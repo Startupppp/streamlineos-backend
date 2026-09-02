@@ -8,7 +8,7 @@ export const listCreditNotesSchema = z.object({
   status: z.enum(["DRAFT", "POSTED", "APPLIED", "VOID"]).optional(),
   clientId: z.coerce.number().int().positive().optional(),
   invoiceId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 
 const cnItemSchema = z.object({
   description: z.string().min(1),
@@ -30,12 +30,12 @@ export const createCreditNoteSchema = z.object({
   customerGstin: z.string().optional(),
   supplierGstin: z.string().optional(),
   notes: z.string().optional(),
-});
+}).strict();
 
 export const applyCreditNoteSchema = z.object({
   invoiceId: z.number().int().positive(),
   amount: z.number().positive(),
-});
+}).strict();
 
 export const listRecurringTemplatesSchema = z.object({
   cursor: z.string().optional(),
@@ -44,7 +44,7 @@ export const listRecurringTemplatesSchema = z.object({
     .string()
     .transform((v) => v === "true")
     .optional(),
-});
+}).strict();
 
 export const createRecurringTemplateSchema = z.object({
   name: z.string().min(1),
@@ -53,45 +53,45 @@ export const createRecurringTemplateSchema = z.object({
   nextRunDate: z.string().optional(),
   endDate: z.string().optional(),
   payload: z.record(z.string(), z.unknown()),
-});
+}).strict();
 
 export const updateRecurringTemplateSchema = createRecurringTemplateSchema.partial().extend({
   isActive: z.boolean().optional(),
-});
+}).strict();
 
 export const listReminderPoliciesSchema = z.object({
   limit: pageSizeField(50, 100),
   cursor: idCursorSchema,
-});
+}).strict();
 
 export const createReminderPolicySchema = z.object({
   name: z.string().min(1),
   offsets: z.array(z.number().int()).max(50),
   channel: z.enum(["EMAIL", "WHATSAPP"]).default("EMAIL"),
   template: z.string().optional(),
-});
+}).strict();
 
 export const updateReminderPolicySchema = createReminderPolicySchema.partial().extend({
   isActive: z.boolean().optional(),
-});
+}).strict();
 
 export const listReminderLogSchema = z.object({
   invoiceId: z.coerce.number().int().positive().optional(),
   limit: pageSizeField(50, 100),
   cursor: idCursorSchema,
-});
+}).strict();
 
 export const customerStatementSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   format: z.enum(["json", "csv"]).default("json"),
-});
+}).strict();
 
 export const listCollectionActivitiesSchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(50, 100),
   clientId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 
 export const createCollectionActivitySchema = z.object({
   clientId: z.number().int().positive(),
@@ -99,13 +99,13 @@ export const createCollectionActivitySchema = z.object({
   type: z.enum(["NOTE", "PROMISE_TO_PAY", "CALL", "EMAIL"]),
   note: z.string().optional(),
   promisedDate: z.string().optional(),
-});
+}).strict();
 
 export const updateInvoiceCollectionSchema = z
   .object({
     collectionOwnerId: z.string().optional(),
     promiseToPayDate: z.string().optional(),
-  })
+  }).strict()
   .refine((v) => v.collectionOwnerId !== undefined || v.promiseToPayDate !== undefined, {
     message: "At least one field must be provided",
   });
@@ -138,7 +138,7 @@ export const listArPaymentsSchema = z.object({
   clientId: z.coerce.number().int().positive().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
-});
+}).strict();
 
 export type ListArPaymentsInput = z.infer<typeof listArPaymentsSchema>;
 export type ListArPaymentsQuery = ListArPaymentsInput;

@@ -27,9 +27,9 @@ export const createSectionSchema = z.object({
   description: z.string().max(2000).optional(),
   sortOrder: z.number().int().min(0).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 
-export const patchSectionSchema = createSectionSchema.partial();
+export const patchSectionSchema = createSectionSchema.partial().strict();
 
 export const choiceInputSchema = z.object({
   choiceKey: z.string().min(1).max(100),
@@ -52,7 +52,7 @@ export const createQuestionSchema = z.object({
   scoring: z.record(z.string(), z.unknown()).optional(),
   sortOrder: z.number().int().min(0).optional(),
   choices: z.array(choiceInputSchema).optional(),
-});
+}).strict();
 
 export const patchQuestionSchema = z.object({
   sectionId: z.number().int().positive().optional(),
@@ -66,12 +66,12 @@ export const patchQuestionSchema = z.object({
   scoring: z.record(z.string(), z.unknown()).optional(),
   sortOrder: z.number().int().min(0).optional(),
   choices: z.array(choiceInputSchema).optional(),
-});
+}).strict();
 
 export const reorderSchema = z.object({
   sections: z.array(z.object({ id: z.number().int().positive(), sortOrder: z.number().int().min(0) })).optional(),
   questions: z.array(z.object({ id: z.number().int().positive(), sectionId: z.number().int().positive(), sortOrder: z.number().int().min(0) })).optional(),
-});
+}).strict();
 
 const conditionSchema = z.object({
   op: z.enum(["answer_equals", "answer_contains", "score_gt", "score_lt", "metadata_equals", "collector_equals", "contact_field_equals", "completion_status_equals"]),
@@ -101,9 +101,9 @@ export const createLogicRuleSchema = z.object({
   action: actionSchema,
   target: z.record(z.string(), z.unknown()).nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
-});
+}).strict();
 
-export const patchLogicRuleSchema = createLogicRuleSchema.partial();
+export const patchLogicRuleSchema = createLogicRuleSchema.partial().strict();
 
 export type CreateSectionInput = z.infer<typeof createSectionSchema>;
 export type PatchSectionInput = z.infer<typeof patchSectionSchema>;

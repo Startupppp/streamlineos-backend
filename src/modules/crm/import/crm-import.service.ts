@@ -9,7 +9,6 @@ import { CrmImportRevertService } from "./crm-import-revert.service";
 
 export type { BatchOutcome, PhaseExtent, ImportProgress } from "./crm-import-internals";
 export { REVERT_WINDOW_DAYS } from "./crm-import-internals";
-export { MAX_ROWS } from "./crm-import-preview.service";
 
 @Injectable()
 export class CrmImportService {

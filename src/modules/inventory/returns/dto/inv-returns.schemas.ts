@@ -5,7 +5,7 @@ export const listReturnsSchema = z.object({
   status: z.enum(["DRAFT", "POSTED", "CANCELLED"]).optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListReturnsInput = z.infer<typeof listReturnsSchema>;
 
 const vendorReturnLineSchema = z.object({
@@ -23,12 +23,12 @@ export const createVendorReturnSchema = z.object({
   grnId: z.number().int().positive().optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(vendorReturnLineSchema).min(1),
-});
+}).strict();
 export type CreateVendorReturnInput = z.infer<typeof createVendorReturnSchema>;
 
 export const postVendorReturnSchema = z.object({
   reason: z.string().max(500).optional(),
-});
+}).strict();
 export type PostVendorReturnInput = z.infer<typeof postVendorReturnSchema>;
 
 const customerReturnLineSchema = z.object({
@@ -47,10 +47,10 @@ export const createCustomerReturnSchema = z.object({
   clientId: z.number().int().positive().optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(customerReturnLineSchema).min(1),
-});
+}).strict();
 export type CreateCustomerReturnInput = z.infer<typeof createCustomerReturnSchema>;
 
 export const postCustomerReturnSchema = z.object({
   reason: z.string().max(500).optional(),
-});
+}).strict();
 export type PostCustomerReturnInput = z.infer<typeof postCustomerReturnSchema>;

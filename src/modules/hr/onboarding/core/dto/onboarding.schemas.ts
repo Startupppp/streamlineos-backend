@@ -83,7 +83,7 @@ export const personalDetailsSchema = z
       .optional()
       .refine((val) => !val || INDIAN_PINCODE_REGEX.test(val.trim()), "Enter a valid 6-digit PIN code"),
     addressCountry: z.string().optional(),
-  })
+  }).strict()
   .refine((val) => val.phone !== val.emergencyPhone, {
     message: "Emergency contact phone number must be different from your own phone number",
     path: ["emergencyPhone"],
@@ -139,17 +139,17 @@ export const personalDetailsSchema = z
 
 export const initiateSchema = z.object({
   userId: z.string().min(1),
-});
+}).strict();
 
 const BANK_NAME_REGEX = /^[A-Za-z][A-Za-z0-9.,'&()\-\s]*$/;
 
 export const requirementsQuerySchema = z.object({
   country: z.string().trim().max(60).optional(),
-});
+}).strict();
 
 export const ensureDocumentsSchema = z.object({
   country: z.string().trim().max(60).optional(),
-});
+}).strict();
 
 const optionalCode = z.string().trim().max(40).optional().default("");
 
@@ -170,7 +170,7 @@ export const bankDetailsSchema = z
     branch: z.string().trim().max(100).optional(),
     taxId: z.string().trim().max(40).optional(),
     statutory: z.record(z.string(), z.string().trim().max(60)).optional().default({}),
-  })
+  }).strict()
   .superRefine((val, ctx) => {
     const req = resolveCountryRequirements(val.countryCode);
 
@@ -241,11 +241,11 @@ export const createTemplateSchema = z.object({
   departmentId: z.string().min(1).optional(),
   description: z.string().optional(),
   steps: z.array(templateStepSchema).default([]),
-});
+}).strict();
 
 export const updateTaskSchema = z.object({
   status: z.enum(["COMPLETED", "PENDING"]),
-});
+}).strict();
 
 export type InitiateInput = z.infer<typeof initiateSchema>;
 export type PersonalDetailsInput = z.infer<typeof personalDetailsSchema>;

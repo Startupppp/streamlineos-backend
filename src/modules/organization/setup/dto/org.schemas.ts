@@ -26,6 +26,6 @@ export const setupSchema = z.object({
     .array(z.enum(ORG_MODULE_KEYS))
     .min(1, "At least one module is required")
     .max(50),
-});
+}).strict();
 
 export type SetupInput = z.infer<typeof setupSchema>;

@@ -104,6 +104,6 @@ export interface EntityWriter {
  * a refusal at preview time is a sentence the tenant can act on rather than a
  * NOT NULL violation on row four thousand.
  */
-export function requiresSubjectType(entity: ImportEntity): boolean {
+function requiresSubjectType(entity: ImportEntity): boolean {
   return entity === "subject";
 }

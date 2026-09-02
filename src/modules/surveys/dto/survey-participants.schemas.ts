@@ -15,21 +15,21 @@ export const participantInputSchema = z.object({
 export const importParticipantsSchema = z.object({
   collectorId: z.number().int().positive().optional(),
   participants: z.array(participantInputSchema).min(1).max(2000),
-});
+}).strict();
 
 export const inviteParticipantsSchema = z.object({
   participantIds: z.array(z.number().int().positive()).min(1).max(2000),
-});
+}).strict();
 
 export const remindParticipantsSchema = z.object({
   participantIds: z.array(z.number().int().positive()).min(1).max(2000),
-});
+}).strict();
 
 export const listParticipantsSchema = z.object({
   status: z.enum(["invited", "delivered", "opened", "started", "partial", "completed", "disqualified", "bounced", "unsubscribed", "expired"]).optional(),
   page: pageNumberField,
   pageSize: pageSizeField(25, 100),
-});
+}).strict();
 
 export type ImportParticipantsInput = z.infer<typeof importParticipantsSchema>;
 export type InviteParticipantsInput = z.infer<typeof inviteParticipantsSchema>;

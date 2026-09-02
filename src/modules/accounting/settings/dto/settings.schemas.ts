@@ -9,7 +9,7 @@ export const paymentTermSchema = z.object({
 
 export const upsertPaymentTermsSchema = z.object({
   terms: z.array(paymentTermSchema).max(20),
-}).superRefine((val, ctx) => {
+}).strict().superRefine((val, ctx) => {
   const keys = val.terms.map(t => t.key);
   const uniqueKeys = new Set(keys);
   if (uniqueKeys.size !== keys.length) {
@@ -29,7 +29,7 @@ export const updateSettingsSchema = z.object({
   accountingBasis: z.enum(["ACCRUAL", "CASH"]).optional(),
   taxRegistration: z.record(z.string(), z.unknown()).optional(),
   coaTemplate: z.string().optional(),
-});
+}).strict();
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 
@@ -37,7 +37,7 @@ export const updateSequenceSchema = z.object({
   prefix: z.string().min(1).max(20).optional(),
   padding: z.number().int().min(1).max(10).optional(),
   nextNumber: z.number().int().min(1).optional(),
-});
+}).strict();
 
 export type UpdateSequenceInput = z.infer<typeof updateSequenceSchema>;
 
@@ -78,7 +78,7 @@ export type SystemAccountPurpose = z.infer<typeof systemAccountPurposeSchema>;
 
 export const upsertSystemAccountSchema = z.object({
   accountId: z.number().int().positive(),
-});
+}).strict();
 
 export type UpsertSystemAccountInput = z.infer<typeof upsertSystemAccountSchema>;
 
@@ -91,6 +91,6 @@ export const openingBalanceLineSchema = z.object({
 export const postOpeningBalancesSchema = z.object({
   asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   lines: z.array(openingBalanceLineSchema).min(1),
-});
+}).strict();
 
 export type PostOpeningBalancesInput = z.infer<typeof postOpeningBalancesSchema>;

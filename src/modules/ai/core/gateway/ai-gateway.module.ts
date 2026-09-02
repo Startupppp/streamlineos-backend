@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AiCreditsModule } from "../../../billing/core/ai-credits.module";
 import { AiCreditsService } from "../../../billing/core/ai-credits.service";
 import { LlmService } from "../providers/llm.service";
+import { EmbeddingsService } from "../providers/embeddings.service";
 import { AiUsageService } from "../services/ai-usage.service";
 import { AiGatewayService } from "./ai-gateway.service";
 import { AiResponseCacheService } from "./ai-response-cache.service";
@@ -12,12 +13,13 @@ import { AI_CREDIT_LEDGER } from "./credit-ledger.interface";
   imports: [AiCreditsModule],
   providers: [
     LlmService,
+    EmbeddingsService,
     AiUsageService,
     AiResponseCacheService,
     AiConcurrencyLimiter,
     AiGatewayService,
     { provide: AI_CREDIT_LEDGER, useExisting: AiCreditsService },
   ],
-  exports: [LlmService, AiUsageService, AiGatewayService, AiResponseCacheService, AI_CREDIT_LEDGER],
+  exports: [LlmService, EmbeddingsService, AiUsageService, AiGatewayService, AiResponseCacheService, AI_CREDIT_LEDGER],
 })
 export class AiGatewayModule {}

@@ -24,7 +24,7 @@ export const createHandbookSchema = z.object({
     .startsWith("https://", "Document URL must start with https://")
     .optional(),
   changelog: z.string().max(2000).optional(),
-});
+}).strict();
 
 export const updateHandbookSchema = z.object({
   status: z.enum(["PUBLISHED", "DRAFT"]).optional(),
@@ -32,7 +32,7 @@ export const updateHandbookSchema = z.object({
   version: z.string().min(1).max(10).regex(VERSION_FORMAT, "Version must be in MAJOR.MINOR format (e.g., 1.0, 2.3)").optional(),
   documentUrl: z.string().url().optional().or(z.literal("")),
   changelog: z.string().max(2000).optional(),
-});
+}).strict();
 
 export type CreateHandbookInput = z.infer<typeof createHandbookSchema>;
 export type UpdateHandbookInput = z.infer<typeof updateHandbookSchema>;

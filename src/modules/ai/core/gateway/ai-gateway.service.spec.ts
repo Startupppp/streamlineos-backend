@@ -10,6 +10,7 @@ import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { AiResponseCacheService } from "./ai-response-cache.service";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
+import { EmbeddingsService } from "../providers/embeddings.service";
 
 const GreetingSchema = z.object({ message: z.string() });
 
@@ -57,10 +58,19 @@ async function buildModule(llmOverride?: ReturnType<typeof makeLlm>, ledgerOverr
 
   const mockConcurrencyLimiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
 
+  const mockEmbeddings = {
+    isConfigured: jest.fn().mockReturnValue(true),
+    embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+    embedBatch: jest.fn().mockResolvedValue([[0.1]]),
+    embedQueryDeduped: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+    toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2,0.3]"),
+  };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       AiGatewayService,
       { provide: LlmService, useValue: llm },
+      { provide: EmbeddingsService, useValue: mockEmbeddings },
       { provide: AiUsageService, useValue: mockUsage },
       { provide: AuditService, useValue: mockAudit },
       { provide: AI_CREDIT_LEDGER, useValue: ledger },
@@ -240,6 +250,7 @@ describe("AiGatewayService", () => {
         providers: [
           AiGatewayService,
           { provide: LlmService, useValue: llm },
+          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQuery: jest.fn(), toVectorLiteral: jest.fn() } },
           { provide: AiUsageService, useValue: mockUsage },
           { provide: AuditService, useValue: mockAudit },
           { provide: AI_CREDIT_LEDGER, useValue: makeLedger() },
@@ -315,6 +326,7 @@ describe("AiGatewayService", () => {
         providers: [
           AiGatewayService,
           { provide: LlmService, useValue: llm },
+          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQuery: jest.fn(), toVectorLiteral: jest.fn() } },
           { provide: AiUsageService, useValue: mockUsage },
           { provide: AuditService, useValue: mockAudit },
           { provide: AI_CREDIT_LEDGER, useValue: ledger },
@@ -343,6 +355,7 @@ describe("AiGatewayService", () => {
         providers: [
           AiGatewayService,
           { provide: LlmService, useValue: llm },
+          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQuery: jest.fn(), toVectorLiteral: jest.fn() } },
           { provide: AiUsageService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
           { provide: AuditService, useValue: { log: jest.fn() } },
           { provide: AI_CREDIT_LEDGER, useValue: makeLedger() },

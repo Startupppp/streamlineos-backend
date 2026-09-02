@@ -8,5 +8,5 @@ export const upsertTranslationSchema = z.object({
   contentText: z.string().default(""),
   excerpt: z.string().max(500).optional().nullable(),
   status: z.enum(KB_TRANSLATION_STATUSES).optional(),
-});
+}).strict();
 export type UpsertTranslationInput = z.infer<typeof upsertTranslationSchema>;

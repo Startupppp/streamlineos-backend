@@ -8,7 +8,7 @@ export interface ObjectAccessContext {
   scope: DataScope;
 }
 
-export type ObjectQuery<T> = (ctx: ObjectAccessContext) => Promise<T | null>;
+type ObjectQuery<T> = (ctx: ObjectAccessContext) => Promise<T | null>;
 
 interface ScopeSource {
   resolveUserPermissions(

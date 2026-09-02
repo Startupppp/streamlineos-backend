@@ -9,5 +9,5 @@ export const teamWeekSummaryQuerySchema = z.object({
     .pipe(z.array(z.string().min(1)).min(1).max(100)),
   startDate: dateString,
   endDate: dateString,
-});
+}).strict();
 export type TeamWeekSummaryQuery = z.infer<typeof teamWeekSummaryQuerySchema>;

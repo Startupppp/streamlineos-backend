@@ -8,22 +8,22 @@ export const listMembershipsQuerySchema = z.object({
   limit: pageSizeField(20, 100),
   cursor: z.string().optional(),
   status: z.enum(["PENDING", "ACTIVE", "SUSPENDED", "REVOKED"]).optional(),
-});
+}).strict();
 
 export const createMembershipSchema = z.object({
   partyContactId: z.string().min(1),
   userMembershipId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const updateMembershipStatusSchema = z.object({
   status: z.enum(membershipStatusValues),
-});
+}).strict();
 
 export const listGrantsQuerySchema = z.object({
   limit: pageSizeField(20, 100),
   cursor: z.string().optional(),
   projectId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 
 export const createGrantSchema = z.object({
   portalMembershipId: z.string().min(1),
@@ -34,7 +34,7 @@ export const createGrantSchema = z.object({
   canViewAttachments: z.boolean().optional(),
   canViewComments: z.boolean().optional(),
   canSubmitChangeRequests: z.boolean().optional(),
-});
+}).strict();
 
 export const updateGrantSchema = z.object({
   canViewMilestones: z.boolean().optional(),
@@ -44,7 +44,7 @@ export const updateGrantSchema = z.object({
   canSubmitChangeRequests: z.boolean().optional(),
   status: z.enum(grantStatusValues).optional(),
   expiresAt: z.string().datetime().nullish(),
-});
+}).strict();
 
 export type ListMembershipsQuery = z.infer<typeof listMembershipsQuerySchema>;
 export type CreateMembershipInput = z.infer<typeof createMembershipSchema>;

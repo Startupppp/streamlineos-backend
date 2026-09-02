@@ -12,14 +12,14 @@ export const listEventsSchema = paginationSchema.extend({
   entityId: z.string().optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-});
+}).strict();
 
 export const exportEventsSchema = paginationSchema.extend({
   eventType: z.string().optional(),
   entityType: z.string().optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-});
+}).strict();
 
 export type ListEventsInput = z.infer<typeof listEventsSchema>;
 export type ExportEventsInput = z.infer<typeof exportEventsSchema>;

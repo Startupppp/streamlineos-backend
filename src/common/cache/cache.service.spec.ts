@@ -1,5 +1,6 @@
 import type { Redis } from "@upstash/redis";
 import { CacheService } from "./cache.service";
+import { REDIS_COMMAND_TIMEOUT } from "./cache.service";
 
 function buildRedis(values = new Map<string, unknown>()): Redis {
   return {
@@ -254,5 +255,42 @@ describe("tenant-aware wrappers", () => {
 
     expect(del).toHaveBeenCalledTimes(2);
     expect(cache.droppedInvalidationCount).toBe(0);
+  });
+});
+
+describe("command-timeout boundary", () => {
+  it("a timed-out get degrades to the underlying source without surfacing an error", async () => {
+    const redis = {
+      get: jest.fn((): Promise<null> => new Promise(() => {})),
+      set: jest.fn((): Promise<string | null> => new Promise(() => {})),
+      eval: jest.fn((): Promise<number> => new Promise(() => {})),
+    } as unknown as Redis;
+    const cache = new CacheService(redis, 1);
+    const source = jest.fn().mockResolvedValue({ fromDb: true });
+
+    await expect(cache.cached("timeout-read-key", source)).resolves.toEqual({ fromDb: true });
+    expect(source).toHaveBeenCalledTimes(1);
+  });
+
+  it("a timed-out invalidation surfaces through the drop counter and error log, not swallowed", async () => {
+    const redis = {
+      del: jest.fn((): Promise<number> => new Promise(() => {})),
+      get: jest.fn((): Promise<null> => new Promise(() => {})),
+    } as unknown as Redis;
+    const cache = new CacheService(redis, 1);
+    const errorSpy = jest
+      .spyOn(cache["logger"], "error")
+      .mockImplementation(() => undefined);
+
+    await cache.invalidate("timeout-invalidation-key");
+
+    expect(redis.del).toHaveBeenCalledTimes(3);
+    expect(cache.droppedInvalidationCount).toBe(1);
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain("cache.invalidation.dropped");
+    errorSpy.mockRestore();
+  });
+
+  it("REDIS_COMMAND_TIMEOUT token is exported for injection", () => {
+    expect(REDIS_COMMAND_TIMEOUT).toBe("REDIS_COMMAND_TIMEOUT");
   });
 });

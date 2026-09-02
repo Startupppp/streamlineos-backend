@@ -1,4 +1,4 @@
-export type { InvalidationTrigger, CacheNamespaceEntry } from "./cache-invalidation-types";
+export type { CacheNamespaceEntry } from "./cache-invalidation-types";
 import type { CacheNamespaceEntry } from "./cache-invalidation-types";
 import { FINANCE_CACHE_ENTRIES } from "./cache-invalidation-finance";
 import { INVENTORY_CACHE_ENTRIES } from "./cache-invalidation-inventory";

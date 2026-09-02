@@ -18,7 +18,7 @@ import type { DataScope } from "../../access/access.types";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import { OrgChartService } from "./org-chart.service";
-export type { OrgChartNode, OrgChartPage } from "./org-chart.service";
+export type { OrgChartPage } from "./org-chart.service";
 
 export interface HeadcountGroup {
   label: string;

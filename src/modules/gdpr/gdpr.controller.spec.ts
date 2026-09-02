@@ -22,12 +22,14 @@ function buildController() {
     }),
   };
   const gdprRectification = { rectifyOwnProfile: jest.fn().mockResolvedValue({ requestId: 1 }) };
+  const gdprErasure = { eraseSubject: jest.fn().mockResolvedValue({ blocked: false, dryRun: false, tablesAnonymised: [], globalIdentityAnonymised: false }) };
   const access = {};
   return {
     controller: new GdprController(
       gdpr as never,
       gdprExport as never,
       gdprRectification as never,
+      gdprErasure as never,
       access as never,
     ),
     gdprExport,

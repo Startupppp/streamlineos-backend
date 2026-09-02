@@ -195,6 +195,7 @@ export class InputsService {
           .select({ userId: organizationMembers.userId, id: organizationMembers.id })
           .from(organizationMembers)
           .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, uniqueUserIds)))
+          .limit(uniqueUserIds.length + 1)
       : [];
     const memberIdByUserId = new Map<string, number>(
       membershipRows.flatMap((r) => r.userId != null ? [[r.userId, r.id]] : []),

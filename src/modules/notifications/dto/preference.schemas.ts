@@ -6,7 +6,7 @@ export const eventPreferenceSchema = z.object({
   channels: channelMap.optional(),
   muted: z.boolean().optional(),
   mode: z.string().optional(),
-});
+}).strict();
 
 export const updatePreferenceSchema = z.object({
   emailEnabled: z.boolean().optional(),
@@ -24,7 +24,7 @@ export const updatePreferenceSchema = z.object({
   channelCategories: z.record(z.string(), channelMap).optional(),
   eventPreferences: z.record(z.string(), eventPreferenceSchema).optional(),
   modulePreferences: z.record(z.string(), z.object({ mode: z.string().optional(), muted: z.boolean().optional() })).optional(),
-});
+}).strict();
 
 const SUPPRESSION_CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP", "WEBHOOK"] as const;
 
@@ -33,7 +33,7 @@ export const createSuppressionSchema = z.object({
   scopeKey: z.string().min(1).max(200),
   channel: z.enum(SUPPRESSION_CHANNELS).optional(),
   expiresAt: z.string().datetime().optional(),
-});
+}).strict();
 
 export type UpdatePreferenceInput = z.infer<typeof updatePreferenceSchema>;
 export type EventPreferenceInput = z.infer<typeof eventPreferenceSchema>;

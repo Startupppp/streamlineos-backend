@@ -12,7 +12,7 @@ export const createBankAccountSchema = z.object({
   ledgerAccountId: z.number().int().positive().optional(),
   openingBalance: z.string().regex(/^-?\d+(\.\d{1,4})?$/).default("0"),
   openingBalanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-});
+}).strict();
 
 export const updateBankAccountSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -22,14 +22,14 @@ export const updateBankAccountSchema = z.object({
   ifsc: z.string().max(20).optional(),
   currency: z.string().length(3).optional(),
   isActive: z.boolean().optional(),
-});
+}).strict();
 
 export const bankAccountsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   isActive: queryBoolean.optional(),
   q: z.string().max(200).optional(),
-});
+}).strict();
 
 export const bankTransactionsQuerySchema = z.object({
   cursor: z.string().optional(),
@@ -38,7 +38,7 @@ export const bankTransactionsQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   q: z.string().max(200).optional(),
-});
+}).strict();
 
 export type CreateBankAccountInput = z.infer<typeof createBankAccountSchema>;
 export type UpdateBankAccountInput = z.infer<typeof updateBankAccountSchema>;

@@ -19,8 +19,6 @@ const RESEND_TIMEOUT_MS = 30_000;
 const ZEPTOMAIL_DEFAULT_URL = "https://api.zeptomail.in/v1.1/email";
 
 export type {
-  EmailAttachment,
-  EmailDispatcher,
   EmailOptions,
   Provider,
 } from "./email-provider-selection";

@@ -63,10 +63,10 @@ export const createEnvelopeSchema = z.object({
   reminderRepeatDays: z.number().int().min(1).max(90).default(3),
   reminderMaxCount: z.number().int().min(0).max(20).default(5),
   metadataJson: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 export type CreateEnvelopeInput = z.infer<typeof createEnvelopeSchema>;
 
-export const updateEnvelopeSchema = createEnvelopeSchema.partial();
+export const updateEnvelopeSchema = createEnvelopeSchema.partial().strict();
 export type UpdateEnvelopeInput = z.infer<typeof updateEnvelopeSchema>;
 
 export const listEnvelopesSchema = z.object({
@@ -76,12 +76,12 @@ export const listEnvelopesSchema = z.object({
   sourceEntityId: z.string().trim().optional(),
   page: pageNumberField,
   limit: pageSizeField(25, 100),
-});
+}).strict();
 export type ListEnvelopesInput = z.infer<typeof listEnvelopesSchema>;
 
 export const voidEnvelopeSchema = z.object({
   reason: z.string().trim().min(1, "Void reason is required").max(1000),
-});
+}).strict();
 export type VoidEnvelopeInput = z.infer<typeof voidEnvelopeSchema>;
 
 export const correctEnvelopeSchema = z.object({
@@ -97,19 +97,19 @@ export const correctEnvelopeSchema = z.object({
     )
     .max(50)
     .optional(),
-});
+}).strict();
 export type CorrectEnvelopeInput = z.infer<typeof correctEnvelopeSchema>;
 
 export const extendExpirationSchema = z.object({
   expiresAt: z.string().datetime(),
-});
+}).strict();
 export type ExtendExpirationInput = z.infer<typeof extendExpirationSchema>;
 
 // ---- Documents ----
 
 export const uploadDocumentMetaSchema = z.object({
   orderIndex: z.coerce.number().int().min(0).default(0),
-});
+}).strict();
 export type UploadDocumentMetaInput = z.infer<typeof uploadDocumentMetaSchema>;
 
 // ---- Recipients ----
@@ -138,10 +138,10 @@ export const createRecipientSchema = z.object({
   routingOrder: z.number().int().min(1).max(50).default(1),
   authMethod: signAuthMethodSchema.default("email_link"),
   accessCode: z.string().trim().min(4).max(50).optional(),
-});
+}).strict();
 export type CreateRecipientInput = z.infer<typeof createRecipientSchema>;
 
-export const updateRecipientSchema = createRecipientSchema.partial();
+export const updateRecipientSchema = createRecipientSchema.partial().strict();
 export type UpdateRecipientInput = z.infer<typeof updateRecipientSchema>;
 
 // ---- Fields ----
@@ -165,10 +165,10 @@ export const createFieldSchema = z.object({
   validationType: z.string().trim().max(50).optional(),
   validationRulesJson: z.record(z.string(), z.unknown()).optional(),
   conditionalRulesJson: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 export type CreateFieldInput = z.infer<typeof createFieldSchema>;
 
-export const updateFieldSchema = createFieldSchema.partial().omit({ documentId: true, recipientId: true });
+export const updateFieldSchema = createFieldSchema.partial().omit({ documentId: true, recipientId: true }).strict();
 export type UpdateFieldInput = z.infer<typeof updateFieldSchema>;
 
 // ---- Templates ----
@@ -180,12 +180,12 @@ export const createTemplateSchema = z.object({
   templateJson: z.record(z.string(), z.unknown()).default({}),
   restrictedToRoles: z.array(z.string().trim().max(100)).max(50).default([]),
   restrictedToTeams: z.array(z.string().trim().max(100)).max(50).default([]),
-});
+}).strict();
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 
 export const updateTemplateSchema = createTemplateSchema.partial().extend({
   status: z.enum(["draft", "published", "archived"]).optional(),
-});
+}).strict();
 export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
 
 export const saveAsTemplateSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict();
@@ -206,7 +206,7 @@ export const createEnvelopeFromTemplateSchema = z.object({
   sourceModule: z.string().trim().max(50).optional(),
   sourceEntityType: z.string().trim().max(50).optional(),
   sourceEntityId: z.string().trim().max(100).optional(),
-});
+}).strict();
 export type CreateEnvelopeFromTemplateInput = z.infer<typeof createEnvelopeFromTemplateSchema>;
 
 export const publishPublicFormSchema = z.object({
@@ -222,7 +222,7 @@ export const publishPublicFormSchema = z.object({
   completionRedirectUrl: z.string().trim().url().optional(),
   webhookUrl: z.string().trim().url().optional(),
   embedAllowed: z.boolean().default(false),
-});
+}).strict();
 export type PublishPublicFormInput = z.infer<typeof publishPublicFormSchema>;
 
 // ---- Bulk send ----
@@ -232,7 +232,7 @@ export const createBulkSendJobSchema = z.object({
   columnMapping: z.record(z.string(), z.string()),
   rows: z.array(z.record(z.string(), z.unknown())).min(1).max(5000),
   dryRun: z.boolean().default(false),
-});
+}).strict();
 export type CreateBulkSendJobInput = z.infer<typeof createBulkSendJobSchema>;
 
 // ---- Public signing ----
@@ -240,17 +240,17 @@ export type CreateBulkSendJobInput = z.infer<typeof createBulkSendJobSchema>;
 export const publicAuthSchema = z.object({
   accessCode: z.string().trim().max(50).optional(),
   otpCode: z.string().trim().max(10).optional(),
-});
+}).strict();
 export type PublicAuthInput = z.infer<typeof publicAuthSchema>;
 
 export const publicConsentSchema = z.object({
   disclosureVersion: z.string().trim().min(1).max(50),
-});
+}).strict();
 export type PublicConsentInput = z.infer<typeof publicConsentSchema>;
 
 export const publicFieldValueSchema = z.object({
   value: z.union([z.string().max(5000), z.boolean(), z.null()]),
-});
+}).strict();
 export type PublicFieldValueInput = z.infer<typeof publicFieldValueSchema>;
 
 export const adoptSignatureSchema = z.object({
@@ -259,12 +259,12 @@ export const adoptSignatureSchema = z.object({
   imageDataUrl: z.string().trim().max(2_000_000).optional(),
   typedText: z.string().trim().max(200).optional(),
   typedFontStyle: z.string().trim().max(100).optional(),
-});
+}).strict();
 export type AdoptSignatureInput = z.infer<typeof adoptSignatureSchema>;
 
 export const declineSchema = z.object({
   reason: z.string().trim().min(1, "Decline reason is required").max(1000),
-});
+}).strict();
 export type DeclineInput = z.infer<typeof declineSchema>;
 
 export const publicFormSubmitSchema = z.object({
@@ -272,7 +272,7 @@ export const publicFormSubmitSchema = z.object({
   email: z.string().trim().email(),
   phone: z.string().trim().max(30).optional(),
   accessCode: z.string().trim().max(50).optional(),
-});
+}).strict();
 export type PublicFormESignSubmitInput = z.infer<typeof publicFormSubmitSchema>;
 
 // ---- Settings ----
@@ -306,7 +306,7 @@ export const updateSignSettingsSchema = z.object({
     .partial()
     .optional(),
   webhookUrl: z.string().trim().url().optional(),
-});
+}).strict();
 export type UpdateSignSettingsInput = z.infer<typeof updateSignSettingsSchema>;
 
 export const watermarkPolicyInputSchema = z.object({
@@ -325,5 +325,5 @@ export const watermarkPolicyInputSchema = z.object({
   showOnFinalPdf: z.boolean().default(true),
   previewOnly: z.boolean().default(false),
   enabled: z.boolean().default(true),
-});
+}).strict();
 export type WatermarkPolicyInput = z.infer<typeof watermarkPolicyInputSchema>;

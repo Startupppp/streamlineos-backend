@@ -16,9 +16,9 @@ export const listSchema = z.object({
   dateFrom: z.string().min(1).optional(),
   dateTo: z.string().min(1).optional(),
   userSearch: z.string().min(1).max(200).optional(),
-});
+}).strict();
 
 export type ListInput = z.infer<typeof listSchema>;
 
-export const exportSchema = listSchema.omit({ cursor: true, limit: true });
+export const exportSchema = listSchema.omit({ cursor: true, limit: true }).strict();
 export type ExportInput = z.infer<typeof exportSchema>;

@@ -28,5 +28,5 @@ export const updateCoreSettingsSchema = z.object({
   expectedWeeklyHours: z.number().positive().max(168).optional().nullable(),
   submissionGraceDays: z.number().int().min(0).max(30).optional().nullable(),
   changeReason: z.string().max(500).optional(),
-});
+}).strict();
 export type UpdateCoreSettingsInput = z.infer<typeof updateCoreSettingsSchema>;

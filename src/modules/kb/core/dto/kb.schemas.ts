@@ -11,10 +11,10 @@ export const createSpaceSchema = z.object({
   audience: z.enum(KB_AUDIENCES).default("internal"),
   icon: z.string().trim().max(100).optional(),
   isPublicHelpCenter: z.boolean().optional(),
-});
+}).strict();
 export type CreateSpaceInput = z.infer<typeof createSpaceSchema>;
 
-export const updateSpaceSchema = createSpaceSchema.partial();
+export const updateSpaceSchema = createSpaceSchema.partial().strict();
 export type UpdateSpaceInput = z.infer<typeof updateSpaceSchema>;
 
 export const createCategorySchema = z.object({
@@ -23,7 +23,7 @@ export const createCategorySchema = z.object({
   description: z.string().trim().max(1000).optional(),
   icon: z.string().trim().max(100).optional(),
   sortOrder: z.coerce.number().int().optional(),
-});
+}).strict();
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 
 export const updateCategorySchema = z.object({
@@ -32,7 +32,7 @@ export const updateCategorySchema = z.object({
   description: z.string().trim().max(1000).optional(),
   icon: z.string().trim().max(100).optional(),
   sortOrder: z.coerce.number().int().optional(),
-});
+}).strict();
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 
 export const listArticlesSchema = z.object({
@@ -42,7 +42,7 @@ export const listArticlesSchema = z.object({
   search: z.string().trim().min(1).max(200).optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 export type ListArticlesInput = z.infer<typeof listArticlesSchema>;
 
 export const createArticleSchema = z.object({
@@ -58,7 +58,7 @@ export const createArticleSchema = z.object({
   seoTitle: z.string().trim().max(200).optional(),
   seoDescription: z.string().trim().max(500).optional(),
   reviewIntervalDays: z.coerce.number().int().positive().nullable().optional(),
-});
+}).strict();
 export type CreateArticleInput = z.infer<typeof createArticleSchema>;
 
 export const updateArticleSchema = z.object({
@@ -74,16 +74,16 @@ export const updateArticleSchema = z.object({
   seoDescription: z.string().trim().max(500).optional(),
   reviewIntervalDays: z.coerce.number().int().positive().nullable().optional(),
   changeSummary: z.string().trim().max(500).optional(),
-});
+}).strict();
 export type UpdateArticleInput = z.infer<typeof updateArticleSchema>;
 
 export const verifyArticleSchema = z.object({
   reviewIntervalDays: z.coerce.number().int().positive().nullable().optional(),
-});
+}).strict();
 export type VerifyArticleInput = z.infer<typeof verifyArticleSchema>;
 
 export const voteArticleSchema = z.object({
   helpful: z.boolean(),
   comment: z.string().trim().max(1000).optional(),
-});
+}).strict();
 export type VoteArticleInput = z.infer<typeof voteArticleSchema>;

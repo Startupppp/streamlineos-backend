@@ -8,8 +8,10 @@ import { DashboardLeaveService } from "./dashboard-leave.service";
 import { DashboardAnnouncementsService } from "./dashboard-announcements.service";
 import { DashboardCrmService } from "./dashboard-crm.service";
 import { DashboardProjectService } from "./dashboard-project.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [DashboardController],
   providers: [
     DashboardStatsService,

@@ -27,7 +27,7 @@ export const createGoalSchema = z
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
     parentGoalId: z.number().optional(),
-  })
+  }).strict()
   .refine((d) => new Date(d.endDate) > new Date(d.startDate), {
     message: "End date must be after start date",
     path: ["endDate"],
@@ -41,7 +41,7 @@ export const updateGoalCollectionSchema = z.object({
   currentValue: z.number().optional(),
   status: z.string().optional(),
   progress: z.number().optional(),
-});
+}).strict();
 
 export const updateGoalItemSchema = z.object({
   title: z.string().min(1).max(100).optional(),
@@ -52,20 +52,20 @@ export const updateGoalItemSchema = z.object({
   progress: z.number().min(0).max(100).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-});
+}).strict();
 
 export const createKeyResultSchema = z.object({
   goalId: z.number().int().positive(),
   title: z.string().min(1).max(200),
   targetValue: z.number().positive().optional(),
   unit: z.string().max(50).optional(),
-});
+}).strict();
 
 export const updateKeyResultSchema = z.object({
   id: z.number().int().positive(),
   currentValue: z.number().min(0).optional(),
   progress: z.number().min(0).max(100).optional(),
-});
+}).strict();
 
 export const createOneOnOneSchema = z
   .object({
@@ -84,7 +84,7 @@ export const createOneOnOneSchema = z
       .min(5, "Agenda must be at least 5 characters")
       .max(1000, "Agenda must be at most 1000 characters"),
     meetingLink: z.string().url("Enter a valid URL").optional().or(z.literal("")),
-  })
+  }).strict()
   .refine((d) => new Date(d.scheduledAt) > new Date(), {
     message: "Meeting must be scheduled in the future",
     path: ["scheduledAt"],
@@ -100,7 +100,7 @@ export const updateOneOnOneSchema = z.object({
     .optional(),
   agenda: z.string().max(1000).optional(),
   meetingLink: z.string().url().optional().or(z.literal("")),
-});
+}).strict();
 
 const pipObjectiveSchema = z.object({
   objective: z
@@ -129,7 +129,7 @@ export const createPipSchema = z
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
     notes: z.string().max(2000).optional(),
-  })
+  }).strict()
   .refine((d) => new Date(d.endDate) > new Date(d.startDate), {
     message: "End date must be after start date",
     path: ["endDate"],
@@ -147,7 +147,7 @@ export const updatePipSchema = z.object({
   reason: z.string().min(1).max(1000).optional(),
   objectives: z.array(pipObjectiveSchema).optional(),
   hrRepId: z.string().nullable().optional(),
-});
+}).strict();
 
 export const createReviewCycleSchema = z
   .object({
@@ -163,7 +163,7 @@ export const createReviewCycleSchema = z
     periodEnd: z.string().min(1, "End date is required"),
     deadline: z.string().min(1, "Deadline is required"),
     description: z.string().max(500).optional(),
-  })
+  }).strict()
   .refine((d) => new Date(d.periodEnd) > new Date(d.periodStart), {
     message: "Period end must be after period start",
     path: ["periodEnd"],
@@ -186,7 +186,7 @@ export const createPerformanceReviewSchema = z
           category: z.string().min(1),
           score: z.number().min(0).max(10),
           comment: z.string().optional(),
-        }),
+        }).strict(),
       )
       .optional(),
     strengths: z.string().max(2000).optional(),
@@ -217,7 +217,7 @@ export const updatePerformanceReviewSchema = z.object({
   periodStart: z.string().optional(),
   periodEnd: z.string().optional(),
   cycleId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const listPerformanceReviewsSchema = z.object({
   userId: z.string().min(1).optional(),
@@ -227,7 +227,7 @@ export const listPerformanceReviewsSchema = z.object({
   sortDir: z.enum(["asc", "desc"]).default("desc"),
   limit: pageSizeField(50),
   cursor: z.string().optional(),
-});
+}).strict();
 
 export const updateReviewCycleSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -237,7 +237,7 @@ export const updateReviewCycleSchema = z.object({
   deadline: z.string().optional(),
   status: z.enum(["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"]).optional(),
   description: z.string().max(500).optional(),
-});
+}).strict();
 
 export type CreateGoalInput = z.infer<typeof createGoalSchema>;
 export type UpdateGoalCollectionInput = z.infer<typeof updateGoalCollectionSchema>;

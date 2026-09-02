@@ -6,21 +6,21 @@ export const supportAiReportFiltersSchema = z.object({
   limit: pageSizeField(50, 100),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
-});
+}).strict();
 
 export const updateSupportAiSettingsSchema = z.object({
   confidenceThreshold: z.number().min(0).max(1).optional(),
-});
+}).strict();
 
 export const resolveAiSuggestionSchema = z.object({
   status: z.enum(["accepted", "rejected"]),
   feedback: z.enum(["helpful", "not_helpful"]).optional(),
-});
+}).strict();
 
 export const translateMessageSchema = z.object({
   messageId: z.number().int().positive(),
   targetLanguage: z.string().trim().min(2).max(50),
-});
+}).strict();
 
 export const supportReportFiltersSchema = z.object({
   dateFrom: z.coerce.date().optional(),
@@ -28,7 +28,7 @@ export const supportReportFiltersSchema = z.object({
   agentId: z.string().trim().optional(),
   queueId: z.coerce.number().int().positive().optional(),
   channel: z.string().trim().optional(),
-});
+}).strict();
 
 export type SupportAiReportFiltersInput = z.infer<typeof supportAiReportFiltersSchema>;
 export type UpdateSupportAiSettingsInput = z.infer<typeof updateSupportAiSettingsSchema>;

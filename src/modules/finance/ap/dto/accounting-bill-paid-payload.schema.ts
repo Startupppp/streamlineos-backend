@@ -10,4 +10,4 @@ export const accountingBillPaidPayloadSchema = z.object({
   actor_user_id: z.string(),
 });
 
-export type AccountingBillPaidPayload = z.infer<typeof accountingBillPaidPayloadSchema>;
+type AccountingBillPaidPayload = z.infer<typeof accountingBillPaidPayloadSchema>;

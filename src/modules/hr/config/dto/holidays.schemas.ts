@@ -3,11 +3,11 @@ import { z } from "zod";
 export const holidayCalendarQuerySchema = z.object({
   year: z.coerce.number().int(),
   month: z.coerce.number().int(),
-});
+}).strict();
 
 export const holidayListQuerySchema = z.object({
   year: z.coerce.number().int(),
-});
+}).strict();
 
 export const updateHolidaySchema = z.object({
   name: z
@@ -27,7 +27,7 @@ export const updateHolidaySchema = z.object({
     ),
   date: z.string().min(1, "Date is required"),
   message: z.string().optional(),
-});
+}).strict();
 
 export const createHolidaySchema = z.object({
   name: z
@@ -51,7 +51,7 @@ export const createHolidaySchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
   message: z.string().max(500, "Message too long").optional(),
   isPublic: z.boolean().optional().default(false),
-});
+}).strict();
 
 export type HolidayCalendarQuery = z.infer<typeof holidayCalendarQuerySchema>;
 export type HolidayListQuery = z.infer<typeof holidayListQuerySchema>;

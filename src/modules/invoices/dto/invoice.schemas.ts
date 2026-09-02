@@ -6,6 +6,6 @@ export const listInvoicesSchema = z.object({
   clientId: z.coerce.number().int().positive().optional(),
   page: pageNumberField,
   limit: pageSizeField(50),
-});
+}).strict();
 
 export type ListInvoicesInput = z.infer<typeof listInvoicesSchema>;

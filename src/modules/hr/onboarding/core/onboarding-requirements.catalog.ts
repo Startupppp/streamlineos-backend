@@ -11,11 +11,7 @@ import {
 import type { CountryOnboardingRequirements } from "./onboarding-requirements.types";
 
 export type {
-  BankField,
-  BankFieldKey,
   CountryOnboardingRequirements,
-  DocumentSeed,
-  StatutoryField,
 } from "./onboarding-requirements.types";
 export { GLOBAL_DOCUMENTS } from "./onboarding-requirements.shared";
 

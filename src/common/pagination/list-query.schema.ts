@@ -49,7 +49,7 @@ export const baseListQuerySchema = z.object({
   sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
-export type BaseListQuery = z.infer<typeof baseListQuerySchema>;
+type BaseListQuery = z.infer<typeof baseListQuerySchema>;
 
 export function withSortField<const T extends [string, ...string[]]>(
   sortFields: T,

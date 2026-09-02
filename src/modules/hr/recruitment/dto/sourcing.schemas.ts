@@ -9,7 +9,7 @@ export const createReferralSubmissionSchema = z.object({
   jobPostingId: z.number().int().positive().optional(),
   relationship: z.string().max(200).optional(),
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 export type CreateReferralSubmissionInput = z.infer<typeof createReferralSubmissionSchema>;
 
 export const updateReferralStatusSchema = z.object({
@@ -17,7 +17,7 @@ export const updateReferralStatusSchema = z.object({
   bonusAmount: z.number().positive().optional(),
   bonusEligible: z.boolean().optional(),
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 export type UpdateReferralStatusInput = z.infer<typeof updateReferralStatusSchema>;
 
 export const createVendorSchema = z.object({
@@ -31,7 +31,7 @@ export const createVendorSchema = z.object({
   contractType: z.enum(["CONTINGENCY", "CONTRACT_STAFFING", "BOTH"]).default("CONTINGENCY"),
   slaDays: z.number().int().positive().optional(),
   replacementGuaranteeDays: z.number().int().positive().optional(),
-});
+}).strict();
 export type CreateVendorInput = z.infer<typeof createVendorSchema>;
 
 export const updateVendorSchema = z.object({
@@ -45,7 +45,7 @@ export const updateVendorSchema = z.object({
   contractType: z.enum(["CONTINGENCY", "CONTRACT_STAFFING", "BOTH"]).optional(),
   slaDays: z.number().int().positive().optional(),
   replacementGuaranteeDays: z.number().int().positive().optional(),
-});
+}).strict();
 export type UpdateVendorInput = z.infer<typeof updateVendorSchema>;
 
 export const createSubmissionSchema = z.object({
@@ -55,7 +55,7 @@ export const createSubmissionSchema = z.object({
   payRate: z.number().positive().optional(),
   contractStartDate: z.string().optional(),
   contractEndDate: z.string().optional(),
-});
+}).strict();
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;
 
 export const updateSubmissionSchema = z.object({
@@ -68,19 +68,19 @@ export const updateSubmissionSchema = z.object({
   payRate: z.number().positive().optional(),
   contractStartDate: z.string().optional(),
   contractEndDate: z.string().optional(),
-});
+}).strict();
 export type UpdateSubmissionInput = z.infer<typeof updateSubmissionSchema>;
 
 export const submissionIdQuerySchema = z.object({
   submissionId: z.coerce.number().int().positive(),
-});
+}).strict();
 export type SubmissionIdQueryInput = z.infer<typeof submissionIdQuerySchema>;
 
 export const headcountListSchema = z.object({
   status: z.string().optional(),
   limit: pageSizeField(50, 100),
   cursor: z.string().optional(),
-});
+}).strict();
 export type HeadcountListInput = z.infer<typeof headcountListSchema>;
 
 export const createHeadcountSchema = z.object({
@@ -90,7 +90,7 @@ export const createHeadcountSchema = z.object({
   justification: z.string().max(5000).optional(),
   targetDate: z.string().optional(),
   status: z.enum(["DRAFT", "SUBMITTED"]).default("DRAFT"),
-});
+}).strict();
 export type CreateHeadcountInput = z.infer<typeof createHeadcountSchema>;
 
 export const updateHeadcountSchema = z.object({
@@ -99,21 +99,21 @@ export const updateHeadcountSchema = z.object({
   justification: z.string().max(5000).optional(),
   targetDate: z.string().optional(),
   status: z.enum(["DRAFT", "SUBMITTED"]).optional(),
-});
+}).strict();
 export type UpdateHeadcountInput = z.infer<typeof updateHeadcountSchema>;
 
 export const rejectHeadcountSchema = z.object({
   reason: z.string().max(2000).optional(),
-});
+}).strict();
 export type RejectHeadcountInput = z.infer<typeof rejectHeadcountSchema>;
 
 export const updateExternalReferralSchema = z.object({
   status: z.enum(["SUBMITTED", "REVIEWING", "HIRED", "REJECTED", "INELIGIBLE", "REWARD_PENDING", "REWARD_PAID"]).optional(),
   rewardAmount: z.number().positive().optional(),
-});
+}).strict();
 export type UpdateExternalReferralInput = z.infer<typeof updateExternalReferralSchema>;
 
 export const updateExternalReferrerStatusSchema = z.object({
   status: z.enum(["ACTIVE", "BLOCKED"]),
-});
+}).strict();
 export type UpdateExternalReferrerStatusInput = z.infer<typeof updateExternalReferrerStatusSchema>;

@@ -15,7 +15,7 @@ export const createPersonSchema = z.object({
   phone: z.string().max(50).optional(),
   userId: z.string().uuid().optional(),
   organizationMembershipId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 
 export const updatePersonSchema = z.object({
   firstName: z.string().min(1).max(255).optional(),
@@ -37,7 +37,7 @@ export const updatePersonSchema = z.object({
   bio: z.string().nullish(),
   userId: z.string().uuid().nullish(),
   organizationMembershipId: z.coerce.number().int().positive().nullish(),
-});
+}).strict();
 
 export type ListPeopleQuery = z.infer<typeof listPeopleQuerySchema>;
 export type CreatePersonInput = z.infer<typeof createPersonSchema>;
@@ -69,7 +69,7 @@ export const createWorkerSchema = z
     memberUserId: z.string().trim().min(1).max(128).optional(),
     workerNumber: z.string().max(100).optional(),
     isPayee: z.boolean().optional(),
-  })
+  }).strict()
   .superRefine((value, ctx) => {
     const subjectCount = Number(Boolean(value.organizationPersonId)) +
       Number(Boolean(value.memberUserId));

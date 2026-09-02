@@ -236,6 +236,18 @@ export class SupportKbController {
     return this.kb.deleteAttachment(u.orgId, articleId, attachmentId);
   }
 
+  @Get("articles/:articleId/attachments/:attachmentId/download")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("support:kb:view")
+  @Validate({ params: articleAndAttachmentIdParams })
+  getAttachmentDownloadUrl(
+    @Param("articleId", ParseIntPipe) articleId: number,
+    @Param("attachmentId", ParseIntPipe) attachmentId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.kb.getAttachmentDownloadUrl(u.orgId, articleId, attachmentId);
+  }
+
   @Post("ask")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")

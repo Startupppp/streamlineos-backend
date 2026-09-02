@@ -7,7 +7,7 @@ export const listWorkLogsQuerySchema = z.object({
   month: z.coerce.number().optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
-});
+}).strict();
 
 export const postWorkLogSchema = z.object({
   date: z.string(),
@@ -33,19 +33,19 @@ export const postWorkLogSchema = z.object({
         }
       });
     }, "Each work link must be a valid URL (max 10)"),
-});
+}).strict();
 
 export const exportWorkLogsQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   userId: z.string().optional(),
-});
+}).strict();
 
 export const patchWorkLogStatusSchema = z.object({
   id: z.number(),
   status: z.enum(["APPROVED", "REJECTED"]),
   rejectionReason: z.string().optional(),
-});
+}).strict();
 
 export type ListWorkLogsQuery = z.infer<typeof listWorkLogsQuerySchema>;
 export type PostWorkLogInput = z.infer<typeof postWorkLogSchema>;

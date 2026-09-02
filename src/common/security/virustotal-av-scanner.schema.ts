@@ -39,6 +39,6 @@ export const vtAnalysisReportSchema = z.object({
 });
 
 export type VtStats = z.infer<typeof vtStatsSchema>;
-export type VtFileReport = z.infer<typeof vtFileReportSchema>;
-export type VtUploadResponse = z.infer<typeof vtUploadResponseSchema>;
-export type VtAnalysisReport = z.infer<typeof vtAnalysisReportSchema>;
+type VtFileReport = z.infer<typeof vtFileReportSchema>;
+type VtUploadResponse = z.infer<typeof vtUploadResponseSchema>;
+type VtAnalysisReport = z.infer<typeof vtAnalysisReportSchema>;

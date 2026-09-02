@@ -31,6 +31,6 @@ export const createOvertimeSchema = z.object({
     ),
   reason: z.string().optional(),
   convertToCompOff: z.boolean().optional(),
-});
+}).strict();
 
 export type CreateOvertimeInput = z.infer<typeof createOvertimeSchema>;

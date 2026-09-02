@@ -1,12 +1,9 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import {
   and,
-  count,
-  desc,
   eq,
   exists,
   gte,
-  isNull,
   lt,
   ne,
   or,
@@ -16,18 +13,19 @@ import {
 import {
   calendarEvents,
   eventAttendees,
-  leaveBalances,
-  leaveTypes,
-  notifications,
   organizationMembers,
-  tickets,
   timesheets,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
+import { NotificationsService } from "../notifications/notifications.service";
+import { DashboardLeaveService } from "./dashboard-leave.service";
+import { DashboardProjectService } from "./dashboard-project.service";
 import { resolvePersonalDashboardModules } from "./dashboard-scope";
+
+const ACTIVE_TICKET_STATUSES = ["TODO", "IN_PROGRESS", "IN_REVIEW"];
 
 @Injectable()
 export class DashboardPersonalService {
@@ -36,6 +34,9 @@ export class DashboardPersonalService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly leaveService: DashboardLeaveService,
+    private readonly projectService: DashboardProjectService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async getPersonalDashboard(u: CurrentUserContext) {
@@ -73,27 +74,12 @@ export class DashboardPersonalService {
       timesheetRows,
       leaveBalanceRows,
       upcomingEvents,
-      unreadCount,
+      unreadNotifResult,
     ] = await Promise.all([
       modules.build
         ? settle(
             "myTasks",
-            () =>
-              this.db.query.tickets.findMany({
-                where: and(
-                  eq(tickets.orgId, orgId),
-                  eq(tickets.assigneeMembershipId, selfMember?.id ?? -1),
-                  isNull(tickets.deletedAt),
-                  or(
-                    eq(tickets.status, "TODO"),
-                    eq(tickets.status, "IN_PROGRESS"),
-                    eq(tickets.status, "IN_REVIEW"),
-                  ),
-                ),
-                orderBy: [desc(tickets.updatedAt)],
-                limit: 10,
-                with: { project: { columns: { id: true, name: true } } },
-              }),
+            () => this.projectService.getMyIssues(orgId, userId, ACTIVE_TICKET_STATUSES),
             [],
           )
         : [],
@@ -120,27 +106,7 @@ export class DashboardPersonalService {
       modules.hr
         ? settle(
             "leaveBalance",
-            () =>
-              this.db
-                .select({
-                  id: leaveBalances.id,
-                  balance: leaveBalances.balance,
-                  total: leaveTypes.daysPerYear,
-                  typeName: leaveTypes.name,
-                  year: leaveBalances.year,
-                })
-                .from(leaveBalances)
-                .innerJoin(
-                  leaveTypes,
-                  eq(leaveBalances.leaveTypeId, leaveTypes.id),
-                )
-                .where(
-                  and(
-                    eq(leaveBalances.orgId, orgId),
-                    eq(leaveBalances.userId, userId),
-                    eq(leaveBalances.year, now.getFullYear()),
-                  ),
-                ),
+            () => this.leaveService.getMyLeaveBalance(orgId, userId),
             [],
           )
         : [],
@@ -208,18 +174,8 @@ export class DashboardPersonalService {
       ),
       settle(
         "unreadNotifications",
-        () =>
-          this.db
-            .select({ cnt: count() })
-            .from(notifications)
-            .where(
-              and(
-                eq(notifications.userId, userId),
-                eq(notifications.orgId, orgId),
-                eq(notifications.isRead, false),
-              ),
-            ),
-        [],
+        () => this.notificationsService.unreadCount(orgId, userId),
+        { count: 0 },
       ),
     ]);
 
@@ -233,7 +189,7 @@ export class DashboardPersonalService {
         status: t.status,
         priority: t.priority,
         dueDate: null,
-        projectName: t.project?.name ?? null,
+        projectName: t.projectName || null,
       })),
       timesheetStatus: {
         submitted: hoursLogged > 0,
@@ -241,9 +197,9 @@ export class DashboardPersonalService {
         hoursLogged,
       },
       leaveBalance: leaveBalanceRows.map((r) => ({
-        type: r.typeName ?? "Leave",
+        type: r.leaveTypeName ?? "Leave",
         remaining: Number(r.balance),
-        total: r.total ?? 0,
+        total: r.daysPerYear ?? 0,
       })),
       upcomingEvents: upcomingEvents.map((e) => ({
         id: e.id,
@@ -252,7 +208,7 @@ export class DashboardPersonalService {
         endTime: e.endDate,
         type: e.category,
       })),
-      unreadNotifications: Number(unreadCount[0]?.cnt ?? 0),
+      unreadNotifications: unreadNotifResult.count,
       degraded,
     };
   }

@@ -13,6 +13,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbIndexingService } from "../../kb/retrieval/kb-indexing.service";
+import { StorageService } from "../../storage/storage.service";
 import type {
   CreateKbArticleInput,
   CreateKbAttachmentInput,
@@ -22,6 +23,8 @@ import type {
   UpdateKbArticleInput,
   UpdateKbCategoryInput,
 } from "./dto/support.schemas";
+
+const ATTACHMENT_DOWNLOAD_EXPIRY_SECONDS = 3600;
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -40,6 +43,7 @@ export class SupportKbService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly indexing: KbIndexingService,
+    private readonly storage: StorageService,
   ) {}
 
   listCategories(orgId: string) {
@@ -421,6 +425,29 @@ export class SupportKbService {
 
     if (!deleted) throw new NotFoundException("Attachment not found");
     return { success: true };
+  }
+
+  async getAttachmentDownloadUrl(orgId: string, articleId: number, attachmentId: number) {
+    const [row] = await this.db
+      .select({
+        fileKey: kbArticleAttachments.fileKey,
+        fileName: kbArticleAttachments.fileName,
+        mimeType: kbArticleAttachments.mimeType,
+      })
+      .from(kbArticleAttachments)
+      .where(
+        and(
+          eq(kbArticleAttachments.id, attachmentId),
+          eq(kbArticleAttachments.articleId, articleId),
+          eq(kbArticleAttachments.orgId, orgId),
+        ),
+      )
+      .limit(1);
+
+    if (!row) throw new NotFoundException("Attachment not found");
+
+    const downloadUrl = await this.storage.getFileUrl(orgId, row.fileKey, ATTACHMENT_DOWNLOAD_EXPIRY_SECONDS);
+    return { fileName: row.fileName, mimeType: row.mimeType, downloadUrl };
   }
 
   private async syncArticleTags(tx: Tx, orgId: string, articleId: number, tagNames: string[]): Promise<string[]> {

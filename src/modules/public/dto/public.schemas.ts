@@ -8,31 +8,31 @@ export const applySchema = z.object({
   linkedinUrl: z.string().url().max(500).optional(),
   coverLetter: z.string().max(5000).optional(),
   resumeUrl: z.string().url().max(500).optional(),
-});
+}).strict();
 
 export const offerRespondSchema = z.object({
   action: z.enum(["accept", "decline", "counter"]),
   declineReason: z.string().max(1000).optional(),
   counterSalary: z.number().positive().optional(),
   counterMessage: z.string().max(2000).optional(),
-});
+}).strict();
 
 export const roadmapQuerySchema = z.object({
   org: z.string().trim().min(1),
-});
+}).strict();
 
 export const roadmapVoteSchema = z.object({
   type: z.enum(["roadmap", "feedback"]),
   id: z.number().int().positive(),
   voterKey: z.string().trim().min(8).max(100),
-});
+}).strict();
 
 export const roadmapFeedbackSchema = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().trim().max(5000).optional(),
   name: z.string().trim().max(120).optional(),
   email: z.string().trim().email().optional(),
-});
+}).strict();
 
 export const kbListQuerySchema = z.object({
   org: z.string().min(1),
@@ -40,17 +40,17 @@ export const kbListQuerySchema = z.object({
   search: z.string().trim().min(1).max(200).optional(),
   pageSize: pageSizeField(50, 100),
   cursor: z.string().optional(),
-});
+}).strict();
 
 export const orgQuerySchema = z.object({
   org: z.string().min(1),
-});
+}).strict();
 
 export const kbFeedbackSchema = z.object({
   helpful: z.boolean(),
   comment: z.string().max(1000).optional(),
   visitorId: z.string().max(100).optional(),
-});
+}).strict();
 
 export const npsSubmitSchema = z.object({
   score: z.number().int().min(0).max(10),
@@ -59,7 +59,7 @@ export const npsSubmitSchema = z.object({
   email: z
     .union([z.string().email("Please enter a valid email address").max(320), z.literal("")])
     .optional(),
-});
+}).strict();
 
 export const leadFormBodySchema = z.record(z.string(), z.unknown());
 
@@ -70,19 +70,19 @@ export const intakeSchema = z.object({
   submitterName: z.string().max(200).optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   requestType: z.enum(["bug", "feature", "task", "question", "other"]).optional(),
-});
+}).strict();
 
 export const publicFormSubmitSchema = z.object({
   values: z.record(z.string(), z.unknown()),
   submittedByName: z.string().max(200).optional(),
-});
+}).strict();
 
 export const externalReferrerRegisterSchema = z.object({
   orgId: z.string().trim().min(1),
   name: z.string().min(1).max(200).trim(),
   email: z.string().email().max(200).toLowerCase(),
   phone: z.string().max(50).optional(),
-});
+}).strict();
 
 export const externalReferralSubmitSchema = z.object({
   firstName: z.string().min(1).max(200).trim(),
@@ -90,7 +90,7 @@ export const externalReferralSubmitSchema = z.object({
   email: z.string().email().max(200).toLowerCase(),
   phone: z.string().max(50).optional(),
   jobPostingId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const contactSubmitSchema = z
   .object({

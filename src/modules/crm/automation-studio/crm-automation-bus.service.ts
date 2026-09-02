@@ -1,4 +1,4 @@
-import { Inject, Injectable, forwardRef } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -15,7 +15,7 @@ export class CrmAutomationBusService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    @Inject(forwardRef(() => "CrmAutomationRunnerService"))
+    @Inject("CrmAutomationRunnerService")
     private readonly runner: CrmAutomationRunnerService,
   ) {}
 

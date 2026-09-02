@@ -1,4 +1,4 @@
-import { Module, forwardRef } from "@nestjs/common";
+import { Module } from "@nestjs/common";
 import { CrmAutomationStudioModule } from "../automation-studio/crm-automation-studio.module";
 import { BillingModule } from "../../billing/core/billing.module";
 import { CrmCampaignsController } from "./crm-campaigns.controller";
@@ -42,7 +42,7 @@ import { CrmFollowupSweepService } from "./crm-followup-sweep.service";
   // PartyModule for `PartyMergeService`: merging two company records is the
   // same act as merging two parties, and ticket 25 retired the second
   // implementation rather than keeping one per surface.
-  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule, CrmConsentModule, NotificationsModule, PartyModule],
+  imports: [CrmAutomationStudioModule, BillingModule, CrmConsentModule, NotificationsModule, PartyModule],
   controllers: [
     CrmCampaignsController,
     CrmOrganizationsController,

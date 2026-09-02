@@ -2,13 +2,21 @@ import { createHash } from "node:crypto";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gt, inArray, isNull, ne } from "drizzle-orm";
 import {
+  aiChatConversations,
+  aiChatMessages,
   auditLogs,
+  chatMessages,
   hrDataRequests,
   hrDependents,
   hrEmployeeSensitiveFields,
   hrEmployments,
   hrLegalHolds,
   hrPeople,
+  kbArticleChunks,
+  kbArticles,
+  kbChatConversations,
+  kbChatMessages,
+  kbSources,
   organizationMembers,
   organizationPeople,
   users,
@@ -20,6 +28,7 @@ import { bustMembershipStatusCache } from "../../common/auth/membership-state.se
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 
 const ERASED_NAME = "ERASED";
+const ERASED_CONTENT = "[ERASED]";
 const ERASURE_ID_PAGE = 200;
 
 /** Drains every page rather than capping, so a partial erasure cannot report as complete. */
@@ -49,12 +58,13 @@ export interface SubjectErasureResult {
 }
 
 /**
- * Idempotent, tenant-scoped PII anonymisation for a single subject.
- * Covers organization_people, hr_employee_sensitive_fields, hr_dependents,
+ * Idempotent, tenant-scoped PII erasure for a single subject.
+ * Anonymises: organization_people, hr_employee_sensitive_fields, hr_dependents,
+ * ai_chat_conversations (title), ai_chat_messages (content), chat_messages (content),
  * and (when no other org memberships remain) the global users identity row.
- *
- * NOT covered: search/vector indexes, ai_chat_messages, kb_chat_messages,
- * chat_messages — these require separate tooling and are reported in the result.
+ * Hard-deletes: kb_chat_messages, kb_chat_conversations, kb_article_chunks where the
+ * subject authored the source page, article, or uploaded source document (embedding +
+ * chunk text are a reproduction of the subject's text and must be fully removed).
  */
 @Injectable()
 export class GdprSubjectErasureService {
@@ -101,6 +111,12 @@ export class GdprSubjectErasureService {
           "organization_people",
           "hr_employee_sensitive_fields",
           "hr_dependents",
+          "ai_chat_conversations",
+          "ai_chat_messages",
+          "chat_messages",
+          "kb_chat_messages",
+          "kb_chat_conversations",
+          "kb_article_chunks",
         ],
         globalIdentityAnonymised: false,
       };
@@ -217,6 +233,42 @@ export class GdprSubjectErasureService {
         .returning({ id: hrDependents.id });
       if (depResult.length > 0) tablesAnonymised.push("hr_dependents");
 
+      const aiConvResult = await tx
+        .update(aiChatConversations)
+        .set({ title: ERASED_CONTENT })
+        .where(
+          and(
+            eq(aiChatConversations.orgId, orgId),
+            eq(aiChatConversations.userId, subjectUserId),
+          ),
+        )
+        .returning({ id: aiChatConversations.id });
+      if (aiConvResult.length > 0) tablesAnonymised.push("ai_chat_conversations");
+
+      const aiMsgResult = await tx
+        .update(aiChatMessages)
+        .set({ content: ERASED_CONTENT })
+        .where(
+          and(
+            eq(aiChatMessages.orgId, orgId),
+            eq(aiChatMessages.userId, subjectUserId),
+          ),
+        )
+        .returning({ id: aiChatMessages.id });
+      if (aiMsgResult.length > 0) tablesAnonymised.push("ai_chat_messages");
+
+      const chatMsgResult = await tx
+        .update(chatMessages)
+        .set({ content: ERASED_CONTENT })
+        .where(
+          and(
+            eq(chatMessages.orgId, orgId),
+            eq(chatMessages.senderMembershipId, membership.id),
+          ),
+        )
+        .returning({ id: chatMessages.id });
+      if (chatMsgResult.length > 0) tablesAnonymised.push("chat_messages");
+
       const [otherMembership] = await tx
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
@@ -253,6 +305,88 @@ export class GdprSubjectErasureService {
           .where(eq(users.id, subjectUserId));
         globalIdentityAnonymised = true;
         tablesAnonymised.push("users");
+      }
+
+      const kbMsgResult = await tx
+        .delete(kbChatMessages)
+        .where(
+          and(
+            eq(kbChatMessages.orgId, orgId),
+            eq(kbChatMessages.userMembershipId, membership.id),
+          ),
+        )
+        .returning({ id: kbChatMessages.id });
+      if (kbMsgResult.length > 0) tablesAnonymised.push("kb_chat_messages");
+
+      const kbConvResult = await tx
+        .delete(kbChatConversations)
+        .where(
+          and(
+            eq(kbChatConversations.orgId, orgId),
+            eq(kbChatConversations.userMembershipId, membership.id),
+          ),
+        )
+        .returning({ id: kbChatConversations.id });
+      if (kbConvResult.length > 0) tablesAnonymised.push("kb_chat_conversations");
+
+      const pageChunkResult = await tx
+        .delete(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.pageCreatedById, subjectUserId),
+          ),
+        )
+        .returning({ id: kbArticleChunks.id });
+      if (pageChunkResult.length > 0) tablesAnonymised.push("kb_article_chunks");
+
+      const authoredArticles = await tx
+        .select({ id: kbArticles.id })
+        .from(kbArticles)
+        .where(
+          and(
+            eq(kbArticles.orgId, orgId),
+            eq(kbArticles.authorId, subjectUserId),
+          ),
+        );
+      if (authoredArticles.length > 0) {
+        const articleIds = authoredArticles.map((a) => a.id);
+        const articleChunkResult = await tx
+          .delete(kbArticleChunks)
+          .where(
+            and(
+              eq(kbArticleChunks.orgId, orgId),
+              inArray(kbArticleChunks.articleId, articleIds),
+            ),
+          )
+          .returning({ id: kbArticleChunks.id });
+        if (articleChunkResult.length > 0 && !tablesAnonymised.includes("kb_article_chunks"))
+          tablesAnonymised.push("kb_article_chunks");
+      }
+
+      const ownedSources = await tx
+        .select({ id: kbSources.id })
+        .from(kbSources)
+        .where(
+          and(
+            eq(kbSources.orgId, orgId),
+            eq(kbSources.createdById, subjectUserId),
+          ),
+        )
+        .limit(1000);
+      if (ownedSources.length > 0) {
+        const sourceIds = ownedSources.map((s) => s.id);
+        const sourceChunkResult = await tx
+          .delete(kbArticleChunks)
+          .where(
+            and(
+              eq(kbArticleChunks.orgId, orgId),
+              inArray(kbArticleChunks.sourceId, sourceIds),
+            ),
+          )
+          .returning({ id: kbArticleChunks.id });
+        if (sourceChunkResult.length > 0 && !tablesAnonymised.includes("kb_article_chunks"))
+          tablesAnonymised.push("kb_article_chunks");
       }
 
       await tx.insert(hrDataRequests).values({

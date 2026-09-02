@@ -29,8 +29,6 @@ import type { CursorPage } from "../../common/pagination/cursor";
 
 export type { ModuleGroupMember } from "./module-access-group-members.service";
 export type {
-  FlatModuleMember,
-  ModuleMemberCandidate,
   ModuleRoleGroup,
 } from "./module-access-groups.types";
 

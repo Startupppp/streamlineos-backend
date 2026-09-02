@@ -6,12 +6,12 @@ export const listInsightsSchema = z.object({
   type: z.string().optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListInsightsInput = z.infer<typeof listInsightsSchema>;
 
 export const updateInsightStatusSchema = z.object({
   status: z.enum(["ACKNOWLEDGED", "DISMISSED"]),
-});
+}).strict();
 export type UpdateInsightStatusInput = z.infer<typeof updateInsightStatusSchema>;
 
 type InsightType =

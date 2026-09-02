@@ -2,14 +2,14 @@ import { z } from "zod";
 
 export const improveDescriptionBodySchema = z.object({
   draft: z.string().max(5000).optional(),
-});
+}).strict();
 export type ImproveDescriptionBodyInput = z.infer<typeof improveDescriptionBodySchema>;
 
 export const draftTicketBodySchema = z
   .object({
     title: z.string().max(500).optional(),
     description: z.string().max(5000).optional(),
-  })
+  }).strict()
   .refine(
     (data) => Boolean(data.title?.trim() || data.description?.trim()),
     { message: "Provide a title or description" },

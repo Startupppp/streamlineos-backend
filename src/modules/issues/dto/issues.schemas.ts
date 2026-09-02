@@ -149,4 +149,4 @@ export const listTransitionsQuerySchema = z
   .strict();
 export type ListTransitionsQuery = z.infer<typeof listTransitionsQuerySchema>;
 
-export const recordTypeParamSchema = z.enum(ISSUE_RECORD_TYPES);
+const recordTypeParamSchema = z.enum(ISSUE_RECORD_TYPES);

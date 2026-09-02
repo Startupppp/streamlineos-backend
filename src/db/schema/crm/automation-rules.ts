@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations } from "../common/auth";
 
 export interface AutomationGraphNode {
@@ -43,8 +43,8 @@ export const crmAutomationRules = pgTable("crm_automation_rules", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
-  index("idx_crm_automation_rules_org").on(table.orgId, table.isActive, table.createdAt),
-  index("idx_crm_automation_rules_deleted").on(table.deletedAt),
+  index("idx_crm_automation_rules_org").on(table.orgId, table.isActive, table.createdAt).where(sql`deleted_at IS NULL`),
+  index("idx_crm_automation_rules_deleted").on(table.orgId, table.deletedAt),
   unique("uniq_crm_automation_rules_org_id").on(table.orgId, table.id),
 ]);
 

@@ -7,14 +7,14 @@ export const createMilestoneSchema = z.object({
   description: z.string().max(1000).optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
   status: z.enum(["PENDING", "ACHIEVED", "MISSED"]).default("PENDING"),
-});
+}).strict();
 
 export const updateMilestoneSchema = z.object({
   name: z.string().min(1, "Name is required").trim().max(200).optional(),
   description: z.string().max(1000).optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format").optional(),
   status: z.enum(["PENDING", "ACHIEVED", "MISSED"]).optional(),
-});
+}).strict();
 
 export const createIntakeSchema = z.object({
   title: z.string().min(1).max(200),
@@ -24,19 +24,19 @@ export const createIntakeSchema = z.object({
   submitterName: z.string().max(200).optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   requestType: z.enum(["bug", "feature", "task", "question", "other"]).optional(),
-});
+}).strict();
 
 export const updateIntakeSchema = z.object({
   status: z.enum(["accepted", "declined", "duplicate"]).optional(),
   declineReason: z.string().min(1).optional(),
   linkedWorkItemId: z.number().optional(),
-});
+}).strict();
 
 export const intakeListQuerySchema = z.object({
   status: z.enum(["pending", "accepted", "declined", "duplicate"]).optional(),
   limit: pageSizeField(50),
   cursor: z.string().optional(),
-});
+}).strict();
 
 const MAX_DISPLAY_OPTIONS_BYTES = 8192;
 
@@ -60,7 +60,7 @@ export const createViewSchema = z.object({
   isPinned: z.boolean().default(false),
   visibility: z.enum(["private", "shared"]).default("shared"),
   displayOptions: displayOptionsSchema,
-});
+}).strict();
 
 export const updateViewSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -78,11 +78,11 @@ export const updateViewSchema = z.object({
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "displayOptions exceeds the 8KB limit" });
       }
     }),
-});
+}).strict();
 
 export const createWhiteboardSchema = z.object({
   name: z.string().min(1).max(200),
-});
+}).strict();
 
 const MAX_SCENE_BYTES = 2_000_000;
 
@@ -103,7 +103,7 @@ export const updateWhiteboardSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
     data: excalidrawSceneSchema.optional(),
-  })
+  }).strict()
   .refine((value) => value.name !== undefined || value.data !== undefined, {
     message: "Provide name or data to update",
   });
@@ -114,7 +114,7 @@ export const updateWhiteboardSharingSchema = z
     publicAccess: z.enum(["viewer", "editor"]).optional(),
     linkExpiresAt: z.string().datetime().nullable().optional(),
     allowExport: z.boolean().optional(),
-  })
+  }).strict()
   .refine(
     (v) =>
       v.visibility !== undefined ||
@@ -133,11 +133,11 @@ export const setWhiteboardSharesSchema = z.object({
       }),
     )
     .max(100),
-});
+}).strict();
 
 export const publicWhiteboardUpdateSchema = z.object({
   data: excalidrawSceneSchema,
-});
+}).strict();
 
 export type CreateMilestoneInput = z.infer<typeof createMilestoneSchema>;
 export type UpdateMilestoneInput = z.infer<typeof updateMilestoneSchema>;

@@ -11,4 +11,4 @@ export const providerSyncPayloadSchema = z.object({
   addConference: z.boolean().optional(),
 });
 
-export type ProviderSyncPayload = z.infer<typeof providerSyncPayloadSchema>;
+type ProviderSyncPayload = z.infer<typeof providerSyncPayloadSchema>;

@@ -18,7 +18,7 @@ export const listTaxCodesQuerySchema = z.object({
     ])
     .optional(),
   isActive: queryBoolean.optional(),
-});
+}).strict();
 
 export const createTaxCodeSchema = z.object({
   name: z.string().min(1).max(200),
@@ -38,9 +38,9 @@ export const createTaxCodeSchema = z.object({
   collectedAccountId: z.number().int().positive().optional(),
   paidAccountId: z.number().int().positive().optional(),
   isActive: z.boolean().default(true),
-});
+}).strict();
 
-export const updateTaxCodeSchema = createTaxCodeSchema.partial();
+export const updateTaxCodeSchema = createTaxCodeSchema.partial().strict();
 
 export type ListTaxCodesQuery = z.infer<typeof listTaxCodesQuerySchema>;
 export type CreateTaxCodeInput = z.infer<typeof createTaxCodeSchema>;

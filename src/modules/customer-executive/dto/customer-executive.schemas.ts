@@ -14,7 +14,7 @@ export const updateHealthConfigSchema = z
     thresholds: z.object({
       healthy: z.number().int().min(0).max(100),
       atRisk: z.number().int().min(0).max(100),
-    }),
+    }).strict(),
   })
   .refine(
     (val) => val.weights.sla + val.weights.csat + val.weights.activity + val.weights.renewal + val.weights.tickets > 0,
@@ -28,13 +28,13 @@ export const updateHealthConfigSchema = z
 export const createSurveySchema = z.object({
   title: z.string().min(1).max(200),
   question: z.string().min(1).max(500),
-});
+}).strict();
 
 export const updateSurveySchema = z.object({
   title: z.string().min(1).max(200).optional(),
   question: z.string().min(1).max(500).optional(),
   status: z.enum(["draft", "active", "closed"]).optional(),
-});
+}).strict();
 
 export type UpdateHealthConfigInput = z.infer<typeof updateHealthConfigSchema>;
 export type CreateSurveyInput = z.infer<typeof createSurveySchema>;

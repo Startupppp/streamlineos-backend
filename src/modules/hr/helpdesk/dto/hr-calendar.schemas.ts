@@ -17,6 +17,6 @@ export const hrCalendarSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v ? (v.split(",").filter((t) => CALENDAR_EVENT_TYPES.includes(t as typeof CALENDAR_EVENT_TYPES[number])) as (typeof CALENDAR_EVENT_TYPES)[number][]) : undefined)),
-});
+}).strict();
 
 export type HrCalendarInput = z.infer<typeof hrCalendarSchema>;

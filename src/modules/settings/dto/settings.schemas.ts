@@ -41,7 +41,7 @@ export const updateCustomFieldSchema = z.object({
   isRequired: z.boolean().optional(),
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
-});
+}).strict();
 
 export const featureFlagSchema = z.object({
   flag: z.enum([

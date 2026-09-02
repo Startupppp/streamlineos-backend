@@ -22,7 +22,7 @@ export const createRunSchema = z
       .optional(),
     sourceRunId: z.number().int().positive().optional(),
     entityId: z.number().int().positive().optional(),
-  })
+  }).strict()
   .superRefine((val, ctx) => {
     if (
       (val.runType === "OFF_CYCLE" ||
@@ -101,23 +101,23 @@ export const patchInputSchema = z.object({
   overtimeHours: z.string().optional(),
   billableHours: z.string().optional(),
   reason: z.string().min(1).max(500),
-});
+}).strict();
 export type PatchInputInput = z.infer<typeof patchInputSchema>;
 
 export const resolveExceptionSchema = z.object({
   note: z.string().max(500).optional(),
-});
+}).strict();
 export type ResolveExceptionInput = z.infer<typeof resolveExceptionSchema>;
 
 export const overrideExceptionSchema = z.object({
   reason: z.string().min(1).max(500),
-});
+}).strict();
 export type OverrideExceptionInput = z.infer<typeof overrideExceptionSchema>;
 
 export const setEmployeeHoldSchema = z.object({
   hold: z.boolean(),
   reason: z.string().max(500).optional(),
-});
+}).strict();
 export type SetEmployeeHoldInput = z.infer<typeof setEmployeeHoldSchema>;
 
 export const addRunAdjustmentSchema = z.object({
@@ -127,7 +127,7 @@ export const addRunAdjustmentSchema = z.object({
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, "Must be a positive decimal string"),
   note: z.string().min(1).max(500),
-});
+}).strict();
 export type AddRunAdjustmentInput = z.infer<typeof addRunAdjustmentSchema>;
 
 export const loanAdjustmentSchema = z.object({
@@ -138,7 +138,7 @@ export const loanAdjustmentSchema = z.object({
     .regex(/^\d+(\.\d{1,2})?$/)
     .optional(),
   reason: z.string().min(1).max(500),
-});
+}).strict();
 export type LoanAdjustmentInput = z.infer<typeof loanAdjustmentSchema>;
 
 export const commandCenterQuerySchema = z.object({
@@ -146,7 +146,7 @@ export const commandCenterQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}$/)
     .optional(),
-});
+}).strict();
 export type CommandCenterQuery = z.infer<typeof commandCenterQuerySchema>;
 
 export const listProfilesQuerySchema = z.object({
@@ -158,7 +158,7 @@ export const listProfilesQuerySchema = z.object({
     .optional(),
   status: z.enum(["UPCOMING", "ACTIVE", "SUPERSEDED"]).optional(),
   costCenter: z.string().optional(),
-});
+}).strict();
 export type ListProfilesQuery = z.infer<typeof listProfilesQuerySchema>;
 
 export const createProfileSchema = z.object({
@@ -195,19 +195,19 @@ export const createProfileSchema = z.object({
     .max(200)
     .optional()
     .default([]),
-});
+}).strict();
 export type CreateProfileInput = z.infer<typeof createProfileSchema>;
 
 export const patchProfileSchema = createProfileSchema
   .partial()
-  .omit({ effectiveFrom: true });
+  .omit({ effectiveFrom: true }).strict();
 export type PatchProfileInput = z.infer<typeof patchProfileSchema>;
 
 export const inputsQuerySchema = z.object({
   userId: z.string().optional(),
   cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type InputsQuery = z.infer<typeof inputsQuerySchema>;
 
 export const exceptionFilterSchema = z.object({
@@ -215,5 +215,5 @@ export const exceptionFilterSchema = z.object({
   status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
   cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ExceptionFilterInput = z.infer<typeof exceptionFilterSchema>;

@@ -28,7 +28,7 @@ export const candidateListSchema = z
     limit: optionalPageSizeField(),
     /** @deprecated prefer page/pageSize */
     offset: z.coerce.number().int().min(0).optional(),
-  })
+  }).strict()
   .transform((q) => {
     const pageSize = q.pageSize ?? q.limit ?? 20;
     const page =
@@ -70,7 +70,7 @@ export const createCandidateSchema = z.object({
   skills: z.array(z.string()).optional(),
   source: z.string().optional(),
   notes: z.string().optional(),
-});
+}).strict();
 export type CreateCandidateInput = z.infer<typeof createCandidateSchema>;
 
 export const updateCandidateSchema = z.object({
@@ -89,12 +89,12 @@ export const updateCandidateSchema = z.object({
   notes: z.string().max(5000).optional(),
   rating: z.number().int().min(1).max(5).optional(),
   resumeUrl: z.string().url().max(500).optional().or(z.literal("")),
-});
+}).strict();
 export type UpdateCandidateInput = z.infer<typeof updateCandidateSchema>;
 
 export const stageSchema = z.object({
   stage: z.enum(CANDIDATE_STATUSES),
-});
+}).strict();
 export type StageInput = z.infer<typeof stageSchema>;
 
 const bulkImportRowSchema = z.object({
@@ -114,7 +114,7 @@ const bulkImportRowSchema = z.object({
 
 export const bulkImportSchema = z.object({
   rows: z.array(bulkImportRowSchema).min(1).max(500),
-});
+}).strict();
 export type BulkImportInput = z.infer<typeof bulkImportSchema>;
 
 const importRowSchema = z.object({
@@ -130,7 +130,7 @@ const importRowSchema = z.object({
 
 export const importSchema = z.object({
   candidates: z.array(importRowSchema).min(1, "At least one candidate required").max(500),
-});
+}).strict();
 export type ImportInput = z.infer<typeof importSchema>;
 
 export const bulkRejectSchema = z.object({
@@ -139,7 +139,7 @@ export const bulkRejectSchema = z.object({
     .min(1, "Provide at least one candidate ID")
     .max(100, "Cannot reject more than 100 candidates at once"),
   sendRejectionEmail: z.boolean().default(true),
-});
+}).strict();
 export type BulkRejectInput = z.infer<typeof bulkRejectSchema>;
 
 export const bulkShortlistSchema = z.object({
@@ -147,12 +147,12 @@ export const bulkShortlistSchema = z.object({
     .array(z.number().int().positive())
     .min(1, "Provide at least one candidate ID")
     .max(100, "Cannot shortlist more than 100 candidates at once"),
-});
+}).strict();
 export type BulkShortlistInput = z.infer<typeof bulkShortlistSchema>;
 
 export const linkDuplicateSchema = z.object({
   duplicateOfId: z.number().int().positive(),
-});
+}).strict();
 export type LinkDuplicateInput = z.infer<typeof linkDuplicateSchema>;
 
 const SLA_STATUSES = ["ON_TRACK", "AT_RISK", "BREACHED"] as const;
@@ -160,20 +160,20 @@ const SLA_STATUSES = ["ON_TRACK", "AT_RISK", "BREACHED"] as const;
 export const slaResetSchema = z.object({
   stage: z.string().min(1),
   status: z.enum(SLA_STATUSES).optional().default("ON_TRACK"),
-});
+}).strict();
 export type SlaResetInput = z.infer<typeof slaResetSchema>;
 
 export const createApplicationSchema = z.object({
   jobPostingId: z.number(),
   coverLetter: z.string().optional(),
-});
+}).strict();
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 
 export const bgvStatusSchema = z.object({
   bgvStatus: z.enum(["NOT_INITIATED", "INITIATED", "PENDING", "CLEARED", "FAILED"]),
   bgvAgency: z.string().max(200).optional(),
   bgvNotes: z.string().max(2000).optional(),
-});
+}).strict();
 export type BgvStatusInput = z.infer<typeof bgvStatusSchema>;
 
 export const diversityReportQuerySchema = z.object({
@@ -181,5 +181,5 @@ export const diversityReportQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   departmentIds: z.string().optional(),
-});
+}).strict();
 export type DiversityReportQueryInput = z.infer<typeof diversityReportQuerySchema>;

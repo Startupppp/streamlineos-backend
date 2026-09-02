@@ -5,7 +5,7 @@ export const aiCreditsUsageQuerySchema = z.object({
   days: z.coerce.number().refine((v) => v === 7 || v === 30 || v === 90, {
     message: "days must be 7, 30, or 90",
   }).default(30),
-});
+}).strict();
 
 export const purchaseAiPackSchema = z.object({
   packId: z.coerce.number().int().positive(),
@@ -28,4 +28,4 @@ export const autoTopUpSchema = z.object({
 export const listTransactionsSchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();

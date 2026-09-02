@@ -64,7 +64,7 @@ function never(name: string): never {
 
 const mockDb = new Proxy(
   {},
-  { get: (_, p) => () => never(`db.${String(p)}`) },
+  { get: (_, p) => never(`db.${String(p)}`) },
 ) as unknown as Db;
 
 const mockCache: CacheService = {

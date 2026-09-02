@@ -6,11 +6,11 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD
 
 export const billApprovalNoteSchema = z.object({
   note: z.string().max(500).optional(),
-});
+}).strict();
 
 export const billCancelSchema = z.object({
   reason: z.string().max(500).optional(),
-});
+}).strict();
 
 export const createVendorCreditItemSchema = z.object({
   description: z.string().min(1).max(255),
@@ -29,19 +29,19 @@ export const createVendorCreditSchema = z.object({
   notes: z.string().max(500).optional(),
   currency: z.string().length(3).default("INR"),
   items: z.array(createVendorCreditItemSchema).min(1),
-});
+}).strict();
 
 export const applyVendorCreditSchema = z.object({
   billId: z.number().int().positive(),
   amount: z.number().positive().max(999999999.99),
-});
+}).strict();
 
 export const listVendorCreditsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   vendorId: z.coerce.number().int().positive().optional(),
   status: z.enum(["DRAFT", "POSTED", "APPLIED", "VOID"]).optional(),
-});
+}).strict();
 
 export const recurringBillPayloadSchema = z.object({
   vendorId: z.number().int().positive(),
@@ -78,15 +78,15 @@ export const createRecurringBillSchema = z.object({
   endDate: isoDate.optional(),
   isActive: z.boolean().default(true),
   payload: recurringBillPayloadSchema,
-});
+}).strict();
 
-export const updateRecurringBillSchema = createRecurringBillSchema.partial();
+export const updateRecurringBillSchema = createRecurringBillSchema.partial().strict();
 
 export const listRecurringBillsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   isActive: queryBoolean.optional(),
-});
+}).strict();
 
 export const createPaymentRunSchema = z.object({
   name: z.string().min(1).max(120),
@@ -99,18 +99,18 @@ export const createPaymentRunSchema = z.object({
       maxAmount: z.number().positive().optional(),
     })
     .optional(),
-});
+}).strict();
 
 export const updatePaymentRunItemSchema = z.object({
   amount: z.number().positive().max(999999999.99).optional(),
   excluded: z.boolean().optional(),
-});
+}).strict();
 
 export const listPaymentRunsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   status: z.enum(["DRAFT", "APPROVED", "COMPLETED", "CANCELLED"]).optional(),
-});
+}).strict();
 
 export const manualAllocationSchema = z.object({
   vendorPaymentId: z.number().int().positive(),
@@ -122,7 +122,7 @@ export const manualAllocationSchema = z.object({
       }),
     )
     .min(1),
-});
+}).strict();
 
 export type BillApprovalNote = z.infer<typeof billApprovalNoteSchema>;
 export type BillCancel = z.infer<typeof billCancelSchema>;
@@ -141,7 +141,7 @@ export const listVendorPaymentsQuerySchema = z.object({
   vendorId: z.coerce.number().int().positive().optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-});
+}).strict();
 
 export type ManualAllocationInput = z.infer<typeof manualAllocationSchema>;
 export type ListVendorPaymentsQuery = z.infer<typeof listVendorPaymentsQuerySchema>;

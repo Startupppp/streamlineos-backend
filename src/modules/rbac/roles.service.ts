@@ -358,23 +358,63 @@ export class RolesService {
       "accountant",
     ];
 
-    const created: string[] = [];
-    const skipped: string[] = [];
-    for (const templateId of starterTemplateIds) {
-      const template = ROLE_TEMPLATES.find((t) => t.id === templateId);
-      if (!template) continue;
-      const existing = await this.db.query.roles.findFirst({
-        where: and(eq(roles.slug, template.slug), eq(roles.orgId, orgId)),
-        columns: { id: true },
-      });
-      if (existing) {
-        skipped.push(template.slug);
-        continue;
-      }
-      await this.seedFromTemplate(orgId, template);
-      created.push(template.slug);
-    }
-    return { created, skipped };
+    const templates = starterTemplateIds
+      .map((id) => ROLE_TEMPLATES.find((t) => t.id === id))
+      .filter((t): t is RoleTemplate => t !== undefined);
+
+    if (templates.length === 0) return { created: [], skipped: [] };
+
+    const slugs = templates.map((t) => t.slug);
+    const existingRows = await this.db
+      .select({ slug: roles.slug })
+      .from(roles)
+      .where(and(eq(roles.orgId, orgId), inArray(roles.slug, slugs)));
+    const existingSlugs = new Set(existingRows.map((r) => r.slug));
+
+    const toCreate = templates.filter((t) => !existingSlugs.has(t.slug));
+    const skipped = templates.filter((t) => existingSlugs.has(t.slug)).map((t) => t.slug);
+
+    if (toCreate.length === 0) return { created: [], skipped };
+
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const roleRows = await tx
+          .insert(roles)
+          .values(
+            toCreate.map((t) => ({
+              name: t.name,
+              slug: t.slug,
+              orgId,
+              isSystem: false,
+              rank: ROLE_RANK.FUNCTIONAL,
+              moduleKey: null,
+            })),
+          )
+          .returning({ id: roles.id, slug: roles.slug });
+
+        const permValues = roleRows.flatMap((row) => {
+          const template = toCreate.find((t) => t.slug === row.slug);
+          if (!template) return [];
+          return template.permissions
+            .filter((k) => CATALOG_KEYS.has(k))
+            .map((permissionKey) => ({
+              orgId,
+              roleId: row.id,
+              permissionKey,
+              scope: "all" as const,
+            }));
+        });
+
+        if (permValues.length > 0)
+          await tx.insert(rolePermissionGrants).values(permValues);
+
+        await bumpPermissionsVersion(tx, orgId);
+      },
+      { orgId },
+    );
+
+    return { created: toCreate.map((t) => t.slug), skipped };
   }
 
   /**

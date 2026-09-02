@@ -363,11 +363,10 @@ describe("KbRagService — unauthorized document chunks never reach the model co
   beforeEach(() => jest.clearAllMocks());
 
   it("gateway is not called when no published public articles exist — no embedding or LLM cost incurred", async () => {
-    const mockGateway = { invokeText: jest.fn() };
-    const mockEmbeddings = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      embedQuery: jest.fn(),
-      toVectorLiteral: jest.fn((v: number[]) => `[${v.join(",")}]`),
+    const mockGateway = {
+      invokeText: jest.fn(),
+      embedQueryWithCredit: jest.fn(),
+      isEmbeddingConfigured: jest.fn().mockReturnValue(true),
     };
     const mockDb = {
       select: jest.fn().mockReturnThis(),
@@ -377,20 +376,25 @@ describe("KbRagService — unauthorized document chunks never reach the model co
       where: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue([]),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
     };
+    const mockLedger = { reserve: jest.fn(), settle: jest.fn(), release: jest.fn() };
+    const mockUsageSvc = { track: jest.fn() };
 
     const { KbRagService } = await import("../../services/kb-rag.service");
     const { DRIZZLE } = await import("../../../../../db/drizzle.constants");
-    const { EmbeddingsService } = await import("../../providers/embeddings.service");
     const { AiGatewayService } = await import("../ai-gateway.service");
+    const { AI_CREDIT_LEDGER } = await import("../credit-ledger.interface");
+    const { AiUsageService } = await import("../../services/ai-usage.service");
     const { Test } = await import("@nestjs/testing");
 
     const module = await Test.createTestingModule({
       providers: [
         KbRagService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: EmbeddingsService, useValue: mockEmbeddings },
         { provide: AiGatewayService, useValue: mockGateway },
+        { provide: AI_CREDIT_LEDGER, useValue: mockLedger },
+        { provide: AiUsageService, useValue: mockUsageSvc },
       ],
     }).compile();
 
@@ -398,16 +402,15 @@ describe("KbRagService — unauthorized document chunks never reach the model co
     const answer = await svc.answerQuestion({ orgId: "org_test", question: "What is X?" });
 
     expect(mockGateway.invokeText).not.toHaveBeenCalled();
-    expect(mockEmbeddings.embedQuery).not.toHaveBeenCalled();
+    expect(mockGateway.embedQueryWithCredit).not.toHaveBeenCalled();
     expect(answer.hasContext).toBe(false);
   });
 
   it("gateway is not called when articles exist but vector search returns empty — predicates excluded all chunks", async () => {
-    const mockGateway = { invokeText: jest.fn() };
-    const mockEmbeddings = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      embedQuery: jest.fn().mockResolvedValue(new Array(1536).fill(0.01)),
-      toVectorLiteral: jest.fn((v: number[]) => `[${v.join(",")}]`),
+    const mockGateway = {
+      invokeText: jest.fn(),
+      embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: new Array(4).fill(0.01), vectorLiteral: "[0.01,0.01,0.01,0.01]" }),
+      isEmbeddingConfigured: jest.fn().mockReturnValue(true),
     };
     const mockDb = {
       select: jest.fn().mockReturnThis(),
@@ -419,20 +422,25 @@ describe("KbRagService — unauthorized document chunks never reach the model co
       limit: jest.fn()
         .mockResolvedValueOnce([{ id: 1 }])
         .mockResolvedValue([]),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
     };
+    const mockLedger = { reserve: jest.fn(), settle: jest.fn(), release: jest.fn() };
+    const mockUsageSvc = { track: jest.fn() };
 
     const { KbRagService } = await import("../../services/kb-rag.service");
     const { DRIZZLE } = await import("../../../../../db/drizzle.constants");
-    const { EmbeddingsService } = await import("../../providers/embeddings.service");
     const { AiGatewayService } = await import("../ai-gateway.service");
+    const { AI_CREDIT_LEDGER } = await import("../credit-ledger.interface");
+    const { AiUsageService } = await import("../../services/ai-usage.service");
     const { Test } = await import("@nestjs/testing");
 
     const module = await Test.createTestingModule({
       providers: [
         KbRagService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: EmbeddingsService, useValue: mockEmbeddings },
         { provide: AiGatewayService, useValue: mockGateway },
+        { provide: AI_CREDIT_LEDGER, useValue: mockLedger },
+        { provide: AiUsageService, useValue: mockUsageSvc },
       ],
     }).compile();
 

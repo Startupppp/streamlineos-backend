@@ -9,7 +9,7 @@ export const createIncidentSchema = z.object({
   severity: z.enum(["low", "medium", "high", "critical"]),
   medicalAttention: z.boolean().optional(),
   confidentialMedicalNote: z.string().max(10000).optional(),
-});
+}).strict();
 
 export const updateIncidentSchema = z.object({
   status: z.enum(["open", "investigating", "mitigated", "closed"]).optional(),
@@ -17,7 +17,7 @@ export const updateIncidentSchema = z.object({
   description: z.string().min(10).max(10000).optional(),
   confidentialMedicalNote: z.string().max(10000).nullable().optional(),
   medicalAttention: z.boolean().optional(),
-});
+}).strict();
 
 export const listIncidentsSchema = z.object({
   cursor: z.string().trim().min(1).max(2048).optional(),
@@ -34,12 +34,12 @@ export const checkinSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
   score: z.number().int().min(1).max(10),
   flags: z.array(z.string()).max(10).optional(),
-});
+}).strict();
 
 export const wellnessTrendSchema = z.object({
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-});
+}).strict();
 
 export type CreateIncidentInput = z.infer<typeof createIncidentSchema>;
 export type UpdateIncidentInput = z.infer<typeof updateIncidentSchema>;

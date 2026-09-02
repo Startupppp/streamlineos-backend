@@ -47,7 +47,7 @@ export const listEventsSchema = z
   .object({
     start: parseableDate,
     end: parseableDate,
-  })
+  }).strict()
   .refine(
     (v) => new Date(v.end) > new Date(v.start),
     { message: "end must be after start", path: ["end"] },
@@ -87,7 +87,7 @@ export const createEventSchema = z
     addConference: z.boolean().optional(),
     rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").optional(),
     recurrenceEnd: z.string().datetime().optional(),
-  })
+  }).strict()
   .refine(
     (v) => {
       const start = new Date(v.startDate);
@@ -121,11 +121,11 @@ export const updateEventSchema = z.object({
   linkedLeadId: z.number().int().nullable().optional(),
   rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").nullable().optional(),
   recurrenceEnd: z.string().datetime().nullable().optional(),
-});
+}).strict();
 
 export const rsvpSchema = z.object({
   status: z.enum(["accepted", "declined", "tentative"]),
-});
+}).strict();
 
 export const EXPORT_MAX_SPAN_DAYS = 366;
 
@@ -133,7 +133,7 @@ export const exportSchema = z
   .object({
     from: parseableDate,
     to: parseableDate,
-  })
+  }).strict()
   .refine(
     (v) => new Date(v.to) > new Date(v.from),
     { message: "to must be after from", path: ["to"] },
@@ -150,7 +150,7 @@ export const externalEventsQuerySchema = z
   .object({
     start: parseableDate,
     end: parseableDate,
-  })
+  }).strict()
   .refine(
     (v) => new Date(v.end) > new Date(v.start),
     { message: "end must be after start", path: ["end"] },

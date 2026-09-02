@@ -26,7 +26,7 @@ export const createAutomationSchema = z.object({
   action: actionEnum,
   actionPayload: z.record(z.string(), z.unknown()).optional().default({}),
   isActive: z.boolean().optional().default(true),
-});
+}).strict();
 export type CreateAutomationInput = z.infer<typeof createAutomationSchema>;
 
 export const updateAutomationSchema = z.object({
@@ -35,7 +35,7 @@ export const updateAutomationSchema = z.object({
   triggerConditions: z.record(z.string(), z.unknown()).optional(),
   action: actionEnum.optional(),
   actionPayload: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 export type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>;
 
 const sequenceStepSchema = z.object({
@@ -60,7 +60,7 @@ export const createSequenceSchema = z.object({
   triggerType: triggerTypeEnum.default("MANUAL"),
   targetAudience: z.record(z.string(), z.unknown()).optional().default({}),
   steps: z.array(sequenceStepSchema).optional().default([]),
-});
+}).strict();
 export type CreateSequenceInput = z.infer<typeof createSequenceSchema>;
 
 export const updateSequenceSchema = z.object({
@@ -70,18 +70,18 @@ export const updateSequenceSchema = z.object({
   triggerType: triggerTypeEnum.optional(),
   targetAudience: z.record(z.string(), z.unknown()).optional(),
   steps: z.array(sequenceStepSchema).optional(),
-});
+}).strict();
 export type UpdateSequenceInput = z.infer<typeof updateSequenceSchema>;
 
 export const enrollSequenceSchema = z.object({
   candidateIds: z.array(z.number().int().positive()).min(1).max(100),
-});
+}).strict();
 export type EnrollSequenceInput = z.infer<typeof enrollSequenceSchema>;
 
 export const messageListSchema = z.object({
   candidateId: z.coerce.number().int().positive().optional(),
   limit: pageSizeField(50),
-});
+}).strict();
 export type MessageListInput = z.infer<typeof messageListSchema>;
 
 export const sendMessageSchema = z.object({
@@ -89,5 +89,5 @@ export const sendMessageSchema = z.object({
   channel: z.enum(["EMAIL", "WHATSAPP", "IN_APP"]).default("EMAIL"),
   subject: z.string().max(500).optional(),
   body: z.string().min(1).max(10_000),
-});
+}).strict();
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;

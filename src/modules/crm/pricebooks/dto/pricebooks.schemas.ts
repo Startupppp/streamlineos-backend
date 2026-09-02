@@ -26,7 +26,7 @@ export const resolvePriceQuerySchema = z.object({
   productId: z.coerce.number().int().positive(),
   quantity: z.coerce.number().min(0).default(1),
   pricebookId: z.string().optional(),
-});
+}).strict();
 
 export const quoteSettingsSchema = z.object({
   maxDiscountPercent: z.number().int().min(0).max(100).nullable().optional(),

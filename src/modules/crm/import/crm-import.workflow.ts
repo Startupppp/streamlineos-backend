@@ -5,7 +5,6 @@ import { CrmImportService, type BatchOutcome, type PhaseExtent } from "./crm-imp
 import { ATTEMPT_BUDGET_MS, batchStepName, pauseStepName, rowWindows } from "./import-batches";
 import { COMMIT_WORKFLOW, REVERT_WORKFLOW } from "./import-workflow-names";
 
-export { COMMIT_WORKFLOW, REVERT_WORKFLOW } from "./import-workflow-names";
 
 /**
  * Committing an import, and taking it back, durably.

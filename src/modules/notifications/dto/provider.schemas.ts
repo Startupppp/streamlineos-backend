@@ -28,15 +28,15 @@ export const createProviderSchema = z.object({
   isDefault: z.boolean().optional().default(false),
   dailySendLimit: z.number().int().positive().nullable().optional(),
   monthlyCostLimit: z.number().int().positive().nullable().optional(),
-});
+}).strict();
 
 export const updateProviderSchema = createProviderSchema
   .partial()
-  .omit({ channel: true, provider: true });
+  .omit({ channel: true, provider: true }).strict();
 
 export const testProviderSchema = z.object({
   to: z.string().max(320).optional(),
-});
+}).strict();
 
 export type CreateProviderInput = z.infer<typeof createProviderSchema>;
 export type UpdateProviderInput = z.infer<typeof updateProviderSchema>;

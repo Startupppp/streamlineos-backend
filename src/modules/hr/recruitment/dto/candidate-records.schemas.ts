@@ -6,7 +6,7 @@ export const createCalibrationSchema = z.object({
   scheduledAt: z.string().datetime().optional(),
   participantIds: z.array(z.string()).max(30).default([]),
   notes: z.string().max(5000).optional(),
-});
+}).strict();
 export type CreateCalibrationInput = z.infer<typeof createCalibrationSchema>;
 
 export const updateCalibrationSchema = z.object({
@@ -16,7 +16,7 @@ export const updateCalibrationSchema = z.object({
   notes: z.string().max(5000).optional().nullable(),
   decision: z.enum(["STRONG_HIRE", "HIRE", "NO_HIRE", "HOLD"]).optional().nullable(),
   participantIds: z.array(z.string()).max(30).optional(),
-});
+}).strict();
 export type UpdateCalibrationInput = z.infer<typeof updateCalibrationSchema>;
 
 export const createReferralSchema = z.object({
@@ -25,7 +25,7 @@ export const createReferralSchema = z.object({
   notes: z.string().max(2000).optional(),
   bonusEligible: z.boolean().default(true),
   bonusAmount: z.number().min(0).optional(),
-});
+}).strict();
 export type CreateReferralInput = z.infer<typeof createReferralSchema>;
 
 export const updateReferralSchema = z.object({
@@ -34,7 +34,7 @@ export const updateReferralSchema = z.object({
   bonusAmount: z.number().min(0).optional().nullable(),
   bonusPaidAt: z.string().datetime().optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
-});
+}).strict();
 export type UpdateReferralInput = z.infer<typeof updateReferralSchema>;
 
 export const createReferenceCheckSchema = z.object({
@@ -45,7 +45,7 @@ export const createReferenceCheckSchema = z.object({
   referencePhone: z.string().max(30).optional(),
   relationship: z.string().max(100).optional(),
   notes: z.string().optional(),
-});
+}).strict();
 export type CreateReferenceCheckInput = z.infer<typeof createReferenceCheckSchema>;
 
 export const updateReferenceCheckSchema = z.object({
@@ -57,13 +57,13 @@ export const updateReferenceCheckSchema = z.object({
   referenceCompany: z.string().max(200).nullable().optional(),
   referenceEmail: z.string().email().nullable().optional(),
   referencePhone: z.string().max(30).nullable().optional(),
-});
+}).strict();
 export type UpdateReferenceCheckInput = z.infer<typeof updateReferenceCheckSchema>;
 
 export const generateDocumentSchema = z.object({
   templateId: z.number().int().positive("Template ID is required"),
   variables: z.record(z.string(), z.string()).default({}),
-});
+}).strict();
 export type GenerateDocumentInput = z.infer<typeof generateDocumentSchema>;
 
 export const rolloutDocumentsSchema = z.object({
@@ -71,7 +71,7 @@ export const rolloutDocumentsSchema = z.object({
   variables: z.record(z.string(), z.string()).default({}),
   sendEmail: z.boolean().default(true),
   acceptanceDeadline: z.string().datetime({ offset: true }).optional(),
-});
+}).strict();
 export type RolloutDocumentsInput = z.infer<typeof rolloutDocumentsSchema>;
 
 const VAULT_DOCUMENT_TYPES = ["AADHAR", "PAN", "PASSPORT", "CERTIFICATE", "OFFER_LETTER", "OTHER"] as const;
@@ -83,7 +83,7 @@ export const addVaultDocumentSchema = z.object({
   fileType: z.string().min(1),
   fileSize: z.number().int().nonnegative(),
   documentType: z.enum(VAULT_DOCUMENT_TYPES).optional(),
-});
+}).strict();
 export type AddVaultDocumentInput = z.infer<typeof addVaultDocumentSchema>;
 
 const OFFER_STATUSES = [
@@ -102,7 +102,7 @@ export const offerListSchema = z.object({
   status: z.enum(OFFER_STATUSES).optional(),
   cursor: z.string().optional(),
   pageSize: pageSizeField(20, 100),
-});
+}).strict();
 export type OfferListInput = z.infer<typeof offerListSchema>;
 
 export const createOfferSchema = z
@@ -126,7 +126,7 @@ export const createOfferSchema = z
         "Offer expiry cannot be in the past",
       ),
     notes: z.string().max(5000).optional(),
-  })
+  }).strict()
   .refine(
     (d) => {
       if (d.joiningDate && d.validUntil) {
@@ -154,12 +154,12 @@ export const updateOfferSchema = z.object({
   sentAt: z.string().optional(),
   viewedAt: z.string().optional(),
   respondedAt: z.string().optional(),
-});
+}).strict();
 export type UpdateOfferInput = z.infer<typeof updateOfferSchema>;
 
 export const approvalRemarksSchema = z.object({
   remarks: z.string().max(2000).optional(),
-});
+}).strict();
 export type ApprovalRemarksInput = z.infer<typeof approvalRemarksSchema>;
 
 export const createOfferNegotiationSchema = z.object({
@@ -167,5 +167,5 @@ export const createOfferNegotiationSchema = z.object({
   proposedJoiningDate: z.string().optional(),
   message: z.string().max(2000).optional(),
   applyToOffer: z.boolean().optional(),
-});
+}).strict();
 export type CreateOfferNegotiationInput = z.infer<typeof createOfferNegotiationSchema>;

@@ -77,7 +77,7 @@ export const ticketsListQuerySchema = baseListQuerySchema
       .enum(["created", "updated", "priority", "dueDate", "rank"])
       .default("rank"),
     orderDir: z.enum(["asc", "desc"]).optional(),
-  });
+  }).strict();
 
 export const allWorkQuerySchema = baseListQuerySchema
   .omit({ page: true, sortDir: true })
@@ -125,7 +125,7 @@ export const allWorkQuerySchema = baseListQuerySchema
     excludeStatus: csvToStringArray,
     scope: z.enum(["all", "mine", "created", "subscribed"]).default("all"),
     pmWorkspaceId: z.string().optional(),
-  });
+  }).strict();
 
 export const searchTicketsQuerySchema = z.object({
   q: z.string().default(""),
@@ -133,7 +133,7 @@ export const searchTicketsQuerySchema = z.object({
 }).strict();
 export type SearchTicketsQuery = z.infer<typeof searchTicketsQuerySchema>;
 
-export const ticketActivityQuerySchema = baseListQuerySchema.omit({ page: true, sortDir: true });
+export const ticketActivityQuerySchema = baseListQuerySchema.omit({ page: true, sortDir: true }).strict();
 export type TicketActivityQuery = z.infer<typeof ticketActivityQuerySchema>;
 
 export const recurrenceRuleSchema = z.object({

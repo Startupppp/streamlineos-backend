@@ -160,7 +160,7 @@ export async function syncCanonicalReportingLine(
   return { status: "written", employmentId, managerEmploymentId: manager };
 }
 
-export async function currentManagerEmploymentId(
+async function currentManagerEmploymentId(
   db: DbOrTx,
   orgId: string,
   employmentId: number,

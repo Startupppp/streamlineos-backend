@@ -9,9 +9,9 @@ export type AfterCommitHook = () => Promise<unknown>;
 export interface TenantContext {
   orgId: string;
   audience: TenantAudience;
-  /** The in-flight transaction carrying this request's tenant GUC. */
   tx: TenantTx;
   afterCommit?: AfterCommitHook[];
+  abortSignal?: AbortSignal;
 }
 
 const storage = new AsyncLocalStorage<TenantContext>();
@@ -41,6 +41,10 @@ export function registerAfterCommit(hook: AfterCommitHook): boolean {
   if (!hooks) return false;
   hooks.push(hook);
   return true;
+}
+
+export function getTenantAbortSignal(): AbortSignal | undefined {
+  return storage.getStore()?.abortSignal;
 }
 
 @Injectable()

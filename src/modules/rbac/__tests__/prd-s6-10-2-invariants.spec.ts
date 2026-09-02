@@ -155,3 +155,92 @@ describe("per-person grant without a new standing — six standings remain exhau
     expect(baselineCapability).toBe("MEMBER");
   });
 });
+
+describe("Zod contract strictness — extra fields are rejected at every CRUD boundary", () => {
+  it("assignRolePermissionSchema rejects extra fields", () => {
+    const { assignRolePermissionSchema } = jest.requireActual<{
+      assignRolePermissionSchema: { safeParse: (x: unknown) => { success: boolean } };
+    }>("../dto/rbac.schemas");
+
+    expect(
+      assignRolePermissionSchema.safeParse({
+        roleId: 1,
+        permissionKey: "hr:employees:view",
+        scope: "all",
+        extra: "injected-field",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      assignRolePermissionSchema.safeParse({
+        roleId: 1,
+        permissionKey: "hr:employees:view",
+        scope: "all",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("revokeRolePermissionSchema rejects extra fields", () => {
+    const { revokeRolePermissionSchema } = jest.requireActual<{
+      revokeRolePermissionSchema: { safeParse: (x: unknown) => { success: boolean } };
+    }>("../dto/rbac.schemas");
+
+    expect(
+      revokeRolePermissionSchema.safeParse({
+        roleId: 1,
+        permissionKey: "hr:employees:view",
+        extra: "injected-field",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      revokeRolePermissionSchema.safeParse({
+        roleId: 1,
+        permissionKey: "hr:employees:view",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("setRolePermissionsSchema inner items reject extra fields", () => {
+    const { setRolePermissionsSchema } = jest.requireActual<{
+      setRolePermissionsSchema: { safeParse: (x: unknown) => { success: boolean } };
+    }>("../dto/rbac.schemas");
+
+    expect(
+      setRolePermissionsSchema.safeParse({
+        version: 1,
+        items: [
+          { permissionKey: "hr:employees:view", scope: "all", extra: "injected-field" },
+        ],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      setRolePermissionsSchema.safeParse({
+        version: 1,
+        items: [{ permissionKey: "hr:employees:view", scope: "all" }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("roleMemberSchema rejects extra fields on the user branch", () => {
+    const { roleMemberSchema } = jest.requireActual<{
+      roleMemberSchema: { safeParse: (x: unknown) => { success: boolean } };
+    }>("../dto/rbac.schemas");
+
+    expect(
+      roleMemberSchema.safeParse({
+        principalType: "user",
+        principalId: "user-123",
+        extra: "injected-field",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      roleMemberSchema.safeParse({
+        principalType: "user",
+        principalId: "user-123",
+      }).success,
+    ).toBe(true);
+  });
+});

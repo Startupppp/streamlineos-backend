@@ -7,6 +7,6 @@ export const submitChangeRequestSchema = z.object({
   estimateMinutes: z.number().int().nonnegative().optional(),
   budgetImpactCents: z.number().int().optional(),
   timelineImpactDays: z.number().int().optional(),
-});
+}).strict();
 
 export type SubmitChangeRequestInput = z.infer<typeof submitChangeRequestSchema>;

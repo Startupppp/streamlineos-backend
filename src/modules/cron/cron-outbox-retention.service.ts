@@ -3,6 +3,8 @@ import { sql } from "drizzle-orm";
 import { outboxEvents, inboxRecords } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { forEachOrg } from "../../common/tenant";
+import type { TenantTx } from "../../common/tenant";
 
 export const OUTBOX_RETENTION_DAYS = 30;
 
@@ -29,39 +31,12 @@ export class CronOutboxRetentionService {
       truncated: false,
     };
 
-    const outboxBatch = await this.batched((limit) =>
-      this.db
-        .delete(outboxEvents)
-        .where(
-          sql`${outboxEvents.outboxEventId} IN (
-            SELECT outbox_event_id FROM outbox_events
-            WHERE delivery_state IN ('DELIVERED', 'DEAD', 'SUPPRESSED')
-              AND occurred_at < ${cutoff}
-            LIMIT ${limit}
-          )`,
-        )
-        .returning({ id: outboxEvents.outboxEventId })
-        .then((rows) => rows.length),
-    );
-    result.outboxEventsDeleted = outboxBatch.count;
-    result.truncated ||= outboxBatch.truncated;
-
-    const inboxBatch = await this.batched((limit) =>
-      this.db
-        .delete(inboxRecords)
-        .where(
-          sql`${inboxRecords.inboxRecordId} IN (
-            SELECT inbox_record_id FROM inbox_records
-            WHERE processed_at IS NOT NULL
-              AND processed_at < ${cutoff}
-            LIMIT ${limit}
-          )`,
-        )
-        .returning({ id: inboxRecords.inboxRecordId })
-        .then((rows) => rows.length),
-    );
-    result.inboxRecordsDeleted = inboxBatch.count;
-    result.truncated ||= inboxBatch.truncated;
+    await forEachOrg(this.db, "outbox-retention", async (tx, orgId) => {
+      const { outboxDeleted, inboxDeleted, truncated } = await this.sweepOrg(tx, orgId, cutoff);
+      result.outboxEventsDeleted += outboxDeleted;
+      result.inboxRecordsDeleted += inboxDeleted;
+      if (truncated) result.truncated = true;
+    });
 
     this.logger.log(
       `[outbox-retention] outbox_events deleted=${result.outboxEventsDeleted} ` +
@@ -70,7 +45,53 @@ export class CronOutboxRetentionService {
     return result;
   }
 
-  private async batched(run: (limit: number) => Promise<number>): Promise<{ count: number; truncated: boolean }> {
+  private async sweepOrg(
+    tx: TenantTx,
+    orgId: string,
+    cutoff: Date,
+  ): Promise<{ outboxDeleted: number; inboxDeleted: number; truncated: boolean }> {
+    const outboxBatch = await this.batchedOrgDelete((limit) =>
+      tx
+        .delete(outboxEvents)
+        .where(
+          sql`${outboxEvents.outboxEventId} IN (
+            SELECT outbox_event_id FROM outbox_events
+            WHERE org_id = ${orgId}
+              AND delivery_state IN ('DELIVERED', 'DEAD', 'SUPPRESSED')
+              AND occurred_at < ${cutoff}
+            LIMIT ${limit}
+          )`,
+        )
+        .returning({ id: outboxEvents.outboxEventId })
+        .then((rows) => rows.length),
+    );
+
+    const inboxBatch = await this.batchedOrgDelete((limit) =>
+      tx
+        .delete(inboxRecords)
+        .where(
+          sql`${inboxRecords.inboxRecordId} IN (
+            SELECT inbox_record_id FROM inbox_records
+            WHERE org_id = ${orgId}
+              AND processed_at IS NOT NULL
+              AND processed_at < ${cutoff}
+            LIMIT ${limit}
+          )`,
+        )
+        .returning({ id: inboxRecords.inboxRecordId })
+        .then((rows) => rows.length),
+    );
+
+    return {
+      outboxDeleted: outboxBatch.count,
+      inboxDeleted: inboxBatch.count,
+      truncated: outboxBatch.truncated || inboxBatch.truncated,
+    };
+  }
+
+  private async batchedOrgDelete(
+    run: (limit: number) => Promise<number>,
+  ): Promise<{ count: number; truncated: boolean }> {
     let total = 0;
     for (let i = 0; i < MAX_BATCHES; i++) {
       const affected = await run(BATCH_SIZE);

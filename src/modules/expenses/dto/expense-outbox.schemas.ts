@@ -38,7 +38,7 @@ export const expenseDecidedPayloadSchema = z.object({
   journalEntryId: z.number().int().positive().nullable(),
 });
 
-export type ExpenseSubmittedPayload = z.infer<typeof expenseSubmittedPayloadSchema>;
+type ExpenseSubmittedPayload = z.infer<typeof expenseSubmittedPayloadSchema>;
 export type ExpenseDecidedPayload = z.infer<typeof expenseDecidedPayloadSchema>;
 
 export type ExpenseDecisionStatus = ExpenseDecidedPayload["status"];
@@ -60,4 +60,4 @@ export const expenseExportRequestedPayloadSchema = z.object({
   orgId: z.string().min(1),
 });
 
-export type ExpenseExportRequestedPayload = z.infer<typeof expenseExportRequestedPayloadSchema>;
+type ExpenseExportRequestedPayload = z.infer<typeof expenseExportRequestedPayloadSchema>;

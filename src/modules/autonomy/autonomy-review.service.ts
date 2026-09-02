@@ -1,5 +1,4 @@
 import {
-  forwardRef,
   Inject,
   Injectable,
   Logger,
@@ -34,7 +33,7 @@ export class AutonomyReviewService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly reversal: AutonomyReversalService,
     @Optional()
-    @Inject(forwardRef(() => AutonomyHoldService))
+    @Inject(AutonomyHoldService)
     private readonly holds?: AutonomyHoldService,
   ) {}
 

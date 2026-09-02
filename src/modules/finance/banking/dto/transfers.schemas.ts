@@ -8,7 +8,7 @@ export const createBankTransferSchema = z.object({
   transferDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   reference: z.string().max(200).optional(),
   description: z.string().max(500).optional(),
-}).refine((d) => d.fromBankAccountId !== d.toBankAccountId, {
+}).strict().refine((d) => d.fromBankAccountId !== d.toBankAccountId, {
   message: "fromBankAccountId and toBankAccountId must differ",
 });
 
@@ -18,7 +18,7 @@ export const transfersQuerySchema = z.object({
   bankAccountId: z.coerce.number().int().positive().optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-});
+}).strict();
 
 export type CreateBankTransferInput = z.infer<typeof createBankTransferSchema>;
 export type TransfersQuery = z.infer<typeof transfersQuerySchema>;

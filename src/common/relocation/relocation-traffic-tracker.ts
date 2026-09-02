@@ -20,7 +20,7 @@ export function resetRelocationTrafficTracker(): void {
   inFlight = null;
 }
 
-export function trackedTargets(): ReadonlyMap<string, string> {
+function trackedTargets(): ReadonlyMap<string, string> {
   return tracked;
 }
 
@@ -72,7 +72,7 @@ export function isRelocationTarget(orgId: string, cellId: string | null): boolea
   return tracked.get(orgId) === cellId;
 }
 
-export async function countRequestIfRelocationTarget(
+async function countRequestIfRelocationTarget(
   db: Db,
   orgId: string,
   cellId: string | null,

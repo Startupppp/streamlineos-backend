@@ -35,8 +35,6 @@ import { readRow } from "./import-row-reader";
 export type { RowAction } from "../../../db/schema/crm/imports";
 import type { RowAction } from "../../../db/schema/crm/imports";
 
-/** Re-exported so callers of the plan do not have to know where the enum lives. */
-export { isPartyType, type PartyType } from "./import-entities";
 
 export type { RowMatch } from "./import-draft";
 

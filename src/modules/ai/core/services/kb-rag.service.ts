@@ -15,7 +15,7 @@ import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.
 import { AiUsageService } from "./ai-usage.service";
 import { settleStream } from "../gateway/ai-gateway-credit.helper";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
-import { streamText } from "ai";
+import { streamText, type ToolSet } from "ai";
 import { resolveChatModel, resolveChatModelId } from "./chat-assistant-model";
 import { logger } from "../../../../common/logger/logger.service";
 import {
@@ -48,7 +48,7 @@ export type KbStreamAnswer =
   | { hasContext: false; answer: string; sources: KbAnswerSource[] }
   | {
       hasContext: true;
-      stream: ReturnType<typeof streamText<Record<string, never>>>;
+      stream: ReturnType<typeof streamText<ToolSet>>;
       sources: KbAnswerSource[];
     };
 
@@ -247,7 +247,7 @@ export class KbRagService {
       actor: { orgId: opts.orgId, userId: null },
       feature: "kb.public-ask",
       tier: "fast",
-      maxOutputTokens: 1024,
+      maxTokens: 1024,
       charge: true,
       prompt: { system, user: userMessage },
     });
@@ -358,8 +358,9 @@ export class KbRagService {
       },
     });
 
-    void (stream.finishReason as Promise<string> | undefined)
-      ?.catch(() => releaseReservation("stream_aborted_no_settle"));
+    void Promise.resolve(stream.finishReason).catch(() =>
+      releaseReservation("stream_aborted_no_settle"),
+    );
 
     return { stream, sources, hasContext: true };
   }

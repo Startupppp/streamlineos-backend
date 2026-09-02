@@ -23,7 +23,7 @@ export const listSchema = z.object({
   search: z.string().optional(),
   page: pageNumberField,
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 const keyResultInputSchema = z.object({
   title: z.string().min(1).max(200),
@@ -45,7 +45,7 @@ export const createSchema = z.object({
   parentGoalId: z.number().int().optional(),
   projectId: z.number().int().optional(),
   keyResults: z.array(keyResultInputSchema).optional(),
-});
+}).strict();
 
 export const updateSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -57,13 +57,13 @@ export const updateSchema = z.object({
   dueDate: isoDate.nullable().optional(),
   parentGoalId: z.number().int().nullable().optional(),
   projectId: z.number().int().nullable().optional(),
-});
+}).strict();
 
 export const checkInSchema = z.object({
   keyResultId: z.number().int(),
   newValue: z.number(),
   note: z.string().max(1000).optional(),
-});
+}).strict();
 
 export const createKeyResultSchema = z.object({
   title: z.string().min(1).max(200),
@@ -73,7 +73,7 @@ export const createKeyResultSchema = z.object({
   currentValue: z.number().default(0),
   unit: z.string().max(50).optional(),
   status: goalStatusEnum.default("not_started"),
-});
+}).strict();
 
 export const updateKeyResultSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -83,20 +83,20 @@ export const updateKeyResultSchema = z.object({
   currentValue: z.number().optional(),
   unit: z.string().max(50).nullable().optional(),
   status: goalStatusEnum.optional(),
-});
+}).strict();
 
 export const createLinkSchema = z
   .object({
     ticketId: z.number().int().optional(),
     projectId: z.number().int().optional(),
-  })
+  }).strict()
   .refine((data) => data.ticketId !== undefined || data.projectId !== undefined, {
     message: "Provide a ticketId or projectId",
   });
 
 export const deleteLinkSchema = z.object({
   linkId: z.coerce.number().int(),
-});
+}).strict();
 
 export type ListInput = z.infer<typeof listSchema>;
 export type CreateInput = z.infer<typeof createSchema>;

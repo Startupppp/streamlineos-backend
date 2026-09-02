@@ -24,8 +24,8 @@ export const createAutomationSchema = z.object({
   conditions: z.array(conditionSchema).default([]),
   actions: z.array(actionSchema).min(1),
   isActive: z.boolean().default(true),
-});
+}).strict();
 export type CreateAutomationInput = z.infer<typeof createAutomationSchema>;
 
-export const updateAutomationSchema = createAutomationSchema.partial();
+export const updateAutomationSchema = createAutomationSchema.partial().strict();
 export type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>;

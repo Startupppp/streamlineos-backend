@@ -30,7 +30,7 @@ import {
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-export { addDec, subDec, mulDec, divDec, cmpDec } from "./decimal";
+export { addDec, mulDec, divDec } from "./decimal";
 
 function resolvePostingDate(cmd: StockEngineCommand): string {
   return cmd.postingDate ?? new Date().toISOString().slice(0, 10);

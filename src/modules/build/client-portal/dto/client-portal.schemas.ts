@@ -7,11 +7,11 @@ export const createPortalCrSchema = z.object({
   estimateMinutes: z.number().int().nonnegative().optional(),
   budgetImpactCents: z.number().int().optional(),
   timelineImpactDays: z.number().int().optional(),
-});
+}).strict();
 
 export const toggleVisibilitySchema = z.object({
   clientVisible: z.boolean(),
-});
+}).strict();
 
 export type CreatePortalCrInput = z.infer<typeof createPortalCrSchema>;
 export type ToggleVisibilityInput = z.infer<typeof toggleVisibilitySchema>;

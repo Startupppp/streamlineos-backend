@@ -15,9 +15,9 @@ export const createRecurringJournalSchema = z.object({
   nextRunDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD"),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD").optional(),
   lines: z.array(recurringLineSchema).min(2).max(100),
-});
+}).strict();
 
-export const updateRecurringJournalSchema = createRecurringJournalSchema.partial();
+export const updateRecurringJournalSchema = createRecurringJournalSchema.partial().strict();
 
 export type CreateRecurringJournalInput = z.infer<typeof createRecurringJournalSchema>;
 export type UpdateRecurringJournalInput = z.infer<typeof updateRecurringJournalSchema>;
@@ -28,5 +28,5 @@ export const recurringLineArraySchema = z.array(recurringLineSchema);
 export const listRecurringJournalsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(50),
-});
+}).strict();
 export type ListRecurringJournalsQuery = z.infer<typeof listRecurringJournalsQuerySchema>;

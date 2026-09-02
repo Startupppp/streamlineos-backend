@@ -53,7 +53,7 @@ export const CONNECTOR_PROVIDERS: readonly ConnectorProvider[] = [
   "pipedrive",
 ];
 
-export function isConnectorProvider(value: string): value is ConnectorProvider {
+function isConnectorProvider(value: string): value is ConnectorProvider {
   return (CONNECTOR_PROVIDERS as readonly string[]).includes(value);
 }
 
@@ -67,7 +67,7 @@ export const CONNECTOR_STREAMS: readonly ConnectorStream[] = [
   "activities",
 ];
 
-export function isConnectorStream(value: string): value is ConnectorStream {
+function isConnectorStream(value: string): value is ConnectorStream {
   return (CONNECTOR_STREAMS as readonly string[]).includes(value);
 }
 

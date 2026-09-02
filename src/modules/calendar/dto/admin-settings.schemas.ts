@@ -15,4 +15,4 @@ export const calendarAdminSettingsResponseSchema = z
   })
   .strict();
 
-export type CalendarAdminSettingsResponse = z.infer<typeof calendarAdminSettingsResponseSchema>;
+type CalendarAdminSettingsResponse = z.infer<typeof calendarAdminSettingsResponseSchema>;

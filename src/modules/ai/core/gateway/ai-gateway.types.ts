@@ -83,3 +83,18 @@ export interface InvokeStructuredWithImageOpts<T>
 }
 
 export type InvokeTextOpts = AiInvokeBaseOpts;
+
+export interface EmbedQueryOpts {
+  text: string;
+  orgId: string;
+  feature: string;
+  charge: boolean;
+}
+
+export interface EmbedQuerySuccess {
+  ok: true;
+  vector: number[];
+  vectorLiteral: string;
+}
+
+export type EmbedQueryResult = EmbedQuerySuccess | AiInvokeFailure;

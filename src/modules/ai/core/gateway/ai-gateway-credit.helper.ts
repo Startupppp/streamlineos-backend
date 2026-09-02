@@ -27,7 +27,7 @@ export interface StreamSettlement {
   promptTokens: number;
   completionTokens: number;
   orgId: string;
-  userId: string;
+  userId: string | null;
   feature: string;
   ttftMs?: number;
   appOverheadMs?: number;

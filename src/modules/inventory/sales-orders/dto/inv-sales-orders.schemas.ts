@@ -9,7 +9,7 @@ export const listSoSchema = z.object({
   clientId: z.coerce.number().int().positive().optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListSoInput = z.infer<typeof listSoSchema>;
 
 const soLineSchema = z.object({
@@ -29,7 +29,7 @@ export const createSoSchema = z.object({
   currency: z.string().length(3).default("INR"),
   notes: z.string().max(2000).optional(),
   lines: z.array(soLineSchema).min(1),
-});
+}).strict();
 export type CreateSoInput = z.infer<typeof createSoSchema>;
 
 export const updateSoSchema = z.object({
@@ -41,7 +41,7 @@ export const updateSoSchema = z.object({
   currency: z.string().length(3).optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(soLineSchema).min(1).optional(),
-});
+}).strict();
 export type UpdateSoInput = z.infer<typeof updateSoSchema>;
 
 const reserveAllocationSchema = z.object({
@@ -55,7 +55,7 @@ const reserveAllocationSchema = z.object({
 export const reserveSoSchema = z.object({
   warehouseId: z.number().int().positive().optional(),
   allocations: z.array(reserveAllocationSchema).optional(),
-});
+}).strict();
 export type ReserveSoInput = z.infer<typeof reserveSoSchema>;
 
 const pickLineSchema = z.object({
@@ -68,7 +68,7 @@ const pickLineSchema = z.object({
 
 export const pickSoSchema = z.object({
   lines: z.array(pickLineSchema).min(1),
-});
+}).strict();
 export type PickSoInput = z.infer<typeof pickSoSchema>;
 
 export const packSoSchema = z.object({
@@ -76,7 +76,7 @@ export const packSoSchema = z.object({
   dimensionsL: z.number().positive().optional(),
   dimensionsW: z.number().positive().optional(),
   dimensionsH: z.number().positive().optional(),
-});
+}).strict();
 export type PackSoInput = z.infer<typeof packSoSchema>;
 
 export const shipSoSchema = z.object({
@@ -84,10 +84,10 @@ export const shipSoSchema = z.object({
   carrierId: z.number().int().positive().optional(),
   trackingNumber: z.string().max(200).optional(),
   notes: z.string().max(500).optional(),
-});
+}).strict();
 export type ShipSoInput = z.infer<typeof shipSoSchema>;
 
 export const cancelSoSchema = z.object({
   reason: z.string().max(500).optional(),
-});
+}).strict();
 export type CancelSoInput = z.infer<typeof cancelSoSchema>;

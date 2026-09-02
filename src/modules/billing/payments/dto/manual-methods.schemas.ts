@@ -16,5 +16,5 @@ export const createManualMethodSchema = z.object({
 }).strict();
 export type CreateManualMethodInput = z.infer<typeof createManualMethodSchema>;
 
-export const updateManualMethodSchema = createManualMethodSchema.partial().omit({ methodType: true });
+export const updateManualMethodSchema = createManualMethodSchema.partial().omit({ methodType: true }).strict();
 export type UpdateManualMethodInput = z.infer<typeof updateManualMethodSchema>;

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -117,6 +117,27 @@ export class EntriesReadService {
     }));
 
     return { data: page.data.map(buildEntryShape), pagination: page.pagination };
+  }
+
+  async getHoursLoggedInRange(
+    orgId: string,
+    membershipId: number,
+    startDate: string,
+    endDate: string,
+  ): Promise<number> {
+    const [row] = await this.db
+      .select({ total: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)` })
+      .from(timesheets)
+      .where(
+        and(
+          eq(timesheets.orgId, orgId),
+          eq(timesheets.userMembershipId, membershipId),
+          gte(timesheets.date, startDate),
+          lt(timesheets.date, endDate),
+          isNull(timesheets.voidedAt),
+        ),
+      );
+    return Number(row?.total ?? 0);
   }
 
   async getEntryById(orgId: string, entryId: number) {

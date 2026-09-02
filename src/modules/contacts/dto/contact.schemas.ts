@@ -7,11 +7,11 @@ export const listSchema = z.object({
   organizationId: z.coerce.number().optional(),
   limit: optionalPageSizeField(),
   cursor: z.string().optional(),
-});
+}).strict();
 
 export const searchSchema = z.object({
   q: z.string().min(2).max(100),
-});
+}).strict();
 
 export const createSchema = z.object({
   name: personNameSchema,
@@ -28,7 +28,7 @@ export const createSchema = z.object({
   leadId: z.number().optional(),
   dealId: z.number().optional(),
   tags: z.array(z.string()).default([]),
-});
+}).strict();
 
 export const updateSchema = z.object({
   name: personNameSchema.optional(),
@@ -46,7 +46,7 @@ export const updateSchema = z.object({
   tags: z.array(z.string()).optional(),
   leadId: z.number().nullable().optional(),
   dealId: z.number().nullable().optional(),
-});
+}).strict();
 
 /** Matches the CRM contacts CSV import dialog payload. */
 export const bulkImportContactRowSchema = z.object({
@@ -61,7 +61,7 @@ export const bulkImportContactRowSchema = z.object({
 
 export const bulkImportContactsSchema = z.object({
   contacts: z.array(bulkImportContactRowSchema).min(1).max(500),
-});
+}).strict();
 
 export type ListInput = z.infer<typeof listSchema>;
 export type SearchInput = z.infer<typeof searchSchema>;

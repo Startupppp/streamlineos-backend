@@ -29,7 +29,7 @@ export const createUserApiTokenSchema = z.object({
       (value) => value.getTime() <= Date.now() + 366 * 24 * 60 * 60 * 1000,
       { message: "Personal tokens cannot exceed one year" },
     ),
-});
+}).strict();
 
 export type CreateUserApiTokenInput = z.infer<typeof createUserApiTokenSchema>;
 

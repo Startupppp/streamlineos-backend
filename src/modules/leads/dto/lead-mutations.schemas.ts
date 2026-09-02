@@ -12,24 +12,24 @@ export const logActivitySchema = z.object({
   messageSummary: z.string().optional(),
   notes: z.string().optional(),
   outcome: z.string().optional(),
-});
+}).strict();
 
 export const customDataSchema = z.object({
   customData: z.record(z.string(), z.unknown()),
-});
+}).strict();
 
 export const verifySchema = z.object({
   priority: z.string().optional(),
   notes: z.string().optional(),
-});
+}).strict();
 
 export const rejectSchema = z.object({
   reason: z.string().optional(),
-});
+}).strict();
 
 export const assignSchema = z.object({
   assignedToId: z.string(),
-});
+}).strict();
 
 export const transitionLeadStatusSchema = z.object({
   status: z.string(),
@@ -37,11 +37,11 @@ export const transitionLeadStatusSchema = z.object({
   lostReason: z.string().optional(),
   estimatedInvestment: z.string().optional(),
   conversionNotes: z.string().optional(),
-});
+}).strict();
 
 export const leadMergeSchema = z.object({
   mergeLeadId: z.number().int().positive(),
-});
+}).strict();
 
 export const topMergeSchema = z.object({
   winnerId: z.number().int().positive(),
@@ -60,7 +60,7 @@ export const topMergeSchema = z.object({
       tags: z.enum(MERGE_FIELD_SIDES).optional(),
     })
     .default({}),
-});
+}).strict();
 
 export const bulkUpdateSchema = z.object({
   leadIds: z.array(z.number()).min(1).max(200),
@@ -69,11 +69,11 @@ export const bulkUpdateSchema = z.object({
     priority: z.string().optional(),
     assignedToId: z.string().optional(),
   }),
-});
+}).strict();
 
 export const bulkDeleteSchema = z.object({
   leadIds: z.array(z.number()).min(1).max(200),
-});
+}).strict();
 
 export const importRowSchema = z.object({
   name: z.string().min(1, "Lead name is required"),
@@ -97,12 +97,12 @@ export const importSchema = z.object({
   leads: z.array(importRowSchema).min(1).max(1000),
   duplicateAction: z.enum(["skip", "update", "import"]).default("skip"),
   autoDistribute: z.boolean().default(true),
-});
+}).strict();
 
 export const distributeSchema = z.object({
   leadIds: z.array(z.number()).min(1).max(200),
   skipAbsent: z.boolean().default(true),
-});
+}).strict();
 
 export type LogActivityInput = z.infer<typeof logActivitySchema>;
 export type CustomDataInput = z.infer<typeof customDataSchema>;

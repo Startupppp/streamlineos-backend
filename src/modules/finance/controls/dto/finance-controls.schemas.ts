@@ -15,9 +15,9 @@ export const createApprovalPolicySchema = z.object({
   approverRole: z.string().max(100).nullable().optional(),
   approverUserId: z.string().nullable().optional(),
   isActive: z.boolean().optional().default(true),
-});
+}).strict();
 
-export const updateApprovalPolicySchema = createApprovalPolicySchema.partial();
+export const updateApprovalPolicySchema = createApprovalPolicySchema.partial().strict();
 
 export const listApprovalsSchema = z.object({
   status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
@@ -34,11 +34,11 @@ export const listApprovalsSchema = z.object({
     .optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export const approvalDecisionSchema = z.object({
   comment: z.string().max(1000).optional(),
-});
+}).strict();
 
 export const listAuditSchema = z.object({
   resourceType: z.string().optional(),
@@ -48,19 +48,19 @@ export const listAuditSchema = z.object({
   to: z.string().datetime().optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export const upsertExchangeRateSchema = z.object({
   fromCurrency: z.string().length(3).toUpperCase(),
   toCurrency: z.string().length(3).toUpperCase(),
   rate: z.string().regex(/^\d+(\.\d{1,8})?$/),
   asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-});
+}).strict();
 
 export const listExchangeRatesSchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(50, 100),
-});
+}).strict();
 
 export type CreateApprovalPolicyInput = z.infer<typeof createApprovalPolicySchema>;
 export type UpdateApprovalPolicyInput = z.infer<typeof updateApprovalPolicySchema>;

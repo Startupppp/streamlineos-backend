@@ -63,7 +63,7 @@ export const createHrFormSchema = z.object({
   audience: z.enum(["internal", "public"]),
   workflowObjectType: z.string().max(100).nullable().optional(),
   schema: z.array(hrFormFieldSchema),
-});
+}).strict();
 
 export const updateHrFormSchema = z.object({
   name: hrFormNameSchema.optional(),
@@ -77,30 +77,30 @@ export const updateHrFormSchema = z.object({
   audience: z.enum(["internal", "public"]).optional(),
   workflowObjectType: z.string().max(100).nullable().optional(),
   schema: z.array(hrFormFieldSchema).optional(),
-});
+}).strict();
 
 export const listHrFormsQuerySchema = z.object({
   status: z.enum(["draft", "active", "archived"]).optional(),
   audience: z.enum(["internal", "public"]).optional(),
   cursor: z.string().optional(),
   limit: optionalPageSizeField(),
-});
+}).strict();
 
 export const submitHrFormSchema = z.object({
   data: z.record(z.string(), z.unknown()),
   submittedByName: z.string().max(200).optional(),
   subjectEmployeeId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const updateSubmissionStatusSchema = z.object({
   status: z.enum(["submitted", "in_review", "approved", "rejected"]),
-});
+}).strict();
 
 export const listSubmissionsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: optionalPageSizeField(),
   status: z.enum(["submitted", "in_review", "approved", "rejected"]).optional(),
-});
+}).strict();
 
 export type CreateHrFormInput = z.infer<typeof createHrFormSchema>;
 export type UpdateHrFormInput = z.infer<typeof updateHrFormSchema>;

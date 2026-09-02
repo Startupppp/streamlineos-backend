@@ -42,6 +42,7 @@ interface TxMocks {
     select: jest.Mock;
     update: jest.Mock;
     insert: jest.Mock;
+    delete: jest.Mock;
   };
   updateChains: FluentChain[];
   insertChains: FluentChain[];
@@ -66,6 +67,9 @@ function makeDb(opts: {
   opUpdated?: unknown[];
   sfUpdated?: unknown[];
   depUpdated?: unknown[];
+  aiConvUpdated?: unknown[];
+  aiMsgUpdated?: unknown[];
+  chatMsgUpdated?: unknown[];
 } = {}): DbMocks {
   const membershipRows = opts.membershipRows ?? [{ id: 1 }];
   const legalHoldRows = opts.legalHoldRows ?? [];
@@ -75,6 +79,9 @@ function makeDb(opts: {
   const opUpdated = opts.opUpdated ?? [{ id: "person-1" }];
   const sfUpdated = opts.sfUpdated ?? [{ id: 1 }];
   const depUpdated = opts.depUpdated ?? [{ id: 2 }];
+  const aiConvUpdated = opts.aiConvUpdated ?? [];
+  const aiMsgUpdated = opts.aiMsgUpdated ?? [];
+  const chatMsgUpdated = opts.chatMsgUpdated ?? [];
 
   const hrPeopleChain = fluentChain(hrPeopleRows);
   const hrEmpChain = fluentChain(hrEmpRows);
@@ -83,6 +90,9 @@ function makeDb(opts: {
   const opUpdateChain = fluentChain([], opUpdated);
   const sfUpdateChain = fluentChain([], sfUpdated);
   const depUpdateChain = fluentChain([], depUpdated);
+  const aiConvUpdateChain = fluentChain([], aiConvUpdated);
+  const aiMsgUpdateChain = fluentChain([], aiMsgUpdated);
+  const chatMsgUpdateChain = fluentChain([], chatMsgUpdated);
   const usersUpdateChain = fluentChain([], []);
 
   const dataReqInsertChain = fluentChain([]);
@@ -105,7 +115,10 @@ function makeDb(opts: {
       if (txUpdateCount === 1) return opUpdateChain;
       if (txUpdateCount === 2) return sfUpdateChain;
       if (txUpdateCount === 3) return depUpdateChain;
-      if (txUpdateCount === 4) return usersUpdateChain;
+      if (txUpdateCount === 4) return aiConvUpdateChain;
+      if (txUpdateCount === 5) return aiMsgUpdateChain;
+      if (txUpdateCount === 6) return chatMsgUpdateChain;
+      if (txUpdateCount === 7) return usersUpdateChain;
       return fluentChain([], []);
     }),
     insert: jest.fn().mockImplementation(() => {
@@ -114,6 +127,7 @@ function makeDb(opts: {
       if (txInsertCount === 2) return auditInsertChain;
       return fluentChain([]);
     }),
+    delete: jest.fn().mockReturnValue(fluentChain([], [])),
   };
 
   let dbSelectCount = 0;
@@ -127,7 +141,7 @@ function makeDb(opts: {
     update: jest.fn().mockReturnValue(fluentChain([], [])),
     insert: jest.fn().mockReturnValue(fluentChain([])),
     transaction: jest.fn().mockImplementation(
-      async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx),
+      async (fn: (t: TxMocks["tx"]) => Promise<unknown>) => fn(tx),
     ),
   };
 
@@ -135,7 +149,7 @@ function makeDb(opts: {
     db,
     txMocks: {
       tx,
-      updateChains: [opUpdateChain, sfUpdateChain, depUpdateChain, usersUpdateChain],
+      updateChains: [opUpdateChain, sfUpdateChain, depUpdateChain, aiConvUpdateChain, aiMsgUpdateChain, chatMsgUpdateChain, usersUpdateChain],
       insertChains: [dataReqInsertChain, auditInsertChain],
     },
   };
@@ -388,8 +402,8 @@ describe("GdprSubjectErasureService — global identity", () => {
 
     expect(result.globalIdentityAnonymised).toBe(true);
     expect(result.tablesAnonymised).toContain("users");
-    // 4 update calls: org_people, sensitive_fields, dependents, users
-    expect(txMocks.tx.update).toHaveBeenCalledTimes(4);
+    // 7 update calls: org_people, sensitive_fields, dependents, ai_chat_conversations, ai_chat_messages, chat_messages, users
+    expect(txMocks.tx.update).toHaveBeenCalledTimes(7);
   });
 
   it("(bite proof) globalIdentityAnonymised is false when subject has another membership — test catches if the guard is skipped", async () => {
@@ -402,8 +416,8 @@ describe("GdprSubjectErasureService — global identity", () => {
 
     expect(result.globalIdentityAnonymised).toBe(false);
     expect(result.tablesAnonymised).not.toContain("users");
-    // 3 update calls: org_people, sensitive_fields, dependents (no users)
-    expect(txMocks.tx.update).toHaveBeenCalledTimes(3);
+    // 6 update calls: org_people, sensitive_fields, dependents, ai_chat_conversations, ai_chat_messages, chat_messages (no users)
+    expect(txMocks.tx.update).toHaveBeenCalledTimes(6);
   });
 });
 
@@ -421,6 +435,9 @@ describe("GdprSubjectErasureService — dry run", () => {
     expect(result.tablesAnonymised).toContain("organization_people");
     expect(result.tablesAnonymised).toContain("hr_employee_sensitive_fields");
     expect(result.tablesAnonymised).toContain("hr_dependents");
+    expect(result.tablesAnonymised).toContain("kb_chat_messages");
+    expect(result.tablesAnonymised).toContain("kb_chat_conversations");
+    expect(result.tablesAnonymised).toContain("kb_article_chunks");
     expect(db.transaction).not.toHaveBeenCalled();
   });
 });
@@ -515,6 +532,7 @@ describe("GdprSubjectErasureService — the id scan drains instead of capping", 
       }),
       update: jest.fn().mockReturnValue(pagedChain([[]])),
       insert: jest.fn().mockReturnValue(pagedChain([[]])),
+      delete: jest.fn().mockReturnValue(pagedChain([[]])),
     };
     let dbSelect = 0;
     const db = {
@@ -540,5 +558,64 @@ describe("GdprSubjectErasureService — the id scan drains instead of capping", 
     // A bare .limit(50) stopped at one call and reported a partial erasure as complete.
     expect(peopleChain.limit).toHaveBeenCalledTimes(2);
     expect(peopleChain.orderBy).toHaveBeenCalled();
+  });
+});
+
+// ─── AI and chat content erasure ─────────────────────────────────────────────
+
+describe("GdprSubjectErasureService — AI and chat content erasure", () => {
+  it("includes ai_chat_conversations in tablesAnonymised when update affects rows", async () => {
+    const { db, txMocks } = makeDb({ aiConvUpdated: [{ id: 1 }] });
+    const svc = buildService(db);
+
+    const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(result.tablesAnonymised).toContain("ai_chat_conversations");
+    expect(txMocks.tx.update).toHaveBeenCalledTimes(7);
+  });
+
+  it("includes ai_chat_messages in tablesAnonymised when update affects rows", async () => {
+    const { db } = makeDb({ aiMsgUpdated: [{ id: 1 }] });
+    const svc = buildService(db);
+
+    const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(result.tablesAnonymised).toContain("ai_chat_messages");
+  });
+
+  it("includes chat_messages in tablesAnonymised when update affects rows", async () => {
+    const { db } = makeDb({ chatMsgUpdated: [{ id: 1 }] });
+    const svc = buildService(db);
+
+    const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(result.tablesAnonymised).toContain("chat_messages");
+  });
+
+  it("(bite proof) ai_chat_conversations absent from tablesAnonymised when update returns no rows — test catches if update is removed", async () => {
+    // Mechanism: aiConvUpdated = [] → returning([]) → NOT pushed to tablesAnonymised.
+    // Neuter: set aiConvUpdated = [{ id: 1 }] → IS pushed → toContain assertion FAILS on "not to contain".
+    const { db } = makeDb({ aiConvUpdated: [] });
+    const svc = buildService(db);
+
+    const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(result.tablesAnonymised).not.toContain("ai_chat_conversations");
+  });
+
+  it("dry-run preview includes AI, chat, and KB tables without executing any writes", async () => {
+    const { db } = makeDb({});
+    const svc = buildService(db);
+
+    const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: true });
+
+    expect(result.dryRun).toBe(true);
+    expect(result.tablesAnonymised).toContain("ai_chat_conversations");
+    expect(result.tablesAnonymised).toContain("ai_chat_messages");
+    expect(result.tablesAnonymised).toContain("chat_messages");
+    expect(result.tablesAnonymised).toContain("kb_chat_messages");
+    expect(result.tablesAnonymised).toContain("kb_chat_conversations");
+    expect(result.tablesAnonymised).toContain("kb_article_chunks");
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 });

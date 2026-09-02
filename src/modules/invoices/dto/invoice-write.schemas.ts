@@ -47,7 +47,7 @@ export const createInvoiceSchema = z
     supplierGstin: z.string().regex(GSTIN_REGEX).optional(),
     reverseCharge: z.boolean().optional(),
     taxInclusive: z.boolean().optional(),
-  })
+  }).strict()
   .refine((v) => Boolean(v.items?.length || v.lineItems?.length), {
     message: "Either items or lineItems must be provided",
   })
@@ -75,7 +75,7 @@ export const updateInvoiceSchema = z.object({
   dueDate: z.string().optional(),
   notes: z.string().optional(),
   status: z.enum(["ISSUED", "PAID", "FAILED"]).optional(),
-});
+}).strict();
 
 export const recordPaymentSchema = z.object({
   amount: z.number().positive().max(999999999.99),
@@ -91,7 +91,7 @@ export const recordPaymentSchema = z.object({
       }),
     )
     .optional(),
-});
+}).strict();
 
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export type UpdateInvoiceInput = z.infer<typeof updateInvoiceSchema>;

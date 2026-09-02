@@ -15,9 +15,9 @@ export const postCreateSchema = z.object({
   metaTitle: z.string().max(256).optional().nullable(),
   metaDescription: z.string().max(320).optional().nullable(),
   slug: z.string().max(256).optional(),
-});
+}).strict();
 
-export const postUpdateSchema = postCreateSchema.partial();
+export const postUpdateSchema = postCreateSchema.partial().strict();
 
 export const categoryCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -27,7 +27,7 @@ export const categoryCreateSchema = z.object({
     .regex(/^#([0-9a-fA-F]{6})$/, "Color must be a hex value like #3B82F6")
     .optional()
     .nullable(),
-});
+}).strict();
 
 export const categoryUpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -37,7 +37,7 @@ export const categoryUpdateSchema = z.object({
     .regex(/^#([0-9a-fA-F]{6})$/, "Color must be a hex value like #3B82F6")
     .optional()
     .nullable(),
-});
+}).strict();
 
 export const feedSchema = z.object({
   limit: optionalPageSizeField(50),
@@ -49,7 +49,7 @@ export const feedSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v === "true" ? true : v === "false" ? false : undefined)),
-});
+}).strict();
 
 export type PostCreateInput = z.infer<typeof postCreateSchema>;
 export type PostUpdateInput = z.infer<typeof postUpdateSchema>;

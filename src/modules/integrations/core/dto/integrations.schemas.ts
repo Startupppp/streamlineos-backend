@@ -7,11 +7,11 @@ export const returnPathSchema = z.enum(["/calendar", "/mail"]);
 export const initiateConnectionSchema = z.object({
   toolkit: integrationToolkitSchema,
   returnPath: returnPathSchema.optional(),
-});
+}).strict();
 
 export const finalizeConnectionSchema = z.object({
   connectedAccountId: z.string().min(1).max(200),
-});
+}).strict();
 
 export type InitiateConnectionInput = z.infer<typeof initiateConnectionSchema>;
 export type FinalizeConnectionInput = z.infer<typeof finalizeConnectionSchema>;

@@ -147,7 +147,8 @@ export class BatchCreatorService {
       const preBatches = await this.db
         .select()
         .from(payrollBankBatches)
-        .where(and(eq(payrollBankBatches.orgId, orgId), inArray(payrollBankBatches.idempotencyKey, allSubKeys)));
+        .where(and(eq(payrollBankBatches.orgId, orgId), inArray(payrollBankBatches.idempotencyKey, allSubKeys)))
+        .limit(allSubKeys.length + 1);
       for (const b of preBatches)
         if (b.idempotencyKey) preFetchedBatchMap.set(b.idempotencyKey, b);
 

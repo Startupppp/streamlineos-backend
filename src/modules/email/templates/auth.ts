@@ -15,7 +15,7 @@ import {
   type LocalizedValues,
 } from "./email-locale";
 
-export const AUTH_TEMPLATE_VERSION = EMAIL_TEMPLATE_VERSION;
+const AUTH_TEMPLATE_VERSION = EMAIL_TEMPLATE_VERSION;
 export const AUTH_TEMPLATE_LOCALES = ["en", "fr", "es", "de"] as const;
 
 const VERIFY_TITLE_MAP: LocalizedValues<string> = {

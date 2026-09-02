@@ -5,6 +5,7 @@ import { withSpan } from "../observability/tracing";
 import { getRegionRegistry, hasRegionRegistry } from "../region/region-registry";
 
 export const REDIS = "REDIS";
+export const REDIS_COMMAND_TIMEOUT = "REDIS_COMMAND_TIMEOUT";
 
 @Injectable()
 export class CacheService {
@@ -30,7 +31,10 @@ export class CacheService {
 
   private droppedInvalidations = 0;
 
-  constructor(@Inject(REDIS) private readonly redis: Redis | null) {}
+  constructor(
+    @Inject(REDIS) private readonly redis: Redis | null,
+    @Inject(REDIS_COMMAND_TIMEOUT) private readonly commandTimeoutMs = 3_000,
+  ) {}
 
   /** Dropped invalidations since boot. A non-zero value means stale entries may be serving. */
   get droppedInvalidationCount(): number {
@@ -179,7 +183,20 @@ export class CacheService {
   }
 
   private timedRedis<T>(operation: () => Promise<T>): Promise<T> {
-    return withSpan('cache.roundtrip', operation, { attributes: { seam: 'cache.roundtrip' } });
+    return withSpan(
+      "cache.roundtrip",
+      () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const deadline = new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Redis command timed out after ${this.commandTimeoutMs}ms`)),
+            this.commandTimeoutMs,
+          );
+        });
+        return Promise.race([operation(), deadline]).finally(() => clearTimeout(timer));
+      },
+      { attributes: { seam: "cache.roundtrip" } },
+    );
   }
 
   private delay(milliseconds: number): Promise<void> {
@@ -236,7 +253,12 @@ export class CacheService {
       if (!config.upstashUrl || !config.upstashToken) return this.redis;
       const existing = this.regionalRedis.get(config.upstashUrl);
       if (existing) return existing;
-      const client = new Redis({ url: config.upstashUrl, token: config.upstashToken });
+      const client = new Redis({
+        url: config.upstashUrl,
+        token: config.upstashToken,
+        signal: () => AbortSignal.timeout(this.commandTimeoutMs),
+        retry: { retries: 0, backoff: () => 0 },
+      });
       this.regionalRedis.set(config.upstashUrl, client);
       return client;
     } catch {

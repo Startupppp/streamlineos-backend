@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { createHash, randomUUID } from "crypto";
 import { LlmService } from "../providers/llm.service";
+import { EmbeddingsService, EMBEDDING_MODEL } from "../providers/embeddings.service";
 import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import {
@@ -11,10 +12,12 @@ import {
   computeTokenCharge,
   milliToCredits,
 } from "../billing/ai-model-pricing.constants";
+import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
 import { AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
 import { AiGatewayRunnerHelper } from "./ai-gateway-runner.helper";
 import { AiResponseCacheService } from "./ai-response-cache.service";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
+import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import type {
   AiInvokeResult,
   AiInvokeWithUsageResult,
@@ -24,18 +27,26 @@ import type {
   InvokeStructuredOpts,
   InvokeStructuredWithImageOpts,
   InvokeTextOpts,
+  EmbedQueryOpts,
+  EmbedQueryResult,
 } from "./ai-gateway.types";
 
 export type {
   InvokeStructuredOpts,
   InvokeStructuredWithImageOpts,
   InvokeTextOpts,
+  EmbedQueryOpts,
+  EmbedQueryResult,
 };
 
 const CONCURRENCY_EXCEEDED_MESSAGE = "Too many concurrent AI requests for this organization";
 
 function resolveCacheOpts(cache: AiResponseCacheOpts | undefined): AiResponseCacheOpts | null {
   return cache ?? null;
+}
+
+function estimateEmbedTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
 @Injectable()
@@ -48,6 +59,7 @@ export class AiGatewayService {
 
   constructor(
     private readonly llm: LlmService,
+    private readonly embeddings: EmbeddingsService,
     private readonly usageSvc: AiUsageService,
     private readonly audit: AuditService,
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
@@ -56,6 +68,45 @@ export class AiGatewayService {
   ) {
     const credit = new AiGatewayCreditHelper(ledger, usageSvc, audit);
     this.runner = new AiGatewayRunnerHelper(llm, credit);
+  }
+
+  isEmbeddingConfigured(): boolean {
+    return this.embeddings.isConfigured();
+  }
+
+  async embedQueryWithCredit(opts: EmbedQueryOpts): Promise<EmbedQueryResult> {
+    const { text, orgId, feature, charge } = opts;
+    const correlationId = randomUUID();
+    let reservationId = 0;
+
+    if (charge) {
+      const reserveMilli = getReserveEstimateMilli(feature);
+      try {
+        const reserved = await this.ledger.reserve({ orgId, userId: null, feature, credits: reserveMilli });
+        reservationId = reserved.reservationId;
+      } catch (error) {
+        if (error instanceof InsufficientAiCreditsException)
+          return { ok: false, kind: "quota_exceeded", message: error.message, correlationId };
+        throw error;
+      }
+    }
+
+    try {
+      const vector = await this.embeddings.embedQuery(text, orgId, feature);
+      const estimatedTokens = estimateEmbedTokens(text);
+      const { costUsd, milliCredits } = charge
+        ? computeTokenCharge(EMBEDDING_MODEL, estimatedTokens, 0)
+        : { costUsd: 0, milliCredits: 0 };
+
+      if (charge && reservationId !== 0)
+        await this.ledger.settle(reservationId, { orgId, actualMilli: milliCredits, model: EMBEDDING_MODEL, promptTokens: estimatedTokens, completionTokens: 0, totalTokens: estimatedTokens, costUsd });
+
+      return { ok: true, vector, vectorLiteral: this.embeddings.toVectorLiteral(vector) };
+    } catch (error) {
+      if (reservationId !== 0)
+        await this.ledger.release(reservationId, "embedding_error", orgId).catch(() => undefined);
+      return { ok: false, kind: "provider_unavailable", message: "Embedding provider is temporarily unavailable", correlationId };
+    }
   }
 
   async invokeStructured<T>(

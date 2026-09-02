@@ -27,6 +27,15 @@ interface TenantBearingRequest {
   portalUser?: { organizationId?: string };
 }
 
+interface CloseableRequest extends TenantBearingRequest {
+  on(event: "close", listener: () => void): unknown;
+  off(event: "close", listener: () => void): unknown;
+}
+
+interface WritableResponse {
+  writableEnded: boolean;
+}
+
 const READ_ONLY_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 interface ResolvedTenant {
@@ -36,8 +45,6 @@ interface ResolvedTenant {
 }
 
 function resolveTenant(req: TenantBearingRequest): ResolvedTenant | null {
-  // A request that cannot write is not fenced; anything else is, including an
-  // unrecognised method, because guessing "read" would skip the fence.
   const intent: PlacementIntent = READ_ONLY_METHODS.has(
     (req.method ?? "").toUpperCase(),
   )
@@ -49,7 +56,6 @@ function resolveTenant(req: TenantBearingRequest): ResolvedTenant | null {
     return { orgId: portalOrgId, audience: "PORTAL", intent };
 
   const orgId = req.user?.orgId;
-  // A signed-in user with no workspace yet has orgId "" — nothing tenant-scoped to open
   if (orgId) return { orgId, audience: "INTERNAL", intent };
 
   return null;
@@ -74,22 +80,38 @@ export class TenantContextInterceptor implements NestInterceptor {
     );
     if (optedOut) return next.handle();
 
-    const req = context.switchToHttp().getRequest<TenantBearingRequest>();
+    const http = context.switchToHttp();
+    const req = http.getRequest<CloseableRequest>();
+    const res = http.getResponse<WritableResponse>();
     const resolved = resolveTenant(req);
     if (!resolved) return next.handle();
 
-    return from(this.runInTenantTransaction(resolved, next));
+    const controller = new AbortController();
+
+    function onClose() {
+      if (!res.writableEnded)
+        controller.abort();
+    }
+
+    req.on("close", onClose);
+
+    return from(
+      this.runInTenantTransaction(resolved, next, controller.signal).finally(() => {
+        req.off("close", onClose);
+      }),
+    );
   }
 
   private async runInTenantTransaction(
     resolved: ResolvedTenant,
     next: CallHandler,
+    abortSignal: AbortSignal,
   ): Promise<unknown> {
     const afterCommit: AfterCommitHook[] = [];
     const tenant = { orgId: resolved.orgId, audience: resolved.audience };
 
     const result = await withTenant(this.db, resolved, (tx) =>
-      this.tenant.run({ ...tenant, tx, afterCommit }, () =>
+      this.tenant.run({ ...tenant, tx, afterCommit, abortSignal }, () =>
         lastValueFrom(next.handle()),
       ),
     );

@@ -8,7 +8,7 @@ export const listRulesSchema = z.object({
   active: queryBoolean.optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListRulesInput = z.infer<typeof listRulesSchema>;
 
 const minMaxRefinement = (data: { minQty: number; maxQty?: number }) =>
@@ -25,7 +25,7 @@ export const createRuleSchema = z
     vendorId: z.number().int().positive().optional(),
     leadTimeDays: z.number().int().min(0).optional(),
     safetyStock: z.number().min(0).optional(),
-  })
+  }).strict()
   .refine(minMaxRefinement, minMaxMessage);
 export type CreateRuleInput = z.infer<typeof createRuleSchema>;
 
@@ -38,7 +38,7 @@ export const updateRuleSchema = z
     leadTimeDays: z.number().int().min(0).optional(),
     safetyStock: z.number().min(0).optional(),
     isActive: z.boolean().optional(),
-  })
+  }).strict()
   .refine((d) => d.maxQty == null || d.minQty == null || d.maxQty >= d.minQty, minMaxMessage);
 export type UpdateRuleInput = z.infer<typeof updateRuleSchema>;
 
@@ -52,18 +52,18 @@ export const generatePoSchema = z.object({
       unitCost: z.number().min(0).optional(),
     }),
   ).min(1),
-});
+}).strict();
 export type GeneratePoInput = z.infer<typeof generatePoSchema>;
 
 export const suggestionsQuerySchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type SuggestionsQueryInput = z.infer<typeof suggestionsQuerySchema>;
 
 export const forecastingSchema = z.object({
   variantId: z.coerce.number().int().positive().optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ForecastingInput = z.infer<typeof forecastingSchema>;

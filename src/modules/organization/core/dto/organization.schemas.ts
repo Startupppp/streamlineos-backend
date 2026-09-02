@@ -16,7 +16,7 @@ export const createOrganizationSchema = z.object({
     .trim()
     .optional()
     .transform((v) => v ?? null),
-});
+}).strict();
 
 export const listMembersSchema = z.object({
   cursor: z.string().min(1).max(2048).optional(),
@@ -32,7 +32,7 @@ export const listMembersSchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((v) => v === "true"),
-});
+}).strict();
 
 export const updateOrgSettingsSchema = z.object({
   name: z.string().min(1).optional(),
@@ -92,48 +92,48 @@ export const securitySettingsSchema = z.object({
 
 export const updateMemberRoleSchema = z.object({
   role: z.enum(ORG_MEMBER_ROLE_VALUES),
-});
+}).strict();
 
 export const acceptInvitationSchema = z.object({
   token: z.string().min(1),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-});
+}).strict();
 
 export const declineInvitationSchema = z.object({
   token: z.string().min(1),
-});
+}).strict();
 
 export const switchOrgSchema = z.object({
   orgId: z.string().min(1),
-});
+}).strict();
 
 export const restoreOrgSchema = z.object({
   orgId: z.string().min(1),
-});
+}).strict();
 
 export const deleteOrgSchema = z.object({
   confirmation: z.string().min(1).max(200),
-});
+}).strict();
 
 export const addCustomDomainSchema = z.object({
   domain: z.string().min(1).max(253),
-});
+}).strict();
 
 export const createHolidaySchema = z.object({
   name: z.string().min(1).max(100),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   recurring: z.boolean().optional().default(false),
-});
+}).strict();
 
 export const schedulePurgeSchema = z.object({
   scheduledForDays: z.number().int().min(1).max(365).default(30),
   reason: z.string().min(1).max(500),
-});
+}).strict();
 
 export const placeLegalHoldSchema = z.object({
   reason: z.string().min(1).max(500),
-});
+}).strict();
 
 export const validateInvitationTokenQuerySchema = z
   .object({ token: z.string().min(1).max(512) })

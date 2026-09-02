@@ -5,40 +5,40 @@ export const moodCheckinSchema = z.object({
   mood: z.number().int().min(1).max(5),
   note: z.string().max(500).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-});
+}).strict();
 
 export const createBadgeSchema = z.object({
   name: z.string().min(2).max(100),
   description: z.string().min(1).max(500),
   icon: z.string().min(1).max(200),
   points: z.number().int().min(0).max(1000).optional(),
-});
+}).strict();
 
 export const awardBadgeSchema = z.object({
   userId: z.string().min(1),
   reason: z.string().max(500).optional(),
-});
+}).strict();
 
 export const createPollSchema = z.object({
   question: z.string().min(5).max(500),
   options: z.array(z.string().min(1).max(200)).min(2).max(10),
   anonymous: z.boolean().optional(),
   closesAt: z.string().optional(),
-});
+}).strict();
 
 export const votePollSchema = z.object({
   optionIndex: z.number().int().min(0),
-});
+}).strict();
 
 export const createCommunitySchema = z.object({
   name: z.string().min(2).max(100),
   description: z.string().max(500).optional(),
-});
+}).strict();
 
 export const communityListSchema = z.object({
   cursor: z.string().max(500).optional(),
   limit: pageSizeField(30, 100),
-});
+}).strict();
 
 export const createCampaignSchema = z.object({
   name: z.string().min(2).max(200),
@@ -52,14 +52,14 @@ export const createCampaignSchema = z.object({
       ids: z.array(z.string()).max(500).optional(),
     })
     .optional(),
-});
+}).strict();
 
-export const updateCampaignSchema = createCampaignSchema.partial();
+export const updateCampaignSchema = createCampaignSchema.partial().strict();
 
 export const updatePollSchema = z.object({
   status: z.enum(["draft", "active", "closed"]).optional(),
   question: z.string().min(5).max(500).optional(),
-});
+}).strict();
 
 export type MoodCheckinInput = z.infer<typeof moodCheckinSchema>;
 export type CreateBadgeInput = z.infer<typeof createBadgeSchema>;

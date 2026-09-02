@@ -13,7 +13,7 @@ export const listAccountsQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
   type: accountTypeSchema.optional(),
   activeOnly: queryBoolean.optional(),
-});
+}).strict();
 
 export const createAccountSchema = z.object({
   code: z.string().min(1).max(20),
@@ -21,13 +21,13 @@ export const createAccountSchema = z.object({
   accountType: accountTypeSchema,
   parentAccountId: z.number().int().positive().optional(),
   description: z.string().max(500).optional(),
-});
+}).strict();
 
 export const updateAccountSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   isActive: z.boolean().optional(),
   description: z.string().max(500).optional(),
-});
+}).strict();
 
 export const journalEntryStatusSchema = z.enum([
   "DRAFT",
@@ -44,7 +44,7 @@ export const listJournalQuerySchema = z
     to: z.coerce.date().optional(),
     sourceType: z.string().max(40).optional(),
     status: journalEntryStatusSchema.optional(),
-  })
+  }).strict()
   .refine((r) => !r.from || !r.to || r.from <= r.to, { message: "`from` must be <= `to`", path: ["from"] });
 
 export const createJournalEntrySchema = z
@@ -66,7 +66,7 @@ export const createJournalEntrySchema = z
           }),
       )
       .min(2),
-  })
+  }).strict()
   .refine(
     (entry) => {
       const totalDebit = entry.lines.reduce((sum, l) => sum + l.debit, 0);
@@ -76,41 +76,41 @@ export const createJournalEntrySchema = z
     { message: "Journal entry must balance: total debits must equal total credits", path: ["lines"] },
   );
 
-export const trialBalanceQuerySchema = z.object({ asOf: isoDate });
+export const trialBalanceQuerySchema = z.object({ asOf: isoDate }).strict();
 
-export const balanceSheetQuerySchema = z.object({ asOf: isoDate });
+export const balanceSheetQuerySchema = z.object({ asOf: isoDate }).strict();
 
 export const profitLossQuerySchema = z
   .object({
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),
-  })
+  }).strict()
   .refine((r) => !r.from || !r.to || r.from <= r.to, { message: "`from` must be <= `to`", path: ["from"] });
 
-export const agedReceivablesQuerySchema = z.object({ asOf: isoDate.optional() });
+export const agedReceivablesQuerySchema = z.object({ asOf: isoDate.optional() }).strict();
 
 export const listCustomerLedgerQuerySchema = z.object({
   from: isoDate.optional(),
   to: isoDate.optional(),
-});
+}).strict();
 
 export const listCustomersOutstandingQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   q: z.string().trim().max(200).optional(),
   onlyOutstanding: queryBoolean.optional(),
-});
+}).strict();
 
 export const listVendorsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   q: z.string().trim().max(200).optional(),
   onlyOutstanding: queryBoolean.optional(),
-});
+}).strict();
 
-export const gstr1QuerySchema = z.object({ from: isoDate, to: isoDate });
+export const gstr1QuerySchema = z.object({ from: isoDate, to: isoDate }).strict();
 
-export const gstr3BQuerySchema = z.object({ from: isoDate, to: isoDate });
+export const gstr3BQuerySchema = z.object({ from: isoDate, to: isoDate }).strict();
 
 export const purchaseBillStatusSchema = z.enum([
   "DRAFT",
@@ -135,7 +135,7 @@ export const listPurchaseBillsQuerySchema = z.object({
     z.union([purchaseBillStatusSchema, z.array(purchaseBillStatusSchema)]).optional(),
   ),
   vendorId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 
 export const createPurchaseBillSchema = z.object({
   vendorId: z.number().int().positive(),
@@ -163,11 +163,11 @@ export const createPurchaseBillSchema = z.object({
       }),
     )
     .min(1),
-});
+}).strict();
 
 export const updatePurchaseBillStatusSchema = z.object({
   status: z.enum(["POSTED", "CANCELLED"]),
-});
+}).strict();
 
 export const recordVendorPaymentSchema = z.object({
   amount: z.number().positive().max(999999999.99),
@@ -175,7 +175,7 @@ export const recordVendorPaymentSchema = z.object({
   paymentMethod: z.enum(["bank_transfer", "upi", "cheque", "cash", "card", "other"]),
   referenceNumber: z.string().max(100).optional(),
   notes: z.string().max(500).optional(),
-});
+}).strict();
 
 export type ListAccountsQuery = z.infer<typeof listAccountsQuerySchema>;
 export type CreateAccountInput = z.infer<typeof createAccountSchema>;

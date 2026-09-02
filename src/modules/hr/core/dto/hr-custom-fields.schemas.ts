@@ -88,7 +88,7 @@ export const createCustomFieldSchema = z.object({
   isSensitive: z.boolean().optional(),
   isRequired: z.boolean().optional(),
   displayOrder: z.number().int().min(0).optional(),
-});
+}).strict();
 
 export const updateCustomFieldSchema = z.object({
   name: nameSchema.optional(),
@@ -100,7 +100,7 @@ export const updateCustomFieldSchema = z.object({
   isRequired: z.boolean().optional(),
   isActive: z.boolean().optional(),
   displayOrder: z.number().int().min(0).optional(),
-});
+}).strict();
 
 export const upsertCustomFieldValuesSchema = z.object({
   values: z
@@ -112,7 +112,7 @@ export const upsertCustomFieldValuesSchema = z.object({
     )
     .min(1)
     .max(100),
-}).superRefine((input, context) => {
+}).strict().superRefine((input, context) => {
   const seen = new Set<number>();
   input.values.forEach((item, index) => {
     if (seen.has(item.fieldDefinitionId)) {
@@ -133,7 +133,7 @@ export const filterByCustomFieldQuerySchema = z.object({
     .max(64, "fieldKey must be at most 64 characters")
     .regex(/^[a-z][a-z0-9_]*$/, "fieldKey must be a valid field key"),
   value: z.string().optional(),
-});
+}).strict();
 
 export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;
 export type UpdateCustomFieldInput = z.infer<typeof updateCustomFieldSchema>;

@@ -17,15 +17,15 @@ export const listSchema = z.object({
     .enum(["true", "false", "1", "0"])
     .optional()
     .transform((value) => value === "true" || value === "1"),
-});
+}).strict();
 
 export const snoozeSchema = z.object({
   snoozedUntil: z.string().datetime(),
-});
+}).strict();
 
 export const bulkActionSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(100),
-});
+}).strict();
 
 export type ListInput = z.infer<typeof listSchema>;
 export type SnoozeInput = z.infer<typeof snoozeSchema>;

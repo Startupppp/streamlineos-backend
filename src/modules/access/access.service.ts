@@ -65,7 +65,6 @@ export {
 } from "./access-policy";
 export type {
   DelegationRow,
-  MembershipGateResult,
 } from "./access-policy";
 const VERSION_CACHE_TTL_MS = 1_000;
 const SHARED_VERSION_TTL_SECONDS = 300;

@@ -15,7 +15,7 @@ export const listSchema = z.object({
   limit: optionalPageSizeField(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
-});
+}).strict();
 
 export const createSchema = z.object({
   name: z.string().min(1),
@@ -34,7 +34,7 @@ export const createSchema = z.object({
   tags: z.array(z.string()).optional(),
   assignedToId: z.string().optional(),
   priority: z.string().default("WARM"),
-});
+}).strict();
 
 export const updateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -52,7 +52,7 @@ export const updateSchema = z.object({
   tags: z.array(z.string()).optional(),
   lostReason: z.string().optional(),
   priority: z.string().optional(),
-});
+}).strict();
 
 export const ingestSchema = z
   .object({
@@ -62,7 +62,7 @@ export const ingestSchema = z
     company: z.string().optional(),
     source: z.string().optional(),
     notes: z.string().optional(),
-  })
+  }).strict()
   .superRefine((d, ctx) => {
     if (!d.name && !d.email && !d.phone)
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "At least one of name, email, or phone is required" });

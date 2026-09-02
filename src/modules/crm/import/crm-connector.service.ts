@@ -4,7 +4,7 @@ import { CrmConnectorLifecycleService } from "./crm-connector-lifecycle.service"
 import type { WalkExtent, PageOutcome, WalkResult } from "./crm-connector-internals";
 import type { ConnectorProvider, ConnectorStream, ConnectorRequest } from "./connectors/connector-source";
 
-export { type WalkExtent, type PageOutcome, type WalkResult, MAX_PAGES_PER_WALK, FAILURE_LIMIT } from "./crm-connector-internals";
+export { type WalkExtent, type PageOutcome, type WalkResult, MAX_PAGES_PER_WALK } from "./crm-connector-internals";
 
 @Injectable()
 export class CrmConnectorService {

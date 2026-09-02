@@ -15,7 +15,7 @@ const criteriaSchema = z.object({
 
 export const territoryListSchema = z.object({
   limit: pageSizeField(50),
-});
+}).strict();
 
 export const territoryCreateSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -60,7 +60,7 @@ const sampleLeadSchema = z.object({
 
 export const territoryPreviewSchema = z.object({
   sample: sampleLeadSchema,
-});
+}).strict();
 
 export type TerritoryListInput = z.infer<typeof territoryListSchema>;
 export type TerritoryCreateInput = z.infer<typeof territoryCreateSchema>;

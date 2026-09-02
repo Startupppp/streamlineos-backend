@@ -6,7 +6,7 @@ export const listPortfoliosQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
-});
+}).strict();
 
 export const createPortfolioSchema = z.object({
   name: z.string().min(1).max(255),
@@ -15,7 +15,7 @@ export const createPortfolioSchema = z.object({
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
   health: z.enum(portfolioHealthEnum.enumValues).optional(),
   strategicGoal: z.string().optional(),
-});
+}).strict();
 
 export const updatePortfolioSchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -24,16 +24,16 @@ export const updatePortfolioSchema = z.object({
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
   health: z.enum(portfolioHealthEnum.enumValues).nullish(),
   strategicGoal: z.string().nullish(),
-});
+}).strict();
 
 export const linkProjectSchema = z.object({
   projectId: z.number().int().positive(),
-});
+}).strict();
 
 export const listProgramsQuerySchema = z.object({
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
   portfolioId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 
 export const createProgramSchema = z.object({
   name: z.string().min(1).max(255),
@@ -42,7 +42,7 @@ export const createProgramSchema = z.object({
   ownerId: z.string().min(1).optional(),
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
   health: z.enum(portfolioHealthEnum.enumValues).optional(),
-});
+}).strict();
 
 export const updateProgramSchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -51,7 +51,7 @@ export const updateProgramSchema = z.object({
   ownerId: z.string().min(1).nullish(),
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
   health: z.enum(portfolioHealthEnum.enumValues).nullish(),
-});
+}).strict();
 
 export type ListPortfoliosQuery = z.infer<typeof listPortfoliosQuerySchema>;
 export type CreatePortfolioInput = z.infer<typeof createPortfolioSchema>;

@@ -6,7 +6,7 @@ export const listPoSchema = z.object({
   vendorId: z.coerce.number().int().positive().optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListPoInput = z.infer<typeof listPoSchema>;
 
 const poLineSchema = z.object({
@@ -25,7 +25,7 @@ export const createPoSchema = z.object({
   currency: z.string().length(3).default("INR"),
   notes: z.string().max(2000).optional(),
   lines: z.array(poLineSchema).min(1),
-});
+}).strict();
 export type CreatePoInput = z.infer<typeof createPoSchema>;
 
 export const updatePoSchema = z.object({
@@ -36,7 +36,7 @@ export const updatePoSchema = z.object({
   currency: z.string().length(3).optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(poLineSchema).min(1).optional(),
-});
+}).strict();
 export type UpdatePoInput = z.infer<typeof updatePoSchema>;
 
 const grnLotLineSchema = z.object({
@@ -55,7 +55,7 @@ export const createGrnSchema = z.object({
   locationId: z.number().int().positive().optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(grnLotLineSchema).min(1),
-});
+}).strict();
 export type CreateGrnInput = z.infer<typeof createGrnSchema>;
 
 export const listGrnSchema = z.object({
@@ -65,10 +65,10 @@ export const listGrnSchema = z.object({
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListGrnInput = z.infer<typeof listGrnSchema>;
 
 export const reverseGrnSchema = z.object({
   reason: z.string().max(500),
-});
+}).strict();
 export type ReverseGrnInput = z.infer<typeof reverseGrnSchema>;

@@ -13,7 +13,7 @@ export const createInterviewSchema = z.object({
   location: z.string().optional(),
   meetingLink: z.string().optional(),
   notes: z.string().optional(),
-});
+}).strict();
 export type CreateInterviewInput = z.infer<typeof createInterviewSchema>;
 
 export const scheduleInterviewSchema = z
@@ -43,7 +43,7 @@ export type ScheduleInterviewInput = z.infer<typeof scheduleInterviewSchema>;
 const slotSchema = z.object({
   start: z.string().datetime(),
   end: z.string().datetime(),
-});
+}).strict();
 
 export const selfScheduleSchema = z.object({
   candidateId: z.number().int().positive(),
@@ -54,7 +54,7 @@ export const selfScheduleSchema = z.object({
   availableSlots: z.array(slotSchema).min(1, "At least one available slot is required"),
   expiresInDays: z.number().int().min(1).max(30).default(7),
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 export type SelfScheduleInput = z.infer<typeof selfScheduleSchema>;
 
 export const updateInterviewSchema = z.object({
@@ -79,7 +79,7 @@ export const updateInterviewSchema = z.object({
   notes: z.string().optional(),
   recordingUrl: z.string().url().optional().or(z.literal("")).or(z.null()),
   recordingPlatform: z.string().max(50).optional().or(z.null()),
-});
+}).strict();
 export type UpdateInterviewInput = z.infer<typeof updateInterviewSchema>;
 
 export const submitScorecardSchema = z.object({
@@ -88,10 +88,10 @@ export const submitScorecardSchema = z.object({
   notes: z.string().optional(),
   templateId: z.number().int().positive().optional(),
   isBlindMode: z.boolean().optional(),
-});
+}).strict();
 export type SubmitScorecardInput = z.infer<typeof submitScorecardSchema>;
 
 export const bookInterviewSchema = z.object({
   slotStart: z.string().datetime(),
-});
+}).strict();
 export type BookInterviewInput = z.infer<typeof bookInterviewSchema>;

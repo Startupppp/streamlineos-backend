@@ -4,24 +4,24 @@ import { pageNumberField, pageSizeField } from "../../../../common/pagination/li
 export const receiptListSchema = z.object({
   page: pageNumberField,
   pageSize: pageSizeField(20, 100),
-});
+}).strict();
 
 export const patchReceiptSchema = z.object({
   merchant: z.string().min(1).max(200).optional(),
   receiptNumber: z.string().min(1).max(100).optional(),
   taxAmount: z.number().nonnegative().optional(),
   categoryId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const createBatchSchema = z.object({
   name: z.string().min(1).max(200),
   expenseIds: z.array(z.number().int().positive()).min(1).max(500),
-});
+}).strict();
 
 export const payBatchSchema = z.object({
   paidDate: z.string().min(10),
   bankAccountId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const createPolicySchema = z.object({
   name: z.string().min(1).max(200),
@@ -30,15 +30,15 @@ export const createPolicySchema = z.object({
   requiresReceiptAbove: z.number().nonnegative().optional(),
   requiresApprovalAbove: z.number().nonnegative().optional(),
   isActive: z.boolean().default(true),
-});
+}).strict();
 
-export const updatePolicySchema = createPolicySchema.partial();
+export const updatePolicySchema = createPolicySchema.partial().strict();
 
 export const batchListSchema = z.object({
   page: pageNumberField,
   pageSize: pageSizeField(20, 100),
   status: z.enum(["DRAFT", "APPROVED", "PAID"]).optional(),
-});
+}).strict();
 
 export type ReceiptListInput = z.infer<typeof receiptListSchema>;
 export type PatchReceiptInput = z.infer<typeof patchReceiptSchema>;

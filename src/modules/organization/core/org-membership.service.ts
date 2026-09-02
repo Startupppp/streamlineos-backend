@@ -36,7 +36,7 @@ import { queryOwnedModuleKeys } from "./org-member-authority-queries";
 import type { MemberLifecycleStatus } from "./member-lifecycle.types";
 
 export type { MemberLifecycleStatus } from "./member-lifecycle.types";
-export { membershipStatusToUserStatus, userStatusToMembershipStatus } from "./member-lifecycle.types";
+export { membershipStatusToUserStatus } from "./member-lifecycle.types";
 export type { MembershipRevocationCause } from "./org-membership-access-revocation";
 
 @Injectable()

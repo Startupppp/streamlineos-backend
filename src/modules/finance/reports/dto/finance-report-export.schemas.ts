@@ -46,4 +46,4 @@ export const financeReportExportRequestedPayloadSchema = z.object({
   orgId: z.string().min(1),
 });
 
-export type FinanceReportExportRequestedPayload = z.infer<typeof financeReportExportRequestedPayloadSchema>;
+type FinanceReportExportRequestedPayload = z.infer<typeof financeReportExportRequestedPayloadSchema>;

@@ -7,5 +7,5 @@ export const auditQuerySchema = z.object({
   action: z.string().optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type AuditQuery = z.infer<typeof auditQuerySchema>;

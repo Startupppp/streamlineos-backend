@@ -127,7 +127,7 @@ export interface PrincipalAuditIdentity {
   actorRef: string | null;
 }
 
-export function principalAuditIdentity(
+function principalAuditIdentity(
   principal: Principal,
 ): PrincipalAuditIdentity {
   switch (principal.kind) {

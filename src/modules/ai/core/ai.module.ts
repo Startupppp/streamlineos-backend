@@ -6,7 +6,6 @@ import { KbRagController } from "./controllers/kb-rag.controller";
 import { ChatAssistantController } from "./controllers/chat-assistant.controller";
 import { ProjectsAiController } from "./controllers/projects-ai.controller";
 import { AiFeedbackController } from "./controllers/ai-feedback.controller";
-import { EmbeddingsService } from "./providers/embeddings.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
 import { CrmContentService } from "./services/crm-content.service";
 import { CrmBriefService } from "./services/crm-brief.service";
@@ -59,7 +58,6 @@ import { SurveyAiService } from "./services/survey-ai.service";
   imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, MailModule, AiGatewayModule],
   controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController, MeetingsAiController, BlogAiController, SurveyAiController],
   providers: [
-    EmbeddingsService,
     CrmScoringService,
     CrmContentService,
     CrmBriefService,
@@ -95,6 +93,6 @@ import { SurveyAiService } from "./services/survey-ai.service";
     BlogAiService,
     SurveyAiService,
   ],
-  exports: [AiGatewayModule, EmbeddingsService, OrgFeaturesService],
+  exports: [AiGatewayModule, OrgFeaturesService],
 })
 export class AiModule {}

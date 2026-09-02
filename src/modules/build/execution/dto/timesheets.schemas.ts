@@ -4,11 +4,11 @@ import { pageNumberField, pageSizeField } from "../../../../common/pagination/li
 export const updateEntrySchema = z.object({
   hours: z.number().positive().optional(),
   description: z.string().optional(),
-});
+}).strict();
 
 export const rejectEntrySchema = z.object({
   reason: z.string().optional(),
-});
+}).strict();
 
 export const logTimeSchema = z.object({
   date: z.string(),
@@ -16,7 +16,7 @@ export const logTimeSchema = z.object({
   description: z.string().optional(),
   imageUrl: z.string().optional(),
   workLink: z.string().optional(),
-});
+}).strict();
 
 export const timeEntriesListQuerySchema = z.object({
   userId: z.string().optional(),

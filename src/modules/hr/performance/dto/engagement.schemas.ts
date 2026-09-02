@@ -5,7 +5,7 @@ export const createFeedbackSchema = z.object({
   reviewerUserId: z.string().min(1),
   type: z.enum(["SELF", "PEER", "MANAGER", "SKIP_LEVEL"]),
   cycleId: z.number().int().positive().optional(),
-});
+}).strict();
 
 const feedbackRatingSchema = z.object({
   category: z.string().min(1),
@@ -18,7 +18,7 @@ export const submitFeedbackSchema = z.object({
   strengths: z.string().optional(),
   improvements: z.string().optional(),
   overallRating: z.number().int().min(1).max(5).optional(),
-});
+}).strict();
 
 const assessmentQuestionSchema = z.object({
   id: z.string().min(1),
@@ -58,13 +58,13 @@ export const createRecognitionSchema = z.object({
     .enum(["KUDOS", "TEAMWORK", "INNOVATION", "LEADERSHIP", "ABOVE_AND_BEYOND"])
     .optional()
     .default("KUDOS"),
-});
+}).strict();
 
 export const createEnpsSchema = z.object({
   score: z.number().int().min(0).max(10),
   comment: z.string().optional(),
   isAnonymous: z.boolean().optional(),
-});
+}).strict();
 
 export const createSurveySchema = z
   .object({
@@ -80,7 +80,7 @@ export const createSurveySchema = z
           text: z.string().min(1),
           type: z.enum(["rating", "text", "choice"]),
           options: z.array(z.string()).optional(),
-        }),
+        }).strict(),
       )
       .min(1, "At least one question is required"),
     isAnonymous: z.boolean().optional().default(true),
@@ -104,7 +104,7 @@ export const submitSurveyResponseSchema = z.object({
 export const updateSurveySchema = z.object({
   status: z.enum(["DRAFT", "ACTIVE", "CLOSED"]).optional(),
   title: z.string().min(1).max(200).optional(),
-});
+}).strict();
 
 export const createOrSubmitAssessmentSchema = z.union([submitAssessmentSchema, createAssessmentSchema]);
 export const createOrRespondSurveySchema = z.union([submitSurveyResponseSchema, createSurveySchema]);

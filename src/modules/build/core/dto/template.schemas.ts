@@ -17,7 +17,7 @@ export const createTemplateSchema = z.object({
   description: z.string().optional(),
   category: z.string().default("GENERAL"),
   tickets: z.array(templateTicketSchema).default([]),
-});
+}).strict();
 
 export const applyTemplateSchema = z
   .object({
@@ -26,7 +26,7 @@ export const applyTemplateSchema = z
     managerId: z.string().optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     refineEndAfterStart(data, ctx);
   });

@@ -26,6 +26,6 @@ export const helpdeskTicketStatusChangedPayloadSchema = z.object({
   ownerId: z.string().min(1),
 });
 
-export type HelpdeskTicketCreatedPayload = z.infer<typeof helpdeskTicketCreatedPayloadSchema>;
-export type HelpdeskTicketAssignedPayload = z.infer<typeof helpdeskTicketAssignedPayloadSchema>;
-export type HelpdeskTicketStatusChangedPayload = z.infer<typeof helpdeskTicketStatusChangedPayloadSchema>;
+type HelpdeskTicketCreatedPayload = z.infer<typeof helpdeskTicketCreatedPayloadSchema>;
+type HelpdeskTicketAssignedPayload = z.infer<typeof helpdeskTicketAssignedPayloadSchema>;
+type HelpdeskTicketStatusChangedPayload = z.infer<typeof helpdeskTicketStatusChangedPayloadSchema>;

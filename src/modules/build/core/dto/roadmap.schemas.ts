@@ -9,7 +9,7 @@ export const roadmapListQuerySchema = z.object({
   search: z.string().trim().min(1).optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(50),
-});
+}).strict();
 
 export const createRoadmapSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -23,7 +23,7 @@ export const createRoadmapSchema = z.object({
   epicTicketId: z.number().int().positive().optional(),
   targetQuarter: z.string().trim().max(20).optional(),
   sortOrder: z.number().int().default(0),
-});
+}).strict();
 
 export const updateRoadmapSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
@@ -37,7 +37,7 @@ export const updateRoadmapSchema = z.object({
   epicTicketId: z.number().int().positive().nullable().optional(),
   targetQuarter: z.string().trim().max(20).nullable().optional(),
   sortOrder: z.number().int().optional(),
-});
+}).strict();
 
 export const feedbackListQuerySchema = z.object({
   status: z
@@ -47,11 +47,11 @@ export const feedbackListQuerySchema = z.object({
   includeMerged: queryBoolean.default(false),
   cursor: z.string().optional(),
   limit: pageSizeField(50),
-});
+}).strict();
 
 export const mergeFeedbackSchema = z.object({
   targetPostId: z.number().int().positive(),
-});
+}).strict();
 
 export const createFeedbackSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -63,7 +63,7 @@ export const createFeedbackSchema = z.object({
   submittedByName: z.string().trim().max(120).optional(),
   submittedByEmail: z.string().trim().email().optional(),
   linkedRoadmapItemId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const updateFeedbackSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
@@ -73,13 +73,13 @@ export const updateFeedbackSchema = z.object({
     .optional(),
   category: z.string().trim().max(100).nullable().optional(),
   linkedRoadmapItemId: z.number().int().positive().nullable().optional(),
-});
+}).strict();
 
 export const changelogListQuerySchema = z.object({
   type: z.enum(["feature", "improvement", "fix"]).optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(50),
-});
+}).strict();
 
 export const createChangelogSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -88,7 +88,7 @@ export const createChangelogSchema = z.object({
   type: z.enum(["feature", "improvement", "fix"]).default("feature"),
   isPublished: z.boolean().default(false),
   linkedRoadmapItemId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const updateChangelogSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
@@ -97,7 +97,7 @@ export const updateChangelogSchema = z.object({
   type: z.enum(["feature", "improvement", "fix"]).optional(),
   isPublished: z.boolean().optional(),
   linkedRoadmapItemId: z.number().int().positive().nullable().optional(),
-});
+}).strict();
 
 export type RoadmapListQuery = z.infer<typeof roadmapListQuerySchema>;
 export type CreateRoadmapInput = z.infer<typeof createRoadmapSchema>;

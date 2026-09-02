@@ -20,14 +20,14 @@ export const createCollectorSchema = z.object({
   utm: z.record(z.string(), z.unknown()).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
   expiresAt: z.coerce.date().optional(),
-});
+}).strict();
 
 export const patchCollectorSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   status: z.enum(["active", "paused", "closed", "expired"]).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
   expiresAt: z.coerce.date().nullable().optional(),
-});
+}).strict();
 
 export type CreateCollectorInput = z.infer<typeof createCollectorSchema>;
 export type PatchCollectorInput = z.infer<typeof patchCollectorSchema>;

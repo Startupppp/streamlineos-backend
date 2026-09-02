@@ -7,4 +7,4 @@ export const chatAttachmentParamsSchema = z
   })
   .strict();
 
-export type ChatAttachmentParams = z.infer<typeof chatAttachmentParamsSchema>;
+type ChatAttachmentParams = z.infer<typeof chatAttachmentParamsSchema>;

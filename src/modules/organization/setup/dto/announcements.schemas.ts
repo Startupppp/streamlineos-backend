@@ -126,7 +126,7 @@ export const updateHrAnnouncementSchema = announcementBodyBase
         path: ["targetIds"],
       });
     }
-  });
+  }).strict();
 
 export type CreateHrAnnouncementInput = z.infer<typeof createHrAnnouncementSchema>;
 export type UpdateHrAnnouncementInput = z.infer<typeof updateHrAnnouncementSchema>;

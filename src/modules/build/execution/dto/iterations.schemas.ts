@@ -20,7 +20,7 @@ export const createSprintSchema = z
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
     goal: z.string().optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -38,7 +38,7 @@ export const updateSprintSchema = z
     endDate: z.string().optional(),
     goal: z.string().optional(),
     status: z.enum(["PLANNED", "ACTIVE", "COMPLETED"]).optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -69,7 +69,7 @@ export const createCycleSchema = z
       .optional(),
     startDate: z.string().min(1, "Start date is required"),
     endDate: z.string().min(1, "End date is required"),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -90,7 +90,7 @@ export const updateCycleSchema = z
     status: z.enum(["draft", "active", "completed"]).optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -103,7 +103,7 @@ export const updateCycleSchema = z
 
 export const cycleListQuerySchema = z.object({
   status: z.enum(["draft", "active", "completed"]).optional(),
-});
+}).strict();
 
 const moduleNameSchema = z
   .string()
@@ -139,7 +139,7 @@ export const createModuleSchema = z
     leadId: z.string().optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -170,7 +170,7 @@ export const updateModuleSchema = z
     leadId: z.string().nullable().optional(),
     startDate: z.string().nullable().optional(),
     endDate: z.string().nullable().optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     if (data.startDate && data.endDate && data.endDate <= data.startDate) {
       ctx.addIssue({
@@ -189,7 +189,7 @@ export const createEpicSchema = z.object({
   startDate: z.string().optional(),
   dueDate: z.string().optional(),
   points: z.number().optional(),
-});
+}).strict();
 
 export const updateEpicSchema = z.object({
   title: z.string().min(1).optional(),
@@ -199,7 +199,7 @@ export const updateEpicSchema = z.object({
   startDate: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
   points: z.number().nullable().optional(),
-});
+}).strict();
 
 export type CreateEpicInput = z.infer<typeof createEpicSchema>;
 export type UpdateEpicInput = z.infer<typeof updateEpicSchema>;

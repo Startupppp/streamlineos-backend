@@ -54,7 +54,7 @@ export const extractionSchema = z.object({
 });
 
 export type Extraction = z.infer<typeof extractionSchema>;
-export type NextStep = z.infer<typeof nextStepSchema>;
+type NextStep = z.infer<typeof nextStepSchema>;
 
 /**
  * Bumped whenever the prompt below changes in a way that could move accuracy.

@@ -25,12 +25,12 @@ export const createBonusSchema = z.object({
     .optional(),
   month: z.string().regex(/^\d{4}-\d{2}$/, "month must be YYYY-MM"),
   taxable: z.boolean().optional(),
-});
+}).strict();
 export type CreateBonusInput = z.infer<typeof createBonusSchema>;
 
 export const patchBonusSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED", "PAID"]),
-});
+}).strict();
 export type PatchBonusInput = z.infer<typeof patchBonusSchema>;
 
 export const createLoanSchema = z.object({
@@ -41,32 +41,32 @@ export const createLoanSchema = z.object({
   reason: z.string().min(1, "Reason is required").max(500),
   totalEmis: z.number().int().min(1, "At least 1 EMI required").max(360, "Maximum 360 EMIs"),
   userId: z.string().optional(),
-});
+}).strict();
 export type CreateLoanInput = z.infer<typeof createLoanSchema>;
 
 export const updateLoanSchema = z.object({
   status: z.enum(["APPROVED", "ACTIVE", "REPAID", "REJECTED"]).optional(),
   paidEmis: z.number().int().min(0).optional(),
-});
+}).strict();
 export type UpdateLoanInput = z.infer<typeof updateLoanSchema>;
 
 export const listPageQuerySchema = z.object({
   page: optionalPageNumberField(),
   limit: optionalPageSizeField(),
-});
+}).strict();
 export type ListPageQueryInput = z.infer<typeof listPageQuerySchema>;
 
 export const cursorListQuerySchema = z.object({
   cursor: z.string().trim().min(1).max(2048).optional(),
   limit: optionalPageSizeField(),
-});
+}).strict();
 export type CursorListQueryInput = z.infer<typeof cursorListQuerySchema>;
 
 export const incentivesQuerySchema = z.object({
   status: z.string().optional(),
   cursor: z.string().trim().min(1).max(2048).optional(),
   limit: optionalPageSizeField(),
-});
+}).strict();
 export type IncentivesQueryInput = z.infer<typeof incentivesQuerySchema>;
 
 export const createIncentiveConfigSchema = z.object({
@@ -79,13 +79,13 @@ export const createIncentiveConfigSchema = z.object({
       .multipleOf(0.01, { message: "Incentive rate can have at most 2 decimal places" })
       .transform((n) => n.toFixed(2)),
   ),
-});
+}).strict();
 export type CreateIncentiveConfigInput = z.infer<typeof createIncentiveConfigSchema>;
 
 export const approveIncentiveSchema = z.object({
   approvedAmount: z.string(),
   notes: z.string().optional(),
-});
+}).strict();
 export type ApproveIncentiveInput = z.infer<typeof approveIncentiveSchema>;
 
 export const createReimbursementSchema = z.object({
@@ -98,13 +98,13 @@ export const createReimbursementSchema = z.object({
   description: z.string().max(1000).optional(),
   receiptUrl: z.string().url("Enter a valid URL (e.g. https://example.com)").optional().or(z.literal("")),
   payrollMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use YYYY-MM").optional(),
-});
+}).strict();
 export type CreateReimbursementInput = z.infer<typeof createReimbursementSchema>;
 
 export const patchReimbursementSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED", "PAID"]),
   rejectionReason: z.string().max(500).optional(),
-});
+}).strict();
 export type PatchReimbursementInput = z.infer<typeof patchReimbursementSchema>;
 
 export const createFnfSchema = z.object({
@@ -120,13 +120,13 @@ export const createFnfSchema = z.object({
   noticeRecovery: z.number().min(0).optional(),
   otherDeductions: z.number().min(0).optional(),
   notes: z.string().max(500).optional(),
-});
+}).strict();
 export type CreateFnfInput = z.infer<typeof createFnfSchema>;
 
 export const patchFnfSchema = z.object({
   status: z.enum(["PENDING_APPROVAL", "APPROVED", "PAID", "HR_REVIEW", "FINANCE_REVIEW"]),
   notes: z.string().optional(),
-});
+}).strict();
 export type PatchFnfInput = z.infer<typeof patchFnfSchema>;
 
 export const createTaxWindowBodySchema = z.object({
@@ -135,7 +135,7 @@ export const createTaxWindowBodySchema = z.object({
   closesAt: z.string().datetime(),
   proofDeadline: z.string().datetime().optional(),
   lockDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "lockDate must be YYYY-MM-DD").optional(),
-});
+}).strict();
 export type CreateTaxWindowBody = z.infer<typeof createTaxWindowBodySchema>;
 
 export const patchTaxWindowBodySchema = z.object({
@@ -144,7 +144,7 @@ export const patchTaxWindowBodySchema = z.object({
   proofDeadline: z.string().datetime().optional(),
   lockDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "lockDate must be YYYY-MM-DD").optional(),
   status: z.enum(["DRAFT", "OPEN", "CLOSED", "LOCKED"]).optional(),
-});
+}).strict();
 export type PatchTaxWindowBody = z.infer<typeof patchTaxWindowBodySchema>;
 
 const salaryTemplateNameSchema = z
@@ -173,8 +173,8 @@ export const createSalaryStructureTemplateSchema = z.object({
   effectiveFrom: z.string().min(1, "Effective from is required"),
   effectiveTo: z.string().nullable().optional(),
   isActive: z.boolean().optional().default(true),
-});
+}).strict();
 export type CreateSalaryStructureTemplateInput = z.infer<typeof createSalaryStructureTemplateSchema>;
 
-export const updateSalaryStructureTemplateSchema = createSalaryStructureTemplateSchema.partial();
+export const updateSalaryStructureTemplateSchema = createSalaryStructureTemplateSchema.partial().strict();
 export type UpdateSalaryStructureTemplateInput = z.infer<typeof updateSalaryStructureTemplateSchema>;

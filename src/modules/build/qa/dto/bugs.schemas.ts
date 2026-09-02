@@ -9,7 +9,7 @@ export const bugListQuerySchema = z.object({
   severity: z.enum(bugSeverityValues).optional(),
   assigneeId: z.string().optional(),
   q: z.string().optional(),
-});
+}).strict();
 
 export const createBugSchema = z.object({
   title: z.string().min(1).max(500),
@@ -27,11 +27,11 @@ export const createBugSchema = z.object({
   qaOwnerId: z.string().optional(),
   linkedTicketId: z.number().int().positive().optional(),
   linkedTestCaseId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const updateBugSchema = createBugSchema.partial().extend({
   status: z.enum(bugStatusValues).optional(),
-});
+}).strict();
 
 export type BugListQuery = z.infer<typeof bugListQuerySchema>;
 export type CreateBugInput = z.infer<typeof createBugSchema>;

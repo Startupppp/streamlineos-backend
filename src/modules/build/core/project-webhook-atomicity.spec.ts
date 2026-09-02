@@ -95,6 +95,7 @@ describe("Build mutation and webhook intent atomicity", () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
       { enqueue } as never,
       {} as never,
       {} as never,

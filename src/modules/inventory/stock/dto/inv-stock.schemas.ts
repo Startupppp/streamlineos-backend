@@ -14,7 +14,7 @@ export const listStockLevelsSchema = z.object({
   search: z.string().max(200).optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListStockLevelsInput = z.infer<typeof listStockLevelsSchema>;
 
 export const listTransactionsSchema = z.object({
@@ -33,13 +33,13 @@ export const listTransactionsSchema = z.object({
   toDate: z.string().optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListTransactionsInput = z.infer<typeof listTransactionsSchema>;
 
 export const availabilityQuerySchema = z.object({
   variantId: z.coerce.number().int().positive(),
   warehouseId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 export type AvailabilityQueryInput = z.infer<typeof availabilityQuerySchema>;
 
 export const listReservationsSchema = z.object({
@@ -49,7 +49,7 @@ export const listReservationsSchema = z.object({
   warehouseId: z.coerce.number().int().positive().optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListReservationsInput = z.infer<typeof listReservationsSchema>;
 
 export const createReservationSchema = z.object({
@@ -63,12 +63,12 @@ export const createReservationSchema = z.object({
   serialId: z.number().int().positive().optional(),
   qty: z.string().regex(/^\d+(\.\d+)?$/, "must be a positive decimal"),
   expiresAt: z.string().datetime().optional(),
-});
+}).strict();
 export type CreateReservationInput = z.infer<typeof createReservationSchema>;
 
 export const releaseReservationSchema = z.object({
   reservationId: z.number().int().positive(),
-});
+}).strict();
 export type ReleaseReservationInput = z.infer<typeof releaseReservationSchema>;
 
 const openingStockLineSchema = z.object({
@@ -81,14 +81,14 @@ const openingStockLineSchema = z.object({
 export const openingStockSchema = z.object({
   lines: z.array(openingStockLineSchema).min(1).max(500),
   notes: z.string().max(500).optional(),
-});
+}).strict();
 export type OpeningStockInput = z.infer<typeof openingStockSchema>;
 
 export const listAdjustmentsSchema = z.object({
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "PENDING_POST", "POSTED", "CANCELLED"]).optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListAdjustmentsInput = z.infer<typeof listAdjustmentsSchema>;
 
 const adjustmentLineSchema = z.object({
@@ -102,7 +102,7 @@ export const createAdjustmentSchema = z.object({
   reason: z.enum(["PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER"]),
   notes: z.string().max(1000).optional(),
   lines: z.array(adjustmentLineSchema).min(1),
-});
+}).strict();
 export type CreateAdjustmentInput = z.infer<typeof createAdjustmentSchema>;
 
 export const listTransfersSchema = z.object({
@@ -115,7 +115,7 @@ export const listTransfersSchema = z.object({
   search: z.string().max(200).optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 export type ListTransfersInput = z.infer<typeof listTransfersSchema>;
 
 const transferLineSchema = z.object({
@@ -132,7 +132,7 @@ export const createTransferSchema = z.object({
   toWarehouseId: z.number().int().positive().optional(),
   notes: z.string().max(1000).optional(),
   lines: z.array(transferLineSchema).min(1),
-});
+}).strict();
 export type CreateTransferInput = z.infer<typeof createTransferSchema>;
 
 export const completeTransferSchema = z.object({
@@ -140,5 +140,5 @@ export const completeTransferSchema = z.object({
     transferLineId: z.number().int().positive(),
     quantityReceived: z.number().min(0),
   })).min(1),
-});
+}).strict();
 export type CompleteTransferInput = z.infer<typeof completeTransferSchema>;

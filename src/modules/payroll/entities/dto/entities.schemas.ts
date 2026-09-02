@@ -10,5 +10,5 @@ export const createEntitySchema = z.object({
   pfEstablishmentCode: z.string().max(50).optional(),
   esiCode: z.string().max(50).optional(),
   ptStateCode: z.string().max(10).optional(),
-});
+}).strict();
 export type CreateEntityInput = z.infer<typeof createEntitySchema>;

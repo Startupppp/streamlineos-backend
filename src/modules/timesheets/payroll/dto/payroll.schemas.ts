@@ -22,7 +22,7 @@ export const periodSummaryQuerySchema = z
       .enum(["true", "false"])
       .default("false")
       .transform((v) => v === "true"),
-  })
+  }).strict()
   .refine(rangeRefinement, { message: "end must be >= start" })
   .refine(dayLimitRefinement, { message: "date range must be ≤ 92 days" });
 
@@ -34,19 +34,19 @@ export const exportPayrollSchema = z
     userIds: z.array(z.string()).max(500).optional(),
     includeExported: z.boolean().default(false),
     note: z.string().max(500).optional(),
-  })
+  }).strict()
   .refine(rangeRefinement, { message: "end must be >= start" })
   .refine(dayLimitRefinement, { message: "date range must be ≤ 92 days" });
 
 export const exportsListQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export const ackExportSchema = z.object({
   status: z.enum(["RECEIVED", "ACCEPTED", "REJECTED", "FAILED"]),
   note: z.string().max(1000).optional(),
-});
+}).strict();
 
 const VALID_COLUMN_KEYS = new Set([
   "employeeName",
@@ -88,7 +88,7 @@ export const updateSettingsSchema = z.object({
   overtimeWeeklyHours: z.number().min(1).max(168).optional(),
   includeNonBillable: z.boolean().optional(),
   payrollMapping: payrollMappingSchema.optional(),
-});
+}).strict();
 
 export type PeriodSummaryQuery = z.infer<typeof periodSummaryQuerySchema>;
 export type ExportPayrollInput = z.infer<typeof exportPayrollSchema>;

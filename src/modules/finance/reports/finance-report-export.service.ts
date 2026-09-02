@@ -18,7 +18,7 @@ import type { FinanceReportExportFilters } from "../../../db/schema/accounting/f
 export type FinanceReportExportJobRow = typeof financeReportExportJobs.$inferSelect;
 
 const EXPIRY_MS = 24 * 60 * 60 * 1000;
-export const REPORT_EXPORT_BATCH_SIZE = 500;
+const REPORT_EXPORT_BATCH_SIZE = 500;
 export const REPORT_LINE_CAP = 50_000;
 
 @Injectable()

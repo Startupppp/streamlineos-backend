@@ -11,7 +11,7 @@ import { EntityReferenceService } from "../entity-reference/entity-reference.ser
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { ChatChannelListService } from "./chat-channel-list.service";
 
-export { entityChannelFallbackName, CHAT_CHANNEL_PAGE_SIZE } from "./chat-channel-list.service";
+export { entityChannelFallbackName } from "./chat-channel-list.service";
 
 @Injectable()
 export class ChatChannelsService {

@@ -67,6 +67,7 @@ describe("Support auth/RBAC (e2e)", () => {
     ["get", "/support/kb/articles/1/attachments"],
     ["post", "/support/kb/articles/1/attachments"],
     ["delete", "/support/kb/articles/1/attachments/1"],
+    ["get", "/support/kb/articles/1/attachments/1/download"],
     ["get", "/support/queues"],
     ["post", "/support/queues"],
     ["patch", "/support/queues/1"],

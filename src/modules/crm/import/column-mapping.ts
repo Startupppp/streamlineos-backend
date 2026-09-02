@@ -31,7 +31,7 @@ import {
  * including the mapping evals, keeps its exact answers.
  */
 
-export { IDENTITY_FIELDS, isFieldOf, type ImportEntity, type ImportField } from "./import-entities";
+export { isFieldOf, type ImportEntity, type ImportField } from "./import-entities";
 
 export type ColumnMapping =
   | { readonly kind: "mapped"; readonly field: ImportField; readonly confidence: number }

@@ -12,15 +12,15 @@ export const confirmMatchSchema = z.object({
   matchedRecordId: z.number().int().positive().optional(),
   counterAccountId: z.number().int().positive().optional(),
   memo: z.string().max(500).optional(),
-});
+}).strict();
 
 export const unmatchSchema = z.object({
   transactionId: z.number().int().positive(),
-});
+}).strict();
 
 export const ignoreTransactionSchema = z.object({
   transactionId: z.number().int().positive(),
-});
+}).strict();
 
 export const ruleConditionSchema = z.object({
   field: z.enum(["description", "counterparty", "amount"]),
@@ -44,7 +44,7 @@ export const createReconciliationRuleSchema = z.object({
   conditions: z.array(ruleConditionSchema).min(1),
   action: ruleActionSchema,
   isActive: z.boolean().default(true),
-});
+}).strict();
 
 export type ConfirmMatchInput = z.infer<typeof confirmMatchSchema>;
 export type UnmatchInput = z.infer<typeof unmatchSchema>;

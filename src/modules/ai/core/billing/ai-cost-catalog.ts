@@ -55,6 +55,7 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "support.root-cause": 2,
   "kb.ask": 1,
   "kb.public-ask": 1,
+  "kb.public-embedding": 1,
   "chat.message": 1,
   "feedbucket.analyze": 5,
   "feedbucket.assist": 5,

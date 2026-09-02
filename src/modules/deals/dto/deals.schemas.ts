@@ -8,7 +8,7 @@ export const listDealsSchema = z.object({
   assignedToId: z.string().optional(),
   limit: optionalPageSizeField(),
   offset: z.coerce.number().min(0).optional(),
-});
+}).strict();
 
 export const createDealSchema = z.object({
   name: z.string().min(1),
@@ -27,7 +27,7 @@ export const createDealSchema = z.object({
   partyId: z.string().min(1).optional(),
   /** What is being transacted, where the tenant models one. */
   subjectId: z.string().min(1).optional(),
-});
+}).strict();
 
 /** Matches the CRM deals CSV import dialog payload. */
 export const bulkImportDealRowSchema = z.object({
@@ -43,7 +43,7 @@ export const bulkImportDealRowSchema = z.object({
 
 export const bulkImportDealsSchema = z.object({
   deals: z.array(bulkImportDealRowSchema).min(1).max(500),
-});
+}).strict();
 
 export const updateDealSchema = z.object({
   name: z.string().min(1).optional(),
@@ -68,7 +68,7 @@ export const updateDealSchema = z.object({
    * move and not the record's current state.
    */
   stageChangeReason: z.string().trim().max(500).optional(),
-});
+}).strict();
 
 export const resolveApprovalSchema = z.object({
   approvalId: z.number().int().positive(),
@@ -90,23 +90,23 @@ export const logActivitySchema = z.object({
   duration: z.number().int().min(0).optional(),
   previousValue: z.string().optional(),
   newValue: z.string().optional(),
-});
+}).strict();
 
 export const patchCustomDataSchema = z.object({
   customData: z.record(z.string(), z.unknown()),
-});
+}).strict();
 
 export const createApprovalRuleSchema = z.object({
   minValue: z.string().min(1, "Minimum value is required"),
   approverType: z.enum(["role", "user", "manager"]).default("role"),
   approverRole: z.string().optional(),
   approverUserId: z.string().optional(),
-});
+}).strict();
 
 export const approvalsListSchema = z.object({
   status: z.enum(["pending", "approved", "rejected"]).optional(),
   limit: optionalPageSizeField(50),
-});
+}).strict();
 
 export const createMeetingSchema = z.object({
   title: z.string().min(1).max(200),
@@ -118,7 +118,7 @@ export const createMeetingSchema = z.object({
   actionItems: z.string().max(2000).optional(),
   recordingLink: z.string().url().optional().or(z.literal("")),
   status: z.enum(["scheduled", "completed", "cancelled"]).optional().default("scheduled"),
-});
+}).strict();
 
 export const updateMeetingSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -130,29 +130,29 @@ export const updateMeetingSchema = z.object({
   actionItems: z.string().max(2000).optional().nullable(),
   recordingLink: z.string().url().optional().nullable().or(z.literal("")),
   status: z.enum(["scheduled", "completed", "cancelled"]).optional(),
-});
+}).strict();
 
 export const createCompetitorSchema = z.object({
   competitorKey: z.string().min(1),
   status: z.enum(["active", "won_against", "lost_to"]).default("active"),
   notes: z.string().max(1000).optional(),
-});
+}).strict();
 
-export const updateCompetitorSchema = createCompetitorSchema.omit({ competitorKey: true }).partial();
+export const updateCompetitorSchema = createCompetitorSchema.omit({ competitorKey: true }).partial().strict();
 
 export const createForecastSnapshotSchema = z.object({
   period: z.string().min(1),
-});
+}).strict();
 
 export const compareForecastSnapshotsSchema = z.object({
   period: z.string().min(1),
-});
+}).strict();
 
 export const forecastSnapshotsQuerySchema = z.object({
   period: z.string().optional(),
   limit: optionalPageSizeField(50),
   cursor: z.string().optional(),
-});
+}).strict();
 
 export const createStakeholderSchema = z.object({
   contactId: z.number().int().positive(),
@@ -160,19 +160,19 @@ export const createStakeholderSchema = z.object({
   influence: z.string().max(50).nullable().optional(),
   isPrimary: z.boolean().optional(),
   notes: z.string().max(2000).nullable().optional(),
-});
+}).strict();
 
 export const updateStakeholderSchema = z.object({
   roleKey: z.string().max(100).nullable().optional(),
   influence: z.string().max(50).nullable().optional(),
   isPrimary: z.boolean().optional(),
   notes: z.string().max(2000).nullable().optional(),
-});
+}).strict();
 
 export const overrideForecastSnapshotSchema = z.object({
   overrideAmount: z.number().min(0).optional(),
   overrideNote: z.string().max(1000).optional(),
-});
+}).strict();
 
 export type ListDealsInput = z.infer<typeof listDealsSchema>;
 export type CreateDealInput = z.infer<typeof createDealSchema>;

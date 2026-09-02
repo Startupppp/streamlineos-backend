@@ -35,12 +35,12 @@ export type NormalizedPaymentWebhookEvent = z.infer<typeof normalizedPaymentWebh
 
 export const generateWebhookSchema = z.object({
   environment: z.enum(["test", "live"]),
-});
+}).strict();
 export type GenerateWebhookInput = z.infer<typeof generateWebhookSchema>;
 
 export const verifyWebhookSchema = z.object({
   environment: z.enum(["test", "live"]),
   rawBody: z.string().min(1).optional(),
   signature: z.string().min(1).optional(),
-});
+}).strict();
 export type VerifyWebhookInput = z.infer<typeof verifyWebhookSchema>;

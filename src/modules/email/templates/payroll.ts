@@ -7,7 +7,7 @@ import {
   type LocalizedValues,
 } from "./email-locale";
 
-export const PAYSLIP_TEMPLATE_VERSION = EMAIL_TEMPLATE_VERSION;
+const PAYSLIP_TEMPLATE_VERSION = EMAIL_TEMPLATE_VERSION;
 export const PAYSLIP_TEMPLATE_LOCALES = ["en", "fr", "es", "de"] as const;
 
 /**

@@ -468,7 +468,7 @@ export async function restorePartyWithMirror(
  * Kept here rather than in the divergence service so that a test of the writer
  * can assert its own claim: after any function above, this is zero.
  */
-export async function countMirroredRows(
+async function countMirroredRows(
   db: MirrorDb,
   organizationId: string,
 ): Promise<Record<MappedLegacyKind, number>> {

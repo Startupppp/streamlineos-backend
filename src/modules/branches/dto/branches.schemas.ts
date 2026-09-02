@@ -49,7 +49,7 @@ export const createBranchSchema = z.object({
   }),
   branchManagerId: z.string().optional(),
   branchHrId: z.string().optional(),
-});
+}).strict();
 
 export type CreateBranchInput = z.infer<typeof createBranchSchema>;
 
@@ -96,6 +96,6 @@ export const updateBranchSchema = z.object({
   branchManagerId: z.string().optional(),
   branchHrId: z.string().optional(),
   status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
-});
+}).strict();
 
 export type UpdateBranchInput = z.infer<typeof updateBranchSchema>;

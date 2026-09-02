@@ -6,7 +6,7 @@ export interface OrgResourceSample {
 export const DISPROPORTIONATE_SHARE_THRESHOLD = 0.5;
 export const CONSECUTIVE_WINDOWS_FOR_RELOCATION = 3;
 
-export type NoisyNeighbourKind = "THROTTLING_REVIEW" | "RELOCATION";
+type NoisyNeighbourKind = "THROTTLING_REVIEW" | "RELOCATION";
 
 export interface ThrottlingReviewVerdict {
   readonly kind: "THROTTLING_REVIEW";

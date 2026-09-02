@@ -24,7 +24,7 @@ export const listSchema = z.object({
   q: z.string().min(1).max(200).optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export const createSchema = z.object({
   title: z
@@ -39,27 +39,27 @@ export const createSchema = z.object({
   category: categorySchema,
   priority: ticketPrioritySchema.optional(),
   isConfidential: z.boolean().optional(),
-});
+}).strict();
 
 export const updateTicketSchema = z.object({
   status: ticketStatusSchema.optional(),
   assigneeId: z.string().nullable().optional(),
   priority: ticketPrioritySchema.optional(),
   resolution: z.string().max(2000).nullable().optional(),
-});
+}).strict();
 
 export const addCommentSchema = z.object({
   body: z.string().min(1).max(2000),
-});
+}).strict();
 
 export const routingRuleSchema = z.object({
   category: categorySchema,
   assigneeUserId: z.string().min(1),
-});
+}).strict();
 
 export const suggestSchema = z.object({
   query: z.string().min(2).max(200),
-});
+}).strict();
 
 export type ListInput = z.infer<typeof listSchema>;
 export type CreateInput = z.infer<typeof createSchema>;

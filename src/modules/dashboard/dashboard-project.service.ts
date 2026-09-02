@@ -80,11 +80,12 @@ export class DashboardProjectService {
     });
   }
 
-  async getMyIssues(orgId: string, userId: string) {
+  async getMyIssues(orgId: string, userId: string, statuses?: string[]) {
     const member = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)), columns: { id: true } });
     if (!member) return [];
+    const statusFilter = statuses && statuses.length > 0 ? inArray(tickets.status, statuses) : undefined;
     const issues = await this.db.query.tickets.findMany({
-      where: and(eq(tickets.orgId, orgId), eq(tickets.assigneeMembershipId, member.id), isNull(tickets.deletedAt)),
+      where: and(eq(tickets.orgId, orgId), eq(tickets.assigneeMembershipId, member.id), isNull(tickets.deletedAt), statusFilter),
       orderBy: [desc(tickets.updatedAt)],
       limit: 10,
       with: {

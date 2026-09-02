@@ -52,18 +52,18 @@ export const visitSchema = z.object({
   sessionToken: z.string().min(1).max(64),
   path: z.string().min(1).max(500),
   referrer: z.string().max(500).nullish(),
-});
+}).strict();
 
 export type VisitInput = z.infer<typeof visitSchema>;
 
 export const visitUsageResponseSchema = z.object({ usage: z.string() }).strict();
-export type VisitUsageResponse = z.infer<typeof visitUsageResponseSchema>;
+type VisitUsageResponse = z.infer<typeof visitUsageResponseSchema>;
 
 export const listMessagesQuerySchema = z.object({
   status: z.enum(["NEW", "READ", "REPLIED", "ARCHIVED", "ALL"]).optional(),
   topic: z.string().optional(),
   search: z.string().optional(),
-});
+}).strict();
 
 export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;
 
@@ -74,7 +74,7 @@ export const contactFormSchema = z.object({
   phone: z.string().max(50).optional(),
   message: z.string().min(1).max(5000),
   topic: z.enum(["sales", "support", "partnership", "press", "other"]).optional(),
-});
+}).strict();
 export type ContactFormInput = z.infer<typeof contactFormSchema>;
 
 export const listCustomersQuerySchema = z.object({
@@ -84,5 +84,5 @@ export const listCustomersQuerySchema = z.object({
   (v) => (v.afterCreatedAt === undefined) === (v.afterId === undefined),
   { message: "afterCreatedAt and afterId must both be present or both absent" },
 );
-export type ListCustomersQuery = z.infer<typeof listCustomersQuerySchema>;
+type ListCustomersQuery = z.infer<typeof listCustomersQuerySchema>;
 

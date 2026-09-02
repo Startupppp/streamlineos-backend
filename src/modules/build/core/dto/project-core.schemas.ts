@@ -50,7 +50,7 @@ export const listProjectsSchema = z.object({
   afterId: idCursorSchema,
   limit: pageSizeField(9),
   pmWorkspaceId: z.string().optional(),
-});
+}).strict();
 
 export const createProjectSchema = z
   .object({
@@ -85,7 +85,7 @@ export const createProjectSchema = z
     workflow: z.string().optional(),
     features: z.record(z.string(), z.boolean()).optional(),
     priority: projectPrioritySchema.optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     refineEndAfterStart(data, ctx);
   });
@@ -105,14 +105,14 @@ export const updateProjectSchema = z
     workflow: z.string().optional(),
     features: z.record(z.string(), z.boolean()).optional(),
     priority: projectPrioritySchema.optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     refineEndAfterStart(data, ctx);
   });
 
 export const updateBudgetSchema = z.object({
   budget: z.number().min(0),
-});
+}).strict();
 
 export const fromDealSchema = z
   .object({
@@ -121,7 +121,7 @@ export const fromDealSchema = z
     description: z.string().optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     refineEndAfterStart(data, ctx);
   });
@@ -129,15 +129,15 @@ export const fromDealSchema = z
 export const addMemberSchema = z.object({
   userId: z.string().min(1),
   role: z.string().default("CONTRIBUTOR"),
-});
+}).strict();
 
 export const removeMemberSchema = z.object({
   userId: z.string().min(1),
-});
+}).strict();
 
 export const updateProjectMemberRoleSchema = z.object({
   role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
-});
+}).strict();
 
 export type UpdateProjectMemberRoleInput = z.infer<
   typeof updateProjectMemberRoleSchema
@@ -145,7 +145,7 @@ export type UpdateProjectMemberRoleInput = z.infer<
 
 export const linkManagedProductSchema = z.object({
   managedProductId: z.number().int().positive().nullable(),
-});
+}).strict();
 
 export type ListProjectsInput = z.infer<typeof listProjectsSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

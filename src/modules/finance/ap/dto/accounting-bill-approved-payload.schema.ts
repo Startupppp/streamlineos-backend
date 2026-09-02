@@ -8,6 +8,6 @@ export const accountingBillApprovedPayloadSchema = z.object({
   actor_user_id: z.string().min(1),
 });
 
-export type AccountingBillApprovedPayload = z.infer<
+type AccountingBillApprovedPayload = z.infer<
   typeof accountingBillApprovedPayloadSchema
 >;

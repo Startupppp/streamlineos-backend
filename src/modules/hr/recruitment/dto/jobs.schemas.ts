@@ -31,7 +31,7 @@ export const jobListSchema = z
     cursor: z.string().optional(),
     pageSize: optionalPageSizeField(),
     limit: optionalPageSizeField(),
-  })
+  }).strict()
   .transform((q) => {
     const pageSize = q.pageSize ?? q.limit ?? 20;
     return {
@@ -78,7 +78,7 @@ export const createJobSchema = z
       .optional(),
     status: z.enum(JOB_STATUSES).optional(),
     screeningQuestions: z.array(screeningQuestionSchema).max(20).optional(),
-  })
+  }).strict()
   .refine(
     (d) => {
       if (d.salaryMin !== undefined && d.salaryMax !== undefined) {
@@ -107,22 +107,22 @@ export const updateJobSchema = z
     openings: z.number().int().positive(),
     applicationDeadline: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)),
     screeningQuestions: z.array(screeningQuestionSchema).max(20),
-  })
+  }).strict()
   .partial();
 export type UpdateJobInput = z.infer<typeof updateJobSchema>;
 
 export const publishJobSchema = z.object({
   platforms: z.array(z.enum(["LINKEDIN", "NAUKRI", "INDEED"])).min(1, "Select at least one platform"),
-});
+}).strict();
 export type PublishJobInput = z.infer<typeof publishJobSchema>;
 
-export const assignRecruiterSchema = z.object({ userId: z.string().min(1) });
+export const assignRecruiterSchema = z.object({ userId: z.string().min(1) }).strict();
 export type AssignRecruiterInput = z.infer<typeof assignRecruiterSchema>;
 
 export const internalApplySchema = z.object({
   coverLetter: z.string().max(5000).optional(),
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 export type InternalApplyInput = z.infer<typeof internalApplySchema>;
 
 const SUPPORTED_PORTALS = ["LINKEDIN", "NAUKRI", "INDEED", "ORGANIC"] as const;
@@ -132,7 +132,7 @@ export const upsertPortalSchema = z.object({
   isActive: z.boolean().default(true),
   oauthToken: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
-});
+}).strict();
 export type UpsertPortalInput = z.infer<typeof upsertPortalSchema>;
 
 export const recruiterActivitySchema = z.object({
@@ -140,11 +140,11 @@ export const recruiterActivitySchema = z.object({
   candidateId: z.number().int().positive().optional(),
   jobPostingId: z.number().int().positive().optional(),
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 export type RecruiterActivityInput = z.infer<typeof recruiterActivitySchema>;
 
 export const recruiterActivityQuerySchema = z.object({
   recruiterId: z.string().optional(),
   limit: pageSizeField(50),
-});
+}).strict();
 export type RecruiterActivityQueryInput = z.infer<typeof recruiterActivityQuerySchema>;

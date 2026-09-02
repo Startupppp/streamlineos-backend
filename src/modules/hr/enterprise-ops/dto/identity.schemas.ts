@@ -6,7 +6,7 @@ export const createProvisioningSchema = z.object({
   systemName: z.string().min(1).max(200),
   action: z.enum(["grant", "revoke", "review"]),
   triggeredBy: z.enum(["joiner", "mover", "leaver", "manual"]),
-});
+}).strict();
 
 export const updateProvisioningSchema = z.object({
   systemName: z.string().min(1).max(200).optional(),
@@ -14,7 +14,7 @@ export const updateProvisioningSchema = z.object({
   status: z.enum(["pending", "completed", "verified", "failed"]).optional(),
   completedAt: z.string().optional(),
   verifiedBy: z.string().uuid().nullable().optional(),
-});
+}).strict();
 
 export const listProvisioningSchema = z.object({
   cursor: z.string().optional(),
@@ -22,7 +22,7 @@ export const listProvisioningSchema = z.object({
   userId: z.string().uuid().optional(),
   triggeredBy: z.enum(["joiner", "mover", "leaver", "manual"]).optional(),
   status: z.enum(["pending", "completed", "verified", "failed"]).optional(),
-});
+}).strict();
 
 const ALPHANUMERIC_RE = /[a-zA-Z0-9]/;
 
@@ -49,7 +49,7 @@ export const createTemplateSchema = z.object({
   systemsConfig: z
     .array(systemConfigItemSchema)
     .min(1, "At least one system is required"),
-});
+}).strict();
 
 export const updateTemplateSchema = z.object({
   name: templateNameSchema.optional(),
@@ -58,16 +58,16 @@ export const updateTemplateSchema = z.object({
     .array(systemConfigItemSchema)
     .min(1, "At least one system is required")
     .optional(),
-});
+}).strict();
 
 export const generateProvisioningSchema = z.object({
   userId: z.string().uuid(),
   triggeredBy: z.enum(["joiner", "mover", "leaver"]),
-});
+}).strict();
 
 export const exitVerificationSchema = z.object({
   userId: z.string().uuid(),
-});
+}).strict();
 
 export type CreateProvisioningInput = z.infer<typeof createProvisioningSchema>;
 export type UpdateProvisioningInput = z.infer<typeof updateProvisioningSchema>;

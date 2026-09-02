@@ -237,7 +237,7 @@ const VOCABULARY: Readonly<Record<ImportEntity, EntityVocabulary>> = {
 
 // ── What the rest of the module asks the registry ──────────────────────────
 
-export function vocabularyOf(entity: ImportEntity): EntityVocabulary {
+function vocabularyOf(entity: ImportEntity): EntityVocabulary {
   return VOCABULARY[entity];
 }
 

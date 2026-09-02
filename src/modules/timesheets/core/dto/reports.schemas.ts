@@ -6,7 +6,7 @@ export const overviewQuerySchema = z.object({
   startDate: dateString.optional(),
   endDate: dateString.optional(),
   userId: z.string().optional(),
-});
+}).strict();
 export type OverviewQuery = z.infer<typeof overviewQuerySchema>;
 
 // Shared range query for the report endpoints. Both dates are optional;
@@ -14,5 +14,5 @@ export type OverviewQuery = z.infer<typeof overviewQuerySchema>;
 export const reportRangeQuerySchema = z.object({
   startDate: dateString.optional(),
   endDate: dateString.optional(),
-});
+}).strict();
 export type ReportRangeQuery = z.infer<typeof reportRangeQuerySchema>;

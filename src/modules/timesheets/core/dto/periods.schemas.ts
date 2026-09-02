@@ -7,5 +7,5 @@ export const periodsQuerySchema = z.object({
     .enum(["OPEN", "DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "LOCKED"])
     .optional(),
   limit: pageSizeField(20),
-});
+}).strict();
 export type PeriodsQuery = z.infer<typeof periodsQuerySchema>;

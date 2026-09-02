@@ -22,7 +22,7 @@ export const listFormsQuerySchema = z.object({
       z.boolean().optional(),
     )
     .optional(),
-});
+}).strict();
 
 export const createFormSchema = z.object({
   name: z.string().min(1).max(500),
@@ -32,7 +32,7 @@ export const createFormSchema = z.object({
   actions: z.array(actionSchema),
   isActive: z.boolean().optional(),
   isPublic: z.boolean().optional(),
-});
+}).strict();
 
 export const updateFormSchema = z.object({
   name: z.string().min(1).max(500).optional(),
@@ -42,16 +42,16 @@ export const updateFormSchema = z.object({
   actions: z.array(actionSchema).optional(),
   isActive: z.boolean().optional(),
   isPublic: z.boolean().optional(),
-});
+}).strict();
 
 export const createSubmissionSchema = z.object({
   values: z.record(z.string(), z.unknown()),
   submittedByName: z.string().optional(),
-});
+}).strict();
 
 export const updateSubmissionSchema = z.object({
   status: z.enum(formSubmissionStatusEnum.enumValues),
-});
+}).strict();
 
 export type ListFormsQuery = z.infer<typeof listFormsQuerySchema>;
 export type CreateFormInput = z.infer<typeof createFormSchema>;

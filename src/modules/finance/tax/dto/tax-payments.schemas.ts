@@ -8,7 +8,7 @@ export const listTaxPaymentsQuerySchema = z.object({
   taxType: z.enum(["GST", "CGST_SGST", "IGST", "VAT", "TDS", "TCS", "EXEMPT", "ZERO_RATED"]).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-});
+}).strict();
 
 export const createTaxPaymentSchema = z.object({
   taxType: z.enum(["GST", "CGST_SGST", "IGST", "VAT", "TDS", "TCS", "EXEMPT", "ZERO_RATED"]),
@@ -18,7 +18,7 @@ export const createTaxPaymentSchema = z.object({
   paidDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   reference: z.string().min(1).max(200),
   notes: z.string().max(1000).optional(),
-});
+}).strict();
 
 export type ListTaxPaymentsQuery = z.infer<typeof listTaxPaymentsQuerySchema>;
 export type CreateTaxPaymentInput = z.infer<typeof createTaxPaymentSchema>;

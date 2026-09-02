@@ -12,7 +12,6 @@ import type {
   CompareForecastSnapshotsInput,
   ForecastSnapshotsQueryInput,
 } from "./dto/deals.schemas";
-export type { ForecastMonth, ForecastSummary } from "./deals-forecast.service";
 
 @Injectable()
 export class DealsAnalyticsService {

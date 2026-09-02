@@ -17,9 +17,9 @@ export const createAutomationSchema = z.object({
     scoreThreshold: z.number().optional(),
     config: z.record(z.string(), z.unknown()).optional(),
   }),
-});
+}).strict();
 
-export const patchAutomationSchema = createAutomationSchema.partial();
+export const patchAutomationSchema = createAutomationSchema.partial().strict();
 
 export type CreateAutomationInput = z.infer<typeof createAutomationSchema>;
 export type PatchAutomationInput = z.infer<typeof patchAutomationSchema>;

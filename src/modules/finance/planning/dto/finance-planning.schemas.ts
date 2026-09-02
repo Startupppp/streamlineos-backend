@@ -8,7 +8,7 @@ export const listBudgetsQuerySchema = z.object({
   limit: pageSizeField(20, 100),
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "ARCHIVED"]).optional(),
   fiscalYear: z.string().max(10).optional(),
-});
+}).strict();
 export type ListBudgetsQuery = z.infer<typeof listBudgetsQuerySchema>;
 
 export const createBudgetSchema = z.object({
@@ -16,13 +16,13 @@ export const createBudgetSchema = z.object({
   fiscalYear: z.string().min(4).max(10),
   periodType: z.enum(["MONTHLY", "QUARTERLY", "YEARLY"]).default("MONTHLY"),
   dimensionType: z.enum(["NONE", "DEPARTMENT", "PROJECT"]).default("NONE"),
-});
+}).strict();
 export type CreateBudgetInput = z.infer<typeof createBudgetSchema>;
 
 export const updateBudgetSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   dimensionType: z.enum(["NONE", "DEPARTMENT", "PROJECT"]).optional(),
-});
+}).strict();
 export type UpdateBudgetInput = z.infer<typeof updateBudgetSchema>;
 
 export const budgetLineSchema = z.object({
@@ -36,31 +36,31 @@ export const budgetLineSchema = z.object({
 export const replaceBudgetLinesSchema = z.object({
   lines: z.array(budgetLineSchema).max(5000),
   note: z.string().max(500).optional(),
-});
+}).strict();
 export type ReplaceBudgetLinesInput = z.infer<typeof replaceBudgetLinesSchema>;
 
 export const budgetWorkflowSchema = z.object({
   note: z.string().max(500).optional(),
-});
+}).strict();
 export type BudgetWorkflowInput = z.infer<typeof budgetWorkflowSchema>;
 
 export const duplicateBudgetSchema = z.object({
   newFiscalYear: z.string().min(4).max(10),
   newName: z.string().min(1).max(200),
   upliftPct: z.number().min(-100).max(200).default(0),
-});
+}).strict();
 export type DuplicateBudgetInput = z.infer<typeof duplicateBudgetSchema>;
 
 export const bvaQuerySchema = z.object({
   from: isoDate.optional(),
   to: isoDate.optional(),
-});
+}).strict();
 export type BvaQuery = z.infer<typeof bvaQuerySchema>;
 
 export const forecastQuerySchema = z.object({
   weeks: z.coerce.number().int().min(1).max(52).default(13),
   scenarioId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 export type ForecastQuery = z.infer<typeof forecastQuerySchema>;
 
 export const compareScenariosQuerySchema = z.object({
@@ -68,7 +68,7 @@ export const compareScenariosQuerySchema = z.object({
     (v) => (typeof v === "string" ? v.split(",").map(Number) : v),
     z.array(z.number().int().positive()).min(2).max(5),
   ),
-});
+}).strict();
 export type CompareScenariosQuery = z.infer<typeof compareScenariosQuerySchema>;
 
 export const plannedSpendItemSchema = z.object({
@@ -91,12 +91,12 @@ export const createScenarioSchema = z.object({
   kind: z.enum(["CONSERVATIVE", "EXPECTED", "AGGRESSIVE", "CUSTOM"]).default("CUSTOM"),
   isDefault: z.boolean().default(false),
   assumptions: scenarioAssumptionsSchema.optional(),
-});
+}).strict();
 export type CreateScenarioInput = z.infer<typeof createScenarioSchema>;
 
 export const updateScenarioSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   isDefault: z.boolean().optional(),
   assumptions: scenarioAssumptionsSchema.optional(),
-});
+}).strict();
 export type UpdateScenarioInput = z.infer<typeof updateScenarioSchema>;

@@ -55,6 +55,7 @@ const MEASURED_PAIRS = [
   ["measuredDownstreamCalls", "maxDownstreamCalls"],
   ["measuredResponseBytes", "maxResponseBytes"],
   ["measuredMemoryMb", "maxMemoryMb"],
+  ["measuredBufferBlocks", "maxBufferBlocks"],
 ];
 
 function buildLiveKeySet(document) {
@@ -79,6 +80,12 @@ export function findMalformedBudgetEntries(manifest) {
       const val = entry[field];
       if (typeof val !== "number" || val < 0 || !Number.isInteger(val)) {
         violations.push({ key, field, value: val, issue: `${field} must be a non-negative integer, got ${JSON.stringify(val)}` });
+      }
+    }
+    const bufferBlocks = entry["maxBufferBlocks"];
+    if (bufferBlocks !== undefined && bufferBlocks !== null) {
+      if (typeof bufferBlocks !== "number" || bufferBlocks < 0 || !Number.isInteger(bufferBlocks)) {
+        violations.push({ key, field: "maxBufferBlocks", value: bufferBlocks, issue: `maxBufferBlocks must be a non-negative integer when present, got ${JSON.stringify(bufferBlocks)}` });
       }
     }
   }
@@ -159,6 +166,35 @@ if (SELF_TEST) {
   if (nullMeasured.length !== 0)
     fail("null-measured-skipped", `expected 0 violations for null measured, got ${nullMeasured.length}`);
   else pass("null-measured-skipped — null measured values are skipped (not yet profiled)");
+
+  const bufferExceeded = findExceededBudgets({ defaults: {}, budgets: { "GET /projects": {
+    maxDbCalls: 5, maxBufferBlocks: 8000, measuredBufferBlocks: 9500,
+  }}});
+  if (bufferExceeded.length !== 1 || !bufferExceeded[0].issue.includes("exceeds"))
+    fail("buffer-exceeded-bites", `expected 1 buffer violation, got ${JSON.stringify(bufferExceeded)}`);
+  else pass("buffer-exceeded-bites — measuredBufferBlocks > maxBufferBlocks is detected");
+
+  const bufferOk = findExceededBudgets({ defaults: {}, budgets: { "GET /projects": {
+    maxDbCalls: 5, maxBufferBlocks: 8000, measuredBufferBlocks: 7200,
+  }}});
+  if (bufferOk.length !== 0)
+    fail("buffer-within-passes", `expected 0 buffer violations for measured < max, got ${JSON.stringify(bufferOk)}`);
+  else pass("buffer-within-passes — measuredBufferBlocks ≤ maxBufferBlocks produces no violation");
+
+  const bufferMalformed = findMalformedBudgetEntries({ budgets: { "GET /projects": {
+    maxDbCalls: 5, maxDownstreamCalls: 0, maxResponseBytes: 131072, maxLatencyP95Ms: 500, maxMemoryMb: 64,
+    maxBufferBlocks: -1,
+  }}});
+  if (bufferMalformed.length !== 1 || bufferMalformed[0].field !== "maxBufferBlocks")
+    fail("buffer-negative-malformed", `expected 1 malformed for maxBufferBlocks=-1, got ${JSON.stringify(bufferMalformed)}`);
+  else pass("buffer-negative-malformed — negative maxBufferBlocks is flagged as malformed");
+
+  const bufferAbsent = findMalformedBudgetEntries({ budgets: { "GET /projects": {
+    maxDbCalls: 5, maxDownstreamCalls: 0, maxResponseBytes: 131072, maxLatencyP95Ms: 500, maxMemoryMb: 64,
+  }}});
+  if (bufferAbsent.length !== 0)
+    fail("buffer-absent-passes", `expected 0 malformed when maxBufferBlocks absent, got ${JSON.stringify(bufferAbsent)}`);
+  else pass("buffer-absent-passes — omitting maxBufferBlocks (optional) produces no malformed violation");
 
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");

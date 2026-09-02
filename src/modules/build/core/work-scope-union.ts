@@ -111,7 +111,7 @@ export function readIds(rows: Record<string, unknown>[]): number[] {
   return rows.map((row) => Number(row["id"]));
 }
 
-export function readIdsAndTotal(rows: Record<string, unknown>[]): {
+function readIdsAndTotal(rows: Record<string, unknown>[]): {
   ids: number[];
   total: number;
 } {

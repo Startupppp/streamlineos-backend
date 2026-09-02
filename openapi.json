@@ -39451,7 +39451,8 @@
                 "required": [
                   "date",
                   "hours"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -46864,7 +46865,8 @@
                   "description": {
                     "type": "string"
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -47042,7 +47044,8 @@
                   "reason": {
                     "type": "string"
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -73333,6 +73336,79 @@
         "x-bodyless": true
       }
     },
+    "/cron/notification-outbox-retention-sweep": {
+      "get": {
+        "operationId": "CronNotificationsController_getNotificationOutboxRetentionSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronNotifications"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronNotificationsController_postNotificationOutboxRetentionSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronNotifications"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
+      }
+    },
     "/cron/notification-time-sweeps": {
       "get": {
         "operationId": "CronNotificationsController_getNotificationTimeSweeps",
@@ -73910,6 +73986,79 @@
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated"
+      }
+    },
+    "/cron/outbox-events-retention-sweep": {
+      "get": {
+        "operationId": "CronOutboxController_getOutboxEventsRetentionSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronOutbox"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronOutboxController_postOutboxEventsRetentionSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronOutbox"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/outbox-events-worker": {
@@ -106128,7 +106277,8 @@
                   "category",
                   "amount",
                   "expenseDate"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -106208,7 +106358,8 @@
                     },
                     "required": [
                       "status"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   {
                     "type": "object",
@@ -106437,7 +106588,8 @@
                     "type": "string",
                     "maxLength": 1000
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -174424,7 +174576,8 @@
                   "category",
                   "amount",
                   "expenseDate"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -205764,6 +205917,63 @@
     "/public/kb/ask": {
       "post": {
         "operationId": "KbRagController_ask",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "KbRag"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "org",
+                  "question"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/kb/stream-ask": {
+      "post": {
+        "operationId": "KbRagController_streamAsk",
         "parameters": [],
         "responses": {
           "200": {
@@ -241096,7 +241306,8 @@
                 "completed",
                 "failed",
                 "cancelled",
-                "timed_out"
+                "timed_out",
+                "dead_lettered"
               ]
             }
           }
@@ -242071,7 +242282,8 @@
                 "completed",
                 "failed",
                 "cancelled",
-                "timed_out"
+                "timed_out",
+                "dead_lettered"
               ]
             }
           }

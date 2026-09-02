@@ -5,8 +5,7 @@ import { PIPELINE_WRITER } from "./pipeline.writer";
 import { SUBJECT_WRITER } from "./subject.writer";
 import type { EntityWriter } from "./entity-writer";
 
-export type { EntityWriter, PlannedValues, UpdatePath, WriteContext } from "./entity-writer";
-export { requiresSubjectType } from "./entity-writer";
+export type { EntityWriter, WriteContext } from "./entity-writer";
 
 /**
  * Every writer, as one exhaustive record.

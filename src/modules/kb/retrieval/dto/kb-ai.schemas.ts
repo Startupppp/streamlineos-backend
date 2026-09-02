@@ -6,19 +6,19 @@ export const searchSchema = z.object({
   spaceId: z.coerce.number().int().positive().optional(),
   page: pageNumberField,
   pageSize: pageSizeField(20, 50),
-});
+}).strict();
 export type SearchInput = z.infer<typeof searchSchema>;
 
 export const askSchema = z.object({
   question: z.string().trim().min(3).max(1000),
   spaceId: z.coerce.number().int().positive().optional(),
   conversationId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 export type AskInput = z.infer<typeof askSchema>;
 
 export const kbAiAskBodySchema = z.object({
   question: z.string().trim().min(3).max(500),
-});
+}).strict();
 
 export const chatHistoryQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
@@ -27,11 +27,11 @@ export const chatHistoryQuerySchema = z.object({
 
 export const kbConversationCreateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
-});
+}).strict();
 
 export const kbConversationRenameSchema = z.object({
   title: z.string().trim().min(1).max(200),
-});
+}).strict();
 
 export const kbConversationsListQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
@@ -53,7 +53,7 @@ export type KbAiFeedbackInput = z.infer<typeof kbAiFeedbackSchema>;
 export const kbResearchBriefCreateSchema = z.object({
   topic: z.string().trim().min(3).max(300),
   spaceId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 export type KbResearchBriefCreateInput = z.infer<typeof kbResearchBriefCreateSchema>;
 
 export const kbResearchBriefListSchema = z.object({
@@ -64,4 +64,4 @@ export type KbResearchBriefListInput = z.infer<typeof kbResearchBriefListSchema>
 
 export const kbResearchBriefRateSchema = z.object({
   rating: z.enum(["helpful", "not_helpful"]),
-});
+}).strict();

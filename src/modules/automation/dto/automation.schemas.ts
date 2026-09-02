@@ -3,7 +3,7 @@ import { pageNumberField, pageSizeField } from "../../../common/pagination/list-
 
 export const testAutomationSchema = z.object({
   payload: z.record(z.string(), z.unknown()).default({}),
-});
+}).strict();
 
 export type TestAutomationInput = z.infer<typeof testAutomationSchema>;
 
@@ -106,7 +106,7 @@ export const createAutomationRuleSchema = z.object({
   conditions: z.array(automationConditionSchema).default([]),
   actions: z.array(automationActionSchema).default([]),
   isEnabled: z.boolean().default(true),
-});
+}).strict();
 
 export const updateAutomationRuleSchema = z.object({
   name: z.string().trim().min(1).max(150).optional(),
@@ -115,12 +115,12 @@ export const updateAutomationRuleSchema = z.object({
   conditions: z.array(automationConditionSchema).optional(),
   actions: z.array(automationActionSchema).optional(),
   isEnabled: z.boolean().optional(),
-});
+}).strict();
 
 export const listSupportAutomationsQuerySchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export type CreateAutomationRuleInput = z.infer<typeof createAutomationRuleSchema>;
 export type UpdateAutomationRuleInput = z.infer<typeof updateAutomationRuleSchema>;

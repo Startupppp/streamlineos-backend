@@ -11,9 +11,9 @@ export const createWorkAuthSchema = z.object({
   validUntil: z.string().optional(),
   status: z.enum(["active", "expiring", "expired", "pending_renewal"]).default("active"),
   note: z.string().max(1000).optional(),
-});
+}).strict();
 
-export const updateWorkAuthSchema = createWorkAuthSchema.partial().omit({ employmentId: true });
+export const updateWorkAuthSchema = createWorkAuthSchema.partial().omit({ employmentId: true }).strict();
 
 export const listWorkAuthSchema = z.object({
   cursor: z.string().optional(),
@@ -21,7 +21,7 @@ export const listWorkAuthSchema = z.object({
   employmentId: z.coerce.number().int().positive().optional(),
   status: z.enum(["active", "expiring", "expired", "pending_renewal"]).optional(),
   days: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 
 export const createComplianceRequirementSchema = z.object({
   name: z.string().min(1).max(200),
@@ -36,9 +36,9 @@ export const createComplianceRequirementSchema = z.object({
   }),
   reminderDaysBefore: z.number().int().min(0).max(365).default(7),
   active: z.boolean().default(true),
-});
+}).strict();
 
-export const updateComplianceRequirementSchema = createComplianceRequirementSchema.partial();
+export const updateComplianceRequirementSchema = createComplianceRequirementSchema.partial().strict();
 
 export const listComplianceRequirementSchema = z.object({
   cursor: z.string().optional(),
@@ -46,7 +46,7 @@ export const listComplianceRequirementSchema = z.object({
   countryCode: z.string().optional(),
   category: z.enum(["statutory_filing", "registration", "posting", "training", "audit", "other"]).optional(),
   active: queryBoolean.optional(),
-});
+}).strict();
 
 export const listComplianceEventsSchema = z.object({
   cursor: z.string().optional(),
@@ -55,16 +55,16 @@ export const listComplianceEventsSchema = z.object({
   status: z.enum(["pending", "done", "overdue"]).optional(),
   from: z.string().optional(),
   to: z.string().optional(),
-});
+}).strict();
 
 export const markEventDoneSchema = z.object({
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 
 export const seedCountryPackSchema = z.object({
   country: z.string().min(2).max(10),
   year: z.coerce.number().int().min(2020).max(2040).optional(),
-});
+}).strict();
 
 export const createContractSchema = z.object({
   employmentId: z.number().int().positive(),
@@ -77,9 +77,9 @@ export const createContractSchema = z.object({
   timesheetBased: z.boolean().default(false),
   status: z.enum(["active", "expiring", "ended", "renewed", "converted"]).default("active"),
   documentUrl: z.string().url().optional(),
-});
+}).strict();
 
-export const updateContractSchema = createContractSchema.partial().omit({ employmentId: true });
+export const updateContractSchema = createContractSchema.partial().omit({ employmentId: true }).strict();
 
 export const listContractsSchema = z.object({
   cursor: z.string().optional(),
@@ -87,16 +87,16 @@ export const listContractsSchema = z.object({
   contractType: z.enum(["contractor", "consultant", "intern", "temporary", "agency", "freelancer"]).optional(),
   status: z.enum(["active", "expiring", "ended", "renewed", "converted"]).optional(),
   days: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 
 export const endContractSchema = z.object({
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 
 export const convertToEmployeeSchema = z.object({
   effectiveDate: z.string().optional(),
   notes: z.string().max(2000).optional(),
-});
+}).strict();
 
 export type CreateWorkAuthInput = z.infer<typeof createWorkAuthSchema>;
 export type UpdateWorkAuthInput = z.infer<typeof updateWorkAuthSchema>;

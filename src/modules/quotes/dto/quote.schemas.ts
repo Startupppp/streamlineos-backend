@@ -14,11 +14,11 @@ export const listSchema = z.object({
   search: z.string().optional(),
   cursor: z.string().optional(),
   pageSize: pageSizeField(25),
-});
+}).strict();
 
 export const exportSchema = z.object({
   status: z.enum(["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"]).optional(),
-});
+}).strict();
 
 export const createSchema = z.object({
   dealId: z.number().int().positive().optional(),
@@ -33,7 +33,7 @@ export const createSchema = z.object({
   templateId: z.string().optional(),
   discountPercent: z.number().min(0).max(100).optional(),
   lineItems: z.array(lineItemSchema).min(1),
-});
+}).strict();
 
 export const updateSchema = z.object({
   subject: z.string().min(1).optional(),
@@ -47,14 +47,14 @@ export const updateSchema = z.object({
   templateId: z.string().optional(),
   discountPercent: z.number().min(0).max(100).optional(),
   lineItems: z.array(lineItemSchema).optional(),
-});
+}).strict();
 
 export const approveRejectSchema = z.object({
   reason: z.string().optional(),
-});
+}).strict();
 export const markSignedSchema = z.object({
   documentRef: z.string().optional(),
-});
+}).strict();
 
 export type ListInput = z.infer<typeof listSchema>;
 export type ExportInput = z.infer<typeof exportSchema>;

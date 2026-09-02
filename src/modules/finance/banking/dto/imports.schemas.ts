@@ -21,13 +21,13 @@ export const createBankImportSchema = z.object({
   rows: z.array(z.array(z.string())).min(1).max(2000),
   dateFormat: z.string().min(1).max(50).default("YYYY-MM-DD"),
   hasHeaderRow: z.boolean().default(false),
-});
+}).strict();
 
 export const bankImportsQuerySchema = z.object({
   bankAccountId: z.coerce.number().int().positive().optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export type CreateBankImportInput = z.infer<typeof createBankImportSchema>;
 export type BankImportsQuery = z.infer<typeof bankImportsQuerySchema>;

@@ -20,7 +20,7 @@ export const listPartiesQuerySchema = z.object({
   // `partyKind=ORGANISATION`, which is what makes it one list rather than two.
   partyKind: z.enum(partyKindValues).optional(),
   search: z.string().optional(),
-});
+}).strict();
 
 export const createPartySchema = z.object({
   name: z.string().min(1).max(255),
@@ -34,7 +34,7 @@ export const createPartySchema = z.object({
   phone: z.string().max(50).optional(),
   website: z.string().url().optional(),
   notes: z.string().optional(),
-});
+}).strict();
 
 export const updatePartySchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -49,7 +49,7 @@ export const updatePartySchema = z.object({
   website: z.string().url().nullish(),
   notes: z.string().nullish(),
   status: z.string().max(50).optional(),
-});
+}).strict();
 
 export const createContactSchema = z.object({
   partyId: z.string().uuid(),
@@ -59,7 +59,7 @@ export const createContactSchema = z.object({
   phone: z.string().max(50).optional(),
   title: z.string().max(255).optional(),
   isPrimary: z.boolean().optional(),
-});
+}).strict();
 
 export const updateContactSchema = z.object({
   firstName: z.string().min(1).max(255).optional(),
@@ -68,7 +68,7 @@ export const updateContactSchema = z.object({
   phone: z.string().max(50).nullish(),
   title: z.string().max(255).nullish(),
   isPrimary: z.boolean().optional(),
-});
+}).strict();
 
 /**
  * The mirror check's scan window.
@@ -82,7 +82,7 @@ export const mirrorDivergenceQuerySchema = z
     kind: z.enum(["LEAD", "CLIENT", "CONTACT", "ORGANISATION"]).optional(),
     limit: pageSizeField(200),
     after: z.coerce.number().int().min(0).default(0),
-  })
+  }).strict()
   .refine((query) => query.after === 0 || query.kind !== undefined, {
     message: "after resumes a single kind's scan and requires kind",
     path: ["after"],

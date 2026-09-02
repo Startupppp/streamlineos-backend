@@ -37,7 +37,7 @@ export const revenueEventPayloadSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 
-export type RevenueEventPayload = z.infer<typeof revenueEventPayloadSchema>;
+type RevenueEventPayload = z.infer<typeof revenueEventPayloadSchema>;
 
 export interface PlanChange {
   type: RevenueEventType;

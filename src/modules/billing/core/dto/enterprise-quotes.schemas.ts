@@ -29,5 +29,5 @@ export const listEnterpriseQuotesSchema = z.object({
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"]).optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(20),
-});
+}).strict();
 export type ListEnterpriseQuotesQuery = z.infer<typeof listEnterpriseQuotesSchema>;

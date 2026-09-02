@@ -8,7 +8,7 @@ export const createCustomFieldSchema = z.object({
   options: z.array(z.string()).optional().nullable(),
   required: z.boolean().default(false),
   position: z.number().int().default(0),
-});
+}).strict();
 
 export const updateCustomFieldSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -16,7 +16,7 @@ export const updateCustomFieldSchema = z.object({
   options: z.array(z.string()).optional().nullable(),
   required: z.boolean().optional(),
   position: z.number().int().optional(),
-});
+}).strict();
 
 export const upsertCustomFieldValueSchema = z.object({
   fieldId: z.number().int(),
@@ -25,7 +25,7 @@ export const upsertCustomFieldValueSchema = z.object({
 
 export const upsertCustomFieldValuesSchema = z.object({
   values: z.array(upsertCustomFieldValueSchema),
-});
+}).strict();
 
 export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;
 export type UpdateCustomFieldInput = z.infer<typeof updateCustomFieldSchema>;

@@ -15,7 +15,7 @@ export const updateSettingsSchema = z.object({
   allowPartialShipment: z.boolean().optional(),
   packageRequiredForShipping: z.boolean().optional(),
   channelPublishPolicy: z.string().nullable().optional(),
-});
+}).strict();
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 
@@ -23,6 +23,6 @@ export const updateNumberSequenceSchema = z.object({
   prefix: z.string().min(1).optional(),
   padding: z.number().int().min(1).max(10).optional(),
   nextNumber: z.number().int().min(1).optional(),
-});
+}).strict();
 
 export type UpdateNumberSequenceInput = z.infer<typeof updateNumberSequenceSchema>;

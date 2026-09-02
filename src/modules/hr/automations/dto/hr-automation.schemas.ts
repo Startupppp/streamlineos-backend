@@ -106,7 +106,7 @@ export const createHrAutomationRuleSchema = z.object({
   conditions: z.array(conditionSchema).default([]),
   actions: z.array(hrAutomationActionSchema).min(1, "At least one action is required"),
   isEnabled: z.boolean().default(true),
-});
+}).strict();
 
 export const updateHrAutomationRuleSchema = z.object({
   name: z.string().trim().min(1).max(150).optional(),
@@ -115,11 +115,11 @@ export const updateHrAutomationRuleSchema = z.object({
   conditions: z.array(conditionSchema).optional(),
   actions: z.array(hrAutomationActionSchema).optional(),
   isEnabled: z.boolean().optional(),
-});
+}).strict();
 
 export const testHrAutomationSchema = z.object({
   payload: z.record(z.string(), z.unknown()).default({}),
-});
+}).strict();
 
 export const toggleHrAutomationRuleSchema = z.object({ isEnabled: z.boolean() }).strict();
 export type ToggleHrAutomationRuleInput = z.infer<typeof toggleHrAutomationRuleSchema>;
@@ -127,7 +127,7 @@ export type ToggleHrAutomationRuleInput = z.infer<typeof toggleHrAutomationRuleS
 export const listRunsSchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 
 export type CreateHrAutomationRuleInput = z.infer<typeof createHrAutomationRuleSchema>;
 export type UpdateHrAutomationRuleInput = z.infer<typeof updateHrAutomationRuleSchema>;

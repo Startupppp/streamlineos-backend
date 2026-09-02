@@ -5,7 +5,7 @@ export const campaignListSchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 50),
   status: z.string().optional(),
-});
+}).strict();
 
 /**
  * Every optional field is `.nullish()`, not `.optional()`. The columns are

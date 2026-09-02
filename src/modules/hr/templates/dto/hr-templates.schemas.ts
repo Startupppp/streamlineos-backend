@@ -56,7 +56,7 @@ export const createTemplateSchema = z.object({
   content: z.record(z.string(), z.unknown()).default({}),
   variablesUsed: z.array(z.string()).optional(),
   letterType: z.enum(HR_LETTER_TYPES).optional(),
-});
+}).strict();
 
 export const updateTemplateSchema = z.object({
   name: hrTemplateNameSchema.optional(),
@@ -64,17 +64,17 @@ export const updateTemplateSchema = z.object({
   content: z.record(z.string(), z.unknown()).optional(),
   variablesUsed: z.array(z.string()).optional(),
   letterType: z.enum(HR_LETTER_TYPES).optional(),
-});
+}).strict();
 
 export const transitionTemplateSchema = z.object({
   to: z.enum(HR_TEMPLATE_STATUSES),
-});
+}).strict();
 
 export const renderTemplateSchema = z.object({
   employeeId: z.number().int().positive().optional(),
   extraContext: z.record(z.string(), z.string()).optional(),
   includeSensitive: z.boolean().default(false),
-});
+}).strict();
 
 export const templateListQuerySchema = z.object({
   kind: z.enum(HR_TEMPLATE_KINDS).optional(),
@@ -82,7 +82,7 @@ export const templateListQuerySchema = z.object({
   search: z.string().max(100).optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(50, 100),
-});
+}).strict();
 
 export const templateRendersQuerySchema = z
   .object({

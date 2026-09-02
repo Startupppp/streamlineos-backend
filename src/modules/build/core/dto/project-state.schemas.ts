@@ -20,7 +20,7 @@ export const createStateSchema = z.object({
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
   order: z.number().int().min(0).optional(),
   type: projectStatusTypeSchema.optional(),
-});
+}).strict();
 
 export const updateCustomStateSchema = z.object({
   name: columnNameSchema.optional(),
@@ -30,12 +30,12 @@ export const updateCustomStateSchema = z.object({
     .optional(),
   order: z.number().int().min(0).optional(),
   type: projectStatusTypeSchema.optional(),
-});
+}).strict();
 
 export const createLabelSchema = z.object({
   name: z.string().min(1, "Label name is required"),
   color: z.string().optional(),
-});
+}).strict();
 
 export const updateLabelSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -43,7 +43,7 @@ export const updateLabelSchema = z.object({
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/)
     .optional(),
-});
+}).strict();
 
 export const bulkReorderStatesSchema = z
   .object({

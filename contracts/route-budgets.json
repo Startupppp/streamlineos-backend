@@ -16,8 +16,11 @@
       "maxResponseBytes": 131072,
       "maxLatencyP95Ms": 500,
       "maxMemoryMb": 64,
+      "maxBufferBlocks": 8000,
       "measuredDbCalls": null,
       "measuredLatencyP95Ms": null,
+      "measuredBufferBlocks": null,
+      "readCostBudgetId": "ticket-list-project",
       "note": "Primary ticket list — high traffic, must be cheap"
     },
     "GET /me/access": {
@@ -36,8 +39,11 @@
       "maxResponseBytes": 262144,
       "maxLatencyP95Ms": 600,
       "maxMemoryMb": 64,
+      "maxBufferBlocks": 8000,
       "measuredDbCalls": null,
       "measuredLatencyP95Ms": null,
+      "measuredBufferBlocks": null,
+      "readCostBudgetId": "employee-record-list-canonical",
       "note": "HR employee list — org-scoped, paginated"
     },
     "GET /notifications": {
@@ -46,8 +52,11 @@
       "maxResponseBytes": 65536,
       "maxLatencyP95Ms": 300,
       "maxMemoryMb": 32,
+      "maxBufferBlocks": 5000,
       "measuredDbCalls": null,
       "measuredLatencyP95Ms": null,
+      "measuredBufferBlocks": null,
+      "readCostBudgetId": "notifications-list",
       "note": "Notification list — called frequently from shell; must be very fast"
     },
     "GET /contacts": {

@@ -12,4 +12,4 @@ export const invoiceReminderPayloadSchema = z.object({
   targetUserIds: z.array(z.string().min(1)).min(1).max(100),
 });
 
-export type InvoiceReminderPayload = z.infer<typeof invoiceReminderPayloadSchema>;
+type InvoiceReminderPayload = z.infer<typeof invoiceReminderPayloadSchema>;
