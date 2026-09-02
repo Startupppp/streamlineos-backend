@@ -60,6 +60,7 @@ function buildService() {
   };
   const noop = { buildTools: jest.fn().mockReturnValue({}) };
   const usageSvc = { track: jest.fn().mockResolvedValue(undefined) } as unknown as jest.Mocked<AiUsageService>;
+  const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
 
   const svc = new ChatAssistantService(
     {} as never,
@@ -77,6 +78,8 @@ function buildService() {
     { get: jest.fn().mockReturnValue({ ask: jest.fn() }) } as never,
     usageSvc,
     makeLedger(),
+    null,
+    limiterStub as never,
   );
 
   jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
@@ -178,6 +181,8 @@ describe("ChatAssistantService — circuit breaker Redis integration (item 2)", 
       release: jest.fn().mockResolvedValue(undefined),
     };
 
+    const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+
     const svc = new ChatAssistantService(
       {} as never,
       { ask: jest.fn(), summarize: jest.fn() } as never,
@@ -195,6 +200,7 @@ describe("ChatAssistantService — circuit breaker Redis integration (item 2)", 
       usageSvc,
       ledger as never,
       redis as never,
+      limiterStub as never,
     );
 
     jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);

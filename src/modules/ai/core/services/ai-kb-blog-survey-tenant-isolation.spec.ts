@@ -89,11 +89,13 @@ describe("KbRagService tenant isolation", () => {
       mockDb as unknown as ConstructorParameters<typeof KbRagRetrievalService>[0],
       mockGateway as unknown as ConstructorParameters<typeof KbRagRetrievalService>[1],
     );
+    const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
     const svc = new KbRagService(
       retrievalSvc,
       mockGateway as unknown as ConstructorParameters<typeof KbRagService>[1],
       mockLedger as unknown as ConstructorParameters<typeof KbRagService>[2],
       mockUsageSvc as unknown as ConstructorParameters<typeof KbRagService>[3],
+      limiterStub as never,
     );
 
     const result = await svc.answerQuestion({ orgId: OWNER_ORG, question: "What is X?" });
@@ -142,11 +144,13 @@ describe("KbRagService tenant isolation", () => {
       mockDb as unknown as ConstructorParameters<typeof KbRagRetrievalService>[0],
       mockGateway as unknown as ConstructorParameters<typeof KbRagRetrievalService>[1],
     );
+    const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
     const svc = new KbRagService(
       retrievalSvc,
       mockGateway as unknown as ConstructorParameters<typeof KbRagService>[1],
       mockLedger as unknown as ConstructorParameters<typeof KbRagService>[2],
       mockUsageSvc as unknown as ConstructorParameters<typeof KbRagService>[3],
+      limiterStub as never,
     );
 
     const result = await svc.answerQuestion({ orgId: OWNER_ORG, question: "What is X?" });

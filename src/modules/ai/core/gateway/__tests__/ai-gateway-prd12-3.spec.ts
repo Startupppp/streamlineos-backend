@@ -382,19 +382,23 @@ describe("KbRagService — unauthorized document chunks never reach the model co
     const mockUsageSvc = { track: jest.fn() };
 
     const { KbRagService } = await import("../../services/kb-rag.service");
+    const { KbRagRetrievalService } = await import("../../services/kb-rag-retrieval.service");
     const { DRIZZLE } = await import("../../../../../db/drizzle.constants");
     const { AiGatewayService } = await import("../ai-gateway.service");
     const { AI_CREDIT_LEDGER } = await import("../credit-ledger.interface");
     const { AiUsageService } = await import("../../services/ai-usage.service");
+    const { AiConcurrencyLimiter } = await import("../ai-concurrency-limiter");
     const { Test } = await import("@nestjs/testing");
 
     const module = await Test.createTestingModule({
       providers: [
         KbRagService,
+        KbRagRetrievalService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AiGatewayService, useValue: mockGateway },
         { provide: AI_CREDIT_LEDGER, useValue: mockLedger },
         { provide: AiUsageService, useValue: mockUsageSvc },
+        { provide: AiConcurrencyLimiter, useValue: { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() } },
       ],
     }).compile();
 
@@ -428,19 +432,23 @@ describe("KbRagService — unauthorized document chunks never reach the model co
     const mockUsageSvc = { track: jest.fn() };
 
     const { KbRagService } = await import("../../services/kb-rag.service");
+    const { KbRagRetrievalService } = await import("../../services/kb-rag-retrieval.service");
     const { DRIZZLE } = await import("../../../../../db/drizzle.constants");
     const { AiGatewayService } = await import("../ai-gateway.service");
     const { AI_CREDIT_LEDGER } = await import("../credit-ledger.interface");
     const { AiUsageService } = await import("../../services/ai-usage.service");
+    const { AiConcurrencyLimiter } = await import("../ai-concurrency-limiter");
     const { Test } = await import("@nestjs/testing");
 
     const module = await Test.createTestingModule({
       providers: [
         KbRagService,
+        KbRagRetrievalService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AiGatewayService, useValue: mockGateway },
         { provide: AI_CREDIT_LEDGER, useValue: mockLedger },
         { provide: AiUsageService, useValue: mockUsageSvc },
+        { provide: AiConcurrencyLimiter, useValue: { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() } },
       ],
     }).compile();
 

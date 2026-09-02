@@ -22,6 +22,7 @@ import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiUsageService } from "./ai-usage.service";
 import { AI_CREDIT_LEDGER } from "../gateway/credit-ledger.interface";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
 
 const makeGatewayOk = (text: string) => ({
   ok: true as const,
@@ -116,6 +117,7 @@ describe("KbRagService", () => {
         { provide: AiGatewayService, useValue: mockGateway },
         { provide: AI_CREDIT_LEDGER, useValue: mockLedger },
         { provide: AiUsageService, useValue: mockUsageSvc },
+        { provide: AiConcurrencyLimiter, useValue: { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() } },
       ],
     }).compile();
     service = module.get(KbRagService);
@@ -260,5 +262,168 @@ describe("KbRagService", () => {
         expect.objectContaining({ charge: true }),
       );
     });
+  });
+});
+
+describe("KbRagService — streamAnswer with context: credit reserve precedes streamText", () => {
+  const mockedStreamText = jest.mocked(streamText);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb.limit.mockResolvedValue([chunkRow]);
+    mockGateway.embedQueryWithCredit.mockResolvedValue(makeEmbedOk());
+    mockGateway.isEmbeddingConfigured.mockReturnValue(true);
+  });
+
+  let service: import("./kb-rag.service").KbRagService;
+
+  beforeEach(async () => {
+    const { Test } = await import("@nestjs/testing");
+    const { KbRagService } = await import("./kb-rag.service");
+    const { KbRagRetrievalService } = await import("./kb-rag-retrieval.service");
+    const { AiGatewayService } = await import("../gateway/ai-gateway.service");
+    const { AI_CREDIT_LEDGER } = await import("../gateway/credit-ledger.interface");
+    const { AiUsageService } = await import("./ai-usage.service");
+    const { DRIZZLE } = await import("../../../../db/drizzle.constants");
+
+    const module = await Test.createTestingModule({
+      providers: [
+        KbRagRetrievalService,
+        KbRagService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AiGatewayService, useValue: mockGateway },
+        { provide: AI_CREDIT_LEDGER, useValue: mockLedger },
+        { provide: AiUsageService, useValue: mockUsageSvc },
+        { provide: AiConcurrencyLimiter, useValue: { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get(KbRagService);
+  });
+
+  it("BITE PROOF — reserve is called before streamText when context is available", async () => {
+    const callOrder: string[] = [];
+    mockDb.limit
+      .mockResolvedValueOnce([{ id: 99 }])
+      .mockResolvedValue([chunkRow]);
+    mockLedger.reserve.mockImplementation(async () => {
+      callOrder.push("reserve");
+      return { reservationId: 7 };
+    });
+    mockedStreamText.mockImplementation(() => {
+      callOrder.push("stream");
+      return { pipeTextStreamToResponse: jest.fn() } as never;
+    });
+
+    const result = await service.streamAnswer({ orgId: ORG_ID, question: QUESTION });
+
+    expect(result.hasContext).toBe(true);
+    expect(callOrder[0]).toBe("reserve");
+    expect(callOrder[1]).toBe("stream");
+  });
+
+  it("BITE PROOF — embedQueryWithCredit called with charge:true on the streaming path", async () => {
+    mockDb.limit
+      .mockResolvedValueOnce([{ id: 99 }])
+      .mockResolvedValue([chunkRow]);
+    mockLedger.reserve.mockResolvedValue({ reservationId: 7 });
+    mockedStreamText.mockImplementation(() => ({ pipeTextStreamToResponse: jest.fn() } as never));
+
+    await service.streamAnswer({ orgId: ORG_ID, question: QUESTION });
+
+    expect(mockGateway.embedQueryWithCredit).toHaveBeenCalledWith(
+      expect.objectContaining({ charge: true, feature: "kb.public-embedding" }),
+    );
+  });
+});
+
+describe("KbRagService — streamAnswer: per-org concurrency cap", () => {
+  const mockedStreamText = jest.mocked(streamText);
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("throws ServiceUnavailableException without calling streamText or reserving credits when concurrency cap is exceeded", async () => {
+    const mockConcurrencyLimiter = {
+      acquire: jest.fn().mockResolvedValue(false),
+      release: jest.fn(),
+    };
+    mockDb.limit
+      .mockResolvedValueOnce([{ id: 99 }])
+      .mockResolvedValue([chunkRow]);
+    mockGateway.embedQueryWithCredit.mockResolvedValue(makeEmbedOk());
+
+    const { Test } = await import("@nestjs/testing");
+    const { KbRagService } = await import("./kb-rag.service");
+    const { KbRagRetrievalService } = await import("./kb-rag-retrieval.service");
+    const { AiGatewayService } = await import("../gateway/ai-gateway.service");
+    const { AI_CREDIT_LEDGER } = await import("../gateway/credit-ledger.interface");
+    const { AiUsageService } = await import("./ai-usage.service");
+    const { DRIZZLE } = await import("../../../../db/drizzle.constants");
+    const { AiConcurrencyLimiter } = await import("../gateway/ai-concurrency-limiter");
+
+    const module = await Test.createTestingModule({
+      providers: [
+        KbRagRetrievalService,
+        KbRagService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AiGatewayService, useValue: mockGateway },
+        { provide: AI_CREDIT_LEDGER, useValue: mockLedger },
+        { provide: AiUsageService, useValue: mockUsageSvc },
+        { provide: AiConcurrencyLimiter, useValue: mockConcurrencyLimiter },
+      ],
+    }).compile();
+
+    const svc = module.get(KbRagService);
+
+    await expect(
+      svc.streamAnswer({ orgId: ORG_ID, question: QUESTION }),
+    ).rejects.toThrow("Too many concurrent AI requests for this organization");
+
+    expect(mockedStreamText).not.toHaveBeenCalled();
+    expect(mockLedger.reserve).not.toHaveBeenCalled();
+  });
+
+  it("releases the concurrency slot when streamText throws synchronously — slot does not leak on setup error", async () => {
+    const mockConcurrencyLimiter = {
+      acquire: jest.fn().mockResolvedValue(true),
+      release: jest.fn(),
+    };
+    mockDb.limit
+      .mockResolvedValueOnce([{ id: 99 }])
+      .mockResolvedValue([chunkRow]);
+    mockGateway.embedQueryWithCredit.mockResolvedValue(makeEmbedOk());
+    mockLedger.reserve.mockResolvedValue({ reservationId: 7 });
+    mockLedger.release.mockResolvedValue(undefined);
+    mockedStreamText.mockImplementationOnce(() => {
+      throw new Error("provider setup failed");
+    });
+
+    const { Test } = await import("@nestjs/testing");
+    const { KbRagService } = await import("./kb-rag.service");
+    const { KbRagRetrievalService } = await import("./kb-rag-retrieval.service");
+    const { AiGatewayService } = await import("../gateway/ai-gateway.service");
+    const { AI_CREDIT_LEDGER } = await import("../gateway/credit-ledger.interface");
+    const { AiUsageService } = await import("./ai-usage.service");
+    const { DRIZZLE } = await import("../../../../db/drizzle.constants");
+    const { AiConcurrencyLimiter } = await import("../gateway/ai-concurrency-limiter");
+
+    const module = await Test.createTestingModule({
+      providers: [
+        KbRagRetrievalService,
+        KbRagService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AiGatewayService, useValue: mockGateway },
+        { provide: AI_CREDIT_LEDGER, useValue: mockLedger },
+        { provide: AiUsageService, useValue: mockUsageSvc },
+        { provide: AiConcurrencyLimiter, useValue: mockConcurrencyLimiter },
+      ],
+    }).compile();
+
+    const svc = module.get(KbRagService);
+
+    await expect(
+      svc.streamAnswer({ orgId: ORG_ID, question: QUESTION }),
+    ).rejects.toThrow("provider setup failed");
+
+    expect(mockConcurrencyLimiter.release).toHaveBeenCalledWith(ORG_ID);
   });
 });

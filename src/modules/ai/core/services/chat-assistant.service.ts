@@ -40,12 +40,15 @@ import { buildContextPrompt } from "./chat-assistant-prompt";
 import { fetchChatContext } from "./chat-assistant-context";
 import { buildInlineTools } from "./chat-assistant-inline-tools";
 import { REDIS } from "../../../../common/cache/cache.service";
+import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
 
 const CB_FAILURE_THRESHOLD = 5;
 const CB_OPEN_DURATION_MS = 30_000;
 const CB_REDIS_OPENED_AT_KEY = "ai:cb:chat:opened_at";
 const CB_REDIS_FAILURES_KEY = "ai:cb:chat:failures";
 const CB_REDIS_OPENED_AT_TTL_S = Math.ceil(CB_OPEN_DURATION_MS / 1000);
+const MAX_HISTORY_MESSAGES = 40;
+const MAX_OUTPUT_TOKENS = 4_096;
 
 interface CircuitBreakerState {
   failures: number;
@@ -77,6 +80,7 @@ export class ChatAssistantService {
     private readonly usageSvc: AiUsageService,
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
     @Optional() @Inject(REDIS) private readonly redis: Redis | null = null,
+    private readonly concurrencyLimiter: AiConcurrencyLimiter,
   ) {}
 
   private async isCbOpen(): Promise<boolean> {
@@ -85,7 +89,6 @@ export class ChatAssistantService {
         const openedAt = await this.redis.get<number>(CB_REDIS_OPENED_AT_KEY);
         if (openedAt !== null) return true;
       } catch {
-        // Redis unavailable — fall through to local state
       }
     }
     return this.cb.failures >= CB_FAILURE_THRESHOLD && Date.now() - this.cb.openedAt < CB_OPEN_DURATION_MS;
@@ -137,6 +140,10 @@ export class ChatAssistantService {
       throw new ServiceUnavailableException("AI chat provider is temporarily unavailable");
     }
 
+    const acquired = await this.concurrencyLimiter.acquire(orgId);
+    if (!acquired)
+      throw new ServiceUnavailableException("Too many concurrent AI requests for this organization");
+
     const reserveMilli = getReserveEstimateMilli(CHAT_FEATURE);
     const reserved = await this.ledger.reserve({
       orgId,
@@ -169,7 +176,7 @@ export class ChatAssistantService {
       }
     }
 
-    const modelMessages: ModelMessage[] = messages.map((m) =>
+    const modelMessages: ModelMessage[] = messages.slice(-MAX_HISTORY_MESSAGES).map((m) =>
       m.role === "user"
         ? { role: "user", content: m.content }
         : { role: "assistant", content: m.content },
@@ -217,6 +224,13 @@ export class ChatAssistantService {
       void this.ledger.release(reservationId, reason, orgId).catch(() => undefined);
     };
 
+    let concurrencyReleased = false;
+    const releaseConcurrency = () => {
+      if (concurrencyReleased) return;
+      concurrencyReleased = true;
+      this.concurrencyLimiter.release(orgId);
+    };
+
     const buildStream = () => {
       streamTextCallTime = Date.now();
       return streamText({
@@ -224,6 +238,7 @@ export class ChatAssistantService {
         messages: modelMessages,
         system: contextPrompt,
         temperature: 0.7,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
         maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
         stopWhen: stepCountIs(10),
         ...(signal !== undefined ? { abortSignal: signal } : {}),
@@ -231,8 +246,6 @@ export class ChatAssistantService {
           if (ttftMs === undefined) ttftMs = Date.now() - streamTextCallTime;
         },
         onError: ({ error }) => {
-          // streamText resolves synchronously, so provider faults surface here
-          // rather than in the setup catch — without this the breaker never opens.
           if (signal?.aborted === true || isAbortError(error)) return;
           this.recordCbFailure();
           logger.warn("AI chat stream failed", {
@@ -243,6 +256,7 @@ export class ChatAssistantService {
         onFinish: async ({ text, usage }) => {
           if (resolved) return;
           resolved = true;
+          releaseConcurrency();
           const promptTokens = usage?.inputTokens ?? 0;
           const completionTokens = usage?.outputTokens ?? 0;
           this.recordCbSuccess();
@@ -290,10 +304,14 @@ export class ChatAssistantService {
     try {
       const stream = buildStream();
       void (stream.finishReason as Promise<string> | undefined)
-        ?.catch(() => releaseReservation("stream_aborted_no_settle"));
+        ?.catch(() => {
+          releaseConcurrency();
+          releaseReservation("stream_aborted_no_settle");
+        });
       return stream;
     } catch (error) {
       this.recordCbFailure();
+      releaseConcurrency();
       releaseReservation("stream_setup_error");
       throw error;
     }
