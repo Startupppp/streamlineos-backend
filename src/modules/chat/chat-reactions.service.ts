@@ -7,6 +7,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import {
   chatChannelMembers,
+  chatChannels,
   chatMessageReactions,
   chatMessages,
   organizationMembers,
@@ -42,6 +43,11 @@ export class ChatReactionsService {
     orgId: string,
     membershipId: number,
   ): Promise<void> {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
+      columns: { id: true, isPrivate: true },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
     const m = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
@@ -50,12 +56,17 @@ export class ChatReactionsService {
       ),
       columns: { id: true },
     });
-    if (!m) throw new ForbiddenException("You are not a member of this channel");
+    if (!m) {
+      // A private channel must not confirm its own existence to a non-member.
+      if (channel.isPrivate) throw new NotFoundException("Channel not found");
+      throw new ForbiddenException("You are not a member of this channel");
+    }
   }
 
   private async assertMessage(
     messageId: number,
     channelId: number,
+    orgId: string,
   ): Promise<void> {
     const [msg] = await this.db
       .select({ id: chatMessages.id })
@@ -63,6 +74,7 @@ export class ChatReactionsService {
       .where(
         and(
           eq(chatMessages.id, messageId),
+          eq(chatMessages.orgId, orgId),
           eq(chatMessages.channelId, channelId),
           eq(chatMessages.isDeleted, false),
         ),
@@ -105,7 +117,7 @@ export class ChatReactionsService {
         "You are not a member of this organization",
       );
     await this.assertChannelMember(channelId, orgId, membershipId);
-    await this.assertMessage(messageId, channelId);
+    await this.assertMessage(messageId, channelId, orgId);
 
     await this.db
       .insert(chatMessageReactions)
@@ -134,7 +146,7 @@ export class ChatReactionsService {
         "You are not a member of this organization",
       );
     await this.assertChannelMember(channelId, orgId, membershipId);
-    await this.assertMessage(messageId, channelId);
+    await this.assertMessage(messageId, channelId, orgId);
 
     await this.db.delete(chatMessageReactions).where(
       and(

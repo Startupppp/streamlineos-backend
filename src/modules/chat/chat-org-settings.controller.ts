@@ -6,14 +6,12 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { updateChatOrgSettingsSchema, type UpdateChatOrgSettingsInput } from "./dto/chat.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 
 @ApiTags("Chat Org Settings")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatOrgSettingsController {

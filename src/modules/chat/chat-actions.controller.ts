@@ -3,7 +3,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   createTaskFromMessageSchema,
   type CreateTaskFromMessageInput,
@@ -20,7 +19,6 @@ import { actorOf } from "../entity-reference/entity-actor";
 import type { EntityActionResult } from "../entity-reference/entity-reference.types";
 import { Validate } from "../../common/validation/validate.decorator";
 
-@RequireModule("chat")
 @Controller("chat/actions")
 @UseGuards(JwtAuthGuard)
 export class ChatActionsController {

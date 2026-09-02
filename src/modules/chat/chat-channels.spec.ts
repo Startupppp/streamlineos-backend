@@ -1,5 +1,6 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ChatChannelsService, entityChannelFallbackName } from "./chat-channels.service";
+import { ChatChannelListService } from "./chat-channel-list.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -105,6 +106,7 @@ describe("ChatChannelsService — read path", () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        ChatChannelListService,
         ChatChannelsService,
         { provide: DRIZZLE, useValue: mocks.mockDb },
         { provide: CacheService, useValue: mocks.mockCache },

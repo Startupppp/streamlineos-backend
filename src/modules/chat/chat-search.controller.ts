@@ -7,7 +7,6 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatSearchService } from "./chat-search.service";
 import { actorOf } from "../entity-reference/entity-actor";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import {
   searchMessagesQuerySchema,
@@ -18,7 +17,6 @@ import {
 
 @ApiTags("Chat Search")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/search")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatSearchController {
@@ -36,7 +34,7 @@ export class ChatSearchController {
     return this.search.searchMessages(
       actorOf(u),
       query.q,
-      20,
+      query.limit,
       query.cursor,
       query.from,
       query.to,

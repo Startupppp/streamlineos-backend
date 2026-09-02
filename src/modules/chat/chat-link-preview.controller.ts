@@ -3,7 +3,6 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagg
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { checkWebhookUrl } from "../../common/security/ssrf-guard";
 import { Validate } from "../../common/validation/validate.decorator";
 import { linkPreviewQuerySchema, type LinkPreviewQueryInput } from "./dto/chat-link-preview.schemas";
@@ -20,7 +19,6 @@ interface LinkMeta {
 
 @ApiTags("Chat Link Preview")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/link-preview")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatLinkPreviewController {

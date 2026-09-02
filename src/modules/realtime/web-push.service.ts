@@ -32,16 +32,28 @@ export class WebPushService {
     return Boolean(this.publicKey && this.privateKey);
   }
 
-  private subscriptionPredicate(userId: string, membershipId: number | null | undefined) {
-    if (membershipId != null)
-      return or(
-        eq(pushSubscriptions.membershipId, membershipId),
-        and(isNull(pushSubscriptions.membershipId), eq(pushSubscriptions.userId, userId)),
-      );
-    return eq(pushSubscriptions.userId, userId);
+  /**
+   * Org-led: a person in two organizations has a subscription row per organization,
+   * so matching on user alone pushes one tenant's notification to the other's device
+   * registration and leaves the (org_id, membership_id) index unusable.
+   */
+  private subscriptionPredicate(
+    orgId: string,
+    userId: string,
+    membershipId: number | null | undefined,
+  ) {
+    const owner =
+      membershipId != null
+        ? or(
+            eq(pushSubscriptions.membershipId, membershipId),
+            and(isNull(pushSubscriptions.membershipId), eq(pushSubscriptions.userId, userId)),
+          )
+        : eq(pushSubscriptions.userId, userId);
+    return and(eq(pushSubscriptions.orgId, orgId), owner);
   }
 
   async sendToUser(
+    orgId: string,
     userId: string,
     payload: PushPayload,
     effect?: { orgId: string; producerEventId: string; effectKey: string },
@@ -59,7 +71,7 @@ export class WebPushService {
         auth: pushSubscriptions.auth,
       })
       .from(pushSubscriptions)
-      .where(this.subscriptionPredicate(userId, membershipId));
+      .where(this.subscriptionPredicate(orgId, userId, membershipId));
 
     if (subs.length === 0) return;
 
@@ -97,7 +109,12 @@ export class WebPushService {
     if (expiredEndpoints.length > 0)
       await this.db
         .delete(pushSubscriptions)
-        .where(inArray(pushSubscriptions.endpoint, expiredEndpoints));
+        .where(
+          and(
+            eq(pushSubscriptions.orgId, orgId),
+            inArray(pushSubscriptions.endpoint, expiredEndpoints),
+          ),
+        );
 
     if (failures.length > 0)
       throw new AggregateError(failures, `push delivery failed for ${failures.length} subscription(s)`);
@@ -131,6 +148,7 @@ export class WebPushService {
 
     const results = await Promise.allSettled(
       members.map((m) => this.sendToUser(
+        orgId,
         m.userId,
         idempotencyKey ? { ...payload, idempotencyKey: `${idempotencyKey}:${m.userId}` } : payload,
         idempotencyKey ? { orgId, producerEventId: idempotencyKey, effectKey: `${idempotencyKey}:${m.userId}` } : undefined,

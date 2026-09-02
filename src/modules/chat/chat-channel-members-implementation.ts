@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import {
   chatAttachments,
   chatChannelMembers,
@@ -109,6 +109,9 @@ export class ChatChannelMembersImplementation {
 
     return this.db.query.chatChannelMembers.findMany({
       where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)),
+      // Without an explicit order the 100-row window is whatever the plan returns, so
+      // the same channel can answer with a different set of members on each call.
+      orderBy: [asc(chatChannelMembers.id)],
       limit: 100,
       with: {
         membership: {
@@ -312,9 +315,12 @@ export class ChatChannelMembersImplementation {
 
   async markRead(channelId: number, userId: string, orgId: string) {
     const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    // GREATEST, not assignment: two marks in flight together commit in either order,
+    // and a plain write lets the older one rewind the cursor and resurrect read messages.
+    const readAt = new Date().toISOString();
     await this.db
       .update(chatChannelMembers)
-      .set({ lastReadAt: new Date() })
+      .set({ lastReadAt: sql`GREATEST(${chatChannelMembers.lastReadAt}, ${readAt}::timestamp)` })
       .where(
         and(
           eq(chatChannelMembers.orgId, orgId),

@@ -12,6 +12,7 @@ import {
   type TenantContext,
 } from "../../common/tenant/tenant-context";
 import { NotificationDispatchService } from "./notification-dispatch.service";
+import { NotificationDispatchPersistenceService } from "./notification-dispatch-persistence.service";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService } from "./notifications.service";
@@ -96,6 +97,7 @@ describe("NotificationDispatchService durability", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationDispatchService,
+        NotificationDispatchPersistenceService,
         { provide: DRIZZLE, useValue: db },
         { provide: NotificationEventRegistryService, useValue: { resolveDefinition } },
         { provide: NotificationRoutingService, useValue: { routeMany: jest.fn() } },

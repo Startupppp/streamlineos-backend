@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import { ChatMessageTimelineService } from "../chat-message-timeline.service";
 import { ChatChannelsService } from "../chat-channels.service";
+import { ChatChannelListService } from "../chat-channel-list.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
@@ -240,6 +241,7 @@ describe("Chat reconnect — Ably token (c): channel subscription is tenant+memb
   async function buildChannelsService(db: ReturnType<typeof makeChannelsDb>) {
     const mod = await Test.createTestingModule({
       providers: [
+        ChatChannelListService,
         ChatChannelsService,
         { provide: DRIZZLE, useValue: db },
         { provide: PlanLimitsService, useValue: mockPlanLimits },

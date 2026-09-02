@@ -16,6 +16,7 @@ import { ChatOrgSettingsController } from "./chat-org-settings.controller";
 import { ChatSummarizeController } from "./chat-summarize.controller";
 import { ChatRealtimeController } from "./chat-realtime.controller";
 import { ChatChannelsService } from "./chat-channels.service";
+import { ChatChannelListService } from "./chat-channel-list.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
 import { ChatMessageTimelineService } from "./chat-message-timeline.service";
@@ -63,6 +64,7 @@ import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanou
     OutboxBackedMessageFanoutProvider,
     { provide: MESSAGE_FANOUT_PROVIDER, useExisting: OutboxBackedMessageFanoutProvider },
     ChatFanoutOutboxConsumer,
+    ChatChannelListService,
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,

@@ -22,13 +22,11 @@ import {
   type SearchQuery,
   type StatusInput,
 } from "./dto/chat.schemas";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 @ApiTags("Chat Presence")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatPresenceController {

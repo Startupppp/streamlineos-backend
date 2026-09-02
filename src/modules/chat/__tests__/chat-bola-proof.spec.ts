@@ -10,6 +10,7 @@ import { ChatSavedService } from "../chat-saved.service";
 import { ChatSavedController } from "../chat-saved.controller";
 import { ChatPinsController } from "../chat-pins.controller";
 import { ChatSearchController } from "../chat-search.controller";
+import { searchMessagesQuerySchema } from "../dto/chat-search.schemas";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -444,7 +445,9 @@ describe("Chat controllers hand the service an actor that carries the membership
   it("ChatSearchController.searchMessages passes membershipId through — without it search returns nothing", () => {
     const search = { searchMessages: jest.fn().mockResolvedValue({ results: [], nextCursor: undefined }) };
     const controller = new ChatSearchController(search as never);
-    controller.searchMessages({ q: "hello" } as never, currentUser());
+    // Parse through the real schema rather than hand-building the query: the page
+    // size default is the schema's, and a hand-built object silently loses it.
+    controller.searchMessages(searchMessagesQuerySchema.parse({ q: "hello" }), currentUser());
     expect(search.searchMessages).toHaveBeenCalledWith(
       expect.objectContaining({ membershipId: MEMBERSHIP_ID }),
       "hello",

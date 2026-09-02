@@ -80,9 +80,12 @@ export class NotificationPreferencesService {
   }
 
   async update(orgId: string, userId: string, dto: UpdatePreferenceInput, membershipId?: number | null) {
+    // The only unique index left on this table is (org_id, membership_id), so a row
+    // without a membership can neither be targeted by the upsert nor read back.
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const provided = <K extends keyof UpdatePreferenceInput>(key: K) => dto[key] !== undefined;
 
-    const insertValues = { ...DEFAULT_PREFERENCES, userId, orgId, membershipId: membershipId ?? null, updatedBy: userId, ...dto };
+    const insertValues = { ...DEFAULT_PREFERENCES, userId, orgId, membershipId, updatedBy: userId, ...dto };
     const updateSet: Record<string, unknown> = { updatedAt: new Date(), updatedBy: userId };
     for (const key of Object.keys(dto) as Array<keyof UpdatePreferenceInput>) {
       if (provided(key)) updateSet[key] = dto[key];
@@ -91,7 +94,10 @@ export class NotificationPreferencesService {
     const [result] = await this.db
       .insert(notificationPreferences)
       .values(insertValues)
-      .onConflictDoUpdate({ target: notificationPreferences.userId, set: updateSet })
+      .onConflictDoUpdate({
+        target: [notificationPreferences.orgId, notificationPreferences.membershipId],
+        set: updateSet,
+      })
       .returning();
 
     // SCH-003 write cutover. Routing resolves mutes and category switches from
@@ -118,9 +124,8 @@ export class NotificationPreferencesService {
     orgId: string,
     userId: string,
     dto: UpdatePreferenceInput,
-    membershipId?: number | null,
+    membershipId: number,
   ): Promise<void> {
-    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const writes: Array<{
       scopeType: "EVENT" | "MODULE" | "CATEGORY";
       scopeKey: string;
@@ -288,7 +293,15 @@ export class NotificationPreferencesService {
         ),
       );
     if (!existing) throw new NotFoundException("Suppression rule not found");
-    await this.db.delete(notificationSuppressionRules).where(eq(notificationSuppressionRules.id, id));
+    await this.db
+      .delete(notificationSuppressionRules)
+      .where(
+        and(
+          eq(notificationSuppressionRules.id, id),
+          eq(notificationSuppressionRules.orgId, orgId),
+          eq(notificationSuppressionRules.userId, userId),
+        ),
+      );
     await this.audit(orgId, userId, "suppression.removed", { id });
     return { success: true };
   }

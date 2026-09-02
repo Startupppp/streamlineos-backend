@@ -24,17 +24,18 @@ import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatTypingService } from "./chat-typing.service";
 import {
   addMemberSchema,
+  channelListQuerySchema,
   createChannelSchema,
   muteChannelSchema,
   notificationPreferenceSchema,
   updateChannelSchema,
   type AddMemberInput,
+  type ChannelListQuery,
   type CreateChannelInput,
   type MuteChannelInput,
   type NotificationPreferenceInput,
   type UpdateChannelInput,
 } from "./dto/chat.schemas";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
@@ -48,7 +49,6 @@ const memberRoleSchema = z.object({ role: z.enum(["ADMIN", "MEMBER"]) }).strict(
 
 @ApiTags("Chat Channels")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/channels")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatChannelsController {
@@ -62,26 +62,27 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
   @RequirePermission("chat:channels:read")
-  @Validate({ query: z.object({ cursor: z.string().optional() }).strict() })
-  list(@CurrentUser() u: CurrentUserContext, @Query("cursor") cursor?: string) {
-    return this.channels.getMyChannels(actorOf(u), cursor);
+  @Validate({ query: channelListQuerySchema })
+  list(@CurrentUser() u: CurrentUserContext, @Query() query: ChannelListQuery) {
+    return this.channels.getMyChannels(actorOf(u), query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "List archived channels for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("archived")
   @RequirePermission("chat:channels:read")
-  @Validate({ query: z.object({ cursor: z.string().optional() }).strict() })
-  listArchived(@CurrentUser() u: CurrentUserContext, @Query("cursor") cursor?: string) {
-    return this.channels.getArchivedChannels(actorOf(u), cursor);
+  @Validate({ query: channelListQuerySchema })
+  listArchived(@CurrentUser() u: CurrentUserContext, @Query() query: ChannelListQuery) {
+    return this.channels.getArchivedChannels(actorOf(u), query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "List public channels available to join" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("public")
   @RequirePermission("chat:channels:read")
-  listPublic(@CurrentUser() u: CurrentUserContext) {
-    return this.channels.listPublicChannels(u.orgId, u.userId);
+  @Validate({ query: channelListQuerySchema })
+  listPublic(@CurrentUser() u: CurrentUserContext, @Query() query: ChannelListQuery) {
+    return this.channels.listPublicChannels(u.orgId, u.userId, query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Get or create the entity-linked channel for a given entity" })

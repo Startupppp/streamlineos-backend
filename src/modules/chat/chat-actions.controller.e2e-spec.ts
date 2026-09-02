@@ -81,7 +81,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("402 when the chat module is disabled", async () => {
+  it("chat is platform core: a member with no enabled modules is still served", async () => {
     const token = await signToken({ permissions: [], enabledModules: [] });
 
     const res = await request(app.getHttpServer())
@@ -89,7 +89,7 @@ describe("ChatActions auth (e2e, no DB required)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send(BODY);
 
-    expect(res.status).toBe(402);
+    expect(res.status).toBe(201);
   });
 
   it("leaves the create refusal to the adapter that owns the record", async () => {

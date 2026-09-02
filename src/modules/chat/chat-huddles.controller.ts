@@ -16,7 +16,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ChatHuddlesService } from "./chat-huddles.service";
 import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
 import {
@@ -47,7 +46,6 @@ const huddleIdParams = z.object({ huddleId: z.coerce.number().int().positive() }
 
 @ApiTags("Chat Huddles & Video")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatHuddlesController {

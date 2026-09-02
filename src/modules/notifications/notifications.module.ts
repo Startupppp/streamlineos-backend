@@ -21,6 +21,7 @@ import { NotificationOutboxRelayService } from "./notification-outbox-relay.serv
 import { NotificationTemplateRenderer } from "./notification-template-renderer.service";
 import { NotificationPreferenceRulesService } from "./notification-preference-rules.service";
 import { NotificationDigestService } from "./notification-digest.service";
+import { NotificationDispatchPersistenceService } from "./notification-dispatch-persistence.service";
 import { NotificationWhatsAppProvider } from "./providers/notification-whatsapp.provider";
 import { NotificationSmsProvider } from "./providers/notification-sms.provider";
 import { NotificationTimeSweepsService } from "./time-sweeps/notification-time-sweeps.service";
@@ -57,6 +58,7 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationEventRegistryService,
     NotificationRoutingService,
     NotificationDispatchService,
+    NotificationDispatchPersistenceService,
     NotificationDeliveryWorker,
     NotificationEmailProvider,
     NotificationWebPushProvider,

@@ -7,7 +7,6 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatSavedService } from "./chat-saved.service";
 import { actorOf } from "../entity-reference/entity-actor";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
@@ -16,7 +15,6 @@ const messageIdParams = z.object({ messageId: z.coerce.number().int().positive()
 
 @ApiTags("Chat Saved Messages")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/saved")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatSavedController {

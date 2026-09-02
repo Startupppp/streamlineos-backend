@@ -22,7 +22,7 @@ import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
 } from "../directory/employment-query";
-import { resolveBroadcastRecipients, replaceBroadcastAudienceTargets } from "./broadcasts-audience.queries";
+import { pageBroadcastRecipients, replaceBroadcastAudienceTargets } from "./broadcasts-audience.queries";
 
 @Injectable()
 export class BroadcastsService {
@@ -187,36 +187,39 @@ export class BroadcastsService {
       return updated;
     }
 
-    const recipientUserIds = await resolveBroadcastRecipients(this.db, orgId, broadcast.id, broadcast.audienceType);
+    const nonInAppChannels = broadcast.channels.filter((c) => c !== "IN_APP");
+    let totalRecipients = 0;
+
+    for await (const page of pageBroadcastRecipients(this.db, orgId, broadcast.id, broadcast.audienceType)) {
+      totalRecipients += page.length;
+      if (nonInAppChannels.length > 0) {
+        await this.dispatchService.emit({
+          eventKey: "notification.broadcast.published",
+          orgId,
+          actorUserId: userId,
+          notifySelf: true,
+          targetUserIds: page,
+          title: broadcast.title,
+          message: broadcast.message,
+          entityType: "broadcast",
+          entityId: String(id),
+          metadata: { broadcastId: id },
+        });
+      }
+    }
 
     const [sent] = await this.db
       .update(broadcasts)
       .set({
         status: "SENT",
         sentAt: new Date(),
-        recipientCount: recipientUserIds.length,
+        recipientCount: totalRecipients,
         deliveredCount: 0,
       })
       .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
       .returning();
 
     if (!sent) throw new BadRequestException("Broadcast could not be sent");
-
-    const nonInAppChannels = broadcast.channels.filter((c) => c !== "IN_APP");
-    if (nonInAppChannels.length > 0 && recipientUserIds.length > 0) {
-      await this.dispatchService.emit({
-        eventKey: "notification.broadcast.published",
-        orgId,
-        actorUserId: userId,
-        notifySelf: true,
-        targetUserIds: recipientUserIds,
-        title: broadcast.title,
-        message: broadcast.message,
-        entityType: "broadcast",
-        entityId: String(id),
-        metadata: { broadcastId: id },
-      });
-    }
 
     await this.invalidateCache(orgId);
     return sent;

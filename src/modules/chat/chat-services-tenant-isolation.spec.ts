@@ -167,6 +167,9 @@ describe("ChatSummarizeService — tenant isolation", () => {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ id: 1 }),
         },
+        chatChannels: {
+          findFirst: jest.fn().mockResolvedValue({ id: 5, isPrivate: false }),
+        },
         chatChannelMembers: {
           findFirst: jest.fn().mockResolvedValue(null),
         },
@@ -193,6 +196,9 @@ describe("ChatSummarizeService — tenant isolation", () => {
       query: {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ id: 1 }),
+        },
+        chatChannels: {
+          findFirst: jest.fn().mockResolvedValue({ id: 5, isPrivate: false }),
         },
         chatChannelMembers: {
           findFirst: jest.fn().mockResolvedValue({ id: 1, channelId: 5, userId: "u1" }),

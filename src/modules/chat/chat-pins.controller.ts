@@ -8,7 +8,6 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatPinsService } from "./chat-pins.service";
 import { actorOf } from "../entity-reference/entity-actor";
 import { pinMessageSchema, type PinMessageInput } from "./dto/chat.schemas";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
@@ -17,7 +16,6 @@ const channelAndMessageIdParams = z.object({ channelId: z.coerce.number().int().
 
 @ApiTags("Chat Pins")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/channels/:channelId/pins")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatPinsController {

@@ -123,7 +123,7 @@ export class NotificationsService {
     // RT-001: id + category only. The title and message stay server-side; the
     // client fetches them through the authenticated API.
     void this.webPush
-      .sendToUser(input.userId, {
+      .sendToUser(input.orgId, input.userId, {
         notificationId: input.id,
         category: isNotificationCategory(input.category) ? input.category : undefined,
         url: input.link ?? "/notifications",

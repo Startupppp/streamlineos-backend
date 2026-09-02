@@ -3,7 +3,6 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   entityActionOptionsSchema,
@@ -28,7 +27,6 @@ import type {
 } from "../entity-reference/entity-reference.types";
 import { Validate } from "../../common/validation/validate.decorator";
 
-@RequireModule("chat")
 @Controller("chat/entity-actions")
 @UseGuards(JwtAuthGuard)
 export class ChatEntityActionsController {

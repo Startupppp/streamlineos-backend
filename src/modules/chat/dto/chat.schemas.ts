@@ -102,6 +102,15 @@ export const listMessagesQuerySchema = z.object({
   limit: pageSizeField(50),
 });
 
+export const channelListQuerySchema = z
+  .object({
+    cursor: z.string().optional(),
+    limit: pageSizeField(50),
+  })
+  .strict();
+
+export type ChannelListQuery = z.infer<typeof channelListQuerySchema>;
+
 export const pollQuerySchema = z.object({
   since: z.string().optional(),
 });

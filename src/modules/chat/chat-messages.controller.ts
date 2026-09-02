@@ -34,7 +34,6 @@ import {
   type ReactionInput,
   type SendMessageInput,
 } from "./dto/chat.schemas";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
@@ -47,7 +46,6 @@ const channelMessageAndEmojiParams = z.object({ channelId: z.coerce.number().int
 
 @ApiTags("Chat Messages")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat/channels/:channelId/messages")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatMessagesController {

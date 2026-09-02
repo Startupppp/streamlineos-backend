@@ -350,11 +350,21 @@ export class ChatHuddlesService {
       await this.db
         .update(chatHuddleParticipants)
         .set({ leftAt: new Date() })
-        .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.membershipId, callerMembership.id)));
+        .where(
+          and(
+            eq(chatHuddleParticipants.orgId, orgId),
+            eq(chatHuddleParticipants.huddleId, huddleId),
+            eq(chatHuddleParticipants.membershipId, callerMembership.id),
+          ),
+        );
     }
 
     const remaining = await this.db.query.chatHuddleParticipants.findMany({
-      where: and(eq(chatHuddleParticipants.huddleId, huddleId), isNull(chatHuddleParticipants.leftAt)),
+      where: and(
+        eq(chatHuddleParticipants.orgId, orgId),
+        eq(chatHuddleParticipants.huddleId, huddleId),
+        isNull(chatHuddleParticipants.leftAt),
+      ),
       columns: { membershipId: true },
       limit: 1,
     });

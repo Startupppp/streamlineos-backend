@@ -29,13 +29,21 @@ const mockAbly = { publishChatEvent: jest.fn().mockResolvedValue(undefined) };
 function makeDb(overrides: Partial<{
   membershipId: number | null;
   channelMember: { id: number } | null;
+  channel: { id: number; isPrivate: boolean } | null;
   message: { id: number } | null;
   reactions: unknown[];
 }> = {}) {
-  const { membershipId = MEMBERSHIP_A, channelMember = { id: MEMBERSHIP_A }, message = { id: MESSAGE_ID }, reactions = [] } = overrides;
+  const {
+    membershipId = MEMBERSHIP_A,
+    channelMember = { id: MEMBERSHIP_A },
+    channel = { id: CHANNEL_ID, isPrivate: false },
+    message = { id: MESSAGE_ID },
+    reactions = [],
+  } = overrides;
   return {
     query: {
       organizationMembers: { findFirst: jest.fn().mockResolvedValue(membershipId !== null ? { id: membershipId } : null) },
+      chatChannels: { findFirst: jest.fn().mockResolvedValue(channel) },
       chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(channelMember) },
       chatMessageReactions: { findMany: jest.fn().mockResolvedValue(reactions) },
     },

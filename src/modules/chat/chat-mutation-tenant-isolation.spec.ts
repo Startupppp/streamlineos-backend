@@ -49,6 +49,7 @@ describe("Chat mutation services — cross-tenant isolation", () => {
     const actorWithMembership = { ...actor, membershipId: 99 };
     const db = {
       query: {
+        chatChannels: { findFirst: jest.fn().mockResolvedValue({ id: 27, isPrivate: false }) },
         chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
         chatMessages: { findFirst: jest.fn() },
       },
@@ -65,6 +66,8 @@ describe("Chat mutation services — cross-tenant isolation", () => {
 
     await expect(service.pin(27, 91, actorWithMembership)).rejects.toThrow(ForbiddenException);
 
+    const channelQuery = db.query.chatChannels.findFirst.mock.calls[0]?.[0];
+    expect(sqlValues(channelQuery?.where)).toContain(actor.orgId);
     const membershipQuery = db.query.chatChannelMembers.findFirst.mock.calls[0]?.[0];
     expect(sqlValues(membershipQuery?.where)).toContain(actor.orgId);
     expect(sqlValues(membershipQuery?.where)).toContain(actorWithMembership.membershipId);

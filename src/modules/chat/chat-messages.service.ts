@@ -348,6 +348,7 @@ export class ChatMessagesService {
     const parentMessage = await this.db.query.chatMessages.findFirst({
       where: and(
         eq(chatMessages.id, parentMessageId),
+        eq(chatMessages.orgId, orgId),
         eq(chatMessages.channelId, channelId),
         eq(chatMessages.isDeleted, false),
       ),

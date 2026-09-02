@@ -5,7 +5,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ChatInviteLinksService } from "./chat-invite-links.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -16,7 +15,6 @@ const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
 @ApiTags("Chat Invite Links")
 @ApiBearerAuth()
-@RequireModule("chat")
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ChatInviteLinksController {
