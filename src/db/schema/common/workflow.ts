@@ -27,7 +27,7 @@ export const workflows = pgTable("workflows", {
 export const workflowVersions = pgTable("workflow_versions", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "cascade" }).notNull(),
+  workflowId: uuid("workflow_id").notNull(),
   version: integer("version").notNull(),
   definitionJson: jsonb("definition_json").$type<Record<string, unknown>>().notNull(),
   publishedBy: text("published_by"),
@@ -46,8 +46,8 @@ export const workflowVersions = pgTable("workflow_versions", {
 
 export const workflowExecutions = pgTable("workflow_executions", {
   id: uuid("id").defaultRandom().primaryKey(),
-  workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "cascade" }).notNull(),
-  workflowVersionId: uuid("workflow_version_id").references(() => workflowVersions.id, { onDelete: "cascade" }).notNull(),
+  workflowId: uuid("workflow_id").notNull(),
+  workflowVersionId: uuid("workflow_version_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   status: workflowExecutionStatusEnum("status").default("pending").notNull(),
   triggerType: workflowTriggerTypeEnum("trigger_type"),
@@ -64,11 +64,22 @@ export const workflowExecutions = pgTable("workflow_executions", {
   index("idx_workflow_executions_workflow").on(table.workflowId),
   index("idx_workflow_executions_org_created").on(table.orgId, table.createdAt),
   unique("uniq_workflow_executions_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.workflowId],
+    foreignColumns: [workflows.orgId, workflows.id],
+    name: "fk_workflow_executions_workflow_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.workflowVersionId],
+    foreignColumns: [workflowVersions.orgId, workflowVersions.id],
+    name: "fk_workflow_executions_workflow_version_id_org",
+  }),
 ]);
 
 export const workflowExecutionSteps = pgTable("workflow_execution_steps", {
   id: uuid("id").defaultRandom().primaryKey(),
-  executionId: uuid("execution_id").references(() => workflowExecutions.id, { onDelete: "cascade" }).notNull(),
+  executionId: uuid("execution_id").notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   nodeId: text("node_id").notNull(),
   nodeType: workflowNodeTypeEnum("node_type").notNull(),
   status: workflowExecutionStatusEnum("status").notNull(),
@@ -82,12 +93,19 @@ export const workflowExecutionSteps = pgTable("workflow_execution_steps", {
 }, (table) => [
   index("idx_workflow_execution_steps_execution").on(table.executionId),
   index("idx_workflow_execution_steps_execution_node").on(table.executionId, table.nodeId),
+  unique("uniq_workflow_execution_steps_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.executionId],
+    foreignColumns: [workflowExecutions.orgId, workflowExecutions.id],
+    name: "fk_workflow_execution_steps_execution_id_org",
+  }),
 ]);
 
 export const workflowApprovals = pgTable("workflow_approvals", {
   id: uuid("id").defaultRandom().primaryKey(),
-  executionId: uuid("execution_id").references(() => workflowExecutions.id, { onDelete: "cascade" }).notNull(),
-  stepId: uuid("step_id").references(() => workflowExecutionSteps.id, { onDelete: "cascade" }).notNull(),
+  executionId: uuid("execution_id").notNull(),
+  stepId: uuid("step_id").notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   approverId: text("approver_id").notNull(),
   status: workflowApprovalStatusEnum("status").default("pending").notNull(),
   comment: text("comment"),
@@ -98,11 +116,22 @@ export const workflowApprovals = pgTable("workflow_approvals", {
 }, (table) => [
   index("idx_workflow_approvals_execution").on(table.executionId),
   index("idx_workflow_approvals_approver_status").on(table.approverId, table.status),
+  unique("uniq_workflow_approvals_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.executionId],
+    foreignColumns: [workflowExecutions.orgId, workflowExecutions.id],
+    name: "fk_workflow_approvals_execution_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.stepId],
+    foreignColumns: [workflowExecutionSteps.orgId, workflowExecutionSteps.id],
+    name: "fk_workflow_approvals_step_id_org",
+  }),
 ]);
 
 export const workflowSchedules = pgTable("workflow_schedules", {
   id: uuid("id").defaultRandom().primaryKey(),
-  workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "cascade" }).notNull(),
+  workflowId: uuid("workflow_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   cronExpression: text("cron_expression").notNull(),
   timezone: text("timezone").default("UTC").notNull(),
@@ -116,12 +145,17 @@ export const workflowSchedules = pgTable("workflow_schedules", {
   index("idx_workflow_schedules_org_enabled").on(table.orgId, table.isEnabled),
   index("idx_workflow_schedules_next_run").on(table.nextRunAt),
   unique("uniq_workflow_schedules_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.workflowId],
+    foreignColumns: [workflows.orgId, workflows.id],
+    name: "fk_workflow_schedules_workflow_id_org",
+  }),
 ]);
 
 export const workflowVariables = pgTable("workflow_variables", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  workflowVersionId: uuid("workflow_version_id").references(() => workflowVersions.id, { onDelete: "cascade" }).notNull(),
+  workflowVersionId: uuid("workflow_version_id").notNull(),
   key: text("key").notNull(),
   valueType: text("value_type").notNull(),
   defaultValue: jsonb("default_value").$type<unknown>(),
@@ -153,8 +187,8 @@ export const workflowSecrets = pgTable("workflow_secrets", {
 export const workflowAuditLogs = pgTable("workflow_audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "cascade" }),
-  executionId: uuid("execution_id").references(() => workflowExecutions.id, { onDelete: "cascade" }),
+  workflowId: uuid("workflow_id"),
+  executionId: uuid("execution_id"),
   actorId: text("actor_id"),
   event: text("event").notNull(),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
@@ -164,6 +198,16 @@ export const workflowAuditLogs = pgTable("workflow_audit_logs", {
   index("idx_workflow_audit_logs_workflow").on(table.workflowId),
   index("idx_workflow_audit_logs_org_created").on(table.orgId, table.createdAt),
   unique("uniq_workflow_audit_logs_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.workflowId],
+    foreignColumns: [workflows.orgId, workflows.id],
+    name: "fk_workflow_audit_logs_workflow_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.executionId],
+    foreignColumns: [workflowExecutions.orgId, workflowExecutions.id],
+    name: "fk_workflow_audit_logs_execution_id_org",
+  }),
 ]);
 
 export const workflowsRelations = relations(workflows, ({ one, many }) => ({

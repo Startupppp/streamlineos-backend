@@ -99,7 +99,9 @@ function buildMockDb() {
     query,
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([]),
+        }),
       }),
     }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),

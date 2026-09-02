@@ -129,8 +129,10 @@ export default tseslint.config(
     files: ["src/**/*.ts"],
     ignores: [
       "src/db/schema/**",
+      "src/modules/accounting/core/accounting-aged-receivables.service.ts",
       "src/modules/accounting/core/accounting-payables-query.service.ts",
       "src/modules/accounting/core/accounting-receivables.service.ts",
+      "src/modules/accounting/core/accounting-vendor-query.service.ts",
       "src/modules/finance/ap/bills-due-check.service.ts",
       "src/modules/finance/ap/payment-runs.service.ts",
       "src/modules/finance/ap/recurring-bills.service.ts",

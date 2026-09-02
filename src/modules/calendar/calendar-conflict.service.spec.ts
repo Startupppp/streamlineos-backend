@@ -24,6 +24,8 @@ function makeEventRow(overrides: {
     timezone: "UTC",
     orgId: overrides.orgId ?? "org-1",
     createdByMembershipId: overrides.createdByMembershipId ?? 99,
+    rrule: null,
+    recurrenceEnd: null,
   };
 }
 
@@ -39,6 +41,7 @@ function makeTx(eventRows: ReturnType<typeof makeEventRow>[], attendeeRows: Arra
         return {
           from: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
           limit: jest.fn().mockResolvedValue(eventRows),
         };
       }

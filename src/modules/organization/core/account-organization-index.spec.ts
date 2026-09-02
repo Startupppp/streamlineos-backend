@@ -11,7 +11,7 @@ function makeSelectChain<T>(result: T[]) {
   chain.from = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockReturnValue(chain);
   chain.innerJoin = jest.fn().mockReturnValue(chain);
-  chain.orderBy = jest.fn().mockResolvedValue(result);
+  chain.orderBy = jest.fn().mockReturnValue(chain);
   chain.limit = jest.fn().mockResolvedValue(result);
   chain.then = jest.fn().mockImplementation(
     (resolve: (v: T[]) => unknown, reject?: (e: unknown) => unknown) =>

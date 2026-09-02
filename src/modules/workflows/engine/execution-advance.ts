@@ -35,7 +35,7 @@ export async function advanceExecution(
   if (execution.triggeredBy != null) {
     const actorActive = await assertTriggerActorActive(tx, execution.orgId, execution.triggeredBy);
     if (!actorActive) {
-      await recordStep(tx, execution.id, "authority-check", "trigger", {
+      await recordStep(tx, execution.orgId, execution.id, "authority-check", "trigger", {
         status: "failed",
         error: "Execution actor is no longer an active member of this organisation",
       });
@@ -46,7 +46,7 @@ export async function advanceExecution(
 
   const parsed = await loadGraph(tx, execution);
   if (!parsed.ok) {
-    await recordStep(tx, execution.id, "definition", "trigger", {
+    await recordStep(tx, execution.orgId, execution.id, "definition", "trigger", {
       status: "failed",
       error: parsed.error,
     });
@@ -63,7 +63,7 @@ export async function advanceExecution(
 
   while (cursor !== null) {
     if (steps >= MAX_STEPS_PER_EXECUTION) {
-      await recordStep(tx, execution.id, cursor, "end", {
+      await recordStep(tx, execution.orgId, execution.id, cursor, "end", {
         status: "failed",
         error: `Exceeded ${MAX_STEPS_PER_EXECUTION} steps; the definition may contain a cycle`,
       });
@@ -73,7 +73,7 @@ export async function advanceExecution(
 
     const node = graph.nodesById.get(cursor);
     if (!node) {
-      await recordStep(tx, execution.id, cursor, "end", {
+      await recordStep(tx, execution.orgId, execution.id, cursor, "end", {
         status: "failed",
         error: `Node "${cursor}" is not in the published definition`,
       });
@@ -96,7 +96,7 @@ export async function advanceExecution(
     steps += 1;
 
     if (outcome.kind === "failed") {
-      await recordStep(tx, execution.id, node.id, node.data.nodeType, {
+      await recordStep(tx, execution.orgId, execution.id, node.id, node.data.nodeType, {
         status: "failed",
         error: outcome.error,
         startedAt,
@@ -105,7 +105,7 @@ export async function advanceExecution(
       return "failed";
     }
 
-    await recordStep(tx, execution.id, node.id, node.data.nodeType, {
+    await recordStep(tx, execution.orgId, execution.id, node.id, node.data.nodeType, {
       status: "completed",
       output: outcome.output,
       startedAt,
@@ -171,6 +171,7 @@ async function loadGraph(
 
 async function recordStep(
   tx: TenantTx,
+  orgId: string,
   executionId: string,
   nodeId: string,
   nodeType: (typeof workflowExecutionSteps.$inferInsert)["nodeType"],
@@ -184,6 +185,7 @@ async function recordStep(
   const completedAt = new Date();
   const startedAt = detail.startedAt ?? completedAt;
   await tx.insert(workflowExecutionSteps).values({
+    orgId,
     executionId,
     nodeId,
     nodeType,

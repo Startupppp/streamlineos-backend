@@ -17,8 +17,8 @@ export async function queryOwnedModuleKeys(
         eq(moduleOwnerships.ownerMembershipId, membershipId),
       ),
     )
-    .limit(100)
-    .for("update");
+    .for("update")
+    .limit(100);
   return rows.map((r) => r.moduleKey);
 }
 

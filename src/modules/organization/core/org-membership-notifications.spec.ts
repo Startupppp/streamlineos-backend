@@ -45,7 +45,7 @@ describe("OrgMembershipService access notifications", () => {
   joinChain.where.mockReturnValue({
     for: jest.fn().mockImplementation(forUpdate),
     limit: jest.fn().mockResolvedValue([]),
-    orderBy: jest.fn().mockResolvedValue([]),
+    orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
   });
 
   const tx = {
@@ -80,7 +80,9 @@ describe("OrgMembershipService access notifications", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    selectWhere.mockResolvedValue([]);
+    selectWhere.mockReturnValue(
+      Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([]) }),
+    );
     orgFindFirst.mockResolvedValue({ name: "Alpha" });
     userFindFirst.mockResolvedValue({
       email: "member@example.com",

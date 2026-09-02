@@ -73,7 +73,7 @@ describe("upload size limit", () => {
 
   it("app-level size check fires before storage upload", () => {
     const maxCheckIdx = controllerSrc.indexOf("file.size > MAX_UPLOAD_SIZE");
-    const uploadIdx = controllerSrc.indexOf("uploadCompressed");
+    const uploadIdx = controllerSrc.indexOf("uploadToKey");
     expect(maxCheckIdx).toBeGreaterThan(-1);
     expect(uploadIdx).toBeGreaterThan(-1);
     expect(maxCheckIdx).toBeLessThan(uploadIdx);
@@ -86,7 +86,7 @@ describe("magic-byte validation", () => {
 
   it("validateMagicBytes is called before upload", () => {
     const magicCheckIdx = controllerSrc.indexOf("validateMagicBytes");
-    const uploadIdx = controllerSrc.indexOf("uploadCompressed");
+    const uploadIdx = controllerSrc.indexOf("uploadToKey");
     expect(magicCheckIdx).toBeGreaterThan(-1);
     expect(uploadIdx).toBeGreaterThan(-1);
     expect(magicCheckIdx).toBeLessThan(uploadIdx);
@@ -135,7 +135,7 @@ describe("sensitive download controls", () => {
 
   it("F3 RESOLVED — malware scan step exists before storage upload", () => {
     const scanIdx = controllerSrc.indexOf("avScanner.scan(");
-    const uploadIdx = controllerSrc.indexOf("uploadCompressed");
+    const uploadIdx = controllerSrc.indexOf("uploadToKey");
     expect(scanIdx).toBeGreaterThan(-1);
     expect(uploadIdx).toBeGreaterThan(-1);
     expect(scanIdx).toBeLessThan(uploadIdx);

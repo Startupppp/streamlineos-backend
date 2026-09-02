@@ -41,7 +41,6 @@ describe("c21-04 partition preconditions", () => {
       "chat_message_reactions.org_id",
       "chat_messages.org_id",
       "chat_messages.reply_to_id",
-      "chat_messages.reply_to_id",
       "chat_pinned_messages.message_id",
       "chat_pinned_messages.message_id",
       "chat_pinned_messages.org_id",

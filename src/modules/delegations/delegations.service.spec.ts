@@ -132,7 +132,7 @@ describe("DelegationsService normalized permission grants", () => {
       revokedBy: null,
     };
     const offset = jest.fn().mockResolvedValue([row]);
-    const limit = jest.fn().mockReturnValue({ offset });
+    const limit = jest.fn().mockResolvedValue([row]);
     const orderBy = jest.fn().mockReturnValue({ limit });
     const pageWhere = jest.fn().mockReturnValue({ orderBy });
     const countWhere = jest.fn().mockResolvedValue([{ total: 21 }]);
@@ -221,12 +221,12 @@ describe("DelegationsService normalized permission grants", () => {
         nextCursor: null,
       },
     });
-    expect(limit).toHaveBeenCalledWith(10);
+    expect(limit).toHaveBeenCalledWith(11);
     expect(offset).not.toHaveBeenCalled();
     expect(orderBy).toHaveBeenCalledTimes(1);
     expect(pageWhere).toHaveBeenCalledTimes(1);
-    expect(countWhere).toHaveBeenCalledTimes(1);
-    expect(select).toHaveBeenCalledTimes(5);
+    expect(countWhere).toHaveBeenCalledTimes(0);
+    expect(select).toHaveBeenCalledTimes(4);
     expect(select).toHaveBeenCalledWith({
       delegationId: userDelegationPermissions.delegationId,
       permissionKey: userDelegationPermissions.permissionKey,

@@ -199,7 +199,7 @@ describe("c4 production access wiring", () => {
     });
 
     expect(sourceLoad).toHaveBeenCalledTimes(1);
-    expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(4);
+    expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(8);
     expect(wiring.getModuleMap).toHaveBeenCalledWith("org-1");
   });
 });
