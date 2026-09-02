@@ -174,8 +174,9 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
       if (deliveries.length !== active.length)
         throw new Error("Failed to persist project webhook delivery intent");
 
-      for (const delivery of deliveries) {
-        await OutboxWriter.emit(tx, {
+      await OutboxWriter.emitMany(
+        tx,
+        deliveries.map((delivery) => ({
           eventId: randomUUID(),
           organizationId: orgId,
           aggregateType: "project_webhook_delivery",
@@ -184,8 +185,8 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
           eventType: WEBHOOK_OUTBOX_EVENT,
           payload: { deliveryId: delivery.id },
           occurredAt: now,
-        });
-      }
+        })),
+      );
   }
 
   async handle(event: OutboxEventRow): Promise<void> {

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hasCompatibleHolidays } from "../../../../db/compat/organization-holidays";
@@ -54,29 +54,43 @@ export class HrChecklistReconciliationService {
   /** Applies auto-detected status to every non-skipped, non-blocked item. Returns true if anything changed. */
   async reconcile(orgId: string, items: ChecklistItemRow[]): Promise<boolean> {
     const signals = await this.computeSignals(orgId);
-    let changed = false;
+    const nowDone: number[] = [];
+    const nowTodo: number[] = [];
 
     for (const item of items) {
       if (!this.isHrSignalKey(item.itemKey)) continue;
       if (item.status === "skipped" || item.status === "blocked") continue;
 
       const satisfied = signals[item.itemKey];
-      if (satisfied && item.status !== "done") {
-        await this.db
-          .update(moduleSetupChecklistItems)
-          .set({ status: "done", completedAt: new Date() })
-          .where(eq(moduleSetupChecklistItems.id, item.id));
-        changed = true;
-      } else if (!satisfied && item.status === "done") {
-        await this.db
-          .update(moduleSetupChecklistItems)
-          .set({ status: "todo", completedAt: null })
-          .where(eq(moduleSetupChecklistItems.id, item.id));
-        changed = true;
-      }
+      if (satisfied && item.status !== "done") nowDone.push(item.id);
+      else if (!satisfied && item.status === "done") nowTodo.push(item.id);
     }
 
-    return changed;
+    if (nowDone.length > 0) {
+      await this.db
+        .update(moduleSetupChecklistItems)
+        .set({ status: "done", completedAt: new Date() })
+        .where(
+          and(
+            eq(moduleSetupChecklistItems.orgId, orgId),
+            inArray(moduleSetupChecklistItems.id, nowDone),
+          ),
+        );
+    }
+
+    if (nowTodo.length > 0) {
+      await this.db
+        .update(moduleSetupChecklistItems)
+        .set({ status: "todo", completedAt: null })
+        .where(
+          and(
+            eq(moduleSetupChecklistItems.orgId, orgId),
+            inArray(moduleSetupChecklistItems.id, nowTodo),
+          ),
+        );
+    }
+
+    return nowDone.length > 0 || nowTodo.length > 0;
   }
 
   private isHrSignalKey(itemKey: string): itemKey is HrSignalKey {

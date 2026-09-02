@@ -9,6 +9,7 @@ function selectLimit(rows: unknown[]) {
     innerJoin: jest.fn(),
     where: jest.fn(),
     limit: jest.fn().mockResolvedValue(rows),
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve(rows).then(resolve),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
@@ -95,13 +96,37 @@ describe("LeaveApproverService", () => {
     );
   });
 
+  it("reads every candidate's membership in one query, not one per candidate", async () => {
+    const winner = { ...APPROVER, id: "hr-2", email: "hr2@example.com" };
+    const db = {
+      select: jest
+        .fn()
+        .mockReturnValueOnce(selectLimit([{ userId: "employee-1" }]))
+        .mockReturnValueOnce(selectLimit([winner]))
+        .mockReturnValue(selectLimit([winner])),
+    };
+    const access = {
+      membersWithPermission: jest.fn().mockResolvedValue([
+        { userId: "hr-1", membershipId: 3 },
+        { userId: "hr-2", membershipId: 4 },
+      ]),
+      resolveUserPermissions: jest
+        .fn()
+        .mockResolvedValue(new Map([["hr:leaves:approve", "all"]])),
+    };
+    const service = new LeaveApproverService(db as never, access as never, makeEmployment("manager-1") as never);
+
+    await expect(service.resolve("org-1", "employee-1")).resolves.toEqual(winner);
+    expect(db.select).toHaveBeenCalledTimes(2);
+  });
+
   it("checks team scope against the subject in the tenant", async () => {
     const db = {
       select: jest
         .fn()
         .mockReturnValueOnce(selectLimit([{ userId: "employee-1" }]))
-        .mockReturnValueOnce(selectLimit([{ id: 11 }]))
-        .mockReturnValueOnce(selectLimit([APPROVER])),
+        .mockReturnValueOnce(selectLimit([APPROVER]))
+        .mockReturnValueOnce(selectLimit([{ id: 11 }])),
     };
     const access = {
       membersWithPermission: jest.fn().mockResolvedValue([]),

@@ -34,9 +34,24 @@ function ambientCorrelationId(): string | null {
  * caused it. A default at the single write site closes that for every producer,
  * including the ones not written yet; an explicit value still wins.
  */
+export const OUTBOX_EMIT_CHUNK = 500;
+
 export const OutboxWriter = {
   async emit(tx: DbOrTx, input: OutboxEventInput): Promise<void> {
     const correlationId = input.correlationId ?? ambientCorrelationId();
     await tx.insert(outboxEvents).values(buildOutboxEvent({ ...input, correlationId }));
+  },
+
+  async emitMany(tx: DbOrTx, inputs: readonly OutboxEventInput[]): Promise<void> {
+    if (inputs.length === 0) return;
+    const ambient = ambientCorrelationId();
+    for (let offset = 0; offset < inputs.length; offset += OUTBOX_EMIT_CHUNK) {
+      const chunk = inputs.slice(offset, offset + OUTBOX_EMIT_CHUNK);
+      await tx.insert(outboxEvents).values(
+        chunk.map((input) =>
+          buildOutboxEvent({ ...input, correlationId: input.correlationId ?? ambient }),
+        ),
+      );
+    }
   },
 };

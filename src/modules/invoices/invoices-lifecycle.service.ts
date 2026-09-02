@@ -137,19 +137,30 @@ export class InvoicesLifecycleService {
     await this.db
       .update(invoices)
       .set({ status: "OVERDUE", updatedAt: new Date() })
-      .where(inArray(invoices.id, ids));
+      .where(
+        orgId
+          ? and(inArray(invoices.id, ids), eq(invoices.orgId, orgId))
+          : inArray(invoices.id, ids),
+      );
+
+    const fallbackRecipients = new Map<string, string[]>();
 
     for (const inv of dueInvoices) {
       const targetUserIds: string[] = [];
       if (inv.collectionOwnerId) {
         targetUserIds.push(inv.collectionOwnerId);
       } else {
-        const members = await this.db
-          .select({ userId: organizationMembers.userId })
-          .from(organizationMembers)
-          .where(eq(organizationMembers.orgId, inv.orgId))
-          .limit(5);
-        targetUserIds.push(...members.map((m) => m.userId));
+        let members = fallbackRecipients.get(inv.orgId);
+        if (members === undefined) {
+          const rows = await this.db
+            .select({ userId: organizationMembers.userId })
+            .from(organizationMembers)
+            .where(eq(organizationMembers.orgId, inv.orgId))
+            .limit(5);
+          members = rows.map((m) => m.userId);
+          fallbackRecipients.set(inv.orgId, members);
+        }
+        targetUserIds.push(...members);
       }
       if (targetUserIds.length > 0) {
         await this.dispatch.emit({

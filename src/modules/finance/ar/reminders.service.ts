@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { randomUUID } from "node:crypto";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import type { OutboxEventInput } from "../../../common/outbox/outbox-event-schema";
 import { INVOICE_REMINDER_EVENT, invoiceReminderPayloadSchema } from "./dto/reminder-outbox.schemas";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { CreateReminderPolicyInput, UpdateReminderPolicyInput, ListReminderPoliciesQuery, ListReminderLogQuery } from "./dto/finance-ar.schemas";
@@ -13,6 +14,7 @@ import { forEachOrg } from "../../../common/tenant";
 
 const CANDIDATE_CAP = 1000;
 const RECIPIENT_CAP = 10;
+const REMINDER_CLAIM_CHUNK = 500;
 
 @Injectable()
 export class RemindersService {
@@ -196,52 +198,98 @@ export class RemindersService {
       fallbackRecipients = members.map((m) => m.userId);
     }
 
+    const now = new Date();
+    const seen = new Set<string>();
+    const claims: {
+      key: string;
+      invoiceId: number;
+      offsetDays: number;
+      channel: "EMAIL" | "WHATSAPP";
+      invoiceNumber: string;
+      targetUserIds: string[];
+    }[] = [];
+
+    for (const r of rawCandidates) {
+      const ownerId = typeof r["collection_owner_id"] === "string" ? r["collection_owner_id"] : null;
+      const targetUserIds = ownerId && activeOwnerSet.has(ownerId) ? [ownerId] : fallbackRecipients;
+      if (targetUserIds.length === 0) continue;
+
+      const invoiceId = Number(r["invoice_id"]);
+      const offsetDays = Number(r["offset_days"]);
+      const key = `${invoiceId}:${offsetDays}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      claims.push({
+        key,
+        invoiceId,
+        offsetDays,
+        channel: r["channel"] === "WHATSAPP" ? "WHATSAPP" : "EMAIL",
+        invoiceNumber: String(r["invoice_number"] ?? ""),
+        targetUserIds,
+      });
+    }
+
     let sent = 0;
     await this.db.transaction(async (tx) => {
-      for (const r of rawCandidates) {
-        const ownerId = typeof r["collection_owner_id"] === "string" ? r["collection_owner_id"] : null;
-        const targetUserIds = ownerId && activeOwnerSet.has(ownerId) ? [ownerId] : fallbackRecipients;
-        if (targetUserIds.length === 0) continue;
+      for (let offset = 0; offset < claims.length; offset += REMINDER_CLAIM_CHUNK) {
+        const chunk = claims.slice(offset, offset + REMINDER_CLAIM_CHUNK);
 
-        const invoiceId = Number(r["invoice_id"]);
-        const offsetDays = Number(r["offset_days"]);
-        const channel = r["channel"] === "WHATSAPP" ? "WHATSAPP" : "EMAIL";
-        const invoiceNumber = String(r["invoice_number"] ?? "");
-
-        const insertResult = await tx
+        const claimed = await tx
           .insert(finReminderLog)
-          .values({ orgId, invoiceId, channel, offsetDays, status: "PENDING", scheduledAt: new Date() })
+          .values(
+            chunk.map((claim) => ({
+              orgId,
+              invoiceId: claim.invoiceId,
+              channel: claim.channel,
+              offsetDays: claim.offsetDays,
+              status: "PENDING" as const,
+              scheduledAt: now,
+            })),
+          )
           .onConflictDoUpdate({
             target: [finReminderLog.orgId, finReminderLog.invoiceId, finReminderLog.offsetDays],
-            set: { status: "PENDING", scheduledAt: new Date() },
+            set: { status: "PENDING", scheduledAt: now },
             where: inArray(finReminderLog.status, ["FAILED", "PENDING"]),
           })
-          .returning({ id: finReminderLog.id });
+          .returning({
+            id: finReminderLog.id,
+            invoiceId: finReminderLog.invoiceId,
+            offsetDays: finReminderLog.offsetDays,
+          });
 
-        const reminderLogId = insertResult[0]?.id;
-        if (reminderLogId === undefined) continue;
+        const claimedIds = new Map(
+          claimed.map((row) => [`${row.invoiceId}:${row.offsetDays}`, row.id]),
+        );
 
-        const payload = invoiceReminderPayloadSchema.parse({
-          orgId,
-          reminderLogId,
-          invoiceId,
-          invoiceNumber,
-          channel,
-          offsetDays,
-          targetUserIds,
-        });
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "fin_reminder_log",
-          aggregateId: String(reminderLogId),
-          aggregateVersion: 1,
-          eventType: INVOICE_REMINDER_EVENT,
-          payload,
-          occurredAt: new Date(),
-        });
+        const events: OutboxEventInput[] = [];
+        for (const claim of chunk) {
+          const reminderLogId = claimedIds.get(claim.key);
+          if (reminderLogId === undefined) continue;
 
-        sent += 1;
+          const payload = invoiceReminderPayloadSchema.parse({
+            orgId,
+            reminderLogId,
+            invoiceId: claim.invoiceId,
+            invoiceNumber: claim.invoiceNumber,
+            channel: claim.channel,
+            offsetDays: claim.offsetDays,
+            targetUserIds: claim.targetUserIds,
+          });
+          events.push({
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: "fin_reminder_log",
+            aggregateId: String(reminderLogId),
+            aggregateVersion: 1,
+            eventType: INVOICE_REMINDER_EVENT,
+            payload,
+            occurredAt: now,
+          });
+        }
+
+        await OutboxWriter.emitMany(tx, events);
+        sent += events.length;
       }
     });
 

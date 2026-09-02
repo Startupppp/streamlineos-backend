@@ -121,6 +121,22 @@ export async function assertTransitionAllowed(
 
   const bypassPrivilege = context.isOrgOwner;
 
+  const readTicketRequiredFields = () =>
+    db
+      .select({
+        assigneeMembershipId: tickets.assigneeMembershipId,
+        dueDate: tickets.dueDate,
+        priority: tickets.priority,
+        points: tickets.points,
+        epicId: tickets.epicId,
+        sprintId: tickets.sprintId,
+      })
+      .from(tickets)
+      .where(and(eq(tickets.id, context.ticketId), eq(tickets.orgId, orgId)))
+      .limit(1);
+
+  let ticketRows: Awaited<ReturnType<typeof readTicketRequiredFields>> | undefined;
+
   for (const transition of matchingTransitions) {
     if (transition.requiresApproval && !bypassPrivilege) {
       throw new BadRequestException(
@@ -147,20 +163,7 @@ export async function assertTransitionAllowed(
       Array.isArray(transition.requiredFields) &&
       transition.requiredFields.length > 0
     ) {
-      const ticketRows = await db
-        .select({
-          assigneeMembershipId: tickets.assigneeMembershipId,
-          dueDate: tickets.dueDate,
-          priority: tickets.priority,
-          points: tickets.points,
-          epicId: tickets.epicId,
-          sprintId: tickets.sprintId,
-        })
-        .from(tickets)
-        .where(
-          and(eq(tickets.id, context.ticketId), eq(tickets.orgId, orgId)),
-        )
-        .limit(1);
+      if (ticketRows === undefined) ticketRows = await readTicketRequiredFields();
 
       if (ticketRows.length > 0) {
         const row = ticketRows[0];

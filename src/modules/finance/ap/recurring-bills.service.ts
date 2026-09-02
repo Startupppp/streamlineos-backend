@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { z } from "zod";
-import { and, asc, eq, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -208,15 +208,26 @@ export class RecurringBillsService {
       )
       .limit(1000);
 
+    const expiredByOrg = new Map<string, number[]>();
+    const runnable: typeof due = [];
     for (const template of due) {
       if (template.endDate && template.endDate < today) {
-        await this.db
-          .update(finRecurringBillTemplates)
-          .set({ isActive: false, updatedAt: new Date() })
-          .where(and(eq(finRecurringBillTemplates.id, template.id), eq(finRecurringBillTemplates.orgId, template.orgId)));
-        continue;
+        const ids = expiredByOrg.get(template.orgId);
+        if (ids) ids.push(template.id);
+        else expiredByOrg.set(template.orgId, [template.id]);
+      } else {
+        runnable.push(template);
       }
+    }
 
+    for (const [expiredOrgId, ids] of expiredByOrg) {
+      await this.db
+        .update(finRecurringBillTemplates)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(and(inArray(finRecurringBillTemplates.id, ids), eq(finRecurringBillTemplates.orgId, expiredOrgId)));
+    }
+
+    for (const template of runnable) {
       try {
         const bill = await this.spawnBillFromTemplate(template.orgId, template.createdBy, template);
         const nextRun = addFrequencyDays(new Date(), template.frequency);

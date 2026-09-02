@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { organizationMembers, users } from "../../../db/schema";
@@ -57,15 +57,11 @@ export class LeaveApproverService {
     ];
 
     const uniqueCandidateIds = [...new Set(candidateIds)];
-    const candidateFactsBatch = await this.employment.getFactsBatch(orgId, uniqueCandidateIds);
+    if (uniqueCandidateIds.length === 0) return null;
 
-    for (const candidateId of uniqueCandidateIds) {
-      if (candidateId === subjectUserId) continue;
-      const permissions = await this.access.resolveUserPermissions(orgId, candidateId);
-      const scope = permissions.get(LEAVE_APPROVE_PERMISSION) ?? "none";
-      if (!(await this.includesSubject(scope, orgId, candidateId, subjectUserId))) continue;
-
-      const [candidate] = await this.db
+    const [candidateFactsBatch, candidateRows] = await Promise.all([
+      this.employment.getFactsBatch(orgId, uniqueCandidateIds),
+      this.db
         .select({
           id: users.id,
           name: users.name,
@@ -79,11 +75,21 @@ export class LeaveApproverService {
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, candidateId),
+            inArray(organizationMembers.userId, uniqueCandidateIds),
             eq(organizationMembers.status, "ACTIVE"),
           ),
-        )
-        .limit(1);
+        ),
+    ]);
+
+    const candidateById = new Map(candidateRows.map((row) => [row.id, row]));
+
+    for (const candidateId of uniqueCandidateIds) {
+      if (candidateId === subjectUserId) continue;
+      const permissions = await this.access.resolveUserPermissions(orgId, candidateId);
+      const scope = permissions.get(LEAVE_APPROVE_PERMISSION) ?? "none";
+      if (!(await this.includesSubject(scope, orgId, candidateId, subjectUserId))) continue;
+
+      const candidate = candidateById.get(candidateId);
       if (candidate) {
         const facts = candidateFactsBatch.get(candidateId);
         return { ...candidate, designation: facts?.designation ?? null };

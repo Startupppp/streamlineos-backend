@@ -98,22 +98,29 @@ export class HrEffectiveChangeApplierService {
         .limit(limit)
         .for("update");
 
-      for (const change of due) {
-        await this.applyOne(tx, orgId, change);
-        const [marked] = await tx
+      for (const change of due) await this.applyOne(tx, orgId, change);
+
+      if (due.length > 0) {
+        const marked = await tx
           .update(hrEffectiveDatedChanges)
           .set({ status: "applied", appliedAt: new Date(), updatedAt: new Date() })
           .where(
             and(
-              eq(hrEffectiveDatedChanges.id, change.id),
+              inArray(
+                hrEffectiveDatedChanges.id,
+                due.map((change) => change.id),
+              ),
               eq(hrEffectiveDatedChanges.orgId, orgId),
               eq(hrEffectiveDatedChanges.status, "approved"),
               isNull(hrEffectiveDatedChanges.appliedAt),
             ),
           )
           .returning({ id: hrEffectiveDatedChanges.id });
-        if (!marked) throw new ConflictException("The effective change was already processed.");
+        if (marked.length !== due.length)
+          throw new ConflictException("The effective change was already processed.");
+      }
 
+      for (const change of due) {
         await this.audit.log(
           {
             orgId,
