@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { aliasedTable, and, desc, eq, isNotNull, or } from "drizzle-orm";
+import { aliasedTable, and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
 import {
   calendarEvents,
   calendarProviderSyncQueue,
@@ -40,11 +40,11 @@ export class CalendarSyncStatusService {
     return row?.id ?? 0;
   }
 
-  private async assertEventVisible(
+  private async findVisibleEvent(
     orgId: string,
     eventId: number,
     callerMembershipId: number,
-  ): Promise<{ id: number; createdByMembershipId: number }> {
+  ): Promise<{ id: number; createdByMembershipId: number } | null> {
     const rows = await this.db
       .select({
         id: calendarEvents.id,
@@ -71,9 +71,49 @@ export class CalendarSyncStatusService {
         ),
       )
       .limit(1);
-    const row = rows[0];
-    if (!row) throw new NotFoundException("Event not found");
-    return row;
+    return rows[0] ?? null;
+  }
+
+  /**
+   * A delete leaves a tombstone: the local row is gone but the queue row that must
+   * remove the provider copy survives. Visibility can no longer be resolved from the
+   * event, so it is resolved from the tombstone's own author — the person `deleteEvent`
+   * already verified as the creator. Without this, a delete that exhausts its attempts
+   * is invisible and unretryable, and the provider copy lives forever.
+   */
+  private async findDeleteTombstone(
+    orgId: string,
+    eventId: number,
+    userId: string,
+  ): Promise<{ id: number } | null> {
+    const rows = await this.db
+      .select({ id: calendarProviderSyncQueue.id })
+      .from(calendarProviderSyncQueue)
+      .where(
+        and(
+          eq(calendarProviderSyncQueue.orgId, orgId),
+          eq(calendarProviderSyncQueue.eventId, eventId),
+          eq(calendarProviderSyncQueue.operation, "delete"),
+          sql`${calendarProviderSyncQueue.payload} ->> 'userId' = ${userId}`,
+        ),
+      )
+      .orderBy(desc(calendarProviderSyncQueue.id))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  private async assertReadable(
+    orgId: string,
+    eventId: number,
+    userId: string,
+    callerMembershipId: number,
+  ): Promise<{ createdByMembershipId: number | null }> {
+    const visible = await this.findVisibleEvent(orgId, eventId, callerMembershipId);
+    if (visible) return { createdByMembershipId: visible.createdByMembershipId };
+
+    const tombstone = await this.findDeleteTombstone(orgId, eventId, userId);
+    if (!tombstone) throw new NotFoundException("Event not found");
+    return { createdByMembershipId: null };
   }
 
   async getSyncStatus(
@@ -82,7 +122,7 @@ export class CalendarSyncStatusService {
     eventId: number,
   ): Promise<SyncStatusResponse> {
     const callerMembershipId = await this.resolveCallerMembershipId(orgId, userId);
-    await this.assertEventVisible(orgId, eventId, callerMembershipId);
+    await this.assertReadable(orgId, eventId, userId, callerMembershipId);
 
     const rows = await this.db
       .select({
@@ -134,8 +174,11 @@ export class CalendarSyncStatusService {
     eventId: number,
   ): Promise<SyncRetryResponse> {
     const callerMembershipId = await this.resolveCallerMembershipId(orgId, userId);
-    const event = await this.assertEventVisible(orgId, eventId, callerMembershipId);
-    if (event.createdByMembershipId !== callerMembershipId)
+    const access = await this.assertReadable(orgId, eventId, userId, callerMembershipId);
+    if (
+      access.createdByMembershipId !== null &&
+      access.createdByMembershipId !== callerMembershipId
+    )
       throw new NotFoundException("Event not found");
 
     const updated = await this.db

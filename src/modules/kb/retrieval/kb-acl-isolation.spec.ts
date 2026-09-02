@@ -3,6 +3,7 @@ import type { SQL } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbMembersService } from "../wiki/kb-members.service";
+import { KbIndexingService } from "./kb-indexing.service";
 import { kbPages, kbArticles } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -167,9 +168,8 @@ describe("KB removed-member ACL revision mechanism", () => {
     };
   }
 
-  const makeIndexing = () => ({
-    syncAclRevisionForSpace: jest.fn().mockResolvedValue(undefined),
-  });
+  const makeIndexing = (db: unknown) =>
+    new KbIndexingService(db as never, undefined as never, undefined as never);
 
   it("removing a non-admin member bumps aclRevision on kbPages and kbArticles for that space", async () => {
     const member = {
@@ -185,7 +185,7 @@ describe("KB removed-member ACL revision mechanism", () => {
     const db = makeDb(member);
     const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
 
-    const svc = new KbMembersService(db as never, access as never, makeIndexing() as never);
+    const svc = new KbMembersService(db as never, access as never, makeIndexing(db) as never);
     const result = await svc.remove("org-1", 5, 10);
 
     expect(result.success).toBe(true);
@@ -216,7 +216,7 @@ describe("KB removed-member ACL revision mechanism", () => {
     };
     const access = { invalidateAccessibleSpaceIds: jest.fn().mockResolvedValue(undefined) };
 
-    const svc = new KbMembersService(db as never, access as never, makeIndexing() as never);
+    const svc = new KbMembersService(db as never, access as never, makeIndexing(db) as never);
     const result = await svc.remove("org-1", 7, 11);
 
     expect(result.success).toBe(true);

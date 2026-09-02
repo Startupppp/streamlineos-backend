@@ -25,6 +25,7 @@ import { CalendarProviderWebhookController } from "./calendar-provider-webhook.c
   controllers: [
     CalendarController,
     CalendarAdminSettingsController,
+    CalendarProviderWebhookController,
   ],
   providers: [
     CalendarEventsAggregateService,

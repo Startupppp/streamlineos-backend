@@ -235,7 +235,7 @@ describe("KbIngestionConsumer — no Redis means no ingestion, not unguarded ing
     expect(adapter.handle).toHaveBeenCalledTimes(2);
   });
 
-  it("a genuinely contended lease still reports contention, not unavailability", async () => {
+  it("a genuinely contended lease suppresses the duplicate; only unavailability fails the event", async () => {
     const recorder: InterleaveRecorder = { events: [], maxConcurrent: 0 };
     const { adapter, open } = makeTracingAdapter(recorder);
     const redis = { set: jest.fn().mockResolvedValue(null) };
@@ -243,7 +243,7 @@ describe("KbIngestionConsumer — no Redis means no ingestion, not unguarded ing
     const consumer = buildConsumer(lease, adapter);
     open();
 
-    await expect(consumer.handle(makeEvent())).rejects.toThrow("KB_INGESTION_LEASE_CONTENTION");
+    await expect(consumer.handle(makeEvent())).resolves.toBeUndefined();
     expect(adapter.handle).not.toHaveBeenCalled();
   });
 

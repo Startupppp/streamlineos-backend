@@ -240,19 +240,41 @@ describe("KbIngestionConsumer", () => {
   });
 
   describe("L1 — lease exclusivity under concurrent claim", () => {
-    it("throws KB_INGESTION_LEASE_CONTENTION when the lease is already held by another worker", async () => {
+    it("suppresses the duplicate delivery when the lease is already held by another worker", async () => {
       const contendedLease = makeLease(false);
       const { consumer } = buildConsumer({ lease: contendedLease });
 
-      await expect(consumer.handle(makeEvent())).rejects.toThrow("KB_INGESTION_LEASE_CONTENTION");
+      await expect(consumer.handle(makeEvent())).resolves.toBeUndefined();
     });
 
     it("does not call the adapter when the lease is not acquired", async () => {
       const contendedLease = makeLease(false);
       const { consumer, pageAdapter } = buildConsumer({ lease: contendedLease });
 
-      await expect(consumer.handle(makeEvent())).rejects.toThrow("KB_INGESTION_LEASE_CONTENTION");
+      await consumer.handle(makeEvent());
+
       expect(pageAdapter.handle).not.toHaveBeenCalled();
+    });
+
+    it("BITE: contention never consumes a retry, so a hot document cannot dead-letter unindexed", async () => {
+      const contendedLease = makeLease(false);
+      const { consumer, pageAdapter } = buildConsumer({ lease: contendedLease });
+
+      for (let attempt = 0; attempt < OUTBOX_MAX_RETRIES - 1; attempt++)
+        await expect(
+          consumer.handle(makeEvent({ retryCount: attempt })),
+        ).resolves.toBeUndefined();
+
+      expect(pageAdapter.handle).not.toHaveBeenCalled();
+    });
+
+    it("releases nothing when the lease was never acquired", async () => {
+      const contendedLease = makeLease(false);
+      const { consumer } = buildConsumer({ lease: contendedLease });
+
+      await consumer.handle(makeEvent());
+
+      expect(contendedLease.release).not.toHaveBeenCalled();
     });
 
     it("releases the lease after successful ingestion", async () => {

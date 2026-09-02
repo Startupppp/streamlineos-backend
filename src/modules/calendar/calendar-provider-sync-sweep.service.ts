@@ -129,6 +129,13 @@ export class CalendarProviderSyncSweepService {
     };
 
     if (row.operation === "create") {
+      if (eventRow.externalEventId) {
+        this.logger.warn(
+          `calendar-provider-sync create row ${row.id} re-claimed after the event was already ` +
+            `created externally (${eventRow.externalEventId}); skipping the push to avoid a duplicate.`,
+        );
+        return;
+      }
       const pushed = await this.sync.pushCreate(userId, conn, pushInput);
       await runInNewTenantTransaction(this.db, row.orgId, async (tx) => {
         await tx
@@ -211,7 +218,12 @@ export class CalendarProviderSyncSweepService {
       await tx
         .update(calendarProviderSyncQueue)
         .set(patch)
-        .where(eq(calendarProviderSyncQueue.id, row.id));
+        .where(
+          and(
+            eq(calendarProviderSyncQueue.id, row.id),
+            eq(calendarProviderSyncQueue.orgId, row.orgId),
+          ),
+        );
     });
   }
 }

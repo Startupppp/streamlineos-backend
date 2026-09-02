@@ -433,7 +433,7 @@ export class CalendarService {
         if (d?.integrationConnectionId && d.externalEventId)
           await tx.insert(calendarProviderSyncQueue).values({
             orgId,
-            eventId: null,
+            eventId: id,
             connectionId: d.integrationConnectionId,
             operation: "delete",
             externalEventId: d.externalEventId,

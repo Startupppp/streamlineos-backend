@@ -93,8 +93,14 @@ export class KbIngestionConsumer implements OutboxEventConsumer, OnModuleInit {
       const lease = await this.leaseService.acquire(orgId, payload.contentType, payload.contentId);
       if (lease.status === "unavailable")
         throw new Error(`${KB_LEASE_UNAVAILABLE_CODE}: ${lease.reason}`);
-      if (lease.status === "contended")
-        throw new Error("KB_INGESTION_LEASE_CONTENTION");
+      if (lease.status === "contended") {
+        this.logger.log("KB ingestion suppressed: lease held by another worker", {
+          orgId,
+          contentType: payload.contentType,
+          contentId: payload.contentId,
+        });
+        return;
+      }
 
       leaseToken = lease.token;
       this.logger.log("KB ingestion started", {

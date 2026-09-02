@@ -1,6 +1,7 @@
 import type { Db } from "../../../db/drizzle.module";
 import { KbSpacesService } from "./kb-spaces.service";
 import type { KbAccessService } from "../core/kb-access.service";
+import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -49,7 +50,8 @@ function makeService(orgId: string, rows: unknown[]): { svc: KbSpacesService; al
   const access = {
     getAccessibleSpaceIds: jest.fn().mockResolvedValue([1, 2, 3]),
   } as unknown as KbAccessService;
-  return { svc: new KbSpacesService(db, access), allWhereArgs };
+  const indexing = new KbIndexingService(db, undefined as never, undefined as never);
+  return { svc: new KbSpacesService(db, access, indexing), allWhereArgs };
 }
 
 describe("KbSpacesService — cross-tenant isolation", () => {

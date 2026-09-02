@@ -23,6 +23,8 @@ export class CalendarProviderWebhookController {
     @Body() body: ProviderWebhookBody,
     @Headers(CALENDAR_WEBHOOK_SECRET_HEADER) secret: string | undefined,
   ): Promise<{ action: string }> {
+    assertCalendarWebhookSecret(secret);
+
     const result = await this.webhooks.handleDelivery({
       connectionId: body.connectionId,
       externalEventId: body.externalEventId,
