@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { WorkflowsExecutionService } from "../../workflows-execution.service";
+import { WorkflowsApprovalService } from "../../workflows-approval.service";
 
 const OWNER_ORG = "org-owner";
 const USER_ID = "user-1";
@@ -15,7 +16,7 @@ describe("WorkflowsExecutionService — TOCTOU hardening", () => {
         query: { workflowExecutions: { findFirst: jest.fn().mockResolvedValue(null) } },
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db, {} as never);
+      const svc = new WorkflowsExecutionService(db, new WorkflowsApprovalService(db as never));
       await expect(
         svc.cancelExecution("attacker-org", USER_ID, WORKFLOW_ID, EXECUTION_ID),
       ).rejects.toThrow(NotFoundException);
@@ -27,7 +28,7 @@ describe("WorkflowsExecutionService — TOCTOU hardening", () => {
         query: { workflowExecutions: { findFirst: jest.fn().mockResolvedValue(COMPLETED_ROW) } },
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db, {} as never);
+      const svc = new WorkflowsExecutionService(db, new WorkflowsApprovalService(db as never));
       await expect(
         svc.cancelExecution(OWNER_ORG, USER_ID, WORKFLOW_ID, EXECUTION_ID),
       ).rejects.toThrow(ForbiddenException);
@@ -54,7 +55,7 @@ describe("WorkflowsExecutionService — TOCTOU hardening", () => {
         insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db, {} as never);
+      const svc = new WorkflowsExecutionService(db, new WorkflowsApprovalService(db as never));
       await svc.cancelExecution(OWNER_ORG, USER_ID, WORKFLOW_ID, EXECUTION_ID);
 
       expect(capturedWhere).toBeDefined();
@@ -79,7 +80,7 @@ describe("WorkflowsExecutionService — TOCTOU hardening", () => {
         insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db, {} as never);
+      const svc = new WorkflowsExecutionService(db, new WorkflowsApprovalService(db as never));
       const result = await svc.cancelExecution(OWNER_ORG, USER_ID, WORKFLOW_ID, EXECUTION_ID);
 
       expect(result).toBeUndefined();
@@ -120,7 +121,7 @@ describe("WorkflowsExecutionService — TOCTOU hardening", () => {
         insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db, {} as never);
+      const svc = new WorkflowsExecutionService(db, new WorkflowsApprovalService(db as never));
       await svc.handleApproval(OWNER_ORG, USER_ID, APPROVAL_ID, { action: "approve" });
 
       expect(capturedWhere).toBeDefined();
@@ -157,7 +158,7 @@ describe("WorkflowsExecutionService — TOCTOU hardening", () => {
         insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db, {} as never);
+      const svc = new WorkflowsExecutionService(db, new WorkflowsApprovalService(db as never));
       const result = await svc.handleApproval(OWNER_ORG, USER_ID, APPROVAL_ID, { action: "approve" });
 
       expect(result).toBeUndefined();
@@ -176,7 +177,7 @@ describe("WorkflowsExecutionService — TOCTOU hardening", () => {
         }),
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db, {} as never);
+      const svc = new WorkflowsExecutionService(db, new WorkflowsApprovalService(db as never));
       await expect(
         svc.handleApproval(OWNER_ORG, "wrong-user", APPROVAL_ID, { action: "approve" }),
       ).rejects.toThrow(NotFoundException);

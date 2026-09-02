@@ -33,6 +33,7 @@ const MOCK_RESULT: UploadResult = {
   key: "kb-media/org-1/file.webp",
   size: COMPRESSED.length,
   mimeType: "image/webp",
+  sha256: "aabbccddeeff00112233445566778899",
 };
 
 const JPEG_BUF = Buffer.from([0xff, 0xd8, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0]);

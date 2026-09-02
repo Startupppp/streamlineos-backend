@@ -16,9 +16,7 @@ describe("InputsService.listInputs scope gate", () => {
             innerJoin: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
                 orderBy: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockReturnValue({
-                    offset: jest.fn().mockResolvedValue(resolved),
-                  }),
+                  limit: jest.fn().mockResolvedValue(resolved),
                 }),
               }),
             }),
@@ -26,9 +24,7 @@ describe("InputsService.listInputs scope gate", () => {
           innerJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
               orderBy: jest.fn().mockReturnValue({
-                limit: jest.fn().mockReturnValue({
-                  offset: jest.fn().mockResolvedValue(resolved),
-                }),
+                limit: jest.fn().mockResolvedValue(resolved),
               }),
             }),
           }),
@@ -49,6 +45,6 @@ describe("InputsService.listInputs scope gate", () => {
     const service = createService({ run: { id: runId, status: "PREPARING" }, rows: [] });
     await expect(
       service.listInputs(orgId, runId, { limit: 50, userId: "other-user" }, "all", actorUserId, 1),
-    ).resolves.toEqual([]);
+    ).resolves.toMatchObject({ data: [], pagination: { hasMore: false } });
   });
 });

@@ -76,6 +76,7 @@ function build(
     access as never,
     { scan: jest.fn() } as never,
     { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
+    { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
   );
   return { controller, storage, db };
 }

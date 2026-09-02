@@ -173,8 +173,8 @@ describe("AiGatewayRunnerHelper — no duplicate paid call (stream handoff does 
 describe("withTenantScopedTools — prompt injection: non-allowlisted tool cannot be invoked", () => {
   it("output tool set only contains keys that were in the input — no tool is created for unregistered names", () => {
     const inputTools = {
-      readTicket: { description: "reads a ticket", execute: jest.fn() },
-      createTicket: { description: "creates a ticket", execute: jest.fn() },
+      readTicket: { description: "reads a ticket", inputSchema: z.object({}), execute: jest.fn() },
+      createTicket: { description: "creates a ticket", inputSchema: z.object({}), execute: jest.fn() },
     };
 
     const result = withTenantScopedTools(inputTools, {} as never, "org_1");
@@ -186,7 +186,7 @@ describe("withTenantScopedTools — prompt injection: non-allowlisted tool canno
   });
 
   it("a key not registered in the tool set resolves to undefined — the AI SDK cannot dispatch it", () => {
-    const inputTools = { readTicket: { description: "reads a ticket", execute: jest.fn() } };
+    const inputTools = { readTicket: { description: "reads a ticket", inputSchema: z.object({}), execute: jest.fn() } };
     const result = withTenantScopedTools(inputTools, {} as never, "org_1");
 
     const injectedTool = (result as Record<string, unknown>)["deleteOrg"];
@@ -198,7 +198,7 @@ describe("withTenantScopedTools — prompt injection: non-allowlisted tool canno
     runInNewTenantTransaction.mockClear();
 
     const mockExecute = jest.fn().mockResolvedValue({ ok: true });
-    const inputTools = { myTool: { description: "tool", execute: mockExecute } };
+    const inputTools = { myTool: { description: "tool", inputSchema: z.object({}), execute: mockExecute } };
     const result = withTenantScopedTools(inputTools, {} as never, "org_scope");
 
     await result["myTool"]?.execute?.({ arg: 1 } as never, {} as never);

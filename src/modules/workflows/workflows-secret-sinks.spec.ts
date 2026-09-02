@@ -22,6 +22,7 @@ describe("Secret sink: execution record — executionContextSchema strips inject
       resumeAt: null,
       variables: { x: 1 },
       steps: 3,
+      infraAttempt: 0,
     });
     expect(out).not.toHaveProperty("secrets");
   });

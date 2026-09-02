@@ -74,7 +74,7 @@ describe("every KB surface builds its predicate from resolved project access", (
     },
     {
       name: "comments",
-      run: () => new KbPageCommentsService(makeDb() as never, {} as never).list(USER, 7),
+      run: () => new KbPageCommentsService(makeDb() as never, {} as never, {} as never).list(USER, 7),
     },
     {
       name: "record links",

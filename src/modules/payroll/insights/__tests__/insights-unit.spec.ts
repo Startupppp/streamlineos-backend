@@ -62,7 +62,7 @@ function _makeMockDb(lineItems: unknown[], runEmployees: unknown[], costCenters:
     where: jest.fn().mockImplementation(() => {
       const result = whereReturns[callCount] ?? [];
       callCount++;
-      return Promise.resolve(result);
+      return chain(result);
     }),
     insert: jest.fn().mockReturnThis(),
     values: jest.fn().mockReturnThis(),
@@ -352,9 +352,9 @@ describe("ReportsService.getCostCenter — costCenter filter is in SQL, not JS p
         return aggChain;
       }),
       groupBy: jest.fn().mockReturnThis(),
+      having: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      offset: jest.fn().mockResolvedValue([]),
+      limit: jest.fn().mockResolvedValue([]),
     };
 
     const mockDb = {

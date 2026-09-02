@@ -42,7 +42,8 @@ function makeDb(pubRow: typeof PUBLISHED_PUB | null = PUBLISHED_PUB) {
   return {
     select: jest.fn().mockReturnValueOnce(selectChain).mockReturnValueOnce({
       from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockResolvedValue(LINE_ITEMS),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(LINE_ITEMS),
     }),
   };
 }

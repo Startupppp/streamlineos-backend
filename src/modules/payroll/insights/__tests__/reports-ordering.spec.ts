@@ -24,23 +24,23 @@ jest.mock("../lib/report-builders", () => ({
 
 function makeOrderingChain(globalOrder: string[]) {
   const chain: Record<string, jest.Mock> = {};
-  for (const method of ["from", "innerJoin", "leftJoin", "where", "groupBy", "limit"]) {
+  for (const method of ["from", "innerJoin", "leftJoin", "where", "groupBy", "having"]) {
     chain[method] = jest.fn(() => chain);
   }
   chain["orderBy"] = jest.fn((..._args: unknown[]) => {
     globalOrder.push("orderBy");
     return chain;
   });
-  chain["offset"] = jest.fn(() => {
-    globalOrder.push("offset");
+  chain["limit"] = jest.fn(() => {
+    globalOrder.push("limit");
     return Promise.resolve([]);
   });
   return chain;
 }
 
 describe("ReportsService — deterministic ORDER BY before paging", () => {
-  describe("getDepartmentCost: orderBy(name, MIN(id)) precedes offset", () => {
-    it("orderBy precedes offset in the department-cost aggregate query", async () => {
+  describe("getDepartmentCost: orderBy(name, MIN(id)) precedes limit", () => {
+    it("orderBy precedes limit in the department-cost aggregate query", async () => {
       const globalOrder: string[] = [];
       const chain = makeOrderingChain(globalOrder);
       const db = { select: jest.fn(() => ({ from: jest.fn(() => chain) })) };
@@ -49,20 +49,20 @@ describe("ReportsService — deterministic ORDER BY before paging", () => {
       await svc.getDepartmentCost("org-1", "2026-01", {}, { limit: 10 });
 
       const orderByCalledAt = globalOrder.indexOf("orderBy");
-      const offsetCalledAt = globalOrder.indexOf("offset");
+      const limitCalledAt = globalOrder.indexOf("limit");
       expect(orderByCalledAt).toBeGreaterThanOrEqual(0);
-      expect(offsetCalledAt).toBeGreaterThan(orderByCalledAt);
+      expect(limitCalledAt).toBeGreaterThan(orderByCalledAt);
     });
 
     it("bite: absent orderBy means the ordering check would fail", () => {
-      const seqWithoutOrderBy = ["offset"];
+      const seqWithoutOrderBy = ["limit"];
       expect(seqWithoutOrderBy.indexOf("orderBy")).toBe(-1);
       expect(seqWithoutOrderBy.indexOf("orderBy")).not.toBeGreaterThanOrEqual(0);
     });
   });
 
-  describe("getCostCenter: orderBy(costCenter, MIN(id)) precedes offset", () => {
-    it("orderBy precedes offset in the cost-center aggregate query", async () => {
+  describe("getCostCenter: orderBy(costCenter, MIN(id)) precedes limit", () => {
+    it("orderBy precedes limit in the cost-center aggregate query", async () => {
       const globalOrder: string[] = [];
       const chain = makeOrderingChain(globalOrder);
       const db = { select: jest.fn(() => ({ from: jest.fn(() => chain) })) };
@@ -71,13 +71,13 @@ describe("ReportsService — deterministic ORDER BY before paging", () => {
       await svc.getCostCenter("org-1", "2026-01", {}, { limit: 10 });
 
       const orderByCalledAt = globalOrder.indexOf("orderBy");
-      const offsetCalledAt = globalOrder.indexOf("offset");
+      const limitCalledAt = globalOrder.indexOf("limit");
       expect(orderByCalledAt).toBeGreaterThanOrEqual(0);
-      expect(offsetCalledAt).toBeGreaterThan(orderByCalledAt);
+      expect(limitCalledAt).toBeGreaterThan(orderByCalledAt);
     });
 
     it("bite: absent orderBy means the ordering check would fail", () => {
-      const seqWithoutOrderBy = ["offset"];
+      const seqWithoutOrderBy = ["limit"];
       expect(seqWithoutOrderBy.indexOf("orderBy")).toBe(-1);
       expect(seqWithoutOrderBy.indexOf("orderBy")).not.toBeGreaterThanOrEqual(0);
     });

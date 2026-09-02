@@ -17,9 +17,7 @@ function makeListMock(dataRows: unknown[] = [], countTotal = 0) {
 
   const dataAfterWhere = {
     orderBy: jest.fn().mockReturnValue({
-      limit: jest.fn().mockReturnValue({
-        offset: jest.fn().mockResolvedValue(dataRows),
-      }),
+      limit: jest.fn().mockResolvedValue(dataRows),
     }),
   };
 

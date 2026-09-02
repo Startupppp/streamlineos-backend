@@ -47,7 +47,7 @@ describe("ReconciliationRulesService.listRules — keyset on priority/id", () =>
   });
 
   it("cursor predicate is a strict < inequality and references id", async () => {
-    const { where } = await captureList("MAAW");
+    const { where } = await captureList("MQA1");
     const sql = render(where);
     expect(sql).toMatch(/</);
     expect(sql).toContain('"id"');

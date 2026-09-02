@@ -432,7 +432,7 @@ describe("AC3: idempotent retry of finalize produces exactly one quarantine reco
   });
 
   it("the quarantine record is keyed to the result of uploadCompressed (one record per upload)", async () => {
-    const uploadResult = { key: "org-1/uploads/specific-uuid-photo.jpg" };
+    const uploadResult = { key: "org-1/uploads/specific-uuid-photo.jpg", url: "https://cdn.example.com/org-1/uploads/specific-uuid-photo.jpg", sha256: "deadbeef" };
     const { controller, quarantine } = buildController({ uploadResult });
     const file = makeFile("image/jpeg", JPEG_MAGIC, "photo.jpg");
 
