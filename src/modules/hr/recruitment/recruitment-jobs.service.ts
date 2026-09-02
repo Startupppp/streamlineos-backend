@@ -277,7 +277,7 @@ export class RecruitmentJobsService {
       await this.db
         .update(jobPostings)
         .set({ externalPostingIds: externalIds, updatedAt: new Date() })
-        .where(eq(jobPostings.id, jobId));
+        .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
       await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     }
 

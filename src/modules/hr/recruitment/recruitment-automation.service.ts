@@ -100,7 +100,7 @@ export class RecruitmentAutomationService {
     const [updated] = await this.db
       .update(candidateMessages)
       .set({ readAt: new Date() })
-      .where(eq(candidateMessages.id, messageId))
+      .where(and(eq(candidateMessages.id, messageId), eq(candidateMessages.orgId, orgId)))
       .returning();
     return updated;
   }

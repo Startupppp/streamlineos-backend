@@ -244,7 +244,7 @@ export class RecruitmentSourcingService {
     const [updated] = await this.db
       .update(headcountRequests)
       .set(updateData)
-      .where(eq(headcountRequests.id, requestId))
+      .where(and(eq(headcountRequests.id, requestId), eq(headcountRequests.orgId, orgId)))
       .returning();
     return updated;
   }
@@ -267,7 +267,7 @@ export class RecruitmentSourcingService {
     const [updated] = await this.db
       .update(headcountRequests)
       .set({ status: "APPROVED", approvedBy: userId, approvedByMembershipId: actorMembershipId, approvedAt: new Date() })
-      .where(eq(headcountRequests.id, requestId))
+      .where(and(eq(headcountRequests.id, requestId), eq(headcountRequests.orgId, orgId)))
       .returning();
     return updated;
   }
@@ -279,7 +279,7 @@ export class RecruitmentSourcingService {
     const [updated] = await this.db
       .update(headcountRequests)
       .set({ status: "REJECTED", rejectedReason: reason })
-      .where(eq(headcountRequests.id, requestId))
+      .where(and(eq(headcountRequests.id, requestId), eq(headcountRequests.orgId, orgId)))
       .returning();
     return updated;
   }
@@ -303,7 +303,7 @@ export class RecruitmentSourcingService {
       await tx
         .update(headcountRequests)
         .set({ status: "JOB_CREATED", linkedJobPostingId: created.id })
-        .where(eq(headcountRequests.id, requestId));
+        .where(and(eq(headcountRequests.id, requestId), eq(headcountRequests.orgId, orgId)));
       return created;
     });
 

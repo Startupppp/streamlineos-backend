@@ -111,7 +111,7 @@ export class RecruitmentCandidateDocsService {
       .limit(1);
     if (!doc) throw new NotFoundException("Document not found");
 
-    void this.markDocumentViewed(documentId);
+    void this.markDocumentViewed(orgId, documentId);
 
     return { htmlContent: doc.htmlContent, title: doc.title };
   }
@@ -265,12 +265,12 @@ export class RecruitmentCandidateDocsService {
     return { documents: generatedDocs, count: generatedDocs.length };
   }
 
-  private async markDocumentViewed(documentId: number): Promise<void> {
+  private async markDocumentViewed(orgId: string, documentId: number): Promise<void> {
     try {
       await this.db
         .update(candidateDocuments)
         .set({ viewedAt: new Date() })
-        .where(eq(candidateDocuments.id, documentId));
+        .where(and(eq(candidateDocuments.id, documentId), eq(candidateDocuments.orgId, orgId)));
     } catch (err) {
       this.logger.warn(`markDocumentViewed failed for document ${documentId}: ${err instanceof Error ? err.message : String(err)}`);
     }

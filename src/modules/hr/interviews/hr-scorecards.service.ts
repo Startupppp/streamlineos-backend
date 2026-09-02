@@ -64,7 +64,7 @@ export class HrScorecardsService {
         ...(input.criteria !== undefined && { criteria: input.criteria }),
         updatedAt: new Date(),
       })
-      .where(eq(scorecardTemplates.id, id));
+      .where(and(eq(scorecardTemplates.id, id), eq(scorecardTemplates.orgId, orgId)));
 
     return { success: true };
   }

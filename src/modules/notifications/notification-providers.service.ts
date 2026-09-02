@@ -99,7 +99,7 @@ export class NotificationProvidersService {
         ...(dto.dailySendLimit !== undefined && { dailySendLimit: dto.dailySendLimit }),
         ...(dto.monthlyCostLimit !== undefined && { monthlyCostLimit: dto.monthlyCostLimit }),
       })
-      .where(eq(notificationProviderAccounts.id, id))
+      .where(and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)))
       .returning();
     if (!row) throw new NotFoundException("Provider not found");
     await this.audit(orgId, userId, "provider.updated", row.id, row.channel);
@@ -112,7 +112,9 @@ export class NotificationProvidersService {
       where: and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Provider not found");
-    await this.db.delete(notificationProviderAccounts).where(eq(notificationProviderAccounts.id, id));
+    await this.db
+      .delete(notificationProviderAccounts)
+      .where(and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)));
     await this.audit(orgId, userId, "provider.deleted", id, existing.channel);
     await this.cache.del(NOTIF_CACHE.availability(orgId));
     return { success: true };
@@ -149,7 +151,7 @@ export class NotificationProvidersService {
     await this.db
       .update(notificationProviderAccounts)
       .set({ lastTestedAt: new Date(), healthStatus: result.status === "SENT" ? "healthy" : "unhealthy" })
-      .where(eq(notificationProviderAccounts.id, id));
+      .where(and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)));
     await this.audit(orgId, userId, "provider.tested", id, channel);
 
     return { status: result.status, sandbox: account.sandboxMode, message: result.failureMessage ?? "Test dispatched", providerMessageId: result.providerMessageId ?? null };

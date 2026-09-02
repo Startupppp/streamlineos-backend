@@ -106,7 +106,7 @@ export class RecruitmentVendorSourcingService {
     const [updated] = await this.db
       .update(recruitmentVendors)
       .set({ portalToken, portalTokenExpiresAt })
-      .where(eq(recruitmentVendors.id, vendorId))
+      .where(and(eq(recruitmentVendors.id, vendorId), eq(recruitmentVendors.orgId, orgId)))
       .returning({ portalToken: recruitmentVendors.portalToken, portalTokenExpiresAt: recruitmentVendors.portalTokenExpiresAt });
     return updated;
   }
