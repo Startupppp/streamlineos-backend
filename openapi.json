@@ -21289,6 +21289,100 @@
         },
         "x-idempotency-command": "billing.checkout",
         "x-idempotent": true
+      },
+      "patch": {
+        "operationId": "BillingController_confirmCheckout",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Billing"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "billing:subscription:manage",
+        "description": "Exposure: permission — billing:subscription:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "orderId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "paymentId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "signature": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "plan": {
+                    "type": "string",
+                    "enum": [
+                      "STARTER",
+                      "PROFESSIONAL",
+                      "ENTERPRISE"
+                    ]
+                  },
+                  "billingCycle": {
+                    "default": "monthly",
+                    "type": "string",
+                    "enum": [
+                      "monthly",
+                      "annual"
+                    ]
+                  },
+                  "couponId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "orderId",
+                  "paymentId",
+                  "signature",
+                  "plan"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-idempotency-command": "billing.subscription.verify",
+        "x-idempotent": true
       }
     },
     "/billing/coupons": {
@@ -22656,206 +22750,6 @@
         "x-exposure": "permissioned",
         "x-permission": "billing:subscription:view",
         "description": "Exposure: permission — billing:subscription:view"
-      }
-    },
-    "/billing/razorpay": {
-      "get": {
-        "operationId": "BillingController_getRazorpaySubscription",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "Billing"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "billing:subscription:view",
-        "description": "Exposure: permission — billing:subscription:view"
-      },
-      "post": {
-        "operationId": "BillingController_createOrder",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdempotencyKeyHeader"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "Billing"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "billing:subscription:manage",
-        "description": "Exposure: permission — billing:subscription:manage",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "plan": {
-                    "type": "string",
-                    "enum": [
-                      "STARTER",
-                      "PROFESSIONAL",
-                      "ENTERPRISE"
-                    ]
-                  },
-                  "billingCycle": {
-                    "default": "monthly",
-                    "type": "string",
-                    "enum": [
-                      "monthly",
-                      "annual"
-                    ]
-                  },
-                  "couponId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  }
-                },
-                "required": [
-                  "plan"
-                ]
-              }
-            }
-          }
-        },
-        "x-idempotency-command": "billing.order.create",
-        "x-idempotent": true
-      },
-      "patch": {
-        "operationId": "BillingController_verifyPayment",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/IdempotencyKeyHeader"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "Billing"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "billing:subscription:manage",
-        "description": "Exposure: permission — billing:subscription:manage",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "razorpay_order_id": {
-                    "type": "string"
-                  },
-                  "razorpay_payment_id": {
-                    "type": "string"
-                  },
-                  "razorpay_signature": {
-                    "type": "string"
-                  },
-                  "plan": {
-                    "type": "string",
-                    "enum": [
-                      "STARTER",
-                      "PROFESSIONAL",
-                      "ENTERPRISE"
-                    ]
-                  },
-                  "billingCycle": {
-                    "default": "monthly",
-                    "type": "string",
-                    "enum": [
-                      "monthly",
-                      "annual"
-                    ]
-                  },
-                  "couponId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  }
-                },
-                "required": [
-                  "razorpay_order_id",
-                  "razorpay_payment_id",
-                  "razorpay_signature",
-                  "plan"
-                ]
-              }
-            }
-          }
-        },
-        "x-idempotency-command": "billing.subscription.verify",
-        "x-idempotent": true
       }
     },
     "/billing/referrals": {
@@ -52818,6 +52712,7 @@
                 "properties": {
                   "userIds": {
                     "minItems": 1,
+                    "maxItems": 10,
                     "type": "array",
                     "items": {
                       "type": "string",

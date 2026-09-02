@@ -19,26 +19,15 @@ export const createOrderSchema = z.object({
 });
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
-export const verifyPaymentSchema = z.object({
-  razorpay_order_id: z.string(),
-  razorpay_payment_id: z.string(),
-  razorpay_signature: z.string(),
+export const confirmCheckoutSchema = z.object({
+  orderId: z.string().min(1),
+  paymentId: z.string().min(1),
+  signature: z.string().min(1),
   plan: planSchema,
   billingCycle: billingCycleSchema.optional(),
   couponId: z.number().int().positive().optional(),
-});
-export type VerifyPaymentInput = z.infer<typeof verifyPaymentSchema>;
-
-export const razorpayOrderSchema = z.object({
-  id: z.string(),
-  amount: z.number(),
-  currency: z.string(),
-});
-export type RazorpayOrder = z.infer<typeof razorpayOrderSchema>;
-
-export const razorpayOrderErrorSchema = z.object({
-  error: z.object({ description: z.string().optional() }).optional(),
-});
+}).strict();
+export type ConfirmCheckoutInput = z.infer<typeof confirmCheckoutSchema>;
 
 export const updateBillingProfileSchema = z.object({
   gstin: z.string().max(15).nullable().optional(),

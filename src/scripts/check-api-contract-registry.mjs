@@ -284,10 +284,14 @@ if (duplicates.length > 0) {
 
 const stale = findStaleEntries(document, registry);
 if (stale.length > 0) {
-  process.stdout.write(`  REPORT: ${String(stale.length)} stale registry entry/entries (operation removed from OpenAPI):\n`);
+  process.stdout.write(`  REPORT: ${String(stale.length)} retained entry/entries (operation removed from OpenAPI):\n`);
   for (const k of stale.slice(0, 20)) process.stdout.write(`    ${k}\n`);
   if (stale.length > 20) process.stdout.write(`    ... and ${String(stale.length - 20)} more\n`);
-  process.stdout.write(`  Run: pnpm registry:generate to remove stale entries\n`);
+  process.stdout.write(
+    `  These are retained on purpose: check-contract-breaking-change detects a removal\n` +
+      `  by finding exactly this state. Do not delete them to quieten the report — clear\n` +
+      `  each one by satisfying its deprecation window or reclassifying it as internal.\n`,
+  );
 }
 
 const violations = findUnclassifiedOperations(document, registry);

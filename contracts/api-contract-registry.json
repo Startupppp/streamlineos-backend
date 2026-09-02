@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.0",
-  "generatedAt": "2026-09-01T19:03:24.418Z",
+  "generatedAt": "2026-09-02T01:52:36.608Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and webhook is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -3254,6 +3254,16 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "PATCH /billing/checkout": {
+      "classification": "published",
+      "xExposure": "permissioned",
+      "operationId": "BillingController_confirmCheckout",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /billing/coupons": {
       "classification": "published",
       "xExposure": "permissioned",
@@ -3478,36 +3488,6 @@
       "classification": "published",
       "xExposure": "permissioned",
       "operationId": "BillingController_listProvisioningFailures",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /billing/razorpay": {
-      "classification": "published",
-      "xExposure": "permissioned",
-      "operationId": "BillingController_getRazorpaySubscription",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /billing/razorpay": {
-      "classification": "published",
-      "xExposure": "permissioned",
-      "operationId": "BillingController_createOrder",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PATCH /billing/razorpay": {
-      "classification": "published",
-      "xExposure": "permissioned",
-      "operationId": "BillingController_verifyPayment",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -32524,6 +32504,86 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /storage/multipart/abort": {
+      "classification": "published",
+      "xExposure": "permissioned",
+      "operationId": "StorageMultipartController_abort",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /storage/multipart/complete": {
+      "classification": "published",
+      "xExposure": "permissioned",
+      "operationId": "StorageMultipartController_complete",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /storage/multipart/initiate": {
+      "classification": "published",
+      "xExposure": "permissioned",
+      "operationId": "StorageMultipartController_initiate",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /storage/quarantine": {
+      "classification": "published",
+      "xExposure": "permissioned",
+      "operationId": "StorageQuarantineController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /storage/quarantine/{quarantineId}": {
+      "classification": "published",
+      "xExposure": "permissioned",
+      "operationId": "StorageQuarantineController_getOne",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /storage/quarantine/{quarantineId}": {
+      "classification": "published",
+      "xExposure": "permissioned",
+      "operationId": "StorageQuarantineController_remove",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /storage/quarantine/{quarantineId}/reject": {
+      "classification": "published",
+      "xExposure": "permissioned",
+      "operationId": "StorageQuarantineController_reject",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /storage/quarantine/{quarantineId}/release": {
+      "classification": "published",
+      "xExposure": "permissioned",
+      "operationId": "StorageQuarantineController_release",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /storage/upload": {
       "classification": "internal",
       "xExposure": "in-service",
@@ -35933,6 +35993,42 @@
       "consumers": [],
       "sunsetAt": null,
       "sunsetEvidence": null
+    },
+    "GET /billing/razorpay": {
+      "classification": "internal",
+      "xExposure": "permissioned",
+      "operationId": "BillingController_getRazorpaySubscription",
+      "owner": "billing-team",
+      "version": "1",
+      "consumers": [
+        "frontend/hooks/api/subscription.ts"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": "Reclassified from the generator default (x-exposure=permissioned maps to published) after determining the only consumer was our own frontend checkout plumbing, migrated to /billing and /billing/checkout in the same change. Approved decision 12 permits internal breakage. No customer or integration ever consumed these provider-named routes."
+    },
+    "POST /billing/razorpay": {
+      "classification": "internal",
+      "xExposure": "permissioned",
+      "operationId": "BillingController_createOrder",
+      "owner": "billing-team",
+      "version": "1",
+      "consumers": [
+        "frontend/hooks/api/subscription.ts"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": "Reclassified from the generator default (x-exposure=permissioned maps to published) after determining the only consumer was our own frontend checkout plumbing, migrated to /billing and /billing/checkout in the same change. Approved decision 12 permits internal breakage. No customer or integration ever consumed these provider-named routes."
+    },
+    "PATCH /billing/razorpay": {
+      "classification": "internal",
+      "xExposure": "permissioned",
+      "operationId": "BillingController_verifyPayment",
+      "owner": "billing-team",
+      "version": "1",
+      "consumers": [
+        "frontend/hooks/api/subscription.ts"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": "Reclassified from the generator default (x-exposure=permissioned maps to published) after determining the only consumer was our own frontend checkout plumbing, migrated to /billing and /billing/checkout in the same change. Approved decision 12 permits internal breakage. No customer or integration ever consumed these provider-named routes."
     }
   },
   "events": {

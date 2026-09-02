@@ -13,7 +13,15 @@
  *
  * If the registry already exists, manually-set fields (owner, version, consumers,
  * sunsetAt, sunsetEvidence) are preserved for entries that still exist in the
- * OpenAPI document. Entries for operations that no longer exist are removed.
+ * OpenAPI document. Entries for operations that no longer exist are RETAINED.
+ *
+ * Retention is deliberate and load-bearing. check-contract-breaking-change.mjs
+ * detects a removal by finding a registry entry with no matching operation in
+ * openapi.json. Dropping those entries here would let anyone silence that gate
+ * by running the very command the gate's own failure message recommends:
+ * delete a published route, see the gate fail, run `registry:generate`, and the
+ * evidence of the removal disappears along with the finding. The registry is a
+ * ledger of what was ever exposed, not a mirror of what is exposed now.
  *
  * Usage:
  *   node src/scripts/generate-api-contract-registry.mjs
@@ -160,6 +168,11 @@ for (const [pathTemplate, pathItem] of Object.entries(paths)) {
       sunsetEvidence: prev?.sunsetEvidence ?? null,
     };
   }
+}
+
+for (const [key, prev] of Object.entries(existingOps)) {
+  if (operations[key] !== undefined) continue;
+  operations[key] = prev;
 }
 
 const eventScan = scanOutboxEvents();

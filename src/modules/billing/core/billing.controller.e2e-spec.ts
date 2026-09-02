@@ -5,8 +5,9 @@ import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 import { BillingService } from "./billing.service";
 
 const stubBilling = {
-  handleRazorpayWebhook: jest.fn().mockResolvedValue({ status: 401, body: { ok: false } }),
   handlePaymentProviderWebhook: jest.fn().mockResolvedValue({ status: 401, body: { ok: false } }),
+  createOrder: jest.fn().mockResolvedValue({ orderId: "order_1", amount: 100, currency: "INR", keyId: "key_1" }),
+  verifyAndActivate: jest.fn().mockResolvedValue({ success: true, plan: "STARTER", status: "ACTIVE" }),
 };
 
 describe("Billing auth/RBAC (e2e)", () => {
@@ -34,8 +35,8 @@ describe("Billing auth/RBAC (e2e)", () => {
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
     ["get", "/billing"],
-    ["post", "/billing/razorpay"],
-    ["patch", "/billing/razorpay"],
+    ["post", "/billing/checkout"],
+    ["patch", "/billing/checkout"],
   ];
 
   it.each(protectedRoutes)("401 on %s %s without a token", async (method, path) => {
@@ -44,25 +45,25 @@ describe("Billing auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  it("403 on POST /billing/razorpay without billing:subscription:manage", async () => {
+  it("403 on POST /billing/checkout without billing:subscription:manage", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
-      .post("/billing/razorpay")
+      .post("/billing/checkout")
       .set("Authorization", `Bearer ${token}`)
       .send({ plan: "STARTER" });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("403 on PATCH /billing/razorpay without billing:subscription:manage", async () => {
+  it("403 on PATCH /billing/checkout without billing:subscription:manage", async () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
-      .patch("/billing/razorpay")
+      .patch("/billing/checkout")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        razorpay_order_id: "order_1",
-        razorpay_payment_id: "pay_1",
-        razorpay_signature: "sig",
+        orderId: "order_1",
+        paymentId: "pay_1",
+        signature: "sig",
         plan: "STARTER",
       });
     expect(res.status).toBe(403);

@@ -57,9 +57,9 @@ describe("creditsToMilli / milliToCredits — round-trip invariants", () => {
 });
 
 const VERIFY_INPUT = {
-  razorpay_order_id: "order_idp_001",
-  razorpay_payment_id: "pay_idp_abc",
-  razorpay_signature: FAKE_VALID_PAYMENT_SIG,
+  orderId: "order_idp_001",
+  paymentId: "pay_idp_abc",
+  signature: FAKE_VALID_PAYMENT_SIG,
   plan: "STARTER" as const,
 };
 
@@ -188,7 +188,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
   });
 
   it("invalid signature → throws BadRequestException before any DB write", async () => {
-    const wrongSigInput = { ...VERIFY_INPUT, razorpay_signature: "wrong-signature" };
+    const wrongSigInput = { ...VERIFY_INPUT, signature: "wrong-signature" };
     const svc = await buildBilling({ transaction: jest.fn() });
     await expect(svc.verifyAndActivate("org-1", "user-1", wrongSigInput)).rejects.toThrow(
       "Payment verification failed",

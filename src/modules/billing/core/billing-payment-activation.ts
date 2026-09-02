@@ -23,7 +23,7 @@ import {
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { BillingCoupons } from "./billing-coupons";
-import { type BillingCycle, type Plan, type VerifyPaymentInput } from "./dto/billing.schemas";
+import { type BillingCycle, type ConfirmCheckoutInput, type Plan } from "./dto/billing.schemas";
 import { PlanLimitsService } from "./plan-limits.service";
 import { ANNUAL_DISCOUNT_PCT, PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
 import { ProrationLedgerService } from "./proration-ledger.service";
@@ -103,15 +103,15 @@ export class BillingPaymentActivation {
     };
   }
 
-  async verifyAndActivate(orgId: string, userId: string, input: VerifyPaymentInput) {
+  async verifyAndActivate(orgId: string, userId: string, input: ConfirmCheckoutInput) {
     const adapter = await this.deps.providers.resolveConfigured(orgId);
     if (adapter === undefined || !adapter.isReady()) {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
     const valid = adapter.verifyPaymentSignature({
-      orderId: input.razorpay_order_id,
-      paymentId: input.razorpay_payment_id,
-      signature: input.razorpay_signature,
+      orderId: input.orderId,
+      paymentId: input.paymentId,
+      signature: input.signature,
     });
     if (!valid) throw new BadRequestException("Payment verification failed: invalid signature");
 
@@ -154,8 +154,8 @@ export class BillingPaymentActivation {
         await tx.insert(subscriptionPayments).values({
           orgId,
           subscriptionId,
-          razorpayPaymentId: input.razorpay_payment_id,
-          razorpayOrderId: input.razorpay_order_id,
+          razorpayPaymentId: input.paymentId,
+          razorpayOrderId: input.orderId,
           amountPaise: amount,
           currency: price.currency,
           status: "captured",
@@ -170,7 +170,7 @@ export class BillingPaymentActivation {
             previousPlan: revenue.previousPlan,
             mrr: revenue.mrr,
             amount: revenue.mrr,
-            metadata: { paymentId: input.razorpay_payment_id, source: "verify-and-activate" },
+            metadata: { paymentId: input.paymentId, source: "verify-and-activate" },
           });
         }
       });
@@ -190,7 +190,7 @@ export class BillingPaymentActivation {
       userId,
       orgId,
       targetType: "subscription",
-      metadata: { plan: input.plan, paymentId: input.razorpay_payment_id },
+      metadata: { plan: input.plan, paymentId: input.paymentId },
     });
     await this.grantPlanCredits(orgId, userId, input);
     return { success: true, plan: input.plan, status: "ACTIVE" };
@@ -284,15 +284,15 @@ export class BillingPaymentActivation {
     });
   }
 
-  private async grantPlanCredits(orgId: string, userId: string, input: VerifyPaymentInput): Promise<void> {
+  private async grantPlanCredits(orgId: string, userId: string, input: ConfirmCheckoutInput): Promise<void> {
     try {
       await this.deps.externalEffectLedger.execute({
         organizationId: orgId,
-        producerEventId: input.razorpay_payment_id,
-        effectKey: `${input.razorpay_payment_id}:plan-credit-grant`,
+        producerEventId: input.paymentId,
+        effectKey: `${input.paymentId}:plan-credit-grant`,
         effectType: "billing.plan-credit-grant",
         providerIdempotency: "NONE",
-      }, () => this.deps.aiCredits.grantPlanCredits(orgId, input.plan, userId, input.razorpay_payment_id));
+      }, () => this.deps.aiCredits.grantPlanCredits(orgId, input.plan, userId, input.paymentId));
     } catch (err: unknown) {
       if (err instanceof ExternalEffectLeaseBusyError) {
         logger.warn("[billing] plan credit grant already in flight", { orgId, plan: input.plan });

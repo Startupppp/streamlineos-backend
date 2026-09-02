@@ -22,11 +22,11 @@ import {
 import { BillingCoupons } from "./billing-coupons";
 import {
   type BillingCycle,
+  type ConfirmCheckoutInput,
   type CreateCouponInput,
   type Plan,
   type UpdateBillingProfileInput,
   type UpdateCouponInput,
-  type VerifyPaymentInput,
 } from "./dto/billing.schemas";
 import { buildPlanCatalog, TRIAL_PLAN } from "./plan-entitlements.constants";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
@@ -106,7 +106,7 @@ export class BillingService {
     const adapter = await this.providers.resolveConfigured(orgId);
     return {
       subscription: subscription ?? null,
-      razorpayKeyId: adapter?.publicKeyId() ?? null,
+      publicKeyId: adapter?.publicKeyId() ?? null,
       isConfigured: adapter?.isReady() ?? false,
     };
   }
@@ -124,7 +124,7 @@ export class BillingService {
   async verifyAndActivate(
     orgId: string,
     userId: string,
-    input: VerifyPaymentInput,
+    input: ConfirmCheckoutInput,
   ) {
     return this.paymentActivation.verifyAndActivate(orgId, userId, input);
   }
@@ -157,14 +157,6 @@ export class BillingService {
     signature: string,
   ): Promise<WebhookResult> {
     return this.webhooks.handle(orgId, providerKey, rawBody, signature);
-  }
-
-  handleRazorpayWebhook(
-    orgId: string,
-    rawBody: string,
-    signature: string,
-  ): Promise<WebhookResult> {
-    return this.webhooks.handle(orgId, "razorpay", rawBody, signature);
   }
 
   listProvisioningFailures(orgId: string) {

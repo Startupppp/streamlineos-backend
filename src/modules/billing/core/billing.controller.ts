@@ -12,20 +12,20 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { BillingService } from "./billing.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import {
+  confirmCheckoutSchema,
   createCouponSchema,
   createOrderSchema,
   purchaseAddonSchema,
   updateBillingProfileSchema,
   updateCouponSchema,
   validateCouponQuerySchema,
-  verifyPaymentSchema,
+  type ConfirmCheckoutInput,
   type CreateCouponInput,
   type CreateOrderInput,
   type PurchaseAddonInput,
   type UpdateBillingProfileInput,
   type UpdateCouponInput,
   type ValidateCouponQueryInput,
-  type VerifyPaymentInput,
 } from "./dto/billing.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -74,6 +74,19 @@ export class BillingController {
     return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
   }
 
+  @Patch("checkout")
+  @Idempotent("billing.subscription.verify")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("billing:subscription:manage")
+  @Validate({ body: confirmCheckoutSchema })
+  confirmCheckout(
+    @Body() body: ConfirmCheckoutInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.billing.verifyAndActivate(u.orgId, u.userId, body);
+  }
+
   @Post("addons/purchase")
   @Idempotent("billing.addon.purchase")
   @HttpCode(200)
@@ -116,38 +129,6 @@ export class BillingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.validateCoupon(query.code, u.orgId, query.plan);
-  }
-
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:subscription:view")
-  @Get("razorpay")
-  getRazorpaySubscription(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.getSubscription(u.orgId);
-  }
-
-  @Post("razorpay")
-  @Idempotent("billing.order.create")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:subscription:manage")
-  @Validate({ body: createOrderSchema })
-  createOrder(
-    @Body() body: CreateOrderInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
-  }
-
-  @Patch("razorpay")
-  @Idempotent("billing.subscription.verify")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:subscription:manage")
-  @Validate({ body: verifyPaymentSchema })
-  verifyPayment(
-    @Body() body: VerifyPaymentInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.billing.verifyAndActivate(u.orgId, u.userId, body);
   }
 
   @Get("profile")
