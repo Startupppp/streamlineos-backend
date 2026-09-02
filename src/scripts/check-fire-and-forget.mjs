@@ -1,23 +1,34 @@
 #!/usr/bin/env node
 /**
- * Gate: prohibit fire-and-forget NotificationDispatchService.emit calls.
+ * Gate: fire-and-forget side effects.
  *
- * Any service file containing `void this.<name>.emit(` or `void <name>.emit(`
- * followed by notification dispatch patterns must await the call instead of
- * discarding the promise.  A fire-and-forget emit can lose the intent on a
- * crash between the domain write and the notification delivery — exactly what
- * the outbox is designed to prevent.
+ * TWO TIERS, BECAUSE THEY ANSWER DIFFERENT QUESTIONS
+ * --------------------------------------------------
+ * TIER 1 — BANNED, zero tolerance. Discarding the promise of a notification dispatch or a mail
+ * sync checkpoint loses the effect outright on a crash between the domain write and the delivery.
+ * These are always a bug; the gate fails on the first one.
  *
- * Detection strategy:
- *   1. Collect all .ts service/implementation files (not specs, not modules,
- *      not controllers, not decorators, not guards).
- *   2. For each file, scan for lines that match the fire-and-forget pattern:
- *        void (this\.\w+\.emit|<ident>\.emit)\(
- *      followed within 20 lines by a pattern identifying it as a notification
- *      dispatch (eventKey, targetUserIds, orgId).
- *   3. Report violations and exit non-zero if any found.
+ * TIER 2 — RATCHETED. Every other discarded promise (`void x.y(`) and every swallowed rejection
+ * (`.catch(() => undefined)` and friends) across the whole of `src`. Most of these are deliberate;
+ * some are the next `build.ticket.status_changed`. They cannot be banned outright today, so the
+ * gate pins the number and fails when it grows.
  *
- * --self-test : feeds a synthetic bad fixture and asserts the gate bites.
+ * WHY THE PREVIOUS VERSION DID NOT HOLD
+ * -------------------------------------
+ * It covered exactly two method names (`emit`, `savePosition`) inside `src/modules`, and then
+ * PRINTED a list of ~39 uncovered method names and exited 0. A gate that reports findings and
+ * exits 0 teaches its readers to scroll past it, which is worse than not reporting them: the
+ * output looked like diligence while the number was free to climb. Coverage is now every shape the
+ * scanner can see, and the number is pinned instead of printed.
+ *
+ * WHAT THIS GATE STILL CANNOT SEE — stated so a green run is not read as more than it is:
+ *   · an async function called with neither `await` nor `void` (needs type information);
+ *   · `.then()` with no rejection handler;
+ *   · a `catch` block whose body only logs — `org-setup.service.ts` hid four steps of org
+ *     provisioning behind exactly that, and no regex distinguishes it from a legitimate one.
+ * `registerAfterCommit` is inventoried below but deliberately NOT ratcheted: backend/CLAUDE.md §4
+ * names it one of the three sanctioned mechanisms for a side effect, so its call count is a
+ * measure of adoption, not of debt.
  *
  * Usage:
  *   node src/scripts/check-fire-and-forget.mjs
@@ -25,82 +36,73 @@
  */
 
 import { readFileSync, readdirSync, statSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, extname } from "node:path";
+import { join, extname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const SELF_TEST = process.argv.includes("--self-test");
 
-const ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const ROOT = resolve(__dirname, "..");
 
+const SKIP_DIRS = ["node_modules", "dist", "__tests__", "scripts", "migrations"];
+
+const MIN_FILES = 1500;
+
+/**
+ * TIER 2 RATCHET — the measured count of floating promises and swallowed rejections in `src`.
+ *
+ * MEASURED 2026-09-02 at 283 across 3,572 scanned files: 200 `void x.y(` floating promises and
+ * 83 swallowed `.catch()` rejections. That is the number this gate holds; it is not a target and
+ * not an approval of those 283 call sites. Lower it whenever the real count drops — the gate says
+ * so on every run that comes in under it.
+ */
+const TIER2_RATCHET = 283;
+
+// --- TIER 1: banned shapes -------------------------------------------------
 const VOID_EMIT_RE = /\bvoid\s+(?:this\.\w+\s*\.\s*emit|[\w.]+\s*\.\s*emit)\s*\(/;
+const VOID_SAVE_POSITION_RE =
+  /\bvoid\s+(?:this\.\w+\s*\.\s*savePosition|[\w.]+\s*\.\s*savePosition)\s*\(/;
+const DISPATCH_SIGNAL_RE = /\b(?:eventKey|targetUserIds|NotificationDispatchService)\b/;
 
-const VOID_SAVE_POSITION_RE = /\bvoid\s+(?:this\.\w+\s*\.\s*savePosition|[\w.]+\s*\.\s*savePosition)\s*\(/;
+// --- TIER 2: ratcheted shapes ---------------------------------------------
+const FLOATING_RE = /\bvoid\s+(?:await\s+)?(?:this\s*\.\s*)?[\w$]+(?:\s*\.\s*[\w$]+)*\s*\(/g;
+const SWALLOWED_RE =
+  /\.catch\s*\(\s*(?:\(\s*\)|\w+|\(\s*\w+(?:\s*:\s*[\w<>[\]|\s]+)?\s*\))\s*=>\s*(?:undefined|null|void 0|\{\s*\})\s*\)/g;
+const SWALLOWED_NOOP_RE = /\.catch\s*\(\s*(?:noop|NOOP)\s*\)/g;
+const AFTER_COMMIT_RE = /\bregisterAfterCommit\s*\(/g;
 
-const DISPATCH_SIGNAL_RE =
-  /\b(?:eventKey|targetUserIds|NotificationDispatchService)\b/;
-
-// This gate's coverage is an enumerated list of method names, which means it
-// stops covering a surface the moment someone discards a promise from a method
-// nobody thought of here. It cannot be widened to every `void x.y(` without
-// turning red on ~50 deliberate call sites, so instead it REPORTS what it does
-// not cover: a stable "0 violations" over a shrinking covered surface is exactly
-// how check:ai-charge hid six paid embedding call sites.
-const COVERED_METHODS = ["emit", "savePosition"];
-const ANY_VOID_CALL_RE = /\bvoid\s+(?:this\.)?[\w.]+\.(\w+)\s*\(/g;
-
-export function uncoveredVoidCalls(source) {
-  const counts = new Map();
-  ANY_VOID_CALL_RE.lastIndex = 0;
-  for (const m of source.matchAll(ANY_VOID_CALL_RE)) {
-    const method = m[1];
-    if (COVERED_METHODS.includes(method)) continue;
-    counts.set(method, (counts.get(method) ?? 0) + 1);
-  }
-  return counts;
+/** The trailing method name of a `void a.b.c(` expression, for grouping the report. */
+function floatingMethodName(match) {
+  const stripped = match.replace(/\s+/g, "").replace(/^void(await)?/, "").replace(/\($/, "");
+  const parts = stripped.split(".");
+  return parts[parts.length - 1] || stripped;
 }
 
-function collectServiceFiles(dir) {
-  const files = [];
-  let entries;
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return files;
-  }
-  for (const entry of entries) {
-    const full = join(dir, entry);
-    let stat;
-    try {
-      stat = statSync(full);
-    } catch {
-      continue;
-    }
-    if (stat.isDirectory()) {
-      files.push(...collectServiceFiles(full));
-    } else if (
-      stat.isFile() &&
-      extname(entry) === ".ts" &&
-      !entry.endsWith(".spec.ts") &&
-      !entry.endsWith(".module.ts") &&
-      !entry.endsWith(".controller.ts") &&
-      !entry.endsWith(".decorator.ts") &&
-      !entry.endsWith(".guard.ts") &&
-      !entry.endsWith(".interceptor.ts") &&
-      !entry.endsWith(".filter.ts") &&
-      !entry.endsWith(".pipe.ts") &&
-      !entry.endsWith(".constants.ts") &&
-      !entry.endsWith(".types.ts") &&
-      !entry.endsWith(".schemas.ts") &&
-      !entry.endsWith(".catalog.ts")
-    ) {
-      files.push(full);
-    }
-  }
-  return files;
+export function floatingPromises(source) {
+  FLOATING_RE.lastIndex = 0;
+  return [...source.matchAll(FLOATING_RE)].map((m) => ({
+    method: floatingMethodName(m[0]),
+    index: m.index,
+  }));
 }
 
-function scanFile(filePath) {
+export function swallowedRejections(source) {
+  SWALLOWED_RE.lastIndex = 0;
+  SWALLOWED_NOOP_RE.lastIndex = 0;
+  return [...source.matchAll(SWALLOWED_RE), ...source.matchAll(SWALLOWED_NOOP_RE)].map((m) => ({
+    text: m[0].trim(),
+    index: m.index,
+  }));
+}
+
+export function afterCommitCalls(source) {
+  AFTER_COMMIT_RE.lastIndex = 0;
+  return [...source.matchAll(AFTER_COMMIT_RE)].length;
+}
+
+/** Tier 1 only: the shapes that are banned outright. */
+export function scanFile(filePath) {
   let src;
   try {
     src = readFileSync(filePath, "utf8");
@@ -113,195 +115,258 @@ function scanFile(filePath) {
     const line = lines[i] ?? "";
     if (VOID_EMIT_RE.test(line)) {
       const window = lines.slice(i, Math.min(i + 20, lines.length)).join("\n");
-      if (DISPATCH_SIGNAL_RE.test(window)) {
-        violations.push({ line: i + 1, text: line.trim() });
-      }
+      if (DISPATCH_SIGNAL_RE.test(window)) violations.push({ line: i + 1, text: line.trim() });
     }
-    if (VOID_SAVE_POSITION_RE.test(line)) {
-      violations.push({ line: i + 1, text: line.trim() });
-    }
+    if (VOID_SAVE_POSITION_RE.test(line)) violations.push({ line: i + 1, text: line.trim() });
   }
   return violations;
 }
 
-if (SELF_TEST) {
+/**
+ * The ratchet comparison. `improved` is reported rather than failed: several agents work this tree
+ * concurrently, so failing a run for being BETTER than the pin would turn a real improvement into
+ * someone else's red build. It is still called out on every run so the pin cannot quietly rot.
+ */
+export function verdict(count, ratchet) {
+  if (count > ratchet) return "REGRESSION";
+  if (count < ratchet) return "IMPROVED";
+  return "AT_RATCHET";
+}
+
+function collectFiles(dir) {
+  const files = [];
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return files;
+  }
+  for (const entry of entries) {
+    if (SKIP_DIRS.includes(entry)) continue;
+    const full = join(dir, entry);
+    let stat;
+    try {
+      stat = statSync(full);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) files.push(...collectFiles(full));
+    else if (
+      stat.isFile() &&
+      extname(entry) === ".ts" &&
+      !entry.endsWith(".spec.ts") &&
+      !entry.endsWith(".d.ts")
+    )
+      files.push(full);
+  }
+  return files;
+}
+
+function runSelfTest() {
   const dir = join(tmpdir(), "check-fire-and-forget-self-test");
   try {
     mkdirSync(dir, { recursive: true });
   } catch {}
 
-  const badFile = join(dir, "bad.service.ts");
-  writeFileSync(
-    badFile,
+  let passed = 0;
+  const failures = [];
+  const assert = (label, condition) => {
+    if (condition) passed++;
+    else failures.push(label);
+  };
+
+  const write = (name, lines) => {
+    const p = join(dir, name);
+    writeFileSync(p, lines.join("\n"));
+    return p;
+  };
+
+  // --- Tier 1 ---
+  const badFile = write("bad.service.ts", [
+    "@Injectable()",
+    "export class BadService {",
+    "  async doWork(orgId: string) {",
+    "    void this.dispatch.emit({",
+    "      eventKey: 'some.event',",
+    "      orgId,",
+    "      targetUserIds: ['user-1'],",
+    "    }).catch(console.error);",
+    "  }",
+    "}",
+  ]);
+  const goodFile = write("good.service.ts", [
+    "@Injectable()",
+    "export class GoodService {",
+    "  async doWork(orgId: string) {",
+    "    await this.dispatch.emit({",
+    "      eventKey: 'some.event',",
+    "      orgId,",
+    "      targetUserIds: ['user-1'],",
+    "    });",
+    "  }",
+    "}",
+  ]);
+  const badCheckpointFile = write("bad-checkpoint.service.ts", [
+    "export class BadCheckpointService {",
+    "  async doWork(orgId: string) {",
+    "    void this.checkpoints.savePosition(orgId, 1, 'INBOX', null);",
+    "  }",
+    "}",
+  ]);
+  const goodCheckpointFile = write("good-checkpoint.service.ts", [
+    "export class GoodCheckpointService {",
+    "  async doWork(orgId: string) {",
+    "    await this.checkpoints.savePosition(orgId, 1, 'INBOX', null);",
+    "  }",
+    "}",
+  ]);
+
+  assert("tier 1 detects a fire-and-forget notification dispatch", scanFile(badFile).length > 0);
+  assert("tier 1 passes an awaited notification dispatch", scanFile(goodFile).length === 0);
+  assert("tier 1 detects a fire-and-forget savePosition", scanFile(badCheckpointFile).length > 0);
+  assert("tier 1 passes an awaited savePosition", scanFile(goodCheckpointFile).length === 0);
+
+  // --- Tier 2: the shapes the old gate printed and ignored ---
+  const floating = floatingPromises(
     [
-      "import { Injectable } from '@nestjs/common';",
-      "import { NotificationDispatchService } from '../../notifications/notification-dispatch.service';",
-      "",
-      "@Injectable()",
-      "export class BadService {",
-      "  constructor(private readonly dispatch: NotificationDispatchService) {}",
-      "",
-      "  async doWork(orgId: string) {",
-      "    void this.dispatch.emit({",
-      "      eventKey: 'some.event',",
-      "      orgId,",
-      "      targetUserIds: ['user-1'],",
-      "    }).catch(console.error);",
-      "  }",
-      "}",
+      "void this.notifications.send({ orgId });",
+      "void this.dispatch.emit({ eventKey: 'x' });",
+      "void this.cursor.savePosition(p);",
+      "void runSweep(orgId);",
+      "void a.b.c.d(1);",
+      "await this.notifications.send({ orgId });",
     ].join("\n"),
   );
+  assert("tier 2 counts a plain `void this.x.y(`", floating.some((f) => f.method === "send"));
+  assert("tier 2 counts the old gate's covered methods too", floating.some((f) => f.method === "emit"));
+  assert("tier 2 counts a bare `void fn(`", floating.some((f) => f.method === "runSweep"));
+  assert("tier 2 counts a deep member chain", floating.some((f) => f.method === "d"));
+  assert("tier 2 ignores an awaited call", floating.length === 5);
 
-  const goodFile = join(dir, "good.service.ts");
-  writeFileSync(
-    goodFile,
+  const swallowed = swallowedRejections(
     [
-      "import { Injectable } from '@nestjs/common';",
-      "import { NotificationDispatchService } from '../../notifications/notification-dispatch.service';",
-      "",
-      "@Injectable()",
-      "export class GoodService {",
-      "  constructor(private readonly dispatch: NotificationDispatchService) {}",
-      "",
-      "  async doWork(orgId: string) {",
-      "    await this.dispatch.emit({",
-      "      eventKey: 'some.event',",
-      "      orgId,",
-      "      targetUserIds: ['user-1'],",
-      "    });",
-      "  }",
-      "}",
+      "p.catch(() => undefined);",
+      "p.catch(() => null);",
+      "p.catch(() => {});",
+      "p.catch((error) => undefined);",
+      "p.catch(noop);",
+      "p.catch((error) => { logger.error(error); });",
+      "p.catch(handleProperly);",
     ].join("\n"),
   );
-
-  const badViolations = scanFile(badFile);
-  if (badViolations.length === 0) {
-    console.error("SELF-TEST FAILED: gate did not detect the bad fixture");
-    process.exit(1);
-  }
-
-  const goodViolations = scanFile(goodFile);
-  if (goodViolations.length !== 0) {
-    console.error("SELF-TEST FAILED: gate produced false-positive on the good fixture");
-    process.exit(1);
-  }
-
-  const badCheckpointFile = join(dir, "bad-checkpoint.service.ts");
-  writeFileSync(
-    badCheckpointFile,
-    [
-      "import { Injectable } from '@nestjs/common';",
-      "import { MailSyncCheckpointService } from './mail-sync-checkpoint.service';",
-      "",
-      "@Injectable()",
-      "export class BadCheckpointService {",
-      "  constructor(private readonly checkpoints: MailSyncCheckpointService) {}",
-      "",
-      "  async doWork(orgId: string, accountId: number, folder: string) {",
-      "    void this.checkpoints.savePosition(orgId, accountId, folder, null);",
-      "  }",
-      "}",
-    ].join("\n"),
+  assert("tier 2 counts `.catch(() => undefined)`", swallowed.length >= 5);
+  assert(
+    "tier 2 does not count a catch that actually handles",
+    !swallowed.some((s) => s.text.includes("logger.error")),
+  );
+  assert(
+    "tier 2 does not count a named handler",
+    !swallowed.some((s) => s.text.includes("handleProperly")),
   );
 
-  const goodCheckpointFile = join(dir, "good-checkpoint.service.ts");
-  writeFileSync(
-    goodCheckpointFile,
-    [
-      "import { Injectable } from '@nestjs/common';",
-      "import { MailSyncCheckpointService } from './mail-sync-checkpoint.service';",
-      "",
-      "@Injectable()",
-      "export class GoodCheckpointService {",
-      "  constructor(private readonly checkpoints: MailSyncCheckpointService) {}",
-      "",
-      "  async doWork(orgId: string, accountId: number, folder: string) {",
-      "    await this.checkpoints.savePosition(orgId, accountId, folder, null);",
-      "  }",
-      "}",
-    ].join("\n"),
+  assert("registerAfterCommit is inventoried", afterCommitCalls("registerAfterCommit(() => x);") === 1);
+
+  // --- the ratchet itself ---
+  assert("the ratchet fails on a regression", verdict(TIER2_RATCHET + 1, TIER2_RATCHET) === "REGRESSION");
+  assert("the ratchet passes at the pin", verdict(TIER2_RATCHET, TIER2_RATCHET) === "AT_RATCHET");
+  assert("the ratchet reports an improvement", verdict(TIER2_RATCHET - 1, TIER2_RATCHET) === "IMPROVED");
+  assert("the ratchet is a real number, not a placeholder", Number.isInteger(TIER2_RATCHET) && TIER2_RATCHET > 0);
+
+  // The failure this gate is named for: a gate that finds something and exits 0.
+  assert(
+    "a tier 2 count above the ratchet cannot produce a passing verdict",
+    verdict(TIER2_RATCHET + 50, TIER2_RATCHET) !== "AT_RATCHET" &&
+      verdict(TIER2_RATCHET + 50, TIER2_RATCHET) !== "IMPROVED",
   );
 
-  const badCheckpointViolations = scanFile(badCheckpointFile);
-  if (badCheckpointViolations.length === 0) {
-    console.error("SELF-TEST FAILED: gate did not detect the bad checkpoint fixture");
+  if (failures.length > 0) {
+    for (const f of failures) console.error(`  FAIL: ${f}`);
+    console.error(`check-fire-and-forget self-tests: ${failures.length} failed, ${passed} passed`);
     process.exit(1);
   }
-
-  const goodCheckpointViolations = scanFile(goodCheckpointFile);
-  if (goodCheckpointViolations.length !== 0) {
-    console.error("SELF-TEST FAILED: gate produced false-positive on the good checkpoint fixture");
-    process.exit(1);
-  }
-
-  // Coverage is a name list. Assert that the gate can tell a shape it does NOT
-  // cover from one it does, so the blind spot is reportable rather than silent.
-  const uncoveredProbe = uncoveredVoidCalls(
-    "void this.notifications.send({ orgId });\nvoid this.dispatch.emit({ eventKey: 'x' });\nvoid this.cursor.savePosition(p);",
-  );
-  if (uncoveredProbe.get("send") !== 1) {
-    console.error("SELF-TEST FAILED: an uncovered fire-and-forget shape was not reported as uncovered");
-    process.exit(1);
-  }
-  if (uncoveredProbe.has("emit") || uncoveredProbe.has("savePosition")) {
-    console.error("SELF-TEST FAILED: a covered method was reported as uncovered");
-    process.exit(1);
-  }
-  if (COVERED_METHODS.length === 0) {
-    console.error("SELF-TEST FAILED: the covered-method list is empty — this gate would scan nothing");
-    process.exit(1);
-  }
-
-  console.log(
-    `SELF-TEST PASSED: detected ${badViolations.length} violation(s) in bad emit fixture, 0 in good emit fixture; detected ${badCheckpointViolations.length} violation(s) in bad checkpoint fixture, 0 in good checkpoint fixture; uncovered-shape reporting bites`,
-  );
+  console.log(`check-fire-and-forget self-tests: ${passed} passed`);
   process.exit(0);
 }
 
-const files = collectServiceFiles(ROOT);
-if (files.length < 50) {
-  console.error(`ERROR: scan found only ${files.length} files — too few to be a real scan`);
-  process.exit(1);
+if (SELF_TEST) runSelfTest();
+
+const files = collectFiles(ROOT);
+if (files.length < MIN_FILES) {
+  console.error(
+    `INCONCLUSIVE: scanned ${files.length} files (floor ${MIN_FILES}) — too few to be a real scan`,
+  );
+  process.exit(2);
 }
 
-const allViolations = [];
-const uncovered = new Map();
+const tier1 = [];
+let floatingCount = 0;
+let swallowedCount = 0;
+let afterCommitCount = 0;
+const byMethod = new Map();
+const byFile = new Map();
+
 for (const file of files) {
-  const violations = scanFile(file);
-  for (const v of violations) {
-    allViolations.push({ file: file.replace(/\\/g, "/"), ...v });
-  }
+  for (const v of scanFile(file)) tier1.push({ file: file.replace(/\\/g, "/"), ...v });
+
   let src;
   try {
     src = readFileSync(file, "utf8");
   } catch {
-    src = "";
+    continue;
   }
-  for (const [method, n] of uncoveredVoidCalls(src)) uncovered.set(method, (uncovered.get(method) ?? 0) + n);
+  const floating = floatingPromises(src);
+  const swallowed = swallowedRejections(src);
+  floatingCount += floating.length;
+  swallowedCount += swallowed.length;
+  afterCommitCount += afterCommitCalls(src);
+  for (const f of floating) byMethod.set(f.method, (byMethod.get(f.method) ?? 0) + 1);
+  const total = floating.length + swallowed.length;
+  if (total > 0) byFile.set(file.replace(ROOT + "/", ""), total);
 }
 
-const uncoveredTotal = [...uncovered.values()].reduce((a, b) => a + b, 0);
-console.log(`Covered methods: ${COVERED_METHODS.map((m) => `.${m}(`).join(" ")}`);
-if (uncoveredTotal > 0) {
-  console.log(
-    `COVERAGE NOTE — ${uncoveredTotal} discarded-promise call site(s) across ${uncovered.size} other method name(s) are OUTSIDE this gate. "0 violations" says nothing about them:`,
-  );
-  for (const [method, n] of [...uncovered].sort((a, b) => b[1] - a[1]))
-    console.log(`    .${method}()  ${n}`);
-}
+const tier2Count = floatingCount + swallowedCount;
+const tier2Verdict = verdict(tier2Count, TIER2_RATCHET);
 
-if (allViolations.length === 0) {
-  console.log(
-    `check:fire-and-forget PASSED — scanned ${files.length} files, 0 violations within its covered surface (${COVERED_METHODS.join(", ")})`,
-  );
-  process.exit(0);
-} else {
-  console.error(`check:fire-and-forget FAILED — ${allViolations.length} fire-and-forget emit violation(s):`);
-  for (const v of allViolations) {
-    console.error(`  ${v.file}:${v.line}  ${v.text}`);
-  }
-  console.error("");
-  console.error("Fix: replace  void this.<dispatch>.emit({...}).catch(...)");
-  console.error("with: await this.<dispatch>.emit({...})");
+console.log(`Scanned ${files.length} TypeScript files under src/`);
+console.log(`TIER 1 (banned)    : ${tier1.length} violation(s) — must be 0`);
+console.log(
+  `TIER 2 (ratcheted) : ${tier2Count} (${floatingCount} floating promises + ${swallowedCount} swallowed rejections) vs ratchet ${TIER2_RATCHET}`,
+);
+console.log(
+  `INVENTORY          : ${afterCommitCount} registerAfterCommit call(s) — a sanctioned mechanism (CLAUDE.md §4), reported, not gated`,
+);
+
+if (tier1.length > 0) {
+  console.error("\nFAIL (tier 1) — fire-and-forget notification dispatch / checkpoint writes:");
+  for (const v of tier1) console.error(`  ${v.file}:${v.line}  ${v.text}`);
+  console.error("\nFix: replace  void this.<dispatch>.emit({...})  with  await this.<dispatch>.emit({...})");
   process.exit(1);
 }
+
+if (tier2Verdict === "REGRESSION") {
+  console.error(
+    `\nFAIL (tier 2) — ${tier2Count - TIER2_RATCHET} new floating promise(s) / swallowed rejection(s) above the ratchet of ${TIER2_RATCHET}.`,
+  );
+  console.error("Heaviest files:");
+  for (const [file, n] of [...byFile].sort((a, b) => b[1] - a[1]).slice(0, 15))
+    console.error(`  ${n}\t${file}`);
+  console.error("\nMost common discarded methods:");
+  for (const [method, n] of [...byMethod].sort((a, b) => b[1] - a[1]).slice(0, 15))
+    console.error(`  .${method}()\t${n}`);
+  console.error(
+    "\nDo not raise the ratchet to clear this. Route the effect through the outbox, `registerAfterCommit`,",
+  );
+  console.error("or await it — see backend/CLAUDE.md §4 for which of the three applies.");
+  process.exit(1);
+}
+
+if (tier2Verdict === "IMPROVED") {
+  console.log(
+    `\nTIER 2 IMPROVED — ${TIER2_RATCHET - tier2Count} fewer than the ratchet. Lower TIER2_RATCHET to ${tier2Count} in ${"src/scripts/check-fire-and-forget.mjs"} so the gain is held.`,
+  );
+}
+
+console.log(
+  `\ncheck:fire-and-forget PASSED — tier 1 clean, tier 2 at ${tier2Count} (ratchet ${TIER2_RATCHET})`,
+);
+process.exit(0);

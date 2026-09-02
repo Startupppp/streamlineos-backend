@@ -11,7 +11,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type SetupInput } from "./dto/org.schemas";
 import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-session.service";
-import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -23,15 +22,13 @@ import {
 } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
 import { withIdentity } from "../../../common/tenant/with-identity";
-import { runOutsideTenantContext } from "../../../common/tenant/tenant-context";
 import {
   DEFAULT_SKIP_MODULES,
   provisionOrgModules,
 } from "../../../common/org/provision-org-modules";
 import { provisionEmployeeSelfService } from "../../../common/org/provision-employee-self-service";
-import { seedSystemRolesForOrg } from "../../rbac/seed-system-roles";
-import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklist.service";
 import { OrgSetupResolverService } from "./org-setup-resolver.service";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 
 export { DEFAULT_SKIP_MODULES, provisionOrgModules };
 
@@ -42,115 +39,74 @@ export class OrgSetupService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly sessions: OnboardingSessionService,
-    private readonly checklists: ModuleChecklistService,
-    private readonly dispatch: NotificationDispatchService,
     private readonly resolver: OrgSetupResolverService,
   ) {}
 
-  private async sendWelcome(orgId: string, userId: string): Promise<void> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { email: true, name: true, firstName: true },
-    });
-    if (!user?.email) return;
-    const name = user.name?.trim() || user.firstName?.trim() || user.email;
-    await this.dispatch.emit({
-      eventKey: "organization.setup.completed",
-      orgId,
-      actorUserId: userId,
-      notifySelf: true,
-      targetUserIds: [userId],
-      entityType: "organization",
-      entityId: orgId,
-      title: "Organization setup complete",
-      message: `Welcome to ${name}. Your organization is ready.`,
-      link: "/dashboard",
-      variables: { userName: name, email: user.email },
+  /**
+   * The setup work that must outlive the request: RBAC role seeding, module checklists, closing
+   * the setup session and the welcome notification.
+   *
+   * It used to run in a bare `setImmediate` whose only failure handler was a log line, so a crash
+   * or a single throwing step left a new organisation half-provisioned with nothing to retry it.
+   * Emitting inside the caller's transaction makes the intent commit atomically with
+   * `onboarding_completed_at`; `OrgSetupCompletedConsumerService` performs it, and the outbox
+   * relay retries until it succeeds or dead-letters visibly.
+   */
+  private emitSetupCompleted(
+    tx: TenantTx,
+    now: Date,
+    input: {
+      orgId: string;
+      userId: string;
+      moduleKeys: readonly string[];
+      sessionAction: "complete" | "skip";
+      skipReason?: string;
+      sendWelcome: boolean;
+    },
+  ): Promise<void> {
+    return OutboxWriter.emit(tx, {
+      eventId: randomUUID(),
+      organizationId: input.orgId,
+      aggregateType: "organization",
+      aggregateId: input.orgId,
+      aggregateVersion: now.getTime(),
+      eventType: "organization.setup.completed",
+      payload: {
+        orgId: input.orgId,
+        userId: input.userId,
+        moduleKeys: [...input.moduleKeys],
+        sessionAction: input.sessionAction,
+        skipReason: input.skipReason ?? null,
+        sendWelcome: input.sendWelcome,
+      },
+      occurredAt: now,
     });
   }
 
-  private schedulePostSetupWork(input: {
-    orgId: string;
-    userId: string;
-    moduleKeys: readonly string[];
-    sessionAction: "complete" | "skip";
-    skipReason?: string;
-    sendWelcome?: boolean;
-  }): void {
-    setImmediate(() => {
-      void runOutsideTenantContext(() => this.runPostSetupWork(input)).catch(
-        (error: unknown) => {
-          logger.error("Organization post-setup work failed", {
-            orgId: input.orgId,
-            userId: input.userId,
-            error,
-          });
-        },
+  /**
+   * `last_activated_at` is a display timestamp that the next organisation switch rewrites, so a
+   * failure here is genuinely recoverable and must not fail setup. Awaiting it rather than
+   * discarding the promise keeps the failure inside the request that caused it.
+   */
+  private async touchAccountOrgIndex(userId: string, orgId: string): Promise<void> {
+    try {
+      await withIdentity(this.db, userId, (tx) =>
+        tx
+          .update(accountOrganizationIndex)
+          .set({ lastActivatedAt: new Date() })
+          .where(
+            and(
+              eq(accountOrganizationIndex.userId, userId),
+              eq(accountOrganizationIndex.orgId, orgId),
+            ),
+          ),
       );
-    });
-  }
-
-  private async runPostSetupWork(input: {
-    orgId: string;
-    userId: string;
-    moduleKeys: readonly string[];
-    sessionAction: "complete" | "skip";
-    skipReason?: string;
-    sendWelcome?: boolean;
-  }): Promise<void> {
-    const roleWork = runInTenantTransaction(
-      this.db,
-      () => seedSystemRolesForOrg(this.db, input.orgId),
-      { orgId: input.orgId },
-    );
-    const checklistWork = runInTenantTransaction(
-      this.db,
-      () =>
-        this.checklists.ensureChecklistsForModules(
-          input.orgId,
-          input.moduleKeys,
-        ),
-      { orgId: input.orgId },
-    );
-    const sessionWork =
-      input.sessionAction === "complete"
-        ? runInTenantTransaction(
-            this.db,
-            () =>
-              this.sessions.completeSession(
-                input.orgId,
-                input.userId,
-                "org_setup",
-              ),
-            { orgId: input.orgId },
-          )
-        : runInTenantTransaction(
-            this.db,
-            () =>
-              this.sessions.skipSession(
-                input.orgId,
-                input.userId,
-                "org_setup",
-                input.skipReason,
-              ),
-            { orgId: input.orgId },
-          );
-
-    const work = await Promise.allSettled([
-      roleWork,
-      checklistWork,
-      sessionWork,
-      ...(input.sendWelcome ? [this.sendWelcome(input.orgId, input.userId)] : []),
-    ]);
-
-    for (const result of work) {
-      if (result.status === "rejected") {
-        logger.error("Organization post-setup task failed", {
-          orgId: input.orgId,
-          userId: input.userId,
-          error: result.reason,
-        });
-      }
+    } catch (error: unknown) {
+      logger.error("[account-org-index] last-activated write failed", {
+        userId,
+        orgId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -181,6 +137,7 @@ export class OrgSetupService {
     if (!target.isOwner) return { success: true, orgId };
 
     const autoLoginToken = randomBytes(32).toString("hex");
+    const now = new Date();
 
     await runInTenantTransaction(
       this.db,
@@ -193,7 +150,7 @@ export class OrgSetupService {
             ...(input.country ? { country: input.country } : {}),
             ...(input.timezone ? { timezone: input.timezone } : {}),
             ...(input.companyName ? { name: input.companyName } : {}),
-            onboardingCompletedAt: new Date(),
+            onboardingCompletedAt: now,
           })
           .where(eq(organizations.id, orgId));
 
@@ -217,37 +174,22 @@ export class OrgSetupService {
           id: randomUUID(),
           userId: u.userId,
           tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
-          expiresAt: addMinutes(new Date(), 10),
+          expiresAt: addMinutes(now, 10),
+        });
+
+        await this.emitSetupCompleted(tx, now, {
+          orgId,
+          userId: u.userId,
+          moduleKeys: input.enabledModules,
+          sessionAction: "complete",
+          sendWelcome: true,
         });
       },
       { orgId },
     );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
-    void withIdentity(this.db, u.userId, (tx) =>
-      tx
-        .update(accountOrganizationIndex)
-        .set({ lastActivatedAt: new Date() })
-        .where(
-          and(
-            eq(accountOrganizationIndex.userId, u.userId),
-            eq(accountOrganizationIndex.orgId, orgId),
-          ),
-        ),
-    ).catch((error: unknown) => {
-      logger.error('[account-org-index] last-activated write failed', {
-        userId: u.userId,
-        orgId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-    this.schedulePostSetupWork({
-      orgId,
-      userId: u.userId,
-      moduleKeys: input.enabledModules,
-      sessionAction: "complete",
-      sendWelcome: true,
-    });
+    await this.touchAccountOrgIndex(u.userId, orgId);
 
     return { success: true, orgId, autoLoginToken };
   }
@@ -296,6 +238,7 @@ export class OrgSetupService {
     }
 
     const autoLoginToken = randomBytes(32).toString("hex");
+    const now = new Date();
 
     await runInTenantTransaction(
       this.db,
@@ -305,7 +248,7 @@ export class OrgSetupService {
           .set({
             industry: "IT Services",
             companySize: "1-10",
-            onboardingCompletedAt: new Date(),
+            onboardingCompletedAt: now,
           })
           .where(eq(organizations.id, orgId));
 
@@ -326,37 +269,23 @@ export class OrgSetupService {
           id: randomUUID(),
           userId: u.userId,
           tokenHash: createHash("sha256").update(autoLoginToken).digest("hex"),
-          expiresAt: addMinutes(new Date(), 10),
+          expiresAt: addMinutes(now, 10),
+        });
+
+        await this.emitSetupCompleted(tx, now, {
+          orgId,
+          userId: u.userId,
+          moduleKeys: DEFAULT_SKIP_MODULES,
+          sessionAction: "skip",
+          skipReason: reason,
+          sendWelcome: false,
         });
       },
       { orgId },
     );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(u.userId));
-    void withIdentity(this.db, u.userId, (tx) =>
-      tx
-        .update(accountOrganizationIndex)
-        .set({ lastActivatedAt: new Date() })
-        .where(
-          and(
-            eq(accountOrganizationIndex.userId, u.userId),
-            eq(accountOrganizationIndex.orgId, orgId),
-          ),
-        ),
-    ).catch((error: unknown) => {
-      logger.error('[account-org-index] last-activated write failed', {
-        userId: u.userId,
-        orgId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-    this.schedulePostSetupWork({
-      orgId,
-      userId: u.userId,
-      moduleKeys: DEFAULT_SKIP_MODULES,
-      sessionAction: "skip",
-      skipReason: reason,
-    });
+    await this.touchAccountOrgIndex(u.userId, orgId);
 
     this.audit.log({
       action: "org.setup.skipped",

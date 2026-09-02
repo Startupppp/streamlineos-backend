@@ -75,7 +75,6 @@ describe("OrgSetupService — cross-tenant isolation", () => {
       },
     } as unknown as Db;
 
-    const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
     const cache = {
       get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn(),
       invalidate: jest.fn().mockResolvedValue(undefined),
@@ -85,7 +84,7 @@ describe("OrgSetupService — cross-tenant isolation", () => {
     };
     const audit = { log: jest.fn() };
     const resolver = new OrgSetupResolverService(db, cache as never, audit as never);
-    const svc = new OrgSetupService(db, audit as never, cache as never, {} as never, {} as never, dispatch as never, resolver);
+    const svc = new OrgSetupService(db, audit as never, cache as never, {} as never, resolver);
     return { svc, db, memberWhere };
   }
 

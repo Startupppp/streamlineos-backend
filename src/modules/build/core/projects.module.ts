@@ -58,6 +58,7 @@ import { BuildAutomationRunnerService } from "./build-automation-runner.service"
 import { PmWorkspacesModule } from "../pm-workspaces/pm-workspaces.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { BuildReleasePublishedConsumerService } from "./build-release-published-consumer.service";
+import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
 
 @Module({
   imports: [BillingModule, NotificationsModule, UsersModule, PmWorkspacesModule, OutboxModule],
@@ -80,6 +81,7 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
   ],
   providers: [
     BuildReleasePublishedConsumerService,
+    BuildTicketStatusChangedConsumerService,
     BuildDueSweepService,
     BuildNotificationVisibility,
     ProjectsQueryService,
