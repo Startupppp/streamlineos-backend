@@ -44,12 +44,12 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
 
         const denied = await request(seededApp.app.getHttpServer())
           .get("/roles")
-          .set("Authorization", `Bearer ${await signSeededToken(alice.userId, fixture.orgId)}`);
+          .set("Authorization", `Bearer ${await signSeededToken(seededApp, alice.userId, fixture.orgId)}`);
         expect({ status: denied.status, fixture: fixture.label() }).toMatchObject({ status: 403 });
 
         const allowed = await request(seededApp.app.getHttpServer())
           .get("/roles")
-          .set("Authorization", `Bearer ${await signSeededToken(bob.userId, fixture.orgId)}`);
+          .set("Authorization", `Bearer ${await signSeededToken(seededApp, bob.userId, fixture.orgId)}`);
         expect({ status: allowed.status, fixture: fixture.label() }).toMatchObject({ status: 200 });
       } finally {
         await fixture.teardown();
@@ -65,7 +65,7 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
       try {
         const carol = fixture.members["carol"];
         if (!carol) throw new Error("carol not in fixture");
-        const token = await signSeededToken(carol.userId, fixture.orgId);
+        const token = await signSeededToken(seededApp, carol.userId, fixture.orgId);
         const server = seededApp.app.getHttpServer();
 
         const denied = await request(server)
@@ -108,7 +108,7 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
         if (typeof orgBRoleId !== "number" && typeof orgBRoleId !== "string")
           throw new Error(`No role found in org B (${fixtureB.orgId}); did the seed not create one?`);
 
-        const token = await signSeededToken(alice.userId, fixtureA.orgId);
+        const token = await signSeededToken(seededApp, alice.userId, fixtureA.orgId);
         const res = await request(seededApp.app.getHttpServer())
           .get(`/roles/${String(orgBRoleId)}`)
           .set("Authorization", `Bearer ${token}`);
@@ -153,7 +153,7 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
         expect(planRow).toMatchObject({ plan: "STARTER" });
 
         const projectMemberRows = await seededApp.seedDb
-          .select({ userId: projectMembers.userId })
+          .select({ membershipId: projectMembers.membershipId })
           .from(projectMembers)
           .where(
             and(
@@ -161,7 +161,7 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
               eq(projectMembers.orgId, fixture.orgId),
             ),
           );
-        expect(projectMemberRows).toEqual([{ userId: erin.userId }]);
+        expect(projectMemberRows).toEqual([{ membershipId: erin.membershipId }]);
       } finally {
         await fixture.teardown();
       }

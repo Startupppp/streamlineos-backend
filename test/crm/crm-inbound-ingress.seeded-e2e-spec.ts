@@ -121,7 +121,7 @@ describe(`${SEEDED_HARNESS} inbound ingress — fixture to rows, no provider SDK
 
     const rep = fixture.members["rep"];
     if (!rep) throw new Error("fixture member 'rep' missing");
-    token = await signSeededToken(rep.userId, fixture.orgId);
+    token = await signSeededToken(seeded, rep.userId, fixture.orgId);
   }, 180_000);
 
   afterAll(async () => {
