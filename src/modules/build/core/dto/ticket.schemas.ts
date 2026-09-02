@@ -130,7 +130,7 @@ export const allWorkQuerySchema = baseListQuerySchema
 export const searchTicketsQuerySchema = z.object({
   q: z.string().default(""),
   limit: pageSizeField(10, 20),
-});
+}).strict();
 export type SearchTicketsQuery = z.infer<typeof searchTicketsQuerySchema>;
 
 export const ticketActivityQuerySchema = baseListQuerySchema.omit({ page: true, sortDir: true });
@@ -170,7 +170,7 @@ export const createTicketSchema = z.object({
   status: z.string().optional(),
   isRecurring: z.boolean().optional(),
   recurrenceRule: recurrenceRuleSchema.nullable().optional(),
-});
+}).strict();
 
 export const updateTicketSchema = z
   .object({
@@ -203,7 +203,7 @@ export const updateTicketSchema = z
     recurrenceRule: recurrenceRuleSchema.nullable().optional(),
     customerId: z.number().int().positive().nullable().optional(),
     parentTicketId: z.number().int().positive().nullable().optional(),
-  })
+  }).strict()
   .superRefine((data, ctx) => {
     refineDueOnOrAfterStart(data, ctx);
   });
@@ -219,7 +219,7 @@ export const bulkUpdateSchema = z
     sprintId: z.number().int().positive().nullable().optional(),
     priority: projectPrioritySchema.optional(),
     parentTicketId: z.number().int().positive().nullable().optional(),
-  })
+  }).strict()
   .refine(
     (data) =>
       data.assigneeId !== undefined ||
@@ -234,26 +234,26 @@ export const rankTicketSchema = z.object({
   beforeTicketId: z.number().int().positive().nullable().optional(),
   afterTicketId: z.number().int().positive().nullable().optional(),
   status: z.string().optional(),
-});
+}).strict();
 
 export const commentSchema = z.object({
   content: z.string().min(1),
   parentCommentId: z.number().int().positive().optional(),
-});
+}).strict();
 
-export const updateCommentSchema = z.object({ content: z.string().min(1) });
+export const updateCommentSchema = z.object({ content: z.string().min(1) }).strict();
 export type UpdateCommentInput = z.infer<typeof updateCommentSchema>;
 
 export const addRelationSchema = z.object({
   relatedTicketId: z.number().int().positive(),
   relationType: z.enum(["blocks", "blocked_by", "duplicate_of", "relates_to"]),
-});
+}).strict();
 
 export const addWatcherSchema = z.object({
   userId: z.string().optional(),
-});
+}).strict();
 
-export const addLabelSchema = z.object({ labelId: z.number() });
+export const addLabelSchema = z.object({ labelId: z.number() }).strict();
 
 export const attachmentSchema = z.object({
   fileName: z.string().min(1),
@@ -261,29 +261,29 @@ export const attachmentSchema = z.object({
   fileKey: z.string().optional(),
   fileSize: z.number(),
   mimeType: z.string(),
-});
+}).strict();
 
 export const addRelatedLinkSchema = z.object({
   url: z.string().url("Must be a valid URL").max(2000),
   label: z.string().trim().max(200).optional(),
-});
+}).strict();
 
 export const updateRelatedLinkSchema = z.object({
   url: z.string().url("Must be a valid URL").max(2000).optional(),
   label: z.string().trim().max(200).nullable().optional(),
-});
+}).strict();
 
 export type AddRelatedLinkInput = z.infer<typeof addRelatedLinkSchema>;
 export type UpdateRelatedLinkInput = z.infer<typeof updateRelatedLinkSchema>;
 
 export const addReactionSchema = z.object({
   emoji: z.string().min(1).max(10),
-});
+}).strict();
 export type AddReactionInput = z.infer<typeof addReactionSchema>;
 
 export const removeRelationQuerySchema = z.object({
   relatedId: z.coerce.number().int().positive(),
-});
+}).strict();
 export type RemoveRelationQuery = z.infer<typeof removeRelationQuerySchema>;
 
 export const importTicketRowSchema = z.object({
@@ -298,7 +298,7 @@ export const importTicketRowSchema = z.object({
 
 export const importTicketsSchema = z.object({
   rows: z.array(importTicketRowSchema).min(1).max(500),
-});
+}).strict();
 
 export type ImportTicketsInput = z.infer<typeof importTicketsSchema>;
 

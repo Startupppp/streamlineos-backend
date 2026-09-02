@@ -1,5 +1,6 @@
 import type { Db } from "../../db/drizzle.module";
 import { DealsImportExportService } from "./deals-import-export.service";
+import type { DataScope } from "../access/access.types";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -49,5 +50,43 @@ describe("DealsImportExportService — cross-tenant isolation", () => {
     await svc.bulkImport(OWNER, "user-1", { deals: [{ name: "Deal B", stage: "NEW", value: 200, ownerEmail: "o@owner.com" }] });
     const allVals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
     expect(allVals).toContain(OWNER);
+  });
+});
+
+describe("DealsImportExportService.exportCsv — cross-tenant isolation + DataScope", () => {
+  const ORG_A = "org-alpha";
+  const ORG_B = "org-beta";
+  const USER_A = "user-alpha";
+
+  it("scopes export query to the caller's orgId — org B cannot read org A rows", async () => {
+    const { db, where } = makeThenableBuilder([]);
+    const planLimits = { assertWithinLimit: jest.fn() };
+    const crud = {} as never;
+    const svc = new DealsImportExportService(db, planLimits as never, crud);
+    await svc.exportCsv(ORG_B, USER_A, "all" as DataScope);
+    const vals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
+    expect(vals).toContain(ORG_B);
+    expect(vals).not.toContain(ORG_A);
+  });
+
+  it("own scope includes userId in WHERE — caller only exports their assigned deals", async () => {
+    const { db, where } = makeThenableBuilder([]);
+    const planLimits = { assertWithinLimit: jest.fn() };
+    const crud = {} as never;
+    const svc = new DealsImportExportService(db, planLimits as never, crud);
+    await svc.exportCsv(ORG_A, USER_A, "own" as DataScope);
+    const vals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
+    expect(vals).toContain(USER_A);
+  });
+
+  it("none scope returns empty result without touching the database", async () => {
+    const db = { select: jest.fn() } as unknown as Db;
+    const planLimits = { assertWithinLimit: jest.fn() };
+    const crud = {} as never;
+    const svc = new DealsImportExportService(db, planLimits as never, crud);
+    const result = await svc.exportCsv(ORG_A, USER_A, "none" as DataScope);
+    expect(result.rowCount).toBe(0);
+    expect(result.truncated).toBe(false);
+    expect(db.select).not.toHaveBeenCalled();
   });
 });

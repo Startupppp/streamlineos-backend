@@ -123,7 +123,8 @@ export class DealsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
   async exportCsv(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
-    const result = await this.deals.exportCsv(u.orgId);
+    const scope = await resolveDealsReadScope(this.access, u);
+    const result = await this.deals.exportCsv(u.orgId, u.userId, scope);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="deals-export.csv"');
     if (result.truncated) res.setHeader("X-Truncated", "true");

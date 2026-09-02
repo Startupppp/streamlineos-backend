@@ -110,8 +110,8 @@ export class DealsService {
     return this.importExport.bulkImport(orgId, userId, input);
   }
 
-  exportCsv(orgId: string) {
-    return this.importExport.exportCsv(orgId);
+  exportCsv(orgId: string, userId: string, scope: DataScope) {
+    return this.importExport.exportCsv(orgId, userId, scope);
   }
 
   private async resolvePipelineStageMap(orgId: string, pipelineId: string | null): Promise<Map<string, { stageType: string; isTerminal: boolean; probability: number }>> {

@@ -2,11 +2,21 @@ import { CronOutboxController } from "./cron-outbox.controller";
 
 jest.mock("./cron-secret", () => ({ assertCronSecret: jest.fn() }));
 
+const retentionMustNotRun = {
+  sweep: jest.fn(() => {
+    throw new Error("outbox retention must not run from the worker or evidence endpoints");
+  }),
+};
+
 describe("CronOutboxController", () => {
   it("leases and flushes the generic outbox through the scheduler entry point", async () => {
     const publisher = { flush: jest.fn().mockResolvedValue({ claimed: 1, delivered: 1, suppressed: 0, retried: 0, dead: 0, fenced: 0 }) };
     const lease = { withLease: jest.fn().mockImplementation(async (_key: string, _seconds: number, fn: () => Promise<unknown>) => ({ ran: true, result: await fn() })) };
-    const controller = new CronOutboxController(publisher as never, lease as never);
+    const controller = new CronOutboxController(
+      publisher as never,
+      lease as never,
+      retentionMustNotRun as never,
+    );
 
     const result = await controller.runPost(undefined);
 
@@ -18,7 +28,11 @@ describe("CronOutboxController", () => {
   it("skips a concurrent scheduler invocation when the lease is held", async () => {
     const publisher = { flush: jest.fn() };
     const lease = { withLease: jest.fn().mockResolvedValue({ ran: false }) };
-    const controller = new CronOutboxController(publisher as never, lease as never);
+    const controller = new CronOutboxController(
+      publisher as never,
+      lease as never,
+      retentionMustNotRun as never,
+    );
 
     await expect(controller.runGet(undefined)).resolves.toEqual({
       success: true, skipped: true, message: "outbox-events-worker already running",
@@ -35,7 +49,11 @@ describe("CronOutboxController", () => {
       report: jest.fn().mockResolvedValue(report),
     };
     const lease = { withLease: jest.fn() };
-    const controller = new CronOutboxController(publisher as never, lease as never);
+    const controller = new CronOutboxController(
+      publisher as never,
+      lease as never,
+      retentionMustNotRun as never,
+    );
 
     await expect(controller.metrics("Bearer secret")).resolves.toEqual({ pending: 1 });
     await expect(controller.report("Bearer secret")).resolves.toEqual(report);

@@ -27,6 +27,7 @@ const DEFAULT_TOP_K = 6;
 const SEARCH_POOL_K = DEFAULT_TOP_K * 4;
 const MIN_DISPLAY_SIMILARITY = 0.2;
 const KB_RAG_STREAM_FEATURE = "kb.public-ask";
+const KB_NO_CONTEXT_ANSWER = "I couldn't find anything related to that in the knowledge base yet.";
 
 export interface KbAnswerSource {
   articleId: number;
@@ -43,11 +44,13 @@ export interface KbAnswer {
   hasContext: boolean;
 }
 
-export interface KbStreamAnswer {
-  stream: ReturnType<typeof streamText<Record<string, never>>>;
-  sources: KbAnswerSource[];
-  hasContext: boolean;
-}
+export type KbStreamAnswer =
+  | { hasContext: false; answer: string; sources: KbAnswerSource[] }
+  | {
+      hasContext: true;
+      stream: ReturnType<typeof streamText<Record<string, never>>>;
+      sources: KbAnswerSource[];
+    };
 
 interface KbSearchResult {
   id: number;
@@ -223,7 +226,7 @@ export class KbRagService {
     const vectorLiteral = await this.embedQuestion(opts);
     if (vectorLiteral === null) {
       this.recordNoContext(opts.orgId, opts.question);
-      return { answer: "I couldn't find anything related to that in the knowledge base yet.", sources: [], hasContext: false };
+      return { answer: KB_NO_CONTEXT_ANSWER, sources: [], hasContext: false };
     }
 
     const results = await this.fetchChunks(opts.orgId, vectorLiteral, opts.articleId);
@@ -231,7 +234,7 @@ export class KbRagService {
     if (results.length === 0) {
       this.recordNoContext(opts.orgId, opts.question);
       return {
-        answer: "I couldn't find anything related to that in the knowledge base yet.",
+        answer: KB_NO_CONTEXT_ANSWER,
         sources: [],
         hasContext: false,
       };
@@ -267,7 +270,7 @@ export class KbRagService {
     if (!hasArticles) {
       this.recordNoContext(opts.orgId, opts.question);
       return {
-        answer: "I couldn't find anything related to that in the knowledge base yet.",
+        answer: KB_NO_CONTEXT_ANSWER,
         sources: [],
         hasContext: false,
       };
@@ -279,41 +282,20 @@ export class KbRagService {
     const hasArticles = await this.hasPublishedPublicArticles(opts.orgId);
     if (!hasArticles) {
       this.recordNoContext(opts.orgId, opts.question);
-      const emptyStream = streamText({
-        model: resolveChatModel(),
-        messages: [{ role: "user", content: opts.question }],
-        system: "Say exactly: I couldn't find anything related to that in the knowledge base yet.",
-        maxOutputTokens: 32,
-        maxRetries: 0,
-      });
-      return { stream: emptyStream, sources: [], hasContext: false };
+      return { hasContext: false, answer: KB_NO_CONTEXT_ANSWER, sources: [] };
     }
 
     const vectorLiteral = await this.embedQuestion(opts);
     if (vectorLiteral === null) {
       this.recordNoContext(opts.orgId, opts.question);
-      const emptyStream = streamText({
-        model: resolveChatModel(),
-        messages: [{ role: "user", content: opts.question }],
-        system: "Say exactly: I couldn't find anything related to that in the knowledge base yet.",
-        maxOutputTokens: 32,
-        maxRetries: 0,
-      });
-      return { stream: emptyStream, sources: [], hasContext: false };
+      return { hasContext: false, answer: KB_NO_CONTEXT_ANSWER, sources: [] };
     }
 
     const results = await this.fetchChunks(opts.orgId, vectorLiteral, opts.articleId);
 
     if (results.length === 0) {
       this.recordNoContext(opts.orgId, opts.question);
-      const emptyStream = streamText({
-        model: resolveChatModel(),
-        messages: [{ role: "user", content: opts.question }],
-        system: "Say exactly: I couldn't find anything related to that in the knowledge base yet.",
-        maxOutputTokens: 32,
-        maxRetries: 0,
-      });
-      return { stream: emptyStream, sources: [], hasContext: false };
+      return { hasContext: false, answer: KB_NO_CONTEXT_ANSWER, sources: [] };
     }
 
     const sources = this.dedupeSources(results);
