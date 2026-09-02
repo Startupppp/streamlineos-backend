@@ -31,6 +31,8 @@ export class IntegrationsGitController {
     @Headers("x-gitlab-token") gitlabToken: string | undefined,
     @Headers("x-github-event") githubEvent: string | undefined,
     @Headers("x-gitlab-event") gitlabEvent: string | undefined,
+    @Headers("x-github-delivery") githubDelivery: string | undefined,
+    @Headers("x-gitlab-event-uuid") gitlabEventUuid: string | undefined,
   ): Promise<{ ok: true }> {
     const ack: { ok: true } = { ok: true };
     try {
@@ -41,6 +43,7 @@ export class IntegrationsGitController {
         gitlabToken,
         githubEvent,
         gitlabEvent,
+        deliveryId: githubDelivery ?? gitlabEventUuid,
       });
       return ack;
     } catch (error) {

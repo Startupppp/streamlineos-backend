@@ -1,4 +1,4 @@
-import { boolean, foreignKey, index, integer, pgEnum, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, foreignKey, index, integer, pgEnum, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -46,6 +46,17 @@ export const gitTicketLinks = build.table("git_ticket_links", {
   index("idx_git_ticket_links_ticket").on(table.ticketId),
   uniqueIndex("uniq_git_ticket_links_ref").on(table.ticketId, table.refType, table.externalId),
   unique("uniq_git_ticket_links_org_id").on(table.orgId, table.id),
+]);
+
+export const gitWebhookSeenDeliveries = build.table("git_webhook_seen_deliveries", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  provider: text("provider").notNull(),
+  deliveryId: text("delivery_id").notNull(),
+  seenAt: timestamp("seen_at").defaultNow().notNull(),
+}, (table) => [
+  unique("uniq_git_webhook_seen_deliveries_delivery").on(table.orgId, table.provider, table.deliveryId),
+  index("idx_git_webhook_seen_deliveries_org_seen_at").on(table.orgId, table.seenAt),
 ]);
 
 export const gitConnectionsRelations = relations(gitConnections, ({ one, many }) => ({

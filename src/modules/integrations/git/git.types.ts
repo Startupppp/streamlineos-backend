@@ -41,4 +41,5 @@ export interface WebhookRequest {
   gitlabToken: string | undefined;
   githubEvent: string | undefined;
   gitlabEvent: string | undefined;
+  deliveryId: string | undefined;
 }
