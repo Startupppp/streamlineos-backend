@@ -1,7 +1,7 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { tool } from "ai";
 import { z } from "zod";
-import { and, eq, ilike, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, sql } from "drizzle-orm";
 import {
   invProducts,
   invProductVariants,
@@ -81,56 +81,57 @@ export class OpsCopilotTools {
             return { results: [], message: `No products found matching "${productQuery}".` };
           }
 
-          const results = await Promise.all(
-            matched.map(async (product) => {
-              const variants = await this.db
-                .select({ id: invProductVariants.id, name: invProductVariants.name })
-                .from(invProductVariants)
-                .where(eq(invProductVariants.productId, product.id))
-                .limit(10);
+          const productIds = matched.map((p) => p.id);
+          const allVariants = await this.db
+            .select({ id: invProductVariants.id, name: invProductVariants.name, productId: invProductVariants.productId })
+            .from(invProductVariants)
+            .where(inArray(invProductVariants.productId, productIds));
 
-              const variantIds = variants.map((v) => v.id);
-              if (variantIds.length === 0) {
-                return { ...product, stock: [] };
-              }
+          const variantsByProduct = new Map<number, Array<{ id: number; name: string }>>();
+          for (const v of allVariants) {
+            const list = variantsByProduct.get(v.productId) ?? [];
+            list.push({ id: v.id, name: v.name });
+            variantsByProduct.set(v.productId, list);
+          }
 
-              const stockRows = await this.db.execute<{
-                variant_id: number;
-                on_hand: string;
-                committed: string;
-              }>(sql`
-                SELECT
-                  product_variant_id AS variant_id,
-                  COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
-                  COALESCE(SUM(committed::numeric), 0)::text AS committed
-                FROM ${invStockLevels}
-                WHERE org_id = ${orgId}
-                  AND product_variant_id = ANY(ARRAY[${sql.join(variantIds.map((id) => sql`${id}`), sql`, `)}]::int[])
-                GROUP BY product_variant_id
-              `);
+          const allVariantIds = allVariants.map((v) => v.id);
+          const stockByVariant = new Map<number, { onHand: number; committed: number }>();
+          if (allVariantIds.length > 0) {
+            const stockRows = await this.db.execute<{
+              variant_id: number;
+              on_hand: string;
+              committed: string;
+            }>(sql`
+              SELECT
+                product_variant_id AS variant_id,
+                COALESCE(SUM(on_hand::numeric), 0)::text AS on_hand,
+                COALESCE(SUM(committed::numeric), 0)::text AS committed
+              FROM ${invStockLevels}
+              WHERE org_id = ${orgId}
+                AND product_variant_id = ANY(ARRAY[${sql.join(allVariantIds.map((id) => sql`${id}`), sql`, `)}]::int[])
+              GROUP BY product_variant_id
+            `);
+            for (const r of stockRows)
+              stockByVariant.set(Number(r.variant_id), { onHand: Number(r.on_hand), committed: Number(r.committed) });
+          }
 
-              const stockByVariant = new Map(
-                stockRows.map((r) => [
-                  Number(r.variant_id),
-                  { onHand: Number(r.on_hand), committed: Number(r.committed) },
-                ]),
-              );
-
-              return {
-                ...product,
-                stock: variants.map((v) => {
-                  const s = stockByVariant.get(v.id) ?? { onHand: 0, committed: 0 };
-                  return {
-                    variantId: v.id,
-                    variantName: v.name,
-                    onHand: s.onHand,
-                    committed: s.committed,
-                    available: s.onHand - s.committed,
-                  };
-                }),
-              };
-            }),
-          );
+          const results = matched.map((product) => {
+            const variants = (variantsByProduct.get(product.id) ?? []).slice(0, 10);
+            if (variants.length === 0) return { ...product, stock: [] };
+            return {
+              ...product,
+              stock: variants.map((v) => {
+                const s = stockByVariant.get(v.id) ?? { onHand: 0, committed: 0 };
+                return {
+                  variantId: v.id,
+                  variantName: v.name,
+                  onHand: s.onHand,
+                  committed: s.committed,
+                  available: s.onHand - s.committed,
+                };
+              }),
+            };
+          });
 
           return { results };
         },

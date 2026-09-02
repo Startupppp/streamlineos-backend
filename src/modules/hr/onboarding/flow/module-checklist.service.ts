@@ -163,6 +163,7 @@ export class ModuleChecklistService {
     if (seedableKeys.length === 0) return;
 
     const existing = await this.db.query.moduleSetupChecklists.findMany({
+      limit: 100,
       where: and(eq(moduleSetupChecklists.orgId, orgId), inArray(moduleSetupChecklists.moduleKey, seedableKeys)),
       columns: { moduleKey: true },
     });

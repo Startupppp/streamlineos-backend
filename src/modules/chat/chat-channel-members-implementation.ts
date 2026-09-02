@@ -466,7 +466,7 @@ export class ChatChannelMembersImplementation {
         id: chatAttachments.id,
         messageId: chatAttachments.messageId,
         fileName: chatAttachments.fileName,
-        fileUrl: chatAttachments.fileUrl,
+        fileKey: chatAttachments.fileKey,
         fileSize: chatAttachments.fileSize,
         mimeType: chatAttachments.mimeType,
         createdAt: chatAttachments.createdAt,

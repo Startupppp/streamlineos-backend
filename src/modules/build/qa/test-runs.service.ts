@@ -49,7 +49,7 @@ export class TestRunsService {
         notRun: count(sql`CASE WHEN ${testRunResults.status} = 'not_run' THEN 1 END`),
       })
       .from(testRunResults)
-      .where(sql`${testRunResults.runId} IN (${sql.join(runIds.map((id) => sql`${id}`), sql`, `)})`)
+      .where(inArray(testRunResults.runId, runIds))
       .groupBy(testRunResults.runId);
     const countMap = new Map(countRows.map((r) => [r.runId, r]));
     return runs.map((run) => {

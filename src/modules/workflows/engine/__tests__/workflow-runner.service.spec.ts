@@ -65,6 +65,11 @@ function makeTx(rec: Recorder) {
         return Promise.resolve(undefined);
       },
     }),
+    delete: () => ({
+      where: () => ({
+        returning: () => Promise.resolve([]),
+      }),
+    }),
   };
 }
 

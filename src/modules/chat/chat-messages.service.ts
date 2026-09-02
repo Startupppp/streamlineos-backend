@@ -164,20 +164,28 @@ export class ChatMessagesService {
 
         let attachmentRows: ChatAttachmentPayload[] = [];
         if (body.attachments && body.attachments.length > 0) {
-          attachmentRows = await tx
+          const inserted = await tx
             .insert(chatAttachments)
             .values(
               body.attachments.map((a) => ({
                 orgId,
                 messageId: created.id,
                 fileName: a.fileName,
-                fileUrl: a.fileUrl,
+                fileUrl: "",
                 fileKey: a.fileKey,
                 fileSize: a.fileSize,
                 mimeType: a.mimeType,
               })),
             )
             .returning();
+          attachmentRows = inserted.map(({ id, fileName, fileKey, fileSize, mimeType }) => ({
+            id,
+            fileName,
+            fileUrl: "",
+            fileKey,
+            fileSize,
+            mimeType,
+          }));
         }
 
         await tx

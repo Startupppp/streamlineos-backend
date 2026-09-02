@@ -17,6 +17,7 @@ import { NotificationDigestService } from "../notifications/notification-digest.
 import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
 import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { CronNotificationOutboxRetentionService } from "./cron-notification-outbox-retention.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
@@ -33,6 +34,7 @@ export class CronNotificationsController {
     private readonly crmFollowupSweep: CrmFollowupSweepService,
     private readonly timeSweeps: NotificationTimeSweepsService,
     private readonly cronLease: CronLeaseService,
+    private readonly notificationOutboxRetention: CronNotificationOutboxRetentionService,
   ) {}
 
   @Get("notification-time-sweeps")
@@ -252,6 +254,40 @@ export class CronNotificationsController {
       };
     } catch (error) {
       logger.error("Notification delivery flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("notification-outbox-retention-sweep")
+  getNotificationOutboxRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runNotificationOutboxRetentionSweep(authorization);
+  }
+
+  @Post("notification-outbox-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  postNotificationOutboxRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runNotificationOutboxRetentionSweep(authorization);
+  }
+
+  private async runNotificationOutboxRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("notification-outbox-retention-sweep", 1800, () =>
+        this.notificationOutboxRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "notification-outbox-retention-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `Notification outbox retention: ${result.rowsDeleted} rows across ${result.organizationsScanned} orgs` +
+          (result.truncated ? " (truncated — rerun)" : ""),
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Notification outbox retention sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

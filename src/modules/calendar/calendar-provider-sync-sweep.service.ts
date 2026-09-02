@@ -46,7 +46,7 @@ export class CalendarProviderSyncSweepService {
             select id from ${calendarProviderSyncQueue}
             where org_id = ${orgId}
               and (
-                state = 'PENDING'
+                (state = 'PENDING' and (lease_expires_at is null or lease_expires_at < ${now.toISOString()}::timestamptz))
                 or (state = 'IN_FLIGHT' and lease_expires_at < ${now.toISOString()}::timestamptz)
               )
             order by id
@@ -147,10 +147,10 @@ export class CalendarProviderSyncSweepService {
       const extId = row.externalEventId ?? eventRow.externalEventId;
       if (!extId) return;
       const result = await this.sync.pushUpdate(userId, conn, extId, {
-        title: pushInput.title,
-        description: pushInput.description,
-        startIso: pushInput.startIso,
-        endIso: pushInput.endIso,
+        title: eventRow.title,
+        description: eventRow.description ?? null,
+        startIso: eventRow.startDate.toISOString(),
+        endIso: eventRow.endDate.toISOString(),
       });
       if (!result.success)
         this.logger.warn(`calendar-provider-sync update skipped for ${conn.toolkit}: ${result.reason}`);

@@ -422,19 +422,20 @@ export class KbArticlesService {
 
   private async uniqueArticleSlug(orgId: string, base: string, excludeId?: number): Promise<string> {
     const root = kbSlugify(base) || "article";
-    let slug = root;
-    let suffix = 1;
-    while (true) {
-      const conditions: SQL[] = [eq(kbArticles.orgId, orgId), eq(kbArticles.slug, slug)];
-      if (excludeId !== undefined) conditions.push(ne(kbArticles.id, excludeId));
-      const existing = await this.db.query.kbArticles.findFirst({
-        where: and(...conditions),
-        columns: { id: true },
-      });
-      if (!existing) return slug;
-      suffix += 1;
-      slug = `${root}-${suffix}`;
-    }
+    const conditions: SQL[] = [
+      eq(kbArticles.orgId, orgId),
+      sql`(${kbArticles.slug} = ${root} OR ${kbArticles.slug} LIKE ${root + "-%"})`,
+    ];
+    if (excludeId !== undefined) conditions.push(ne(kbArticles.id, excludeId));
+    const rows = await this.db
+      .select({ slug: kbArticles.slug })
+      .from(kbArticles)
+      .where(and(...conditions));
+    const taken = new Set(rows.map((r) => r.slug));
+    if (!taken.has(root)) return root;
+    let suffix = 2;
+    while (taken.has(`${root}-${suffix}`)) suffix += 1;
+    return `${root}-${suffix}`;
   }
 
   private async nextVersionNumber(tx: KbTransaction, orgId: string, articleId: number): Promise<number> {

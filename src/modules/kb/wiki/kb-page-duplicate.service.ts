@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { kbPages, kbPageLinks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -36,25 +36,43 @@ export class KbPageDuplicateService {
       const subtreeMap = await this.buildSubtreeMap(tx, orgId, pageId);
       const idMapping = new Map<number, number>();
 
+      const rootPage = subtreeMap.get(pageId);
+      if (!rootPage) throw new NotFoundException("Page not found");
+      const rootParentId = rootPage.parentPageId;
+
+      const [rootSibRow] = await tx
+        .select({ sortOrder: kbPages.sortOrder })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            isNull(kbPages.deletedAt),
+            rootParentId === null
+              ? isNull(kbPages.parentPageId)
+              : eq(kbPages.parentPageId, rootParentId),
+          ),
+        )
+        .orderBy(desc(kbPages.sortOrder))
+        .limit(1);
+      const rootNextSort = (rootSibRow?.sortOrder ?? 0) + 100;
+
+      const childSortCounters = new Map<number, number>();
+
       for (const [originalId, original] of subtreeMap.entries()) {
         const isRoot = originalId === pageId;
         const newParentId = isRoot
           ? original.parentPageId
           : (idMapping.get(original.parentPageId ?? -1) ?? null);
 
-        const siblings = await tx
-          .select({ sortOrder: kbPages.sortOrder })
-          .from(kbPages)
-          .where(
-            and(
-              eq(kbPages.orgId, orgId),
-              isNull(kbPages.deletedAt),
-              newParentId === null ? isNull(kbPages.parentPageId) : eq(kbPages.parentPageId, newParentId),
-            ),
-          )
-          .orderBy(sql`${kbPages.sortOrder} desc`)
-          .limit(1);
-        const maxSort = siblings[0]?.sortOrder ?? 0;
+        let sortOrder: number;
+        if (isRoot) {
+          sortOrder = rootNextSort;
+        } else {
+          const key = newParentId ?? -1;
+          const counter = (childSortCounters.get(key) ?? 0) + 1;
+          childSortCounters.set(key, counter);
+          sortOrder = counter * 100;
+        }
 
         const [created] = await tx
           .insert(kbPages)
@@ -67,7 +85,7 @@ export class KbPageDuplicateService {
             coverImage: original.coverImage,
             content: original.content ?? null,
             contentText: original.contentText,
-            sortOrder: maxSort + 100,
+            sortOrder,
             isLocked: false,
             createdById: user.userId,
             lastEditedById: user.userId,
@@ -81,12 +99,7 @@ export class KbPageDuplicateService {
           const validLinks = await tx
             .select({ id: kbPages.id })
             .from(kbPages)
-            .where(
-              and(
-                eq(kbPages.orgId, orgId),
-                sql`${kbPages.id} = ANY(ARRAY[${sql.join(linkIds.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-              ),
-            );
+            .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, linkIds)));
           const validIds = validLinks.map((l) => l.id);
           if (validIds.length > 0) {
             await tx.insert(kbPageLinks).values(

@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, gt, isNull, lte } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lte } from "drizzle-orm";
 import {
   organizationMembers,
   operatorAccessGrants,
@@ -245,29 +245,39 @@ export class PlatformOperatorAccessService {
         lte(operatorAccessGrants.expiresAt, now),
         isNull(operatorAccessGrants.revokedAt),
       ));
-    let count = 0;
+    const byOrg = new Map<string, Array<{ grantId: string; operatorUserId: string }>>();
     for (const grant of grants) {
-      await runInNewTenantTransaction(this.db, grant.orgId, async (tx) => {
+      const orgGrants = byOrg.get(grant.orgId) ?? [];
+      orgGrants.push({ grantId: grant.grantId, operatorUserId: grant.operatorUserId });
+      byOrg.set(grant.orgId, orgGrants);
+    }
+
+    let count = 0;
+    for (const [orgId, orgGrants] of byOrg) {
+      await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+        const grantIds = orgGrants.map((g) => g.grantId);
         const expired = await tx
           .update(operatorAccessGrants)
           .set({ status: "expired" })
           .where(and(
-            eq(operatorAccessGrants.grantId, grant.grantId),
+            inArray(operatorAccessGrants.grantId, grantIds),
             eq(operatorAccessGrants.status, "pending"),
             lte(operatorAccessGrants.expiresAt, now),
             isNull(operatorAccessGrants.revokedAt),
           ))
-          .returning({ grantId: operatorAccessGrants.grantId });
-        if (!expired?.[0]) return;
-        count += 1;
-        await tx.insert(operatorAccessLog).values({
-          grantId: grant.grantId,
-          operatorUserId: "system",
-          orgId: grant.orgId,
-          action: "grant.expired",
-          detail: { operatorUserId: grant.operatorUserId },
-          ipAddress: null,
-        });
+          .returning({ grantId: operatorAccessGrants.grantId, operatorUserId: operatorAccessGrants.operatorUserId });
+        if (expired.length === 0) return;
+        count += expired.length;
+        await tx.insert(operatorAccessLog).values(
+          expired.map((e) => ({
+            grantId: e.grantId,
+            operatorUserId: "system",
+            orgId,
+            action: "grant.expired" as const,
+            detail: { operatorUserId: e.operatorUserId },
+            ipAddress: null,
+          })),
+        );
       });
     }
     return count;

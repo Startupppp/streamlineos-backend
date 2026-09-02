@@ -465,16 +465,17 @@ export class SupportKbService {
 
   private async uniqueArticleSlug(orgId: string, base: string): Promise<string> {
     const root = slugify(base) || "article";
-    let slug = root;
-    let suffix = 1;
-    while (true) {
-      const existing = await this.db.query.kbArticles.findFirst({
-        where: and(eq(kbArticles.orgId, orgId), eq(kbArticles.slug, slug)),
-        columns: { id: true },
-      });
-      if (!existing) return slug;
-      suffix += 1;
-      slug = `${root}-${suffix}`;
-    }
+    const rows = await this.db
+      .select({ slug: kbArticles.slug })
+      .from(kbArticles)
+      .where(and(
+        eq(kbArticles.orgId, orgId),
+        sql`(${kbArticles.slug} = ${root} OR ${kbArticles.slug} LIKE ${root + "-%"})`,
+      ));
+    const taken = new Set(rows.map((r) => r.slug));
+    if (!taken.has(root)) return root;
+    let suffix = 2;
+    while (taken.has(`${root}-${suffix}`)) suffix += 1;
+    return `${root}-${suffix}`;
   }
 }

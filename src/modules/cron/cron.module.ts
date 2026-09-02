@@ -79,6 +79,8 @@ import { CronMailRetentionService } from "./cron-mail-retention.service";
 import { CronAnnouncementsRetentionService } from "./cron-announcements-retention.service";
 import { CronStorageSweepService } from "./cron-storage-sweep.service";
 import { CronStorageController } from "./cron-storage.controller";
+import { CronOutboxRetentionService } from "./cron-outbox-retention.service";
+import { CronNotificationOutboxRetentionService } from "./cron-notification-outbox-retention.service";
 
 @Module({
   imports: [
@@ -166,6 +168,8 @@ import { CronStorageController } from "./cron-storage.controller";
     CronMailRetentionService,
     CronAnnouncementsRetentionService,
     CronStorageSweepService,
+    CronOutboxRetentionService,
+    CronNotificationOutboxRetentionService,
   ],
 })
 export class CronModule {}

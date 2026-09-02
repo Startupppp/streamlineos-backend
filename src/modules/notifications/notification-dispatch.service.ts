@@ -15,7 +15,6 @@ import type { DispatchEventInput } from "./notification.types";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 import { getTenantContext, registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { type DbOrTx } from "../../common/rbac/access-invalidate";
 
 /**
  * PIPE-006. How many recipients are persisted at once. Sized against the Postgres
@@ -74,9 +73,41 @@ export class NotificationDispatchService {
     if (!ambient || ambient.orgId !== input.orgId) return this.emitNow(input);
 
     const chunks = this.chunkRecipients(input.targetUserIds);
-    for (const [i, chunkIds] of chunks.entries()) {
+    const chunkData = chunks.map((chunkIds, i) => {
       const chunkInput: DispatchEventInput = { ...input, targetUserIds: chunkIds };
-      const dedupeKey = await this.writeIntent(ambient.tx, chunkInput, i > 0 ? i : undefined);
+      const baseKey = buildNotifOutboxDedupeKey(chunkInput);
+      const dedupeKey = i > 0 ? `${baseKey}:c${i}` : baseKey;
+      return { chunkInput, dedupeKey };
+    });
+
+    await ambient.tx
+      .insert(notificationOutbox)
+      .values(
+        chunkData.map(({ chunkInput, dedupeKey }) => ({
+          orgId: chunkInput.orgId,
+          eventKey: chunkInput.eventKey,
+          dedupeKey,
+          actorUserId: chunkInput.actorUserId ?? null,
+          notifySelf: chunkInput.notifySelf ?? false,
+          targetUserIds: chunkInput.targetUserIds,
+          entityType: chunkInput.entityType ?? null,
+          entityId: chunkInput.entityId ?? null,
+          title: chunkInput.title ?? null,
+          message: chunkInput.message ?? null,
+          link: chunkInput.link ?? null,
+          variables: (chunkInput.variables ?? {}) as Record<string, unknown>,
+          metadata: {
+            ...(chunkInput.metadata ?? {}),
+            ...(chunkInput.emailHtml ? { emailHtml: chunkInput.emailHtml } : {}),
+            ...(chunkInput.attachments ? { attachments: chunkInput.attachments } : {}),
+          },
+        })),
+      )
+      .onConflictDoNothing({
+        target: [notificationOutbox.orgId, notificationOutbox.dedupeKey],
+      });
+
+    for (const { chunkInput, dedupeKey } of chunkData) {
       registerAfterCommit(async () => {
         await this.emitNow({ ...chunkInput, dedupeKey });
         await this.markIntentProcessed(input.orgId, dedupeKey);
@@ -99,36 +130,6 @@ export class NotificationDispatchService {
     for (let i = 0; i < ids.length; i += OUTBOX_CHUNK)
       chunks.push(ids.slice(i, i + OUTBOX_CHUNK));
     return chunks;
-  }
-
-  private async writeIntent(tx: DbOrTx, input: DispatchEventInput, chunkIndex?: number): Promise<string> {
-    const baseKey = buildNotifOutboxDedupeKey(input);
-    const dedupeKey = chunkIndex !== undefined ? `${baseKey}:c${chunkIndex}` : baseKey;
-    await tx
-      .insert(notificationOutbox)
-      .values({
-        orgId: input.orgId,
-        eventKey: input.eventKey,
-        dedupeKey,
-        actorUserId: input.actorUserId ?? null,
-        notifySelf: input.notifySelf ?? false,
-        targetUserIds: input.targetUserIds,
-        entityType: input.entityType ?? null,
-        entityId: input.entityId ?? null,
-        title: input.title ?? null,
-        message: input.message ?? null,
-        link: input.link ?? null,
-        variables: (input.variables ?? {}) as Record<string, unknown>,
-        metadata: {
-          ...(input.metadata ?? {}),
-          ...(input.emailHtml ? { emailHtml: input.emailHtml } : {}),
-          ...(input.attachments ? { attachments: input.attachments } : {}),
-        },
-      })
-      .onConflictDoNothing({
-        target: [notificationOutbox.orgId, notificationOutbox.dedupeKey],
-      });
-    return dedupeKey;
   }
 
   /**

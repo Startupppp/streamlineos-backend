@@ -153,17 +153,28 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
       const active = rows.filter(({ events }) =>
         events.length === 0 || events.includes(eventName) || events.includes("*"),
       );
-      for (const endpoint of active) {
-        const [delivery] = await tx.insert(webhookDeliveries).values({
-          orgId,
-          webhookId: endpoint.id,
-          event: eventName,
-          payload,
-          status: "pending",
-          attempts: 0,
-          nextAttemptAt: new Date(),
-        }).returning({ id: webhookDeliveries.id });
-        if (!delivery) throw new Error("Failed to persist project webhook delivery intent");
+      if (active.length === 0) return;
+
+      const now = new Date();
+      const deliveries = await tx
+        .insert(webhookDeliveries)
+        .values(
+          active.map((endpoint) => ({
+            orgId,
+            webhookId: endpoint.id,
+            event: eventName,
+            payload,
+            status: "pending" as const,
+            attempts: 0,
+            nextAttemptAt: now,
+          })),
+        )
+        .returning({ id: webhookDeliveries.id });
+
+      if (deliveries.length !== active.length)
+        throw new Error("Failed to persist project webhook delivery intent");
+
+      for (const delivery of deliveries) {
         await OutboxWriter.emit(tx, {
           eventId: randomUUID(),
           organizationId: orgId,
@@ -172,7 +183,7 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
           aggregateVersion: delivery.id,
           eventType: WEBHOOK_OUTBOX_EVENT,
           payload: { deliveryId: delivery.id },
-          occurredAt: new Date(),
+          occurredAt: now,
         });
       }
   }

@@ -59,41 +59,55 @@ export class ProjectsTicketsUpdateService {
           ? "A ticket cannot be its own parent"
           : "A ticket cannot be its own epic",
       );
-    let current: number | null = refId;
-    let hops = 0;
-    while (current !== null && hops < 100) {
-      if (current === ticketId)
-        throw new BadRequestException(
-          field === "parentTicketId"
-            ? "Cannot set parent: this would create a cycle"
-            : "Cannot set epic: this would create a cycle",
-        );
-      const row:
-        | {
-            parentTicketId: number | null;
-            epicId: number | null;
-            projectId: number | null;
-          }
-        | undefined = await this.db.query.tickets.findFirst({
-        where: and(eq(tickets.id, current), eq(tickets.orgId, orgId)),
-        columns: { parentTicketId: true, epicId: true, projectId: true },
-      });
-      if (!row)
-        throw new BadRequestException(
-          field === "parentTicketId"
-            ? "Parent ticket not found"
-            : "Epic ticket not found",
-        );
-      if (hops === 0 && row.projectId !== projectId)
-        throw new BadRequestException(
-          field === "parentTicketId"
-            ? "Parent must be in the same project"
-            : "Epic must be in the same project",
-        );
-      current = field === "parentTicketId" ? row.parentTicketId : row.epicId;
-      hops += 1;
-    }
-    if (current !== null)
+
+    const nextCol =
+      field === "parentTicketId" ? sql.raw('"parent_ticket_id"') : sql.raw('"epic_id"');
+    const nextColT =
+      field === "parentTicketId" ? sql.raw('t."parent_ticket_id"') : sql.raw('t."epic_id"');
+
+    const chainRows = await this.db.execute<{
+      id: number;
+      next_id: number | null;
+      project_id: number | null;
+      depth: number;
+    }>(sql`
+      WITH RECURSIVE chain(id, next_id, project_id, depth) AS (
+        SELECT id, ${nextCol}, project_id, 0
+        FROM tickets
+        WHERE id = ${refId} AND org_id = ${orgId}
+        UNION ALL
+        SELECT t.id, ${nextColT}, t.project_id, c.depth + 1
+        FROM tickets t
+        JOIN chain c ON t.id = c.next_id
+        WHERE t.org_id = ${orgId} AND c.depth < 100
+      )
+      SELECT id, next_id, project_id, depth FROM chain
+    `);
+
+    if (chainRows.length === 0)
+      throw new BadRequestException(
+        field === "parentTicketId" ? "Parent ticket not found" : "Epic ticket not found",
+      );
+
+    const firstRow = chainRows[0];
+    if (firstRow && Number(firstRow.project_id) !== projectId)
+      throw new BadRequestException(
+        field === "parentTicketId"
+          ? "Parent must be in the same project"
+          : "Epic must be in the same project",
+      );
+
+    const hasCycle = chainRows.some(
+      (r) => Number(r.id) === ticketId || (r.next_id !== null && Number(r.next_id) === ticketId),
+    );
+    if (hasCycle)
+      throw new BadRequestException(
+        field === "parentTicketId"
+          ? "Cannot set parent: this would create a cycle"
+          : "Cannot set epic: this would create a cycle",
+      );
+
+    if (chainRows.length === 100 && chainRows[chainRows.length - 1]?.next_id !== null)
       throw new BadRequestException(
         field === "parentTicketId"
           ? "Parent chain exceeds maximum depth"

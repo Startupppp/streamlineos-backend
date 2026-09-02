@@ -125,14 +125,14 @@ const RETENTION_MATRIX = {
     notes: "Expired past a 90-day grace and aged past 730 days. forEachOrg, batch 200 per phase; targets and reads cascade.",
   },
   notification_outbox: {
-    decision: "PENDING-DECISION",
-    worker: null,
-    notes: "No safe worker exists; pending and in-flight notification intents must not be deleted without an approved processed/dead-state policy.",
+    decision: "RETAIN-BOUNDED",
+    worker: "CronNotificationOutboxRetentionService",
+    notes: "30-day retention for terminal states (PROCESSED, DEAD). PENDING and IN_FLIGHT rows are never touched. forEachOrg, batch 500, per-org lease.",
   },
   outbox_events: {
-    decision: "PENDING-DECISION",
-    worker: null,
-    notes: "No safe worker exists; pending, in-flight, delivered, and dead domain events require an approved lifecycle and replay policy.",
+    decision: "RETAIN-BOUNDED",
+    worker: "CronOutboxRetentionService",
+    notes: "30-day retention for terminal states (DELIVERED, DEAD, SUPPRESSED). PENDING and IN_FLIGHT rows are never touched. Global sweep (owner role, no tenant GUC), batch 1000. inbox_records processed_at < cutoff also swept.",
   },
   audit_logs: {
     decision: "KEEP-FOREVER",
@@ -218,13 +218,18 @@ if (args.includes("--self-test")) {
       classify(policyTableName("chat_messages_y2026_m08", "chat_messages")).status === "COVERED",
     reportingLinesHaveDecision: RETENTION_MATRIX["hr_reporting_lines"].decision === "KEEP-FOREVER",
     documentsHaveExistingWorker: RETENTION_MATRIX["documents"].worker === "CronHrRetentionService (via hr_retention_policies, recordType=document)",
-    unsupportedTablesRemainPending: ["notification_outbox", "outbox_events"].every(
-      (table) => RETENTION_MATRIX[table].decision === "PENDING-DECISION" && classify(table).status === "UNCOVERED",
+    outboxTablesAreNowCovered: ["notification_outbox", "outbox_events"].every(
+      (table) =>
+        RETENTION_MATRIX[table].decision === "RETAIN-BOUNDED" &&
+        typeof RETENTION_MATRIX[table].worker === "string" &&
+        classify(table).status === "COVERED",
     ),
     decidedTablesAreNoLongerPending: [
       ["helpdesk_tickets", "CronHelpdeskRetentionService"],
       ["mail_message_metadata", "CronMailRetentionService"],
       ["announcements", "CronAnnouncementsRetentionService"],
+      ["notification_outbox", "CronNotificationOutboxRetentionService"],
+      ["outbox_events", "CronOutboxRetentionService"],
     ].every(
       ([table, worker]) =>
         RETENTION_MATRIX[table].decision === "RETAIN-BOUNDED" &&

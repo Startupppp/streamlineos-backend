@@ -13,6 +13,7 @@ const executionContextSchema = z.object({
   variables: z.record(z.string(), z.unknown()).optional(),
   steps: z.number().int().nonnegative().optional(),
   infraAttempt: z.number().int().nonnegative().optional(),
+  dlqReason: z.string().nullish(),
 });
 
 export interface WorkflowRunState {
@@ -22,12 +23,14 @@ export interface WorkflowRunState {
   steps: number;
   /** How many times this execution has been released back due to transient infra errors. */
   infraAttempt: number;
+  /** Set when the execution is dead-lettered; null otherwise. */
+  dlqReason: string | null;
 }
 
 export function readRunState(context: unknown): WorkflowRunState {
   const parsed = executionContextSchema.safeParse(context ?? {});
   if (!parsed.success)
-    return { cursor: null, resumeAt: null, variables: {}, steps: 0, infraAttempt: 0 };
+    return { cursor: null, resumeAt: null, variables: {}, steps: 0, infraAttempt: 0, dlqReason: null };
 
   const resumeAt = parsed.data.resumeAt ? new Date(parsed.data.resumeAt) : null;
   return {
@@ -36,6 +39,7 @@ export function readRunState(context: unknown): WorkflowRunState {
     variables: parsed.data.variables ?? {},
     steps: parsed.data.steps ?? 0,
     infraAttempt: parsed.data.infraAttempt ?? 0,
+    dlqReason: parsed.data.dlqReason ?? null,
   };
 }
 
@@ -46,6 +50,7 @@ export function writeRunState(state: WorkflowRunState): Record<string, unknown> 
     variables: state.variables,
     steps: state.steps,
     infraAttempt: state.infraAttempt,
+    dlqReason: state.dlqReason,
   };
 }
 

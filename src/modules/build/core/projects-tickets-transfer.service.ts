@@ -112,7 +112,7 @@ export class ProjectsTicketsTransferService {
         .from(projectStatuses)
         .where(and(eq(projectStatuses.orgId, u.orgId), eq(projectStatuses.projectId, projectId))),
       this.db
-        .select({ userId: organizationMembers.userId, email: users.email })
+        .select({ userId: organizationMembers.userId, email: users.email, membershipId: organizationMembers.id, status: organizationMembers.status })
         .from(projectMembers)
         .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
         .innerJoin(users, eq(organizationMembers.userId, users.id))
@@ -121,6 +121,9 @@ export class ProjectsTicketsTransferService {
 
     const validStatusSet = new Set(validStatuses.map((s) => s.name));
     const emailToUserId = new Map(memberEmails.map((m) => [m.email, m.userId]));
+    const userIdToMembershipId = new Map(
+      memberEmails.filter((m) => m.status === "ACTIVE").map((m) => [m.userId, m.membershipId]),
+    );
     const defaultStatus = validStatuses[0]?.name ?? "TODO";
 
     const skipped: Array<{ row: number; reason: string }> = [];
@@ -154,9 +157,7 @@ export class ProjectsTicketsTransferService {
         status: row.status ?? defaultStatus,
         priority: row.priority ?? "MEDIUM",
         points: row.points ?? undefined,
-        assigneeMembershipId: assigneeId
-          ? (await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, assigneeId), eq(organizationMembers.status, "ACTIVE")), columns: { id: true } }))?.id ?? null
-          : null,
+        assigneeMembershipId: assigneeId ? (userIdToMembershipId.get(assigneeId) ?? null) : null,
         dueDate: row.dueDate ?? undefined,
         reporterId: u.userId,
         rowIndex: i + 1,

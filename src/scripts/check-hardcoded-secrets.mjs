@@ -1,20 +1,5 @@
 #!/usr/bin/env node
-/**
- * Secret gate: no credential literal is committed to the tree.
- *
- * `check-log-secrets.mjs` proves we never *log* a secret. It scanned 2,996
- * files while ten tracked scripts carried a live Neon password in a URL
- * literal, because a hardcoded credential is never passed to a logger. This
- * gate covers the other half: the literal itself.
- *
- * A connection string is only a finding when it carries a real password.
- * `postgres://user:***@host`, `${DATABASE_URL}` and `process.env.X` are the
- * shapes we WANT people to write, so they must pass or the gate gets muted.
- *
- * Flags:
- *   --self-test   Feed known-bad and known-good fixtures through the
- *                 classifier and exit.
- */
+// Secret gate: no credential literal is committed to the tree. --self-test runs fixtures.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -48,16 +33,11 @@ const SCANNED_EXTENSIONS = [
   ".md",
 ];
 
-/** Real secrets live here by design and the file is git-ignored. */
 const isPrivateEnvFile = (name) =>
   name === ".env" || (name.startsWith(".env.") && !/\.(example|sample|template)$/.test(name));
 
 const isTemplateEnvFile = (name) => /^\.env\.(example|sample|template)$/.test(name);
 
-/**
- * A password position that is a placeholder rather than a credential.
- * Anything referencing the environment is the correct pattern, not a finding.
- */
 const PLACEHOLDER = /^(\*+|x+|<[^>]*>|\$\{[^}]*\}|%[^%]*%|(?:process\.env\.[\w.]+))$/i;
 const PLACEHOLDER_WORDS = new Set([
   "password",
@@ -81,11 +61,6 @@ const PLACEHOLDER_WORDS = new Set([
 const URL_CREDENTIAL =
   /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis(?:s)?|amqps?|https?):\/\/([A-Za-z0-9._%-]+):([^@\s'"`]+)@/g;
 
-/**
- * Vendor key prefixes with enough entropy after them to be a real key.
- * Each entry is [label, pattern]. A prefix alone is not a finding — the
- * pattern must require the random tail, or every doc mentioning "sk-" fails.
- */
 const KEY_PATTERNS = [
   ["neon", /\bnpg_[A-Za-z0-9]{12,}\b/],
   ["aws-access-key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
@@ -98,16 +73,8 @@ const KEY_PATTERNS = [
   ["private-key-block", /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/],
 ];
 
-/** path → why the literal stands. Never extend to accept a live credential. */
 const ALLOWED_FILES = {};
 
-/**
- * Test fixtures write `pw`, `p`, `ci`, `probe`, `badpassword`. Real provider
- * credentials are long and mixed-class. Length plus character-class variety is
- * what separates the two, so the gate does not drown in fixture noise and get
- * switched off. A weak-but-real password still gets caught by KEY_PATTERNS
- * when it carries a vendor prefix.
- */
 const MIN_CREDENTIAL_LENGTH = 12;
 
 function looksLikeRealCredential(password) {
@@ -178,7 +145,6 @@ function runSelfTests() {
     }
   };
 
-  // Fixtures are concatenated so this file never contains a literal the gate matches.
   const pgHost = "@ep-orange-mode.aws.neon.tech/neondb?sslmode=require";
   const livePassword = "npg_" + "aB3xY9zQ1mNp";
 

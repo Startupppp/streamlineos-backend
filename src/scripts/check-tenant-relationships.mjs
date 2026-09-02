@@ -121,9 +121,6 @@ async function runCatalogMode() {
   return runQuery(postgres, cleanUrl);
 }
 
-// A freshly reset scratch database has no tenant tables, so it has no single-column
-// tenant FKs either, and this gate reports "zero actionable" at its most confident
-// exactly when it has measured nothing. Below this floor the verdict is refused.
 const MIN_TENANT_TABLES = 400;
 
 async function runQuery(postgres, url) {

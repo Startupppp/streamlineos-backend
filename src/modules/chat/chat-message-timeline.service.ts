@@ -152,7 +152,7 @@ export class ChatMessageTimelineService {
       orderBy: [desc(chatMessages.channelPosition)],
       limit: safeLimit + 1,
       with: {
-        attachments: true,
+        attachments: { columns: { id: true, fileName: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
         replyTo: {
           with: { senderMembership: { columns: { userId: true } } },
@@ -220,7 +220,7 @@ export class ChatMessageTimelineService {
       orderBy: [asc(chatMessages.channelPosition)],
       limit: safeLimit + 1,
       with: {
-        attachments: true,
+        attachments: { columns: { id: true, fileName: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
         replyTo: {
           with: { senderMembership: { columns: { userId: true } } },
@@ -257,7 +257,7 @@ export class ChatMessageTimelineService {
         eq(chatMessages.orgId, actor.orgId),
       ),
       with: {
-        attachments: true,
+        attachments: { columns: { id: true, fileName: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
         replyTo: {
           with: { senderMembership: { columns: { userId: true } } },
@@ -298,7 +298,7 @@ export class ChatMessageTimelineService {
       orderBy: [desc(chatMessages.channelPosition)],
       limit: safeLimit + 1,
       with: {
-        attachments: true,
+        attachments: { columns: { id: true, fileName: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
         replyTo: {
           with: { senderMembership: { columns: { userId: true } } },

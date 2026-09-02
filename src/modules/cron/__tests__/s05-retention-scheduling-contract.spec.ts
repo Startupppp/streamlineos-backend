@@ -20,6 +20,8 @@ describe("S05 retention scheduling contracts", () => {
     expect(module).toMatch(/CronHelpdeskRetentionService/);
     expect(module).toMatch(/CronMailRetentionService/);
     expect(module).toMatch(/CronAnnouncementsRetentionService/);
+    expect(module).toMatch(/CronOutboxRetentionService/);
+    expect(module).toMatch(/CronNotificationOutboxRetentionService/);
   });
 
   it("exposes the HR policy sweep through authenticated GET/POST routes and a lease", () => {
@@ -89,5 +91,28 @@ describe("S05 retention scheduling contracts", () => {
     expect(build).toMatch(/@Post\("build-retention-prune"\)/);
     expect(build).toMatch(/withLease\("build-retention-prune",\s*120/);
     expect(build).toMatch(/this\.buildRetention\.pruneWebhookDeliveries\(\)/);
+  });
+
+  it("exposes outbox events and notification outbox retention through authenticated leased routes", () => {
+    const outbox = source("cron-outbox.controller.ts");
+    const notifications = source("cron-notifications.controller.ts");
+    expect(outbox).toMatch(/@Get\("outbox-events-retention-sweep"\)/);
+    expect(outbox).toMatch(/@Post\("outbox-events-retention-sweep"\)/);
+    expect(outbox).toMatch(/withLease\("outbox-events-retention-sweep",\s*1800/);
+    expect(outbox).toMatch(/this\.outboxRetention\.sweep\(\)/);
+    expect(notifications).toMatch(/@Get\("notification-outbox-retention-sweep"\)/);
+    expect(notifications).toMatch(/@Post\("notification-outbox-retention-sweep"\)/);
+    expect(notifications).toMatch(/withLease\("notification-outbox-retention-sweep",\s*1800/);
+    expect(notifications).toMatch(/this\.notificationOutboxRetention\.sweep\(\)/);
+  });
+
+  it("CronLeaseService writes a heartbeat key after a successful sweep and a failure record on error", () => {
+    const leaseSource = source("cron-lease.service.ts");
+    expect(leaseSource).toMatch(/HEARTBEAT_KEY_PREFIX/);
+    expect(leaseSource).toMatch(/LAST_ERROR_KEY_PREFIX/);
+    expect(leaseSource).toMatch(/writeHeartbeat/);
+    expect(leaseSource).toMatch(/writeFailureRecord/);
+    expect(leaseSource).toMatch(/cron:heartbeat:/);
+    expect(leaseSource).toMatch(/cron:last-error:/);
   });
 });

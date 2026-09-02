@@ -19,16 +19,9 @@ describe("FeedbucketSubmissionsService user projection", () => {
       null,
     );
 
-    const columns = findMany.mock.calls[0]?.[0]?.with?.assignee?.columns;
-    expect(columns).toEqual({
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      image: true,
-    });
-    expect(columns).not.toHaveProperty("totpSecret");
-    expect(columns).not.toHaveProperty("bankDetails");
+    const call = findMany.mock.calls[0]?.[0];
+    expect(call?.with?.assignee).toBeUndefined();
+    expect(call?.columns?.consoleLogs).toBe(false);
+    expect(call?.columns?.networkLogs).toBe(false);
   });
 });

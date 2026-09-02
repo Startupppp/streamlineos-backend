@@ -28,7 +28,7 @@ export const WorkflowExecutionQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   direction: z.enum(["asc", "desc"]).default("desc"),
-  status: z.enum(["pending", "running", "waiting", "completed", "failed", "cancelled", "timed_out"]).optional(),
+  status: z.enum(["pending", "running", "waiting", "completed", "failed", "cancelled", "timed_out", "dead_lettered"]).optional(),
 });
 
 export const WorkflowListQuerySchema = z.object({

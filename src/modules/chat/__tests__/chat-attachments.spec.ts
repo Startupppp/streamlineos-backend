@@ -132,4 +132,35 @@ describe("ChatAttachmentsService.getSignedUrl", () => {
       expect(storage.getFileUrl).toHaveBeenCalledWith(ORG, FILE_KEY, 3600);
     });
   });
+
+  describe("tenant key scoping", () => {
+    it("(a) signed URL uses the caller orgId as the storage tenant, not a guess from the key", async () => {
+      const storage = makeStorage();
+      const service = makeService(makeDb([VALID_ROW]), makeMembers(), storage);
+
+      await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+
+      const [calledOrgId] = (storage.getFileUrl as jest.Mock).mock.calls[0] as [string, string, number];
+      expect(calledOrgId).toBe(ORG);
+    });
+
+    it("(b) DENY: a cross-tenant query (no row found) means storage is never reached", async () => {
+      const storage = makeStorage();
+      const service = makeService(makeDb([]), makeMembers(), storage);
+
+      await expect(
+        service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, OTHER_ORG),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(storage.getFileUrl).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: the correct org gets the signed URL", async () => {
+      const storage = makeStorage();
+      const service = makeService(makeDb([VALID_ROW]), makeMembers(), storage);
+
+      const result = await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+      expect(result.url).toBe(SIGNED_URL);
+      expect(storage.getFileUrl).toHaveBeenCalledTimes(1);
+    });
+  });
 });

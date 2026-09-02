@@ -378,6 +378,7 @@ describe("S06 — Redis loss: isTransientInfraError classifies errors, WorkflowR
         variables: {},
         steps: 0,
         infraAttempt: OUTBOX_MAX_RETRIES,
+        dlqReason: null,
       };
       const claimedWithExhaustedContext = { ...CLAIMED_EXECUTION, context: exhaustedContext };
       const db = makeRunnerDb([claimedWithExhaustedContext]);
@@ -389,7 +390,7 @@ describe("S06 — Redis loss: isTransientInfraError classifies errors, WorkflowR
       type Private = { runOne(orgId: string, id: string): Promise<string | null> };
       const result = await (svc as unknown as Private).runOne(ORG, "exec-s06-transient");
 
-      expect(result).toBe("failed");
+      expect(result).toBe("dead_lettered");
     });
   });
 });

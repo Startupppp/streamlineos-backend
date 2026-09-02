@@ -15,7 +15,7 @@ import {
   type NodeDispatchPort,
   type ResolvedPermissionSet,
 } from "./node-outcome";
-import { readRunState, writeRunState } from "./workflow-execution-context";
+import { readRunState, writeRunState, type WorkflowRunState } from "./workflow-execution-context";
 import { type ClaimedExecution } from "./execution-claim";
 
 export const MAX_STEPS_PER_EXECUTION = 200;
@@ -206,6 +206,7 @@ export async function advanceExecution(
             variables,
             steps,
             infraAttempt: 0,
+            dlqReason: null,
           }),
         })
         .where(
@@ -302,9 +303,33 @@ export async function finishExecution(
               variables: state.variables,
               steps: state.steps,
               infraAttempt: 0,
+              dlqReason: null,
             }),
           }
         : {}),
+    })
+    .where(
+      and(
+        eq(workflowExecutions.id, executionId),
+        eq(workflowExecutions.status, "running"),
+      ),
+    );
+}
+
+export async function deadLetterExecution(
+  tx: TenantTx,
+  executionId: string,
+  reason: string,
+  state: WorkflowRunState,
+): Promise<void> {
+  await tx
+    .update(workflowExecutions)
+    .set({
+      status: "dead_lettered",
+      dlqReason: reason,
+      completedAt: new Date(),
+      durationMs: sql`EXTRACT(EPOCH FROM (now() - COALESCE(${workflowExecutions.startedAt}, now()))) * 1000`,
+      context: writeRunState({ ...state, cursor: null, resumeAt: null, dlqReason: reason }),
     })
     .where(
       and(

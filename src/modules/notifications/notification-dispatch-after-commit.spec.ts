@@ -73,8 +73,11 @@ describe("NotificationDispatchService durability", () => {
     }),
     execute: jest.fn().mockResolvedValue([]),
     insert: jest.fn().mockImplementation(() => ({
-      values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
-        insertedValues.push(v);
+      values: jest.fn().mockImplementation((v: Record<string, unknown> | Array<Record<string, unknown>>) => {
+        if (Array.isArray(v))
+          for (const row of v) insertedValues.push(row);
+        else
+          insertedValues.push(v);
         return { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
       }),
     })),

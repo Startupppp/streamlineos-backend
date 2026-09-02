@@ -5,7 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { forEachOrg } from "../../../common/tenant/for-each-org";
-import { workflowExecutions } from "../../../db/schema";
+import { workflowExecutions, workflowExecutionSteps } from "../../../db/schema";
 import {
   NODE_DISPATCH_PORT,
   type NodeDispatchPort,
@@ -20,6 +20,7 @@ import {
 import { claimExecution } from "./execution-claim";
 import {
   advanceExecution,
+  deadLetterExecution,
   finishExecution,
   MAX_STEPS_PER_EXECUTION,
 } from "./execution-advance";
@@ -31,6 +32,8 @@ export { MAX_STEPS_PER_EXECUTION };
 
 export const RUNNING_TIMEOUT_MS = 15 * 60 * 1000;
 const SWEEP_BATCH = 50;
+const STEP_RETENTION_DAYS = 30;
+const STEP_PRUNE_EXEC_BATCH = 50;
 
 /**
  * ioredis and postgres-js errors are cross-realm — `instanceof Error` is false.
@@ -84,6 +87,8 @@ export interface WorkflowSweepResult {
   completed: number;
   failed: number;
   suspended: number;
+  deadLettered: number;
+  stepsPruned: number;
 }
 
 @Injectable()
@@ -102,6 +107,8 @@ export class WorkflowRunnerService {
       completed: 0,
       failed: 0,
       suspended: 0,
+      deadLettered: 0,
+      stepsPruned: 0,
     };
 
     await forEachOrg(this.db, "workflow-runner", async (tx, orgId) => {
@@ -113,8 +120,10 @@ export class WorkflowRunnerService {
         totals.claimed += 1;
         if (result === "completed") totals.completed += 1;
         else if (result === "failed") totals.failed += 1;
+        else if (result === "dead_lettered") totals.deadLettered += 1;
         else totals.suspended += 1;
       }
+      totals.stepsPruned += await this.pruneOrgSteps(tx, orgId);
     });
 
     return totals;
@@ -159,10 +168,40 @@ export class WorkflowRunnerService {
       .map((row) => row.id);
   }
 
+  // Deletes steps for terminal executions whose completedAt is past the retention
+  // window. Uses a bounded batch so a backlog cannot hold a lock across the table.
+  // Terminal executions themselves are kept — only the per-step rows are pruned.
+  private async pruneOrgSteps(tx: TenantTx, orgId: string): Promise<number> {
+    const cutoff = new Date(Date.now() - STEP_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const oldExecs = await tx
+      .select({ id: workflowExecutions.id })
+      .from(workflowExecutions)
+      .where(
+        and(
+          eq(workflowExecutions.orgId, orgId),
+          lt(workflowExecutions.completedAt, cutoff),
+          inArray(workflowExecutions.status, ["completed", "failed", "cancelled", "timed_out"]),
+        ),
+      )
+      .limit(STEP_PRUNE_EXEC_BATCH);
+    if (oldExecs.length === 0) return 0;
+    const ids = oldExecs.map((r) => r.id);
+    const deleted = await tx
+      .delete(workflowExecutionSteps)
+      .where(
+        and(
+          eq(workflowExecutionSteps.orgId, orgId),
+          inArray(workflowExecutionSteps.executionId, ids),
+        ),
+      )
+      .returning({ id: workflowExecutionSteps.id });
+    return deleted.length;
+  }
+
   private async runOne(
     orgId: string,
     executionId: string,
-  ): Promise<"completed" | "failed" | "suspended" | null> {
+  ): Promise<"completed" | "failed" | "suspended" | "dead_lettered" | null> {
     const execution = await claimExecution(this.db, orgId, executionId);
     if (!execution) return null;
 
@@ -173,7 +212,8 @@ export class WorkflowRunnerService {
       try {
         resolvedPermissions = await this.access.resolveUserPermissions(orgId, execution.triggeredBy);
       } catch (error) {
-        if (isTransientInfraError(error) && currentState.infraAttempt < OUTBOX_MAX_RETRIES) {
+        const isTransient = isTransientInfraError(error);
+        if (isTransient && currentState.infraAttempt < OUTBOX_MAX_RETRIES) {
           const delay = backoffMs(currentState.infraAttempt + 1);
           const runAfter = new Date(Date.now() + delay);
           this.logger.warn(
@@ -192,6 +232,16 @@ export class WorkflowRunnerService {
           : typeof errProp["code"] === "string"
           ? errProp["code"]
           : "unknown";
+        if (isTransient) {
+          this.logger.error(
+            `workflow execution ${executionId} retry budget exhausted after ` +
+            `${currentState.infraAttempt} attempts (permission resolve) — dead-lettering: ${errStr}`,
+          );
+          await runInNewTenantTransaction(this.db, orgId, (tx) =>
+            deadLetterExecution(tx, execution.id, errStr, currentState),
+          );
+          return "dead_lettered";
+        }
         this.logger.error(
           `workflow execution ${executionId} failed during permission resolve ` +
           `(infraAttempt=${currentState.infraAttempt}): ${errStr}`,
@@ -208,11 +258,35 @@ export class WorkflowRunnerService {
         advanceExecution(tx, execution, this.dispatcher, resolvedPermissions),
       );
     } catch (error) {
-      this.logger.error(
-        `workflow execution ${executionId} crashed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      const isTransient = isTransientInfraError(error);
+      if (isTransient && currentState.infraAttempt < OUTBOX_MAX_RETRIES) {
+        const delay = backoffMs(currentState.infraAttempt + 1);
+        const runAfter = new Date(Date.now() + delay);
+        this.logger.warn(
+          `workflow execution ${executionId} transient execution error ` +
+          `(attempt ${currentState.infraAttempt + 1}/${OUTBOX_MAX_RETRIES}) — ` +
+          `rescheduled in ${delay}ms`,
+        );
+        await releaseToWaiting(this.db, orgId, executionId, runAfter, currentState);
+        return "suspended";
+      }
+      const errObj = error as Record<string, unknown>;
+      const reason = typeof errObj["message"] === "string"
+        ? errObj["message"]
+        : typeof errObj["code"] === "string"
+        ? errObj["code"]
+        : String(error);
+      if (isTransient) {
+        this.logger.error(
+          `workflow execution ${executionId} retry budget exhausted after ` +
+          `${currentState.infraAttempt} attempts (execution) — dead-lettering: ${reason}`,
+        );
+        await runInNewTenantTransaction(this.db, orgId, (tx) =>
+          deadLetterExecution(tx, execution.id, reason, currentState),
+        );
+        return "dead_lettered";
+      }
+      this.logger.error(`workflow execution ${executionId} crashed: ${reason}`);
       await runInNewTenantTransaction(this.db, orgId, (tx) =>
         finishExecution(tx, execution.id, "failed"),
       );

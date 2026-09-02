@@ -143,36 +143,36 @@ export class KbImportExportService {
     let succeeded = 0;
     let failed = 0;
 
-    await this.db.transaction(async function insertPages(tx) {
-      const counters = new Map<number | null, number>(
-        parentIds.map(function initCounter(pid) {
-          return [pid ?? null, 0];
-        }),
-      );
-
-      for (const item of items) {
-        const pid = item.parentPageId ?? null;
-        const counter = counters.get(pid) ?? 0;
-        const base = sortOffsets.get(pid) ?? 100;
-        const sortOrder = base + counter * 100;
-        counters.set(pid, counter + 1);
-
-        try {
-          await tx.insert(kbPages).values({
-            orgId,
-            parentPageId: item.parentPageId ?? null,
-            title: item.title,
-            contentText: item.contentText ?? null,
-            sortOrder,
-            createdById: user.userId,
-            lastEditedById: user.userId,
-          });
-          succeeded++;
-        } catch {
-          failed++;
-        }
-      }
+    const counters = new Map<number | null, number>(
+      parentIds.map(function initCounter(pid) {
+        return [pid ?? null, 0];
+      }),
+    );
+    const pageValues = items.map(function buildRow(item) {
+      const pid = item.parentPageId ?? null;
+      const counter = counters.get(pid) ?? 0;
+      const base = sortOffsets.get(pid) ?? 100;
+      const sortOrder = base + counter * 100;
+      counters.set(pid, counter + 1);
+      return {
+        orgId,
+        parentPageId: item.parentPageId ?? null,
+        title: item.title,
+        contentText: item.contentText ?? null,
+        sortOrder,
+        createdById: user.userId,
+        lastEditedById: user.userId,
+      };
     });
+
+    if (pageValues.length > 0) {
+      try {
+        await this.db.insert(kbPages).values(pageValues).onConflictDoNothing();
+        succeeded = pageValues.length;
+      } catch {
+        failed = pageValues.length;
+      }
+    }
 
     const [job] = await this.db
       .insert(kbImportJobs)

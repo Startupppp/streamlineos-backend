@@ -3,7 +3,7 @@ import { relations } from "drizzle-orm";
 import { organizations } from "./auth";
 
 export const workflowStatusEnum = pgEnum("workflow_status", ["draft", "published", "disabled", "archived"]);
-export const workflowExecutionStatusEnum = pgEnum("workflow_execution_status", ["pending", "running", "waiting", "completed", "failed", "cancelled", "timed_out"]);
+export const workflowExecutionStatusEnum = pgEnum("workflow_execution_status", ["pending", "running", "waiting", "completed", "failed", "cancelled", "timed_out", "dead_lettered"]);
 export const workflowTriggerTypeEnum = pgEnum("workflow_trigger_type", ["event", "schedule", "webhook", "api", "manual"]);
 export const workflowApprovalStatusEnum = pgEnum("workflow_approval_status", ["pending", "approved", "rejected", "delegated", "expired"]);
 export const workflowNodeTypeEnum = pgEnum("workflow_node_type", ["trigger", "condition", "approval", "action", "delay", "loop", "ai_action", "integration", "script", "end"]);
@@ -57,6 +57,7 @@ export const workflowExecutions = pgTable("workflow_executions", {
   completedAt: timestamp("completed_at"),
   durationMs: integer("duration_ms"),
   triggeredBy: text("triggered_by"),
+  dlqReason: text("dlq_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_workflow_executions_org").on(table.orgId),
