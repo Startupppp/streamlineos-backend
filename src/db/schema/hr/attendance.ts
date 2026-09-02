@@ -30,7 +30,7 @@ export const attendance = pgTable("attendance", {
   unique("uniq_attendance_org_id").on(table.orgId, table.id),
   index("idx_attendance_org_date_status").on(table.orgId, table.date, table.status),
   index("idx_attendance_org_user_date").on(table.orgId, table.userId, table.date),
-  index("idx_attendance_org_user_membership_date").on(table.orgId, table.userMembershipId, table.date),
+  index("idx_attendance_org_user_membership_date").on(table.orgId, table.userMembershipId, table.date.desc(), table.createdAt.desc()),
   foreignKey({
     columns: [table.orgId, table.userMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],

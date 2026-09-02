@@ -4649,6 +4649,13 @@
       "when": 1803000010115,
       "tag": "1027_t07b_dashboard_my_tasks_assignee_updated_index",
       "breakpoints": true
+    },
+    {
+      "idx": 797,
+      "version": "7",
+      "when": 1803000010116,
+      "tag": "1041_t22c_attendance_membership_history_index",
+      "breakpoints": true
     }
   ]
 }
