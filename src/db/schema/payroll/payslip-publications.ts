@@ -35,6 +35,7 @@ export const payslipPublications = pgTable("payslip_publications", {
   index("idx_payslip_publications_run").on(table.runId),
   index("idx_payslip_publications_user").on(table.userId),
   index("idx_payslip_publications_org_status").on(table.orgId, table.status),
+  index("idx_payslip_publications_org_user_status").on(table.orgId, table.userId, table.status),
   index("idx_payslip_publications_org_user_actor").on(table.orgId, table.userMembershipId),
   foreignKey({
     columns: [table.orgId, table.userMembershipId],

@@ -24,7 +24,7 @@ export const userDelegations = pgTable("user_delegations", {
   revokedAt: timestamp("revoked_at"),
   revokedBy: text("revoked_by").references(() => users.id),
 }, (table) => [
-  unique("uniq_user_delegations_org_delegation").on(table.orgId, table.id),
+  unique("uniq_user_delegations_org_id").on(table.orgId, table.id),
   index("idx_user_delegations_delegatee_status").on(
     table.orgId,
     table.delegateeMembershipId,

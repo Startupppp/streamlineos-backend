@@ -4523,6 +4523,41 @@
       "when": 1803000010096,
       "tag": "1000_s08_plan_measured_indexes_and_kb_ann",
       "breakpoints": true
+    },
+    {
+      "idx": 778,
+      "version": "7",
+      "when": 1803000010097,
+      "tag": "1001_s08_payroll_financial_immutability",
+      "breakpoints": true
+    },
+    {
+      "idx": 779,
+      "version": "7",
+      "when": 1803000010098,
+      "tag": "1002_s08_payroll_read_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 780,
+      "version": "7",
+      "when": 1803000010099,
+      "tag": "1003_s08_residual_duplicate_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 781,
+      "version": "7",
+      "when": 1803000010100,
+      "tag": "1004_s08_payroll_lock_guard_org_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 782,
+      "version": "7",
+      "when": 1803000010101,
+      "tag": "1005_s08_feedbucket_modules_catalog_row",
+      "breakpoints": true
     }
   ]
 }

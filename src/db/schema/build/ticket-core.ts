@@ -168,5 +168,6 @@ export const workItemRelations = build.table(
       table.relatedWorkItemId,
     ),
     index("idx_work_item_relations_related").on(table.relatedWorkItemId),
+    unique("uniq_work_item_relations_org_id").on(table.orgId, table.id),
   ],
 );

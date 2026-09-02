@@ -73,7 +73,7 @@ export const payrollRuns = pgTable("payroll_runs", {
   ),
   index("idx_payroll_runs_org_status").on(table.orgId, table.status),
   index("idx_payroll_runs_org_type").on(table.orgId, table.runType),
-  index("idx_payroll_runs_org_entity").on(table.orgId, table.entityId),
+  index("idx_payroll_runs_org_entity_month").on(table.orgId, table.entityId, table.month, table.id),
   index("idx_payroll_runs_source_run").on(table.sourceRunId),
   index("idx_payroll_runs_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
   index("idx_payroll_runs_org_paid_actor").on(table.orgId, table.paidByMembershipId),
@@ -153,7 +153,7 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
   uniqueIndex("uniq_payroll_run_employees_run_worker")
     .on(table.runId, table.workerId)
     .where(sql`worker_id IS NOT NULL`),
-  index("idx_payroll_run_employees_org_run").on(table.orgId, table.runId),
+  index("idx_payroll_run_employees_org_run_status").on(table.orgId, table.runId, table.status),
   index("idx_payroll_run_employees_org_worker").on(table.orgId, table.workerId),
   index("idx_payroll_run_employees_org_user_actor").on(table.orgId, table.userMembershipId),
   foreignKey({

@@ -130,7 +130,6 @@ export const finExchangeRates = pgTable("fin_exchange_rates", {
 }, (table) => [
   unique("uniq_fin_exchange_rates_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_exchange_rates_org_pair_date").on(table.orgId, table.fromCurrency, table.toCurrency, table.asOfDate),
-  index("idx_fin_exchange_rates_org_date").on(table.orgId, table.asOfDate),
 ]);
 
 export const finApprovalPolicies = pgTable("fin_approval_policies", {

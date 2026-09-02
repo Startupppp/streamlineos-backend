@@ -58,6 +58,7 @@ export const webhookDeliveries = build.table(
   foreignKey({ columns: [t.orgId, t.webhookId], foreignColumns: [projectWebhooks.orgId, projectWebhooks.id], name: "fk_webhook_deliveries_org_webhook" }).onDelete("cascade"),
     index("idx_webhook_deliveries_webhook_id").on(t.webhookId),
     index("idx_webhook_deliveries_delivered_at").on(t.deliveredAt),
+    unique("uniq_webhook_deliveries_org_id").on(t.orgId, t.id),
     check(
       "chk_webhook_deliveries_status",
       sql`${t.status} IN ('pending','success','failed')`,

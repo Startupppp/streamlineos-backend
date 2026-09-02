@@ -136,6 +136,7 @@ export const crmSlaBreachLog = pgTable(
       table.leadId,
       table.policyId,
     ),
+    unique("uniq_crm_sla_breach_log_org_id").on(table.orgId, table.id),
   ],
 );
 

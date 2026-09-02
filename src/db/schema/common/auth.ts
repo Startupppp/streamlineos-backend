@@ -56,6 +56,7 @@ export const orgCustomDomains = pgTable("org_custom_domains", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_org_custom_domains_domain").on(table.domain),
+  unique("uniq_org_custom_domains_org_id").on(table.orgId, table.id),
 ]);
 
 export const orgHolidays = pgTable("org_holidays", {

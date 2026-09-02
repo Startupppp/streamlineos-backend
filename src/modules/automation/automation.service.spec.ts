@@ -99,7 +99,7 @@ describe("AutomationService — support_* actions", () => {
     );
 
     expect(result.actionResults).toEqual([{ type: "support_add_tag", ok: true }]);
-    expect(mockDb.values).toHaveBeenCalledWith({ ticketId: 42, tagId: 7 });
+    expect(mockDb.values).toHaveBeenCalledWith({ orgId: "org1", ticketId: 42, tagId: 7 });
     expect(mockDb.onConflictDoNothing).toHaveBeenCalled();
   });
 
@@ -445,7 +445,7 @@ describe("AutomationService — support_add_tag org-scoping", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(insertTracker).toContainEqual({ ticketId: 10, tagId: 99 });
+    expect(insertTracker).toContainEqual({ orgId: "org-a", ticketId: 10, tagId: 99 });
   });
 
   it("rejects a tagId that does not belong to the caller's org (cross-org tag isolation)", async () => {
@@ -473,7 +473,7 @@ describe("AutomationService — support_add_tag org-scoping", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(insertTracker).toContainEqual({ ticketId: 42, tagId: 7 });
+    expect(insertTracker).toContainEqual({ orgId: "org-a", ticketId: 42, tagId: 7 });
   });
 });
 

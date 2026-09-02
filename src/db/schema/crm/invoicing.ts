@@ -89,7 +89,6 @@ export const payments = pgTable("payments", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.invoiceId], foreignColumns: [invoices.orgId, invoices.id], name: "fk_payments_invoice_id_org" }).onDelete("cascade"),
   index("idx_payments_invoice").on(table.invoiceId),
-  index("idx_payments_org_date").on(table.orgId, table.paymentDate),
   unique("uniq_payments_org_id").on(table.orgId, table.id),
 ]);
 
@@ -162,7 +161,6 @@ export const vendorPayments = pgTable("vendor_payments", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.billId], foreignColumns: [purchaseBills.orgId, purchaseBills.id], name: "fk_vendor_payments_bill_id_org" }).onDelete("cascade"),
   index("idx_vendor_payments_bill").on(table.billId),
-  index("idx_vendor_payments_org_date").on(table.orgId, table.paymentDate),
   unique("uniq_vendor_payments_org_id").on(table.orgId, table.id),
 ]);
 

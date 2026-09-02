@@ -114,12 +114,16 @@ export const supportTags = pgTable(
 export const supportTicketTags = pgTable(
   "support_ticket_tags",
   {
-    ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
-    tagId: integer("tag_id").references(() => supportTags.id, { onDelete: "cascade" }).notNull(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    ticketId: integer("ticket_id").notNull(),
+    tagId: integer("tag_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.ticketId, table.tagId] }),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [supportTickets.orgId, supportTickets.id], name: "fk_support_ticket_tags_ticket_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.tagId], foreignColumns: [supportTags.orgId, supportTags.id], name: "fk_support_ticket_tags_tag_id_org" }).onDelete("cascade"),
+    index("idx_support_ticket_tags_org_ticket").on(table.orgId, table.ticketId),
     index("idx_support_ticket_tags_tag").on(table.tagId),
   ],
 );

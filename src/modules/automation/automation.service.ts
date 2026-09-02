@@ -213,7 +213,7 @@ export class AutomationService {
           if (!tag) throw new Error(`Tag ${String(action.config.tagId)} not found in this organisation`);
           await this.db
             .insert(supportTicketTags)
-            .values({ ticketId, tagId: action.config.tagId })
+            .values({ orgId, ticketId, tagId: action.config.tagId })
             .onConflictDoNothing();
           return { type: action.type, ok: true };
         }

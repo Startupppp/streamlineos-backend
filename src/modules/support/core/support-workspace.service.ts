@@ -187,7 +187,7 @@ export class SupportWorkspaceService {
 
     await this.db
       .insert(supportTicketTags)
-      .values({ ticketId, tagId })
+      .values({ orgId, ticketId, tagId })
       .onConflictDoNothing();
     return { success: true };
   }

@@ -76,7 +76,6 @@ export const finBankTransactions = pgTable("fin_bank_transactions", {
   unique("uniq_fin_bank_transactions_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_bank_txn_org_account_fp").on(table.orgId, table.bankAccountId, table.fingerprint),
   index("idx_fin_bank_txn_org_account_status").on(table.orgId, table.bankAccountId, table.status),
-  index("idx_fin_bank_txn_org_date").on(table.orgId, table.txnDate),
 ]);
 
 export const finReconciliationMatches = pgTable("fin_reconciliation_matches", {
@@ -113,7 +112,6 @@ export const finReconciliationRules = pgTable("fin_reconciliation_rules", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_fin_recon_rules_org_id").on(table.orgId, table.id),
-  index("idx_fin_reconciliation_rules_org_priority").on(table.orgId, table.priority),
 ]);
 
 export const finBankTransfers = pgTable("fin_bank_transfers", {
@@ -133,7 +131,6 @@ export const finBankTransfers = pgTable("fin_bank_transfers", {
   foreignKey({ columns: [table.orgId, table.journalEntryId], foreignColumns: [journalEntries.orgId, journalEntries.id], name: "fk_fin_bank_transfers_journal_entry_id_org" }),
   foreignKey({ columns: [table.orgId, table.toBankAccountId], foreignColumns: [finBankAccounts.orgId, finBankAccounts.id], name: "fk_fin_bank_transfers_to_bank_account_id_org" }),
   unique("uniq_fin_bank_transfers_org_id").on(table.orgId, table.id),
-  index("idx_fin_bank_transfers_org_date").on(table.orgId, table.transferDate),
   index("idx_fin_bank_transfers_from").on(table.fromBankAccountId),
   index("idx_fin_bank_transfers_to").on(table.toBankAccountId),
 ]);
