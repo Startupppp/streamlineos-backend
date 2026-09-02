@@ -63,6 +63,7 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     },
     eventId: 10,
     externalEventId: null,
+    eventLocalVersion: null as number | null,
     attemptCount: 0,
     leaseExpiresAt: null,
     processedAt: null,
@@ -209,6 +210,149 @@ describe("(a) Backoff is enforced — retried PENDING rows with future leaseExpi
     expect(inFlightIdx).toBeGreaterThanOrEqual(0);
     expect(isNullIdx).toBeGreaterThanOrEqual(0);
     expect(isNullIdx).toBeLessThan(inFlightIdx);
+  });
+});
+
+describe("(c) Stale UPDATE job cancellation — superseded by newer PENDING/IN_FLIGHT job", () => {
+  it("skips a stale UPDATE (eventLocalVersion < event.localVersion) when a newer PENDING job exists", async () => {
+    const updateRow = makeRow({
+      operation: "update" as const,
+      externalEventId: "ext-cancel",
+      eventLocalVersion: 1,
+    });
+
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+      await cb(makeClaimingTx([updateRow]) as never, ORG);
+      return { organizations: 1, succeeded: 1, failed: 0 };
+    });
+
+    const pushUpdate = jest.fn().mockResolvedValue({ success: true });
+    const sync = { pushUpdate } as unknown as ExternalCalendarSyncService;
+
+    const newerPendingRow = [{ id: updateRow.id + 1 }];
+    let syncQueueSelectCount = 0;
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        const callIdx = syncQueueSelectCount++;
+        if (callIdx === 0) {
+          return {
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([
+                  { id: 5, toolkit: "googlecalendar", composioConnectedAccountId: "c-1" },
+                ]),
+              }),
+            }),
+          };
+        }
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(newerPendingRow) }),
+          }),
+        };
+      }),
+      query: {
+        calendarEvents: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 10,
+            title: "Superseded Event",
+            description: null,
+            startDate: new Date("2026-09-02T09:00:00Z"),
+            endDate: new Date("2026-09-02T09:30:00Z"),
+            allDay: false,
+            externalEventId: "ext-cancel",
+            localVersion: 2,
+          }),
+        },
+      },
+    } as unknown as Db;
+
+    const svc = new CalendarProviderSyncSweepService(db, sync);
+    const result = await svc.run(NOW);
+
+    expect(result.processed).toBe(1);
+    expect(pushUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does NOT skip an UPDATE job when eventLocalVersion is null (pre-migration rows are always processed)", async () => {
+    const updateRow = makeRow({
+      operation: "update" as const,
+      externalEventId: "ext-legacy",
+      eventLocalVersion: null,
+    });
+
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+      await cb(makeClaimingTx([updateRow]) as never, ORG);
+      return { organizations: 1, succeeded: 1, failed: 0 };
+    });
+
+    const pushUpdate = jest.fn().mockResolvedValue({ success: true });
+    const sync = { pushUpdate } as unknown as ExternalCalendarSyncService;
+
+    const db = {
+      ...makeResolveConnectionDb(),
+      query: {
+        calendarEvents: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 10,
+            title: "Legacy Event",
+            description: null,
+            startDate: new Date("2026-09-02T09:00:00Z"),
+            endDate: new Date("2026-09-02T09:30:00Z"),
+            allDay: false,
+            externalEventId: "ext-legacy",
+            localVersion: 5,
+          }),
+        },
+      },
+    } as unknown as Db;
+
+    const svc = new CalendarProviderSyncSweepService(db, sync);
+    const result = await svc.run(NOW);
+
+    expect(result.processed).toBe(1);
+    expect(pushUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT skip an UPDATE when eventLocalVersion matches event.localVersion (job is current — not stale)", async () => {
+    const currentVersion = 3;
+    const updateRow = makeRow({
+      operation: "update" as const,
+      externalEventId: "ext-current",
+      eventLocalVersion: currentVersion,
+    });
+
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+      await cb(makeClaimingTx([updateRow]) as never, ORG);
+      return { organizations: 1, succeeded: 1, failed: 0 };
+    });
+
+    const pushUpdate = jest.fn().mockResolvedValue({ success: true });
+    const sync = { pushUpdate } as unknown as ExternalCalendarSyncService;
+
+    const db = {
+      ...makeResolveConnectionDb(),
+      query: {
+        calendarEvents: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 10,
+            title: "Current Event",
+            description: null,
+            startDate: new Date("2026-09-02T09:00:00Z"),
+            endDate: new Date("2026-09-02T09:30:00Z"),
+            allDay: false,
+            externalEventId: "ext-current",
+            localVersion: currentVersion,
+          }),
+        },
+      },
+    } as unknown as Db;
+
+    const svc = new CalendarProviderSyncSweepService(db, sync);
+    const result = await svc.run(NOW);
+
+    expect(result.processed).toBe(1);
+    expect(pushUpdate).toHaveBeenCalledTimes(1);
   });
 });
 

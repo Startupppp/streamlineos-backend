@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { calendarEvents, calendarProviderSyncQueue, userIntegrationConnections } from "../../db/schema";
@@ -113,7 +113,7 @@ export class CalendarProviderSyncSweepService {
       where: and(eq(calendarEvents.id, row.eventId), eq(calendarEvents.orgId, row.orgId)),
       columns: {
         id: true, title: true, description: true, startDate: true, endDate: true,
-        allDay: true, externalEventId: true,
+        allDay: true, externalEventId: true, localVersion: true,
       },
     });
     if (!eventRow) return;
@@ -144,6 +144,12 @@ export class CalendarProviderSyncSweepService {
     }
 
     if (row.operation === "update") {
+      if (
+        row.eventId !== null &&
+        row.eventLocalVersion !== null &&
+        eventRow.localVersion > row.eventLocalVersion &&
+        await this.hasNewerPendingUpdateFor(row.orgId, row.eventId, row.id)
+      ) return;
       const extId = row.externalEventId ?? eventRow.externalEventId;
       if (!extId) return;
       const result = await this.sync.pushUpdate(userId, conn, extId, {
@@ -178,6 +184,23 @@ export class CalendarProviderSyncSweepService {
     if (!row || (row.toolkit !== "googlecalendar" && row.toolkit !== "outlook"))
       throw new Error(`Calendar connection ${connectionId} not found or inactive`);
     return { id: row.id, toolkit: row.toolkit, composioConnectedAccountId: row.composioConnectedAccountId };
+  }
+
+  private async hasNewerPendingUpdateFor(orgId: string, eventId: number, currentRowId: number): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: calendarProviderSyncQueue.id })
+      .from(calendarProviderSyncQueue)
+      .where(
+        and(
+          eq(calendarProviderSyncQueue.orgId, orgId),
+          eq(calendarProviderSyncQueue.eventId, eventId),
+          eq(calendarProviderSyncQueue.operation, "update"),
+          inArray(calendarProviderSyncQueue.state, ["PENDING", "IN_FLIGHT"]),
+          gt(calendarProviderSyncQueue.id, currentRowId),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
   }
 
   private mark(

@@ -4453,6 +4453,13 @@
       "when": 1803000010086,
       "tag": "0990_support_template_grant_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 768,
+      "version": "7",
+      "when": 1803000010087,
+      "tag": "0991_calendar_event_local_version",
+      "breakpoints": true
     }
   ]
 }

@@ -17,6 +17,7 @@ import { CalendarAttendeesService } from "./calendar-attendees.service";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
 import { CalendarSyncStatusService } from "./calendar-sync-status.service";
+import { CalendarProviderWebhookService } from "./calendar-provider-webhook.service";
 
 @Module({
   imports: [IntegrationsModule, NotificationsModule],
@@ -27,6 +28,7 @@ import { CalendarSyncStatusService } from "./calendar-sync-status.service";
     CalendarRecurrenceService,
     CalendarExportService,
     CalendarSyncStatusService,
+    CalendarProviderWebhookService,
     CalendarService,
     CalendarConflictService,
     CalendarReminderSweepService,

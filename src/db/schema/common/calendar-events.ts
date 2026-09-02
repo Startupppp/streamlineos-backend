@@ -43,6 +43,7 @@ export const calendarEvents = pgTable(
     reminder15MinSent: boolean("reminder_15min_sent").default(false).notNull(),
     integrationConnectionId: integer("integration_connection_id"),
     externalEventId: text("external_event_id"),
+    localVersion: integer("local_version").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -149,6 +150,7 @@ export const calendarProviderSyncQueue = pgTable(
     attemptCount: integer("attempt_count").default(0).notNull(),
     lastError: text("last_error"),
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    eventLocalVersion: integer("event_local_version"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     processedAt: timestamp("processed_at", { withTimezone: true }),
   },

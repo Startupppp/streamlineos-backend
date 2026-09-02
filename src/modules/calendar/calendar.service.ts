@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { aliasedTable, and, asc, eq, gt, inArray, isNotNull, like, or } from "drizzle-orm";
+import { aliasedTable, and, asc, eq, gt, inArray, isNotNull, like, or, sql } from "drizzle-orm";
 import {
   calendarEvents,
   calendarProviderSyncQueue,
@@ -144,6 +144,7 @@ export class CalendarService {
             linkedLeadId: input.linkedLeadId ?? null,
             rrule: input.rrule ?? null,
             recurrenceEnd: input.recurrenceEnd ? new Date(input.recurrenceEnd) : null,
+            localVersion: 1,
           })
           .returning();
         const memberships = attendeeIds.length === 0 ? [] : await tx
@@ -186,6 +187,7 @@ export class CalendarService {
             eventId: event.id,
             connectionId: input.syncConnectionId,
             operation: "create",
+            eventLocalVersion: event.localVersion,
             payload: {
               userId,
               title: input.title,
@@ -240,6 +242,7 @@ export class CalendarService {
       input.rrule !== undefined ||
       input.recurrenceEnd !== undefined;
     if (timeChanged) updateData.reminder15MinSent = false;
+    updateData.localVersion = sql`${calendarEvents.localVersion} + 1`;
 
     const event = await this.db.transaction(async (tx) => {
       const memberRow = await tx.query.organizationMembers.findFirst({
@@ -307,6 +310,7 @@ export class CalendarService {
           connectionId: updated.integrationConnectionId,
           operation: "update",
           externalEventId: updated.externalEventId,
+          eventLocalVersion: updated.localVersion,
           payload: {
             userId,
             title: updated.title,
