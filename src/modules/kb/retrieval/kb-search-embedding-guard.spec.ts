@@ -2,6 +2,8 @@ import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
+const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
+
 function makeUser(): CurrentUserContext {
   return {
     userId: "user-1",
@@ -57,6 +59,7 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);
@@ -73,6 +76,7 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const result = await svc.retrieveTopSources(makeUser(), "anything at all", 4);
@@ -90,6 +94,7 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);

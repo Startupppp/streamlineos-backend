@@ -42,6 +42,7 @@ export class KbCandidateService {
     query: string,
     pool: number,
     principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
+    ownerScopeFilter: SQL | null,
     spaceId?: number,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
@@ -53,6 +54,7 @@ export class KbCandidateService {
       keywordCond,
       this.articleRestrictionFilter(orgId, principal),
     ];
+    if (ownerScopeFilter) conditions.push(ownerScopeFilter);
     if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
 
     const rows = await this.db
@@ -70,6 +72,7 @@ export class KbCandidateService {
     vector: string,
     pool: number,
     principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
+    ownerScopeFilter: SQL | null,
     spaceId?: number,
   ): Promise<number[]> {
     try {
@@ -85,6 +88,7 @@ export class KbCandidateService {
         eq(kbArticles.status, "published"),
         this.articleRestrictionFilter(orgId, principal),
       ];
+      if (ownerScopeFilter) conditions.push(ownerScopeFilter);
       if (spaceId) conditions.push(eq(kbArticles.spaceId, spaceId));
 
       const rows = await this.db

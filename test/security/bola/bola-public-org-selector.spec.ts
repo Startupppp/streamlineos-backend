@@ -112,39 +112,49 @@ describe("BOLA sweep — support inbound webhooks", () => {
   });
 
   it("a wrong secret and an unknown organization are indistinguishable", () => {
-    expect(service).toMatch(
-      /!channel\?\.inboundSecret \|\| !providedSecret \|\| channel\.inboundSecret !== providedSecret/,
+    expect(service).toContain(
+      "const matches = inboundSecretMatches(channel?.inboundSecret, providedSecret);",
     );
+    expect(service).toContain("if (!channel || !matches) {");
     expect(service).toContain('throw new UnauthorizedException("Invalid inbound webhook secret")');
   });
 
   /**
-   * `!==` on a secret short-circuits at the first differing byte. The same
-   * repository already compares a webhook secret correctly, in
-   * `razorpay.adapter.ts`, with `timingSafeEqual`.
+   * `!==` on a secret short-circuits at the first differing byte. Fixed: the
+   * comparison now goes through `inboundSecretMatches`, which reduces both sides
+   * to a fixed-width digest and compares with `timingSafeEqual` — the same
+   * primitive `razorpay.adapter.ts` already used. Behaviour is proved in
+   * `bola-support-inbound-secret.spec.ts`; this is the regression guard.
    */
-  it("KNOWN-OPEN: the secret comparison is not constant-time", () => {
-    expect(service).toContain("channel.inboundSecret !== providedSecret");
-    const sliceAroundCompare = service.slice(
-      service.indexOf("verifyInboundSecret"),
-      service.indexOf("verifyInboundSecret") + 800,
+  it("FIXED: the secret comparison is constant-time", () => {
+    expect(service).not.toContain("channel.inboundSecret !== providedSecret");
+    expect(read("src/modules/support/core/support-inbound-secret.ts")).toContain(
+      "timingSafeEqual",
     );
-    expect(sliceAroundCompare).not.toContain("timingSafeEqual");
+  });
+
+  /** FIXED: the secret is a digest at rest, and the plaintext is handed back once. */
+  it("FIXED: the inbound secret is hashed at rest", () => {
+    expect(service).toContain("inboundSecret === null ? null : hashInboundSecret(inboundSecret)");
+    expect(service).toContain("columns: { inboundSecret: false }");
   });
 
   /**
-   * The rate limiter runs before the secret check and is keyed on the
-   * caller-supplied org id, so an anonymous caller who knows an organization's
-   * id can exhaust that organization's inbound quota and stop its real support
-   * mail from being delivered.
+   * The rate limiter runs before the secret check, so keying it on the
+   * caller-supplied org id let an anonymous caller who knows an organization's id
+   * exhaust that organization's inbound quota. Fixed: the pre-auth limit is keyed
+   * on the client address and the per-org quota moved after the credential check.
    */
-  it("KNOWN-OPEN: the pre-auth rate limit is keyed on the caller-supplied org id", () => {
+  it("FIXED: the pre-auth rate limit is keyed on the caller's own address", () => {
     for (const channel of ["email", "whatsapp", "sms"]) {
-      const limitAt = controller.indexOf(`"support:inbound-${channel}", orgId`);
+      const preAuthAt = controller.indexOf(`"support:inbound-${channel}", clientIp(req)`);
       const verifyAt = controller.indexOf(`verifyInboundSecret(orgId, "${channel}"`);
-      expect(limitAt).toBeGreaterThan(-1);
-      expect(verifyAt).toBeGreaterThan(limitAt);
+      const perOrgAt = controller.indexOf(`"support:inbound-${channel}", orgId`);
+      expect(preAuthAt).toBeGreaterThan(-1);
+      expect(verifyAt).toBeGreaterThan(preAuthAt);
+      expect(perOrgAt).toBeGreaterThan(verifyAt);
     }
+    expect(controller).toContain('this.rateLimit.check("support:chat-widget", clientIp(req))');
   });
 });
 

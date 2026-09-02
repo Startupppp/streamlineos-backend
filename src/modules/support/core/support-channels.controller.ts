@@ -11,8 +11,10 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
+import type { Request } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { Public } from "../../../common/auth/public.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -42,6 +44,19 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+
+/**
+ * The pre-authentication limit is keyed on the caller's own address, never on the
+ * path `:orgId` the caller chose: keying it on the victim's identifier lets an
+ * anonymous request exhaust another organization's inbound quota. The per-org
+ * quota is still enforced, after the shared secret has been proved.
+ */
+function clientIp(req: Request): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const candidate = raw?.split(",")[0]?.trim() || req.ip;
+  return candidate ? candidate.slice(0, 100) : "unknown";
+}
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
@@ -118,13 +133,18 @@ export class SupportChannelsController {
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
     @Body() body: InboundEmailInput,
+    @Req() req: Request,
   ) {
-    const rate = await this.rateLimit.check("support:inbound-email", orgId);
-    if (!rate.allowed) {
+    const preAuth = await this.rateLimit.check("support:inbound-email", clientIp(req));
+    if (!preAuth.allowed) {
       throw new HttpException("Too many inbound emails", HttpStatus.TOO_MANY_REQUESTS);
     }
 
     const channel = await this.channels.verifyInboundSecret(orgId, "email", secret);
+    const perOrg = await this.rateLimit.check("support:inbound-email", orgId);
+    if (!perOrg.allowed) {
+      throw new HttpException("Too many inbound emails", HttpStatus.TOO_MANY_REQUESTS);
+    }
     return this.channels.ingestInboundEmail(orgId, channel, body);
   }
 
@@ -137,13 +157,18 @@ export class SupportChannelsController {
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
     @Body() body: InboundWhatsAppInput,
+    @Req() req: Request,
   ) {
-    const rate = await this.rateLimit.check("support:inbound-whatsapp", orgId);
-    if (!rate.allowed) {
+    const preAuth = await this.rateLimit.check("support:inbound-whatsapp", clientIp(req));
+    if (!preAuth.allowed) {
       throw new HttpException("Too many inbound WhatsApp messages", HttpStatus.TOO_MANY_REQUESTS);
     }
 
     const channel = await this.channels.verifyInboundSecret(orgId, "whatsapp", secret);
+    const perOrg = await this.rateLimit.check("support:inbound-whatsapp", orgId);
+    if (!perOrg.allowed) {
+      throw new HttpException("Too many inbound WhatsApp messages", HttpStatus.TOO_MANY_REQUESTS);
+    }
     return this.channels.ingestInboundWhatsApp(orgId, channel, body);
   }
 
@@ -156,13 +181,18 @@ export class SupportChannelsController {
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
     @Body() body: InboundSmsInput,
+    @Req() req: Request,
   ) {
-    const rate = await this.rateLimit.check("support:inbound-sms", orgId);
-    if (!rate.allowed) {
+    const preAuth = await this.rateLimit.check("support:inbound-sms", clientIp(req));
+    if (!preAuth.allowed) {
       throw new HttpException("Too many inbound SMS messages", HttpStatus.TOO_MANY_REQUESTS);
     }
 
     const channel = await this.channels.verifyInboundSecret(orgId, "sms", secret);
+    const perOrg = await this.rateLimit.check("support:inbound-sms", orgId);
+    if (!perOrg.allowed) {
+      throw new HttpException("Too many inbound SMS messages", HttpStatus.TOO_MANY_REQUESTS);
+    }
     return this.channels.ingestInboundSms(orgId, channel, body);
   }
 
@@ -178,8 +208,9 @@ export class SupportChannelsController {
   async startChatSession(
     @Param("orgId") orgId: string,
     @Body() body: StartChatSessionInput,
+    @Req() req: Request,
   ) {
-    const rate = await this.rateLimit.check("support:chat-widget", orgId);
+    const rate = await this.rateLimit.check("support:chat-widget", clientIp(req));
     if (!rate.allowed) {
       throw new HttpException("Too many chat sessions", HttpStatus.TOO_MANY_REQUESTS);
     }

@@ -328,6 +328,7 @@ export const updateSupportChannelSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
   isActive: z.boolean().optional(),
+  rotateInboundSecret: z.boolean().optional(),
 }).strict();
 
 export const inboundEmailSchema = z.object({

@@ -4,6 +4,8 @@ import { pageVisibleTo } from "./kb-page-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
+const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
+
 const ACCESSIBLE_PROJECT_IDS = [7];
 
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
@@ -87,6 +89,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const user = makeUser();
@@ -105,6 +108,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const user = makeUser();
@@ -122,6 +126,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const user = makeUser();
@@ -143,6 +148,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       makeConfiguredEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const user = makeUser();

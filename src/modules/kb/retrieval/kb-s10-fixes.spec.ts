@@ -7,6 +7,8 @@ import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
 import { KbCandidateService } from "./kb-candidate.service";
 
+const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
+
 jest.mock("./kb-attachment-extract.util", () => ({
   isExtractableMime: jest.fn().mockReturnValue(true),
   extractAttachmentText: jest.fn().mockResolvedValue(""),
@@ -64,6 +66,7 @@ describe("Fix 1 — retrieveTopSources carries chunk-side orgId predicate", () =
       embeddings as never,
       { record: jest.fn().mockResolvedValue(undefined) } as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopSources({ userId: "u1", orgId: "org-fix1", isOrgOwner: false, role: "member", sessionId: "s1", tokenScopes: null, principal: undefined } as never, "query", 4);

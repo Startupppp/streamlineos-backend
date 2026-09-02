@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
-import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
@@ -233,15 +233,18 @@ export class KbAskService {
   private async resolveVisibleArticles(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
     const spaceIds = await this.access.getAccessibleSpaceIds(user);
     if (spaceIds.length === 0) return new Set();
+    const ownerFilter = await this.search.articleOwnerFilterFor(user);
+    const conditions: SQL[] = [
+      eq(kbArticles.orgId, user.orgId),
+      inArray(kbArticles.id, ids),
+      inArray(kbArticles.spaceId, spaceIds),
+      eq(kbArticles.status, "published"),
+    ];
+    if (ownerFilter) conditions.push(ownerFilter);
     const rows = await this.db
       .select({ id: kbArticles.id })
       .from(kbArticles)
-      .where(and(
-        eq(kbArticles.orgId, user.orgId),
-        inArray(kbArticles.id, ids),
-        inArray(kbArticles.spaceId, spaceIds),
-        eq(kbArticles.status, "published"),
-      ));
+      .where(and(...conditions));
     return new Set(rows.map((r) => r.id));
   }
 

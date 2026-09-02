@@ -14,6 +14,9 @@ import type { DataScope } from "../../access/access.types";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KbCandidateService } from "./kb-candidate.service";
+import { AccessService } from "../../access/access.service";
+import { resolveKbArticlesViewScope } from "../core/kb-scope";
+import { articleOwnerScopeFilter } from "./kb-article-owner-scope";
 
 const KB_SEARCH_FEATURE = "kb.search";
 
@@ -31,7 +34,19 @@ export class KbSearchService {
     private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
     private readonly candidates: KbCandidateService,
+    private readonly scopes: AccessService,
   ) {}
+
+  /**
+   * Retrieval resolves the asker's own `kb:articles:view` DataScope rather than
+   * accepting one, so no RAG caller — `POST /kb/ask`, the research brief graph or
+   * any future one — can reach the vector index without the predicate the direct
+   * read endpoint applies.
+   */
+  async articleOwnerFilterFor(user: CurrentUserContext): Promise<SQL | null> {
+    const articleScope = await resolveKbArticlesViewScope(this.scopes, user);
+    return articleOwnerScopeFilter(articleScope, user);
+  }
 
   private async embedSearchQuery(text: string, orgId: string) {
     return this.aiGateway.embedQueryWithCredit({
@@ -85,14 +100,8 @@ export class KbSearchService {
     if (!isAdmin) conditions.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
     // The same narrowing `GET /kb/articles` applies, in the predicate rather than
     // downstream: these rows carry article text and are what retrieval hands on.
-    if (scope !== "all") {
-      const membershipId = actingMembershipId(user.principal);
-      conditions.push(
-        membershipId === null
-          ? sql`false`
-          : eq(kbArticles.ownerMembershipId, membershipId),
-      );
-    }
+    const ownerFilter = articleOwnerScopeFilter(scope, user);
+    if (ownerFilter) conditions.push(ownerFilter);
     if (input.spaceId) conditions.push(eq(kbArticles.spaceId, input.spaceId));
     const where = and(...conditions);
 
@@ -159,6 +168,7 @@ export class KbSearchService {
 
     const isAdmin = await this.access.isAdmin(user);
     const principal = await this.access.getPrincipalIds(user);
+    const ownerFilter = await this.articleOwnerFilterFor(user);
 
     const pool = Math.max(limit * 3, limit);
     const hasSpaces = ids.length > 0;
@@ -184,10 +194,10 @@ export class KbSearchService {
 
     const [articleKeyword, articleVector, pageKeyword, pageVector] = await Promise.all([
       hasSpaces
-        ? this.candidates.articleKeywordCandidates(user.orgId, ids, q, pool, principal, spaceId)
+        ? this.candidates.articleKeywordCandidates(user.orgId, ids, q, pool, principal, ownerFilter, spaceId)
         : Promise.resolve<number[]>([]),
       hasSpaces && vectorLiteral
-        ? this.candidates.articleVectorCandidates(user.orgId, ids, vectorLiteral, pool, principal, spaceId)
+        ? this.candidates.articleVectorCandidates(user.orgId, ids, vectorLiteral, pool, principal, ownerFilter, spaceId)
         : Promise.resolve<number[]>([]),
       this.candidates.pageKeywordCandidates(user.orgId, q, pool, pageVisibility),
       vectorLiteral
@@ -221,6 +231,7 @@ export class KbSearchService {
         eq(kbArticles.status, "published"),
       ];
       if (spaceId) articleConditions.push(eq(kbArticles.spaceId, spaceId));
+      if (ownerFilter) articleConditions.push(ownerFilter);
       if (!isAdmin) articleConditions.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
       const articleRows = await this.db
         .select({

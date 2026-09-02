@@ -6,6 +6,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { eq, type SQL } from "drizzle-orm";
 import { kbArticleChunks, kbArticles } from "../../../db/schema";
 
+const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
+
 const dialect = new PgDialect();
 
 function makeUser(): CurrentUserContext {
@@ -131,6 +133,7 @@ describe("KB ACL revision gate — stale chunks cannot surface in vector search"
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "deployment guide", 4);
@@ -178,6 +181,7 @@ describe("KB ACL revision gate — stale chunks cannot surface in vector search"
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopArticles(makeUser(), "onboarding workflow", 4);

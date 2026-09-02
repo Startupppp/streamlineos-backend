@@ -8,6 +8,8 @@ import { kbPages, kbArticles } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
+const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
+
 function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
     userId: "user-1",
@@ -90,6 +92,7 @@ describe("KB cross-tenant isolation", () => {
       embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     await svc.retrieveTopSources(makeUser({ orgId: "org-a" }), "how do I reset my password", 4);
@@ -133,6 +136,7 @@ describe("KB cross-tenant isolation", () => {
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
+      makeScopes() as never,
     );
 
     const orgBUser = makeUser({ orgId: "org-b", userId: "user-b" });
