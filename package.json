@@ -311,7 +311,15 @@
     "check:lifecycle-predicates": "node src/scripts/check-lifecycle-predicates.mjs",
     "check:lifecycle-predicates:self-test": "node src/scripts/check-lifecycle-predicates.mjs --self-test",
     "check:evidence-seal": "node src/scripts/check-evidence-seal.mjs",
-    "check:evidence-seal:self-test": "node src/scripts/check-evidence-seal.mjs --self-test"
+    "check:evidence-seal:self-test": "node src/scripts/check-evidence-seal.mjs --self-test",
+    "check:cache-key-shapes": "node src/scripts/check-cache-key-shapes.mjs",
+    "check:cache-key-shapes:self-test": "node src/scripts/check-cache-key-shapes.mjs --self-test",
+    "check:hr-pagination": "node src/scripts/check-hr-pagination-gate.mjs",
+    "check:hr-pagination:self-test": "node src/scripts/check-hr-pagination-gate.mjs --self-test",
+    "check:namespace-coverage": "node src/scripts/check-namespace-coverage.mjs",
+    "check:namespace-coverage:self-test": "node src/scripts/check-namespace-coverage.mjs --self-test",
+    "check:replay-ledger": "node --env-file-if-exists=.env src/scripts/check-replay-ledger.mjs",
+    "check:replay-ledger:self-test": "node src/scripts/check-replay-ledger.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

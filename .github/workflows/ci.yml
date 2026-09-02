@@ -7,6 +7,12 @@ name: Backend CI
 # Ticket 12's acceptance gates live in `evals/*.eval.spec.ts` and are asserted by
 # `meetsGate` against `EVAL_ACCEPTANCE`. They run under `pnpm test`, so a prompt
 # or model change that regresses one of them fails this job.
+#
+# 2026-09-02 (ticket 35b) — the gates moved out of `verify` into their own job.
+# Measured on run 33622305895: `verify` failed at step 7 (Lint) and every one of
+# the 26 gate steps below it reported `-`, i.e. never executed. A gate sequenced
+# after a red step is not a gate. `gates` deliberately carries no `needs:`, so a
+# lint regression can no longer mask the whole enforcement surface.
 
 on:
   push:
@@ -23,6 +29,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Build health only. Nothing here may gate anything in `gates`.
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -55,6 +62,30 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Dead-code report
+        run: pnpm exec knip --no-progress
+        continue-on-error: true
+
+  # Every static gate in the repository. Hermetic: no database, no network
+  # beyond the registry, no secrets. A step marked `continue-on-error` names the
+  # measured reason it cannot block yet -- a gate wired so that it always fails
+  # gets muted within a week, which is worse than not wiring it.
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
       - name: Import cycles
         run: pnpm check:cycles
 
@@ -82,6 +113,42 @@ jobs:
           CORS_ORIGINS: http://localhost:1000
           APP_URL: http://localhost:1000
 
+      - name: Every operation is exposure-stamped and request-schema covered
+        run: pnpm check:openapi-coverage:self-test && pnpm check:openapi-coverage
+
+      - name: Path parameters are declared
+        run: pnpm check:openapi-path-params:self-test && pnpm check:openapi-path-params
+
+      - name: Operation IDs are unique
+        run: pnpm check:operation-ids:self-test && pnpm check:operation-ids
+
+      - name: Bodyless conflicts
+        run: pnpm check:bodyless-conflicts:self-test && pnpm check:bodyless-conflicts
+
+      - name: File-interceptor handlers declare their multipart contract
+        run: pnpm check:multipart-contracts:self-test && pnpm check:multipart-contracts
+
+      - name: Response and error envelopes are consistent
+        run: pnpm check:envelope-consistency:self-test && pnpm check:envelope-consistency
+
+      - name: Collection and bulk endpoints have bounded contracts
+        run: pnpm check:bounded-contracts:self-test && pnpm check:bounded-contracts
+
+      - name: Bulk id arrays declare an upper bound
+        run: pnpm check:bulk-id-limits:self-test && pnpm check:bulk-id-limits
+
+      - name: No duplicate or ambiguous routes
+        run: pnpm check:route-duplicates:self-test && pnpm check:route-duplicates
+
+      - name: Published operations are registered and versioned
+        run: pnpm check:contract-registry:self-test && pnpm check:contract-registry
+
+      - name: No breaking change to a published operation
+        run: pnpm check:contract-breaking-change:self-test && pnpm check:contract-breaking-change
+
+      - name: HTTP responses are compressed
+        run: pnpm check:compression:self-test && pnpm check:compression
+
       - name: Retryable commands are fenced
         run: pnpm check:idempotent-commands:self-test && pnpm check:idempotent-commands
 
@@ -91,11 +158,29 @@ jobs:
       - name: Module lifecycle gates are wired
         run: pnpm check:module-lifecycle:self-test
 
+      # An unregistered module compiles green and does not exist at runtime.
+      - name: Every module is reachable from AppModule
+        run: pnpm check:module-registration:self-test && pnpm check:module-registration
+
+      # A union-typed injection or a mistyped provider token boots as a silent
+      # null under @Optional.
+      - name: Module DI tokens resolve
+        run: pnpm check:module-di:self-test && pnpm check:module-di
+
       - name: Every resolved DataScope reaches a predicate
         run: pnpm check:scope-application
 
       - name: No record read can return a deleted row
         run: pnpm check:record-access
+
+      - name: Placement bypass guard
+        run: pnpm check:placement-bypass:self-test && pnpm check:placement-bypass
+
+      - name: Owner authority guard
+        run: pnpm check:owner-authority:self-test && pnpm check:owner-authority
+
+      - name: Controllers gate on their own module
+        run: pnpm check:module-gate:self-test && pnpm check:module-gate
 
       # The index half of the RLS invariant, which needs no database: the policy
       # half is db:verify-rls in the tenant-isolation job below, and that job only
@@ -105,9 +190,21 @@ jobs:
       - name: Tenant index check
         run: pnpm check:tenant-indexes
 
-      # Restore the chain-gaps marker from the most recent nightly cold bootstrap.
-      # The file is absent on the very first run; in that case criterion (e) of
-      # verify-migration-chain.mjs silently skips rather than failing the build.
+      - name: Every referenced table is in its query's FROM/JOIN
+        run: pnpm check:unjoined-table-refs:self-test && pnpm check:unjoined-table-refs
+
+      - name: Cache writes and invalidations agree
+        run: pnpm check:cache-invalidation:self-test && pnpm check:cache-invalidation
+
+      - name: Cache key shapes
+        run: pnpm check:cache-key-shapes:self-test && pnpm check:cache-key-shapes
+
+      - name: No namespace is bumped without a reader, or read without a bumper
+        run: pnpm check:namespace-coverage:self-test && pnpm check:namespace-coverage
+
+      - name: HR list endpoints are paginated
+        run: pnpm check:hr-pagination:self-test && pnpm check:hr-pagination
+
       - name: Restore chain-gaps marker
         uses: actions/cache/restore@v4
         with:
@@ -124,9 +221,29 @@ jobs:
       - name: Migration chain verification
         run: pnpm check:migration-chain:self-test && pnpm check:migration-chain
 
-      - name: Dead-code report
-        run: pnpm exec knip --no-progress
-        continue-on-error: true
+      - name: Migration discipline
+        run: pnpm check:migration-discipline:self-test && pnpm check:migration-discipline
+
+      # A forward migration must carry a truthful rollback or an explicit irreversible
+      # declaration. The 0143 rollback failed live because a later migration added a partial
+      # index whose enum predicate blocked the column rewrite — this is the gate for that class.
+      - name: Migration rollbacks are truthful
+        run: pnpm check:migration-rollback:self-test && pnpm check:migration-rollback
+
+      # A dropped column that is still declared in the Drizzle schema is a runtime
+      # 42703 on the next select. Three non-empty floors guard the cross-product:
+      # neutering either side of it used to print OK.
+      - name: Dropped columns are not still declared
+        run: pnpm check:drop-column-safety:self-test && pnpm check:drop-column-safety
+
+      - name: db:generate cannot be run against a stale snapshot
+        run: pnpm check:db-generate-guard
+
+      - name: Tenant foreign keys use the right referential action
+        run: pnpm check:restrict-fks:self-test && pnpm check:restrict-fks
+
+      - name: HR table freeze
+        run: pnpm check:hr-table-freeze:self-test && pnpm check:hr-table-freeze
 
       # No source line may hand a secret or PII to a logger outside the redactor, and every
       # @UseRateLimit key must have a TIERS entry — an unknown key silently disables the limit
@@ -134,6 +251,21 @@ jobs:
       # nothing reports a clean tree.
       - name: No secret reaches a log, and every rate limit has a tier
         run: pnpm check:log-secrets:self-test && pnpm check:log-secrets
+
+      # A committed credential. Two false-positive rules were added in ticket 35 (a
+      # slot-naming identifier suffix, and an all-lowercase kebab value) because a
+      # false positive in a security gate is how a security gate gets allowlisted.
+      - name: No committed credential
+        run: pnpm check:hardcoded-secrets:self-test && pnpm check:hardcoded-secrets
+
+      - name: No upload path mints a permanent public object URL
+        run: pnpm check:public-object-urls:self-test && pnpm check:public-object-urls
+
+      - name: Deferred work is not fired and forgotten
+        run: pnpm check:fire-and-forget:self-test && pnpm check:fire-and-forget
+
+      - name: Mock surfaces match the class they double
+        run: pnpm check:mock-surface:self-test && pnpm check:mock-surface
 
       # Alert detection logic, exercised against fixtures. These do not touch a database or a
       # webhook; they prove each alert fires on a breaching input and stays quiet on a clean one.
@@ -162,33 +294,13 @@ jobs:
 
       # `pnpm typecheck` runs tsconfig.build.json, which excludes **/*spec.ts, and ts-jest
       # transpiles without type-checking — so until now no gate had ever type-checked a spec file.
-      # 18 errors had accumulated, mostly TS2554 arity drift where a service grew a parameter and
-      # the spec kept passing the old list, so the test ran with that argument undefined. Two were
-      # load-bearing: a DataScope gate that was never exercised, and a string written into a
-      # numeric column.
       - name: Specs type-check
         run: pnpm check:spec-typecheck:self-test && pnpm check:spec-typecheck
 
-      # A controller must gate on its OWN module. Thirteen timesheets controllers gated on
-      # "build" and eight surveys controllers gated on nothing at all — a paying Timesheets
-      # subscriber was 403'd out of their module while a Build subscriber got it free, and any
-      # authenticated user could reach Surveys without the subscription. check:module-entitlement
-      # only ever validated one module's key round-trip, which is why neither was caught.
-      - name: Controllers gate on their own module
-        run: pnpm check:module-gate:self-test && pnpm check:module-gate
-
       # Every AI gateway call must declare `charge` explicitly. Absent meant the credit
-      # reservation block was skipped entirely, so the paid provider call went out unmetered and
-      # the feature's AI_FEATURE_COSTS entry was dead. `charge: false` is a valid, auditable
-      # answer for platform-cost background work; absent is not.
+      # reservation block was skipped entirely, so the paid provider call went out unmetered.
       - name: AI calls declare whether they charge
         run: pnpm check:ai-charge:self-test && pnpm check:ai-charge
-
-      # A forward migration must carry a truthful rollback or an explicit irreversible
-      # declaration. The 0143 rollback failed live because a later migration added a partial
-      # index whose enum predicate blocked the column rewrite — this is the gate for that class.
-      - name: Migration rollbacks are truthful
-        run: pnpm check:migration-rollback:self-test && pnpm check:migration-rollback
 
       # Every table above the size threshold must have a recorded retention decision.
       # Self-test only here: the live check needs a database.
@@ -203,19 +315,91 @@ jobs:
       - name: Dependency licences
         run: pnpm check:licenses:self-test && pnpm check:licenses
 
-      # Every feature flag must declare an owner and a removal date. ENFORCED since 0841 added
-      # the governance columns; the gate had been failing correctly and is now green for real.
       - name: Feature flag governance
         run: pnpm check:feature-flag-governance:self-test && pnpm check:feature-flag-governance
 
-      # Cross-tenant negative-test coverage. ENFORCED as of 2026-09-01: measured 895/895
-      # tenant-owned services declare at least one isolation spec. The previous comment here
-      # said 18% (136/773) and set continue-on-error on that basis; both numbers were stale by
-      # a wide margin, so the gate had been passing silently while advertising itself as broken.
-      # Note this gate is STATIC — it proves the spec exists, not that it passes. Execution
-      # proof is the isolation job below, and both are required.
+      # Cross-tenant negative-test coverage. Note this gate is STATIC — it proves the
+      # spec exists, not that it passes. Execution proof is the isolation job below.
       - name: Cross-tenant isolation coverage
         run: pnpm check:tenant-isolation:self-test && pnpm check:tenant-isolation
+
+      - name: Source file and folder names are kebab-case
+        run: pnpm check:kebab-case:self-test && pnpm check:kebab-case
+
+      - name: Import direction inside src/common
+        run: pnpm check:import-direction:self-test && pnpm check:import-direction
+
+      - name: Evidence seals hold
+        run: pnpm check:evidence-seal:self-test && pnpm check:evidence-seal
+
+      - name: S05 approval and evidence artifact contract
+        run: pnpm check:s05-artifact-contract
+
+      - name: Offset, unbounded and unordered reads do not increase
+        run: pnpm check:unbounded-reads:self-test && pnpm check:unbounded-reads
+
+      - name: Production operations evidence gate self-test
+        run: pnpm ops:evidence:self-test
+
+      # The catalog half needs SET_NULL_GATE_DATABASE_URL against a bootstrapped
+      # database, which no job here provides, so the live gate would exit 2. The
+      # self-test exercises the declaration half, which is hermetic.
+      - name: ON DELETE SET NULL column lists (declaration half)
+        run: pnpm check:set-null-column-lists:self-test
+
+      # The live ledger check needs a bootstrapped database; only its self-test is
+      # hermetic. Wire the live half when a job here runs `pnpm db:bootstrap`.
+      - name: Migration ledger self-test
+        run: pnpm check:migration-ledger:self-test
+
+
+      # ---------------------------------------------------------------------
+      # Reported, not blocking. Each of these has a MEASURED reason, recorded
+      # 2026-09-02. Delete the continue-on-error when the named number is zero.
+      # ---------------------------------------------------------------------
+
+      # Measured rc=1, and the reason moved twice inside one hour while ticket 37
+      # worked the tree: the failure is now "a file at or below 500 lines must
+      # lose its row" — stale bookkeeping in file-size-exceptions.md, not a file
+      # over the ceiling. Ticket 37 owns both the splits and that list.
+      - name: Files over 500 lines
+        continue-on-error: true
+        run: pnpm check:file-sizes:self-test && pnpm check:file-sizes
+
+      # Measured rc=1: 400 files exceed 300 lines, 6 above the baseline of 394.
+      # Ticket 37 owns the split; blocking it here would red the pipeline on work
+      # that is already ticketed.
+      - name: Files over 300 lines do not increase
+        continue-on-error: true
+        run: pnpm check:over-300:self-test && pnpm check:over-300
+
+      # BLOCKING. Ticket 35 fixed the detector (41 -> 147 files seen), which
+      # exposed 7 entries claiming N+1-FIXED while still holding a loop DB call
+      # and 101 files with no verdict at all. The 7 are reclassified with line
+      # numbers (5 ACTIONABLE, 2 FALSE-POSITIVE) and ticket 21 triaged the 101.
+      # Nothing was baselined away to go green: the gate reports
+      # "ACTIONABLE: 49 file(s) (71 call site(s) to fix)" — the debt is recorded,
+      # visible and ratcheted, which is what makes rc=0 honest here.
+      - name: N+1 classification is current
+        run: pnpm check:db-call-count:self-test && pnpm check:db-call-count
+
+      # Measured rc=1 on BOTH the gate and its self-test: 76 primary reads of a
+      # lifecycle table carry no predicate against a recorded baseline of 75. The
+      # self-test asserts the same live ratchet, so this is a genuine committed
+      # regression in application source, not a broken gate. Ticket 06.
+      - name: Lifecycle predicates
+        continue-on-error: true
+        run: pnpm check:lifecycle-predicates:self-test && pnpm check:lifecycle-predicates
+
+      # Blocking. At HEAD this gate exits 0 while printing INCONCLUSIVE (declared
+      # budgets, none measured), so it proves only that the manifest parses. With
+      # ticket 22's in-flight measurement work in the tree it exits 1 on two real
+      # breaches — GET /notifications measuredDbCalls=5 > 3, and
+      # GET /notifications/unread-count measuredBufferBlocks=10234 > 3000. Those
+      # are findings for ticket 22 to fix or record; the gate's own message is
+      # right that raising a ceiling to go green is itself a defect.
+      - name: Route budgets
+        run: pnpm check:route-budgets:self-test && pnpm check:route-budgets
 
   # Tenant isolation, against a real database as the real application role.
   #
@@ -255,6 +439,14 @@ jobs:
 
       - name: Module lifecycle gates (timesheets)
         run: pnpm check:module-lifecycle
+        env:
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
+
+      # Exits 2 (INCONCLUSIVE) without APP_DATABASE_URL, which is why it belongs
+      # here and not in `gates`. Until this job runs, the privilege boundary is
+      # UNPROVEN and must not be cited as evidence.
+      - name: Audit log privileges
+        run: pnpm check:audit-log-privileges:self-test && pnpm check:audit-log-privileges
         env:
           APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
 

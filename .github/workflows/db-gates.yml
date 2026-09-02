@@ -1,0 +1,188 @@
+name: Database gates
+
+# Ported here on 2026-09-02 (ticket 35b) from two workflow files that lived in
+# the FRONTEND repository — `.github/workflows/backend.yml` and
+# `.github/workflows/seeded-e2e.yml`. That repository has no `backend/`
+# directory, so `pnpm/action-setup` could not find `backend/package.json` and
+# every run died at step 3 with "No pnpm version is specified" (measured: FE runs
+# 33601538287 and 33601538365, 52s and 35s, every gate step reporting `-`).
+# Those two files never executed a single gate and have been deleted.
+#
+# The static gates they named now run in `ci.yml`'s `gates` job on every push and
+# pull request. What is left here is the half that needs a live database.
+#
+# NOT ENABLED ON PUSH OR PULL REQUEST ON PURPOSE. These jobs have never executed
+# in any repository, so their green is unproven; wiring an unproven job as a
+# required check is how a pipeline gets muted. Run it with `workflow_dispatch`,
+# read the result, then promote the jobs that pass to `ci.yml`.
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The migration ledger and the controller e2e suite, against a bootstrapped
+  # database. Also the ON DELETE SET NULL catalog half, which cannot be answered
+  # by anything static — the column list lives only in pg_constraint.confdelsetcols.
+  bootstrapped:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+      PGSSLMODE: disable
+      BACKEND_JWT_SECRET: ci-only-backend-jwt-secret-with-at-least-44-characters
+      PORTAL_JWT_SECRET: ci-only-portal-jwt-secret-with-at-least-44-characters-xx
+      ENCRYPTION_KEY: ci-only-encryption-key-min-32-characters-for-testing
+      INTERNAL_API_SECRET: ci-only-internal-api-secret-min-32-chars-for-testing
+      CORS_ORIGINS: http://localhost:1000
+      APP_URL: http://localhost:1000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Bootstrap Database
+        run: pnpm db:bootstrap
+
+      - name: Migration ledger agrees with the journal
+        run: pnpm check:migration-ledger:self-test && pnpm check:migration-ledger
+
+      - name: ON DELETE SET NULL column lists (catalog half)
+        run: pnpm check:set-null-column-lists
+        env:
+          SET_NULL_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
+      - name: Retention coverage (live)
+        run: pnpm check:retention-coverage
+
+      - name: Controller E2E Tests
+        run: pnpm test:e2e:ci
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+  # Run the complete migration chain twice from disposable databases: once from
+  # zero and once split at the supported upgrade watermark. The proof compares the
+  # full catalog and drops both probes in a finally block.
+  migration-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+      PGSSLMODE: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Migration proof guard self-test
+        run: pnpm migration:proof --self-test
+
+      - name: Cold bootstrap and supported-upgrade catalog proof
+        run: pnpm migration:proof
+
+  # Composite tenant foreign keys. The detector reads pg_constraint, so it only
+  # runs where a bootstrapped database exists. Its self-test runs without one and
+  # includes an inline .references() fixture — the form an earlier version of this
+  # gate could not see, which is how it reported a false zero.
+  #
+  # NON-BLOCKING, and only until the count reaches zero: 486 single-column tenant
+  # FKs remain actionable, so a hard gate would red the run over known-open work.
+  tenant-relationships:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+      APP_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
+      APP_DB_PASSWORD: ci
+      PGSSLMODE: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Bootstrap Database
+        run: pnpm db:bootstrap
+
+      - name: Create App Role
+        run: pnpm db:bootstrap-role
+
+      - name: Tenant foreign keys are composite
+        continue-on-error: true
+        env:
+          TENANT_RELATIONSHIP_DB_URL: postgres://ci:ci@127.0.0.1:5432/ci
+        run: pnpm check:tenant-relationships:self-test && pnpm check:tenant-relationships
+
+      # The seeded suite needs the non-owner role above; without it every case
+      # passes while proving nothing, since the owner has BYPASSRLS.
+      - name: Seeded Controller E2E Tests
+        run: pnpm test:e2e:seeded
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          BACKEND_JWT_SECRET: ci-only-backend-jwt-secret-with-at-least-44-characters
+          PORTAL_JWT_SECRET: ci-only-portal-jwt-secret-with-at-least-44-characters-xx
+          ENCRYPTION_KEY: ci-only-encryption-key-min-32-characters-for-testing
+          INTERNAL_API_SECRET: ci-only-internal-api-secret-min-32-chars-for-testing
+          CORS_ORIGINS: http://localhost:1000
+          APP_URL: http://localhost:1000
