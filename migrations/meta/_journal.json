@@ -4579,6 +4579,13 @@
       "when": 1803000010104,
       "tag": "1008_s09_hash_support_inbound_secrets",
       "breakpoints": true
+    },
+    {
+      "idx": 786,
+      "version": "7",
+      "when": 1803000010105,
+      "tag": "1009_s09_inv_stock_transactions_single_column_fks",
+      "breakpoints": true
     }
   ]
 }

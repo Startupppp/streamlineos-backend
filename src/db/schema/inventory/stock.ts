@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, date, decimal, integer, jsonb, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, decimal, integer, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { invTxnTypeEnum, invAdjReasonEnum, invTransferStatusEnum, invAdjustmentStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
@@ -34,8 +34,8 @@ export const invStockLevels = pgTable("inv_stock_levels", {
 export const invStockTransactions = pgTable("inv_stock_transactions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  productVariantId: integer("product_variant_id").references(() => invProductVariants.id, { onDelete: "cascade" }).notNull(),
-  locationId: integer("location_id").references(() => invLocations.id, { onDelete: "set null" }),
+  productVariantId: integer("product_variant_id").notNull(),
+  locationId: integer("location_id"),
   transactionType: invTxnTypeEnum("transaction_type").notNull(),
   quantityChange: decimal("quantity_change", { precision: 18, scale: 4 }).notNull(),
   quantityBefore: decimal("quantity_before", { precision: 18, scale: 4 }).notNull(),
@@ -60,6 +60,8 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_idempotency").on(table.orgId, table.idempotencyKey),
   index("idx_inv_txn_created").on(table.createdAt),
   index("idx_inv_txn_org_created").on(table.orgId, table.createdAt),
+  foreignKey({ columns: [table.orgId, table.productVariantId], foreignColumns: [invProductVariants.orgId, invProductVariants.id], name: "fk_inv_stock_transactions_product_variant_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.locationId], foreignColumns: [invLocations.orgId, invLocations.id], name: "fk_inv_stock_transactions_location_id_org" }).onDelete("set null"),
   index("idx_inv_txn_org_variant").on(table.orgId, table.productVariantId),
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
   index("idx_inv_txn_org_posting_date").on(table.orgId, table.postingDate),
