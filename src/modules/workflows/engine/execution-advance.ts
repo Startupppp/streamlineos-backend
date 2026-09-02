@@ -6,12 +6,37 @@ import {
   workflowExecutionSteps,
   workflowVersions,
 } from "../../../db/schema";
-import { nextNodeId, parseWorkflowGraph, type WorkflowGraph } from "./workflow-graph";
-import { type NodeDispatchPort, type ResolvedPermissionSet } from "./node-outcome";
+import {
+  nextNodeId,
+  parseWorkflowGraph,
+  type WorkflowGraph,
+} from "./workflow-graph";
+import {
+  type NodeDispatchPort,
+  type ResolvedPermissionSet,
+} from "./node-outcome";
 import { readRunState, writeRunState } from "./workflow-execution-context";
 import { type ClaimedExecution } from "./execution-claim";
 
 export const MAX_STEPS_PER_EXECUTION = 200;
+
+async function isStillRunning(
+  tx: TenantTx,
+  orgId: string,
+  executionId: string,
+): Promise<boolean> {
+  const [row] = await tx
+    .select({ executionStatus: workflowExecutions.status })
+    .from(workflowExecutions)
+    .where(
+      and(
+        eq(workflowExecutions.id, executionId),
+        eq(workflowExecutions.orgId, orgId),
+      ),
+    )
+    .limit(1);
+  return row?.executionStatus === "running";
+}
 
 async function assertTriggerActorActive(
   tx: TenantTx,
@@ -21,7 +46,12 @@ async function assertTriggerActorActive(
   const [row] = await tx
     .select({ status: organizationMembers.status })
     .from(organizationMembers)
-    .where(and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)))
+    .where(
+      and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.orgId, orgId),
+      ),
+    )
     .limit(1);
   return row?.status === "ACTIVE";
 }
@@ -33,12 +63,24 @@ export async function advanceExecution(
   resolvedPermissions: ResolvedPermissionSet = null,
 ): Promise<"completed" | "failed" | "suspended"> {
   if (execution.triggeredBy != null) {
-    const actorActive = await assertTriggerActorActive(tx, execution.orgId, execution.triggeredBy);
+    const actorActive = await assertTriggerActorActive(
+      tx,
+      execution.orgId,
+      execution.triggeredBy,
+    );
     if (!actorActive) {
-      await recordStep(tx, execution.orgId, execution.id, "authority-check", "trigger", {
-        status: "failed",
-        error: "Execution actor is no longer an active member of this organisation",
-      });
+      await recordStep(
+        tx,
+        execution.orgId,
+        execution.id,
+        "authority-check",
+        "trigger",
+        {
+          status: "failed",
+          error:
+            "Execution actor is no longer an active member of this organisation",
+        },
+      );
       await finishExecution(tx, execution.id, "failed");
       return "failed";
     }
@@ -46,10 +88,17 @@ export async function advanceExecution(
 
   const parsed = await loadGraph(tx, execution);
   if (!parsed.ok) {
-    await recordStep(tx, execution.orgId, execution.id, "definition", "trigger", {
-      status: "failed",
-      error: parsed.error,
-    });
+    await recordStep(
+      tx,
+      execution.orgId,
+      execution.id,
+      "definition",
+      "trigger",
+      {
+        status: "failed",
+        error: parsed.error,
+      },
+    );
     await finishExecution(tx, execution.id, "failed");
     return "failed";
   }
@@ -62,6 +111,19 @@ export async function advanceExecution(
   const variables = { ...state.variables };
 
   while (cursor !== null) {
+    if (!(await isStillRunning(tx, execution.orgId, execution.id))) {
+      await tx
+        .update(workflowExecutions)
+        .set({ context: writeRunState({ ...state, cursor, variables, steps }) })
+        .where(
+          and(
+            eq(workflowExecutions.id, execution.id),
+            eq(workflowExecutions.orgId, execution.orgId),
+          ),
+        );
+      return "suspended";
+    }
+
     if (steps >= MAX_STEPS_PER_EXECUTION) {
       await recordStep(tx, execution.orgId, execution.id, cursor, "end", {
         status: "failed",
@@ -96,25 +158,42 @@ export async function advanceExecution(
     steps += 1;
 
     if (outcome.kind === "failed") {
-      await recordStep(tx, execution.orgId, execution.id, node.id, node.data.nodeType, {
-        status: "failed",
-        error: outcome.error,
-        startedAt,
-      });
+      await recordStep(
+        tx,
+        execution.orgId,
+        execution.id,
+        node.id,
+        node.data.nodeType,
+        {
+          status: "failed",
+          error: outcome.error,
+          startedAt,
+        },
+      );
       await finishExecution(tx, execution.id, "failed");
       return "failed";
     }
 
-    await recordStep(tx, execution.orgId, execution.id, node.id, node.data.nodeType, {
-      status: "completed",
-      output: outcome.output,
-      startedAt,
-    });
+    await recordStep(
+      tx,
+      execution.orgId,
+      execution.id,
+      node.id,
+      node.data.nodeType,
+      {
+        status: "completed",
+        output: outcome.output,
+        startedAt,
+      },
+    );
 
     if (outcome.kind === "suspend") {
       const next = nextNodeId(graph, node.id);
       if (next === null) {
-        await finishExecution(tx, execution.id, "completed", { variables, steps });
+        await finishExecution(tx, execution.id, "completed", {
+          variables,
+          steps,
+        });
         return "completed";
       }
       await tx
@@ -139,7 +218,10 @@ export async function advanceExecution(
     }
 
     if (outcome.kind === "halt") {
-      await finishExecution(tx, execution.id, "completed", { variables, steps });
+      await finishExecution(tx, execution.id, "completed", {
+        variables,
+        steps,
+      });
       return "completed";
     }
 

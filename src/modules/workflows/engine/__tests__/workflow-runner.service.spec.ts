@@ -30,6 +30,7 @@ interface Recorder {
   steps: StepRow[];
   updates: Record<string, unknown>[];
   selects: unknown[][];
+  executionStatus: Array<{ executionStatus: string }>;
 }
 
 let currentTx: unknown;
@@ -48,9 +49,14 @@ function makeTx(rec: Recorder) {
         return { where: () => thenableWith(claimRows) };
       },
     }),
-    select: () => ({
+    select: (projection?: Record<string, unknown>) => ({
       from: () => ({
-        where: () => ({ limit: () => Promise.resolve(rec.selects.shift() ?? []) }),
+        where: () => ({
+          limit: () =>
+            projection !== undefined && "executionStatus" in projection
+              ? Promise.resolve(rec.executionStatus)
+              : Promise.resolve(rec.selects.shift() ?? []),
+        }),
       }),
     }),
     insert: () => ({
@@ -69,7 +75,12 @@ function node(id: string, nodeType: string, configuration: Record<string, unknow
 }
 
 function setup(definition: unknown, opts?: { claimed?: boolean; context?: unknown }) {
-  const rec: Recorder = { steps: [], updates: [], selects: [] };
+  const rec: Recorder = {
+    steps: [],
+    updates: [],
+    selects: [],
+    executionStatus: [{ executionStatus: "running" }],
+  };
   const execution = {
     id: "exec-1",
     orgId: "org-1",

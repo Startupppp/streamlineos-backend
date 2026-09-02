@@ -70,10 +70,24 @@ export class SurveyLiveSessionService {
 
   async start(orgId: string, sessionId: number) {
     const session = await this.get(orgId, sessionId);
-    const firstQuestion = await this.db.query.surveyQuestions.findFirst({
-      where: and(eq(surveyQuestions.orgId, session.orgId), eq(surveyQuestions.versionId, session.versionId)),
-      orderBy: [asc(surveySections.sortOrder), asc(surveyQuestions.sortOrder)],
-    });
+    const [firstQuestion] = await this.db
+      .select({ id: surveyQuestions.id })
+      .from(surveyQuestions)
+      .innerJoin(
+        surveySections,
+        and(
+          eq(surveySections.id, surveyQuestions.sectionId),
+          eq(surveySections.orgId, surveyQuestions.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(surveyQuestions.orgId, session.orgId),
+          eq(surveyQuestions.versionId, session.versionId),
+        ),
+      )
+      .orderBy(asc(surveySections.sortOrder), asc(surveyQuestions.sortOrder))
+      .limit(1);
     const [updated] = await this.db
       .update(surveyLiveSessions)
       .set({ status: "active", startedAt: new Date(), currentQuestionId: firstQuestion?.id ?? null })

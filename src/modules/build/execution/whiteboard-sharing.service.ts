@@ -184,23 +184,26 @@ export class WhiteboardSharingService {
 
     const excluded = new Set([board.createdBy ?? "", u.userId]);
     const filteredShares = shares.filter((s) => !excluded.has(s.userId));
+    const membershipByUserId = new Map(members.map((m) => [m.userId, m.id]));
+    const rows = filteredShares.map((s) => {
+      const membershipId = membershipByUserId.get(s.userId);
+      if (membershipId === undefined)
+        throw new BadRequestException(`Unknown member(s): ${s.userId}`);
+      return {
+        orgId: u.orgId,
+        whiteboardId,
+        membershipId,
+        role: s.role,
+        createdBy: u.userId,
+      };
+    });
 
     await this.db.transaction(async (tx) => {
       await tx
         .delete(projectWhiteboardShares)
         .where(eq(projectWhiteboardShares.whiteboardId, whiteboardId));
 
-      if (filteredShares.length > 0) {
-        await tx.insert(projectWhiteboardShares).values(
-          filteredShares.map((s) => ({
-            orgId: u.orgId,
-            whiteboardId,
-            membershipId: members.find((m) => m.userId === s.userId)?.id ?? 0,
-            role: s.role,
-            createdBy: u.userId,
-          })),
-        );
-      }
+      if (rows.length > 0) await tx.insert(projectWhiteboardShares).values(rows);
     });
 
     return this.db
