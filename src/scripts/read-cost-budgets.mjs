@@ -33,6 +33,29 @@
  * exclusion is a claim about the database, and a stale claim is indistinguishable from coverage.
  */
 
+const DAY_MS = 86_400_000;
+
+/**
+ * The `notifications` read window, mirroring `src/modules/notifications/notification-read-window.ts`.
+ *
+ * `notifications` is RANGE-partitioned on `created_at`. A budget with no `created_at` predicate
+ * plans a Merge Append over every declared partition and measures partition pruning that the
+ * service does not have to pay for — the opposite of what the ceiling is for. Kept in step with
+ * NOTIFICATION_RETENTION_POLICY.notifications.retainDays (180) by hand, because this catalog is
+ * plain ESM and the policy is TypeScript; changing the retention window without changing this
+ * makes the budget measure a wider window than the service reads.
+ */
+const NOTIFICATION_RETAIN_DAYS = 180;
+
+export function notificationReadWindow(now = new Date()) {
+  const cutoff = new Date(now.getTime() - NOTIFICATION_RETAIN_DAYS * DAY_MS);
+  const monthStart = Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth(), 1);
+  return {
+    start: new Date(monthStart - DAY_MS).toISOString(),
+    end: new Date(now.getTime() + DAY_MS).toISOString(),
+  };
+}
+
 export const BUDGETS = [
   {
     id: "scoped-board-page",
@@ -126,11 +149,21 @@ export const BUDGETS = [
     minRows: 100,
     maxScanRows: 2_000,
     rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => [f.orgId, f.userId],
+    // Migration 0520 moved the recipient authority from `user_id` to `membership_id`, and the live
+    // indexes followed the service rather than this catalog: there is no `(org_id, user_id, …)`
+    // index left. Filtering the old column measured a plan the application never runs — 3,860-6,267
+    // rows scanned in each of 11 partitions — and would have stayed flat through both the fix and
+    // any future regression. A budget that does not track the code it bounds is not a budget.
+    params: (f) => {
+      if (!f.membershipId) return null;
+      const w = notificationReadWindow();
+      return [f.orgId, f.membershipId, w.start, w.end];
+    },
     sql: `
       SELECT id, title, message, is_read, category, source_module, link, created_at
       FROM notifications
-      WHERE org_id = $1 AND user_id = $2
+      WHERE org_id = $1 AND membership_id = $2
+        AND created_at >= $3::timestamptz AND created_at < $4::timestamptz
         AND deleted_at IS NULL AND archived_at IS NULL
       ORDER BY id DESC
       LIMIT 50`,
@@ -143,11 +176,17 @@ export const BUDGETS = [
     ceiling: 3_000,
     minRows: 100,
     rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => [f.orgId, f.userId],
+    // Same 0520 drift as notifications-list, same remedy — see the note there.
+    params: (f) => {
+      if (!f.membershipId) return null;
+      const w = notificationReadWindow();
+      return [f.orgId, f.membershipId, w.start, w.end];
+    },
     sql: `
       SELECT count(*)::int
       FROM notifications
-      WHERE org_id = $1 AND user_id = $2
+      WHERE org_id = $1 AND membership_id = $2
+        AND created_at >= $3::timestamptz AND created_at < $4::timestamptz
         AND is_read = false AND deleted_at IS NULL AND archived_at IS NULL`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "notifications" },
@@ -258,12 +297,16 @@ export const BUDGETS = [
     ceiling: 5_000,
     minRows: 30,
     rowCountSql: `SELECT count(*)::int FROM kb_page_visits WHERE org_id = $1`,
-    params: (f) => [f.orgId, f.userId],
+    // Same membership migration as the notification budgets: KbPageVisitsService.getRecent filters
+    // `kbPageVisits.membershipId`, and `idx_kb_page_visits_org_membership_visited` is the index
+    // that serves it. The catalog filtered `user_id`, which is a different plan on a different
+    // index and so a ceiling over a query the application does not issue.
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT pv.page_id, pv.visited_at, p.title, p.space_id
       FROM kb_page_visits pv
       INNER JOIN kb_pages p ON p.id = pv.page_id
-      WHERE pv.org_id = $1 AND pv.user_id = $2
+      WHERE pv.org_id = $1 AND pv.membership_id = $2
         AND p.deleted_at IS NULL
       ORDER BY pv.visited_at DESC
       LIMIT 20`,
@@ -372,12 +415,17 @@ export const BUDGETS = [
     ceiling: 5_000,
     minRows: 20,
     rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1`,
-    params: (f) => [f.orgId, f.userId],
+    // LeavesService.my filters `user_membership_id` and orders by `id DESC` (cursor pagination on
+    // id, not on created_at). This budget filtered `user_id` and ordered by `created_at`, so it
+    // measured `idx_leave_requests_user_id` and a sort the endpoint never performs, while
+    // `idx_leave_requests_org_user_membership` — the index that actually serves the route — went
+    // unexercised.
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT id, status, start_date, end_date, created_at
       FROM leave_requests
-      WHERE org_id = $1 AND user_id = $2
-      ORDER BY created_at DESC
+      WHERE org_id = $1 AND user_membership_id = $2
+      ORDER BY id DESC
       LIMIT 50`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "leave_requests" },
@@ -389,12 +437,14 @@ export const BUDGETS = [
     minRows: 30,
     maxScanRows: 200,
     rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1`,
-    params: (f) => [f.orgId, f.userId],
+    // EmployeeAttendanceService.history filters `user_membership_id` and orders by
+    // (date DESC, created_at DESC). Same membership migration as the notification budgets.
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT id, date, status, check_in, check_out
       FROM attendance
-      WHERE org_id = $1 AND user_id = $2
-      ORDER BY date DESC
+      WHERE org_id = $1 AND user_membership_id = $2
+      ORDER BY date DESC, created_at DESC
       LIMIT 31`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "attendance" },
@@ -825,22 +875,25 @@ export const BUDGETS = [
   },
   {
     // Self-service timesheet view — every employee hits this on every timesheet page load.
-    // Service: build/execution/timesheets.service.ts listTimeEntries with scope='own'
-    // applyScope adds user_id = caller, so the WHERE is always (org_id, user_id).
-    // idx_timesheets_org_user_date on (org_id, user_id, date) covers this exactly.
+    // Service: build/execution/timesheets.service.ts listTimeEntries with scope='own'.
+    // applyMembershipScope adds user_membership_id = actingMembershipId(user.principal), so the
+    //   WHERE is (org_id, user_membership_id) and the membership id arrives on the request
+    //   principal — the service issues no organization_members lookup for it. This budget used to
+    //   resolve it with a scalar subquery and to name idx_timesheets_org_user_date on
+    //   (org_id, user_id, date), an index that does not exist at head: it charged the route for a
+    //   membership probe it does not make and described a plan on a column the table stopped
+    //   filtering on.
+    // idx_timesheets_org_user_membership_date on (org_id, user_membership_id, date) covers this.
     // SQL verified against listTimeEntries with scope resolved to 'own'.
     id: "timesheets-mine",
     ceiling: 3_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM timesheets WHERE org_id = $1`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT id, date, hours, status, description, project_id, ticket_id, voided_at
       FROM timesheets
-      WHERE org_id = $1
-        AND user_membership_id = (
-          SELECT id FROM organization_members WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE' LIMIT 1
-        )
+      WHERE org_id = $1 AND user_membership_id = $2
       ORDER BY date DESC
       LIMIT 50 OFFSET 0`,
     planAssertions: [],
@@ -849,9 +902,14 @@ export const BUDGETS = [
     // Mail inbox cached list — first page served from mail_message_metadata on every inbox load.
     // Service: mail/mail-metadata.service.ts listCached (called by mail.service.ts listMessages
     //   on first page when no search and single account selected).
-    // idx_mail_metadata_list on (org_id, user_id, folder, date DESC) covers this exactly.
-    // SQL verified against listCached: WHERE org_id, user_id, folder ORDER BY date DESC LIMIT.
-    // PROVISIONAL ceiling — measure with actual mail seed; mail is not seeded by default.
+    // idx_mail_metadata_list_keyset on (org_id, user_membership_id, folder, date DESC, id DESC)
+    //   covers this exactly. Migration 1022 made the page keyset-pageable and DROPPED
+    //   idx_mail_metadata_list, which this comment used to name on a column (user_id) the table no
+    //   longer filters on; the ORDER BY here carried the same lag — listCached orders by
+    //   (date DESC, id DESC) so the cursor cannot repeat or skip a row at a page boundary, and a
+    //   budget ordering by date alone measures a prefix scan the route does not run.
+    // SQL verified against listCached: WHERE org_id, user_membership_id, folder
+    //   ORDER BY date DESC, id DESC LIMIT.
     id: "mail-inbox-cached",
     ceiling: 5_000,
     // 10 rows satisfied the floor while guaranteeing a Seq Scan: on a single-page
@@ -862,12 +920,12 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM mail_message_metadata WHERE org_id = $1`,
     params: (f) => (f.hasMailMessages && f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
-      SELECT message_id, thread_id, account_id, subject, sender_email, sender_name,
+      SELECT id, message_id, thread_id, account_id, subject, sender_email, sender_name,
              date, is_read, is_starred, has_attachment, labels, folder, synced_at
       FROM mail_message_metadata
       WHERE org_id = $1 AND user_membership_id = $2 AND folder = 'inbox'
-      ORDER BY date DESC
-      LIMIT 50`,
+      ORDER BY date DESC, id DESC
+      LIMIT 51`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "mail_message_metadata" },
     ],
@@ -1042,10 +1100,20 @@ export const BUDGETS = [
   {
     id: "dashboard-personal-my-tasks",
     // The status list mirrors DEFAULT_PROJECT_STATUSES / ACTIVE_TICKET_STATUSES, which the
-    // application writes in UPPER_SNAKE. The perf seed writes title-case ('Todo', 'In Progress'),
-    // so this predicate matches zero rows there and the budget reports VACUOUS. The seed is the
-    // side that deviates; do NOT retune the predicate to the seed's vocabulary — that would make
-    // the budget measure a query the application never runs.
+    // application writes in UPPER_SNAKE. The perf seed used to write title-case ('Todo',
+    // 'In Progress'), so this predicate matched zero rows and the budget reported VACUOUS; the
+    // seed was the deviant side and it was the seed that was corrected. Do NOT retune the
+    // predicate to a fixture's vocabulary — that makes the budget measure a query the application
+    // never runs.
+    //
+    // KNOWN BREACH, deliberately left failing. The moment the fixture stopped being empty this
+    // scanned 1,801 rows against maxScanRows 1,000 on the majority tenant: the planner takes
+    // idx_tickets_org_updated_live (org_id, updated_at DESC) to satisfy the ORDER BY and declines
+    // idx_tickets_org_assignee_status (org_id, assignee_membership_id, status), which cannot order.
+    // The breach is real and pre-existing — it was invisible only because the budget was vacuous —
+    // and the remedy is an index, (org_id, assignee_membership_id, updated_at DESC) WHERE
+    // deleted_at IS NULL, which lives in migrations/ and src/db/schema/**, not here. The ceiling
+    // stays at 1,000: raising it to 1,801 would record the defect as the contract.
     ceiling: 2_000,
     minRows: 50,
     maxScanRows: 1_000,
@@ -1122,11 +1190,20 @@ export const BUDGETS = [
     ceiling: 3_000,
     minRows: 1,
     rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    // `GET /dashboard/personal` calls NotificationsReadService.unreadCount, so this budget must be
+    // the same query as notifications-unread-count — including the partition window. It carried the
+    // pre-0520 `user_id` predicate and no window, and measured 11,044 blocks for it.
+    params: (f) => {
+      if (!f.membershipId) return null;
+      const w = notificationReadWindow();
+      return [f.orgId, f.membershipId, w.start, w.end];
+    },
     sql: `
       SELECT count(*)::int
       FROM notifications
-      WHERE org_id = $1 AND user_id = $2 AND is_read = false`,
+      WHERE org_id = $1 AND membership_id = $2
+        AND created_at >= $3::timestamptz AND created_at < $4::timestamptz
+        AND is_read = false AND deleted_at IS NULL AND archived_at IS NULL`,
     planAssertions: [],
   },
   {
