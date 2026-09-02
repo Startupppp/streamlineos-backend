@@ -465,6 +465,8 @@ export const BUDGETS = [
     planAssertions: [],
   },
   {
+    // DRIFTED, and NOT correctable here yet — see the note on leads-active below. `queryContacts`
+    // reads `contact_party_map INNER JOIN business_parties`; `contacts` is the legacy mirror.
     id: "contacts-list",
     ceiling: 8_000,
     minRows: 50,
@@ -479,6 +481,19 @@ export const BUDGETS = [
     planAssertions: [],
   },
   {
+    // DRIFTED at the table, not the column, and BLOCKED on the fixture rather than on this file.
+    // `LeadsReadService.list` reads `lead_party_map INNER JOIN business_parties` through
+    // `LEAD_PARTY_COLUMNS` (ticket 02 made Party canonical and `leads` a derived mirror), so this
+    // budget and leads-assigned-to-me below bound a table the module no longer selects from — the
+    // same defect class as the 0520 notification budgets, one level up.
+    //
+    // Re-pointing them at Party today would make them VACUOUS, which is worse: measured on the
+    // perf seed at head, `lead_party_map` and `contact_party_map` hold 0 rows and
+    // `business_parties.owner_user_id` is NULL on all 22,240 rows, while `leads` and `contacts`
+    // hold 8,896 each. The seed writes the mirror and not the canonical side. Fix the seed first
+    // (test/perf + scripts/seed-*), then move these three budgets and re-measure; the mapping is
+    // leads.assigned_to_id -> business_parties.owner_user_id, .status -> coalesce(lifecycle_stage,
+    // 'NEW'), .score -> qualification_score, ORDER BY created_at DESC, lead_id DESC.
     id: "leads-active",
     ceiling: 10_000,
     minRows: 50,
@@ -494,6 +509,7 @@ export const BUDGETS = [
     planAssertions: [],
   },
   {
+    // Same Party drift and the same fixture block as leads-active — see the note there.
     id: "leads-assigned-to-me",
     ceiling: 8_000,
     minRows: 50,
