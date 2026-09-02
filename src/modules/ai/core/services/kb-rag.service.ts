@@ -10,8 +10,14 @@ import {
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { EmbeddingsService } from "../providers/embeddings.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.interface";
+import { AiUsageService } from "./ai-usage.service";
+import { settleStream } from "../gateway/ai-gateway-credit.helper";
+import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
+import { streamText } from "ai";
+import { resolveChatModel, resolveChatModelId } from "./chat-assistant-model";
+import { logger } from "../../../../common/logger/logger.service";
 import {
   runInTenantTransaction,
   runInNewTenantTransaction,
@@ -20,6 +26,7 @@ import {
 const DEFAULT_TOP_K = 6;
 const SEARCH_POOL_K = DEFAULT_TOP_K * 4;
 const MIN_DISPLAY_SIMILARITY = 0.2;
+const KB_RAG_STREAM_FEATURE = "kb.public-ask";
 
 export interface KbAnswerSource {
   articleId: number;
@@ -32,6 +39,12 @@ export interface KbAnswerSource {
 
 export interface KbAnswer {
   answer: string;
+  sources: KbAnswerSource[];
+  hasContext: boolean;
+}
+
+export interface KbStreamAnswer {
+  stream: ReturnType<typeof streamText<Record<string, never>>>;
   sources: KbAnswerSource[];
   hasContext: boolean;
 }
@@ -54,22 +67,43 @@ interface AnswerOptions {
   articleId?: number;
 }
 
+function buildKbPrompts(results: KbSearchResult[]): { system: string; user: string } {
+  const context = results
+    .map(
+      (r, i) =>
+        `[${i + 1}] ${r.title}${r.attachmentName ? ` — ${r.attachmentName}` : ""}\n${r.content}`,
+    )
+    .join("\n\n---\n\n");
+
+  return {
+    system:
+      "You are a knowledge base assistant. Answer the user's question using ONLY the provided context excerpts. " +
+      "Be concise and accurate. Cite supporting excerpts inline using their bracket number, e.g. [1]. " +
+      "If the context does not contain the answer, clearly say you don't have that information in the knowledge base. " +
+      "Never invent facts that are not in the context.",
+    user: context,
+  };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+}
+
 @Injectable()
 export class KbRagService {
   private readonly logger = new Logger(KbRagService.name);
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly embeddings: EmbeddingsService,
     private readonly aiGateway: AiGatewayService,
+    @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
+    private readonly usageSvc: AiUsageService,
   ) {}
 
   isEmbeddingConfigured(): boolean {
-    return this.embeddings.isConfigured();
+    return this.aiGateway.isEmbeddingConfigured();
   }
 
-  // Runs the vector search inside a transaction using a precomputed embedding vector.
-  // All access predicates (tenant scope, published/public status, space audience) are unchanged.
   private async fetchChunks(
     orgId: string,
     vector: string,
@@ -170,12 +204,29 @@ export class KbRagService {
     });
   }
 
-  private async runAnswer(opts: AnswerOptions): Promise<KbAnswer> {
-    const vector = this.embeddings.toVectorLiteral(
-      await this.embeddings.embedQuery(opts.question, opts.orgId, "kb.public-rag"),
-    );
+  private async embedQuestion(opts: AnswerOptions): Promise<string | null> {
+    const embedResult = await this.aiGateway.embedQueryWithCredit({
+      text: opts.question,
+      orgId: opts.orgId,
+      feature: "kb.public-embedding",
+      charge: true,
+    });
+    if (!embedResult.ok) {
+      if (embedResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: embedResult.message });
+      throw new ServiceUnavailableException("AI provider is temporarily unavailable");
+    }
+    return embedResult.vectorLiteral;
+  }
 
-    const results = await this.fetchChunks(opts.orgId, vector, opts.articleId);
+  private async runAnswer(opts: AnswerOptions): Promise<KbAnswer> {
+    const vectorLiteral = await this.embedQuestion(opts);
+    if (vectorLiteral === null) {
+      this.recordNoContext(opts.orgId, opts.question);
+      return { answer: "I couldn't find anything related to that in the knowledge base yet.", sources: [], hasContext: false };
+    }
+
+    const results = await this.fetchChunks(opts.orgId, vectorLiteral, opts.articleId);
 
     if (results.length === 0) {
       this.recordNoContext(opts.orgId, opts.question);
@@ -186,35 +237,21 @@ export class KbRagService {
       };
     }
 
-    const context = results
-      .map(
-        (r, i) =>
-          `[${i + 1}] ${r.title}${r.attachmentName ? ` — ${r.attachmentName}` : ""}\n${r.content}`,
-      )
-      .join("\n\n---\n\n");
+    const { system, user: contextUser } = buildKbPrompts(results);
+    const userMessage = `${contextUser}\n\nQuestion: ${opts.question}`;
 
-    const system =
-      "You are a knowledge base assistant. Answer the user's question using ONLY the provided context excerpts. " +
-      "Be concise and accurate. Cite supporting excerpts inline using their bracket number, e.g. [1]. " +
-      "If the context does not contain the answer, clearly say you don't have that information in the knowledge base. " +
-      "Never invent facts that are not in the context.";
-
-    const user = `Context excerpts:\n\n${context}\n\nQuestion: ${opts.question}`;
-
-    // LLM call is outside any transaction.
     const gatewayResult = await this.aiGateway.invokeText({
       actor: { orgId: opts.orgId, userId: null },
       feature: "kb.public-ask",
       tier: "fast",
-      maxTokens: 1024,
+      maxOutputTokens: 1024,
       charge: true,
-      prompt: { system, user },
+      prompt: { system, user: userMessage },
     });
 
     if (!gatewayResult.ok) {
-      if (gatewayResult.kind === "quota_exceeded") {
+      if (gatewayResult.kind === "quota_exceeded")
         throw new InsufficientAiCreditsException({ message: gatewayResult.message });
-      }
       throw new ServiceUnavailableException("AI provider is temporarily unavailable");
     }
 
@@ -236,5 +273,112 @@ export class KbRagService {
       };
     }
     return this.runAnswer(opts);
+  }
+
+  async streamAnswer(opts: AnswerOptions, signal?: AbortSignal): Promise<KbStreamAnswer> {
+    const hasArticles = await this.hasPublishedPublicArticles(opts.orgId);
+    if (!hasArticles) {
+      this.recordNoContext(opts.orgId, opts.question);
+      const emptyStream = streamText({
+        model: resolveChatModel(),
+        messages: [{ role: "user", content: opts.question }],
+        system: "Say exactly: I couldn't find anything related to that in the knowledge base yet.",
+        maxOutputTokens: 32,
+        maxRetries: 0,
+      });
+      return { stream: emptyStream, sources: [], hasContext: false };
+    }
+
+    const vectorLiteral = await this.embedQuestion(opts);
+    if (vectorLiteral === null) {
+      this.recordNoContext(opts.orgId, opts.question);
+      const emptyStream = streamText({
+        model: resolveChatModel(),
+        messages: [{ role: "user", content: opts.question }],
+        system: "Say exactly: I couldn't find anything related to that in the knowledge base yet.",
+        maxOutputTokens: 32,
+        maxRetries: 0,
+      });
+      return { stream: emptyStream, sources: [], hasContext: false };
+    }
+
+    const results = await this.fetchChunks(opts.orgId, vectorLiteral, opts.articleId);
+
+    if (results.length === 0) {
+      this.recordNoContext(opts.orgId, opts.question);
+      const emptyStream = streamText({
+        model: resolveChatModel(),
+        messages: [{ role: "user", content: opts.question }],
+        system: "Say exactly: I couldn't find anything related to that in the knowledge base yet.",
+        maxOutputTokens: 32,
+        maxRetries: 0,
+      });
+      return { stream: emptyStream, sources: [], hasContext: false };
+    }
+
+    const sources = this.dedupeSources(results);
+    const { system, user: contextUser } = buildKbPrompts(results);
+    const userMessage = `${contextUser}\n\nQuestion: ${opts.question}`;
+
+    const reserveMilli = getReserveEstimateMilli(KB_RAG_STREAM_FEATURE);
+    const { reservationId } = await this.ledger.reserve({
+      orgId: opts.orgId,
+      userId: null,
+      feature: KB_RAG_STREAM_FEATURE,
+      credits: reserveMilli,
+    });
+
+    let resolved = false;
+    const releaseReservation = (reason: string) => {
+      if (resolved) return;
+      resolved = true;
+      void this.ledger.release(reservationId, reason, opts.orgId).catch(() => undefined);
+    };
+
+    const modelId = resolveChatModelId();
+
+    const stream = streamText({
+      model: resolveChatModel(),
+      messages: [{ role: "user", content: userMessage }],
+      system,
+      maxOutputTokens: 1024,
+      maxRetries: 0,
+      ...(signal !== undefined ? { abortSignal: signal } : {}),
+      onError: ({ error }) => {
+        if (signal?.aborted === true || isAbortError(error)) return;
+        logger.warn("KB RAG stream failed", {
+          error: error instanceof Error ? error.message : String(error),
+          orgId: opts.orgId,
+        });
+      },
+      onFinish: async ({ usage }) => {
+        if (resolved) return;
+        resolved = true;
+        const promptTokens = usage?.inputTokens ?? 0;
+        const completionTokens = usage?.outputTokens ?? 0;
+        try {
+          await settleStream(this.ledger, this.usageSvc, {
+            reservationId,
+            model: modelId,
+            promptTokens,
+            completionTokens,
+            orgId: opts.orgId,
+            userId: null,
+            feature: KB_RAG_STREAM_FEATURE,
+          });
+        } catch (err) {
+          logger.error("Failed to settle KB RAG stream", {
+            error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+            orgId: opts.orgId,
+            reservationId,
+          });
+        }
+      },
+    });
+
+    void (stream.finishReason as Promise<string> | undefined)
+      ?.catch(() => releaseReservation("stream_aborted_no_settle"));
+
+    return { stream, sources, hasContext: true };
   }
 }
