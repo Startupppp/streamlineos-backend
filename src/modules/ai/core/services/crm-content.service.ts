@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
+import type { AiInvokePrompt } from "../gateway/ai-gateway.types";
+import type { AiTextStream } from "../gateway/ai-gateway-stream.helper";
 
 import {
   conversationSummaryPrompt,
@@ -36,6 +38,17 @@ const MAX_TEXT = 2000;
 function trunc(s: string | null | undefined, max = MAX_TEXT): string {
   if (!s) return "";
   return s.length > max ? s.slice(0, max) + "…" : s;
+}
+
+const REPORT_NARRATOR_SYSTEM =
+  "You are a business analyst who writes clear, insightful plain-English narratives from raw data for an Indian investment and financial services firm. Focus on key trends, notable changes, and actionable insights. Keep it concise (2-3 paragraphs). Use relevant financial context and terminology appropriate for the Indian market when applicable.";
+
+/** One prompt for the buffered route and its streaming sibling. */
+function reportNarratorPrompt(input: ReportNarratorInput): AiInvokePrompt {
+  return {
+    system: REPORT_NARRATOR_SYSTEM,
+    user: `Context: ${input.context ?? "Business performance data"}\n\nData:\n${trunc(input.data)}`,
+  };
 }
 
 function actorCharge(
@@ -200,11 +213,7 @@ export class CrmContentService {
     const result = await this.gateway.invokeText({
       actor: resolvedActor,
       feature: "crm.report-narrator",
-      prompt: {
-        system:
-          "You are a business analyst who writes clear, insightful plain-English narratives from raw data for an Indian investment and financial services firm. Focus on key trends, notable changes, and actionable insights. Keep it concise (2-3 paragraphs). Use relevant financial context and terminology appropriate for the Indian market when applicable.",
-        user: `Context: ${input.context ?? "Business performance data"}\n\nData:\n${trunc(input.data)}`,
-      },
+      prompt: reportNarratorPrompt(input),
       tier: "fast",
       maxTokens: 1024,
       ...actorCharge(actor),
@@ -212,5 +221,20 @@ export class CrmContentService {
 
     if (!result.ok) throwOnAiFailure(result);
     return { narrative: result.data, generatedAt: new Date().toISOString() };
+  }
+
+  streamNarrateReport(
+    input: ReportNarratorInput,
+    actor: { orgId: string; userId: string },
+    signal?: AbortSignal,
+  ): Promise<AiTextStream> {
+    return this.gateway.streamTextWithUsage({
+      actor,
+      feature: "crm.report-narrator",
+      prompt: reportNarratorPrompt(input),
+      maxTokens: 1024,
+      charge: true,
+      ...(signal !== undefined ? { signal } : {}),
+    });
   }
 }

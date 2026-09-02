@@ -5,7 +5,6 @@ import {
   hiringFlowRounds,
   interviews,
   jobPostings,
-  users,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
@@ -23,6 +22,8 @@ import {
   type InterviewNotesSummaryResult,
 } from "../dto/output.schemas";
 import type { GenerateJdInput } from "../dto/request.schemas";
+import type { AiInvokePrompt } from "../gateway/ai-gateway.types";
+import type { AiTextStream } from "../gateway/ai-gateway-stream.helper";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { unwrapAiResult } from "./gateway-result.util";
@@ -286,34 +287,11 @@ export class HrRecruitmentAiService {
     return unwrapAiResult(result);
   }
 
-  async generateJd(input: GenerateJdInput) {
-    const orgId = "system";
-    const userId = null;
-    const contextLines: string[] = [`Job Title: ${input.title}`];
-    if (input.location) contextLines.push(`Location: ${input.location}`);
-    if (input.type)
-      contextLines.push(`Employment Type: ${input.type.replace("_", " ")}`);
-    if (input.salaryMin && input.salaryMax) {
-      contextLines.push(
-        `Salary Range: ₹${input.salaryMin.toLocaleString("en-IN")} – ₹${input.salaryMax.toLocaleString("en-IN")} per annum`,
-      );
-    }
-    if (input.requirements)
-      contextLines.push(
-        `Key Requirements / Skills:\n${input.requirements.slice(0, 2000)}`,
-      );
-
-    const system = `You are an expert HR recruiter and technical writer.
-Write a professional, engaging job description in plain text (no markdown formatting).
-Structure: Overview paragraph (3-4 sentences), Key Responsibilities (5-7 bullet points starting with "-"), Requirements (5-7 bullet points starting with "-"), What We Offer (3-4 bullet points starting with "-").
-Keep it concise, specific, and compelling. Do not use bold, headers, or markdown.`;
-
-    const user = `Write a job description for the following role:\n\n${contextLines.join("\n")}`;
-
+  async generateJd(input: GenerateJdInput, actor: { orgId: string; userId: string }) {
     const result = await this.gateway.invokeText({
-      actor: { orgId, userId },
+      actor,
       feature: "hr.generate-jd",
-      prompt: { system, user },
+      prompt: generateJdPrompt(input),
       tier: "fast",
       maxTokens: 1024,
       charge: true,
@@ -322,4 +300,43 @@ Keep it concise, specific, and compelling. Do not use bold, headers, or markdown
     const description = unwrapAiResult(result);
     return { description: description.trim() };
   }
+
+  streamGenerateJd(
+    input: GenerateJdInput,
+    actor: { orgId: string; userId: string },
+    signal?: AbortSignal,
+  ): Promise<AiTextStream> {
+    return this.gateway.streamTextWithUsage({
+      actor,
+      feature: "hr.generate-jd",
+      prompt: generateJdPrompt(input),
+      maxTokens: 1024,
+      charge: true,
+      ...(signal !== undefined ? { signal } : {}),
+    });
+  }
+}
+
+const GENERATE_JD_SYSTEM = `You are an expert HR recruiter and technical writer.
+Write a professional, engaging job description in plain text (no markdown formatting).
+Structure: Overview paragraph (3-4 sentences), Key Responsibilities (5-7 bullet points starting with "-"), Requirements (5-7 bullet points starting with "-"), What We Offer (3-4 bullet points starting with "-").
+Keep it concise, specific, and compelling. Do not use bold, headers, or markdown.`;
+
+/** One prompt for the buffered route and its streaming sibling. */
+function generateJdPrompt(input: GenerateJdInput): AiInvokePrompt {
+  const contextLines: string[] = [`Job Title: ${input.title}`];
+  if (input.location) contextLines.push(`Location: ${input.location}`);
+  if (input.type) contextLines.push(`Employment Type: ${input.type.replace("_", " ")}`);
+  if (input.salaryMin && input.salaryMax) {
+    contextLines.push(
+      `Salary Range: ₹${input.salaryMin.toLocaleString("en-IN")} – ₹${input.salaryMax.toLocaleString("en-IN")} per annum`,
+    );
+  }
+  if (input.requirements)
+    contextLines.push(`Key Requirements / Skills:\n${input.requirements.slice(0, 2000)}`);
+
+  return {
+    system: GENERATE_JD_SYSTEM,
+    user: `Write a job description for the following role:\n\n${contextLines.join("\n")}`,
+  };
 }

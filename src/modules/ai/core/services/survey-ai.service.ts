@@ -11,7 +11,12 @@ import {
 import { AuditService } from "../../../../common/audit/audit.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
+import type { AiInvokePrompt } from "../gateway/ai-gateway.types";
+import type { AiTextStream } from "../gateway/ai-gateway-stream.helper";
 import { unwrapAiResult } from "./gateway-result.util";
+
+const SUMMARIZE_RESPONSES_SYSTEM =
+  "You are a survey analyst. Summarize the key themes, patterns, and notable insights from the survey responses. Be objective and specific. Output a narrative paragraph or two, under 600 words.";
 
 @Injectable()
 export class SurveyAiService {
@@ -21,7 +26,11 @@ export class SurveyAiService {
     private readonly audit: AuditService,
   ) {}
 
-  async summarizeResponses(orgId: string, userId: string, surveyId: number) {
+  /**
+   * Shared by the buffered route and its streaming sibling, so the streamed
+   * summary is the same answer arriving sooner rather than a different one.
+   */
+  private async resolveSummaryPrompt(orgId: string, surveyId: number): Promise<AiInvokePrompt> {
     // Context assembly is its own short transaction so the pooled connection is
     // returned before the provider call, which is orders of magnitude slower.
     const { title, responseCount, textRows } = await runInTenantTransaction(
@@ -80,14 +89,18 @@ export class SurveyAiService {
       .join("\n\n")
       .slice(0, 2000);
 
-    const system =
-      "You are a survey analyst. Summarize the key themes, patterns, and notable insights from the survey responses. Be objective and specific. Output a narrative paragraph or two, under 600 words.";
     const user = `Survey: "${title}"\nTotal submitted responses: ${responseCount}\n\nOpen-ended responses (sample):\n${textBlock}\n\nProvide a narrative summary of key themes and insights.`;
+
+    return { system: SUMMARIZE_RESPONSES_SYSTEM, user };
+  }
+
+  async summarizeResponses(orgId: string, userId: string, surveyId: number) {
+    const prompt = await this.resolveSummaryPrompt(orgId, surveyId);
 
     const result = await this.gateway.invokeText({
       actor: { orgId, userId },
       feature: "survey.summarize-responses",
-      prompt: { system, user },
+      prompt,
       tier: "standard",
       maxTokens: 768,
       charge: true,
@@ -96,5 +109,23 @@ export class SurveyAiService {
     const summary = unwrapAiResult(result);
     this.audit.log({ action: "ai.survey.summarize-responses", userId, orgId, resourceType: "survey", resourceId: String(surveyId) });
     return { summary: summary.slice(0, 2000) };
+  }
+
+  async streamSummarizeResponses(
+    orgId: string,
+    userId: string,
+    surveyId: number,
+    signal?: AbortSignal,
+  ): Promise<AiTextStream> {
+    const prompt = await this.resolveSummaryPrompt(orgId, surveyId);
+    this.audit.log({ action: "ai.survey.summarize-responses", userId, orgId, resourceType: "survey", resourceId: String(surveyId) });
+    return this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "survey.summarize-responses",
+      prompt,
+      maxTokens: 768,
+      charge: true,
+      ...(signal !== undefined ? { signal } : {}),
+    });
   }
 }

@@ -8,7 +8,14 @@ import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { OrgFeaturesService } from "./org-features.service";
 import { throwOnAiFailure } from "./gateway-result.util";
 import { loadLeadContext, loadLeadProfile, trunc } from "./crm-brief-loaders";
+import type { AiInvokePrompt } from "../gateway/ai-gateway.types";
+import type { AiTextStream } from "../gateway/ai-gateway-stream.helper";
 import type { MeetingPrepInput } from "../dto/request.schemas";
+
+const MEETING_PREP_SYSTEM =
+  "You are an executive assistant preparing meeting briefs for an Indian investment firm sales team. Generate structured, concise pre-meeting briefs that help the team walk into every meeting fully prepared. Be specific, actionable, and tailor advice to the Indian B2B financial services context.";
+const MEETING_FOLLOW_UP_SYSTEM =
+  "You are an executive assistant drafting professional follow-up emails for an Indian investment firm. Write clear, concise, and actionable follow-up emails. Never auto-send; return draft text only.";
 
 interface MeetingFollowUpInput {
   meetingTitle: string;
@@ -28,7 +35,15 @@ export class CrmMeetingBriefService {
     private readonly orgFeatures: OrgFeaturesService,
   ) {}
 
-  async meetingPrep(orgId: string, input: MeetingPrepInput, userId?: string) {
+  /**
+   * Shared by the buffered route and its streaming sibling. A second copy of the
+   * context assembly would drift the moment either is tuned, and the streamed
+   * brief would stop matching the one the buffered route returns.
+   */
+  private async resolveMeetingPrepPrompt(
+    orgId: string,
+    input: MeetingPrepInput,
+  ): Promise<{ attendeeName: string; prompt: AiInvokePrompt }> {
     const { meetingTitle, attendeeType, attendeeId, scheduledAt, notes } = input;
 
     const ctx = await runInTenantTransaction(this.db, async (tx) => {
@@ -157,14 +172,16 @@ Please generate a structured pre-meeting brief with:
 6. Suggested Questions to Ask (3-4 open-ended questions to drive the conversation)
 7. Preparation Checklist (materials or data to prepare before the meeting)`;
 
+    return { attendeeName, prompt: { system: MEETING_PREP_SYSTEM, user: userPrompt } };
+  }
+
+  async meetingPrep(orgId: string, input: MeetingPrepInput, userId?: string) {
+    const { attendeeName, prompt } = await this.resolveMeetingPrepPrompt(orgId, input);
+
     const result = await this.gateway.invokeText({
       actor: { orgId, userId: userId ?? null },
       feature: "crm.meeting-prep",
-      prompt: {
-        system:
-          "You are an executive assistant preparing meeting briefs for an Indian investment firm sales team. Generate structured, concise pre-meeting briefs that help the team walk into every meeting fully prepared. Be specific, actionable, and tailor advice to the Indian B2B financial services context.",
-        user: userPrompt,
-      },
+      prompt,
       tier: "standard",
       maxTokens: 1024,
       charge: true,
@@ -174,7 +191,27 @@ Please generate a structured pre-meeting brief with:
     return { brief: result.data, attendeeName, generatedAt: new Date().toISOString() };
   }
 
-  async meetingFollowUpDraft(orgId: string, input: MeetingFollowUpInput, userId?: string) {
+  async streamMeetingPrep(
+    orgId: string,
+    input: MeetingPrepInput,
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<AiTextStream> {
+    const { prompt } = await this.resolveMeetingPrepPrompt(orgId, input);
+    return this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "crm.meeting-prep",
+      prompt,
+      maxTokens: 1024,
+      charge: true,
+      ...(signal !== undefined ? { signal } : {}),
+    });
+  }
+
+  private async resolveMeetingFollowUpPrompt(
+    orgId: string,
+    input: MeetingFollowUpInput,
+  ): Promise<{ attendeeName: string; prompt: AiInvokePrompt }> {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
 
@@ -214,13 +251,16 @@ Write a concise, professional follow-up email (subject + body) that:
 4. Sets expectations for next steps
 Keep the tone professional but warm. Max 200 words for the body.`;
 
+    return { attendeeName, prompt: { system: MEETING_FOLLOW_UP_SYSTEM, user: userPrompt } };
+  }
+
+  async meetingFollowUpDraft(orgId: string, input: MeetingFollowUpInput, userId?: string) {
+    const { attendeeName, prompt } = await this.resolveMeetingFollowUpPrompt(orgId, input);
+
     const result = await this.gateway.invokeText({
       actor: { orgId, userId: userId ?? null },
       feature: "crm.meeting-follow-up",
-      prompt: {
-        system: "You are an executive assistant drafting professional follow-up emails for an Indian investment firm. Write clear, concise, and actionable follow-up emails. Never auto-send; return draft text only.",
-        user: userPrompt,
-      },
+      prompt,
       tier: "standard",
       maxTokens: 512,
       charge: true,
@@ -228,5 +268,22 @@ Keep the tone professional but warm. Max 200 words for the body.`;
 
     if (!result.ok) throwOnAiFailure(result);
     return { draft: result.data, attendeeName, generatedAt: new Date().toISOString() };
+  }
+
+  async streamMeetingFollowUpDraft(
+    orgId: string,
+    input: MeetingFollowUpInput,
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<AiTextStream> {
+    const { prompt } = await this.resolveMeetingFollowUpPrompt(orgId, input);
+    return this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "crm.meeting-follow-up",
+      prompt,
+      maxTokens: 512,
+      charge: true,
+      ...(signal !== undefined ? { signal } : {}),
+    });
   }
 }

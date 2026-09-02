@@ -56,6 +56,38 @@ describe("streaming routes must not run inside the request-scoped tenant transac
     expect(offenders).toEqual([]);
   });
 
+  /**
+   * This release removes duplicate mechanisms rather than adding them. A second
+   * streaming path would compile, respond and look right while skipping the
+   * abort seam, the awaited pipe and the HttpException passthrough that the
+   * shared helper is the only place to get.
+   */
+  it("every streaming route goes through the one shared helper", () => {
+    const offenders: string[] = [];
+    let streamRoutes = 0;
+
+    for (const file of listControllerFiles(AI_MODULE_ROOT)) {
+      const source = readFileSync(file, "utf8");
+      const routes = source.match(/@(?:Post|Get)\("[^"]*stream[^"]*"\)/g) ?? [];
+      if (routes.length === 0) continue;
+      streamRoutes += routes.length;
+      const usesHelper =
+        source.includes("respondWithAiTextStream") || source.includes("pipeAiTextStream");
+      if (!usesHelper) offenders.push(file);
+    }
+
+    expect(offenders).toEqual([]);
+    expect(streamRoutes).toBeGreaterThanOrEqual(10);
+  });
+
+  it("no AI controller pipes the provider stream itself, bypassing the awaited pipe", () => {
+    const offenders = listControllerFiles(AI_MODULE_ROOT).filter((file) =>
+      /\.pipeTextStreamToResponse\(/.test(readFileSync(file, "utf8")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
   it("the scan actually looks at controller files", () => {
     const files = listControllerFiles(AI_MODULE_ROOT);
 

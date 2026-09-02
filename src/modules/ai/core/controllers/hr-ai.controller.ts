@@ -4,10 +4,13 @@ import {
   Get,
   NotFoundException,
   Post,
+  Req,
+  Res,
   ServiceUnavailableException,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -46,7 +49,7 @@ import {
   type ScoreCandidateInput,
 } from "../dto/request.schemas";
 import type { HelpdeskReplyResult } from "../dto/output.schemas";
-import { AiRequestAbortInterceptor } from "../streaming";
+import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
 
 const ADVISORY_DISCLAIMER = "AI estimate only. Human decision required.";
 
@@ -100,9 +103,33 @@ export class HrAiController {
   @Validate({ body: generateJdSchema })
   generateJd(
     @Body() body: GenerateJdInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
-    return this.hrRecruitment.generateJd(body);
+    return this.hrRecruitment.generateJd(body, { orgId: u.orgId, userId: u.userId });
+  }
+
+  @Post("generate-jd/stream")
+  @RequirePermission("hr:interviews:manage")
+  @Validate({ body: generateJdSchema })
+  async generateJdStream(
+    @Req() req: Request,
+    @Body() body: GenerateJdInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "hr.generate-jd",
+        orgId: u.orgId,
+        route: "POST /ai/generate-jd/stream",
+      },
+      async (signal) =>
+        this.hrRecruitment.streamGenerateJd(body, { orgId: u.orgId, userId: u.userId }, signal),
+    );
   }
 
   @Post("score-candidate")

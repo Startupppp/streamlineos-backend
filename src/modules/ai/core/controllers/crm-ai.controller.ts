@@ -10,10 +10,13 @@ import {
   NotFoundException,
   Post,
   Query,
+  Req,
+  Res,
   ServiceUnavailableException,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
@@ -65,7 +68,7 @@ import {
   type SuggestionsQueryInput,
   type SummarizeInput,
 } from "../dto/request.schemas";
-import { AiRequestAbortInterceptor } from "../streaming";
+import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
 
 const scoreLeadBodySchema = z.union([scoreLeadBatchSchema, scoreLeadSingleSchema]);
 
@@ -194,6 +197,29 @@ export class CrmAiController {
     return this.brief.accountSummary(u.orgId, body);
   }
 
+  @Post("account-summary/stream")
+  @Validate({ body: accountSummarySchema })
+  async accountSummaryStream(
+    @Req() req: Request,
+    @Body() body: AccountSummaryInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
+    await this.planLimits.assertFeature(u.orgId, "ai.deal-summary");
+    this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "crm.account-summary",
+        orgId: u.orgId,
+        route: "POST /ai/account-summary/stream",
+      },
+      async (signal) => this.brief.streamAccountSummary(u.orgId, body, u.userId, signal),
+    );
+  }
+
   @Post("meeting-prep")
   @Validate({ body: meetingPrepSchema })
   async meetingPrep(
@@ -204,6 +230,29 @@ export class CrmAiController {
     await this.planLimits.assertFeature(u.orgId, "ai.next-action");
     this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
     return this.brief.meetingPrep(u.orgId, body);
+  }
+
+  @Post("meeting-prep/stream")
+  @Validate({ body: meetingPrepSchema })
+  async meetingPrepStream(
+    @Req() req: Request,
+    @Body() body: MeetingPrepInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.requireAiFlag(u.orgId, "aiLeadScoring");
+    await this.planLimits.assertFeature(u.orgId, "ai.next-action");
+    this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "crm.meeting-prep",
+        orgId: u.orgId,
+        route: "POST /ai/meeting-prep/stream",
+      },
+      async (signal) => this.brief.streamMeetingPrep(u.orgId, body, u.userId, signal),
+    );
   }
 
   @Post("nl-search")
@@ -283,6 +332,29 @@ export class CrmAiController {
     await this.requireAiFlag(u.orgId, "aiChat");
     this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
     return this.content.narrateReport(body);
+  }
+
+  @Post("report-narrator/stream")
+  @Validate({ body: reportNarratorSchema })
+  async reportNarratorStream(
+    @Req() req: Request,
+    @Body() body: ReportNarratorInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.requireAiFlag(u.orgId, "aiChat");
+    this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "crm.report-narrator",
+        orgId: u.orgId,
+        route: "POST /ai/report-narrator/stream",
+      },
+      async (signal) =>
+        this.content.streamNarrateReport(body, { orgId: u.orgId, userId: u.userId }, signal),
+    );
   }
 
   @Get("prioritize-tasks")

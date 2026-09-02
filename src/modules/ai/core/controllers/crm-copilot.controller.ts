@@ -7,10 +7,13 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Req,
+  Res,
   ServiceUnavailableException,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
@@ -25,7 +28,7 @@ import { CrmCopilotService } from "../services/crm-copilot.service";
 import { CrmBriefService } from "../services/crm-brief.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
-import { AiRequestAbortInterceptor } from "../streaming";
+import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
 
 const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
@@ -174,6 +177,27 @@ export class CrmCopilotController {
   ) {
     this.ensureLlm();
     return this.brief.meetingFollowUpDraft(u.orgId, body, u.userId);
+  }
+
+  @Post("meeting-follow-up/stream")
+  @Validate({ body: meetingFollowUpSchema })
+  async meetingFollowUpStream(
+    @Req() req: Request,
+    @Body() body: MeetingFollowUpBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "crm.meeting-follow-up",
+        orgId: u.orgId,
+        route: "POST /ai/crm/meeting-follow-up/stream",
+      },
+      async (signal) => this.brief.streamMeetingFollowUpDraft(u.orgId, body, u.userId, signal),
+    );
   }
 
   @Get("stale-pipeline")
