@@ -79,7 +79,7 @@ export class SalaryProfilesRepository {
     const finalConditions = search ? [...conditions, search] : conditions;
     if (position) {
       finalConditions.push(
-        sql`(${profileSortName}, ${employeeSalaryProfiles.id}) > (${position.value}, ${position.id})`,
+        sql`(${profileSortName}, ${employeeSalaryProfiles.id}) > (${sql.param(position.value)}, ${sql.param(position.id, employeeSalaryProfiles.id)})`,
       );
     }
     const joins = (queryBuilder: ReturnType<Db["select"]>) =>

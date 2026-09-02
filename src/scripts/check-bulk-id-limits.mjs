@@ -40,12 +40,36 @@ const EXCLUDED_MODULE_DIRS = new Set(["crm", "inventory"]);
  * Currently empty: every property in scope has been given a safe cap.
  */
 const ALLOWLIST = [
-  // Example shape (do not remove):
-  // { file: "example.schemas.ts", prop: "someIds",
-  //   reason: "fans out to entire org; truncation silently drops recipients" }
+  {
+    file: "chat-fanout-outbox.ts",
+    prop: "mentionedUserIds",
+    reason:
+      "outbox event payload, not an HTTP body. A cap here would silently drop mention recipients from a fan-out that was already accepted and committed.",
+  },
+  {
+    file: "mail-normalizers.ts",
+    prop: "labelIds",
+    reason:
+      "shape of a Gmail provider response, not a client request. Truncating a provider's label list would corrupt message metadata rather than limit attacker-controlled work.",
+  },
 ];
 
 // ─── file discovery ─────────────────────────────────────────────────────────
+
+/**
+ * Scan every TypeScript source, not only `*.schemas.ts`.
+ *
+ * Restricting discovery to one filename pattern made this gate blind to a
+ * Zod body declared inline in a controller, which is exactly where an
+ * unbounded ids-array is most likely to be written by accident. Specs are
+ * excluded because a fixture is allowed to be deliberately unbounded.
+ */
+function isScannableSource(entry) {
+  if (!entry.endsWith(".ts")) return false;
+  if (entry.endsWith(".d.ts")) return false;
+  if (entry.endsWith(".spec.ts") || entry.endsWith(".e2e-spec.ts")) return false;
+  return true;
+}
 
 function isExcludedPath(fullPath) {
   const normalized = fullPath.replace(/\\/g, "/");
@@ -73,7 +97,7 @@ function collectSchemaFiles(dir) {
     }
     if (stat.isDirectory()) {
       results.push(...collectSchemaFiles(full));
-    } else if (stat.isFile() && entry.endsWith(".schemas.ts")) {
+    } else if (stat.isFile() && isScannableSource(entry)) {
       if (!isExcludedPath(full)) results.push(full);
     }
   }
@@ -242,6 +266,29 @@ export const otherSchema = z.object({
   assert(
     "multi-line bounded declaration not flagged",
     multiLineBoundedFindings.length === 0,
+  );
+
+  // ── Fixture 6: inline body schema in a controller ────────────────────────
+  // This is the shape the gate was previously blind to: discovery matched only
+  // `*.schemas.ts`, so an unbounded array declared inline in a `@Validate({...})`
+  // decorator was never scanned. The known-bad fixture is in that exact shape.
+  const controllerInline = `
+  @Post("huddles/:huddleId/invite")
+  @Validate({ params: huddleIdParams, body: z.object({ userIds: z.array(z.string().min(1)).min(1) }) })
+  invite() {}
+`;
+  const controllerFindings = scanContent("<fixture:controller-inline>", controllerInline);
+  assert(
+    "unbounded array inline in a controller @Validate body is detected",
+    controllerFindings.length === 1 && controllerFindings[0].prop === "userIds",
+  );
+
+  assert(
+    "a controller source file is scannable (discovery is not limited to *.schemas.ts)",
+    isScannableSource("chat-huddles.controller.ts") &&
+      isScannableSource("thing.schemas.ts") &&
+      !isScannableSource("thing.spec.ts") &&
+      !isScannableSource("thing.d.ts"),
   );
 
   if (!allPassed) {

@@ -52,7 +52,7 @@ export class PayrollComponentsService {
     const position = decodePayrollNumberTextCursor(input.cursor, cursorScope);
     if (position) {
       filters.push(
-        sql`(${salaryComponents.sortOrder}, ${salaryComponents.name}, ${salaryComponents.id}) > (${position.numberValue}, ${position.textValue}, ${position.id})`,
+        sql`(${salaryComponents.sortOrder}, ${salaryComponents.name}, ${salaryComponents.id}) > (${sql.param(position.numberValue, salaryComponents.sortOrder)}, ${sql.param(position.textValue, salaryComponents.name)}, ${sql.param(position.id, salaryComponents.id)})`,
       );
     }
 

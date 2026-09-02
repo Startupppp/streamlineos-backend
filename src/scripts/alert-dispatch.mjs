@@ -33,7 +33,7 @@ const REGISTRY = {
 
 const RUNBOOK_BASE =
   process.env.ALERT_RUNBOOK_BASE ??
-  "architecture-refactor/c28-cell-based-platform-at-20m/RUNBOOKS.md";
+  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
 
 const DEFAULT_SUPPRESSION_WINDOW_MS = 60 * 60 * 1000;
 

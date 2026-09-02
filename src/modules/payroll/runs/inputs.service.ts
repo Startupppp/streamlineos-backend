@@ -60,7 +60,7 @@ export class InputsService {
     const position = decodePayrollTextCursor(query.cursor, cursorScope);
     if (position) {
       conditions.push(
-        sql`(${inputSortName}, ${payrollInputs.id}) > (${position.value}, ${position.id})`,
+        sql`(${inputSortName}, ${payrollInputs.id}) > (${sql.param(position.value)}, ${sql.param(position.id, payrollInputs.id)})`,
       );
     }
 

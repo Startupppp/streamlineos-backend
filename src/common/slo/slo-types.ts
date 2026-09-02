@@ -42,7 +42,7 @@ export interface ServiceLevelObjective {
 }
 
 export const ALERT_RUNBOOK =
-  "architecture-refactor/c28-cell-based-platform-at-20m/RUNBOOKS.md";
+  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
 
 export const FAILURE_RUNBOOK =
   "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";

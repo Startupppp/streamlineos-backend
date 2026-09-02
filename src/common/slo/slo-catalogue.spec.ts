@@ -167,7 +167,8 @@ describe("SLO catalogue", () => {
       FAILURE_RUNBOOK:
         "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md",
     };
-    const base = "architecture-refactor/c28-cell-based-platform-at-20m/RUNBOOKS.md";
+    const base =
+      "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
     const broken: string[] = [];
     for (const [id, entry] of registry) {
       const file = entry.file === null ? base : files[entry.file];

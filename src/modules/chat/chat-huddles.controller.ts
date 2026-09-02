@@ -25,11 +25,15 @@ import {
   raiseHandSchema,
   screenShareSchema,
   kickSchema,
+  deafenSchema,
+  huddleInviteSchema,
   type HuddleSignalInput,
   type MuteInput,
   type RaiseHandInput,
   type ScreenShareInput,
   type KickInput,
+  type DeafenInput,
+  type HuddleInviteInput,
 } from "./dto/huddle.schemas";
 import { z } from "zod";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
@@ -143,10 +147,10 @@ export class ChatHuddlesController {
   @Patch("huddles/:huddleId/deafen")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
-  @Validate({ params: huddleIdParams, body: z.object({ deafened: z.boolean() }) })
+  @Validate({ params: huddleIdParams, body: deafenSchema })
   deafen(
     @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body() body: { deafened: boolean },
+    @Body() body: DeafenInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.signals.setDeafen(huddleId, u.userId, u.orgId, body.deafened);
@@ -220,10 +224,10 @@ export class ChatHuddlesController {
   @Idempotent("chat.huddle.invite")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
-  @Validate({ params: huddleIdParams, body: z.object({ userIds: z.array(z.string().min(1)).min(1) }) })
+  @Validate({ params: huddleIdParams, body: huddleInviteSchema })
   invite(
     @Param("huddleId", ParseIntPipe) huddleId: number,
-    @Body() body: { userIds: string[] },
+    @Body() body: HuddleInviteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.huddles.inviteToHuddle(huddleId, u.userId, u.orgId, body.userIds);
