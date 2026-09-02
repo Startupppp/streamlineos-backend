@@ -19,6 +19,43 @@ const INSERT_CHUNK_SIZE = 500;
 
 type GrantScope = "all" | "own" | "team";
 
+/**
+ * What every reconcilable slug is supposed to hold, given a permission catalog.
+ *
+ * Pure and exported because it is the whole answer to "is this template widening
+ * inert for organisations that already exist" — a key present here for a slug
+ * that exists reaches every pristine role at the next boot, and a key absent
+ * here reaches nobody. `backfill-slugs-exist.spec.ts` asserts against it rather
+ * than against the service, so the claim is checked instead of narrated.
+ */
+export function buildDesiredGrants(
+  catalog: ReadonlySet<string>,
+): Map<string, DesiredGrant[]> {
+  const desired = new Map<string, DesiredGrant[]>();
+
+  for (const spec of buildSeededRoleSpecs(new Set(catalog))) {
+    if (spec.permissionKeys.length === 0) continue;
+    desired.set(
+      spec.slug,
+      spec.permissionKeys.map((permissionKey) => ({
+        permissionKey,
+        scope: seededGrantScope(spec.slug, permissionKey),
+      })),
+    );
+  }
+
+  for (const template of ROLE_TEMPLATES) {
+    const keys = template.permissions.filter((key) => catalog.has(key));
+    if (keys.length === 0) continue;
+    desired.set(
+      template.slug,
+      keys.map((permissionKey) => ({ permissionKey, scope: "all" as const })),
+    );
+  }
+
+  return desired;
+}
+
 export interface ReconcileReport {
   organizations: number;
   rolesReconciled: number;
@@ -83,30 +120,7 @@ export class RoleGrantReconcilerService {
   }
 
   private async buildDesiredGrants(): Promise<Map<string, DesiredGrant[]>> {
-    const catalog = await resolveDbPermissionSet(this.db);
-    const desired = new Map<string, DesiredGrant[]>();
-
-    for (const spec of buildSeededRoleSpecs(catalog)) {
-      if (spec.permissionKeys.length === 0) continue;
-      desired.set(
-        spec.slug,
-        spec.permissionKeys.map((permissionKey) => ({
-          permissionKey,
-          scope: seededGrantScope(spec.slug, permissionKey),
-        })),
-      );
-    }
-
-    for (const template of ROLE_TEMPLATES) {
-      const keys = template.permissions.filter((key) => catalog.has(key));
-      if (keys.length === 0) continue;
-      desired.set(
-        template.slug,
-        keys.map((permissionKey) => ({ permissionKey, scope: "all" as const })),
-      );
-    }
-
-    return desired;
+    return buildDesiredGrants(await resolveDbPermissionSet(this.db));
   }
 
   private async reconcileOrganization(

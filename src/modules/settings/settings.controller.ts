@@ -86,13 +86,13 @@ export class SettingsController {
     return this.settings.getAiUsage(u);
   }
 
-  @RequirePermission("settings:api-tokens:read")
+  @RequirePermission("settings:manage")
   @Get("api-keys")
   listApiKeys(@CurrentUser() u: CurrentUserContext) {
     return this.settings.listApiKeys(u);
   }
 
-  @RequirePermission("settings:api-tokens:write")
+  @RequirePermission("settings:manage")
   @Post("api-keys")
   @HttpCode(201)
   @Idempotent("settings.apiKey.create")
@@ -104,7 +104,7 @@ export class SettingsController {
     return this.settings.createApiKey(u, body);
   }
 
-  @RequirePermission("settings:api-tokens:write")
+  @RequirePermission("settings:manage")
   @Delete("api-keys/:keyId")
   @Validate({ params: keyIdParams })
   revokeApiKey(
@@ -277,6 +277,7 @@ export class SettingsController {
 
   @RequirePermission("settings:rbac:manage")
   @Post("users/:userId/role")
+  @Idempotent("settings.userRole.update")
   @Validate({ params: userIdParams, body: updateUserRoleSchema })
   updateUserRole(
     @Param("userId") userId: string,

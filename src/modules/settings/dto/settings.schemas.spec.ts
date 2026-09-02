@@ -40,6 +40,48 @@ describe("settings request schemas reject unknown keys", () => {
   });
 });
 
+/**
+ * The top-level object was strict while everything nested inside it was not, so
+ * a misspelt key in `actions[].config` or in a condition parsed clean and the
+ * rule was stored doing something other than what was asked for. `.strict()` at
+ * the outer boundary only guards the outer boundary.
+ */
+describe("automation bodies are strict all the way down", () => {
+  const rule = (actions: unknown[], conditions: unknown[] = []) => ({
+    name: "rule",
+    triggerEvent: "lead.created",
+    conditions,
+    actions,
+  });
+
+  it("refuses an unknown key inside an action's config", () => {
+    expect(createAutomationSchema.safeParse(rule([notifyAction])).success).toBe(true);
+    expect(
+      createAutomationSchema.safeParse(
+        rule([{ type: "notify_all", config: { title: "t", message: "m", lnik: "typo" } }]),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("refuses an unknown key beside an action's discriminator", () => {
+    expect(
+      createAutomationSchema.safeParse(rule([{ ...notifyAction, scope: "all" }])).success,
+    ).toBe(false);
+  });
+
+  it("refuses an unknown key inside a condition", () => {
+    expect(
+      createAutomationSchema.safeParse(rule([notifyAction], [{ field: "status", op: "eq" }]))
+        .success,
+    ).toBe(true);
+    expect(
+      createAutomationSchema.safeParse(
+        rule([notifyAction], [{ field: "status", op: "eq", vaule: "NEW" }]),
+      ).success,
+    ).toBe(false);
+  });
+});
+
 describe("settings request schemas bound growing arrays", () => {
   const scopes = (count: number) =>
     Array.from({ length: count }, (_, i) => `scope-${i}`);

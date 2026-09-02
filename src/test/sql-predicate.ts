@@ -181,13 +181,20 @@ class Parser {
     }
     if (operator === "in") {
       const values: unknown[] = [];
-      if (this.text() !== "(") throw new Error("sql-predicate: expected in (");
-      this.index += 1;
-      while (this.text() !== ")") {
-        if (this.text() === ",") this.index += 1;
-        else values.push(this.operand());
+      // `inArray` renders its members as a bare parameter array with no
+      // parentheses and no separators, so the parenthesised form is only one of
+      // the two shapes that reach here.
+      if (this.text() === "(") {
+        this.index += 1;
+        while (this.text() !== ")") {
+          if (this.text() === ",") this.index += 1;
+          else values.push(this.operand());
+        }
+        this.index += 1;
+      } else {
+        while (this.peek()?.kind === "value") values.push(this.operand());
+        if (values.length === 0) throw new Error("sql-predicate: expected in (");
       }
-      this.index += 1;
       return values.includes(left);
     }
     return compare(operator, left, this.operand());

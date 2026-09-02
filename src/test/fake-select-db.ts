@@ -116,16 +116,91 @@ class SelectBuilder implements PromiseLike<FakeRow[]> {
   }
 }
 
+/**
+ * The write half, opt-in.
+ *
+ * Default `insert` throws its rows away and returns `[{ id: 1 }]`, which is
+ * enough for a spec that only reads. A spec about what a *write* does — a sweep
+ * that inserts one tenant's rows while another tenant's rows sit in the same
+ * table — needs the row to land where the next `select` will evaluate its
+ * predicate against it. Off by default so the existing read-only consumers keep
+ * the cheap builder.
+ */
+class InsertBuilder implements PromiseLike<FakeRow[]> {
+  private pending: FakeRow[] = [];
+
+  constructor(
+    private readonly tables: TableRows,
+    private readonly table: Table | undefined,
+  ) {}
+
+  values(rows: FakeRow | FakeRow[]): this {
+    this.pending = Array.isArray(rows) ? rows : [rows];
+    return this;
+  }
+
+  onConflictDoNothing(): this {
+    return this;
+  }
+
+  onConflictDoUpdate(): this {
+    return this;
+  }
+
+  returning(projection?: Projection): Promise<FakeRow[]> {
+    return Promise.resolve(this.persist(projection));
+  }
+
+  private persist(projection?: Projection): FakeRow[] {
+    if (this.table === undefined) return this.pending.map(() => ({ id: 1 }));
+    const name = getTableName(this.table);
+    const columns = getTableColumns(this.table);
+    const stored = this.tables[name] ?? [];
+    this.tables[name] = stored;
+    const written: FakeRow[] = [];
+    for (const row of this.pending) {
+      const encoded: FakeRow = {};
+      for (const [property, column] of Object.entries(columns))
+        if (property in row) encoded[column.name] = row[property];
+      if ("id" in columns && encoded.id === undefined)
+        encoded.id = stored.reduce((top, existing) => Math.max(top, Number(existing.id ?? 0)), 0) + 1;
+      stored.push(encoded);
+      written.push(
+        projection === undefined
+          ? { ...encoded }
+          : Object.fromEntries(
+              Object.entries(projection).map(([key, value]) => [
+                key,
+                value instanceof Column ? (encoded[value.name] ?? null) : null,
+              ]),
+            ),
+      );
+    }
+    return written;
+  }
+
+  then<TResult1 = FakeRow[], TResult2 = never>(
+    onfulfilled?: ((value: FakeRow[]) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): PromiseLike<TResult1 | TResult2> {
+    return Promise.resolve(this.persist()).then(onfulfilled, onrejected);
+  }
+}
+
 export type FakeDb = {
   select: (projection?: Projection) => SelectBuilder;
   query: Record<string, { findFirst: (args?: { where?: SQL }) => Promise<FakeRow | undefined>; findMany: (args?: { where?: SQL }) => Promise<FakeRow[]> }>;
   update: () => { set: () => { where: () => Promise<FakeRow[]> } };
-  insert: () => { values: () => { returning: () => Promise<FakeRow[]> } };
+  insert: (table?: Table) => { values: (rows: FakeRow | FakeRow[]) => { returning: (projection?: Projection) => Promise<FakeRow[]> } };
   transaction: <T>(callback: (tx: FakeDb) => Promise<T>) => Promise<T>;
   execute: () => Promise<FakeRow[]>;
 };
 
-export function makeFakeDb(tables: TableRows, relationalTables: Record<string, Table> = {}): FakeDb {
+export function makeFakeDb(
+  tables: TableRows,
+  relationalTables: Record<string, Table> = {},
+  options: { persistInserts?: boolean } = {},
+): FakeDb {
   const query: FakeDb["query"] = {};
   for (const [key, table] of Object.entries(relationalTables)) {
     const tableName = getTableName(table);
@@ -143,7 +218,10 @@ export function makeFakeDb(tables: TableRows, relationalTables: Record<string, T
     select: (projection?: Projection) => new SelectBuilder(tables, projection),
     query,
     update: () => ({ set: () => ({ where: () => Promise.resolve([{ id: 1 }]) }) }),
-    insert: () => ({ values: () => ({ returning: () => Promise.resolve([{ id: 1 }]) }) }),
+    insert: (table?: Table) =>
+      options.persistInserts === true
+        ? new InsertBuilder(tables, table)
+        : { values: () => ({ returning: () => Promise.resolve([{ id: 1 }]) }) },
     transaction: (callback) => callback(db),
     execute: () => Promise.resolve([]),
   };

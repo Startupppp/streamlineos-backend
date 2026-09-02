@@ -26,7 +26,7 @@ export const createCustomFieldSchema = z.object({
     .enum(["text", "number", "date", "boolean", "select"])
     .default("text"),
   options: z
-    .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
+    .array(z.object({ value: z.string().min(1), label: z.string().min(1) }).strict())
     .optional(),
   isRequired: z.boolean().optional().default(false),
   sortOrder: z.number().int().optional().default(0),
@@ -35,7 +35,7 @@ export const createCustomFieldSchema = z.object({
 export const updateCustomFieldSchema = z.object({
   label: z.string().min(1).optional(),
   options: z
-    .array(z.object({ value: z.string().min(1), label: z.string().min(1) }))
+    .array(z.object({ value: z.string().min(1), label: z.string().min(1) }).strict())
     .optional()
     .nullable(),
   isRequired: z.boolean().optional(),
@@ -124,7 +124,7 @@ const automationConditionSchema = z.object({
   field: z.string().min(1),
   op: z.enum(["eq", "neq", "contains", "gt", "lt", "exists"]),
   value: z.union([z.string(), z.number(), z.boolean()]).optional(),
-});
+}).strict();
 
 const automationActionSchema = z.discriminatedUnion("type", [
   z.object({
@@ -134,62 +134,62 @@ const automationActionSchema = z.discriminatedUnion("type", [
       title: z.string().min(1),
       message: z.string().min(1),
       link: z.string().optional(),
-    }),
-  }),
+    }).strict(),
+  }).strict(),
   z.object({
     type: z.literal("notify_all"),
     config: z.object({
       title: z.string().min(1),
       message: z.string().min(1),
       link: z.string().optional(),
-    }),
-  }),
+    }).strict(),
+  }).strict(),
   z.object({
     type: z.literal("email"),
     config: z.object({
       to: z.string().email(),
       subject: z.string().min(1),
       body: z.string().min(1),
-    }),
-  }),
+    }).strict(),
+  }).strict(),
   z.object({
     type: z.literal("create_task"),
     config: z.object({
       title: z.string().min(1),
       assigneeId: z.string().optional(),
       dueInDays: z.number().int().min(0).optional(),
-    }),
-  }),
+    }).strict(),
+  }).strict(),
   z.object({
     type: z.literal("webhook"),
     config: z.object({
       event: z.string().min(1),
-    }),
-  }),
+    }).strict(),
+  }).strict(),
   z.object({
     type: z.literal("support_assign_ticket"),
     config: z.object({
       assigneeId: z.string().min(1),
-    }),
-  }),
+    }).strict(),
+  }).strict(),
   z.object({
     type: z.literal("support_set_priority"),
     config: z.object({
       priority: z.string().min(1),
-    }),
-  }),
+    }).strict(),
+  }).strict(),
   z.object({
     type: z.literal("support_add_tag"),
     config: z.object({
       tagId: z.number().int().positive(),
-    }),
-  }),
+    }).strict(),
+  }).strict(),
   z.object({
     type: z.literal("support_internal_note"),
     config: z.object({
       body: z.string().min(1),
-    }),
-  }),
+    }).strict(),
+  }).strict(),
 ]);
 
 export const createAutomationSchema = z.object({

@@ -169,7 +169,10 @@ export class SettingsService {
     });
     if (!existing) throw new NotFoundException("API key not found.");
 
-    await this.db.update(apiKeys).set({ isRevoked: true }).where(eq(apiKeys.id, keyId));
+    await this.db
+      .update(apiKeys)
+      .set({ isRevoked: true })
+      .where(and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, u.orgId)));
     return { success: true };
   }
 
