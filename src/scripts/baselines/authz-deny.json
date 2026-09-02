@@ -4,7 +4,7 @@
   "gatedHandlers": 3220,
   "covered": 767,
   "uncovered": 2453,
-  "uncoveredRatchet": 2453,
+  "uncoveredRatchet": 2443,
   "uncoveredHandlers": [
     "DELETE /access/delegations/*  DelegationsController.revoke  (src/modules/delegations/delegations.controller.ts)",
     "DELETE /accounting/approval-policies/*  ApprovalPoliciesController.remove  (src/modules/finance/controls/approval-policies.controller.ts)",
