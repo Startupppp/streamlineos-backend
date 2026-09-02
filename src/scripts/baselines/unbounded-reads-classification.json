@@ -763,6 +763,11 @@
       "note": "All reads are groupBy/count/avg aggregates for time-series reports; no unbounded row-returning scan",
       "justification": "L82 sprint scope events bounded by sprintId (one sprint); L217 daily snapshots bounded by date-range window (query.days rows); L262 sprint velocity bounded by sprint count; L450/L462 grouped per-sprint ticket aggregates 2026-09-01"
     },
+    "/build/core/projects-search.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Extracted verbatim from projects-work-query.service.ts, which carries the same verdict; the gate is path-keyed, so the split uncovered it rather than changing it",
+      "justification": "the only uncapped select reads the caller's own project memberships to build an inArray filter, bounded by how many projects one person belongs to; the ticket read that follows carries an explicit .limit(limit) 2026-09-02"
+    },
     "/build/core/projects-ticket-comments.service.ts": {
       "verdict": "BOUNDED",
       "note": "Has explicit .limit() on comment reads; per-ticket comments are a small dataset",
@@ -1491,6 +1496,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "gdpr lane (excluded territory)",
       "justification": "GDPR export worker bounded by orgId+userId of specific export request; per-user data collection 2026-09-01"
+    },
+    "/gdpr/gdpr-subject-erasure.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "GDPR subject erasure intentionally reads all records for a subject; bounded by authorId = subjectUserId (one user)",
+      "justification": "Line 344: selects all KB articles authored by the erasure subject. GDPR compliance requires processing ALL records; adding LIMIT would create partial erasure (compliance violation). Bounded by authorId = subjectUserId (one user account, not an org-wide scan). The file already has drainIds() for paginated erasure of larger datasets; article authorship is typically small per user."
     },
     "/gdpr/gdpr.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2420,6 +2430,11 @@
       "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
+    "/organization/onboarding/workspace-onboarding.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray bounds result count to IN-list size; IN-list derives from fixed INDUSTRY_TEMPLATES and MODULE_STRUCTURE_TEMPLATES catalogs",
+      "justification": "Lines 189 and 221: inArray(orgUnits.name, deptNames/allTeamNames) where the arrays derive from resolveStructureTemplate() built from INDUSTRY_TEMPLATES (max 5 depts per industry key) and MODULE_STRUCTURE_TEMPLATES (6 module types x max 2 depts each). Max ~15 depts and ~25 teams total. Result count is bounded by IN-list size; adding LIMIT would silently drop existing org units and cause duplicate insertions in the onboarding flow."
+    },
     "/organization/setup/announcements.service.ts": {
       "verdict": "BOUNDED",
       "proof": "announcement lists cap rows at 50/100; targetIds are schema-capped at 1000 and target reads are tenant-scoped and capped",
@@ -2692,6 +2707,11 @@
       "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
+    "/payroll/setup/templates.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "reads global system seed catalog (isSystem=true, orgId IS NULL); row count equals PAYROLL_TEMPLATE_SEEDS.length",
+      "justification": "Line 27: seedPayrollTemplates reads all system payroll template keys to deduplicate before seeding. These are a fixed platform catalog (not tenant data), bounded by PAYROLL_TEMPLATE_SEEDS.length. Adding LIMIT would prevent seeding new templates. The main list() endpoint has keyset pagination with explicit limit."
+    },
     "/platform/platform-admin.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "platform lane (excluded territory)",
@@ -2749,9 +2769,19 @@
       "verdict": "BOUNDED",
       "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
+    "/rbac/role-seed.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray bounds result count to ROLE_TEMPLATES.length (static code constant); rbac module owned by another agent",
+      "justification": "Line 51: inArray(roles.slug, slugs) where slugs = ROLE_TEMPLATES filtered by starterTemplateIds - a static code constant. Result count is bounded by the number of starter template slugs (~10). Adding LIMIT would break the deduplication check that prevents duplicate role creation from templates."
+    },
     "/rbac/roles-query.service.ts": {
       "verdict": "BOUNDED",
       "note": "rbac lane (excluded territory â€” other lane owns this module)"
+    },
+    "/rbac/roles.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray bounds result count to ROLE_TEMPLATES.length (static code constant); rbac module owned by another agent",
+      "justification": "Line 369: inArray(roles.slug, slugs) where slugs = ROLE_TEMPLATES.map(t => t.slug) - a static code constant. Result count is bounded by ROLE_TEMPLATES.length. Adding LIMIT would break the deduplication check that prevents duplicate role creation from templates."
     },
     "/realtime/web-push.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -3018,11 +3048,6 @@
       "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listGlobalVariables capped at .limit(200); workflow variables are org config, typically <100 2026-09-01"
-    },
-    "/build/core/projects-search.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Extracted verbatim from projects-work-query.service.ts, which carries the same verdict; the gate is path-keyed, so the split uncovered it rather than changing it",
-      "justification": "the only uncapped select reads the caller's own project memberships to build an inArray filter, bounded by how many projects one person belongs to; the ticket read that follows carries an explicit .limit(limit) 2026-09-02"
     }
   }
 }

@@ -372,8 +372,7 @@ export class GdprSubjectErasureService {
             eq(kbSources.orgId, orgId),
             eq(kbSources.createdById, subjectUserId),
           ),
-        )
-        .limit(1000);
+        );
       if (ownedSources.length > 0) {
         const sourceIds = ownedSources.map((s) => s.id);
         const sourceChunkResult = await tx

@@ -31,6 +31,10 @@ function fluentChain(limitResult: unknown, returningResult: unknown = []) {
     set: jest.fn().mockReturnThis(),
     returning: jest.fn().mockResolvedValue(returningResult),
     values: jest.fn().mockResolvedValue(undefined),
+    then: (
+      resolve: (v: unknown) => unknown,
+      reject?: (r: unknown) => unknown,
+    ) => Promise.resolve(limitResult).then(resolve, reject),
   };
   return chain;
 }

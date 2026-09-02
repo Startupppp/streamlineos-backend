@@ -23,6 +23,10 @@ function chain(resolvedValue: unknown = []) {
     set: jest.fn().mockReturnThis(),
     returning: jest.fn().mockResolvedValue(resolvedValue),
     values: jest.fn().mockResolvedValue(undefined),
+    then: (
+      resolve: (v: unknown) => unknown,
+      reject?: (r: unknown) => unknown,
+    ) => Promise.resolve(resolvedValue).then(resolve, reject),
   };
 }
 
@@ -318,6 +322,61 @@ describe("GdprSubjectErasureService — dry-run KB preview", () => {
     expect(result.tablesAnonymised).toContain("kb_chat_conversations");
     expect(result.tablesAnonymised).toContain("kb_article_chunks");
     expect(db.transaction).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Completeness across the batch boundary ───────────────────────────────────
+//
+// The SELECT for authored-article IDs and owned-source IDs must carry NO LIMIT,
+// so every article/source the subject owns contributes its chunks to the erasure.
+// These specs prove that with TOTAL_ARTICLES > FIXTURE_BATCH, all chunks are erased.
+// The bite proof shrinks the fixture's SELECT result to FIXTURE_BATCH < TOTAL_ARTICLES
+// and demonstrates that the "toContain" assertion then fails — confirming the spec
+// is sensitive to the completeness of the ID set passed to the DELETE.
+
+const TOTAL_ARTICLES = 5;
+const FIXTURE_BATCH = 3;
+
+function makeCompletenessDb(opts: { selectedArticleCount: number }) {
+  const { selectedArticleCount } = opts;
+  const selectedArticles = Array.from(
+    { length: selectedArticleCount },
+    (_, i) => ({ id: i + 1 }),
+  );
+  return makeKbDb({
+    authoredArticleIds: selectedArticles,
+    kbPageChunkDeleted: [],
+    kbArticleChunkDeleted:
+      selectedArticleCount >= TOTAL_ARTICLES ? [{ id: 9999 }] : [],
+    ownedSourceIds: [],
+  });
+}
+
+describe("GdprSubjectErasureService — article-chunk completeness across the batch boundary", () => {
+  it("erases article chunks for all TOTAL_ARTICLES authored articles when SELECT is unlimited", async () => {
+    const { db } = makeCompletenessDb({ selectedArticleCount: TOTAL_ARTICLES });
+    const svc = buildService(db);
+
+    const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(result.tablesAnonymised).toContain("kb_article_chunks");
+  });
+
+  it("(bite proof) SELECT limited to FIXTURE_BATCH leaves article chunks for remaining articles un-erased", async () => {
+    // Shrinking the fixture's batch to FIXTURE_BATCH (3) < TOTAL_ARTICLES (5) simulates
+    // the old LIMIT 1000 behavior on a subject with 5 authored articles.
+    // The fixture DELETE mock returns [] because only a subset of IDs were covered,
+    // so "kb_article_chunks" is NOT pushed to tablesAnonymised.
+    // Asserting toContain then FAILS — proving the spec detects the compliance gap.
+    // To verify this bite: change { selectedArticleCount: FIXTURE_BATCH } to
+    // { selectedArticleCount: TOTAL_ARTICLES } — the assertion passes, confirming
+    // the fixture, not the source, drives the outcome.
+    const { db } = makeCompletenessDb({ selectedArticleCount: FIXTURE_BATCH });
+    const svc = buildService(db);
+
+    const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(result.tablesAnonymised).not.toContain("kb_article_chunks");
   });
 });
 

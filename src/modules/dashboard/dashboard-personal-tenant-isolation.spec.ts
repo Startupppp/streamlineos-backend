@@ -1,6 +1,9 @@
 import type { Db } from "../../db/drizzle.module";
 import { DashboardPersonalService } from "./dashboard-personal.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { DashboardLeaveService } from "./dashboard-leave.service";
+import type { DashboardProjectService } from "./dashboard-project.service";
+import type { NotificationsService } from "../notifications/notifications.service";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -48,9 +51,28 @@ describe("DashboardPersonalService — cross-tenant isolation", () => {
     } as never;
   }
 
+  function makeLeaveService() {
+    return {
+      getMyLeaveBalance: jest.fn().mockResolvedValue([]),
+    } as unknown as DashboardLeaveService;
+  }
+
+  function makeProjectService() {
+    return {
+      getMyIssues: jest.fn().mockResolvedValue([]),
+    } as unknown as DashboardProjectService;
+  }
+
+  function makeNotificationsService() {
+    return {
+      unreadCount: jest.fn().mockResolvedValue({ count: 0 }),
+    } as unknown as NotificationsService;
+  }
+
   it("scopes personal dashboard queries to the requesting org (tenant isolation)", async () => {
     const wheres: unknown[] = [];
-    const svc = new DashboardPersonalService(makeDb(wheres), makeAccess());
+    const notifSvc = makeNotificationsService();
+    const svc = new DashboardPersonalService(makeDb(wheres), makeAccess(), makeLeaveService(), makeProjectService(), notifSvc);
 
     await svc.getPersonalDashboard(makeU(ATTACKER));
 
@@ -61,16 +83,20 @@ describe("DashboardPersonalService — cross-tenant isolation", () => {
     } else {
       expect(true).toBe(true);
     }
+    expect(notifSvc.unreadCount).toHaveBeenCalledWith(ATTACKER, "user-1");
+    expect(notifSvc.unreadCount).not.toHaveBeenCalledWith(OWNER, expect.anything());
   });
 
   it("returns personal dashboard for the owning org (same-tenant control)", async () => {
     const wheres: unknown[] = [];
-    const svc = new DashboardPersonalService(makeDb(wheres), makeAccess());
+    const notifSvc = makeNotificationsService();
+    const svc = new DashboardPersonalService(makeDb(wheres), makeAccess(), makeLeaveService(), makeProjectService(), notifSvc);
 
     const result = await svc.getPersonalDashboard(makeU(OWNER));
 
     expect(result).toBeDefined();
     expect(result).toHaveProperty("myTasks");
     expect(result).toHaveProperty("upcomingEvents");
+    expect(notifSvc.unreadCount).toHaveBeenCalledWith(OWNER, "user-1");
   });
 });

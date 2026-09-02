@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.0",
-  "generatedAt": "2026-09-02T06:49:00.764Z",
+  "generatedAt": "2026-09-02T08:46:33.697Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and webhook is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -11942,6 +11942,28 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /cron/notification-outbox-retention-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronNotificationsController_getNotificationOutboxRetentionSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/notification-outbox-retention-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronNotificationsController_postNotificationOutboxRetentionSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /cron/notification-time-sweeps": {
       "classification": "internal",
       "classificationOverride": null,
@@ -12112,6 +12134,28 @@
       "classificationOverride": null,
       "xExposure": "public",
       "operationId": "CronOutboxController_report",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /cron/outbox-events-retention-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronOutboxController_getOutboxEventsRetentionSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/outbox-events-retention-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronOutboxController_postOutboxEventsRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -33917,6 +33961,19 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /public/kb/stream-ask": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "KbRagController_streamAsk",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "unauthenticated external users via share links, embedded widgets and emailed forms"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /public/kb/widget/{orgId}": {
       "classification": "published",
       "classificationOverride": null,
@@ -37039,6 +37096,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "SupportKbController_deleteAttachment",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /support/kb/articles/{articleId}/attachments/{attachmentId}/download": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "SupportKbController_getAttachmentDownloadUrl",
       "owner": null,
       "version": "1",
       "consumers": [],

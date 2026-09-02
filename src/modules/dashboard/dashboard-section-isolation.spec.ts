@@ -12,13 +12,16 @@
  *   select 1   → outer calendarEvents query (select({id,title,…}).from(calendarEvents).where(…).orderBy(…).limit(3))
  *   select 2   → creator EXISTS inner       (select({one:sql`1`}).from(organizationMembers).where(…))
  *   select 3   → attendee EXISTS inner      (select({one:sql`1`}).from(eventAttendees).innerJoin(…).where(…))
- *   select 4   → notifications count        (select({cnt:count()}).from(notifications).where(…))
+ *   unreadNotifications → delegated to NotificationsService.unreadCount (no direct db.select)
  *
  * select 2 and 3 are builder calls inside the argument to the outer .where(); they
  * return a SQL condition object (not a Promise), so they are never directly awaited.
  *
- * Maximum DB calls with all modules enabled: 1 findFirst + 1 tickets.findMany + 3 selects
- * (timesheets-sum, leaveBalances, calendarEvents) + 1 notifications = 6 total (criterion 6).
+ * Maximum DB calls with all modules enabled: 1 findFirst + 4 selects
+ * (timesheets-sum, outer calendarEvents, 2 EXISTS subqueries).
+ * myTasks → DashboardProjectService.getMyIssues (delegated).
+ * leaveBalance → DashboardLeaveService.getMyLeaveBalance (delegated).
+ * unreadNotifications → NotificationsService.unreadCount (delegated).
  */
 
 import type { CacheService } from "../../common/cache/cache.service";
@@ -28,6 +31,9 @@ import type { DataScope } from "../access/access.types";
 import type { Db } from "../../db/drizzle.module";
 import { DashboardPersonalService } from "./dashboard-personal.service";
 import { DashboardStatsService } from "./dashboard-stats.service";
+import type { DashboardLeaveService } from "./dashboard-leave.service";
+import type { DashboardProjectService } from "./dashboard-project.service";
+import type { NotificationsService } from "../notifications/notifications.service";
 
 const ORG = "org-iso-test-1";
 const USER = "user-iso-test-1";
@@ -51,16 +57,19 @@ function makeAccessWithModules(build: boolean, timesheets: boolean, hr: boolean)
   } as unknown as AccessService;
 }
 
-/**
- * Db mock used for tests that do not need module-conditional queries.
- * Tracks select() call index to route calendarEvents vs EXISTS vs notifications.
- */
-function makeNeutralPersonalDb(opts: { ticketsFindMany?: jest.Mock } = {}): {
-  db: Db;
-  ticketsFindMany: jest.Mock;
-} {
-  const ticketsFindMany = opts.ticketsFindMany ?? jest.fn().mockResolvedValue([]);
+function makeLeaveService(result: unknown[] = []): DashboardLeaveService {
+  return { getMyLeaveBalance: jest.fn().mockResolvedValue(result) } as unknown as DashboardLeaveService;
+}
 
+function makeProjectService(result: unknown[] = []): DashboardProjectService {
+  return { getMyIssues: jest.fn().mockResolvedValue(result) } as unknown as DashboardProjectService;
+}
+
+function makeNotificationsService(count = 0): NotificationsService {
+  return { unreadCount: jest.fn().mockResolvedValue({ count }) } as unknown as NotificationsService;
+}
+
+function makeNeutralPersonalDb(): { db: Db } {
   const innerChain: Record<string, unknown> = {
     from: function () { return innerChain; },
     innerJoin: function () { return innerChain; },
@@ -74,32 +83,27 @@ function makeNeutralPersonalDb(opts: { ticketsFindMany?: jest.Mock } = {}): {
     },
   };
 
-  const notifChain: Record<string, unknown> = {
-    from: function () { return notifChain; },
-    where: function () { return Promise.resolve([{ cnt: 0 }]); },
-  };
-
   let callIdx = 0;
   const db = {
     query: {
-      tickets: { findMany: ticketsFindMany },
+      tickets: { findMany: jest.fn().mockResolvedValue([]) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-iso-1" }) },
     },
     select: jest.fn().mockImplementation(() => {
       callIdx++;
       if (callIdx === 1) return outerEventChain;
-      if (callIdx <= 3) return innerChain;
-      return notifChain;
+      return innerChain;
     }),
   } as unknown as Db;
 
-  return { db, ticketsFindMany };
+  return { db };
 }
 
 /**
  * Db mock for the isolation (GUARANTEE II) test.
  * Call 1 (outer calendarEvents) → .limit() rejects with "DB timeout".
- * Call 4+ (notifications)       → .where() resolves with [{cnt: 7}].
+ * Calls 2+ (EXISTS subqueries)  → innerChain returns condition objects.
+ * unreadNotifications is now delegated; pass makeNotificationsService(7) for count=7.
  * Removal proof: removing `settle("upcomingEvents", …)` causes the reject to
  * propagate out of Promise.all → getPersonalDashboard rejects entirely →
  * `expect(result.unreadNotifications).toBe(7)` never runs → TEST FAILS.
@@ -118,11 +122,6 @@ function makeIsolationPersonalDb(): Db {
     },
   };
 
-  const notifChain: Record<string, unknown> = {
-    from: function () { return notifChain; },
-    where: function () { return Promise.resolve([{ cnt: 7 }]); },
-  };
-
   let callIdx = 0;
   return {
     query: {
@@ -132,8 +131,7 @@ function makeIsolationPersonalDb(): Db {
     select: jest.fn().mockImplementation(() => {
       callIdx++;
       if (callIdx === 1) return failingOuterChain;
-      if (callIdx <= 3) return innerChain;
-      return notifChain;
+      return innerChain;
     }),
   } as unknown as Db;
 }
@@ -144,18 +142,18 @@ function makeIsolationPersonalDb(): Db {
 describe("DashboardPersonalService — GUARANTEE I: denied section omitted and query never runs", () => {
   /**
    * BITE: removing `modules.build ?` so the settle path always runs would make
-   * ticketsFindMany be called → `expect(ticketsFindMany).not.toHaveBeenCalled()` FAILS.
+   * projectService.getMyIssues be called → `expect(projectSvc.getMyIssues).not.toHaveBeenCalled()` FAILS.
    */
-  it("BITE: build module disabled → myTasks is [] and tickets.findMany is NEVER called", async () => {
-    const ticketsFindMany = jest.fn().mockResolvedValue([{ id: 99, title: "Leaked task" }]);
-    const { db } = makeNeutralPersonalDb({ ticketsFindMany });
+  it("BITE: build module disabled → myTasks is [] and projectService.getMyIssues is NEVER called", async () => {
+    const { db } = makeNeutralPersonalDb();
     const access = makeAccessWithModules(false, false, false);
+    const projectSvc = makeProjectService([{ id: 99, title: "Leaked task", status: "TODO", priority: "MEDIUM", projectName: "" }]);
 
-    const svc = new DashboardPersonalService(db, access);
+    const svc = new DashboardPersonalService(db, access, makeLeaveService(), projectSvc, makeNotificationsService());
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(result.myTasks).toEqual([]);
-    expect(ticketsFindMany).not.toHaveBeenCalled();
+    expect(projectSvc.getMyIssues).not.toHaveBeenCalled();
   });
 
   /**
@@ -169,7 +167,7 @@ describe("DashboardPersonalService — GUARANTEE I: denied section omitted and q
     const { db } = makeNeutralPersonalDb();
     const access = makeAccessWithModules(false, false, false);
 
-    const svc = new DashboardPersonalService(db, access);
+    const svc = new DashboardPersonalService(db, access, makeLeaveService(), makeProjectService(), makeNotificationsService());
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(result.timesheetStatus.hoursLogged).toBe(0);
@@ -177,30 +175,33 @@ describe("DashboardPersonalService — GUARANTEE I: denied section omitted and q
   });
 
   /**
-   * BITE: removing `modules.hr ?` so the leave-balance select always runs would
-   * cause settle to catch the mock-chain mismatch → degraded includes "leaveBalance"
-   * → `expect(result.degraded).not.toContain("leaveBalance")` FAILS.
+   * BITE: removing `modules.hr ?` so the leave-balance delegation always runs would
+   * make leaveSvc.getMyLeaveBalance be called → `expect(leaveSvc.getMyLeaveBalance).not.toHaveBeenCalled()` FAILS.
    */
-  it("BITE: hr module disabled → leaveBalance is [] and no degraded for leaveBalance", async () => {
+  it("BITE: hr module disabled → leaveBalance is [] and leaveService.getMyLeaveBalance is NEVER called", async () => {
     const { db } = makeNeutralPersonalDb();
     const access = makeAccessWithModules(false, false, false);
+    const leaveSvc = makeLeaveService([{ id: 1, leaveTypeName: "Annual", balance: "10", daysPerYear: 20, year: 2026 }]);
 
-    const svc = new DashboardPersonalService(db, access);
+    const svc = new DashboardPersonalService(db, access, leaveSvc, makeProjectService(), makeNotificationsService());
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(result.leaveBalance).toEqual([]);
+    expect(leaveSvc.getMyLeaveBalance).not.toHaveBeenCalled();
     expect(result.degraded).not.toContain("leaveBalance");
   });
 
   it("upcomingEvents and unreadNotifications are always returned (universal sections)", async () => {
     const { db } = makeNeutralPersonalDb();
     const access = makeAccessAllModulesDisabled();
+    const notifSvc = makeNotificationsService(3);
 
-    const svc = new DashboardPersonalService(db, access);
+    const svc = new DashboardPersonalService(db, access, makeLeaveService(), makeProjectService(), notifSvc);
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(Array.isArray(result.upcomingEvents)).toBe(true);
     expect(typeof result.unreadNotifications).toBe("number");
+    expect(notifSvc.unreadCount).toHaveBeenCalledWith(ORG, USER);
   });
 });
 
@@ -213,7 +214,7 @@ describe("DashboardPersonalService — GUARANTEE II: one section failure leaves 
   beforeEach(async () => {
     const db = makeIsolationPersonalDb();
     const access = makeAccessAllModulesDisabled();
-    const svc = new DashboardPersonalService(db, access);
+    const svc = new DashboardPersonalService(db, access, makeLeaveService(), makeProjectService(), makeNotificationsService(7));
     result = await svc.getPersonalDashboard(makeUser());
   });
 
@@ -385,7 +386,7 @@ describe("DashboardStatsService — deny-before-query and section isolation", ()
  * CRITERION 8 — regression tests: membership cannot bypass section gating or escalate failures.
  */
 describe("DashboardPersonalService — membership once + section bypass prevention (criteria 6 & 8)", () => {
-  it("CRITERION 6: all modules enabled → exactly 1 findFirst + ≤6 select calls (no duplicate membership query)", async () => {
+  it("CRITERION 6: all modules enabled → exactly 1 findFirst + ≤4 select calls, projectService delegated once", async () => {
     const innerChain: Record<string, unknown> = {
       from: function () { return innerChain; },
       innerJoin: function () { return innerChain; },
@@ -399,61 +400,51 @@ describe("DashboardPersonalService — membership once + section bypass preventi
       from: function () { return timesheetChain; },
       where: function () { return Promise.resolve([{ hours: "8" }]); },
     };
-    const leaveChain: Record<string, unknown> = {
-      from: function () { return leaveChain; },
-      innerJoin: function () { return leaveChain; },
-      where: function () { return Promise.resolve([]); },
-    };
-    const notifChain: Record<string, unknown> = {
-      from: function () { return notifChain; },
-      where: function () { return Promise.resolve([{ cnt: 2 }]); },
-    };
 
     let selectCallCount = 0;
     const findFirstMock = jest.fn().mockResolvedValue({ id: "member-iso-1" });
-    const ticketsFindMany = jest.fn().mockResolvedValue([]);
 
     const db = {
       query: {
-        tickets: { findMany: ticketsFindMany },
+        tickets: { findMany: jest.fn().mockResolvedValue([]) },
         organizationMembers: { findFirst: findFirstMock },
       },
       select: jest.fn().mockImplementation(() => {
         selectCallCount++;
         if (selectCallCount === 1) return timesheetChain;
-        if (selectCallCount === 2) return leaveChain;
-        if (selectCallCount <= 4) return innerChain;
-        if (selectCallCount === 5) return outerEventChain;
-        return notifChain;
+        if (selectCallCount === 2) return outerEventChain;
+        return innerChain;
       }),
     } as unknown as Db;
 
     const access = makeAccessWithModules(true, true, true);
-    const svc = new DashboardPersonalService(db, access);
+    const projectSvc = makeProjectService([]);
+    const svc = new DashboardPersonalService(db, access, makeLeaveService(), projectSvc, makeNotificationsService());
     await svc.getPersonalDashboard(makeUser());
 
     expect(findFirstMock).toHaveBeenCalledTimes(1);
-    expect(selectCallCount).toBeLessThanOrEqual(6);
-    expect(ticketsFindMany).toHaveBeenCalledTimes(1);
+    expect(selectCallCount).toBeLessThanOrEqual(4);
+    expect(projectSvc.getMyIssues).toHaveBeenCalledTimes(1);
+    expect(projectSvc.getMyIssues).toHaveBeenCalledWith(ORG, USER, expect.any(Array));
   });
 
   it("REGRESSION (8a): valid selfMember does not activate a module-disabled section", async () => {
-    const ticketsFindMany = jest.fn().mockResolvedValue([{ id: 99, title: "Leaked" }]);
-    const { db } = makeNeutralPersonalDb({ ticketsFindMany });
+    const { db } = makeNeutralPersonalDb();
     const access = makeAccessWithModules(false, false, false);
+    const projectSvc = makeProjectService([{ id: 99, title: "Leaked", status: "TODO", priority: "MEDIUM", projectName: "" }]);
 
-    const svc = new DashboardPersonalService(db, access);
+    const svc = new DashboardPersonalService(db, access, makeLeaveService(), projectSvc, makeNotificationsService());
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(result.myTasks).toEqual([]);
-    expect(ticketsFindMany).not.toHaveBeenCalled();
+    expect(projectSvc.getMyIssues).not.toHaveBeenCalled();
     expect(result.degraded).not.toContain("myTasks");
   });
 
   it("REGRESSION (8b): a section settle() failure leaves all universal sections intact", async () => {
     const db = makeIsolationPersonalDb();
     const access = makeAccessAllModulesDisabled();
-    const svc = new DashboardPersonalService(db, access);
+    const svc = new DashboardPersonalService(db, access, makeLeaveService(), makeProjectService(), makeNotificationsService(7));
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(result).toBeDefined();

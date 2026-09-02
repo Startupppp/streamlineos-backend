@@ -21,7 +21,9 @@
  *   captured[0] = creator EXISTS subquery WHERE
  *   captured[1] = attendee EXISTS subquery WHERE
  *   captured[2] = outer upcomingEvents WHERE
- *   captured[3] = notifications WHERE
+ *
+ * unreadNotifications is now delegated to NotificationsService.unreadCount —
+ * no captured[3]; its orgId/userId isolation is proven via the mock spy below.
  */
 
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -30,6 +32,9 @@ import { calendarEvents, eventAttendees, organizationMembers } from "../../db/sc
 import { DashboardPersonalService } from "./dashboard-personal.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { Db } from "../../db/drizzle.module";
+import type { DashboardLeaveService } from "./dashboard-leave.service";
+import type { DashboardProjectService } from "./dashboard-project.service";
+import type { NotificationsService } from "../notifications/notifications.service";
 
 const dialect = new PgDialect();
 const ORG = "org-p0a-vis-1";
@@ -44,6 +49,14 @@ function makeAccess() {
   return {
     moduleAvailability: jest.fn().mockResolvedValue({ available: false }),
   } as never;
+}
+
+function makeCollaborators() {
+  return {
+    leaveService: { getMyLeaveBalance: jest.fn().mockResolvedValue([]) } as unknown as DashboardLeaveService,
+    projectService: { getMyIssues: jest.fn().mockResolvedValue([]) } as unknown as DashboardProjectService,
+    notifService: { unreadCount: jest.fn().mockResolvedValue({ count: 0 }) } as unknown as NotificationsService,
+  };
 }
 
 /**
@@ -102,7 +115,8 @@ describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", (
 
     beforeEach(async () => {
       const captured: unknown[] = [];
-      const svc = new DashboardPersonalService(makeDb(captured), makeAccess());
+      const { leaveService, projectService, notifService } = makeCollaborators();
+      const svc = new DashboardPersonalService(makeDb(captured), makeAccess(), leaveService, projectService, notifService);
       await svc.getPersonalDashboard(makeUser(ORG));
       creatorCond = captured[0] as SQL;
     });
@@ -129,7 +143,8 @@ describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", (
 
     beforeEach(async () => {
       const captured: unknown[] = [];
-      const svc = new DashboardPersonalService(makeDb(captured), makeAccess());
+      const { leaveService, projectService, notifService } = makeCollaborators();
+      const svc = new DashboardPersonalService(makeDb(captured), makeAccess(), leaveService, projectService, notifService);
       await svc.getPersonalDashboard(makeUser(ORG));
       innerCond = captured[1] as SQL;
     });
@@ -168,7 +183,8 @@ describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", (
 
     beforeEach(async () => {
       const captured: unknown[] = [];
-      const svc = new DashboardPersonalService(makeDb(captured), makeAccess());
+      const { leaveService, projectService, notifService } = makeCollaborators();
+      const svc = new DashboardPersonalService(makeDb(captured), makeAccess(), leaveService, projectService, notifService);
       await svc.getPersonalDashboard(makeUser(ORG, USER));
       outerCond = captured[2];
     });
@@ -210,10 +226,10 @@ describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", (
  * makeSerializableDb has inner EXISTS select chains return the WHERE condition
  * directly (not a mock object), so exists(realCondition) makes the outer OR and
  * therefore the outer AND serializable.  Call order with all modules disabled:
- *   select call 1 → creator EXISTS inner chain
- *   select call 2 → attendee EXISTS inner chain
- *   select call 3 → outer upcomingEvents query
- *   select call 4 → notifications count query
+ *   select call 1 → outer calendarEvents query  (outerChain captures the full WHERE)
+ *   select call 2 → creator EXISTS inner chain  (innerChain returns condition)
+ *   select call 3 → attendee EXISTS inner chain (innerChain returns condition)
+ *   unreadNotifications → delegated to NotificationsService.unreadCount (no db.select)
  *
  * Removal proofs actually executed (neuter → run spec → failure confirmed → restore):
  *   - eq(calendarEvents.visibility, "org") stripped → "BITING: visibility arm" fails
@@ -246,16 +262,18 @@ describe("DashboardPersonalService — P0-A: BITING outer-condition serializable
       select: jest.fn().mockImplementation(() => {
         callCount++;
         if (callCount === 1) return outerChain;
-        if (callCount <= 3) return innerChain;
-        return { from: () => ({ where: () => Promise.resolve([]) }) };
+        return innerChain;
       }),
     } as unknown as Db;
   }
 
   let capturedOuter: { cond?: SQL };
+  let notifSvcBiting: ReturnType<typeof makeCollaborators>["notifService"];
   beforeEach(async () => {
     capturedOuter = {};
-    const svc = new DashboardPersonalService(makeSerializableDb(capturedOuter), makeAccess());
+    const { leaveService, projectService, notifService } = makeCollaborators();
+    notifSvcBiting = notifService;
+    const svc = new DashboardPersonalService(makeSerializableDb(capturedOuter), makeAccess(), leaveService, projectService, notifService);
     await svc.getPersonalDashboard(makeUser(ORG));
   });
 
@@ -277,5 +295,9 @@ describe("DashboardPersonalService — P0-A: BITING outer-condition serializable
   it("BITING: caller binding — caller userId appears in the serialized params", () => {
     const { params } = dialect.sqlToQuery(capturedOuter.cond as SQL);
     expect(params).toContain(USER);
+  });
+
+  it("BITING: delegated unreadNotifications — unreadCount called with caller orgId and userId", () => {
+    expect(notifSvcBiting.unreadCount).toHaveBeenCalledWith(ORG, USER);
   });
 });
