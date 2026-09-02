@@ -15,12 +15,6 @@ const ABANDONED_AFTER_MS = 24 * 60 * 60 * 1000;
 const MAX_PARTS = 10000;
 const MIN_PART_SIZE_BYTES = 5 * 1024 * 1024;
 
-export interface MultipartInitResult {
-  uploadId: string;
-  key: string;
-  partSize: number;
-}
-
 export interface CompletedPart {
   partNumber: number;
   eTag: string;

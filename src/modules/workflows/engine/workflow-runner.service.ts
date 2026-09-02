@@ -327,5 +327,3 @@ export class WorkflowRunnerService {
     }
   }
 }
-
-export type { WorkflowRunState };

@@ -67,7 +67,3 @@ export function workspaceRoot(): string {
     "Workspace",
   );
 }
-
-export function workspacePath(...segments: string[]): string {
-  return join(workspaceRoot(), ...segments);
-}

@@ -16,8 +16,3 @@ import { getObservabilityContext } from "../../../../common/observability";
 export function resolveAiCorrelationId(): string {
   return getObservabilityContext()?.correlationId ?? randomUUID();
 }
-
-/** True when this call had a request to join, false when it minted its own. */
-export function hasAmbientCorrelation(): boolean {
-  return getObservabilityContext()?.correlationId !== undefined;
-}

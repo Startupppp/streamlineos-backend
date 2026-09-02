@@ -164,12 +164,6 @@ export const UNSCHEDULED_PURGE_JOBS: readonly { jobKey: string; reason: string }
   },
 ];
 
-export const RETENTION_JOB_KEYS: readonly string[] = RETENTION_JOBS.map((j) => j.jobKey);
-
-export function retentionJob(jobKey: string): RetentionJobDeclaration | undefined {
-  return RETENTION_JOBS.find((job) => job.jobKey === jobKey);
-}
-
 /** Reverse lookup for the durable per-tenant failure record `forEachOrg` writes. */
 export function retentionJobForSweep(sweepName: string): RetentionJobDeclaration | undefined {
   return RETENTION_JOBS.find((job) => job.sweepName === sweepName);
