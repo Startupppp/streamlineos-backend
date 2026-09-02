@@ -126,6 +126,8 @@ describe("HrWorkflowApproverService — resolveApprovers", () => {
     const step = { stepOrder: 1, name: "Step 1", approverType: "named_user", approverValue: "user-fixed", mode: "serial" };
     const result = await approver.resolveApprovers(step, "emp1", "org1");
     expect(result).toEqual(["user-fixed"]);
+
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it("returns empty array for named_user with null approverValue", async () => {
@@ -276,6 +278,9 @@ describe("HrWorkflowEngineService — act non-approver denied", () => {
     await expect(
       engine.act({ orgId: "org1", instanceId: 1, actorUserId: "random-user", action: "approved" }),
     ).rejects.toThrow(ForbiddenException);
+
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 });
 
@@ -284,6 +289,10 @@ describe("HrWorkflowEngineService — getInstanceOrThrow", () => {
     const db = makeDb([[]]);
     const { engine } = await makeServices(db);
     await expect(engine.getInstanceOrThrow("org1", 999)).rejects.toThrow(NotFoundException);
+
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it("returns the instance when found", async () => {

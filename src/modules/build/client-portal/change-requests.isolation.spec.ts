@@ -18,7 +18,7 @@ function makeU(orgId: string, isOrgOwner = false): CurrentUserContext {
   };
 }
 
-function makeMockDb(changeRequestRow: unknown = undefined): Db {
+function makeMockDb(changeRequestRow: unknown = undefined) {
   return {
     query: {
       projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -28,7 +28,7 @@ function makeMockDb(changeRequestRow: unknown = undefined): Db {
     transaction: jest.fn(),
     insert: jest.fn(),
     update: jest.fn(),
-  } as unknown as Db;
+  };
 }
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
@@ -44,9 +44,13 @@ beforeEach(() => {
 describe("ChangeRequestsService — cross-tenant isolation (BOLA)", () => {
   it("throws NotFoundException when change request belongs to a different org", async () => {
     const db = makeMockDb(undefined);
-    const svc = new ChangeRequestsService(db, mockAccess, mockAudit);
+    const svc = new ChangeRequestsService(db as unknown as Db, mockAccess, mockAudit);
 
     await expect(svc.getChangeRequest("org-attacker", 1, 99)).rejects.toThrow(NotFoundException);
+
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it("returns the change request when orgId matches", async () => {
@@ -68,11 +72,12 @@ describe("ChangeRequestsService — cross-tenant isolation (BOLA)", () => {
       transaction: jest.fn(),
       insert: jest.fn(),
       update: jest.fn(),
-    } as unknown as Db;
+    };
 
-    const svc = new ChangeRequestsService(db, mockAccess, mockAudit);
+    const svc = new ChangeRequestsService(db as unknown as Db, mockAccess, mockAudit);
     const result = await svc.getChangeRequest("org-1", 1, 1);
     expect(result).toEqual(crRow);
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it("throws NotFoundException for project lookup with wrong org before listing change requests", async () => {
@@ -83,13 +88,16 @@ describe("ChangeRequestsService — cross-tenant isolation (BOLA)", () => {
       },
       select: jest.fn(),
       transaction: jest.fn(),
-    } as unknown as Db;
+    };
 
-    const svc = new ChangeRequestsService(db, mockAccess, mockAudit);
+    const svc = new ChangeRequestsService(db as unknown as Db, mockAccess, mockAudit);
 
     await expect(
       svc.listChangeRequests(makeU("org-attacker"), 1, {}),
     ).rejects.toThrow(NotFoundException);
+
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.query.changeRequests.findFirst).not.toHaveBeenCalled();
   });
 });
 
@@ -100,11 +108,12 @@ describe("ChangeRequestsService — project membership gate (BOLA fix)", () => {
     resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
   } as unknown as AccessService;
 
-  function makeNonMemberDb(): Db {
+  function makeNonMemberDb() {
     return {
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
       },
+      transaction: jest.fn(),
       select: jest.fn()
         .mockReturnValueOnce({
           from: jest.fn().mockReturnValue({
@@ -122,7 +131,7 @@ describe("ChangeRequestsService — project membership gate (BOLA fix)", () => {
             }),
           }),
         }),
-    } as unknown as Db;
+    };
   }
 
   function makeMemberDb(): Db {
@@ -155,13 +164,16 @@ describe("ChangeRequestsService — project membership gate (BOLA fix)", () => {
 
   it("rejects non-member with ForbiddenException on listChangeRequests", async () => {
     const db = makeNonMemberDb();
-    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const svc = new ChangeRequestsService(db as unknown as Db, gateAccess, mockAudit);
     await expect(svc.listChangeRequests(u, 1, {})).rejects.toThrow(ForbiddenException);
+
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it("allows direct project member on listChangeRequests", async () => {
     const db = makeMemberDb();
     const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+
     await expect(svc.listChangeRequests(u, 1, {})).resolves.toBeDefined();
   });
 });

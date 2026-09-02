@@ -65,22 +65,35 @@ const MIN_SPEC_FILES = 200;
 const MIN_DOUBLES = 100;
 
 /**
- * Spec files whose every transaction double is inert. MEASURED 2026-09-02 at 9,
- * after three false-positive classes were removed from the detector first
+ * Spec files whose every transaction double is inert. First measured 2026-09-02
+ * at 9, after three false-positive classes were removed from the detector
  * (22 -> 11 -> 9): a double configured after the object literal
  * (`db.transaction.mockImplementation(...)`), a cast-then-call implementation
  * (`(cb as Fn)(mockDb)`), and a `transaction:` inside a TYPE annotation.
  * Baselining before that would have recorded 13 files of detector noise as debt.
  *
- * This is the state of a class nothing gated before, not a clean bill, and not a
- * baseline raised to turn a regression green — the gate did not exist to be
- * regressed. Seven of the nine are refusal tests (`*-tenant-isolation.spec.ts`,
- * `*.isolation.spec.ts`) that never reach the transaction on purpose but never
- * assert it either; adding `expect(db.transaction).not.toHaveBeenCalled()` moves
- * them to DECLARED-UNREACHED and drops the number. Spec territory. It may only
- * go down, and a NEW void file fails immediately.
+ * LOWERED 9 -> 2. Seven of the nine were repaired in spec territory: five refusal
+ * tests now assert `expect(db.transaction).not.toHaveBeenCalled()`
+ * (DECLARED-UNREACHED — the refusal happens before any write), and two
+ * same-tenant controls now invoke the callback and assert what it did. The two
+ * that remain are `inventory/replenishment` and `leads/lead-status`, both
+ * excluded from this release's scope.
+ *
+ * TWO MORE READER BLIND SPOTS were fixed in the same pass, and both were found by
+ * repairing a real file rather than by inspection:
+ *   - a chain wrapped across lines — `transaction: jest\n.fn()\n.mockImplementation(...)`.
+ *     The expression reader stopped at the line break, so an INVOKING double
+ *     either vanished from the scan or, once newlines were allowed, read as BARE.
+ *     18 files carry that shape.
+ *   - an assignment over the literal — `dbSurface["transaction"] = jest.fn()...`,
+ *     the form a spec must use when `db` is typed `as unknown as Db`. The bare
+ *     `transaction: jest.fn()` above it is dead by the time any test runs.
+ * Both were fixed BEFORE the ratchet was lowered, so the new number is a real
+ * measurement and not the detector going quiet.
+ *
+ * It may only go down, and a NEW void file fails immediately.
  */
-const VOID_FILE_BASELINE = 9;
+const VOID_FILE_BASELINE = 2;
 
 const UNREACHED_RE = /transaction\s*\)?[^\n]{0,40}\.not\s*\.\s*toHaveBeenCalled|not\s*\.\s*toHaveBeenCalled[^\n]{0,40}transaction/;
 
@@ -132,7 +145,13 @@ function readDoubleExpression(text, afterColon) {
   // Consume a leading `async` and any identifier/dot path, then balanced calls.
   let guard = 0;
   while (i < text.length && guard++ < 40) {
-    while (i < text.length && /[A-Za-z0-9_$.\s]/.test(text[i]) && text[i] !== "\n") i++;
+    // Newlines are part of the path, not the end of it. Prettier wraps a long
+    // double as `jest\n.fn()\n.mockImplementation(...)`, and stopping at the line
+    // break read only `jest` -- the double then failed the jest-surface guard
+    // below and vanished from the scan entirely. An invoking double that is
+    // invisible under-counts; a file holding one of those beside a bare double
+    // reads VOID when it is covered.
+    while (i < text.length && /[A-Za-z0-9_$.\s]/.test(text[i])) i++;
     if (text[i] === "(") {
       const end = balance(text, i);
       i = end + 1;
@@ -146,7 +165,13 @@ function readDoubleExpression(text, afterColon) {
         const nl = text.indexOf("\n", j);
         return text.slice(start, nl === -1 ? text.length : nl);
       }
-      if (text[i] === ".") continue;
+      // The chain continues after the newline too: `jest\n.fn()\n.mockImplementation(`.
+      // Testing `text[i]` without skipping whitespace stopped at `jest.fn()` and
+      // classified an invoking double BARE.
+      if (text[j] === ".") {
+        i = j;
+        continue;
+      }
       return text.slice(start, i);
     }
     return text.slice(start, i);
@@ -190,6 +215,18 @@ export function classifyDouble(expr) {
 const LATE_CONFIG_RE =
   /\.\s*transaction\s*(?:as\s+[\w.<>\s]+\s*\))?\s*\.\s*(mockImplementation|mockImplementationOnce|mockResolvedValue|mockResolvedValueOnce|mockRejectedValue|mockRejectedValueOnce|mockReturnValue|mockReturnValueOnce)\s*\(/g;
 
+/**
+ * The third place a double is configured: ASSIGNED over, rather than declared in
+ * the literal or reconfigured through a mock method.
+ *   `dbSurface["transaction"] = jest.fn().mockImplementation((fn) => fn(tx));`
+ * is the shape a spec reaches for when `db` is typed `as unknown as Db`, so
+ * `db.transaction` is not a `jest.Mock` and the dot form will not type-check.
+ * The bare `transaction: jest.fn()` in the literal above it is dead the moment
+ * this line runs, and reading only the literal calls the file VOID when its
+ * double invokes.
+ */
+const ASSIGN_CONFIG_RE = /(?:\.\s*transaction|\[\s*["'`]transaction["'`]\s*\])\s*=\s*/g;
+
 export function scanFile(text) {
   const doubles = [];
   const re = /\btransaction\s*:/g;
@@ -215,6 +252,16 @@ export function scanFile(text) {
       verdict: classifyDouble(expr),
     });
   }
+  ASSIGN_CONFIG_RE.lastIndex = 0;
+  while ((m = ASSIGN_CONFIG_RE.exec(text)) !== null) {
+    const expr = readDoubleExpression(text, ASSIGN_CONFIG_RE.lastIndex);
+    if (!/jest\s*\.\s*fn|mock(Resolved|Rejected|Return|Implementation)/.test(expr) && !invokesCallback(expr))
+      continue;
+    doubles.push({
+      line: text.slice(0, m.index).split("\n").length,
+      verdict: classifyDouble(expr),
+    });
+  }
   return doubles;
 }
 
@@ -228,7 +275,9 @@ export function fileVerdict(doubles, text) {
 
 function runSelfTest() {
   let failures = 0;
+  let assertions = 0;
   const assert = (label, cond) => {
+    assertions++;
     if (!cond) {
       console.error(`  FAIL ${label}`);
       failures++;
@@ -342,11 +391,71 @@ function runSelfTest() {
     fileVerdict(scanFile(castLateFile), castLateFile) === "INVOKES",
   );
 
+  const wrappedChainFile = `
+    const db = {
+      transaction: jest
+        .fn()
+        .mockImplementation(
+          async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+        ),
+      select: jest.fn(),
+    };
+  `;
+  assert(
+    "a double whose chain is wrapped across lines is found",
+    scanFile(wrappedChainFile).length === 1,
+  );
+  assert(
+    "a double whose chain is wrapped across lines INVOKES, not BARE",
+    fileVerdict(scanFile(wrappedChainFile), wrappedChainFile) === "INVOKES",
+  );
+
+  const wrappedBareFile = `
+    const db = {
+      transaction: jest.fn(),
+      insert: jest.fn(),
+      update: jest.fn(),
+    };
+  `;
+  assert(
+    "a bare double followed by sibling properties is still exactly one double",
+    scanFile(wrappedBareFile).length === 1,
+  );
+  assert(
+    "a bare double followed by sibling properties is still VOID",
+    fileVerdict(scanFile(wrappedBareFile), wrappedBareFile) === "VOID",
+  );
+
+  const bracketAssignFile = `
+    const db = { transaction: jest.fn(), select: jest.fn() } as unknown as Db;
+    const dbSurface = db as unknown as Record<string, unknown>;
+    dbSurface["transaction"] = jest
+      .fn()
+      .mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn(db));
+  `;
+  assert(
+    "an assignment over the literal is found beside the literal's own double",
+    scanFile(bracketAssignFile).length === 2,
+  );
+  assert(
+    "a double assigned over the literal makes the file INVOKES, not VOID",
+    fileVerdict(scanFile(bracketAssignFile), bracketAssignFile) === "INVOKES",
+  );
+
+  const dotAssignFile = `
+    const db = { transaction: jest.fn() };
+    db.transaction = jest.fn().mockImplementation((cb) => cb(db));
+  `;
+  assert(
+    "a dot assignment over the literal also makes the file INVOKES",
+    fileVerdict(scanFile(dotAssignFile), dotAssignFile) === "INVOKES",
+  );
+
   if (failures > 0) {
     console.error(`check-transaction-callbacks self-test: ${failures} failed`);
     process.exit(1);
   }
-  console.log("check-transaction-callbacks self-tests: 21 passed");
+  console.log(`check-transaction-callbacks self-tests: ${assertions} passed`);
   process.exit(0);
 }
 

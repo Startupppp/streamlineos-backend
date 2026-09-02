@@ -34,8 +34,9 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
 function buildService(resolved: Map<string, DataScope>): {
   service: AccessService;
   resolveSpy: jest.SpyInstance;
+  dbMock: { select: jest.Mock; execute: jest.Mock; transaction: jest.Mock };
 } {
-  const db = {
+  const dbMock = {
     query: {
       accessVersions: { findFirst: jest.fn() },
       organizationMembers: { findFirst: jest.fn() },
@@ -43,7 +44,8 @@ function buildService(resolved: Map<string, DataScope>): {
     select: jest.fn(),
     execute: jest.fn(),
     transaction: jest.fn(),
-  } as unknown as Db;
+  };
+  const db = dbMock as unknown as Db;
 
   const cache = {
     cached: jest.fn(),
@@ -61,7 +63,7 @@ function buildService(resolved: Map<string, DataScope>): {
   const resolveSpy = jest
     .spyOn(service, "resolveUserPermissions")
     .mockResolvedValue(resolved);
-  return { service, resolveSpy };
+  return { service, resolveSpy, dbMock };
 }
 
 describe("AccessService.holds — whether a person holds a permission key", () => {
@@ -163,5 +165,24 @@ describe("AccessService.scopeFor — data scope for a permission key", () => {
     const user = makeUser({ tokenScopes: ["crm:leads:view"] });
 
     expect(await service.scopeFor(user, "crm:leads:view")).toBe("own");
+  });
+});
+
+describe("AccessService.holds / scopeFor — no database work of their own", () => {
+  it("answers from the resolved map without opening a transaction, on every branch", async () => {
+    const { service, dbMock } = buildService(
+      new Map<string, DataScope>([["crm:leads:view", "team"]]),
+    );
+
+    await service.holds(makeUser(), "crm:leads:view");
+    await service.holds(makeUser(), "crm:leads:missing");
+    await service.holds(makeUser({ isOrgOwner: true }), "hr:employees:view");
+    await service.holds(makeUser({ tokenScopes: ["crm:leads:view"] }), "crm:leads:view");
+    await service.scopeFor(makeUser(), "crm:leads:view");
+    await service.scopeFor(makeUser({ isOrgOwner: true }), "hr:employees:view");
+
+    expect(dbMock.transaction).not.toHaveBeenCalled();
+    expect(dbMock.select).not.toHaveBeenCalled();
+    expect(dbMock.execute).not.toHaveBeenCalled();
   });
 });
