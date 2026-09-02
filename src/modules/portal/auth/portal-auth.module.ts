@@ -8,6 +8,5 @@ import { PortalTokenService } from "./portal-token.service";
   imports: [DrizzleModule],
   controllers: [PortalAuthController],
   providers: [PortalAuthService, PortalTokenService],
-  exports: [PortalTokenService],
 })
 export class PortalAuthModule {}

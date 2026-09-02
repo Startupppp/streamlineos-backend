@@ -1,4 +1,4 @@
-import { checkWebhookUrl } from "./webhook-url-guard";
+import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
 
 describe("checkWebhookUrl", () => {
   it("rejects a malformed url", async () => {

@@ -25,6 +25,6 @@ import { NotificationsModule } from "../notifications/notifications.module";
     PlatformOperatorCustomerService,
     OperatorSessionGuard,
   ],
-  exports: [PlatformService, PlatformAnalyticsService, PlatformAdminService, PlatformOperatorAccessService],
+  exports: [PlatformOperatorAccessService],
 })
 export class PlatformModule {}

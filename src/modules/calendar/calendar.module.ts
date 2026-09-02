@@ -44,6 +44,6 @@ import { CalendarProviderWebhookController } from "./calendar-provider-webhook.c
     CalendarSourcePreferencesService,
     CalendarNativeEventSource,
   ],
-  exports: [CalendarService, CalendarConflictService, CalendarReminderSweepService, CalendarProviderSyncSweepService, CalendarSourceRegistry],
+  exports: [CalendarService, CalendarReminderSweepService, CalendarSourceRegistry],
 })
 export class CalendarModule {}

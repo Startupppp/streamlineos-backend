@@ -22,6 +22,6 @@ import { SessionsModule } from "../sessions/sessions.module";
     GdprRectificationService,
     GdprSubjectErasureService,
   ],
-  exports: [GdprService, GdprExportService, GdprStoragePurgeService, GdprRectificationService, GdprSubjectErasureService],
+  exports: [GdprExportService],
 })
 export class GdprModule {}

@@ -9,6 +9,6 @@ import { EmploymentFactsModule } from "../../directory/employment-facts.module";
   imports: [EmploymentFactsModule],
   controllers: [HrPoliciesController],
   providers: [HrPoliciesService, HrPolicyEvaluationService, HrPolicyConflictService],
-  exports: [HrPolicyEvaluationService, HrPolicyConflictService],
+  exports: [HrPolicyEvaluationService],
 })
 export class HrPoliciesModule {}

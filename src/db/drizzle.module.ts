@@ -65,7 +65,7 @@ export type { Db } from "./drizzle.types";
       },
     },
   ],
-  exports: [DRIZZLE, DB_POOL_CONFIG, DRIZZLE_REPLICA, REPLICA_ROUTER],
+  exports: [DRIZZLE, DB_POOL_CONFIG],
 })
 export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger("Drizzle");

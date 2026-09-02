@@ -92,7 +92,6 @@ function buildRegistry(topology: RegionTopology, primaryDb: Db): RegionRegistry 
       },
     },
   ],
-  exports: [REGION_REGISTRY, REGION_TOPOLOGY],
 })
 export class RegionModule implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger("Region");

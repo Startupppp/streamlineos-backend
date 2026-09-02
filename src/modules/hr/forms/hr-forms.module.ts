@@ -10,6 +10,5 @@ import { HrFormsSubmissionsService } from "./hr-forms-submissions.service";
   imports: [HrCoreModule, HrWorkflowsModule],
   controllers: [HrFormsController, HrFormsPublicController],
   providers: [HrFormsService, HrFormsSubmissionsService],
-  exports: [HrFormsService],
 })
 export class HrFormsModule {}

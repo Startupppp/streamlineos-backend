@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrPolicies, hrTemplates, hrWorkflowDefinitions } from "../../../db/schema";
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
-import { HR_POLICY_TYPES } from "./hr-settings-hub.constants";
+import { HR_POLICY_TYPES } from "../policies/dto/hr-policy.schemas";
 import type { PolicyType } from "../policies/hr-policy-types";
 
 const VERSION_LINEAGE_LIMIT = 500;

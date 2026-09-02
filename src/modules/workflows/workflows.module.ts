@@ -65,6 +65,5 @@ import { ComposioGateway } from "../integrations/core/composio.gateway";
     { provide: INTEGRATION_LOOKUP, useExisting: IntegrationsService },
     { provide: COMPOSIO_TOOL_CALLER, useExisting: ComposioGateway },
   ],
-  exports: [WorkflowsService],
 })
 export class WorkflowsModule {}

@@ -18,7 +18,6 @@ import { OrganizationSagaService } from "../organization/core/lifecycle/organiza
     OrganizationSagaService,
   ],
   exports: [
-    OwnershipService,
     OwnershipTransfersService,
     OwnershipTransferResponseService,
   ],

@@ -81,6 +81,6 @@ import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-
     SignReportsService,
     SignEnvelopeCompletedConsumerService,
   ],
-  exports: [SignAuditService, SignSettingsService, SignEnvelopesService, SignFinalizationService, SignTemplatesService],
+  exports: [SignAuditService, SignSettingsService, SignEnvelopesService, SignTemplatesService],
 })
 export class ESignModule {}

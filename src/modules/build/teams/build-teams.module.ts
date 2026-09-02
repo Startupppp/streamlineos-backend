@@ -9,6 +9,5 @@ import { TeamProjectsService } from "./team-projects.service";
   imports: [PmWorkspacesModule],
   controllers: [TeamsController],
   providers: [TeamsService, TeamMembersService, TeamProjectsService],
-  exports: [TeamsService],
 })
 export class BuildTeamsModule {}

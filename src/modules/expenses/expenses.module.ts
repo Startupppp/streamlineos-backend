@@ -37,6 +37,6 @@ import { ExpenseExportWorkerService } from "./expense-export-worker.service";
     ExpenseExportService,
     ExpenseExportWorkerService,
   ],
-  exports: [ExpensesService, ExpenseLifecycleService],
+  exports: [ExpensesService],
 })
 export class ExpensesModule {}

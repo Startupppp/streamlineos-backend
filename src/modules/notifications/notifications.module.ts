@@ -80,7 +80,6 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     UnifiedInboxService,
     NotificationEventService,
     NotificationDispatchService,
-    NotificationEventRegistryService,
     NotificationDeliveryWorker,
     NotificationVisibilityRegistry,
     NotificationOutboxRelayService,

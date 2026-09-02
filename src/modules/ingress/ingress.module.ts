@@ -18,6 +18,5 @@ import { InboundIngressWorkflow } from "./inbound-ingress.workflow";
   imports: [AutonomyModule, MailModule],
   controllers: [InboundIngressController, CrmMailboxController],
   providers: [InboundIngressService, InboundIngressWorkflow, CrmMailboxService],
-  exports: [InboundIngressService, CrmMailboxService],
 })
 export class IngressModule {}

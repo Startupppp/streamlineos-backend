@@ -34,7 +34,6 @@ import { AvScannerModule } from "../../common/security/av-scanner.module";
   ],
   exports: [
     StorageService,
-    StoragePurgeService,
     FileQuarantineService,
     StorageMultipartService,
     MediaTransformRunner,

@@ -17,7 +17,10 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { CyclesService, EpicsService, ModulesService, SprintsService } from "./iterations.service";
+import { CyclesService } from "./cycles.service";
+import { EpicsService } from "./epics.service";
+import { ModulesService } from "./modules.service";
+import { SprintsService } from "./sprints.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   createCycleSchema,

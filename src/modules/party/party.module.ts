@@ -13,6 +13,6 @@ import { SubjectTypeService } from "./subject-type.service";
 @Module({
   controllers: [PartyController, PartyMergeController, SubjectController],
   providers: [PartyService, PartyDivergenceService, PartyMergeService, PartyRevertService, PartyRolesService, SubjectService, SubjectTypeService],
-  exports: [PartyDivergenceService, PartyMergeService, PartyRevertService, PartyRolesService, SubjectService, SubjectTypeService],
+  exports: [PartyDivergenceService, PartyMergeService, PartyRolesService],
 })
 export class PartyModule {}

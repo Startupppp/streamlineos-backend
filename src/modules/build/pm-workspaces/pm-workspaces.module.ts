@@ -6,6 +6,6 @@ import { PmWorkspaceMembershipsService } from "./pm-workspace-memberships.servic
 @Module({
   controllers: [PmWorkspacesController],
   providers: [PmWorkspacesService, PmWorkspaceMembershipsService],
-  exports: [PmWorkspacesService, PmWorkspaceMembershipsService],
+  exports: [PmWorkspacesService],
 })
 export class PmWorkspacesModule {}

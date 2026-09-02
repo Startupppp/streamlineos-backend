@@ -9,6 +9,5 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
   imports: [InvStockEngineModule, OutboxModule],
   controllers: [OfferFulfillmentController],
   providers: [OfferFulfillmentService, DealClosedConsumerService],
-  exports: [OfferFulfillmentService, DealClosedConsumerService],
 })
 export class OfferFulfillmentModule {}

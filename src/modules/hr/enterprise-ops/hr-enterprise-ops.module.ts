@@ -29,6 +29,6 @@ import { EventStreamService } from "./event-stream/event-stream.service";
     SimulatorService,
     EventStreamService,
   ],
-  exports: [IdentityService, EventStreamService],
+  exports: [IdentityService],
 })
 export class HrEnterpriseOpsModule {}

@@ -27,7 +27,6 @@ import { selfcheckWorkflow } from "./workflow-selfcheck";
     WorkflowRegistry,
     WorkflowRunnerService,
     WorkflowOutboxRelayService,
-    WorkflowInspectorService,
   ],
 })
 export class WorkflowModule implements OnModuleInit {

@@ -7,6 +7,6 @@ import { FinancePostingAccountsService } from "./finance-posting-accounts.servic
 @Module({
   imports: [NotificationsModule],
   providers: [JournalPostingService, FinancePostingAccountsService, FinancePostingService],
-  exports: [JournalPostingService, FinancePostingAccountsService, FinancePostingService],
+  exports: [JournalPostingService, FinancePostingService],
 })
 export class AccountingPostingModule {}

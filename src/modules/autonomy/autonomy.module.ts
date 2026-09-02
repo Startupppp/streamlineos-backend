@@ -54,6 +54,6 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
     AutonomyHoldService,
     AutonomyHoldWorkflow,
   ],
-  exports: [AutonomyService, AutonomyReviewService, AutonomyScoringService, AutonomyHoldService],
+  exports: [AutonomyService, AutonomyScoringService],
 })
 export class AutonomyModule {}

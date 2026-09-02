@@ -31,6 +31,6 @@ import { LaborService } from "./labor/labor.service";
     PositionsTaxonomyService,
     LaborService,
   ],
-  exports: [LegalHoldsService, RetentionService],
+  exports: [RetentionService],
 })
 export class HrGovernanceModule {}

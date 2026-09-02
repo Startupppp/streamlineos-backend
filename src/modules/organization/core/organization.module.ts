@@ -52,7 +52,6 @@ import { IntegrationConnectionDisconnectedConsumer } from "./integration-connect
     InvitationsReadService,
     InvitationAcceptanceService,
     OrgMembershipService,
-    OrgMembershipStatusService,
     OrgMemberDepartureService,
     AccountOrganizationIndexService,
     OrganizationSagaService,
