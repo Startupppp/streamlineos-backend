@@ -40,6 +40,7 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { z } from "zod";
 
 const contactIdParams = z.object({ contactId: z.coerce.number().int().positive() }).strict();
@@ -89,6 +90,7 @@ export class ContactsController {
 
   @Get("export")
   @RequirePermission("crm:contacts:view")
+  @NoTenantTransaction()
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="contacts-export.csv"')
   async exportCsv(

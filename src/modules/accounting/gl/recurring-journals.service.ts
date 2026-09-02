@@ -149,7 +149,12 @@ export class RecurringJournalsService {
     await this.db
       .update(finRecurringJournalTemplates)
       .set({ lastRunDate: today, nextRunDate: nextRun })
-      .where(eq(finRecurringJournalTemplates.id, templateId));
+      .where(
+        and(
+          eq(finRecurringJournalTemplates.id, templateId),
+          eq(finRecurringJournalTemplates.orgId, orgId),
+        ),
+      );
 
     return entry;
   }
@@ -180,7 +185,12 @@ export class RecurringJournalsService {
         await this.db
           .update(finRecurringJournalTemplates)
           .set({ lastRunDate: today, nextRunDate: nextRun })
-          .where(eq(finRecurringJournalTemplates.id, tmpl.id));
+          .where(
+            and(
+              eq(finRecurringJournalTemplates.id, tmpl.id),
+              eq(finRecurringJournalTemplates.orgId, tmpl.orgId),
+            ),
+          );
         processed++;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

@@ -7,6 +7,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { AuditLogService } from "./audit-log.service";
 import {
   exportSchema,
@@ -32,6 +33,7 @@ export class AuditLogController {
 
   @Get("export")
   @RequirePermission("audit-log:read")
+  @NoTenantTransaction()
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="audit-log-export.csv"')
   @Validate({ query: exportSchema })

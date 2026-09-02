@@ -81,7 +81,7 @@ export async function advanceExecution(
             "Execution actor is no longer an active member of this organisation",
         },
       );
-      await finishExecution(tx, execution.id, "failed");
+      await finishExecution(tx, execution.orgId, execution.id, "failed");
       return "failed";
     }
   }
@@ -99,7 +99,7 @@ export async function advanceExecution(
         error: parsed.error,
       },
     );
-    await finishExecution(tx, execution.id, "failed");
+    await finishExecution(tx, execution.orgId, execution.id, "failed");
     return "failed";
   }
 
@@ -129,7 +129,7 @@ export async function advanceExecution(
         status: "failed",
         error: `Exceeded ${MAX_STEPS_PER_EXECUTION} steps; the definition may contain a cycle`,
       });
-      await finishExecution(tx, execution.id, "failed");
+      await finishExecution(tx, execution.orgId, execution.id, "failed");
       return "failed";
     }
 
@@ -139,7 +139,7 @@ export async function advanceExecution(
         status: "failed",
         error: `Node "${cursor}" is not in the published definition`,
       });
-      await finishExecution(tx, execution.id, "failed");
+      await finishExecution(tx, execution.orgId, execution.id, "failed");
       return "failed";
     }
 
@@ -170,7 +170,7 @@ export async function advanceExecution(
           startedAt,
         },
       );
-      await finishExecution(tx, execution.id, "failed");
+      await finishExecution(tx, execution.orgId, execution.id, "failed");
       return "failed";
     }
 
@@ -190,7 +190,7 @@ export async function advanceExecution(
     if (outcome.kind === "suspend") {
       const next = nextNodeId(graph, node.id);
       if (next === null) {
-        await finishExecution(tx, execution.id, "completed", {
+        await finishExecution(tx, execution.orgId, execution.id, "completed", {
           variables,
           steps,
         });
@@ -219,7 +219,7 @@ export async function advanceExecution(
     }
 
     if (outcome.kind === "halt") {
-      await finishExecution(tx, execution.id, "completed", {
+      await finishExecution(tx, execution.orgId, execution.id, "completed", {
         variables,
         steps,
       });
@@ -229,7 +229,7 @@ export async function advanceExecution(
     cursor = nextNodeId(graph, node.id, outcome.branch);
   }
 
-  await finishExecution(tx, execution.id, "completed", { variables, steps });
+  await finishExecution(tx, execution.orgId, execution.id, "completed", { variables, steps });
   return "completed";
 }
 
@@ -285,6 +285,7 @@ async function recordStep(
 // the cancelled row simply no longer matches.
 export async function finishExecution(
   tx: TenantTx,
+  orgId: string,
   executionId: string,
   status: "completed" | "failed",
   state?: { variables: Record<string, unknown>; steps: number },
@@ -311,6 +312,7 @@ export async function finishExecution(
     .where(
       and(
         eq(workflowExecutions.id, executionId),
+        eq(workflowExecutions.orgId, orgId),
         eq(workflowExecutions.status, "running"),
       ),
     );
@@ -318,6 +320,7 @@ export async function finishExecution(
 
 export async function deadLetterExecution(
   tx: TenantTx,
+  orgId: string,
   executionId: string,
   reason: string,
   state: WorkflowRunState,
@@ -334,6 +337,7 @@ export async function deadLetterExecution(
     .where(
       and(
         eq(workflowExecutions.id, executionId),
+        eq(workflowExecutions.orgId, orgId),
         eq(workflowExecutions.status, "running"),
       ),
     );

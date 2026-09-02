@@ -15,7 +15,7 @@ import { hrRetentionPolicies, hrDataRequests } from "../../../../db/schema/hr/go
 import { users, organizationMembers } from "../../../../db/schema/common/auth";
 import { organizationLegalHolds } from "../../../../db/schema/common/organization-purge";
 import { HrAuditService } from "../../core/hr-audit.service";
-import { isUnderLegalHold } from "../legal-holds/legal-hold-check.helper";
+import { isUnderLegalHold, subjectsUnderLegalHold } from "../legal-holds/legal-hold-check.helper";
 import { logger } from "../../../../common/logger/logger.service";
 import type {
   CreateRetentionPolicyInput,
@@ -356,8 +356,18 @@ export class RetentionService {
      * the request, so it was being asked once per stranded request. */
     const orgHeld = await this.isOrgUnderLegalHold(orgId);
 
+    /* The per-subject hold probe is the same shape for every stranded request, so it
+     * is one indexed multi-key read rather than one round trip per subject. */
+    const heldSubjects = orgHeld
+      ? new Set<string>()
+      : await subjectsUnderLegalHold(
+          orgId,
+          stranded.map((req) => req.subjectUserId),
+          this.db,
+        );
+
     for (const req of stranded) {
-      const hrHeld = orgHeld ? false : await isUnderLegalHold(orgId, req.subjectUserId, this.db);
+      const hrHeld = orgHeld ? false : heldSubjects.has(req.subjectUserId);
       if (hrHeld || orgHeld) {
         skipped++;
         logger.warn("[retention-sweep] stranded delete request blocked by legal hold", {

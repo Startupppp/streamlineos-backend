@@ -7,6 +7,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { toCsv } from "../inventory/import-export/csv.util";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetBeforeId } from "../../common/pagination/keyset";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { ExportInput, ListInput } from "./dto/audit-log.schemas";
 
 const AUDIT_DISTINCT_TTL_SECONDS = 300;
@@ -124,22 +125,30 @@ export class AuditLogService {
       }
 
       const remaining = Math.min(EXPORT_PAGE_SIZE, EXPORT_ROW_CAP - emitted);
-      const rows = await this.db
-        .select({
-          id: auditLogs.id,
-          action: auditLogs.action,
-          userName: users.name,
-          userEmail: users.email,
-          targetType: auditLogs.targetType,
-          targetId: auditLogs.targetId,
-          ipAddress: auditLogs.ipAddress,
-          createdAt: auditLogs.createdAt,
-        })
-        .from(auditLogs)
-        .leftJoin(users, eq(auditLogs.userId, users.id))
-        .where(and(...conditions))
-        .orderBy(auditLogs.id)
-        .limit(remaining);
+      /* One page, one transaction. The handler is `@NoTenantTransaction()` because the
+       * generator stays open for the whole download; holding the request transaction
+       * across every `res.write` would pin a pooled connection to the client's socket. */
+      const rows = await runInTenantTransaction(
+        this.db,
+        (tx) =>
+          tx
+            .select({
+              id: auditLogs.id,
+              action: auditLogs.action,
+              userName: users.name,
+              userEmail: users.email,
+              targetType: auditLogs.targetType,
+              targetId: auditLogs.targetId,
+              ipAddress: auditLogs.ipAddress,
+              createdAt: auditLogs.createdAt,
+            })
+            .from(auditLogs)
+            .leftJoin(users, eq(auditLogs.userId, users.id))
+            .where(and(...conditions))
+            .orderBy(auditLogs.id)
+            .limit(remaining),
+        { orgId },
+      );
 
       if (rows.length === 0) return;
 

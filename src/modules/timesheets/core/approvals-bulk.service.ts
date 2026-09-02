@@ -217,16 +217,17 @@ export class ApprovalsBulkService {
         );
 
       const actorMembId = actingMembershipId(u.principal);
-      for (const id of ids) {
-        await this.audit.record(tx, {
+      await this.audit.recordMany(
+        tx,
+        ids.map((id) => ({
           orgId: u.orgId,
           actorMembershipId: actorMembId,
           entityType: "period",
           entityId: id.toString(),
           action: "period.rejected",
           reason: input.reason,
-        });
-      }
+        })),
+      );
     });
 
     return { rejected: ids.length };

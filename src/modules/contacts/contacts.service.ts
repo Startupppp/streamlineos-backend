@@ -21,6 +21,7 @@ import {
   contactPartyViewScope,
 } from "./contact-party-reader";
 import type { DataScope } from "../access/access.types";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { queryContacts, searchContacts, getOneContact } from "./contacts-query";
 import type {
   BulkImportContactsInput,
@@ -174,28 +175,36 @@ export class ContactsService {
     const pageSize = 500;
     let afterId = 0;
     for (;;) {
-      const rows = await this.db
-        .select({
-          id: CONTACT_PARTY_COLUMNS.id,
-          name: CONTACT_PARTY_COLUMNS.name,
-          email: CONTACT_PARTY_COLUMNS.email,
-          phone: CONTACT_PARTY_COLUMNS.phone,
-          title: CONTACT_PARTY_COLUMNS.title,
-          company: CONTACT_PARTY_COLUMNS.company,
-          department: CONTACT_PARTY_COLUMNS.department,
-          createdAt: CONTACT_PARTY_COLUMNS.createdAt,
-        })
-        .from(contactPartyMap)
-        .innerJoin(businessParties, CONTACT_PARTY_JOIN)
-        .where(
-          and(
-            ...contactPartyScope(orgId),
-            contactPartyViewScope(orgId, userId, scope),
-            gt(contactPartyMap.contactId, afterId),
-          ),
-        )
-        .orderBy(asc(contactPartyMap.contactId))
-        .limit(pageSize);
+      /* One page, one transaction. The handler is `@NoTenantTransaction()` because the
+       * generator stays open for the whole download; holding the request transaction
+       * across every `res.write` would pin a pooled connection to the client's socket. */
+      const rows = await runInTenantTransaction(
+        this.db,
+        (tx) =>
+          tx
+            .select({
+              id: CONTACT_PARTY_COLUMNS.id,
+              name: CONTACT_PARTY_COLUMNS.name,
+              email: CONTACT_PARTY_COLUMNS.email,
+              phone: CONTACT_PARTY_COLUMNS.phone,
+              title: CONTACT_PARTY_COLUMNS.title,
+              company: CONTACT_PARTY_COLUMNS.company,
+              department: CONTACT_PARTY_COLUMNS.department,
+              createdAt: CONTACT_PARTY_COLUMNS.createdAt,
+            })
+            .from(contactPartyMap)
+            .innerJoin(businessParties, CONTACT_PARTY_JOIN)
+            .where(
+              and(
+                ...contactPartyScope(orgId),
+                contactPartyViewScope(orgId, userId, scope),
+                gt(contactPartyMap.contactId, afterId),
+              ),
+            )
+            .orderBy(asc(contactPartyMap.contactId))
+            .limit(pageSize),
+        { orgId },
+      );
       if (rows.length === 0) return;
 
       const pageCsv = toCsv(headers, rows.map((r) => ({

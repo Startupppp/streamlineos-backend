@@ -164,7 +164,7 @@ describe("A — infra failure retries; deterministic failure does not", () => {
     expect(result).toBe("failed");
     const waitingCall = db.allSetCalls.find((c) => c["status"] === "waiting");
     expect(waitingCall).toBeUndefined();
-    expect(finishExecution).toHaveBeenCalledWith(expect.anything(), BASE_EXECUTION.id, "failed");
+    expect(finishExecution).toHaveBeenCalledWith(expect.anything(), ORG, BASE_EXECUTION.id, "failed");
   });
 
   it("isTransientInfraError returns false for a plain domain Error (no code)", () => {
@@ -215,6 +215,7 @@ describe("B — exhausted retry budget lands in dead_lettered state", () => {
 
     expect(deadLetterExecution).toHaveBeenCalledWith(
       expect.anything(),
+      ORG,
       BASE_EXECUTION.id,
       "connection reset by peer",
       expect.objectContaining({ infraAttempt: OUTBOX_MAX_RETRIES }),
@@ -250,7 +251,7 @@ describe("B — exhausted retry budget lands in dead_lettered state", () => {
 
     expect(result).toBe("failed");
     expect(deadLetterExecution).not.toHaveBeenCalled();
-    expect(finishExecution).toHaveBeenCalledWith(expect.anything(), BASE_EXECUTION.id, "failed");
+    expect(finishExecution).toHaveBeenCalledWith(expect.anything(), ORG, BASE_EXECUTION.id, "failed");
   });
 
   it("no retry happens once budget is exhausted — status is not set to waiting", async () => {
@@ -522,6 +523,7 @@ describe("D — expired lease reclaim: expireStuck re-queues crashed workers", (
 
     expect(deadLetterExecution).toHaveBeenCalledWith(
       tx,
+      ORG,
       "exec-stuck-4",
       expect.stringContaining("timed out"),
       expect.objectContaining({ infraAttempt: OUTBOX_MAX_RETRIES }),

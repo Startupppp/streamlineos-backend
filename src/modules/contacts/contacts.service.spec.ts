@@ -130,16 +130,25 @@ describe("ContactsService bulk import", () => {
     query.innerJoin.mockReturnValue(query);
     query.where.mockReturnValue(query);
     query.orderBy.mockReturnValue(query);
-    const service = new ContactsService(
-      { select: jest.fn().mockReturnValue(query) } as never,
-      {} as never,
-      {} as never,
-    );
+    /*
+     * Each page now runs in its own tenant transaction, because the export handler is
+     * `@NoTenantTransaction()` — the generator outlives the request, so holding one
+     * transaction across the whole download would pin a pooled connection to the
+     * client's socket. `db.transaction` is the per-page borrow.
+     */
+    const tx = { select: jest.fn().mockReturnValue(query), execute: jest.fn().mockResolvedValue([]) };
+    const db = {
+      select: jest.fn().mockReturnValue(query),
+      execute: jest.fn().mockResolvedValue([]),
+      transaction: jest.fn().mockImplementation((run: (t: unknown) => unknown) => run(tx)),
+    };
+    const service = new ContactsService(db as never, {} as never, {} as never);
 
     const chunks: string[] = [];
     for await (const chunk of service.exportCsvChunks("org-1", "user-1", "all")) chunks.push(chunk);
     const csv = chunks.join("");
 
+    expect(db.transaction).toHaveBeenCalledTimes(2);
     expect(limit).toHaveBeenCalledTimes(2);
     expect(limit).toHaveBeenCalledWith(500);
     expect(csv.match(/^id,name,email,phone,title,company,department,createdAt$/gm)).toHaveLength(1);

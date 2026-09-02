@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, notInArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import {
   supportBusinessHours,
   supportSlaPolicies,
@@ -325,7 +325,8 @@ export class SupportSlaService {
       assigneeId: ticket.assigneeMembership?.user?.id ?? null,
     }));
 
-    let escalated = 0;
+    const due: { ticket: (typeof ticketsForEscalation)[number]; risk: SlaRiskLevel; isRepeatBreach: boolean }[] = [];
+    const idsByNewLevel = new Map<number, number[]>();
 
     for (const ticket of ticketsForEscalation) {
       const risk = this.computeRisk(ticket);
@@ -336,12 +337,24 @@ export class SupportSlaService {
       if (newLevel <= ticket.slaEscalationLevel && !isRepeatBreach) continue;
 
       if (newLevel > ticket.slaEscalationLevel) {
-        await this.db
-          .update(supportTickets)
-          .set({ slaEscalationLevel: newLevel })
-          .where(and(eq(supportTickets.id, ticket.id), eq(supportTickets.orgId, orgId)));
+        const ids = idsByNewLevel.get(newLevel);
+        if (ids) ids.push(ticket.id);
+        else idsByNewLevel.set(newLevel, [ticket.id]);
       }
 
+      due.push({ ticket, risk, isRepeatBreach });
+    }
+
+    for (const [newLevel, ids] of idsByNewLevel) {
+      await this.db
+        .update(supportTickets)
+        .set({ slaEscalationLevel: newLevel })
+        .where(and(inArray(supportTickets.id, ids), eq(supportTickets.orgId, orgId)));
+    }
+
+    let escalated = 0;
+
+    for (const { ticket, risk, isRepeatBreach } of due) {
       if (ticket.assigneeId && (risk === "first_response_due_soon" || risk === "first_response_breached" || risk === "resolution_due_soon" || risk === "resolution_breached")) {
         try {
           await this.notifications.sendEscalationEmail(orgId, ticket.assigneeId, ticket.title, ticket.id, risk);

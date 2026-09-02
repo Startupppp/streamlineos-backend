@@ -25,6 +25,8 @@ export interface AuditEventParams {
 
 type DbLike = Pick<Db, "insert" | "select">;
 
+const AUDIT_INSERT_CHUNK = 500;
+
 /** JSON.stringify with recursively sorted object keys, so hashes survive
  *  Postgres jsonb round-trips (jsonb does not preserve key order). */
 export function stableStringify(value: unknown): string {
@@ -88,6 +90,47 @@ export class TimesheetsAuditService {
       prevHash,
       rowHash,
     });
+  }
+
+  /**
+   * The chained form of `record`. The hash chain is sequential by definition, so a
+   * bulk action wrote one SELECT plus one INSERT per subject; here the tail hash is
+   * read once and the chain is extended in memory, which is exactly what a per-row
+   * loop would have produced because every link is derived from its predecessor.
+   * The multi-row INSERT keeps VALUES order, so `id` order matches chain order.
+   */
+  async recordMany(dbOrTx: DbLike, paramsList: readonly AuditEventParams[]): Promise<void> {
+    const first = paramsList[0];
+    if (!first) return;
+
+    const [last] = await dbOrTx
+      .select({ rowHash: timesheetAuditEvents.rowHash })
+      .from(timesheetAuditEvents)
+      .where(eq(timesheetAuditEvents.orgId, first.orgId))
+      .orderBy(desc(timesheetAuditEvents.id))
+      .limit(1);
+
+    let prevHash = last?.rowHash ?? null;
+    const rows = paramsList.map((params) => {
+      const rowHash = computeAuditRowHash(prevHash, params);
+      const row = {
+        orgId: params.orgId,
+        actorMembershipId: params.actorMembershipId ?? null,
+        entityType: params.entityType,
+        entityId: params.entityId,
+        action: params.action,
+        before: (params.before ?? null) as Record<string, unknown> | null,
+        after: (params.after ?? null) as Record<string, unknown> | null,
+        reason: params.reason ?? null,
+        prevHash,
+        rowHash,
+      };
+      prevHash = rowHash;
+      return row;
+    });
+
+    for (let offset = 0; offset < rows.length; offset += AUDIT_INSERT_CHUNK)
+      await dbOrTx.insert(timesheetAuditEvents).values(rows.slice(offset, offset + AUDIT_INSERT_CHUNK));
   }
 
   recordWithDb(params: AuditEventParams): Promise<void> {

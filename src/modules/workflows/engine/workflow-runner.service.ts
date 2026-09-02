@@ -170,6 +170,7 @@ export class WorkflowRunnerService {
       } else {
         await deadLetterExecution(
           tx,
+          orgId,
           row.id,
           `execution timed out after ${OUTBOX_MAX_RETRIES} infra attempts`,
           state,
@@ -285,7 +286,7 @@ export class WorkflowRunnerService {
             `${currentState.infraAttempt} attempts (permission resolve) — dead-lettering: ${errStr}`,
           );
           await runInNewTenantTransaction(this.db, orgId, (tx) =>
-            deadLetterExecution(tx, execution.id, errStr, currentState),
+            deadLetterExecution(tx, orgId, execution.id, errStr, currentState),
           );
           return "dead_lettered";
         }
@@ -294,7 +295,7 @@ export class WorkflowRunnerService {
           `(infraAttempt=${currentState.infraAttempt}): ${errStr}`,
         );
         await runInNewTenantTransaction(this.db, orgId, (tx) =>
-          finishExecution(tx, execution.id, "failed"),
+          finishExecution(tx, orgId, execution.id, "failed"),
         );
         return "failed";
       }
@@ -329,13 +330,13 @@ export class WorkflowRunnerService {
           `${currentState.infraAttempt} attempts (execution) — dead-lettering: ${reason}`,
         );
         await runInNewTenantTransaction(this.db, orgId, (tx) =>
-          deadLetterExecution(tx, execution.id, reason, currentState),
+          deadLetterExecution(tx, orgId, execution.id, reason, currentState),
         );
         return "dead_lettered";
       }
       this.logger.error(`workflow execution ${executionId} crashed: ${reason}`);
       await runInNewTenantTransaction(this.db, orgId, (tx) =>
-        finishExecution(tx, execution.id, "failed"),
+        finishExecution(tx, orgId, execution.id, "failed"),
       );
       return "failed";
     }

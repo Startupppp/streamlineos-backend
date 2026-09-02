@@ -78,7 +78,8 @@ export class LeaveApproverService {
             inArray(organizationMembers.userId, uniqueCandidateIds),
             eq(organizationMembers.status, "ACTIVE"),
           ),
-        ),
+        )
+        .limit(uniqueCandidateIds.length),
     ]);
 
     const candidateById = new Map(candidateRows.map((row) => [row.id, row]));
