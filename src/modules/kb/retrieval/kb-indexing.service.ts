@@ -22,6 +22,14 @@ export function isPageIndexable(page: {
   return page.status !== "archived" && page.deletedAt === null;
 }
 
+function articleBodyChunks(orgId: string, articleId: number) {
+  return and(
+    eq(kbArticleChunks.orgId, orgId),
+    eq(kbArticleChunks.articleId, articleId),
+    eq(kbArticleChunks.source, "article_body"),
+  );
+}
+
 const REINDEX_ALL_BATCH_SIZE = 100;
 const KB_INDEXING_FEATURE = "kb.indexing";
 
@@ -187,19 +195,38 @@ export class KbIndexingService {
 
     const [firstExisting] = await runInTenantTransaction(this.db, async (tx) =>
       tx
-        .select({ contentHash: kbArticleChunks.contentHash })
+        .select({
+          contentHash: kbArticleChunks.contentHash,
+          aclRevision: kbArticleChunks.aclRevision,
+          contentRevision: kbArticleChunks.contentRevision,
+        })
         .from(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.articleId, articleId),
-            eq(kbArticleChunks.source, "article_body"),
-          ),
-        )
+        .where(articleBodyChunks(orgId, articleId))
         .limit(1),
     { orgId });
 
-    if (firstExisting?.contentHash === contentHash) return;
+    const contentRevision = article.contentRevision;
+    const aclRevision = article.aclRevision;
+
+    // An unchanged hash returned unconditionally, stranding the chunk ACL: the candidate
+    // gate joins acl_revision with `=`, so a restriction change that left the text alone
+    // dropped the article out of retrieval until somebody edited its body.
+    if (firstExisting?.contentHash === contentHash) {
+      if (
+        firstExisting.aclRevision === aclRevision &&
+        firstExisting.contentRevision === contentRevision
+      )
+        return;
+
+      this.logger.log("KB article ACL updated (content unchanged)", { orgId, articleId });
+      await runInTenantTransaction(this.db, async (tx) =>
+        tx
+          .update(kbArticleChunks)
+          .set({ aclRevision, contentRevision })
+          .where(articleBodyChunks(orgId, articleId)),
+      { orgId });
+      return;
+    }
 
     this.logger.log("KB article indexing started", {
       orgId,
@@ -216,19 +243,10 @@ export class KbIndexingService {
       signal,
     );
 
-    const contentRevision = article.contentRevision;
-    const aclRevision = article.aclRevision;
-
     await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.articleId, articleId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "article_body"),
-          ),
-        );
+        .where(articleBodyChunks(orgId, articleId));
 
       await tx.insert(kbArticleChunks).values(
         chunks.map((chunk, index) => ({
