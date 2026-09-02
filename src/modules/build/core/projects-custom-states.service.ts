@@ -14,6 +14,7 @@ import {
   projectStatuses,
   tickets,
 } from "../../../db/schema";
+import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
@@ -55,6 +56,7 @@ export class ProjectsCustomStatesService {
       .from(projectMembers)
       .where(
         and(
+          eq(projectMembers.orgId, u.orgId),
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.membershipId, callerMid ?? -1),
         ),
@@ -222,9 +224,13 @@ export class ProjectsCustomStatesService {
 
     const currentById = new Map(current.map((s) => [s.id, s.order]));
 
+    const seenStateIds = new Set<number>();
     for (const item of body.items) {
       if (!currentById.has(item.stateId))
         throw new NotFoundException(`Status ${item.stateId} not found in this project`);
+      if (seenStateIds.has(item.stateId))
+        throw new BadRequestException(`Status ${item.stateId} appears twice in the reorder`);
+      seenStateIds.add(item.stateId);
     }
 
     const conflicts: { stateId: number; currentOrder: number; expectedOrder: number }[] = [];
@@ -237,25 +243,26 @@ export class ProjectsCustomStatesService {
     if (conflicts.length > 0)
       throw new HttpException({ error: "conflict", conflicts }, 409);
 
-    const updated = await this.db.transaction(async (tx) => {
-      const results: { id: number; order: number }[] = [];
-      for (const item of body.items) {
-        const [row] = await tx
-          .update(projectStatuses)
-          .set({ order: item.order })
-          .where(
-            and(
-              eq(projectStatuses.id, item.stateId),
-              eq(projectStatuses.orgId, u.orgId),
-            ),
-          )
-          .returning({ id: projectStatuses.id, order: projectStatuses.order });
-        if (row) results.push(row);
-      }
-      return results;
+    /*
+     * A reorder is one statement, not one per state. Every row carries a
+     * different `order`, so the batched form is `UPDATE … FROM (VALUES …)`;
+     * a repeated stateId is refused there rather than silently applying one
+     * of the two orders.
+     */
+    const updatedIds = await bulkUpdateFromValues(this.db, {
+      table: projectStatuses,
+      orgId: u.orgId,
+      key: { column: "id", type: "integer" },
+      columns: [{ column: "order", type: "integer" }],
+      rows: body.items.map((item) => ({ key: item.stateId, values: [item.order] })),
     });
+    const updatedSet = new Set(updatedIds.map((id) => Number(id)));
 
-    return { items: updated };
+    return {
+      items: body.items
+        .filter((item) => updatedSet.has(item.stateId))
+        .map((item) => ({ id: item.stateId, order: item.order })),
+    };
   }
 
   async deleteCustomState(u: CurrentUserContext, stateId: number) {

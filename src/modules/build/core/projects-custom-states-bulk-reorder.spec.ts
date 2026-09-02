@@ -1,4 +1,6 @@
-import { HttpException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, HttpException, NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { ProjectsCustomStatesService } from "./projects-custom-states.service";
 import { projectStatuses } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
@@ -21,7 +23,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
 type StateRow = { id: number; order: number };
 
 function makeDb(rows: StateRow[]) {
-  const store = { rows: [...rows], updateCalls: 0, txRolledBack: false };
+  const store = { rows: [...rows], updateCalls: 0, txRolledBack: false, statements: 0 };
 
   const builder = (filterFn: (row: StateRow) => boolean) => ({
     limit: jest.fn().mockResolvedValue(store.rows.filter(filterFn)),
@@ -51,6 +53,23 @@ function makeDb(rows: StateRow[]) {
           }),
         }),
       }),
+    }),
+    /*
+     * The reorder is one `UPDATE … FROM (VALUES …)`. Decode the bind parameters
+     * so the mock answers with exactly the ids the statement claims to move —
+     * a statement that missed a state returns fewer keys and the service drops
+     * it from the response, which is what makes these assertions bite.
+     */
+    execute: jest.fn().mockImplementation((statement: SQL) => {
+      store.statements++;
+      store.updateCalls++;
+      const { params } = new PgDialect().sqlToQuery(statement);
+      const keys: number[] = [];
+      for (let i = 0; i + 1 < params.length; i += 2) {
+        if (typeof params[i] !== "number") break;
+        keys.push(params[i] as number);
+      }
+      return Promise.resolve(keys.map((key) => ({ key })));
     }),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const txProxy = {
@@ -95,10 +114,36 @@ describe("bulk-reorder — idempotent transactional update", () => {
       ],
     };
 
-    const result = await service.bulkReorderCustomStates(makeUser(), PROJECT_ID, body);
+    const { db: db2, store } = makeDb(rows);
+    const service2 = makeService(db2);
+    const result = await service2.bulkReorderCustomStates(makeUser(), PROJECT_ID, body);
 
-    expect(result.items).toHaveLength(2);
-    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(result.items).toEqual([
+      { id: 1, order: 1 },
+      { id: 2, order: 0 },
+    ]);
+    // One statement for the whole reorder: the atomicity a wrapping transaction
+    // used to provide now comes from the statement itself.
+    expect(store.statements).toBe(1);
+    expect(db2.transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a reorder that names the same state twice", async () => {
+    const rows: StateRow[] = [{ id: 1, order: 0 }];
+    const { db, store } = makeDb(rows);
+    const service = makeService(db);
+
+    const body: BulkReorderStatesInput = {
+      items: [
+        { stateId: 1, order: 0 },
+        { stateId: 1, order: 1 },
+      ],
+    };
+
+    await expect(
+      service.bulkReorderCustomStates(makeUser(), PROJECT_ID, body),
+    ).rejects.toThrow(BadRequestException);
+    expect(store.statements).toBe(0);
   });
 
   it("throws NotFoundException when a stateId does not exist in the project", async () => {
@@ -164,6 +209,7 @@ describe("bulk-reorder — idempotent transactional update", () => {
     );
 
     expect(store.updateCalls).toBe(0);
+    expect(store.statements).toBe(0);
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
@@ -182,10 +228,12 @@ describe("bulk-reorder — idempotent transactional update", () => {
       ],
     };
 
-    const result = await service.bulkReorderCustomStates(makeUser(), PROJECT_ID, body);
+    const { db: db2, store } = makeDb(rows);
+    const service2 = makeService(db2);
+    const result = await service2.bulkReorderCustomStates(makeUser(), PROJECT_ID, body);
 
-    expect(result.items).toBeDefined();
-    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(result.items).toHaveLength(2);
+    expect(store.statements).toBe(1);
   });
 
   it("is bounded at 50 items by the schema", () => {

@@ -13,6 +13,9 @@ import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 import { AiCreditsPacksService } from "./ai-credits-packs.service";
 import type { AiCreditReserveInput, AiCreditSettleInput } from "../../ai/core/gateway/credit-ledger.interface";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../db/drizzle.types";
+
+type WalletExecutor = Db | TenantTx;
 
 @Injectable()
 export class AiCreditsService {
@@ -105,6 +108,43 @@ export class AiCreditsService {
     return this.packs.listPacks();
   }
 
+  /**
+   * Credits the wallet in one statement, creating it if this is the tenant's
+   * first grant.
+   *
+   * `SELECT … FOR UPDATE` locks nothing when the row does not exist, so on an
+   * organisation's very first purchase two payments both saw no wallet, both
+   * inserted, and the loser died `23505`. The catch below swallowed it and
+   * returned the current balance: the customer paid and got no credits, and no
+   * ledger row recorded the purchase. An upsert has no such window, and the
+   * balance moves in SQL rather than as a read-modify-write, so a concurrent
+   * grant cannot be erased either.
+   *
+   * The returned balance is the one the database committed — the ledger's
+   * `balanceAfter` is taken from it rather than recomputed, so the two cannot
+   * disagree.
+   */
+  private async creditWallet(
+    tx: WalletExecutor,
+    orgId: string,
+    amountMilli: number,
+  ): Promise<number> {
+    const [wallet] = await tx
+      .insert(orgAiCredits)
+      .values({ orgId, balance: amountMilli, lifetimeGranted: amountMilli })
+      .onConflictDoUpdate({
+        target: orgAiCredits.orgId,
+        set: {
+          balance: sql`${orgAiCredits.balance} + ${amountMilli}`,
+          lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${amountMilli}`,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({ balance: orgAiCredits.balance });
+    if (!wallet) throw new Error("AI credit wallet upsert returned no rows");
+    return wallet.balance;
+  }
+
   async grantPlanCredits(orgId: string, plan: string, userId?: string, referenceId?: string) {
     const amountMilli = planGrantMilli(plan);
     if (!amountMilli) return;
@@ -126,27 +166,7 @@ export class AiCreditsService {
           if (existing) return;
         }
 
-        let [wallet] = await tx
-          .select()
-          .from(orgAiCredits)
-          .where(eq(orgAiCredits.orgId, orgId))
-          .for("update");
-        if (!wallet) {
-          [wallet] = await tx
-            .insert(orgAiCredits)
-            .values({ orgId })
-            .returning();
-        }
-
-        const newBalance = wallet.balance + amountMilli;
-        await tx
-          .update(orgAiCredits)
-          .set({
-            balance: newBalance,
-            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${amountMilli}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(orgAiCredits.orgId, orgId));
+        const newBalance = await this.creditWallet(tx, orgId, amountMilli);
 
         await tx.insert(aiCreditTransactions).values({
           orgId,
@@ -202,36 +222,14 @@ export class AiCreditsService {
             .limit(1);
           if (existingPurchase) {
             const [current] = await tx
-              .select()
+              .select({ balance: orgAiCredits.balance })
               .from(orgAiCredits)
               .where(eq(orgAiCredits.orgId, orgId));
-            return current;
+            return current?.balance ?? 0;
           }
         }
 
-        const [locked] = await tx
-          .select()
-          .from(orgAiCredits)
-          .where(eq(orgAiCredits.orgId, orgId))
-          .for("update");
-
-        let currentBalance = 0;
-        if (locked) {
-          currentBalance = locked.balance;
-        } else {
-          await tx.insert(orgAiCredits).values({ orgId });
-        }
-
-        const newBalance = currentBalance + creditsAddedMilli;
-        const [updated] = await tx
-          .update(orgAiCredits)
-          .set({
-            balance: newBalance,
-            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAddedMilli}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(orgAiCredits.orgId, orgId))
-          .returning();
+        const newBalance = await this.creditWallet(tx, orgId, creditsAddedMilli);
 
         await tx.insert(aiCreditTransactions).values({
           orgId,
@@ -244,10 +242,10 @@ export class AiCreditsService {
           metadata: automatic ? { automatic: true } : null,
         });
 
-        return updated;
+        return newBalance;
       });
 
-      return { balance: milliToCredits(wallet?.balance ?? 0), creditsAdded, pack };
+      return { balance: milliToCredits(wallet ?? 0), creditsAdded, pack };
     } catch (err: unknown) {
       if ((err as { code?: string }).code === "23505") {
         const [currentWallet] = await this.db
@@ -338,28 +336,7 @@ export class AiCreditsService {
 
     try {
       await runInTenantTransaction(this.db, async (tx) => {
-        const [wallet] = await tx
-          .select()
-          .from(orgAiCredits)
-          .where(eq(orgAiCredits.orgId, orgId))
-          .for("update");
-
-        let currentBalance = 0;
-        if (wallet) {
-          currentBalance = wallet.balance;
-        } else {
-          await tx.insert(orgAiCredits).values({ orgId });
-        }
-
-        const newBalance = currentBalance + creditsAddedMilli;
-        await tx
-          .update(orgAiCredits)
-          .set({
-            balance: newBalance,
-            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAddedMilli}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(orgAiCredits.orgId, orgId));
+        const newBalance = await this.creditWallet(tx, orgId, creditsAddedMilli);
 
         await tx.insert(aiCreditTransactions).values({
           orgId,

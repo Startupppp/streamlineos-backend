@@ -11,12 +11,29 @@ export function seatCount(orgId: string): SQL<number> {
   )::int`;
 }
 
+function quotaLockKey(orgId: string, limitKey: string): string {
+  return `quota:${orgId}:${limitKey}`;
+}
+
+/**
+ * Serialises a plan-limit check against the insert it guards.
+ *
+ * `assertWithinLimit` is check-then-act on its own: N concurrent creates at the
+ * ceiling all read the same `used` and all succeed. Held for the length of the
+ * transaction that does the insert — and with the same transaction handed to
+ * `assertWithinLimit` so the count reads through it — the check and the write
+ * become one serialized invariant.
+ */
+function lockQuota(orgId: string, limitKey: string): SQL {
+  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${quotaLockKey(orgId, limitKey)}, 0))`;
+}
+
 export function membersQuotaLockKey(orgId: string): string {
-  return `quota:${orgId}:members`;
+  return quotaLockKey(orgId, "members");
 }
 
 export function lockMembersQuota(orgId: string): SQL {
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${membersQuotaLockKey(orgId)}, 0))`;
+  return lockQuota(orgId, "members");
 }
 
 export type SeatEventType =

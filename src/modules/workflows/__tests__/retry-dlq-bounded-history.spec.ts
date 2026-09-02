@@ -49,6 +49,8 @@ jest.mock("../engine/execution-advance", () => ({
 
 import { WorkflowRunnerService, isTransientInfraError } from "../engine/workflow-runner.service";
 import { advanceExecution, deadLetterExecution, finishExecution } from "../engine/execution-advance";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
 import type { Db } from "../../../db/drizzle.module";
 import type { NodeDispatchPort } from "../engine/node-outcome";
@@ -388,11 +390,20 @@ describe("C — step history is bounded by the sweep pruning pass", () => {
 describe("D — expired lease reclaim: expireStuck re-queues crashed workers", () => {
   type PrivateStuck = { expireStuck(tx: unknown, orgId: string): Promise<void> };
 
+  /*
+   * The release is now one `UPDATE … FROM (VALUES …)` for the whole batch
+   * instead of one statement per execution, so the values this group asserts on
+   * ride as bind parameters rather than as a `.set({...})` object. Both capture
+   * paths feed `allSetCalls`, so every assertion below still reads what the
+   * runner actually wrote — and would still see a `timed_out` written either way.
+   */
   function makeTxWithStuck(rows: object[]): {
     tx: unknown;
     allSetCalls: Array<Record<string, unknown>>;
+    statements: number;
   } {
     const allSetCalls: Array<Record<string, unknown>> = [];
+    const captured = { statements: 0 };
     const tx = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
@@ -407,8 +418,32 @@ describe("D — expired lease reclaim: expireStuck re-queues crashed workers", (
           return { where: jest.fn().mockReturnValue(Promise.resolve()) };
         }),
       }),
+      execute: jest.fn().mockImplementation((statement: SQL) => {
+        captured.statements += 1;
+        const { params } = new PgDialect().sqlToQuery(statement);
+        const keys: Array<string | number> = [];
+        for (let i = 0; i + 2 < params.length; i += 3) {
+          const [key, status, context] = [params[i], params[i + 1], params[i + 2]];
+          if (typeof status !== "string" || typeof context !== "string") break;
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(context);
+          } catch {
+            break;
+          }
+          allSetCalls.push({ status, context: parsed as Record<string, unknown> });
+          keys.push(key as string | number);
+        }
+        return Promise.resolve(keys.map((key) => ({ key })));
+      }),
     };
-    return { tx, allSetCalls };
+    return {
+      tx,
+      allSetCalls,
+      get statements() {
+        return captured.statements;
+      },
+    };
   }
 
   function makeMinimalService(): WorkflowRunnerService {
@@ -434,6 +469,20 @@ describe("D — expired lease reclaim: expireStuck re-queues crashed workers", (
     const ctx = waitingCall?.["context"] as Record<string, unknown> | undefined;
     expect(ctx?.["infraAttempt"]).toBe(2);
     expect(ctx?.["resumeAt"]).toBeDefined();
+  });
+
+  it("the whole stuck batch is released by ONE statement, not one per execution", async () => {
+    const rows = [1, 2, 3].map((n) => ({
+      id: `exec-batch-${n}`,
+      context: { cursor: `node-${n}`, resumeAt: null, variables: {}, steps: 1, infraAttempt: 0, dlqReason: null },
+    }));
+    const captured = makeTxWithStuck(rows);
+    const svc = makeMinimalService();
+
+    await (svc as unknown as PrivateStuck).expireStuck(captured.tx, ORG);
+
+    expect(captured.statements).toBe(1);
+    expect(captured.allSetCalls.filter((c) => c["status"] === "waiting")).toHaveLength(3);
   });
 
   it("the released execution has a future resumeAt (backoff is non-zero)", async () => {

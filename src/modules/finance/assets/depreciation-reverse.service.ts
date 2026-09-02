@@ -5,6 +5,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { JournalPostingService, type DraftLine } from "../../accounting/posting/journal-posting.service";
 import {
   accFixedAssets, accDepreciationRuns, accDepreciationSchedules,
@@ -95,18 +96,34 @@ export class DepreciationReverseService {
             .where(and(inArray(accFixedAssets.id, assetIds), eq(accFixedAssets.orgId, u.orgId)))
             .limit(assetIds.length);
 
-      for (const asset of assets) {
-        const amt = assetAmounts.get(asset.id) ?? 0;
-        const newAccum = Math.max(
-          0,
-          Math.round((Number(asset.accumulatedDepreciation) - amt) * 10000) / 10000,
-        );
-        const newStatus = asset.status === "FULLY_DEPRECIATED" ? "ACTIVE" : asset.status;
-        await tx
-          .update(accFixedAssets)
-          .set({ accumulatedDepreciation: String(newAccum), status: newStatus, updatedAt: new Date() })
-          .where(and(eq(accFixedAssets.id, asset.id), eq(accFixedAssets.orgId, u.orgId)));
-      }
+      /*
+       * Each asset carries a different accumulated figure, so `inArray` cannot
+       * batch it — one `UPDATE … FROM (VALUES …)` moves the whole register.
+       */
+      await bulkUpdateFromValues(tx, {
+        table: accFixedAssets,
+        orgId: u.orgId,
+        key: { column: "id", type: "integer" },
+        columns: [
+          { column: "accumulated_depreciation", type: "numeric" },
+          { column: "status", type: "acc_asset_status" },
+        ],
+        touch: ["updated_at"],
+        rows: assets.map((asset) => ({
+          key: asset.id,
+          values: [
+            String(
+              Math.max(
+                0,
+                Math.round(
+                  (Number(asset.accumulatedDepreciation) - (assetAmounts.get(asset.id) ?? 0)) * 10000,
+                ) / 10000,
+              ),
+            ),
+            asset.status === "FULLY_DEPRECIATED" ? "ACTIVE" : asset.status,
+          ],
+        })),
+      });
 
       await tx
         .update(accDepreciationRuns)

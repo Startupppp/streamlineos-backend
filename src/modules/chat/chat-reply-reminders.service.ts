@@ -113,7 +113,7 @@ export class ChatReplyRemindersService {
 
       for (const reminder of due) {
         try {
-          const handled = await this.processReminder(reminder.id);
+          const handled = await this.processReminder(orgId, reminder.id);
           if (handled === "sent") sent += 1;
           if (handled === "cancelled") cancelled += 1;
         } catch (error) {
@@ -129,25 +129,31 @@ export class ChatReplyRemindersService {
   }
 
   private async processReminder(
+    orgId: string,
     reminderId: number,
   ): Promise<"sent" | "cancelled" | "skipped"> {
     const reminder = await this.db.query.chatReplyReminders.findFirst({
-      where: eq(chatReplyReminders.id, reminderId),
+      where: and(eq(chatReplyReminders.orgId, orgId), eq(chatReplyReminders.id, reminderId)),
     });
     if (!reminder || reminder.sentAt || reminder.cancelledAt) return "skipped";
 
     const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, reminder.messageId), eq(chatMessages.isDeleted, false)),
+      where: and(
+        eq(chatMessages.orgId, orgId),
+        eq(chatMessages.id, reminder.messageId),
+        eq(chatMessages.isDeleted, false),
+      ),
       columns: { id: true, content: true, createdAt: true, channelId: true },
     });
     if (!message) {
-      await this.markCancelled(reminderId);
+      await this.markCancelled(orgId, reminderId);
       return "cancelled";
     }
 
     if (reminder.recipientMembershipId) {
       const reply = await this.db.query.chatMessages.findFirst({
         where: and(
+          eq(chatMessages.orgId, orgId),
           eq(chatMessages.channelId, reminder.channelId),
           eq(chatMessages.senderMembershipId, reminder.recipientMembershipId),
           eq(chatMessages.isDeleted, false),
@@ -156,33 +162,34 @@ export class ChatReplyRemindersService {
         columns: { id: true },
       });
       if (reply) {
-        await this.markCancelled(reminderId);
+        await this.markCancelled(orgId, reminderId);
         return "cancelled";
       }
     }
 
     const recipientMembershipId = reminder.recipientMembershipId;
     if (!recipientMembershipId) {
-      await this.markCancelled(reminderId);
+      await this.markCancelled(orgId, reminderId);
       return "cancelled";
     }
     const membership = await this.db.query.chatChannelMembers.findFirst({
       where: and(
+        eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, reminder.channelId),
         eq(chatChannelMembers.membershipId, recipientMembershipId),
       ),
       columns: { mutedUntil: true, archivedAt: true },
     });
     if (!membership) {
-      await this.markCancelled(reminderId);
+      await this.markCancelled(orgId, reminderId);
       return "cancelled";
     }
     if (membership.archivedAt) {
-      await this.markCancelled(reminderId);
+      await this.markCancelled(orgId, reminderId);
       return "cancelled";
     }
     if (membership.mutedUntil && new Date(membership.mutedUntil) > new Date()) {
-      await this.markCancelled(reminderId);
+      await this.markCancelled(orgId, reminderId);
       return "cancelled";
     }
 
@@ -209,25 +216,28 @@ export class ChatReplyRemindersService {
     const sender = senderMembership?.user;
 
     if (!recipient || !recipient.email || !recipient.isActive) {
-      await this.markCancelled(reminderId);
+      await this.markCancelled(orgId, reminderId);
       return "cancelled";
     }
 
     const prefs = await this.db.query.notificationPreferences.findFirst({
-      where: eq(notificationPreferences.userId, recipient.id),
+      where: and(
+        eq(notificationPreferences.orgId, orgId),
+        eq(notificationPreferences.userId, recipient.id),
+      ),
       columns: { emailEnabled: true },
     });
     if (prefs && !prefs.emailEnabled) {
-      await this.markCancelled(reminderId);
+      await this.markCancelled(orgId, reminderId);
       return "cancelled";
     }
 
     const channel = await this.db.query.chatChannels.findFirst({
-      where: eq(chatChannels.id, reminder.channelId),
+      where: and(eq(chatChannels.orgId, orgId), eq(chatChannels.id, reminder.channelId)),
       columns: { name: true, type: true },
     });
     if (!channel) {
-      await this.markCancelled(reminderId);
+      await this.markCancelled(orgId, reminderId);
       return "cancelled";
     }
 
@@ -256,15 +266,15 @@ export class ChatReplyRemindersService {
     await this.db
       .update(chatReplyReminders)
       .set({ sentAt: new Date() })
-      .where(eq(chatReplyReminders.id, reminderId));
+      .where(and(eq(chatReplyReminders.orgId, orgId), eq(chatReplyReminders.id, reminderId)));
 
     return "sent";
   }
 
-  private async markCancelled(reminderId: number): Promise<void> {
+  private async markCancelled(orgId: string, reminderId: number): Promise<void> {
     await this.db
       .update(chatReplyReminders)
       .set({ cancelledAt: new Date() })
-      .where(eq(chatReplyReminders.id, reminderId));
+      .where(and(eq(chatReplyReminders.orgId, orgId), eq(chatReplyReminders.id, reminderId)));
   }
 }

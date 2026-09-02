@@ -24,6 +24,10 @@ import {
   finishExecution,
   MAX_STEPS_PER_EXECUTION,
 } from "./execution-advance";
+import {
+  bulkUpdateFromValues,
+  type BulkUpdateRow,
+} from "../../../common/db/bulk-update";
 import { backoffMs } from "../../../common/workflow/retry-policy";
 import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
 import { AccessService } from "../../access/access.service";
@@ -143,28 +147,26 @@ export class WorkflowRunnerService {
         ),
       )
       .limit(STUCK_BATCH);
+    /*
+     * Every retried execution carries a different serialised context, so the
+     * batched form is `UPDATE … FROM (VALUES …)`. The `status = 'running'`
+     * compare-and-set the per-row update relied on rides in `extraWhere`, so a
+     * concurrently claimed execution is still skipped.
+     */
+    const retries: BulkUpdateRow[] = [];
     for (const row of stuck) {
       const state = readRunState(row.context);
       if (state.infraAttempt < OUTBOX_MAX_RETRIES) {
-        const delay = backoffMs(state.infraAttempt + 1);
-        const resumeAt = new Date(Date.now() + delay);
-        await tx
-          .update(workflowExecutions)
-          .set({
-            status: "waiting",
-            context: writeRunState({
-              ...state,
-              resumeAt,
-              infraAttempt: state.infraAttempt + 1,
-            }),
-          })
-          .where(
-            and(
-              eq(workflowExecutions.id, row.id),
-              eq(workflowExecutions.orgId, orgId),
-              eq(workflowExecutions.status, "running"),
+        const resumeAt = new Date(Date.now() + backoffMs(state.infraAttempt + 1));
+        retries.push({
+          key: row.id,
+          values: [
+            "waiting",
+            JSON.stringify(
+              writeRunState({ ...state, resumeAt, infraAttempt: state.infraAttempt + 1 }),
             ),
-          );
+          ],
+        });
       } else {
         await deadLetterExecution(
           tx,
@@ -174,6 +176,18 @@ export class WorkflowRunnerService {
         );
       }
     }
+    if (retries.length > 0)
+      await bulkUpdateFromValues(tx, {
+        table: workflowExecutions,
+        orgId,
+        key: { column: "id", type: "uuid" },
+        columns: [
+          { column: "status", type: "workflow_execution_status" },
+          { column: "context", type: "jsonb" },
+        ],
+        rows: retries,
+        extraWhere: eq(workflowExecutions.status, "running"),
+      });
   }
 
   private async findRunnableIds(tx: TenantTx, orgId: string): Promise<string[]> {

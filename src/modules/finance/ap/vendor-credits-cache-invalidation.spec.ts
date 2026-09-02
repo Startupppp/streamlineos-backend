@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { VendorCreditsService } from "./vendor-credits.service";
 
@@ -35,7 +36,7 @@ const MOCK_BILL = {
 const MOCK_VC_POSTED = { ...MOCK_VC, status: "POSTED" };
 const MOCK_SEQ = { next: 2, padding: 4 };
 
-function buildDb() {
+function buildDb(affectedRows: Array<{ id: number }> = [{ id: VC_ID }]) {
   const txFn = jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
     const tx = {
       insert: jest.fn().mockReturnValue({
@@ -43,8 +44,19 @@ function buildDb() {
           returning: jest.fn().mockResolvedValue([MOCK_VC]),
         }),
       }),
+      /*
+       * `applyVendorCredit` moves the credit and the bill with conditional
+       * updates and reads the affected rows back — zero rows means someone else
+       * applied first. The mock therefore has to answer `.returning()`.
+       */
       update: jest.fn().mockReturnValue({
-        set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue(
+            Object.assign(Promise.resolve(undefined), {
+              returning: jest.fn().mockResolvedValue(affectedRows),
+            }),
+          ),
+        }),
       }),
     };
     return cb(tx);
@@ -143,5 +155,24 @@ describe("VendorCreditsService — cache.invalidate is not fire-and-forget", () 
     order.push("method");
     expect(order).toEqual(["invalidate", "method"]);
     expect(String(cache.invalidate.mock.calls[0]?.[0])).toContain(ORG_ID);
+  });
+
+  it("applyVendorCredit conflicts when the conditional update moves no row", async () => {
+    const cache = orderedCache([]);
+    // Zero affected rows is how the database says a concurrent apply already
+    // consumed the credit. Spending it twice used to be silent.
+    const db = buildDb([]);
+
+    const selectFn = jest.fn()
+      .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([MOCK_VC_POSTED]) }) }) })
+      .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([MOCK_BILL]) }) }) });
+
+    const enrichedDb = { ...db, select: selectFn };
+    const { svc, u } = buildService(enrichedDb as unknown as Db, cache);
+
+    await expect(
+      svc.applyVendorCredit(u as never, VC_ID, { billId: BILL_ID, amount: 100 }),
+    ).rejects.toThrow(ConflictException);
+    expect(cache.invalidate).not.toHaveBeenCalled();
   });
 });

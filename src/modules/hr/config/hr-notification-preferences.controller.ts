@@ -21,7 +21,7 @@ export class HrNotificationPreferencesController {
   @Get()
   @RequirePermission("hr:employees:view")
   get(@CurrentUser() u: CurrentUserContext) {
-    return this.preferences.get(u.userId);
+    return this.preferences.get(u.userId, u.orgId);
   }
 
   @Patch()

@@ -45,6 +45,7 @@ export class HrWorkflowStepRunnerService {
     if (currentStep.mode === "parallel_all") {
       const [approvedActions] = await this.db.select({ approvedCount: count() }).from(hrWorkflowStepActions)
         .where(and(
+          eq(hrWorkflowStepActions.orgId, orgId),
           eq(hrWorkflowStepActions.instanceId, instance.id),
           eq(hrWorkflowStepActions.stepOrder, currentStep.stepOrder),
           inArray(hrWorkflowStepActions.action, ["approved"]),

@@ -261,12 +261,12 @@ export class BillingPaymentActivation {
       value: coupons.value,
       maxUses: coupons.maxUses,
       usedCount: coupons.usedCount,
-    }).from(coupons).where(and(eq(coupons.id, couponId), eq(coupons.isActive, true))).for("update").limit(1);
+    }).from(coupons).where(and(eq(coupons.orgId, orgId), eq(coupons.id, couponId), eq(coupons.isActive, true))).for("update").limit(1);
     if (!lockedCoupon) return;
     if (lockedCoupon.maxUses !== null && lockedCoupon.usedCount >= lockedCoupon.maxUses) {
       throw new BadRequestException("This coupon has reached its usage limit");
     }
-    await tx.update(coupons).set({ usedCount: sql`${coupons.usedCount} + 1` }).where(eq(coupons.id, couponId));
+    await tx.update(coupons).set({ usedCount: sql`${coupons.usedCount} + 1` }).where(and(eq(coupons.orgId, orgId), eq(coupons.id, couponId)));
     const discountPaise = couponDiscountPaise({
       id: lockedCoupon.id,
       type: lockedCoupon.type,

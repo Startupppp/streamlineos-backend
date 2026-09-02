@@ -229,13 +229,22 @@ export class PaymentProviderSetupService {
     const provider = await this.findProvider(orgId, providerKey);
     const existing = await this.db.query.paymentProviderCredentials.findFirst({
       where: and(
+        eq(paymentProviderCredentials.orgId, orgId),
         eq(paymentProviderCredentials.providerId, provider.id),
         eq(paymentProviderCredentials.environment, environment),
       ),
+      columns: { id: true },
     });
     if (!existing) throw new NotFoundException(`No ${environment} credentials configured`);
 
-    await this.db.delete(paymentProviderCredentials).where(eq(paymentProviderCredentials.id, existing.id));
+    await this.db
+      .delete(paymentProviderCredentials)
+      .where(
+        and(
+          eq(paymentProviderCredentials.orgId, orgId),
+          eq(paymentProviderCredentials.id, existing.id),
+        ),
+      );
 
     await this.audit.log({
       orgId,

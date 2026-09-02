@@ -105,7 +105,11 @@ export class RecruitmentTalentPoolsService {
     if (!candidate) throw new NotFoundException("Candidate not found");
 
     const existing = await this.db.query.talentPoolMembers.findFirst({
-      where: and(eq(talentPoolMembers.poolId, poolId), eq(talentPoolMembers.candidateId, input.candidateId)),
+      where: and(
+        eq(talentPoolMembers.orgId, orgId),
+        eq(talentPoolMembers.poolId, poolId),
+        eq(talentPoolMembers.candidateId, input.candidateId),
+      ),
       columns: { id: true },
     });
     if (existing) throw new ConflictException("Candidate is already in this pool");

@@ -306,8 +306,7 @@ export class AccountingPayablesService {
     if (bill.status === "DRAFT") throw new ConflictException("Post the bill before recording a payment");
     if (bill.status === "CANCELLED") throw new ConflictException("Cannot record payment on a cancelled bill");
 
-    const total = toDecimal(bill.total);
-    const remaining = subtractDecimals(total, toDecimal(bill.amountPaid));
+    const remaining = subtractDecimals(toDecimal(bill.total), toDecimal(bill.amountPaid));
     const requested = decimalFromNumber(input.amount);
     if (compareDecimals(requested, remaining) > 0) {
       throw new BadRequestException(
@@ -318,6 +317,39 @@ export class AccountingPayablesService {
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
     const payment = await this.db.transaction(async (tx) => {
+      /*
+       * The read above gives a readable 400; it is not the invariant. `amount_paid`
+       * is a projection of `sum(vendor_payments.amount)`, and under READ COMMITTED a
+       * concurrent transaction's insert is invisible to this sum — so two full
+       * payments on one bill each summed only their own row and the second write
+       * erased the first. The bill then under-reported what was paid.
+       *
+       * Locking the bill row serialises the two, so the sum below sees every
+       * committed payment and the sufficiency test is re-asserted against it.
+       */
+      const [locked] = await tx
+        .select({
+          total: purchaseBills.total,
+          amountPaid: purchaseBills.amountPaid,
+          status: purchaseBills.status,
+        })
+        .from(purchaseBills)
+        .where(and(eq(purchaseBills.id, billId), eq(purchaseBills.orgId, orgId)))
+        .for("update")
+        .limit(1);
+      if (!locked) throw new NotFoundException("Purchase bill not found");
+      if (locked.status === "DRAFT")
+        throw new ConflictException("Post the bill before recording a payment");
+      if (locked.status === "CANCELLED")
+        throw new ConflictException("Cannot record payment on a cancelled bill");
+
+      const total = toDecimal(locked.total);
+      const lockedRemaining = subtractDecimals(total, toDecimal(locked.amountPaid));
+      if (compareDecimals(requested, lockedRemaining) > 0)
+        throw new ConflictException(
+          `Payment amount ${roundDecimal(requested, 2)} exceeds remaining ${roundDecimal(lockedRemaining, 2)} — another payment landed first`,
+        );
+
       const [inserted] = await tx
         .insert(vendorPayments)
         .values({

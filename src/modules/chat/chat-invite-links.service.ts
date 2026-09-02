@@ -41,9 +41,10 @@ export class ChatInviteLinksService {
     return member;
   }
 
-  private async findActiveLink(channelId: number) {
+  private async findActiveLink(orgId: string, channelId: number) {
     return this.db.query.chatChannelInviteLinks.findFirst({
       where: and(
+        eq(chatChannelInviteLinks.orgId, orgId),
         eq(chatChannelInviteLinks.channelId, channelId),
         isNull(chatChannelInviteLinks.revokedAt),
       ),
@@ -53,7 +54,7 @@ export class ChatInviteLinksService {
   async getOrCreateInviteLink(channelId: number, userId: string, orgId: string) {
     const member = await this.assertAdmin(channelId, userId, orgId);
 
-    const existing = await this.findActiveLink(channelId);
+    const existing = await this.findActiveLink(orgId, channelId);
     if (existing) {
       const shown = this.readableToken(existing);
       if (shown) return { token: shown };
@@ -127,9 +128,11 @@ export class ChatInviteLinksService {
 
     const existingMember = await this.db.query.chatChannelMembers.findFirst({
       where: and(
+        eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channel.id),
         eq(chatChannelMembers.membershipId, joinerOrgMember.id),
       ),
+      columns: { id: true },
     });
     if (!existingMember) {
       await this.db.insert(chatChannelMembers).values({

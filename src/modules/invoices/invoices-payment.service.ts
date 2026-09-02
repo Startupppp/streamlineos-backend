@@ -1,4 +1,11 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   invoices,
@@ -114,6 +121,39 @@ export class InvoicesPaymentService {
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
     const created = await this.db.transaction(async (tx) => {
+      /*
+       * The outstanding-balance read above is outside any transaction, so two
+       * full payments against one invoice both saw the same remaining amount and
+       * both were accepted — the `payments` rows then totalled twice what the
+       * invoice recorded, because `recomputeInvoiceBalance` writes an absolute
+       * sum and the later write won.
+       *
+       * Locking the invoice row serialises them; the re-summed total inside the
+       * lock sees every committed payment, so the second one is refused instead
+       * of silently overpaying.
+       */
+      const [lockedInvoice] = await tx
+        .select({ total: invoices.total, status: invoices.status })
+        .from(invoices)
+        .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)))
+        .for("update")
+        .limit(1);
+      if (!lockedInvoice) throw new NotFoundException("Invoice not found");
+      if (lockedInvoice.status === "VOIDED")
+        throw new ConflictException("Cannot record payment on voided invoice");
+
+      const [lockedPaid] = await tx
+        .select({
+          totalPaid: sql<number>`COALESCE(sum(${payments.amount}::numeric), 0)::float`,
+        })
+        .from(payments)
+        .where(and(eq(payments.invoiceId, invoiceId), eq(payments.orgId, orgId)));
+      const lockedRemaining = Number(lockedInvoice.total ?? 0) - Number(lockedPaid?.totalPaid ?? 0);
+      if (input.amount > lockedRemaining + 0.01)
+        throw new ConflictException(
+          `Payment amount ${input.amount.toFixed(2)} exceeds outstanding balance ${lockedRemaining.toFixed(2)} — another payment landed first`,
+        );
+
       const payment = await this.createPayment(
         orgId,
         invoiceId,

@@ -33,14 +33,22 @@ export class CalibrationService {
     const existing = await this.db
       .select()
       .from(hrCalibrationEntries)
-      .where(and(eq(hrCalibrationEntries.cycleId, cycleId), eq(hrCalibrationEntries.employeeId, employeeId)))
+      .where(
+        and(
+          eq(hrCalibrationEntries.orgId, orgId),
+          eq(hrCalibrationEntries.cycleId, cycleId),
+          eq(hrCalibrationEntries.employeeId, employeeId),
+        ),
+      )
       .limit(1);
 
     if (existing.length) {
       const [updated] = await this.db
         .update(hrCalibrationEntries)
         .set({ ...data, calibratedBy, updatedAt: new Date() })
-        .where(eq(hrCalibrationEntries.id, existing[0].id))
+        .where(
+          and(eq(hrCalibrationEntries.orgId, orgId), eq(hrCalibrationEntries.id, existing[0].id)),
+        )
         .returning();
       return updated;
     }

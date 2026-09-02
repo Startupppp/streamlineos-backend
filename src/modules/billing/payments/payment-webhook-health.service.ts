@@ -54,6 +54,7 @@ export class PaymentWebhookHealthService {
 
     const existing = await this.db.query.paymentWebhookEndpoints.findFirst({
       where: and(
+        eq(paymentWebhookEndpoints.orgId, orgId),
         eq(paymentWebhookEndpoints.providerId, provider.id),
         eq(paymentWebhookEndpoints.environment, environment),
       ),
@@ -71,7 +72,12 @@ export class PaymentWebhookHealthService {
       ? await this.db
           .update(paymentWebhookEndpoints)
           .set(values)
-          .where(eq(paymentWebhookEndpoints.id, existing.id))
+          .where(
+            and(
+              eq(paymentWebhookEndpoints.orgId, orgId),
+              eq(paymentWebhookEndpoints.id, existing.id),
+            ),
+          )
           .returning()
       : await this.db
           .insert(paymentWebhookEndpoints)
@@ -108,6 +114,7 @@ export class PaymentWebhookHealthService {
     const provider = await this.findProvider(orgId, providerKey);
     const endpoint = await this.db.query.paymentWebhookEndpoints.findFirst({
       where: and(
+        eq(paymentWebhookEndpoints.orgId, orgId),
         eq(paymentWebhookEndpoints.providerId, provider.id),
         eq(paymentWebhookEndpoints.environment, environment),
       ),

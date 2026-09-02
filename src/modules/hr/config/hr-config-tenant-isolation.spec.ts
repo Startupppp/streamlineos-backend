@@ -122,6 +122,8 @@ describe("HrInterviewQuestionsService — cross-tenant isolation", () => {
 describe("HrNotificationPreferencesService — cross-tenant isolation", () => {
   const USER_A = "user-attacker";
   const USER_B = "user-owner";
+  const ORG_A = "org-attacker";
+  const ORG_B = "org-owner";
 
   function makePrefsDb(row: unknown) {
     const findFirst = jest.fn().mockResolvedValue(row);
@@ -130,12 +132,15 @@ describe("HrNotificationPreferencesService — cross-tenant isolation", () => {
     return { db, findFirst };
   }
 
-  it("get preferences scopes findFirst to requesting user (cross-tenant isolation — user-scoped data)", async () => {
+  it("get preferences scopes findFirst to the requesting user AND their org (cross-tenant isolation)", async () => {
     const { db, findFirst } = makePrefsDb(null);
     const svc = new HrNotificationPreferencesService(db);
-    const result = await svc.get(USER_A);
+    const result = await svc.get(USER_A, ORG_A);
     const arg = (findFirst.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
     expect(sqlValues(arg)).toContain(USER_A);
+    // notification_preferences is keyed on (org_id, user_id). Without org_id a
+    // member of two organisations reads whichever row the planner returns first.
+    expect(sqlValues(arg)).toContain(ORG_A);
     expect(result.emailEnabled).toBe(true);
   });
 
@@ -143,9 +148,10 @@ describe("HrNotificationPreferencesService — cross-tenant isolation", () => {
     const row = { userId: USER_B, emailEnabled: false, pushEnabled: true, smsEnabled: false, inAppEnabled: true, quietHoursStart: null, quietHoursEnd: null, categories: {} };
     const { db, findFirst } = makePrefsDb(row);
     const svc = new HrNotificationPreferencesService(db);
-    const result = await svc.get(USER_B);
+    const result = await svc.get(USER_B, ORG_B);
     const arg = (findFirst.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
     expect(sqlValues(arg)).toContain(USER_B);
+    expect(sqlValues(arg)).toContain(ORG_B);
     expect(result.emailEnabled).toBe(false);
   });
 });

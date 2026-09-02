@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and, isNull, desc, or } from "drizzle-orm";
+import { eq, and, isNull, desc, or, sql } from "drizzle-orm";
 import { notificationPreferences, notificationPolicyDefaults, notificationAuditLogs, notificationPreferenceRules, notificationSuppressionRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -168,16 +168,27 @@ export class NotificationPreferencesService {
     const off = writes.filter((w) => !w.on);
     const on = writes.filter((w) => w.on);
 
-    for (const w of on) {
+    /*
+     * One DELETE for the whole ON set. The predicates differed only in the
+     * (scopeType, scopeKey, channel) triple, so a row-constructor IN list covers
+     * them in a single statement that still rides the
+     * (org_id, membership_id, scope_type, scope_key, channel) unique index —
+     * a preferences save was previously one round trip per channel per event.
+     */
+    if (on.length > 0) {
+      const scopes = sql.join(
+        on.map(
+          (w) => sql`(${w.scopeType}::text, ${w.scopeKey}::text, ${w.channel}::notification_channel)`,
+        ),
+        sql`, `,
+      );
       await this.db
         .delete(notificationPreferenceRules)
         .where(
           and(
             eq(notificationPreferenceRules.orgId, orgId),
             eq(notificationPreferenceRules.membershipId, membershipId),
-            eq(notificationPreferenceRules.scopeType, w.scopeType),
-            eq(notificationPreferenceRules.scopeKey, w.scopeKey),
-            eq(notificationPreferenceRules.channel, w.channel),
+            sql`(${notificationPreferenceRules.scopeType}, ${notificationPreferenceRules.scopeKey}, ${notificationPreferenceRules.channel}) IN (${scopes})`,
           ),
         );
     }

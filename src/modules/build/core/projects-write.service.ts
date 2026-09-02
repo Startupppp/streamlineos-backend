@@ -72,6 +72,7 @@ export class ProjectsWriteService {
             .from(projectMembers)
             .where(
               and(
+                eq(projectMembers.orgId, orgId),
                 eq(projectMembers.projectId, projectId),
                 eq(projectMembers.membershipId, callerMembershipId ?? -1),
               ),

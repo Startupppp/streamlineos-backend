@@ -76,7 +76,10 @@ export class ChatHuddlesService {
     if (!huddle) return null;
 
     if (huddle.endedAt) {
-      await this.db.update(chatHuddles).set({ status: "ended" }).where(eq(chatHuddles.id, huddle.id));
+      await this.db
+        .update(chatHuddles)
+        .set({ status: "ended" })
+        .where(and(eq(chatHuddles.orgId, orgId), eq(chatHuddles.id, huddle.id)));
       return null;
     }
 
@@ -86,6 +89,7 @@ export class ChatHuddlesService {
       .set({ leftAt: new Date() })
       .where(
         and(
+          eq(chatHuddleParticipants.orgId, orgId),
           eq(chatHuddleParticipants.huddleId, huddle.id),
           isNull(chatHuddleParticipants.leftAt),
           lt(chatHuddleParticipants.lastSeenAt, staleThreshold),
@@ -95,7 +99,11 @@ export class ChatHuddlesService {
 
     const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
     const remaining = await this.db.query.chatHuddleParticipants.findMany({
-      where: and(eq(chatHuddleParticipants.huddleId, huddle.id), isNull(chatHuddleParticipants.leftAt)),
+      where: and(
+        eq(chatHuddleParticipants.orgId, orgId),
+        eq(chatHuddleParticipants.huddleId, huddle.id),
+        isNull(chatHuddleParticipants.leftAt),
+      ),
       columns: { id: true },
       limit: 1,
     });

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBefore } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -301,30 +301,67 @@ export class VendorCreditsService {
       );
     }
 
+    /*
+     * The two reads above give the caller a readable 400; they cannot be the
+     * invariant. Both writes were absolute values computed from a snapshot taken
+     * outside the transaction, so two applications of the same credit each
+     * passed the remaining-balance guard and each wrote its own total — the
+     * credit was spent twice and recorded once.
+     *
+     * The sufficiency test now rides in the WHERE against the row the database
+     * is already locking, and zero affected rows is the signal that someone else
+     * got there first.
+     */
     await this.db.transaction(async (tx) => {
-      const newApplied = round2(alreadyApplied + input.amount);
-      const newVcStatus = newApplied >= vcTotal - 0.005 ? "APPLIED" : "POSTED";
-
-      await tx
+      const [creditApplied] = await tx
         .update(vendorCredits)
         .set({
-          appliedAmount: newApplied.toFixed(4),
-          status: newVcStatus,
+          appliedAmount: sql`round(${vendorCredits.appliedAmount} + ${input.amount}::numeric, 4)`,
+          status: sql`CASE
+            WHEN ${vendorCredits.appliedAmount} + ${input.amount}::numeric >= ${vendorCredits.total} - 0.005
+            THEN 'APPLIED'::fin_credit_note_status
+            ELSE 'POSTED'::fin_credit_note_status
+          END`,
           updatedAt: new Date(),
         })
-        .where(and(eq(vendorCredits.id, vendorCreditId), eq(vendorCredits.orgId, orgId)));
+        .where(
+          and(
+            eq(vendorCredits.id, vendorCreditId),
+            eq(vendorCredits.orgId, orgId),
+            eq(vendorCredits.status, "POSTED"),
+            sql`${vendorCredits.appliedAmount} + ${input.amount}::numeric <= ${vendorCredits.total} + 0.005`,
+          ),
+        )
+        .returning({ id: vendorCredits.id });
+      if (!creditApplied)
+        throw new ConflictException(
+          "This vendor credit no longer has enough remaining balance — reload and try again",
+        );
 
-      const newBillPaid = round2(billPaid + input.amount);
-      const newBillStatus = newBillPaid >= billTotal - 0.005 ? "PAID" : "PARTIALLY_PAID";
-
-      await tx
+      const [billUpdated] = await tx
         .update(purchaseBills)
         .set({
-          amountPaid: newBillPaid.toFixed(4),
-          status: newBillStatus,
+          amountPaid: sql`round(${purchaseBills.amountPaid} + ${input.amount}::numeric, 4)`,
+          status: sql`CASE
+            WHEN ${purchaseBills.amountPaid} + ${input.amount}::numeric >= ${purchaseBills.total} - 0.005
+            THEN 'PAID'
+            ELSE 'PARTIALLY_PAID'
+          END`,
           updatedAt: new Date(),
         })
-        .where(and(eq(purchaseBills.id, input.billId), eq(purchaseBills.orgId, orgId)));
+        .where(
+          and(
+            eq(purchaseBills.id, input.billId),
+            eq(purchaseBills.orgId, orgId),
+            ne(purchaseBills.status, "CANCELLED"),
+            sql`${purchaseBills.amountPaid} + ${input.amount}::numeric <= ${purchaseBills.total} + 0.005`,
+          ),
+        )
+        .returning({ id: purchaseBills.id });
+      if (!billUpdated)
+        throw new ConflictException(
+          "This bill no longer has enough outstanding balance — reload and try again",
+        );
     });
 
     await this.cache.invalidate(VC_CACHE_KEY(orgId));

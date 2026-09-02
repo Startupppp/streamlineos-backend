@@ -418,7 +418,11 @@ export class RecruitmentJobsService {
     }
 
     const existingApp = await this.db.query.candidateApplications.findFirst({
-      where: and(eq(candidateApplications.candidateId, candidateId), eq(candidateApplications.jobPostingId, jobId)),
+      where: and(
+        eq(candidateApplications.orgId, orgId),
+        eq(candidateApplications.candidateId, candidateId),
+        eq(candidateApplications.jobPostingId, jobId),
+      ),
       columns: { id: true },
     });
     if (existingApp) throw new ConflictException("You have already applied for this position");

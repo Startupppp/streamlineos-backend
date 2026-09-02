@@ -118,15 +118,17 @@ export class OnboardingDocumentsController {
       });
       const existing = await tx.query.onboardingSteps.findFirst({
         where: and(
+          eq(onboardingSteps.orgId, u.orgId),
           eq(onboardingSteps.userId, u.userId),
           eq(onboardingSteps.stepName, stepName),
         ),
+        columns: { id: true },
       });
       if (existing) {
         await tx
           .update(onboardingSteps)
           .set({ status: "COMPLETED", completedAt: new Date() })
-          .where(eq(onboardingSteps.id, existing.id));
+          .where(and(eq(onboardingSteps.orgId, u.orgId), eq(onboardingSteps.id, existing.id)));
       } else {
         await tx.insert(onboardingSteps).values({
           userId: u.userId,

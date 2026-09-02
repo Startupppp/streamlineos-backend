@@ -8,6 +8,10 @@ import { keysetBefore } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import {
+  bulkUpdateFromValues,
+  type BulkUpdateRow,
+} from "../../../common/db/bulk-update";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -186,7 +190,12 @@ export class DepreciationRunsService {
       await tx
         .update(accDepreciationSchedules)
         .set({ status: "POSTED", runId: insertedRun.id, journalEntryId: entry.id })
-        .where(inArray(accDepreciationSchedules.id, allScheduleIds));
+        .where(
+          and(
+            eq(accDepreciationSchedules.orgId, u.orgId),
+            inArray(accDepreciationSchedules.id, allScheduleIds),
+          ),
+        );
 
       const assetAmounts = new Map<number, number>();
       for (const row of scheduleRows) {
@@ -194,17 +203,37 @@ export class DepreciationRunsService {
         assetAmounts.set(row.asset.id, prev + Number(row.schedule.amount));
       }
 
+      /*
+       * One statement for the whole register. The per-asset accumulated figure
+       * differs, so this is the `UPDATE … FROM (VALUES …)` shape rather than an
+       * `inArray`, and the tenant predicate the per-row update was missing is
+       * now in the WHERE.
+       */
+      const assetRows: BulkUpdateRow[] = [];
       for (const [assetId, amt] of assetAmounts) {
         const asset = scheduleRows.find((r) => r.asset.id === assetId)?.asset;
         if (!asset) continue;
         const newAccum = Math.round((Number(asset.accumulatedDepreciation) + amt) * 10000) / 10000;
         const depreciable = Number(asset.acquisitionCost) - Number(asset.salvageValue);
-        const newStatus = newAccum >= depreciable - 0.0001 ? "FULLY_DEPRECIATED" : "ACTIVE";
-        await tx
-          .update(accFixedAssets)
-          .set({ accumulatedDepreciation: String(newAccum), status: newStatus, updatedAt: new Date() })
-          .where(eq(accFixedAssets.id, assetId));
+        assetRows.push({
+          key: assetId,
+          values: [
+            String(newAccum),
+            newAccum >= depreciable - 0.0001 ? "FULLY_DEPRECIATED" : "ACTIVE",
+          ],
+        });
       }
+      await bulkUpdateFromValues(tx, {
+        table: accFixedAssets,
+        orgId: u.orgId,
+        key: { column: "id", type: "integer" },
+        columns: [
+          { column: "accumulated_depreciation", type: "numeric" },
+          { column: "status", type: "acc_asset_status" },
+        ],
+        touch: ["updated_at"],
+        rows: assetRows,
+      });
 
       return insertedRun;
     });

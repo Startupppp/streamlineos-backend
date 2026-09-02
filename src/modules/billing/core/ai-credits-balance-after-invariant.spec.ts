@@ -3,6 +3,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 import { Test } from "@nestjs/testing";
+import { SQL, is } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AiCreditsService } from "./ai-credits.service";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
@@ -45,11 +46,52 @@ function makeSelectChain(rows: unknown[]) {
   };
 }
 
+
+type WalletCapture = {
+  walletBalance: number | null;
+  txAmount?: number | null;
+  txBalanceAfter: number | null;
+  conflictSetBalance?: unknown;
+  insertedBalance?: number | null;
+};
+
+/**
+ * `insert(...).values(...)` has to serve two callers now: the ledger insert,
+ * which is awaited directly, and the wallet upsert, which chains
+ * `.onConflictDoUpdate(...).returning(...)`. The returned value is therefore a
+ * thenable that also carries the upsert link.
+ */
+function makeUpsertAwareInsert(captured: WalletCapture, settledBalance: number) {
+  return jest.fn().mockImplementation(() => ({
+    values: jest.fn().mockImplementation(
+      (args: { amount?: number; balanceAfter?: number; balance?: number }) => {
+        if (args.balanceAfter !== undefined) captured.txBalanceAfter = args.balanceAfter;
+        if (args.amount !== undefined) captured.txAmount = args.amount;
+        if (args.balanceAfter === undefined && args.balance !== undefined)
+          captured.insertedBalance = args.balance;
+        return Object.assign(Promise.resolve([]), {
+          onConflictDoUpdate: jest.fn().mockImplementation(
+            (config: { set: { balance?: unknown } }) => {
+              captured.conflictSetBalance = config.set.balance;
+              return {
+                returning: jest.fn().mockImplementation(() => {
+                  captured.walletBalance = settledBalance;
+                  return Promise.resolve([{ balance: settledBalance }]);
+                }),
+              };
+            },
+          ),
+        });
+      },
+    ),
+  }));
+}
+
 function buildGrantFromWebhookDb(prevBalance: number) {
-  const captured = {
-    walletBalance: null as number | null,
-    txAmount: null as number | null,
-    txBalanceAfter: null as number | null,
+  const captured: WalletCapture = {
+    walletBalance: null,
+    txAmount: null,
+    txBalanceAfter: null,
   };
 
   let selectCallCount = 0;
@@ -62,25 +104,7 @@ function buildGrantFromWebhookDb(prevBalance: number) {
       }
       return makeSelectChain([{ balance: prevBalance }]);
     }),
-    insert: jest.fn().mockImplementation(() => ({
-      values: jest.fn().mockImplementation(
-        (args: { amount?: number; balanceAfter?: number; balance?: number }) => {
-          if (args.balanceAfter !== undefined) captured.txBalanceAfter = args.balanceAfter;
-          if (args.amount !== undefined) captured.txAmount = args.amount;
-          return Promise.resolve([]);
-        },
-      ),
-    })),
-    update: jest.fn().mockImplementation(() => ({
-      set: jest.fn().mockImplementation((args: { balance?: number }) => {
-        if (args.balance !== undefined) captured.walletBalance = args.balance;
-        return {
-          where: jest.fn().mockReturnValue({
-            returning: jest.fn().mockResolvedValue([{ balance: args.balance ?? prevBalance }]),
-          }),
-        };
-      }),
-    })),
+    insert: makeUpsertAwareInsert(captured, prevBalance + PACK_MILLI),
     transaction: jest.fn().mockImplementation(
       (fn: (tx: unknown) => Promise<unknown>) => fn(db),
     ),
@@ -120,10 +144,7 @@ describe("AI credits — balanceAfter invariant: balanceAfter = prev_balance + a
 
   it("purchaseCreditsDirectly: wallet balance matches balanceAfter written to the transaction table", async () => {
     const startBalance = 50_000;
-    const captured = {
-      walletBalance: null as number | null,
-      txBalanceAfter: null as number | null,
-    };
+    const captured: WalletCapture = { walletBalance: null, txBalanceAfter: null };
 
     let selectCallCount = 0;
     const db = {
@@ -132,22 +153,7 @@ describe("AI credits — balanceAfter invariant: balanceAfter = prev_balance + a
         if (selectCallCount === 1) return makeSelectChain([PACK]);
         return makeSelectChain([{ balance: startBalance }]);
       }),
-      update: jest.fn().mockImplementation(() => ({
-        set: jest.fn().mockImplementation((args: { balance?: number }) => {
-          captured.walletBalance = args.balance ?? null;
-          return {
-            where: jest.fn().mockReturnValue({
-              returning: jest.fn().mockResolvedValue([{ balance: args.balance ?? startBalance }]),
-            }),
-          };
-        }),
-      })),
-      insert: jest.fn().mockImplementation(() => ({
-        values: jest.fn().mockImplementation((args: { balanceAfter?: number }) => {
-          if (args.balanceAfter !== undefined) captured.txBalanceAfter = args.balanceAfter;
-          return Promise.resolve([]);
-        }),
-      })),
+      insert: makeUpsertAwareInsert(captured, startBalance + PACK_MILLI),
       transaction: jest.fn().mockImplementation(
         (fn: (tx: unknown) => Promise<unknown>) => fn(db),
       ),
@@ -163,7 +169,7 @@ describe("AI credits — balanceAfter invariant: balanceAfter = prev_balance + a
 
   it("non-zero starting balance: balanceAfter = starting + PACK_MILLI (not just PACK_MILLI)", async () => {
     const startBalance = 750_000;
-    const captured = { txBalanceAfter: null as number | null };
+    const captured: WalletCapture = { walletBalance: null, txBalanceAfter: null };
 
     let selectCallCount = 0;
     const db = {
@@ -172,17 +178,7 @@ describe("AI credits — balanceAfter invariant: balanceAfter = prev_balance + a
         if (selectCallCount === 1) return makeSelectChain([PACK]);
         return makeSelectChain([{ balance: startBalance }]);
       }),
-      update: jest.fn().mockReturnValue({
-        set: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ balance: startBalance + PACK_MILLI }]) }),
-        }),
-      }),
-      insert: jest.fn().mockImplementation(() => ({
-        values: jest.fn().mockImplementation((args: { balanceAfter?: number }) => {
-          if (args.balanceAfter !== undefined) captured.txBalanceAfter = args.balanceAfter;
-          return Promise.resolve([]);
-        }),
-      })),
+      insert: makeUpsertAwareInsert(captured, startBalance + PACK_MILLI),
       transaction: jest.fn().mockImplementation(
         (fn: (tx: unknown) => Promise<unknown>) => fn(db),
       ),
@@ -193,6 +189,36 @@ describe("AI credits — balanceAfter invariant: balanceAfter = prev_balance + a
 
     expect(captured.txBalanceAfter).toBe(startBalance + PACK_MILLI);
     expect(captured.txBalanceAfter).not.toBe(PACK_MILLI);
+  });
+
+  it("the wallet credit is an upsert whose balance moves in SQL, never a JS-computed literal", async () => {
+    const startBalance = 120_000;
+    const captured: WalletCapture = { walletBalance: null, txBalanceAfter: null };
+
+    let selectCallCount = 0;
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        if (selectCallCount === 1) return makeSelectChain([PACK]);
+        return makeSelectChain([{ balance: startBalance }]);
+      }),
+      insert: makeUpsertAwareInsert(captured, startBalance + PACK_MILLI),
+      transaction: jest.fn().mockImplementation(
+        (fn: (tx: unknown) => Promise<unknown>) => fn(db),
+      ),
+    };
+
+    const svc = await buildSvc(db);
+    await svc.purchaseCreditsDirectly("org1", "user1", PACK.id);
+
+    // The insert leg grants the whole pack, so an organisation whose wallet row
+    // does not exist yet is credited by the same statement that creates it.
+    expect(captured.insertedBalance).toBe(PACK_MILLI);
+    // The conflict leg is an increment expression. A number here would mean the
+    // balance was read, added to in JavaScript and written back — the shape that
+    // let a concurrent grant be erased.
+    expect(is(captured.conflictSetBalance, SQL)).toBe(true);
+    expect(typeof captured.conflictSetBalance).not.toBe("number");
   });
 });
 

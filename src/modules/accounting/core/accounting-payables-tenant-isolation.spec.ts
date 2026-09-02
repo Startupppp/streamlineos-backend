@@ -140,6 +140,21 @@ describe("AccountingPayablesService — cross-tenant isolation", () => {
     it("processes payment for the owning org (CONTROL)", async () => {
       const paymentRow = { id: 10, orgId: OWNER_ORG, billId: 1, amount: "50.00" };
       const { posting, audit, query, rateResolver, fx } = makeDeps();
+      const postedBill = { ...BILL_ROW, status: "POSTED" };
+      /*
+       * Two reads happen inside the transaction: the bill row taken FOR UPDATE
+       * (the lock that serialises two concurrent payments), then the sum of
+       * vendor_payments. `where` therefore has to be awaitable AND carry `.for`.
+       */
+      const forMode = jest.fn();
+      const txWhere = jest.fn().mockImplementation(() =>
+        Object.assign(Promise.resolve([{ paid: "50.00" }]), {
+          for: (mode: string) => {
+            forMode(mode);
+            return { limit: jest.fn().mockResolvedValue([postedBill]) };
+          },
+        }),
+      );
       const mockTx = {
         insert: jest.fn().mockReturnValue({
           values: jest.fn().mockReturnValue({
@@ -147,9 +162,7 @@ describe("AccountingPayablesService — cross-tenant isolation", () => {
           }),
         }),
         select: jest.fn().mockReturnValue({
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue([{ paid: "50.00" }]),
-          }),
+          from: jest.fn().mockReturnValue({ where: txWhere }),
         }),
         update: jest.fn().mockReturnValue({
           set: jest.fn().mockReturnValue({
@@ -157,7 +170,6 @@ describe("AccountingPayablesService — cross-tenant isolation", () => {
           }),
         }),
       };
-      const postedBill = { ...BILL_ROW, status: "POSTED" };
       const limit = jest.fn().mockResolvedValue([postedBill]);
       const where = jest.fn().mockReturnValue({ limit });
       const from = jest.fn().mockReturnValue({ where });
@@ -172,6 +184,10 @@ describe("AccountingPayablesService — cross-tenant isolation", () => {
         paymentMethod: "bank_transfer",
       });
       expect(result).toMatchObject({ id: 10 });
+      // Without the row lock the sufficiency check is check-then-act and two
+      // full payments on one bill both commit.
+      expect(forMode).toHaveBeenCalledWith("update");
+      expect(sqlValues(txWhere.mock.calls[0]?.[0])).toContain(OWNER_ORG);
     });
   });
 });

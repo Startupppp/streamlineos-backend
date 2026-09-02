@@ -46,10 +46,18 @@ export class PaymentReadinessService {
 
     const [testCred, liveCred] = await Promise.all([
       this.db.query.paymentProviderCredentials.findFirst({
-        where: and(eq(paymentProviderCredentials.providerId, provider.id), eq(paymentProviderCredentials.environment, "test")),
+        where: and(
+          eq(paymentProviderCredentials.orgId, orgId),
+          eq(paymentProviderCredentials.providerId, provider.id),
+          eq(paymentProviderCredentials.environment, "test"),
+        ),
       }),
       this.db.query.paymentProviderCredentials.findFirst({
-        where: and(eq(paymentProviderCredentials.providerId, provider.id), eq(paymentProviderCredentials.environment, "live")),
+        where: and(
+          eq(paymentProviderCredentials.orgId, orgId),
+          eq(paymentProviderCredentials.providerId, provider.id),
+          eq(paymentProviderCredentials.environment, "live"),
+        ),
       }),
     ]);
 
@@ -72,7 +80,11 @@ export class PaymentReadinessService {
     }
 
     const liveWebhook = await this.db.query.paymentWebhookEndpoints.findFirst({
-      where: and(eq(paymentWebhookEndpoints.providerId, provider.id), eq(paymentWebhookEndpoints.environment, "live")),
+      where: and(
+        eq(paymentWebhookEndpoints.orgId, orgId),
+        eq(paymentWebhookEndpoints.providerId, provider.id),
+        eq(paymentWebhookEndpoints.environment, "live"),
+      ),
     });
     if (liveWebhook?.status === "verified") {
       completedChecks.push("live_webhook_verified");
@@ -83,7 +95,11 @@ export class PaymentReadinessService {
     }
 
     const succeededTestPayment = await this.db.query.paymentTestTransactions.findFirst({
-      where: and(eq(paymentTestTransactions.providerId, provider.id), eq(paymentTestTransactions.status, "succeeded")),
+      where: and(
+        eq(paymentTestTransactions.orgId, orgId),
+        eq(paymentTestTransactions.providerId, provider.id),
+        eq(paymentTestTransactions.status, "succeeded"),
+      ),
     });
     if (succeededTestPayment) {
       completedChecks.push("test_payment_succeeded");
@@ -92,7 +108,10 @@ export class PaymentReadinessService {
     }
 
     const account = await this.db.query.paymentProviderAccounts.findFirst({
-      where: eq(paymentProviderAccounts.providerId, provider.id),
+      where: and(
+        eq(paymentProviderAccounts.orgId, orgId),
+        eq(paymentProviderAccounts.providerId, provider.id),
+      ),
     });
     if (!account) {
       warnings.push("Business details / KYC have not been recorded for this provider.");

@@ -238,7 +238,13 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
         const memberRow = await this.db
           .select({ id: organizationMembers.id })
           .from(organizationMembers)
-          .where(and(eq(organizationMembers.id, delivery.membershipId), eq(organizationMembers.status, "ACTIVE")))
+          .where(
+            and(
+              eq(organizationMembers.orgId, job.orgId),
+              eq(organizationMembers.id, delivery.membershipId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+          )
           .limit(1);
         recipientStillActive = memberRow.length === 1;
       } else {

@@ -76,10 +76,14 @@ export class PaymentWebhookReceiverService {
           .where(
             environment
               ? and(
+                  eq(paymentWebhookEndpoints.orgId, orgId),
                   eq(paymentWebhookEndpoints.providerId, provider.id),
                   eq(paymentWebhookEndpoints.environment, environment),
                 )
-              : eq(paymentWebhookEndpoints.providerId, provider.id),
+              : and(
+                  eq(paymentWebhookEndpoints.orgId, orgId),
+                  eq(paymentWebhookEndpoints.providerId, provider.id),
+                ),
           );
       },
       { orgId },
@@ -173,6 +177,7 @@ export class PaymentWebhookReceiverService {
           .from(paymentWebhookEndpoints)
           .where(
             and(
+              eq(paymentWebhookEndpoints.orgId, params.orgId),
               eq(paymentWebhookEndpoints.providerId, provider.id),
               eq(paymentWebhookEndpoints.environment, params.environment),
             ),

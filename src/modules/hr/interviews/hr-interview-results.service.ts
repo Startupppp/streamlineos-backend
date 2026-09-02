@@ -65,6 +65,7 @@ export class HrInterviewResultsService {
 
     const scorecard = await this.db.query.interviewScorecards.findFirst({
       where: and(
+        eq(interviewScorecards.orgId, orgId),
         eq(interviewScorecards.interviewId, interviewId),
         eq(interviewScorecards.interviewerMembershipId, membershipId),
       ),
@@ -83,6 +84,7 @@ export class HrInterviewResultsService {
 
     const existing = await this.db.query.interviewScorecards.findFirst({
       where: and(
+        eq(interviewScorecards.orgId, orgId),
         eq(interviewScorecards.interviewId, interviewId),
         eq(interviewScorecards.interviewerMembershipId, membershipId),
       ),
@@ -104,7 +106,7 @@ export class HrInterviewResultsService {
           submittedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(interviewScorecards.id, existing.id))
+        .where(and(eq(interviewScorecards.orgId, orgId), eq(interviewScorecards.id, existing.id)))
         .returning();
       scorecard = updated;
     } else {
