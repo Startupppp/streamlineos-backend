@@ -15,7 +15,7 @@ const MAX_KEYS = 60;
 const REDACTED = "[redacted]";
 
 /** Matched against the key with punctuation and casing removed. */
-const SENSITIVE_SUBSTRINGS = [
+export const SENSITIVE_SUBSTRINGS = [
   "password",
   "passwd",
   "secret",
@@ -23,6 +23,7 @@ const SENSITIVE_SUBSTRINGS = [
   "authorization",
   "cookie",
   "apikey",
+  "accesskey",
   "credential",
   "privatekey",
   "sessionid",
@@ -32,6 +33,17 @@ const SENSITIVE_SUBSTRINGS = [
   "cardnumber",
   "accountnumber",
   "connectionstring",
+  // Tenant data rather than a credential, and the distinction does not matter to
+  // a log aggregator: a mailbox address, a phone number, an AI prompt, a message
+  // subject or a document's filename is a customer's content, and the whole point
+  // of a log line is that a much wider group can read it. Context (which org,
+  // which actor id, which route) is what an operator needs; the content is not.
+  "emailaddress",
+  "phonenumber",
+  "mobilenumber",
+  "recipient",
+  "prompt",
+  "filename",
 ] as const;
 
 /**
@@ -43,15 +55,29 @@ const SENSITIVE_SUBSTRINGS = [
  * `Key (email)=(ada@example.com) already exists.` — so the whole subtree is
  * withheld while the safe diagnostics (table, column, SQLSTATE) stay readable.
  */
-const SENSITIVE_EXACT = new Set([
+export const SENSITIVE_EXACT = new Set([
   "pan",
   "otp",
   "cvv",
   "ssn",
   "dsn",
   "pin",
+  "jwt",
+  "bearer",
   "query",
+  // Drizzle's `DrizzleQueryError` carries the bind values of the failing
+  // statement on `params` — every value the statement was about to write.
+  "params",
   "driverdetail",
+  // Tenant data. `to`, `cc` and `bcc` are only ever recipients in log metadata;
+  // `subject` is a message's own free text.
+  "email",
+  "emails",
+  "phone",
+  "to",
+  "cc",
+  "bcc",
+  "subject",
 ]);
 
 function normaliseKey(key: string): string {
@@ -69,14 +95,46 @@ export function redactAttributes(
 ): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {};
   for (const [key, value] of Object.entries(attrs)) {
-    out[key] = isSensitive(key) ? REDACTED : value;
+    if (isSensitive(key)) {
+      out[key] = REDACTED;
+      continue;
+    }
+    out[key] = typeof value === "string" ? truncateForLog(value) : value;
   }
   return out;
 }
 
+/**
+ * Drizzle builds `DrizzleQueryError`'s message as
+ * `Failed query: <sql>\nparams: <bind values>`, so the values the statement was
+ * about to write are carried in the message itself — not on a property a key
+ * check could reach. That message is then re-emitted by every generic handler:
+ * `AllExceptionsFilter`, `forEachOrg`'s per-organisation catch, the after-commit
+ * drain, `logSideEffectFailure`, and any `logger.error(\`… ${err.message}\`)`.
+ * Withholding the `query` key while the same SQL and every bind value ride along
+ * in the message would be redaction in name only.
+ *
+ * Scoped to the exact shape rather than any line containing "params:", so a
+ * message that merely mentions parameters is left readable.
+ */
+const DRIZZLE_QUERY_ERROR = /Failed query:/;
+const BIND_PARAMS_LINE = /(\bparams:)[^\n]*/g;
+
+export function scrubBindParameters(value: string): string {
+  if (!DRIZZLE_QUERY_ERROR.test(value)) return value;
+  return value.replace(BIND_PARAMS_LINE, `$1 ${REDACTED}`);
+}
+
+/**
+ * The single chokepoint every string passes through on its way to a log line:
+ * the message, each string inside `meta`, an error's message and its stack.
+ * Scrubbing here rather than at each call site is what makes the guarantee hold
+ * for call sites that have not been written yet.
+ */
 export function truncateForLog(value: string): string {
-  if (value.length <= MAX_STRING) return value;
-  return `${value.slice(0, MAX_STRING)}… [truncated ${value.length - MAX_STRING} chars]`;
+  const scrubbed = scrubBindParameters(value);
+  if (scrubbed.length <= MAX_STRING) return scrubbed;
+  return `${scrubbed.slice(0, MAX_STRING)}… [truncated ${scrubbed.length - MAX_STRING} chars]`;
 }
 
 function describeError(error: Error): Record<string, unknown> {

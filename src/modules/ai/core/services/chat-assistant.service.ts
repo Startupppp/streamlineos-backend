@@ -41,19 +41,11 @@ import { fetchChatContext } from "./chat-assistant-context";
 import { buildInlineTools } from "./chat-assistant-inline-tools";
 import { REDIS } from "../../../../common/cache/cache.service";
 import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
+import { AiStreamBreaker } from "../streaming/ai-stream-breaker";
 
-const CB_FAILURE_THRESHOLD = 5;
-const CB_OPEN_DURATION_MS = 30_000;
-const CB_REDIS_OPENED_AT_KEY = "ai:cb:chat:opened_at";
-const CB_REDIS_FAILURES_KEY = "ai:cb:chat:failures";
-const CB_REDIS_OPENED_AT_TTL_S = Math.ceil(CB_OPEN_DURATION_MS / 1000);
 const MAX_HISTORY_MESSAGES = 40;
 const MAX_OUTPUT_TOKENS = 4_096;
-
-interface CircuitBreakerState {
-  failures: number;
-  openedAt: number;
-}
+const CHAT_BREAKER_MESSAGE = "AI chat provider is temporarily unavailable";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
@@ -61,7 +53,7 @@ function isAbortError(error: unknown): boolean {
 
 @Injectable()
 export class ChatAssistantService {
-  private readonly cb: CircuitBreakerState = { failures: 0, openedAt: 0 };
+  private readonly breaker: AiStreamBreaker;
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -81,41 +73,12 @@ export class ChatAssistantService {
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
     @Optional() @Inject(REDIS) private readonly redis: Redis | null = null,
     private readonly concurrencyLimiter: AiConcurrencyLimiter,
-  ) {}
-
-  private async isCbOpen(): Promise<boolean> {
-    if (this.redis) {
-      try {
-        const openedAt = await this.redis.get<number>(CB_REDIS_OPENED_AT_KEY);
-        if (openedAt !== null) return true;
-      } catch {
-      }
-    }
-    return this.cb.failures >= CB_FAILURE_THRESHOLD && Date.now() - this.cb.openedAt < CB_OPEN_DURATION_MS;
-  }
-
-  private recordCbSuccess(): void {
-    this.cb.failures = 0;
-    if (this.redis) {
-      void Promise.all([
-        this.redis.del(CB_REDIS_FAILURES_KEY),
-        this.redis.del(CB_REDIS_OPENED_AT_KEY),
-      ]).catch(() => undefined);
-    }
-  }
-
-  private recordCbFailure(): void {
-    this.cb.failures += 1;
-    if (this.cb.failures === CB_FAILURE_THRESHOLD) this.cb.openedAt = Date.now();
-    if (this.redis) {
-      const r = this.redis;
-      void r.incr(CB_REDIS_FAILURES_KEY)
-        .then((count) => {
-          if (count === CB_FAILURE_THRESHOLD)
-            void r.set(CB_REDIS_OPENED_AT_KEY, Date.now(), { ex: CB_REDIS_OPENED_AT_TTL_S }).catch(() => undefined);
-        })
-        .catch(() => undefined);
-    }
+  ) {
+    this.breaker = new AiStreamBreaker({
+      key: "chat",
+      unavailableMessage: CHAT_BREAKER_MESSAGE,
+      redis: this.redis,
+    });
   }
 
   private async fetchContext(
@@ -136,93 +99,11 @@ export class ChatAssistantService {
     const { userId, orgId } = actor;
     const membershipId = actingMembershipId(actor.principal) ?? 0;
 
-    if (await this.isCbOpen()) {
-      throw new ServiceUnavailableException("AI chat provider is temporarily unavailable");
-    }
+    await this.breaker.assertClosed();
 
     const acquired = await this.concurrencyLimiter.acquire(orgId);
     if (!acquired)
       throw new ServiceUnavailableException("Too many concurrent AI requests for this organization");
-
-    const reserveMilli = getReserveEstimateMilli(CHAT_FEATURE);
-    const reserved = await this.ledger.reserve({
-      orgId,
-      userId,
-      feature: CHAT_FEATURE,
-      credits: reserveMilli,
-    });
-    const reservationId = reserved.reservationId;
-
-    const context = await this.fetchContext(userId, orgId);
-    const basePrompt = buildContextPrompt(context);
-    const personaConfig = persona ? getPersona(persona) : undefined;
-    const contextPrompt = personaConfig
-      ? `${personaConfig.preamble}\n\n${basePrompt}`
-      : basePrompt;
-
-    const latest = messages.at(-1);
-    if (latest?.role === "user") {
-      if (conversationId !== undefined) {
-        await this.history.appendToConversation(
-          orgId,
-          userId,
-          membershipId,
-          conversationId,
-          "user",
-          latest.content,
-        );
-      } else {
-        await this.history.append(orgId, userId, membershipId, "user", latest.content);
-      }
-    }
-
-    const modelMessages: ModelMessage[] = messages.slice(-MAX_HISTORY_MESSAGES).map((m) =>
-      m.role === "user"
-        ? { role: "user", content: m.content }
-        : { role: "assistant", content: m.content },
-    );
-
-    const modelId = resolveChatModelId();
-
-    const inlineTools = buildInlineTools({
-      db: this.db,
-      orgId,
-      userId,
-      actor,
-      toolAccess: this.toolAccess,
-      projectsAi: this.projectsAi,
-      moduleRef: this.moduleRef,
-    });
-
-    const allBuiltTools = {
-      ...this.hrCopilot.buildTools({ orgId, userId }),
-      ...this.workspaceCopilot.buildTools({ actor }),
-      ...this.opsCopilot.buildTools({ actor }),
-      ...this.crmCopilot.buildTools({ actor }),
-      ...this.commsCopilot.buildTools({ actor }),
-      ...this.projectsCopilot.buildTools({ actor }),
-      ...this.commsActions.buildTools({ actor }),
-      ...this.mailCopilot.buildTools({ actor }),
-      ...inlineTools,
-    };
-
-    const effectiveTools = withTenantScopedTools(
-      persona ? filterToolsByPersona(allBuiltTools, persona) : allBuiltTools,
-      this.db,
-      orgId,
-    );
-
-    const appOverheadMs = Date.now() - appOverheadStart;
-    let ttftMs: number | undefined;
-    let streamTextCallTime: number;
-
-    let resolved = false;
-
-    const releaseReservation = (reason: string) => {
-      if (resolved) return;
-      resolved = true;
-      void this.ledger.release(reservationId, reason, orgId).catch(() => undefined);
-    };
 
     let concurrencyReleased = false;
     const releaseConcurrency = () => {
@@ -231,88 +112,178 @@ export class ChatAssistantService {
       this.concurrencyLimiter.release(orgId);
     };
 
-    const buildStream = () => {
-      streamTextCallTime = Date.now();
-      return streamText({
-        model: resolveChatModel(),
-        messages: modelMessages,
-        system: contextPrompt,
-        temperature: 0.7,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
-        stopWhen: stepCountIs(10),
-        ...(signal !== undefined ? { abortSignal: signal } : {}),
-        onChunk: () => {
-          if (ttftMs === undefined) ttftMs = Date.now() - streamTextCallTime;
-        },
-        onError: ({ error }) => {
-          if (signal?.aborted === true || isAbortError(error)) return;
-          this.recordCbFailure();
-          logger.warn("AI chat stream failed", {
-            error: error instanceof Error ? error.message : String(error),
-            orgId,
-          });
-        },
-        onFinish: async ({ text, usage }) => {
-          if (resolved) return;
-          resolved = true;
-          releaseConcurrency();
-          const promptTokens = usage?.inputTokens ?? 0;
-          const completionTokens = usage?.outputTokens ?? 0;
-          this.recordCbSuccess();
-          try {
-            await runInNewTenantTransaction(this.db, orgId, async () => {
-              await settleStream(this.ledger, this.usageSvc, {
-                reservationId,
-                model: modelId,
-                promptTokens,
-                completionTokens,
-                orgId,
-                userId,
-                feature: CHAT_FEATURE,
-                ttftMs,
-                appOverheadMs,
-              });
-              if (conversationId !== undefined) {
-                await this.history.appendToConversation(
-                  orgId,
-                  userId,
-                  membershipId,
-                  conversationId,
-                  "assistant",
-                  text,
-                );
-              } else {
-                await this.history.append(orgId, userId, membershipId, "assistant", text);
-              }
-            });
-          } catch (error) {
-            logger.error("Failed to finalise assistant chat turn", {
-              error:
-                error instanceof Error
-                  ? (error.stack ?? error.message)
-                  : String(error),
-              orgId,
-              reservationId,
-            });
-          }
-        },
-        tools: effectiveTools,
+    let reservationId = 0;
+    try {
+      const reserveMilli = getReserveEstimateMilli(CHAT_FEATURE);
+      const reserved = await this.ledger.reserve({
+        orgId,
+        userId,
+        feature: CHAT_FEATURE,
+        credits: reserveMilli,
       });
+      reservationId = reserved.reservationId;
+    } catch (error) {
+      releaseConcurrency();
+      throw error;
+    }
+
+    let resolved = false;
+    const releaseReservation = (reason: string) => {
+      if (resolved) return;
+      resolved = true;
+      void this.ledger.release(reservationId, reason, orgId).catch(() => undefined);
     };
 
     try {
-      const stream = buildStream();
-      void (stream.finishReason as Promise<string> | undefined)
-        ?.catch(() => {
+      const context = await this.fetchContext(userId, orgId);
+      const basePrompt = buildContextPrompt(context);
+      const personaConfig = persona ? getPersona(persona) : undefined;
+      const contextPrompt = personaConfig
+        ? `${personaConfig.preamble}\n\n${basePrompt}`
+        : basePrompt;
+
+      const latest = messages.at(-1);
+      if (latest?.role === "user") {
+        if (conversationId !== undefined) {
+          await this.history.appendToConversation(
+            orgId,
+            userId,
+            membershipId,
+            conversationId,
+            "user",
+            latest.content,
+          );
+        } else {
+          await this.history.append(orgId, userId, membershipId, "user", latest.content);
+        }
+      }
+
+      const modelMessages: ModelMessage[] = messages.slice(-MAX_HISTORY_MESSAGES).map((m) =>
+        m.role === "user"
+          ? { role: "user", content: m.content }
+          : { role: "assistant", content: m.content },
+      );
+
+      const modelId = resolveChatModelId();
+
+      const inlineTools = buildInlineTools({
+        db: this.db,
+        orgId,
+        userId,
+        actor,
+        toolAccess: this.toolAccess,
+        projectsAi: this.projectsAi,
+        moduleRef: this.moduleRef,
+      });
+
+      const allBuiltTools = {
+        ...this.hrCopilot.buildTools({ orgId, userId }),
+        ...this.workspaceCopilot.buildTools({ actor }),
+        ...this.opsCopilot.buildTools({ actor }),
+        ...this.crmCopilot.buildTools({ actor }),
+        ...this.commsCopilot.buildTools({ actor }),
+        ...this.projectsCopilot.buildTools({ actor }),
+        ...this.commsActions.buildTools({ actor }),
+        ...this.mailCopilot.buildTools({ actor }),
+        ...inlineTools,
+      };
+
+      const effectiveTools = withTenantScopedTools(
+        persona ? filterToolsByPersona(allBuiltTools, persona) : allBuiltTools,
+        this.db,
+        orgId,
+      );
+
+      const appOverheadMs = Date.now() - appOverheadStart;
+      let ttftMs: number | undefined;
+      let streamTextCallTime: number;
+
+      const buildStream = () => {
+        streamTextCallTime = Date.now();
+        return streamText({
+          model: resolveChatModel(),
+          messages: modelMessages,
+          system: contextPrompt,
+          temperature: 0.7,
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
+          stopWhen: stepCountIs(10),
+          ...(signal !== undefined ? { abortSignal: signal } : {}),
+          onChunk: () => {
+            if (ttftMs === undefined) ttftMs = Date.now() - streamTextCallTime;
+          },
+          onError: ({ error }) => {
+            if (signal?.aborted === true || isAbortError(error)) return;
+            this.breaker.recordFailure();
+            logger.warn("AI chat stream failed", {
+              error: error instanceof Error ? error.message : String(error),
+              orgId,
+            });
+          },
+          onFinish: async ({ text, usage }) => {
+            if (resolved) return;
+            resolved = true;
+            releaseConcurrency();
+            const promptTokens = usage?.inputTokens ?? 0;
+            const completionTokens = usage?.outputTokens ?? 0;
+            this.breaker.recordSuccess();
+            try {
+              await runInNewTenantTransaction(this.db, orgId, async () => {
+                await settleStream(this.ledger, this.usageSvc, {
+                  reservationId,
+                  model: modelId,
+                  promptTokens,
+                  completionTokens,
+                  orgId,
+                  userId,
+                  feature: CHAT_FEATURE,
+                  ttftMs,
+                  appOverheadMs,
+                });
+                if (conversationId !== undefined) {
+                  await this.history.appendToConversation(
+                    orgId,
+                    userId,
+                    membershipId,
+                    conversationId,
+                    "assistant",
+                    text,
+                  );
+                } else {
+                  await this.history.append(orgId, userId, membershipId, "assistant", text);
+                }
+              });
+            } catch (error) {
+              logger.error("Failed to finalise assistant chat turn", {
+                error:
+                  error instanceof Error
+                    ? (error.stack ?? error.message)
+                    : String(error),
+                orgId,
+                reservationId,
+              });
+            }
+          },
+          tools: effectiveTools,
+        });
+      };
+
+      try {
+        const stream = buildStream();
+        void Promise.resolve(stream.finishReason).catch(() => {
           releaseConcurrency();
           releaseReservation("stream_aborted_no_settle");
         });
-      return stream;
+        return stream;
+      } catch (error) {
+        this.breaker.recordFailure();
+        releaseConcurrency();
+        releaseReservation("stream_setup_error");
+        throw error;
+      }
     } catch (error) {
-      this.recordCbFailure();
       releaseConcurrency();
-      releaseReservation("stream_setup_error");
+      releaseReservation("chat_setup_error");
       throw error;
     }
   }

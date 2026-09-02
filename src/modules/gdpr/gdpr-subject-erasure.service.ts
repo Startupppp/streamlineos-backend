@@ -17,6 +17,8 @@ import {
   kbArticles,
   kbChatConversations,
   kbChatMessages,
+  kbIngestionCheckpoints,
+  kbPages,
   kbSources,
   organizationMembers,
   organizationPeople,
@@ -24,10 +26,12 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import type { TenantTx } from "../../db/drizzle.types";
 import { CacheService } from "../../common/cache/cache.service";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { SessionsService } from "../sessions/sessions.service";
+import { GdprStoragePurgeService, type PurgeManifest } from "./gdpr-storage-purge.service";
 
 const ERASED_NAME = "ERASED";
 const ERASED_CONTENT = "[ERASED]";
@@ -50,6 +54,35 @@ async function drainIds<T extends { id: number }>(
   }
 }
 
+/**
+ * Keyset-drains owner ids and settles each page's dependent rows before reading the
+ * next, so memory stays bounded and a subject past the page size is still fully erased.
+ */
+async function forEachIdPage<T extends { id: number }>(
+  pageSize: number,
+  page: (cursor: number | null) => Promise<T[]>,
+  settle: (ids: number[]) => Promise<number>,
+): Promise<number> {
+  let cursor: number | null = null;
+  let settled = 0;
+  for (;;) {
+    const rows = await page(cursor);
+    if (rows.length === 0) return settled;
+    settled += await settle(rows.map((row) => row.id));
+    if (rows.length < pageSize) return settled;
+    const last = rows[rows.length - 1];
+    if (!last || last.id === cursor) return settled;
+    cursor = last.id;
+  }
+}
+
+export interface SubjectErasureStorageResult {
+  manifestSize: number;
+  deleted: number;
+  skipped: number;
+  failed: number;
+}
+
 export interface SubjectErasureResult {
   blocked: boolean;
   blockReason?: string;
@@ -57,16 +90,27 @@ export interface SubjectErasureResult {
   dryRun: boolean;
   tablesAnonymised: string[];
   globalIdentityAnonymised: boolean;
+  storage: SubjectErasureStorageResult;
 }
+
+const NO_STORAGE_WORK: SubjectErasureStorageResult = {
+  manifestSize: 0,
+  deleted: 0,
+  skipped: 0,
+  failed: 0,
+};
 
 /**
  * Idempotent, tenant-scoped PII erasure for a single subject.
  * Anonymises: organization_people, hr_employee_sensitive_fields, hr_dependents,
  * ai_chat_conversations (title), ai_chat_messages (content), chat_messages (content),
  * and (when no other org memberships remain) the global users identity row.
- * Hard-deletes: kb_chat_messages, kb_chat_conversations, kb_article_chunks where the
- * subject authored the source page, article, or uploaded source document (embedding +
- * chunk text are a reproduction of the subject's text and must be fully removed).
+ * Hard-deletes: kb_chat_messages, kb_chat_conversations, kb_article_chunks and the
+ * kb_ingestion_checkpoints that mirror them, where the subject authored the source page,
+ * article, or uploaded source document (embedding + chunk text are a reproduction of the
+ * subject's text and must be fully removed).
+ * Purges: every object-storage file the subject owns, using a manifest captured before
+ * the database transaction so a nulled key column cannot orphan its object.
  */
 @Injectable()
 export class GdprSubjectErasureService {
@@ -74,6 +118,7 @@ export class GdprSubjectErasureService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly sessionsService: SessionsService,
+    private readonly storagePurge: GdprStoragePurgeService,
   ) {}
 
   async eraseSubject(
@@ -103,8 +148,17 @@ export class GdprSubjectErasureService {
         dryRun: options.dryRun,
         tablesAnonymised: [],
         globalIdentityAnonymised: false,
+        storage: NO_STORAGE_WORK,
       };
     }
+
+    // Captured before anything is anonymised: an erased `*_key` column no longer names
+    // the object it pointed at, and a manifest built afterwards would leave that object
+    // alive in the bucket with its record gone.
+    const storageManifest: PurgeManifest = await this.storagePurge.buildManifest(
+      subjectUserId,
+      [orgId],
+    );
 
     if (options.dryRun) {
       return {
@@ -120,8 +174,10 @@ export class GdprSubjectErasureService {
           "kb_chat_messages",
           "kb_chat_conversations",
           "kb_article_chunks",
+          "kb_ingestion_checkpoints",
         ],
         globalIdentityAnonymised: false,
+        storage: { ...NO_STORAGE_WORK, manifestSize: storageManifest.keys.length },
       };
     }
 
@@ -343,77 +399,129 @@ export class GdprSubjectErasureService {
         .returning({ id: kbArticleChunks.id });
       if (pageChunkResult.length > 0) tablesAnonymised.push("kb_article_chunks");
 
-      const authoredArticles = await tx
-        .select({ id: kbArticles.id })
-        .from(kbArticles)
-        .where(
-          and(
-            eq(kbArticles.orgId, orgId),
-            eq(kbArticles.authorId, subjectUserId),
-          ),
-        );
-      if (authoredArticles.length > 0) {
-        const articleIds = authoredArticles.map((a) => a.id);
-        const articleChunkResult = await tx
-          .delete(kbArticleChunks)
-          .where(
-            and(
-              eq(kbArticleChunks.orgId, orgId),
-              inArray(kbArticleChunks.articleId, articleIds),
-            ),
-          )
-          .returning({ id: kbArticleChunks.id });
-        if (articleChunkResult.length > 0 && !tablesAnonymised.includes("kb_article_chunks"))
+      const markChunks = (deletedCount: number) => {
+        if (deletedCount > 0 && !tablesAnonymised.includes("kb_article_chunks"))
           tablesAnonymised.push("kb_article_chunks");
-      }
+      };
 
-      const ownedSources = await tx
-        .select({ id: kbSources.id })
-        .from(kbSources)
-        .where(
-          and(
-            eq(kbSources.orgId, orgId),
-            eq(kbSources.createdById, subjectUserId),
-          ),
-        );
-      if (ownedSources.length > 0) {
-        const sourceIds = ownedSources.map((s) => s.id);
-        const sourceChunkResult = await tx
-          .delete(kbArticleChunks)
-          .where(
-            and(
-              eq(kbArticleChunks.orgId, orgId),
-              inArray(kbArticleChunks.sourceId, sourceIds),
-            ),
-          )
-          .returning({ id: kbArticleChunks.id });
-        if (sourceChunkResult.length > 0 && !tablesAnonymised.includes("kb_article_chunks"))
-          tablesAnonymised.push("kb_article_chunks");
-      }
+      let checkpointsRemoved = 0;
 
-      const uploadedAttachments = await tx
-        .select({ id: kbArticleAttachments.id })
-        .from(kbArticleAttachments)
-        .where(
-          and(
-            eq(kbArticleAttachments.orgId, orgId),
-            eq(kbArticleAttachments.uploadedBy, subjectUserId),
-          ),
-        );
-      if (uploadedAttachments.length > 0) {
-        const attachmentIds = uploadedAttachments.map((a) => a.id);
-        const attachmentChunkResult = await tx
-          .delete(kbArticleChunks)
-          .where(
-            and(
-              eq(kbArticleChunks.orgId, orgId),
-              inArray(kbArticleChunks.attachmentId, attachmentIds),
-            ),
-          )
-          .returning({ id: kbArticleChunks.id });
-        if (attachmentChunkResult.length > 0 && !tablesAnonymised.includes("kb_article_chunks"))
-          tablesAnonymised.push("kb_article_chunks");
-      }
+      markChunks(
+        await forEachIdPage(
+          ERASURE_ID_PAGE,
+          (cursor) =>
+            tx
+              .select({ id: kbArticles.id })
+              .from(kbArticles)
+              .where(
+                and(
+                  eq(kbArticles.orgId, orgId),
+                  eq(kbArticles.authorId, subjectUserId),
+                  ...(cursor === null ? [] : [gt(kbArticles.id, cursor)]),
+                ),
+              )
+              .orderBy(asc(kbArticles.id))
+              .limit(ERASURE_ID_PAGE),
+          async (ids) => {
+            const removed = await tx
+              .delete(kbArticleChunks)
+              .where(
+                and(
+                  eq(kbArticleChunks.orgId, orgId),
+                  inArray(kbArticleChunks.articleId, ids),
+                ),
+              )
+              .returning({ id: kbArticleChunks.id });
+            checkpointsRemoved += await this.clearCheckpoints(tx, orgId, "article", ids);
+            return removed.length;
+          },
+        ),
+      );
+
+      markChunks(
+        await forEachIdPage(
+          ERASURE_ID_PAGE,
+          (cursor) =>
+            tx
+              .select({ id: kbSources.id })
+              .from(kbSources)
+              .where(
+                and(
+                  eq(kbSources.orgId, orgId),
+                  eq(kbSources.createdById, subjectUserId),
+                  ...(cursor === null ? [] : [gt(kbSources.id, cursor)]),
+                ),
+              )
+              .orderBy(asc(kbSources.id))
+              .limit(ERASURE_ID_PAGE),
+          async (ids) => {
+            const removed = await tx
+              .delete(kbArticleChunks)
+              .where(
+                and(
+                  eq(kbArticleChunks.orgId, orgId),
+                  inArray(kbArticleChunks.sourceId, ids),
+                ),
+              )
+              .returning({ id: kbArticleChunks.id });
+            return removed.length;
+          },
+        ),
+      );
+
+      markChunks(
+        await forEachIdPage(
+          ERASURE_ID_PAGE,
+          (cursor) =>
+            tx
+              .select({ id: kbArticleAttachments.id })
+              .from(kbArticleAttachments)
+              .where(
+                and(
+                  eq(kbArticleAttachments.orgId, orgId),
+                  eq(kbArticleAttachments.uploadedBy, subjectUserId),
+                  ...(cursor === null ? [] : [gt(kbArticleAttachments.id, cursor)]),
+                ),
+              )
+              .orderBy(asc(kbArticleAttachments.id))
+              .limit(ERASURE_ID_PAGE),
+          async (ids) => {
+            const removed = await tx
+              .delete(kbArticleChunks)
+              .where(
+                and(
+                  eq(kbArticleChunks.orgId, orgId),
+                  inArray(kbArticleChunks.attachmentId, ids),
+                ),
+              )
+              .returning({ id: kbArticleChunks.id });
+            return removed.length;
+          },
+        ),
+      );
+
+      // kb_ingestion_checkpoints keeps the chunk text and its embedding for content whose
+      // indexing was interrupted. It survives the chunk delete because it is keyed by
+      // (content_type, content_id), not by a foreign key to the chunk row.
+      checkpointsRemoved += await forEachIdPage(
+        ERASURE_ID_PAGE,
+        (cursor) =>
+          tx
+            .select({ id: kbPages.id })
+            .from(kbPages)
+            .where(
+              and(
+                eq(kbPages.orgId, orgId),
+                eq(kbPages.createdById, subjectUserId),
+                ...(cursor === null ? [] : [gt(kbPages.id, cursor)]),
+              ),
+            )
+            .orderBy(asc(kbPages.id))
+            .limit(ERASURE_ID_PAGE),
+        (ids) => this.clearCheckpoints(tx, orgId, "page", ids),
+      );
+
+      if (checkpointsRemoved > 0) tablesAnonymised.push("kb_ingestion_checkpoints");
 
       await tx.insert(hrDataRequests).values({
         orgId,
@@ -444,12 +552,46 @@ export class GdprSubjectErasureService {
     await bustMembershipStatusCache(this.cache, subjectUserId);
     await this.sessionsService.revokeAllForUser(subjectUserId);
 
+    const purge = await this.storagePurge.purgeFromManifest(
+      storageManifest,
+      subjectUserId,
+      actorUserId,
+      orgId,
+      { dryRun: false },
+    );
+    if (purge.deleted.length > 0) tablesAnonymised.push("object_storage");
+
     return {
       blocked: false,
       dryRun: false,
       tablesAnonymised,
       globalIdentityAnonymised,
+      storage: {
+        manifestSize: storageManifest.keys.length,
+        deleted: purge.deleted.length,
+        skipped: purge.skipped.length,
+        failed: purge.failed.length,
+      },
     };
+  }
+
+  private async clearCheckpoints(
+    tx: TenantTx,
+    orgId: string,
+    contentType: "article" | "page",
+    contentIds: number[],
+  ): Promise<number> {
+    const removed = await tx
+      .delete(kbIngestionCheckpoints)
+      .where(
+        and(
+          eq(kbIngestionCheckpoints.orgId, orgId),
+          eq(kbIngestionCheckpoints.contentType, contentType),
+          inArray(kbIngestionCheckpoints.contentId, contentIds),
+        ),
+      )
+      .returning({ id: kbIngestionCheckpoints.id });
+    return removed.length;
   }
 
   private async findActiveLegalHold(

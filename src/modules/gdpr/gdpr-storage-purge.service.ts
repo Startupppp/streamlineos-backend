@@ -22,12 +22,19 @@ export interface PurgeResult {
   blockReason?: string;
   dryRun: boolean;
   deleted: string[];
-  skipped: string[];
+  skipped: Array<{ key: string; reason: string }>;
   failed: Array<{ key: string; reason: string }>;
   manifest: SubjectFileKey[];
 }
 
 const STORAGE_DELETE_ATTEMPTS = 3;
+
+/**
+ * An `org-id` sourced key came from a table with no foreign key to `users`, so the
+ * row is attributable to the tenant and not to the subject. Deleting it would destroy
+ * another person's object, so those keys are reported and left in place.
+ */
+const NOT_SUBJECT_ATTRIBUTABLE = "not-subject-attributable-org-scoped-key";
 
 @Injectable()
 export class GdprStoragePurgeService {
@@ -80,6 +87,39 @@ export class GdprStoragePurgeService {
       };
     }
 
+    return this.purgeFromManifest(
+      manifest,
+      userId,
+      actorUserId,
+      primaryOrgId,
+      options,
+    );
+  }
+
+  /**
+   * Deletes the objects in an already-built manifest. Erasure builds the manifest
+   * before it anonymises the database, because a nulled `*_key` column no longer
+   * names the object it pointed at and the object would outlive its record.
+   */
+  async purgeFromManifest(
+    manifest: PurgeManifest,
+    userId: string,
+    actorUserId: string,
+    primaryOrgId: string,
+    options: { dryRun: boolean },
+  ): Promise<PurgeResult> {
+    if (manifest.blocked) {
+      return {
+        blocked: true,
+        blockReason: manifest.blockReason,
+        dryRun: options.dryRun,
+        deleted: [],
+        skipped: [],
+        failed: [],
+        manifest: [],
+      };
+    }
+
     if (options.dryRun) {
       return {
         blocked: false,
@@ -92,9 +132,14 @@ export class GdprStoragePurgeService {
     }
 
     const deleted: string[] = [];
+    const skipped: Array<{ key: string; reason: string }> = [];
     const failed: Array<{ key: string; reason: string }> = [];
 
     for (const entry of manifest.keys) {
+      if (entry.source === "org-id") {
+        skipped.push({ key: entry.key, reason: NOT_SUBJECT_ATTRIBUTABLE });
+        continue;
+      }
       if (entry.orgId === null) {
         failed.push({ key: entry.key, reason: "table-has-no-org-id" });
         continue;
@@ -134,13 +179,14 @@ export class GdprStoragePurgeService {
       primaryOrgId,
       deleted.length,
       failed.length,
+      skipped.length,
     );
 
     return {
       blocked: false,
       dryRun: false,
       deleted,
-      skipped: [],
+      skipped,
       failed,
       manifest: manifest.keys,
     };
@@ -174,6 +220,7 @@ export class GdprStoragePurgeService {
     orgId: string,
     deletedCount: number,
     failedCount: number,
+    skippedCount: number,
   ) {
     await this.db.insert(auditLogs).values({
       action: "subject.storage.erased",
@@ -184,6 +231,7 @@ export class GdprStoragePurgeService {
       metadata: {
         keyCount: deletedCount,
         failedCount,
+        skippedCount,
         subjectUserIdHash: this.hashId(subjectUserId),
       },
       isPlatformEvent: false,

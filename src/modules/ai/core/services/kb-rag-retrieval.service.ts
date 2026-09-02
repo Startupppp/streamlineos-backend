@@ -138,6 +138,8 @@ export class KbRagRetrievalService {
     if (!embedResult.ok) {
       if (embedResult.kind === "quota_exceeded")
         throw new InsufficientAiCreditsException({ message: embedResult.message });
+      if (embedResult.kind === "concurrency_exceeded")
+        throw new ServiceUnavailableException(embedResult.message);
       throw new ServiceUnavailableException("AI provider is temporarily unavailable");
     }
     return embedResult.vectorLiteral;

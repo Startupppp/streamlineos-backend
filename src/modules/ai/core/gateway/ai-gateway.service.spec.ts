@@ -45,7 +45,25 @@ function makeLedger(overrides: Partial<AiCreditLedger> = {}): jest.Mocked<AiCred
   } as jest.Mocked<AiCreditLedger>;
 }
 
-async function buildModule(llmOverride?: ReturnType<typeof makeLlm>, ledgerOverride?: jest.Mocked<AiCreditLedger>) {
+function makeEmbeddings(overrides: Partial<{ embedQueryRaw: jest.Mock }> = {}) {
+  return {
+    isConfigured: jest.fn().mockReturnValue(true),
+    embedQueryRaw: overrides.embedQueryRaw ?? jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+    embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+    embedBatch: jest.fn().mockResolvedValue([[0.1]]),
+    embedQueryDeduped: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+    toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2,0.3]"),
+  };
+}
+
+async function buildModule(
+  llmOverride?: ReturnType<typeof makeLlm>,
+  ledgerOverride?: jest.Mocked<AiCreditLedger>,
+  extras: Partial<{
+    embeddings: ReturnType<typeof makeEmbeddings>;
+    limiter: { acquire: jest.Mock; release: jest.Mock };
+  }> = {},
+) {
   const mockUsage = { track: jest.fn().mockResolvedValue(undefined) };
   const mockAudit = { log: jest.fn() };
   const llm = llmOverride ?? makeLlm();
@@ -56,15 +74,10 @@ async function buildModule(llmOverride?: ReturnType<typeof makeLlm>, ledgerOverr
     invalidate: jest.fn().mockResolvedValue(undefined),
   };
 
-  const mockConcurrencyLimiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+  const mockConcurrencyLimiter =
+    extras.limiter ?? { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
 
-  const mockEmbeddings = {
-    isConfigured: jest.fn().mockReturnValue(true),
-    embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
-    embedBatch: jest.fn().mockResolvedValue([[0.1]]),
-    embedQueryDeduped: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
-    toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2,0.3]"),
-  };
+  const mockEmbeddings = extras.embeddings ?? makeEmbeddings();
 
   const module: TestingModule = await Test.createTestingModule({
     providers: [
@@ -85,6 +98,8 @@ async function buildModule(llmOverride?: ReturnType<typeof makeLlm>, ledgerOverr
     ledger,
     mockUsage,
     mockAudit,
+    mockEmbeddings,
+    mockConcurrencyLimiter,
   };
 }
 
@@ -368,6 +383,210 @@ describe("AiGatewayService", () => {
       const limiter2 = module2.get(AiConcurrencyLimiter) as jest.Mocked<AiConcurrencyLimiter>;
       await svc2.invokeText({ actor: ACTOR, feature: FEATURE, prompt: PROMPT });
       expect(limiter2.release).toHaveBeenCalledWith(ACTOR.orgId);
+    });
+  });
+  describe("embedQueryWithCredit — credit before the paid call (ticket 10)", () => {
+    const EMBED_FEATURE = "kb.public-embedding";
+    const RESERVE_CEILING_MILLI = 1000;
+
+    it("reserves credit BEFORE the embedding provider is called", async () => {
+      const { svc, ledger, mockEmbeddings } = await buildModule();
+      const result = await svc.embedQueryWithCredit({
+        text: "how do I reset my password",
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(ledger.reserve).toHaveBeenCalledWith({
+        orgId: ACTOR.orgId,
+        userId: null,
+        feature: EMBED_FEATURE,
+        credits: RESERVE_CEILING_MILLI,
+      });
+      const reserveOrder = ledger.reserve.mock.invocationCallOrder[0];
+      const embedOrder = mockEmbeddings.embedQueryRaw.mock.invocationCallOrder[0];
+      expect(reserveOrder).toBeDefined();
+      expect(embedOrder).toBeDefined();
+      expect(reserveOrder!).toBeLessThan(embedOrder!);
+    });
+
+    it("never calls the provider when the wallet is short", async () => {
+      const ledger = makeLedger({
+        reserve: jest.fn().mockRejectedValue(new InsufficientAiCreditsException({ message: "Insufficient AI credits" })),
+      });
+      const { svc, mockEmbeddings } = await buildModule(undefined, ledger);
+
+      const result = await svc.embedQueryWithCredit({
+        text: "anything",
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.kind).toBe("quota_exceeded");
+      expect(mockEmbeddings.embedQueryRaw).not.toHaveBeenCalled();
+      expect(ledger.settle).not.toHaveBeenCalled();
+    });
+
+    it("settles the token-metered charge, not the flat reserve ceiling, and scales with input size", async () => {
+      const short = await buildModule();
+      await short.svc.embedQueryWithCredit({
+        text: "x".repeat(4_000),
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+      const shortSettle = short.ledger.settle.mock.calls[0]?.[1];
+      expect(shortSettle?.actualMilli).toBe(10);
+      expect(shortSettle?.promptTokens).toBe(1_000);
+
+      const long = await buildModule();
+      await long.svc.embedQueryWithCredit({
+        text: "x".repeat(40_000),
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+      const longSettle = long.ledger.settle.mock.calls[0]?.[1];
+      expect(longSettle?.actualMilli).toBe(30);
+      expect(longSettle?.promptTokens).toBe(10_000);
+      expect(longSettle?.actualMilli).not.toBe(RESERVE_CEILING_MILLI);
+    });
+
+    it("records the settled milli-credits on the usage log", async () => {
+      const { svc, mockUsage } = await buildModule();
+      await svc.embedQueryWithCredit({
+        text: "x".repeat(40_000),
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+
+      expect(mockUsage.track).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orgId: ACTOR.orgId,
+          feature: EMBED_FEATURE,
+          creditsMilli: 30,
+          promptTokens: 10_000,
+          outcome: "ok",
+        }),
+      );
+    });
+
+    it("releases the reservation when the provider throws and reports provider_unavailable", async () => {
+      const embeddings = makeEmbeddings({
+        embedQueryRaw: jest.fn().mockRejectedValue(new Error("openai down")),
+      });
+      const { svc, ledger } = await buildModule(undefined, undefined, { embeddings });
+
+      const result = await svc.embedQueryWithCredit({
+        text: "anything",
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.kind).toBe("provider_unavailable");
+      expect(ledger.release).toHaveBeenCalledWith(42, "embedding_error", ACTOR.orgId);
+      expect(ledger.settle).not.toHaveBeenCalled();
+    });
+
+    it("does not refund or fail a successful embedding when settlement throws", async () => {
+      const ledger = makeLedger({
+        settle: jest.fn().mockRejectedValue(new Error("ledger unavailable")),
+      });
+      const { svc } = await buildModule(undefined, ledger);
+
+      const result = await svc.embedQueryWithCredit({
+        text: "anything",
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(ledger.release).not.toHaveBeenCalled();
+    });
+
+    it("takes a concurrency slot and releases it on both success and provider failure", async () => {
+      const ok = await buildModule();
+      await ok.svc.embedQueryWithCredit({
+        text: "anything",
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+      expect(ok.mockConcurrencyLimiter.acquire).toHaveBeenCalledWith(ACTOR.orgId);
+      expect(ok.mockConcurrencyLimiter.release).toHaveBeenCalledWith(ACTOR.orgId);
+
+      const failing = await buildModule(undefined, undefined, {
+        embeddings: makeEmbeddings({ embedQueryRaw: jest.fn().mockRejectedValue(new Error("down")) }),
+      });
+      await failing.svc.embedQueryWithCredit({
+        text: "anything",
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+      expect(failing.mockConcurrencyLimiter.release).toHaveBeenCalledWith(ACTOR.orgId);
+    });
+
+    it("does not leak a slot when the wallet is short", async () => {
+      const ledger = makeLedger({
+        reserve: jest.fn().mockRejectedValue(new InsufficientAiCreditsException()),
+      });
+      const { svc, mockConcurrencyLimiter } = await buildModule(undefined, ledger);
+
+      await svc.embedQueryWithCredit({
+        text: "anything",
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+
+      expect(mockConcurrencyLimiter.acquire).toHaveBeenCalledTimes(1);
+      expect(mockConcurrencyLimiter.release).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns concurrency_exceeded without reserving credit or calling the provider", async () => {
+      const { svc, ledger, mockEmbeddings } = await buildModule(undefined, undefined, {
+        limiter: { acquire: jest.fn().mockResolvedValue(false), release: jest.fn() },
+      });
+
+      const result = await svc.embedQueryWithCredit({
+        text: "anything",
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.kind).toBe("concurrency_exceeded");
+      expect(ledger.reserve).not.toHaveBeenCalled();
+      expect(mockEmbeddings.embedQueryRaw).not.toHaveBeenCalled();
+    });
+
+    it("charge: false neither reserves nor settles but still returns a vector", async () => {
+      const { svc, ledger } = await buildModule();
+      const result = await svc.embedQueryWithCredit({
+        text: "anything",
+        orgId: ACTOR.orgId,
+        feature: EMBED_FEATURE,
+        charge: false,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.vectorLiteral).toBe("[0.1,0.2,0.3]");
+      expect(ledger.reserve).not.toHaveBeenCalled();
+      expect(ledger.settle).not.toHaveBeenCalled();
     });
   });
 });

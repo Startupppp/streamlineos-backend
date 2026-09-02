@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { createHash, randomUUID } from "crypto";
 import { LlmService } from "../providers/llm.service";
-import { EmbeddingsService, EMBEDDING_MODEL } from "../providers/embeddings.service";
+import { EmbeddingsService } from "../providers/embeddings.service";
 import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import {
@@ -12,12 +12,11 @@ import {
   computeTokenCharge,
   milliToCredits,
 } from "../billing/ai-model-pricing.constants";
-import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
 import { AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
 import { AiGatewayRunnerHelper } from "./ai-gateway-runner.helper";
+import { AiGatewayEmbedHelper } from "./ai-gateway-embed.helper";
 import { AiResponseCacheService } from "./ai-response-cache.service";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
-import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import type {
   AiInvokeResult,
   AiInvokeWithUsageResult,
@@ -45,10 +44,6 @@ function resolveCacheOpts(cache: AiResponseCacheOpts | undefined): AiResponseCac
   return cache ?? null;
 }
 
-function estimateEmbedTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
 @Injectable()
 export class AiGatewayService {
   private readonly inflightMap = new Map<
@@ -56,6 +51,7 @@ export class AiGatewayService {
     Promise<AiInvokeResult<unknown>>
   >();
   private readonly runner: AiGatewayRunnerHelper;
+  private readonly embedder: AiGatewayEmbedHelper;
 
   constructor(
     private readonly llm: LlmService,
@@ -68,6 +64,7 @@ export class AiGatewayService {
   ) {
     const credit = new AiGatewayCreditHelper(ledger, usageSvc, audit);
     this.runner = new AiGatewayRunnerHelper(llm, credit);
+    this.embedder = new AiGatewayEmbedHelper(embeddings, ledger, usageSvc);
   }
 
   isEmbeddingConfigured(): boolean {
@@ -75,37 +72,14 @@ export class AiGatewayService {
   }
 
   async embedQueryWithCredit(opts: EmbedQueryOpts): Promise<EmbedQueryResult> {
-    const { text, orgId, feature, charge } = opts;
     const correlationId = randomUUID();
-    let reservationId = 0;
-
-    if (charge) {
-      const reserveMilli = getReserveEstimateMilli(feature);
-      try {
-        const reserved = await this.ledger.reserve({ orgId, userId: null, feature, credits: reserveMilli });
-        reservationId = reserved.reservationId;
-      } catch (error) {
-        if (error instanceof InsufficientAiCreditsException)
-          return { ok: false, kind: "quota_exceeded", message: error.message, correlationId };
-        throw error;
-      }
-    }
-
+    const allowed = await this.concurrencyLimiter.acquire(opts.orgId);
+    if (!allowed)
+      return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
     try {
-      const vector = await this.embeddings.embedQuery(text, orgId, feature);
-      const estimatedTokens = estimateEmbedTokens(text);
-      const { costUsd, milliCredits } = charge
-        ? computeTokenCharge(EMBEDDING_MODEL, estimatedTokens, 0)
-        : { costUsd: 0, milliCredits: 0 };
-
-      if (charge && reservationId !== 0)
-        await this.ledger.settle(reservationId, { orgId, actualMilli: milliCredits, model: EMBEDDING_MODEL, promptTokens: estimatedTokens, completionTokens: 0, totalTokens: estimatedTokens, costUsd });
-
-      return { ok: true, vector, vectorLiteral: this.embeddings.toVectorLiteral(vector) };
-    } catch (error) {
-      if (reservationId !== 0)
-        await this.ledger.release(reservationId, "embedding_error", orgId).catch(() => undefined);
-      return { ok: false, kind: "provider_unavailable", message: "Embedding provider is temporarily unavailable", correlationId };
+      return await this.embedder.run(opts, correlationId);
+    } finally {
+      this.concurrencyLimiter.release(opts.orgId);
     }
   }
 

@@ -1,4 +1,6 @@
 import { ProviderCircuitBreaker, sharedProviderBreaker } from "./provider-circuit-breaker";
+import { currentSpan, formatTraceparent, withSpan } from "../observability/tracing";
+import { getObservabilityContext } from "../observability/observability-context";
 
 export type FailureClass = "retryable" | "terminal";
 
@@ -76,6 +78,27 @@ function wrapWithTimeout<T>(fn: () => Promise<T>, ms: number, provider: string):
  * Circuit breaker is process-local by default (see ProviderCircuitBreaker for rationale).
  * Pass an explicit `breaker` to scope it differently (e.g. per tenant in tests).
  */
+/**
+ * The headers that let a downstream service join this trace.
+ *
+ * W3C `traceparent` for anything that speaks it, and `x-correlation-id` for the
+ * far commoner case of a service that only echoes an opaque request id back into
+ * its own logs — which is exactly what makes a provider's support ticket
+ * joinable to ours. Empty when there is nothing ambient to propagate, so a
+ * background call sends no misleading header.
+ *
+ * Header names only, never a credential: a caller merges these into whatever
+ * authentication headers it already builds.
+ */
+export function outboundTraceHeaders(): Record<string, string> {
+  const span = currentSpan();
+  const correlationId = getObservabilityContext()?.correlationId;
+  return {
+    ...(span ? { traceparent: formatTraceparent(span) } : {}),
+    ...(correlationId ? { "x-correlation-id": correlationId } : {}),
+  };
+}
+
 export async function callProvider<T>(
   descriptor: ProviderDescriptor,
   fn: () => Promise<T>,
@@ -90,7 +113,18 @@ export async function callProvider<T>(
       return { ok: false, kind: "circuit-open", retryAfterMs: decision.retryAfterMs, attempts: attempt };
 
     try {
-      const value = await wrapWithTimeout(fn, descriptor.timeoutMs, descriptor.provider);
+      /**
+       * One span per attempt, not per call: a call that succeeded on its third
+       * try after two timeouts and a call that succeeded immediately are the
+       * same single span otherwise, and the retries — the thing worth seeing —
+       * are invisible. The span is also what `outboundTraceHeaders` reads, so
+       * the header the provider receives names this attempt.
+       */
+      const value = await withSpan(
+        `provider.${descriptor.provider}`,
+        () => wrapWithTimeout(fn, descriptor.timeoutMs, descriptor.provider),
+        { attributes: { "provider.name": descriptor.provider, "provider.attempt": attempt } },
+      );
       breaker.recordSuccess(descriptor.provider);
       return { ok: true, value, attempts: attempt };
     } catch (err: unknown) {

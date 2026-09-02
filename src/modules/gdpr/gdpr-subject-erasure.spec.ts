@@ -4,6 +4,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 import { GdprController } from "./gdpr.controller";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { SubjectFileKey } from "../storage/storage-key-catalog";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -159,13 +160,33 @@ function makeDb(opts: {
   };
 }
 
+function makeStoragePurge(keys: SubjectFileKey[] = []) {
+  return {
+    buildManifest: jest.fn().mockResolvedValue({ blocked: false, keys }),
+    purgeFromManifest: jest.fn().mockResolvedValue({
+      blocked: false,
+      dryRun: false,
+      deleted: keys.map((k) => k.key),
+      skipped: [],
+      failed: [],
+      manifest: keys,
+    }),
+  };
+}
+
 function buildService(
   db: DbMocks["db"],
   sessionsService?: { revokeAllForUser: jest.Mock },
+  storagePurge?: ReturnType<typeof makeStoragePurge>,
 ): GdprSubjectErasureService {
   const cache = {} as CacheService;
   const sessions = sessionsService ?? { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) };
-  return new GdprSubjectErasureService(db as unknown as Db, cache, sessions as never);
+  return new GdprSubjectErasureService(
+    db as unknown as Db,
+    cache,
+    sessions as never,
+    (storagePurge ?? makeStoragePurge()) as never,
+  );
 }
 
 beforeEach(() => {
@@ -562,7 +583,12 @@ describe("GdprSubjectErasureService — the id scan drains instead of capping", 
     const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) } as unknown as ConstructorParameters<
       typeof GdprSubjectErasureService
     >[2];
-    const service = new GdprSubjectErasureService(db, cache, sessions);
+    const service = new GdprSubjectErasureService(
+      db,
+      cache,
+      sessions,
+      makeStoragePurge() as never,
+    );
 
     await service.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 

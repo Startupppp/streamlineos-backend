@@ -11,7 +11,12 @@ jest.mock("../security/ssrf-guard", () => ({
 }));
 
 import { checkWebhookUrl } from "../security/ssrf-guard";
+import { parseTraceparent, runInSpan } from "../observability/tracing";
+import { runWithObservabilityContext } from "../observability/observability-context";
 const mockCheckWebhookUrl = checkWebhookUrl as jest.MockedFunction<typeof checkWebhookUrl>;
+
+const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
+const SPAN_ID = "00f067aa0ba902b7";
 
 function listenOnFreePort(server: Server): Promise<number> {
   return new Promise<number>((resolve, reject) => {
@@ -25,6 +30,73 @@ function listenOnFreePort(server: Server): Promise<number> {
     });
   });
 }
+
+describe("outboundRequest — the provider receives this trace, not a new one", () => {
+  let server: Server;
+  let port: number;
+  const received: Record<string, string | undefined>[] = [];
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      received.push({
+        traceparent: req.headers["traceparent"] as string | undefined,
+        correlation: req.headers["x-correlation-id"] as string | undefined,
+        authorization: req.headers["authorization"] as string | undefined,
+      });
+      res.writeHead(200).end("{}");
+    });
+    port = await listenOnFreePort(server);
+    mockCheckWebhookUrl.mockResolvedValue({ allowed: true });
+  });
+
+  afterAll((done) => {
+    server.close(done);
+  });
+
+  beforeEach(() => {
+    received.length = 0;
+  });
+
+  it("forwards a traceparent whose trace id is the request's, so both halves join", async () => {
+    await runWithObservabilityContext({ correlationId: "cid-outbound" }, () =>
+      runInSpan({ traceId: TRACE_ID, spanId: SPAN_ID, sampled: true }, () =>
+        outboundRequest(`http://127.0.0.1:${String(port)}/charge`, {
+          provider: "razorpay",
+          timeoutMs: 2_000,
+        }),
+      ),
+    );
+
+    expect(received).toHaveLength(1);
+    const parsed = parseTraceparent(received[0]?.traceparent);
+    expect(parsed?.traceId).toBe(TRACE_ID);
+    // Its own span, not the caller's: the provider's work nests under this call.
+    expect(parsed?.spanId).not.toBe(SPAN_ID);
+    expect(received[0]?.correlation).toBe("cid-outbound");
+  });
+
+  it("(bite proof) sends no trace headers at all when nothing is ambient", async () => {
+    await outboundRequest(`http://127.0.0.1:${String(port)}/charge`, {
+      provider: "razorpay",
+      timeoutMs: 2_000,
+    });
+
+    expect(received[0]?.correlation).toBeUndefined();
+  });
+
+  it("never overwrites a header the adapter already set and may have signed", async () => {
+    await runWithObservabilityContext({ correlationId: "cid-outbound" }, () =>
+      outboundRequest(`http://127.0.0.1:${String(port)}/charge`, {
+        provider: "razorpay",
+        timeoutMs: 2_000,
+        headers: { authorization: "Bearer scoped", "x-correlation-id": "adapter-chosen" },
+      }),
+    );
+
+    expect(received[0]?.authorization).toBe("Bearer scoped");
+    expect(received[0]?.correlation).toBe("adapter-chosen");
+  });
+});
 
 describe("outboundRequest — hanging server is abandoned at the deadline", () => {
   let hangingServer: Server;

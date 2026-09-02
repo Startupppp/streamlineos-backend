@@ -1,5 +1,7 @@
 import { logger } from "../logger/logger.service";
 import { checkWebhookUrl } from "../security/ssrf-guard";
+import { outboundTraceHeaders } from "../outbound/call-provider";
+import { withSpan } from "../observability/tracing";
 
 export type OutboundOutcome = "ok" | "timeout" | "ssrf-blocked" | "network-error";
 
@@ -44,11 +46,31 @@ export async function outboundRequest(
   const start = performance.now();
 
   try {
-    const response = await fetch(url, {
-      ...fetchInit,
-      redirect: "error",
-      signal: combined,
-    });
+    /**
+     * The span is opened before the headers are read, because
+     * `outboundTraceHeaders` names whatever span is current: reading it outside
+     * would send the caller's span id and make the provider's half of the trace
+     * a sibling of this call rather than its child.
+     *
+     * A header the caller already set is left alone — an adapter that signs its
+     * own request must stay in control of what it signed.
+     */
+    const response = await withSpan(
+      `provider.${provider}`,
+      () => {
+        const headers = new Headers(fetchInit.headers);
+        for (const [name, value] of Object.entries(outboundTraceHeaders())) {
+          if (!headers.has(name)) headers.set(name, value);
+        }
+        return fetch(url, {
+          ...fetchInit,
+          headers,
+          redirect: "error",
+          signal: combined,
+        });
+      },
+      { attributes: { "provider.name": provider } },
+    );
     const durationMs = Math.round(performance.now() - start);
     logger.info("OUTBOUND_OK", { provider, status: response.status, durationMs });
     return response;

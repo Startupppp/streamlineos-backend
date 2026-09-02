@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { organizations, outboxEvents } from "../../db/schema";
@@ -14,6 +15,11 @@ import { OutboxConsumerRegistry, type OutboxEventRow } from "./outbox-consumer.r
 import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { forEachOrg } from "../tenant";
 import { OutboxReportService } from "./outbox-report.service";
+import { runWithObservabilityContext } from "../observability/observability-context";
+import { withSpan } from "../observability/tracing";
+import { currentRelease } from "../observability/release";
+import { scrubBindParameters, truncateForLog } from "../observability/redact";
+import { PROCESS_CELL_ID } from "../cell-resources/cell-id";
 import type { OutboxFlushResult, OutboxMetrics, OutboxOrganizationReport, OutboxReport } from "./outbox-publisher.types";
 
 export type { OutboxFlushResult, OutboxMetrics, OutboxOrganizationReport, OutboxReport };
@@ -57,26 +63,60 @@ export class OutboxPublisherService {
     let fenced = 0;
 
     for (const event of claimed) {
-      try {
-        const lifecycle = await this.readOrgLifecycle(event.organizationId);
-        if (!lifecycle.found || shouldSuppressForLifecycle(lifecycle.status)) {
-          if (await this.mark(event, "SUPPRESSED")) suppressed++;
-          else fenced++;
-          continue;
-        }
-
-        await this.deliver(event);
-        if (await this.mark(event, "DELIVERED", { publishedAt: new Date() })) delivered++;
-        else fenced++;
-      } catch (error: unknown) {
-        const outcome = await this.handleFailure(event, error);
-        if (outcome === "DEAD") dead++;
-        else if (outcome === "RETRY") retried++;
-        else fenced++;
-      }
+      const outcome = await this.inEventContext(event, () => this.processEvent(event));
+      if (outcome === "DELIVERED") delivered++;
+      else if (outcome === "SUPPRESSED") suppressed++;
+      else if (outcome === "DEAD") dead++;
+      else if (outcome === "RETRY") retried++;
+      else fenced++;
     }
 
     return { claimed: claimed.length, delivered, suppressed, retried, dead, fenced };
+  }
+
+  /**
+   * Delivery runs long after the request that produced the event, in a process
+   * that may not have served it at all, so there is no ambient context to
+   * inherit and nothing may be borrowed from one. The context is rebuilt from
+   * the row: the producer's correlation id becomes the join key, and the
+   * organisation is stated explicitly rather than assumed.
+   *
+   * A legacy row written before `OutboxWriter` defaulted the column has no
+   * correlation id. It gets a fresh one instead of none, so the delivery's own
+   * log lines still group together — they simply do not join back to a request.
+   */
+  private inEventContext<T>(event: OutboxEventRow, fn: () => Promise<T>): Promise<T> {
+    return runWithObservabilityContext(
+      {
+        correlationId: event.correlationId ?? randomUUID(),
+        orgId: event.organizationId,
+        route: `outbox:${event.eventType}`,
+        cellId: PROCESS_CELL_ID,
+        release: currentRelease(),
+      },
+      () =>
+        withSpan("outbox.deliver", fn, {
+          attributes: { "outbox.event_type": event.eventType, "outbox.attempt": event.retryCount + 1 },
+        }),
+    );
+  }
+
+  private async processEvent(
+    event: OutboxEventRow,
+  ): Promise<"DELIVERED" | "SUPPRESSED" | "DEAD" | "RETRY" | "FENCED"> {
+    try {
+      const lifecycle = await this.readOrgLifecycle(event.organizationId);
+      if (!lifecycle.found || shouldSuppressForLifecycle(lifecycle.status)) {
+        return (await this.mark(event, "SUPPRESSED")) ? "SUPPRESSED" : "FENCED";
+      }
+
+      await this.deliver(event);
+      return (await this.mark(event, "DELIVERED", { publishedAt: new Date() }))
+        ? "DELIVERED"
+        : "FENCED";
+    } catch (error: unknown) {
+      return this.handleFailure(event, error);
+    }
   }
 
   metrics(): Promise<OutboxMetrics> {
@@ -158,7 +198,13 @@ export class OutboxPublisherService {
     event: OutboxEventRow,
     error: unknown,
   ): Promise<"DEAD" | "RETRY" | "FENCED"> {
-    const message = error instanceof Error ? error.message : String(error);
+    // `last_error` is read back by the dead-outbox alert and printed into an
+    // operator's terminal, so it is a log destination in every sense that
+    // matters. A Drizzle failure's message carries the statement's bind values;
+    // storing them unscrubbed would put tenant data into that output.
+    const message = truncateForLog(
+      scrubBindParameters(error instanceof Error ? error.message : String(error)),
+    );
     const retryCount = event.retryCount + 1;
 
     if (shouldDeadLetter(retryCount)) {

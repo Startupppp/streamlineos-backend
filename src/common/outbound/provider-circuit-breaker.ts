@@ -52,6 +52,20 @@ export class ProviderCircuitBreaker {
     return { open: true, retryAfterMs: this.cooldownMs - elapsed };
   }
 
+  /**
+   * Providers whose circuit is open right now, without changing anything.
+   *
+   * `check` half-opens a breaker whose cooldown has elapsed, which is correct for
+   * a caller about to make a call and wrong for a health probe: a probe that
+   * consumed the half-open slot would spend the recovery attempt on itself.
+   */
+  openProviders(now: number): readonly string[] {
+    const open: string[] = [];
+    for (const [provider, entry] of this.state)
+      if (entry.openedAt !== null && now - entry.openedAt < this.cooldownMs) open.push(provider);
+    return open;
+  }
+
   recordSuccess(provider: string): void {
     this.state.delete(provider);
   }

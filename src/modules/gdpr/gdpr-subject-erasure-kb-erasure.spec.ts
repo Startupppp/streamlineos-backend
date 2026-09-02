@@ -129,7 +129,23 @@ function makeKbDb(opts: KbDbOpts = {}) {
 function buildService(db: ReturnType<typeof makeKbDb>["db"]): GdprSubjectErasureService {
   const cache = {} as CacheService;
   const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) } as unknown as SessionsService;
-  return new GdprSubjectErasureService(db as unknown as Db, cache, sessions);
+  const storagePurge = {
+    buildManifest: jest.fn().mockResolvedValue({ blocked: false, keys: [] }),
+    purgeFromManifest: jest.fn().mockResolvedValue({
+      blocked: false,
+      dryRun: false,
+      deleted: [],
+      skipped: [],
+      failed: [],
+      manifest: [],
+    }),
+  };
+  return new GdprSubjectErasureService(
+    db as unknown as Db,
+    cache,
+    sessions,
+    storagePurge as never,
+  );
 }
 
 beforeEach(() => {

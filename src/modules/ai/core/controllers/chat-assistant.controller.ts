@@ -7,16 +7,16 @@ import {
   Get,
   HttpCode,
   Inject,
-  InternalServerErrorException,
   Param,
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -25,7 +25,6 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../../common/tenant";
-import { logger } from "../../../../common/logger/logger.service";
 import { z } from "zod";
 import { ChatAssistantService } from "../services/chat-assistant.service";
 import { ChatHistoryService } from "../services/chat-history.service";
@@ -59,6 +58,13 @@ import { ToolAccessService } from "../tool-access.service";
 import { AI_EVENT_TIMEZONE } from "../ai-event-timezone";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../../common/auth/principal";
+import {
+  createStreamAbortSignal,
+  pipeAiTextStream,
+  rethrowStreamRouteError,
+} from "../streaming";
+
+export const CHAT_STREAM_DEADLINE_MS = 120_000;
 
 const conversationIdParams = z.object({ conversationId: z.string().min(1) }).strict();
 
@@ -210,6 +216,7 @@ export class ChatAssistantController {
   @NoTenantTransaction()
   @Validate({ body: chatRequestSchema })
   async chatAssistant(
+    @Req() req: Request,
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
@@ -222,17 +229,7 @@ export class ChatAssistantController {
       throw new ForbiddenException("AI chat is disabled for this organization.");
     }
 
-    const controller = new AbortController();
-    res.on("close", () => controller.abort());
-    const deadline = AbortSignal.timeout(120_000);
-    const combined = (() => {
-      const ctrl = new AbortController();
-      const abort = () => ctrl.abort();
-      controller.signal.addEventListener("abort", abort, { once: true });
-      deadline.addEventListener("abort", abort, { once: true });
-      if (controller.signal.aborted || deadline.aborted) ctrl.abort();
-      return ctrl.signal;
-    })();
+    const abort = createStreamAbortSignal(req, res, CHAT_STREAM_DEADLINE_MS);
 
     try {
       const result = await this.chat.processChat(
@@ -240,12 +237,13 @@ export class ChatAssistantController {
         u,
         parsed.data.conversationId,
         parsed.data.persona,
-        combined,
+        abort.signal,
       );
-      result.pipeTextStreamToResponse(res);
+      await pipeAiTextStream(res, result, { feature: "ai.chat", orgId: u.orgId });
     } catch (error) {
-      logger.error("Chat route error", { error });
-      throw new InternalServerErrorException("Internal server error");
+      rethrowStreamRouteError(error, { route: "POST /chat" });
+    } finally {
+      abort.dispose();
     }
   }
 

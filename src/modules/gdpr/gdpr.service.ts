@@ -110,10 +110,14 @@ export class GdprService {
 
     if (!subject) throw new NotFoundException("Subject not found");
 
+    // This endpoint is the bounded, synchronous subset. The exhaustive extract is
+    // POST /gdpr/export-async/me, which keyset-drains every source in
+    // REQUIRED_GDPR_EXPORT_SOURCES with no cap; these notes name what it adds so a
+    // subject is never told a source is unavailable when it is.
     const exportIncomplete: string[] = [
-      "audit_logs: existence confirmed only — full extract requires elevated tooling",
-      "blob storage: R2 object keys require R2_ENDPOINT + credentials (see purge-user.mjs)",
-      "chat_messages, mail_messages: not included — contact support under regulatory order",
+      `this synchronous export caps every section at ${SYNC_EXPORT_CAP} records — POST /gdpr/export-async/me returns every record`,
+      "blob storage: object keys are enumerated only by the async export",
+      "chat_messages, mail_message_metadata, notifications, documents, expenses and payroll sources are included only in the async export",
     ];
 
     const hrPersonRowsRaw = await this.db

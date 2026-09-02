@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { REDIS } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
 import { PROCESS_CELL_ID } from "../../common/cell-resources/cell-id";
+import { shutdownState } from "../../health/shutdown-state";
 
 export type LeaseOutcome<T> = { ran: true; result: T } | { ran: false };
 
@@ -15,11 +16,28 @@ const HEARTBEAT_TTL_SECONDS = 7 * 24 * 3600;
 export class CronLeaseService {
   constructor(@Inject(REDIS) private readonly redis: Redis | null) {}
 
+  /**
+   * A draining process takes no new lease.
+   *
+   * The lease is the only thing standing between two workers and a duplicated
+   * batch, and a sweep started seconds before the process exits is either
+   * abandoned mid-batch or finished by a pool that is already closing. Refusing
+   * here leaves the work claimable: the lease is never taken, so the next tick —
+   * on this replica or another — picks it up whole. That is a handoff, not a
+   * loss, and it is why `stopAccepting` precedes waiting for quiescence.
+   */
   async withLease<T>(
     jobKey: string,
     windowSeconds: number,
     fn: () => Promise<T>,
   ): Promise<LeaseOutcome<T>> {
+    if (shutdownState.isDraining()) {
+      logger.warn(
+        `[cron-lease] ${PROCESS_CELL_ID}:${jobKey} refused — process is draining; the next tick resumes it`,
+      );
+      return { ran: false };
+    }
+
     if (!this.redis) {
       logger.warn(`[cron-lease] Redis unavailable; running ${PROCESS_CELL_ID}:${jobKey} without dedup`);
       return { ran: true, result: await fn() };

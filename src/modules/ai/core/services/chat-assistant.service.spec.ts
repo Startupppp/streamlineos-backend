@@ -87,6 +87,43 @@ function buildService(ledger: jest.Mocked<AiCreditLedger>, usageSvc?: jest.Mocke
   return { svc, history, ledger };
 }
 
+function buildServiceWithLimiter(
+  ledger: jest.Mocked<AiCreditLedger>,
+  limiter: { acquire: jest.Mock; release: jest.Mock },
+) {
+  const history = {
+    append: jest.fn().mockResolvedValue(undefined),
+    appendToConversation: jest.fn().mockResolvedValue(undefined),
+  };
+  const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
+  const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
+  const noop = { buildTools: jest.fn().mockReturnValue({}) };
+
+  const svc = new ChatAssistantService(
+    {} as never,
+    { ask: jest.fn(), summarize: jest.fn() } as never,
+    history as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    noop as never,
+    toolAccess as never,
+    moduleRef as never,
+    makeUsageSvc(),
+    ledger,
+    null,
+    limiter as never,
+  );
+
+  jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+
+  return { svc, history };
+}
+
 describe("ChatAssistantService — credit charging", () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -613,5 +650,58 @@ describe("ChatAssistantService — per-org concurrency cap (12.3 criterion 4)", 
     ).rejects.toThrow("provider setup failed");
 
     expect(limiter.release).toHaveBeenCalledWith("org_1");
+  });
+
+  it("releases the concurrency slot when the credit reservation is rejected — an out-of-credit org does not leak a slot per request", async () => {
+    const ledger = makeLedger({
+      reserve: jest.fn().mockRejectedValue(
+        new InsufficientAiCreditsException({ message: "out of credits" }),
+      ),
+    });
+    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+    (streamText as jest.Mock).mockImplementation(() => ({}));
+
+    const { svc } = buildServiceWithLimiter(ledger, limiter);
+
+    await expect(
+      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
+    ).rejects.toBeInstanceOf(InsufficientAiCreditsException);
+
+    expect(limiter.acquire).toHaveBeenCalledWith("org_1");
+    expect(limiter.release).toHaveBeenCalledWith("org_1");
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("releases the concurrency slot and the reservation when context loading throws after the slot is taken", async () => {
+    const ledger = makeLedger();
+    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+    (streamText as jest.Mock).mockImplementation(() => ({}));
+
+    const { svc } = buildServiceWithLimiter(ledger, limiter);
+    jest.spyOn(svc as never, "fetchContext").mockRejectedValue(new Error("context load failed") as never);
+
+    await expect(
+      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
+    ).rejects.toThrow("context load failed");
+
+    expect(limiter.release).toHaveBeenCalledWith("org_1");
+    expect(ledger.release).toHaveBeenCalledWith(42, "chat_setup_error", "org_1");
+    expect(streamText).not.toHaveBeenCalled();
+  });
+
+  it("releases the concurrency slot when persisting the user turn throws after the slot is taken", async () => {
+    const ledger = makeLedger();
+    const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+    (streamText as jest.Mock).mockImplementation(() => ({}));
+
+    const { svc, history } = buildServiceWithLimiter(ledger, limiter);
+    history.append.mockRejectedValue(new Error("history write failed"));
+
+    await expect(
+      svc.processChat([{ role: "user", content: "hi" }], ACTOR),
+    ).rejects.toThrow("history write failed");
+
+    expect(limiter.release).toHaveBeenCalledWith("org_1");
+    expect(streamText).not.toHaveBeenCalled();
   });
 });

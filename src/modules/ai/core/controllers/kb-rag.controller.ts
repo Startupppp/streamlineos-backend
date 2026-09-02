@@ -2,13 +2,13 @@ import {
   Body,
   Controller,
   HttpCode,
-  InternalServerErrorException,
   Post,
+  Req,
   Res,
   ServiceUnavailableException,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { Public } from "../../../../common/auth/public.decorator";
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
@@ -16,7 +16,15 @@ import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transac
 import { KbRagService } from "../services/kb-rag.service";
 import { kbAskSchema, type KbAskInput } from "../dto/request.schemas";
 import { Validate } from "../../../../common/validation/validate.decorator";
-import { logger } from "../../../../common/logger/logger.service";
+import {
+  createStreamAbortSignal,
+  encodeStreamSourcesHeader,
+  pipeAiTextStream,
+  rethrowStreamRouteError,
+} from "../streaming";
+
+export const KB_STREAM_DEADLINE_MS = 60_000;
+const KB_SOURCES_HEADER = "x-kb-sources";
 
 @Public()
 @Controller("public/kb")
@@ -44,37 +52,46 @@ export class KbRagController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:public-kb-ask")
   @Validate({ body: kbAskSchema })
-  async streamAsk(@Body() body: KbAskInput, @Res() res: Response): Promise<void> {
+  async streamAsk(
+    @Req() req: Request,
+    @Body() body: KbAskInput,
+    @Res() res: Response,
+  ): Promise<void> {
     if (!this.kbRag.isEmbeddingConfigured()) {
       throw new ServiceUnavailableException("AI assistant is not available");
     }
 
-    const controller = new AbortController();
-    res.on("close", () => controller.abort());
-    const deadline = AbortSignal.timeout(60_000);
-    const signal = (() => {
-      const ctrl = new AbortController();
-      const abort = () => ctrl.abort();
-      controller.signal.addEventListener("abort", abort, { once: true });
-      deadline.addEventListener("abort", abort, { once: true });
-      if (controller.signal.aborted || deadline.aborted) ctrl.abort();
-      return ctrl.signal;
-    })();
+    const abort = createStreamAbortSignal(req, res, KB_STREAM_DEADLINE_MS);
 
     try {
       const result = await this.kbRag.streamAnswer(
         { orgId: body.org, question: body.question },
-        signal,
+        abort.signal,
       );
+
       if (!result.hasContext) {
         res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
         res.end(result.answer);
         return;
       }
-      result.stream.pipeTextStreamToResponse(res);
+
+      const encodedSources = encodeStreamSourcesHeader(result.sources);
+      await pipeAiTextStream(res, result.stream, {
+        feature: "kb.public-ask",
+        orgId: body.org,
+        ...(encodedSources !== null
+          ? {
+              headers: {
+                [KB_SOURCES_HEADER]: encodedSources,
+                "access-control-expose-headers": KB_SOURCES_HEADER,
+              },
+            }
+          : {}),
+      });
     } catch (error) {
-      logger.error("KB stream-ask route error", { error });
-      throw new InternalServerErrorException("Internal server error");
+      rethrowStreamRouteError(error, { route: "POST /public/kb/stream-ask" });
+    } finally {
+      abort.dispose();
     }
   }
 }

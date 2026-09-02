@@ -42,8 +42,12 @@ export class EmbeddingsService {
     return this.embeddings;
   }
 
+  async embedQueryRaw(text: string): Promise<number[]> {
+    return this.getEmbeddings().embedQuery(text);
+  }
+
   async embedQuery(text: string, orgId: string, feature: string): Promise<number[]> {
-    const vec = await this.getEmbeddings().embedQuery(text);
+    const vec = await this.embedQueryRaw(text);
     await this.usage
       .track({
         orgId,
