@@ -60,9 +60,18 @@ describe("Payroll insights query bounds", () => {
   it("manager inbox fetches at most one latest payslip and declaration per bounded report", () => {
     const source = readFileSync(require.resolve("./manager-inbox.service"), "utf8");
     expect(source).toContain(".limit(directReportIds.length)");
-    expect(source.match(/\.selectDistinctOn\(/g)).toHaveLength(1);
+    expect(source).toContain(".selectDistinctOn([payslipPublications.userId]");
+    expect(source).toContain(".selectDistinctOn([taxDeclarations.userId]");
+    expect(source).toContain(".limit(reportIds.length)");
     expect(source).toContain("asc(payslipPublications.userId)");
     expect(source).toContain("asc(taxDeclarations.userId)");
+  });
+
+  it("the tax declaration CSV export probes past its cap instead of silently truncating", () => {
+    const source = readFileSync(require.resolve("./tax-admin.service"), "utf8");
+    expect(source).toContain(".limit(PAYROLL_READ_CAP + 1)");
+    expect(source).toContain('requirePayrollReadWithinCap(rows, "export tax declarations")');
+    expect(source).not.toContain(".limit(100)");
   });
 
   it("bounds payroll proof, approval, command-center, and team-reward whole-set reads", () => {

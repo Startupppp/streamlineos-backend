@@ -16,7 +16,6 @@ import {
   payrollRunEvents,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PayrollPostingService } from "../payroll-posting.service";
 import { JournalOutboxService } from "../insights/journal-outbox.service";
 import { parseBankReturnCsv } from "./lib/bank-return";
 import { checkRunCompletion, refreshBatchPaidStatus } from "./lib/payout-run-completion";
@@ -29,7 +28,6 @@ export class BatchStatusService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly payrollPosting: PayrollPostingService,
     @Optional() private readonly journalOutbox?: JournalOutboxService,
   ) {}
 
@@ -37,7 +35,6 @@ export class BatchStatusService {
     return {
       db: this.db,
       audit: this.audit,
-      payrollPosting: this.payrollPosting,
       journalOutbox: this.journalOutbox,
       logger: this.logger,
     };
@@ -154,6 +151,8 @@ export class BatchStatusService {
       ),
     });
     if (!item) throw new NotFoundException("Batch item not found");
+    if (item.status === "PAID")
+      throw new ConflictException("Item is already paid and cannot be marked failed");
 
     const batchRow = await this.db.query.payrollBankBatches.findFirst({
       where: and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)),
@@ -215,6 +214,7 @@ export class BatchStatusService {
         .where(
           and(
             eq(payrollBankBatchItems.batchId, batchId),
+            eq(payrollBankBatchItems.orgId, orgId),
             not(eq(payrollBankBatchItems.status, "PAID")),
             not(eq(payrollBankBatchItems.status, "FAILED")),
           ),
@@ -223,14 +223,20 @@ export class BatchStatusService {
       const failedItems = await tx
         .select({ id: payrollBankBatchItems.id })
         .from(payrollBankBatchItems)
-        .where(and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.status, "FAILED")))
+        .where(
+          and(
+            eq(payrollBankBatchItems.batchId, batchId),
+            eq(payrollBankBatchItems.orgId, orgId),
+            eq(payrollBankBatchItems.status, "FAILED"),
+          ),
+        )
         .limit(1);
 
       const newBatchStatus = failedItems.length > 0 ? "PARTIALLY_PAID" : "PAID";
       await tx
         .update(payrollBankBatches)
         .set({ status: newBatchStatus })
-        .where(eq(payrollBankBatches.id, batchId));
+        .where(and(eq(payrollBankBatches.id, batchId), eq(payrollBankBatches.orgId, orgId)));
     });
 
     this.audit.log({

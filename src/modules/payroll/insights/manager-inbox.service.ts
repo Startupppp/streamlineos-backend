@@ -175,7 +175,7 @@ export class ManagerInboxService {
           )
           .groupBy(salaryLoans.userMembershipId),
         this.db
-          .select({
+          .selectDistinctOn([payslipPublications.userId], {
             userId: payslipPublications.userId,
             publicationId: payslipPublications.id,
             publishedAt: payslipPublications.publishedAt,
@@ -195,7 +195,8 @@ export class ManagerInboxService {
               eq(payslipPublications.status, "PUBLISHED"),
             ),
           )
-          .orderBy(asc(payslipPublications.userId), desc(payslipPublications.publishedAt)),
+          .orderBy(asc(payslipPublications.userId), desc(payslipPublications.publishedAt))
+          .limit(reportIds.length),
         this.db
           .selectDistinctOn([taxDeclarations.userId], {
             userId: taxDeclarations.userId,

@@ -222,7 +222,14 @@ export class RunResultPersisterService {
     empIdBySubject: Map<string, number>,
     allEmpIds: number[],
   ): Promise<void> {
-    await tx.delete(payrollLineItems).where(inArray(payrollLineItems.runEmployeeId, allEmpIds));
+    await tx
+      .delete(payrollLineItems)
+      .where(
+        and(
+          eq(payrollLineItems.orgId, orgId),
+          inArray(payrollLineItems.runEmployeeId, allEmpIds),
+        ),
+      );
 
     const allLineRows = calcResults.flatMap(({ profile, snapshot }) => {
       const empId = empIdBySubject.get(

@@ -1,4 +1,5 @@
 import { Logger } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray, not, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import {
@@ -10,18 +11,17 @@ import {
   organizationMembers,
 } from "../../../../db/schema";
 import type { AuditService } from "../../../../common/audit/audit.service";
-import type { PayrollPostingService } from "../../payroll-posting.service";
-import { systemActor } from "../../../../common/auth/system-actor";
 import type { JournalOutboxService } from "../../insights/journal-outbox.service";
 import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import { runInNewTenantTransaction } from "../../../../common/tenant";
 import { PAYROLL_READ_CAP } from "../../lib/query-bounds";
+import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
+import { PAYROLL_RUN_PAYOUT_POSTING_INTENT_EVENT } from "../payroll-payout-posting-intent.consumer";
 
 export interface RunCompletionDeps {
   db: Db;
   audit: AuditService;
-  payrollPosting: PayrollPostingService;
   journalOutbox?: JournalOutboxService;
   logger: Logger;
 }
@@ -158,10 +158,15 @@ export async function checkRunCompletion(
 
   const now = new Date();
   let runMarkedPaid = false;
+  let paidMonth: string | null = null;
 
   await deps.db.transaction(async (tx) => {
     const [currentRun] = await tx
-      .select({ status: payrollRuns.status })
+      .select({
+        status: payrollRuns.status,
+        month: payrollRuns.month,
+        netTotal: payrollRuns.netTotal,
+      })
       .from(payrollRuns)
       .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
       .limit(1);
@@ -196,10 +201,28 @@ export async function checkRunCompletion(
       metadata: { paidCount: paidRunEmployeeIds.length },
     });
 
+    await OutboxWriter.emit(tx, {
+      eventId: randomUUID(),
+      organizationId: orgId,
+      aggregateType: "payroll_run",
+      aggregateId: String(runId),
+      aggregateVersion: 2,
+      eventType: PAYROLL_RUN_PAYOUT_POSTING_INTENT_EVENT,
+      payload: {
+        runId,
+        month: currentRun.month,
+        net: currentRun.netTotal ?? "0",
+        actorUserId: actorId,
+        orgId,
+      },
+      occurredAt: now,
+    });
+
+    paidMonth = currentRun.month;
     runMarkedPaid = true;
   });
 
-  if (runMarkedPaid) {
+  if (runMarkedPaid && paidMonth) {
     deps.audit.log({
       action: "payroll.marked_paid",
       userId: actorId,
@@ -209,30 +232,11 @@ export async function checkRunCompletion(
       metadata: { paidCount: paidRunEmployeeIds.length },
     });
 
-    const paidRun = await deps.db
-      .select({ month: payrollRuns.month, netTotal: payrollRuns.netTotal })
-      .from(payrollRuns)
-      .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
-      .limit(1);
-
-    if (paidRun[0]) {
-      const { month, netTotal } = paidRun[0];
-      const postTask = () =>
-        deps.payrollPosting.postPaid(
-          systemActor("payroll.run.payout-posting", orgId, actorId),
-          runId,
-          month,
-          netTotal ?? "0",
-        );
-      if (!registerAfterCommit(postTask))
-        void postTask().catch((err: unknown) =>
-          deps.logger.error("payroll paid posting fallback failed", { runId, month, err }),
-        );
-      const snapshotTask = () =>
-        autoSnapshotJournal(deps, orgId, actorId, month, runId).catch(
-          logSideEffectFailure("payroll auto-snapshot journal", { orgId, runId }),
-        );
-      if (!registerAfterCommit(snapshotTask)) void snapshotTask();
-    }
+    const month = paidMonth;
+    const snapshotTask = () =>
+      autoSnapshotJournal(deps, orgId, actorId, month, runId).catch(
+        logSideEffectFailure("payroll auto-snapshot journal", { orgId, runId }),
+      );
+    if (!registerAfterCommit(snapshotTask)) void snapshotTask();
   }
 }

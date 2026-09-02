@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -374,6 +375,10 @@ export class PayrollFilingsService {
       where: and(eq(payrollFilings.id, filingId), eq(payrollFilings.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Filing not found");
+    if (existing.status === "ACKNOWLEDGED")
+      throw new ConflictException(
+        "Filing is already acknowledged — acknowledgement references are immutable",
+      );
 
     const hasAck = !!(body.acknowledgementRef || body.challanRef);
     const [row] = await this.db
@@ -387,7 +392,7 @@ export class PayrollFilingsService {
           : existing.statusLabel,
         submittedAt: hasAck ? new Date() : existing.submittedAt,
       })
-      .where(eq(payrollFilings.id, filingId))
+      .where(and(eq(payrollFilings.id, filingId), eq(payrollFilings.orgId, orgId)))
       .returning();
     return row;
   }

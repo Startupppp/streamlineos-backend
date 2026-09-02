@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { taxDeclarations, users } from "../../../db/schema";
 import { buildCsv } from "./lib/csv";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import {
   decodePayrollTimestampCursor,
@@ -121,7 +122,9 @@ export class TaxAdminService {
       .from(taxDeclarations)
       .leftJoin(users, eq(taxDeclarations.userId, users.id))
       .where(this.scopeWhere(orgId, { financialYear }))
-      .limit(100);
+      .limit(PAYROLL_READ_CAP + 1);
+
+    requirePayrollReadWithinCap(rows, "export tax declarations");
 
     const headers = [
       "ID",

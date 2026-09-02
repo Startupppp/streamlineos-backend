@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { createHash } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -236,6 +236,7 @@ export class PayslipBulkPublisherService {
         })
         .onConflictDoUpdate({
           target: payslipPublications.runEmployeeId,
+          setWhere: ne(payslipPublications.status, "PUBLISHED"),
           set: {
             pdfUrl,
             publishedAt: pubStatus === "PUBLISHED" ? now : null,
@@ -323,7 +324,7 @@ export class PayslipBulkPublisherService {
         await tx
           .update(payrollRuns)
           .set({ status: "PAYSLIPS_PUBLISHED", publishedAt: now, publishedBy: actorId, publishedByMembershipId })
-          .where(eq(payrollRuns.id, runId));
+          .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
         await tx.insert(payrollRunEvents).values({
           orgId,
           runId,

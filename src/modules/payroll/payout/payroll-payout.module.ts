@@ -28,6 +28,7 @@ import { PayrollPostingService } from "../payroll-posting.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { PayrollPostingIntentConsumer } from "./payroll-posting-intent.consumer";
+import { PayrollPayoutPostingIntentConsumer } from "./payroll-payout-posting-intent.consumer";
 
 @Module({
   imports: [NotificationsModule, PayrollInsightsModule, PayrollRunsModule, AccountingModule, DirectoryModule, OutboxModule],
@@ -46,6 +47,7 @@ import { PayrollPostingIntentConsumer } from "./payroll-posting-intent.consumer"
     PayrollApproverResolverService,
     LockingService,
     PayrollPostingIntentConsumer,
+    PayrollPayoutPostingIntentConsumer,
     PayoutBatchesService,
     BatchCreatorService,
     BatchStatusService,
