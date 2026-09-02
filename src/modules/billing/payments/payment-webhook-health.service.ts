@@ -158,7 +158,7 @@ export class PaymentWebhookHealthService {
               failureReason: "Sample signature did not match",
             },
       )
-      .where(eq(paymentWebhookEndpoints.id, endpoint.id))
+      .where(and(eq(paymentWebhookEndpoints.orgId, orgId), eq(paymentWebhookEndpoints.id, endpoint.id)))
       .returning();
 
     await this.audit.log({

@@ -57,6 +57,7 @@ export class ChatHuddleSignalsService {
       .set({ isMuted: muted })
       .where(
         and(
+          eq(chatHuddleParticipants.orgId, orgId),
           eq(chatHuddleParticipants.huddleId, huddleId),
           eq(chatHuddleParticipants.membershipId, callerMembershipId),
           isNull(chatHuddleParticipants.leftAt),
@@ -74,7 +75,13 @@ export class ChatHuddleSignalsService {
     if (!huddle) throw new NotFoundException("Huddle not found");
     const callerMembershipId = await this.assertMember(huddle.channelId, userId, orgId);
     await this.db.update(chatHuddleParticipants).set({ isDeafened: deafened })
-      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.membershipId, callerMembershipId)));
+      .where(
+        and(
+          eq(chatHuddleParticipants.orgId, orgId),
+          eq(chatHuddleParticipants.huddleId, huddleId),
+          eq(chatHuddleParticipants.membershipId, callerMembershipId),
+        ),
+      );
     await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, isDeafened: deafened });
     return { ok: true };
   }
@@ -91,6 +98,7 @@ export class ChatHuddleSignalsService {
       .set({ handRaised: raised })
       .where(
         and(
+          eq(chatHuddleParticipants.orgId, orgId),
           eq(chatHuddleParticipants.huddleId, huddleId),
           eq(chatHuddleParticipants.membershipId, callerMembershipId),
           isNull(chatHuddleParticipants.leftAt),
@@ -146,7 +154,14 @@ export class ChatHuddleSignalsService {
     await this.db
       .update(chatHuddleParticipants)
       .set({ isScreenSharing })
-      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.membershipId, callerMembershipId), isNull(chatHuddleParticipants.leftAt)));
+      .where(
+        and(
+          eq(chatHuddleParticipants.orgId, orgId),
+          eq(chatHuddleParticipants.huddleId, huddleId),
+          eq(chatHuddleParticipants.membershipId, callerMembershipId),
+          isNull(chatHuddleParticipants.leftAt),
+        ),
+      );
     await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, isScreenSharing });
     return { ok: true };
   }

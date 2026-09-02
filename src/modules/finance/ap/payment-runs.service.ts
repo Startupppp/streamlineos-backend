@@ -107,7 +107,7 @@ export class PaymentRunsService {
       .from(finPaymentRunItems)
       .leftJoin(purchaseBills, eq(purchaseBills.id, finPaymentRunItems.billId))
       .leftJoin(clients, eq(clients.id, finPaymentRunItems.vendorId))
-      .where(eq(finPaymentRunItems.runId, runId));
+      .where(and(eq(finPaymentRunItems.orgId, orgId), eq(finPaymentRunItems.runId, runId)));
 
     return { ...run, items };
   }
@@ -300,7 +300,13 @@ export class PaymentRunsService {
     const itemRows = await this.db
       .select()
       .from(finPaymentRunItems)
-      .where(and(eq(finPaymentRunItems.id, itemId), eq(finPaymentRunItems.runId, runId)))
+      .where(
+        and(
+          eq(finPaymentRunItems.orgId, orgId),
+          eq(finPaymentRunItems.id, itemId),
+          eq(finPaymentRunItems.runId, runId),
+        ),
+      )
       .limit(1);
     const item = itemRows[0];
     if (!item) throw new NotFoundException("Payment run item not found");
@@ -308,7 +314,13 @@ export class PaymentRunsService {
     if (input.excluded === true) {
       await this.db
         .delete(finPaymentRunItems)
-        .where(and(eq(finPaymentRunItems.id, itemId), eq(finPaymentRunItems.runId, runId)));
+        .where(
+          and(
+            eq(finPaymentRunItems.orgId, orgId),
+            eq(finPaymentRunItems.id, itemId),
+            eq(finPaymentRunItems.runId, runId),
+          ),
+        );
     } else if (input.amount !== undefined) {
       const billRows = await this.db
         .select({ total: purchaseBills.total, amountPaid: purchaseBills.amountPaid })
@@ -327,14 +339,20 @@ export class PaymentRunsService {
       await this.db
         .update(finPaymentRunItems)
         .set({ amount: input.amount.toFixed(4) })
-        .where(and(eq(finPaymentRunItems.id, itemId), eq(finPaymentRunItems.runId, runId)));
+        .where(
+          and(
+            eq(finPaymentRunItems.orgId, orgId),
+            eq(finPaymentRunItems.id, itemId),
+            eq(finPaymentRunItems.runId, runId),
+          ),
+        );
 
       const itemTotals = await this.db
         .select({
           total: sql<string>`COALESCE(sum(${finPaymentRunItems.amount}::numeric), 0)::text`,
         })
         .from(finPaymentRunItems)
-        .where(eq(finPaymentRunItems.runId, runId));
+        .where(and(eq(finPaymentRunItems.orgId, orgId), eq(finPaymentRunItems.runId, runId)));
 
       const newTotal = round2(Number(itemTotals[0]?.total ?? 0));
       await this.db

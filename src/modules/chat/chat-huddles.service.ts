@@ -110,16 +110,16 @@ export class ChatHuddlesService {
 
     if (remaining.length === 0 || huddle.startedAt < twelveHoursAgo) {
       const now = new Date();
-      await this.db.update(chatHuddles).set({ status: "ended", endedAt: now }).where(eq(chatHuddles.id, huddle.id));
+      await this.db.update(chatHuddles).set({ status: "ended", endedAt: now }).where(and(eq(chatHuddles.orgId, orgId), eq(chatHuddles.id, huddle.id)));
       if (huddle.calendarEventId) {
-        await this.db.update(calendarEvents).set({ endDate: now }).where(eq(calendarEvents.id, huddle.calendarEventId));
+        await this.db.update(calendarEvents).set({ endDate: now }).where(and(eq(calendarEvents.orgId, orgId), eq(calendarEvents.id, huddle.calendarEventId)));
       }
       await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:ended", { huddleId: huddle.id, channelId: huddle.channelId });
       return null;
     }
 
     return this.db.query.chatHuddles.findFirst({
-      where: eq(chatHuddles.id, huddle.id),
+      where: and(eq(chatHuddles.orgId, orgId), eq(chatHuddles.id, huddle.id)),
       with: {
         participants: {
           where: isNull(chatHuddleParticipants.leftAt),
@@ -309,7 +309,11 @@ export class ChatHuddlesService {
     const callerMembershipId = await this.assertMember(huddle.channelId, userId, orgId);
 
     const activeParticipants = await this.db.query.chatHuddleParticipants.findMany({
-      where: and(eq(chatHuddleParticipants.huddleId, huddleId), isNull(chatHuddleParticipants.leftAt)),
+      where: and(
+        eq(chatHuddleParticipants.orgId, orgId),
+        eq(chatHuddleParticipants.huddleId, huddleId),
+        isNull(chatHuddleParticipants.leftAt),
+      ),
       columns: { membershipId: true },
       limit: HUDDLE_MESH_MAX_PARTICIPANTS + 1,
     });
@@ -383,13 +387,15 @@ export class ChatHuddlesService {
 
     if (remaining.length === 0) {
       const now = new Date();
-      await this.db.update(chatHuddles).set({ status: "ended", endedAt: now }).where(eq(chatHuddles.id, huddleId));
+      await this.db.update(chatHuddles).set({ status: "ended", endedAt: now }).where(and(eq(chatHuddles.orgId, orgId), eq(chatHuddles.id, huddleId)));
 
       if (huddle.calendarEventId) {
         await this.db
           .update(calendarEvents)
           .set({ endDate: now })
-          .where(eq(calendarEvents.id, huddle.calendarEventId));
+          .where(
+            and(eq(calendarEvents.orgId, orgId), eq(calendarEvents.id, huddle.calendarEventId)),
+          );
       }
 
       await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:ended", { huddleId, channelId: huddle.channelId });
@@ -398,7 +404,7 @@ export class ChatHuddlesService {
       if (huddle.startedByMembershipId === callerMembership?.id) {
         const nextHost = remaining[0];
         if (nextHost) {
-          await this.db.update(chatHuddles).set({ startedByMembershipId: nextHost.membershipId }).where(eq(chatHuddles.id, huddleId));
+          await this.db.update(chatHuddles).set({ startedByMembershipId: nextHost.membershipId }).where(and(eq(chatHuddles.orgId, orgId), eq(chatHuddles.id, huddleId)));
           await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", {
             huddleId, hostTransferred: true, newHostMembershipId: nextHost.membershipId,
           });
@@ -430,7 +436,14 @@ export class ChatHuddlesService {
       await this.db
         .update(chatHuddleParticipants)
         .set({ leftAt: new Date() })
-        .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.membershipId, targetMembership.id), isNull(chatHuddleParticipants.leftAt)));
+        .where(
+          and(
+            eq(chatHuddleParticipants.orgId, orgId),
+            eq(chatHuddleParticipants.huddleId, huddleId),
+            eq(chatHuddleParticipants.membershipId, targetMembership.id),
+            isNull(chatHuddleParticipants.leftAt),
+          ),
+        );
     }
     await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId: targetUserId, kicked: true });
     void this.ably.publishToUser(orgId, targetUserId, "huddle:kicked", { huddleId, channelId: huddle.channelId }).catch((error: unknown) => {

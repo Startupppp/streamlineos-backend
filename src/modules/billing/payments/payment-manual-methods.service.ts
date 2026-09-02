@@ -49,7 +49,7 @@ export class PaymentManualMethodsService {
       ? await this.db
           .update(paymentManualMethods)
           .set(values)
-          .where(eq(paymentManualMethods.id, existing.id))
+          .where(and(eq(paymentManualMethods.orgId, orgId), eq(paymentManualMethods.id, existing.id)))
           .returning()
       : await this.db.insert(paymentManualMethods).values({ ...values, orgId }).returning();
 
@@ -77,7 +77,7 @@ export class PaymentManualMethodsService {
     const [updated] = await this.db
       .update(paymentManualMethods)
       .set({ ...input, status })
-      .where(eq(paymentManualMethods.id, id))
+      .where(and(eq(paymentManualMethods.orgId, orgId), eq(paymentManualMethods.id, id)))
       .returning();
 
     await this.audit.log({
@@ -101,7 +101,7 @@ export class PaymentManualMethodsService {
     const [updated] = await this.db
       .update(paymentManualMethods)
       .set({ status: "disabled" })
-      .where(eq(paymentManualMethods.id, id))
+      .where(and(eq(paymentManualMethods.orgId, orgId), eq(paymentManualMethods.id, id)))
       .returning();
 
     await this.audit.log({

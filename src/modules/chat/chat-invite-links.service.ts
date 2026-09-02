@@ -80,6 +80,7 @@ export class ChatInviteLinksService {
       .set({ revokedAt: new Date() })
       .where(
         and(
+          eq(chatChannelInviteLinks.orgId, orgId),
           eq(chatChannelInviteLinks.channelId, channelId),
           isNull(chatChannelInviteLinks.revokedAt),
         ),
@@ -109,12 +110,16 @@ export class ChatInviteLinksService {
 
   async joinViaInviteLink(token: string, userId: string, orgId: string) {
     const link = await this.db.query.chatChannelInviteLinks.findFirst({
-      where: and(eq(chatChannelInviteLinks.tokenHash, hashToken(token)), isNull(chatChannelInviteLinks.revokedAt)),
+      where: and(
+        eq(chatChannelInviteLinks.orgId, orgId),
+        eq(chatChannelInviteLinks.tokenHash, hashToken(token)),
+        isNull(chatChannelInviteLinks.revokedAt),
+      ),
     });
     if (!link) throw new NotFoundException("Invite link is invalid or has been revoked");
 
     const channel = await this.db.query.chatChannels.findFirst({
-      where: eq(chatChannels.id, link.channelId),
+      where: and(eq(chatChannels.orgId, orgId), eq(chatChannels.id, link.channelId)),
     });
     if (!channel || channel.orgId !== orgId) {
       throw new NotFoundException("Invite link is invalid or has been revoked");

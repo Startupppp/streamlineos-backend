@@ -201,7 +201,12 @@ export class ChatMessagesService {
         await tx
           .update(chatChannelMembers)
           .set({ archivedAt: null })
-          .where(eq(chatChannelMembers.channelId, channelId));
+          .where(
+            and(
+              eq(chatChannelMembers.orgId, orgId),
+              eq(chatChannelMembers.channelId, channelId),
+            ),
+          );
 
         await OutboxWriter.emit(tx, {
           eventId: fanoutEventId,

@@ -59,7 +59,11 @@ export class PaymentRunExecutorService {
       .select()
       .from(finPaymentRunItems)
       .where(
-        and(eq(finPaymentRunItems.runId, runId), eq(finPaymentRunItems.status, "PENDING")),
+        and(
+          eq(finPaymentRunItems.orgId, orgId),
+          eq(finPaymentRunItems.runId, runId),
+          eq(finPaymentRunItems.status, "PENDING"),
+        ),
       )
       .limit(1000);
 
@@ -193,7 +197,9 @@ export class PaymentRunExecutorService {
           await tx
             .update(finPaymentRunItems)
             .set({ status: "PAID", vendorPaymentId: payment.id })
-            .where(eq(finPaymentRunItems.id, item.id));
+            .where(
+              and(eq(finPaymentRunItems.orgId, orgId), eq(finPaymentRunItems.id, item.id)),
+            );
 
           await this.dispatch.emit({
             eventKey: "accounting.payment.recorded",
@@ -214,7 +220,7 @@ export class PaymentRunExecutorService {
         await this.db
           .update(finPaymentRunItems)
           .set({ status: "SKIPPED" })
-          .where(eq(finPaymentRunItems.id, item.id));
+          .where(and(eq(finPaymentRunItems.orgId, orgId), eq(finPaymentRunItems.id, item.id)));
       }
     }
 

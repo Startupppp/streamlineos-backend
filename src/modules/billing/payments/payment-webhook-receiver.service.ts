@@ -265,7 +265,12 @@ export class PaymentWebhookReceiverService {
               lastVerifiedAt: new Date(),
               failureReason: null,
             })
-            .where(eq(paymentWebhookEndpoints.id, endpoint.id));
+            .where(
+              and(
+                eq(paymentWebhookEndpoints.orgId, params.orgId),
+                eq(paymentWebhookEndpoints.id, endpoint.id),
+              ),
+            );
         },
         { orgId: params.orgId },
       );
