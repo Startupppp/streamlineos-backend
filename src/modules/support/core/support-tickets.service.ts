@@ -405,20 +405,32 @@ export class SupportTicketsService {
     return { success: true, updatedAt: updateData.updatedAt };
   }
 
-  async splitTicket(orgId: string, ticketId: number, userId: string, input: SplitTicketInput) {
+  async splitTicket(
+    orgId: string,
+    ticketId: number,
+    userId: string,
+    input: SplitTicketInput,
+    membershipId?: number | null,
+  ) {
     const original = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       columns: { id: true, category: true, clientId: true, priority: true, requesterEmail: true, requesterName: true },
     });
     if (!original) throw new NotFoundException("Ticket not found");
 
-    const newTicket = await this.createTicket(orgId, userId, {
-      title: input.title,
-      description: input.description,
-      category: original.category ?? undefined,
-      clientId: original.clientId ?? undefined,
-      priority: original.priority,
-    });
+    const newTicket = await this.createTicket(
+      orgId,
+      userId,
+      {
+        title: input.title,
+        description: input.description,
+        category: original.category ?? undefined,
+        clientId: original.clientId ?? undefined,
+        priority: original.priority,
+      },
+      undefined,
+      membershipId,
+    );
 
     await this.db
       .insert(supportTicketLinks)

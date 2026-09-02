@@ -26,13 +26,9 @@ const makeTicket = (assigneeId: string | null = ASSIGNEE_USER) => ({
   title: "Test ticket",
   status: "OPEN",
   priority: "MEDIUM",
-  assigneeId,
-  creatorId: ASSIGNEE_USER,
-  createdAt: new Date(),
-  updatedAt: new Date(),
   client: null,
-  assignee: assigneeId ? { id: assigneeId, name: "User", image: null } : null,
-  creator: { id: ASSIGNEE_USER, name: "Creator" },
+  assigneeMembership: assigneeId ? { user: { id: assigneeId } } : null,
+  creatorMembership: { user: { id: ASSIGNEE_USER } },
   messages: [],
 });
 

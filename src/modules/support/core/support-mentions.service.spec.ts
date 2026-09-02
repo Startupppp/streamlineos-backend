@@ -21,9 +21,9 @@ const mockDispatch = {
 };
 
 const ORG_USERS = [
-  { id: "user-jane", name: "Jane Doe", firstName: "Jane", lastName: "Doe", email: "jane@example.com" },
-  { id: "user-bob", name: null, firstName: "Bob", lastName: "Lee", email: "bob@example.com" },
-  { id: "user-author", name: "Author Person", firstName: "Author", lastName: "Person", email: "author@example.com" },
+  { id: "user-jane", membershipId: 10, name: "Jane Doe", firstName: "Jane", lastName: "Doe", email: "jane@example.com" },
+  { id: "user-bob", membershipId: 20, name: null, firstName: "Bob", lastName: "Lee", email: "bob@example.com" },
+  { id: "user-author", membershipId: 30, name: "Author Person", firstName: "Author", lastName: "Person", email: "author@example.com" },
 ];
 
 describe("SupportMentionsService", () => {
@@ -78,7 +78,7 @@ describe("SupportMentionsService", () => {
 
     expect(mockDb.insert).toHaveBeenCalled();
     expect(mockDb.values).toHaveBeenCalledWith([
-      { orgId: "org1", messageId: 5, mentionedUserId: "user-jane" },
+      { orgId: "org1", messageId: 5, mentionedUserMembershipId: 10 },
     ]);
     expect(mockDispatch.emit).toHaveBeenCalledWith(
       expect.objectContaining({ orgId: "org1", targetUserIds: ["user-jane"], title: "You were mentioned" }),

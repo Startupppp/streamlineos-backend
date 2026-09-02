@@ -221,7 +221,13 @@ export class SupportTicketsController {
     @Body() body: SplitTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.splitTicket(u.orgId, supportTicketId, u.userId, body);
+    return this.tickets.splitTicket(
+      u.orgId,
+      supportTicketId,
+      u.userId,
+      body,
+      actingMembershipId(u.principal),
+    );
   }
 
   @Get(":supportTicketId/draft")
