@@ -56,38 +56,33 @@ const DRIFTING_KEYS: readonly string[] = [
   "sign:envelope:view",
   "support:reports:view",
   "support:tickets:view",
+  "tasks:read",
+  "timesheets:billing:view",
   "timesheets:entries:view",
   "timesheets:payroll:view",
 ];
 
-const UNSCOPED_ROUTE_BASELINE = 335;
+const UNSCOPED_ROUTE_BASELINE = 329;
 
 /**
- * Hand-verified disclosures: the unscoped route returns the same entity's rows
- * as its scoped sibling, under the same key, so an `own`-scoped holder reads
- * the whole organization. Each was read in full, not inferred from the counts.
+ * Hand-verified disclosures — the unscoped route returned the same entity's rows
+ * as its scoped sibling under the same key, so an `own`-scoped holder read the
+ * whole organization. All six are now fixed, and each is asserted below as
+ * scoped rather than pinned as open: a defect pin cannot go green and stay
+ * honest, so once the finding is repaired the assertion has to be inverted into
+ * a regression guard or it fails forever.
+ *
+ * `GET /deals/aging`, `/clients/export`, `/leads/export` and `/contacts/export`
+ * are CRM, which is out of scope for this release. They are asserted here rather
+ * than changed — the fix predates the exclusion, and dropping the assertion would
+ * lose the finding.
  */
-const VERIFIED_DISCLOSURES: ReadonlyMap<string, { key: string; sibling: string }> = new Map([
-  [
-    "GET /deals/aging",
-    { key: "crm:deals:read", sibling: "GET /deals" },
-  ],
-  [
-    "GET /clients/export",
-    { key: "crm:clients:read", sibling: "GET /clients" },
-  ],
-  [
-    "GET /leads/export",
-    { key: "crm:leads:view", sibling: "GET /leads" },
-  ],
-  [
-    "GET /contacts/export",
-    { key: "crm:contacts:view", sibling: "GET /crm/people-slugs" },
-  ],
-  [
-    "GET /kb/search",
-    { key: "kb:articles:view", sibling: "GET /kb/articles" },
-  ],
+const FIXED_DISCLOSURES: ReadonlyMap<string, { key: string; sibling: string }> = new Map([
+  ["GET /deals/aging", { key: "crm:deals:read", sibling: "GET /deals" }],
+  ["GET /clients/export", { key: "crm:clients:read", sibling: "GET /clients" }],
+  ["GET /leads/export", { key: "crm:leads:view", sibling: "GET /leads" }],
+  ["GET /contacts/export", { key: "crm:contacts:view", sibling: "GET /contacts" }],
+  ["GET /kb/search", { key: "kb:articles:view", sibling: "GET /kb/articles" }],
   [
     "GET /sign/reports/dashboard",
     { key: "sign:envelope:view", sibling: "GET /sign/envelopes" },
@@ -135,13 +130,32 @@ describe("BOLA sweep — export and search apply their sibling list's DataScope"
     expect(deals?.unscoped).not.toContain("GET /deals/export");
   });
 
-  it("PINNED: each hand-verified disclosure still sits opposite a scoped sibling", () => {
-    for (const [route, { key, sibling }] of VERIFIED_DISCLOSURES) {
+  it("FIXED: every hand-verified disclosure now resolves a scope, like its sibling", () => {
+    const stillDrifting: string[] = [];
+    for (const [route, { key, sibling }] of FIXED_DISCLOSURES) {
       const finding = findings.find((f) => f.permissionKey === key);
-      expect(finding).toBeDefined();
-      const stillDrifting = finding?.unscoped.includes(route) ?? false;
-      const siblingScoped = finding?.scoped.includes(sibling) ?? false;
-      if (stillDrifting) expect(siblingScoped).toBe(true);
+      const scoped = finding?.scoped ?? [];
+      expect(scoped).toContain(sibling);
+      if (!scoped.includes(route)) stillDrifting.push(`${route} (${key})`);
     }
+    expect(stillDrifting).toEqual([]);
+  });
+
+  /**
+   * Fixing `GET /tasks` and `GET /timesheets/billing/rate-preview` made their
+   * keys visible to a detector that needs one scoped and one unscoped handler:
+   * before the fix NEITHER side scoped, so the key did not qualify. Both
+   * remaining siblings are the benign shape the detector's own comment names —
+   * `GET /tasks/sequences` lists org-level sequence templates and
+   * `GET /timesheets/billing/uninvoiced` is the org's billing queue.
+   */
+  it("EXPECTED-CONSEQUENCE: a key becomes visible when one of its siblings starts scoping", () => {
+    const tasks = findings.find((f) => f.permissionKey === "tasks:read");
+    expect(tasks?.scoped).toContain("GET /tasks");
+    expect(tasks?.unscoped).toEqual(["GET /tasks/sequences"]);
+
+    const billing = findings.find((f) => f.permissionKey === "timesheets:billing:view");
+    expect(billing?.scoped).toContain("GET /timesheets/billing/rate-preview");
+    expect(billing?.unscoped).toEqual(["GET /timesheets/billing/uninvoiced"]);
   });
 });

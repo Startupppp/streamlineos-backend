@@ -92,6 +92,13 @@ interface Candidate {
   groupKey: string;
 }
 
+/**
+ * The rows `assertFindingsInOrg` reads before anything else when the selection
+ * names ids: an explicit list must be all this tenant's or the whole decision
+ * fails, so every `kind: "ids"` fixture has to answer that read first.
+ */
+const owned = (...findingIds: string[]) => findingIds.map((findingId) => ({ findingId }));
+
 const candidate = (findingId: string, patch: Partial<Candidate> = {}): Candidate => ({
   findingId,
   proposedAction: "none",
@@ -161,6 +168,7 @@ describe("DataQualityResolutionService", () => {
       queue.selectCandidates.mockResolvedValue([
         candidate("f-1", { proposedAction: "merge-parties", relatedPartyId: "p-2" }),
       ]);
+      db.script("select", owned("f-1"));
       db.script("insert", [{ resolutionId: "r-1" }]);
       db.script("update", [{ findingId: "f-1", proposedAction: "merge-parties" }], []);
 
@@ -194,6 +202,7 @@ describe("DataQualityResolutionService", () => {
       // Two clean pairs, then one that now contradicts itself.
       db.script(
         "select",
+        owned("f-1", "f-2", "f-3"),
         [party("p-f-1"), party("q-1")],
         [party("p-f-2"), party("q-2")],
         [party("p-f-3", { taxNumber: "AAA" }), party("q-3", { taxNumber: "BBB" })],
@@ -227,7 +236,7 @@ describe("DataQualityResolutionService", () => {
       ]);
       db.script("insert", [{ resolutionId: "r-1" }]);
       db.script("update", [{ findingId: "f-1", proposedAction: "merge-parties", partyId: "p-f-1", relatedPartyId: "q-1" }]);
-      db.script("select", [
+      db.script("select", owned("f-1"), [
         party("p-f-1", { taxNumber: "GB123" }),
         party("q-1", { taxNumber: "GB999" }),
       ]);
@@ -247,7 +256,7 @@ describe("DataQualityResolutionService", () => {
       ]);
       db.script("insert", [{ resolutionId: "r-1" }]);
       db.script("update", [{ findingId: "f-1", proposedAction: "merge-parties", partyId: "p-f-1", relatedPartyId: "q-1" }]);
-      db.script("select", [party("p-f-1")]);
+      db.script("select", owned("f-1"), [party("p-f-1")]);
 
       const result = await service.resolve("org_1", "user_1", {
         selection: { kind: "ids", findingIds: ["f-1"] },
@@ -262,6 +271,7 @@ describe("DataQualityResolutionService", () => {
         candidate("f-1", { reversibility: "instant" }),
         candidate("f-2", { reversibility: "irreversible" }),
       ]);
+      db.script("select", owned("f-1", "f-2"));
       db.script("insert", [{ resolutionId: "r-1" }]);
       db.script("update", [{ findingId: "f-1", proposedAction: "none" }], []);
 
@@ -290,6 +300,29 @@ describe("DataQualityResolutionService", () => {
 
       expect(db.count("insert")).toBe(0);
       expect(db.count("update")).toBe(0);
+    });
+
+    /**
+     * `selectCandidates` narrowed on `organizationId` and `status = 'open'` in
+     * one predicate, so a foreign id was indistinguishable from an
+     * already-decided one and a mixed list came back as a full success on the
+     * subset the caller owned. The whole decision now fails, with the same 404
+     * an unknown id gets.
+     */
+    it("refuses the WHOLE decision when one id in the selection is another tenant's", async () => {
+      db.script("select", owned("f-1"));
+      queue.selectCandidates.mockResolvedValue([candidate("f-1")]);
+
+      await expect(
+        service.resolve("org_1", "user_1", {
+          selection: { kind: "ids", findingIds: ["f-1", "someone-elses-finding"] },
+          action: "dismiss",
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(db.count("insert")).toBe(0);
+      expect(db.count("update")).toBe(0);
+      expect(queue.selectCandidates).not.toHaveBeenCalled();
     });
 
     it("is not found when nothing open matches — including another tenant's identifiers", async () => {

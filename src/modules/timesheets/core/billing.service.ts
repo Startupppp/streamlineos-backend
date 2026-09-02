@@ -435,16 +435,16 @@ export class BillingService {
     };
   }
 
-  async getRatePreview(u: CurrentUserContext, query: RatePreviewQuery) {
+  async getRatePreview(u: CurrentUserContext, query: RatePreviewQuery, subjectUserId: string | undefined) {
     let userMembershipId: number | undefined;
-    if (query.userId) {
+    if (subjectUserId) {
       const [member] = await this.db
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
         .where(
           and(
             eq(organizationMembers.orgId, u.orgId),
-            eq(organizationMembers.userId, query.userId),
+            eq(organizationMembers.userId, subjectUserId),
           ),
         )
         .limit(1);

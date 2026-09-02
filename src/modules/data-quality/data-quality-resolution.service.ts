@@ -68,6 +68,8 @@ export class DataQualityResolutionService {
    * write would let both believe they had all four hundred.
    */
   async resolve(organizationId: string, userId: string, input: ResolveFindingsInput) {
+    if (input.selection.kind === "ids")
+      await this.assertFindingsInOrg(organizationId, input.selection.findingIds);
     const candidates = await this.queue.selectCandidates(organizationId, input.selection, "open");
 
     /**
@@ -177,6 +179,23 @@ export class DataQualityResolutionService {
   }
 
   /** One statement, whatever the size of the selection. */
+  /** Membership is checked before the status filter, so a foreign id is not a skip. */
+  private async assertFindingsInOrg(organizationId: string, findingIds: readonly string[]) {
+    const requestedIds = [...new Set(findingIds)];
+    const owned = await this.db
+      .select({ findingId: dataQualityFindings.findingId })
+      .from(dataQualityFindings)
+      .where(
+        and(
+          eq(dataQualityFindings.organizationId, organizationId),
+          inArray(dataQualityFindings.findingId, requestedIds),
+        ),
+      )
+      .limit(requestedIds.length);
+    if (owned.length !== requestedIds.length)
+      throw new NotFoundException("No open findings matched this selection");
+  }
+
   private async claim(
     organizationId: string,
     userId: string,

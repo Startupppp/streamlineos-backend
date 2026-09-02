@@ -21,6 +21,15 @@ const SCOPE_HELPER_DIRS = join(BACKEND_ROOT, "src", "modules");
 const FAIL_OPEN_RE = /if\s*\(\s*!\s*isScopable\s*\(\s*([\w.]+)\s*\)\s*\)\s*return\s*["']all["']/g;
 const CONST_KEY_RE = /(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*=\s*["'`]([^"'`]+)["'`]/g;
 
+/**
+ * Comments are not code. A doc comment that quotes the fallback it removed would
+ * otherwise read as the fallback still being there — which is exactly what the
+ * four repaired resolvers now carry.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
@@ -38,7 +47,7 @@ export interface FailOpenSite {
 function findFailOpenResolvers(): FailOpenSite[] {
   const sites: FailOpenSite[] = [];
   for (const abs of walk(SCOPE_HELPER_DIRS)) {
-    const source = readFileSync(abs, "utf8");
+    const source = withoutComments(readFileSync(abs, "utf8"));
     if (!source.includes("isScopable")) continue;
     const constants = new Map<string, string>();
     for (const m of source.matchAll(CONST_KEY_RE)) constants.set(m[1] as string, m[2] as string);
@@ -57,20 +66,16 @@ function findFailOpenResolvers(): FailOpenSite[] {
 
 /**
  * Resolvers whose key is not scopable, so the fallback is live and every caller
- * resolves `"all"`. Named rather than counted, because each needs either a
- * `scopable: true` catalog entry or a fail-closed fallback, and the two choices
- * are not interchangeable.
+ * resolves `"all"`.
+ *
+ * This list is now EMPTY. `goals-scope.ts` (`build:goals:manage`),
+ * `assets-scope.ts` (`hr:assets:manage`) and both resolvers in
+ * `dashboard-scope.ts` dropped the fallback entirely and let
+ * `resolved.get(KEY) ?? "none"` decide, which fails closed: a holder keeps their
+ * grant's own scope and a non-holder is denied. The map stays as the shape a new
+ * one would have to be added to, and the assertions below refuse to let it grow.
  */
-const KNOWN_LIVE_FAIL_OPEN: ReadonlyMap<string, string> = new Map([
-  [
-    "src/modules/goals/goals-scope.ts",
-    "build:goals:manage is not scopable, so resolveGoalsScope returns 'all' for every caller",
-  ],
-  [
-    "src/modules/hr/directory/assets-scope.ts",
-    "hr:assets:manage is not scopable, so resolveAssetsScope returns 'all' for every caller",
-  ],
-]);
+const KNOWN_LIVE_FAIL_OPEN: ReadonlyMap<string, string> = new Map<string, string>();
 
 describe("BOLA sweep — a scope gate must be able to bite", () => {
   const sites = findFailOpenResolvers();
@@ -93,36 +98,87 @@ describe("BOLA sweep — a scope gate must be able to bite", () => {
     expect(new Set(live).size).toBeLessThanOrEqual(KNOWN_LIVE_FAIL_OPEN.size);
   });
 
-  it("PINNED: each known fail-open resolver is still resolving 'all' for everyone", () => {
-    for (const [file] of KNOWN_LIVE_FAIL_OPEN) {
-      const site = sites.find((s) => s.file === file);
-      if (!site) continue;
-      expect(isScopable(site.permissionKey)).toBe(false);
+  it("FIXED: no resolver falls open on a key the catalog does not mark scopable", () => {
+    expect(sites.filter((s) => !s.scopable).map((s) => s.file)).toEqual([]);
+  });
+
+  /**
+   * The four repaired resolvers must not merely have lost the `isScopable`
+   * fallback — dropping the branch and returning `"all"` unconditionally would
+   * also empty the scan above while being strictly worse. Each has to end at the
+   * resolved grant, so a non-holder gets `none`: either `resolved.get(KEY) ??
+   * "none"` directly, or `access.scopeFor`, which answers `none` for a
+   * non-holder itself.
+   */
+  it("FIXED: each repaired resolver now fails closed on the caller's own grant", () => {
+    const repaired = [
+      "src/modules/goals/goals-scope.ts",
+      "src/modules/hr/directory/assets-scope.ts",
+      "src/modules/dashboard/dashboard-scope.ts",
+      "src/modules/tasks/tasks-scope.ts",
+    ];
+    for (const rel of repaired) {
+      const source = withoutComments(readFileSync(join(BACKEND_ROOT, rel), "utf8"));
+      expect(source).not.toMatch(new RegExp(FAIL_OPEN_RE.source));
+      const failsClosed =
+        source.includes('?? "none"') || source.includes("access.scopeFor(u,");
+      expect({ rel, failsClosed }).toEqual({ rel, failsClosed: true });
     }
   });
 });
 
 describe("BOLA sweep — a widening filter is gated on DataScope, not on holding the key", () => {
   /**
-   * `GET /tasks` widens on `crm:tasks:view !== "none"`. That key IS scopable, so
-   * a caller narrowed to `own` or `team` passes the gate, the owner predicate is
-   * dropped entirely, and `?assigneeId=<anyone>` returns that person's tasks.
-   * The read key `tasks:read` is an employee-self-service default, so every
-   * active member reaches the route.
+   * `GET /tasks` used to widen on `crm:tasks:view !== "none"`. That key IS
+   * scopable, so a caller narrowed to `own` or `team` passed the gate, the owner
+   * predicate was dropped entirely, and `?assigneeId=<anyone>` returned that
+   * person's tasks — a gate that was present and did not bite. The read key
+   * `tasks:read` is an employee-self-service default, so every active member
+   * reached the route.
+   *
+   * The assertion is inverted rather than deleted. It used to pin the defect,
+   * which means it could not go green and stay honest; as a regression guard it
+   * fails if the gate is ever loosened back to a presence check.
    */
-  it("KNOWN-OPEN crm/tasks: the widening gate collapses own and team into all", () => {
-    const source = readFileSync(
-      join(BACKEND_ROOT, "src/modules/tasks/tasks.service.ts"),
-      "utf8",
+  it("FIXED crm/tasks: the widening gate resolves the key's DataScope and demands 'all'", () => {
+    const service = withoutComments(
+      readFileSync(join(BACKEND_ROOT, "src/modules/tasks/tasks.service.ts"), "utf8"),
     );
-    expect(source).toContain('resolved.get("crm:tasks:view")');
+    const scope = withoutComments(
+      readFileSync(join(BACKEND_ROOT, "src/modules/tasks/tasks-scope.ts"), "utf8"),
+    );
     expect(isScopable("crm:tasks:view")).toBe(true);
+    expect(scope).toContain('resolved.get(TASKS_VIEW_PERMISSION) ?? "none"');
+    expect(service).toContain('scope === "all"');
+    expect(service).not.toContain('!== "none"');
+    expect(service).toContain("if (!canViewAll) conditions.push(eq(tasks.assigneeId, userId));");
+  });
 
-    const gatesOnAll =
-      source.includes('resolved.get("crm:tasks:view") ?? "none") === "all"') ||
-      source.includes('=== "all"');
-    expect(gatesOnAll).toBe(false);
-    expect(source).toContain('!== "none"');
+  /**
+   * `GET /timesheets/billing/rate-preview` took an optional `userId` and
+   * resolved another member's billable rate with no gate at all. It cannot be
+   * gated on its own key — `timesheets:billing:view` is not scopable, so testing
+   * it would resolve `all` for every holder, which is precisely the no-op the
+   * constitution names. It is gated on `timesheets:team:view`, the scopable key
+   * every other timesheets read uses for the same parameter.
+   */
+  it("FIXED timesheets/rate-preview: the userId widening resolves a scopable key's DataScope", () => {
+    const scope = withoutComments(
+      readFileSync(join(BACKEND_ROOT, "src/modules/timesheets/core/timesheets-core-scope.ts"), "utf8"),
+    );
+    const controller = withoutComments(
+      readFileSync(join(BACKEND_ROOT, "src/modules/timesheets/core/billing.controller.ts"), "utf8"),
+    );
+    const service = withoutComments(
+      readFileSync(join(BACKEND_ROOT, "src/modules/timesheets/core/billing.service.ts"), "utf8"),
+    );
+    expect(isScopable("timesheets:billing:view")).toBe(false);
+    expect(isScopable("timesheets:team:view")).toBe(true);
+    expect(scope).toContain("resolveRatePreviewSubject");
+    expect(scope).toContain("resolveEntriesScope(access, u)");
+    expect(scope).toContain('return scope === "all" ? requestedUserId : u.userId;');
+    expect(controller).toContain("resolveRatePreviewSubject(this.access, u, query.userId)");
+    expect(service).not.toContain("query.userId");
   });
 });
 

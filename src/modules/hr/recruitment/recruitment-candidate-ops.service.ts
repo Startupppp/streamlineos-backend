@@ -108,6 +108,7 @@ export class RecruitmentCandidateOpsService {
   }
 
   async bulkReject(orgId: string, userId: string, input: BulkRejectInput) {
+    const requestedIds = [...new Set(input.candidateIds)];
     const existing = await this.db
       .select({
         id: candidates.id,
@@ -117,10 +118,11 @@ export class RecruitmentCandidateOpsService {
         status: candidates.status,
       })
       .from(candidates)
-      .where(and(inArray(candidates.id, input.candidateIds), eq(candidates.orgId, orgId)));
+      .where(and(inArray(candidates.id, requestedIds), eq(candidates.orgId, orgId)))
+      .limit(requestedIds.length);
 
-    if (existing.length === 0) {
-      throw new NotFoundException("No matching candidates found");
+    if (existing.length !== requestedIds.length) {
+      throw new NotFoundException("One or more candidate IDs not found in this organization");
     }
 
     const toReject = existing.filter((c) => c.status !== "REJECTED");
@@ -182,13 +184,15 @@ export class RecruitmentCandidateOpsService {
   }
 
   async bulkShortlist(orgId: string, userId: string, input: BulkShortlistInput) {
+    const requestedIds = [...new Set(input.candidateIds)];
     const existing = await this.db
       .select({ id: candidates.id, firstName: candidates.firstName, lastName: candidates.lastName, status: candidates.status })
       .from(candidates)
-      .where(and(inArray(candidates.id, input.candidateIds), eq(candidates.orgId, orgId)));
+      .where(and(inArray(candidates.id, requestedIds), eq(candidates.orgId, orgId)))
+      .limit(requestedIds.length);
 
-    if (existing.length === 0) {
-      throw new NotFoundException("No matching candidates found");
+    if (existing.length !== requestedIds.length) {
+      throw new NotFoundException("One or more candidate IDs not found in this organization");
     }
 
     const toShortlist = existing.filter((c) => c.status === "NEW");

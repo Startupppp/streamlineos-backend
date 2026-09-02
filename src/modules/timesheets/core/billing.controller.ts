@@ -14,7 +14,9 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
 import { BillingService } from "./billing.service";
+import { resolveRatePreviewSubject } from "./timesheets-core-scope";
 import {
   uninvoicedQuerySchema,
   exportBillingSchema,
@@ -31,7 +33,10 @@ import { Validate } from "../../../common/validation/validate.decorator";
 @Controller("timesheets/billing")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetBillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(
+    private readonly billing: BillingService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("uninvoiced")
   @RequirePermission("timesheets:billing:view")
@@ -68,10 +73,11 @@ export class TimesheetBillingController {
   @Get("rate-preview")
   @RequirePermission("timesheets:billing:view")
   @Validate({ query: ratePreviewQuerySchema })
-  ratePreview(
+  async ratePreview(
     @Query() query: RatePreviewQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.billing.getRatePreview(u, query);
+    const subjectUserId = await resolveRatePreviewSubject(this.access, u, query.userId);
+    return await this.billing.getRatePreview(u, query, subjectUserId);
   }
 }

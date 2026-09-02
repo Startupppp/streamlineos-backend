@@ -1,5 +1,10 @@
 import { loadRouteSurface, isObjectAddressable, type HandlerRoute } from "./route-surface";
 import { buildSourceIndex, analyzeRoute, type BindingVerdict } from "./tenant-binding";
+import { allCatalogScopes, platformCapabilityScopes } from "src/modules/access/access-policy";
+import {
+  PLATFORM_ONLY_PERMISSION_KEYS,
+  isDelegablePermission,
+} from "src/common/rbac/grantability";
 
 /**
  * Every object-addressable route is followed from its handler into the data
@@ -58,20 +63,26 @@ const TENANT_SELECTOR_IN_PATH: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * Open holes. `blog_posts` and `blog_categories` are the vendor's own global
- * marketing content, but `blog:posts:manage` / `blog:categories:manage` sit in
- * the tenant permission catalog, and `computeUserPermissions` short-circuits
- * every org OWNER and ORG_ADMIN to `allCatalogScopes()` — every key at scope
- * `all`. So every customer organization's admin holds the key that edits and
- * deletes the vendor's public marketing site, and the service binds no tenant
- * because there is no tenant column to bind.
+ * Unbound at the data layer BY DESIGN, and the reason is worth stating exactly
+ * because it inverts the usual remedy.
  *
- * The fix is the gate, not the predicate: these routes are platform
- * administration and must resolve platform-operator standing rather than a
- * tenant permission key. Listed here so the sweep stays green while the count
- * can only fall.
+ * `blog_posts` and `blog_categories` are the vendor's own global marketing
+ * content — one row set for the whole platform, no `org_id` column — so there is
+ * no tenant for `BlogService` to bind, and adding one would turn the vendor's
+ * public blog into a per-tenant resource, which is a different product.
+ *
+ * The hole was never the predicate. `blog:posts:manage` and
+ * `blog:categories:manage` sat in the per-organization catalog, and
+ * `computeUserPermissions` short-circuits every org OWNER and ORG_ADMIN to
+ * `allCatalogScopes()` — every catalog key at scope `all` — so every customer's
+ * administrator held the keys that rewrite and hard-delete the vendor's public
+ * site. The fix is the gate: the three `blog:*` keys are platform-only, removed
+ * from the tenant catalog at resolution time and conferred only by deployment
+ * configuration. The routes stay listed here because they are still not
+ * tenant-bound and never can be; the executable assertions below are what prove
+ * they are no longer reachable.
  */
-const KNOWN_OPEN_DEFECTS: ReadonlySet<string> = new Set([
+const PLATFORM_GLOBAL_RESOURCE: ReadonlySet<string> = new Set([
   "GET /blog/admin/posts/:postId",
   "PATCH /blog/admin/posts/:postId",
   "DELETE /blog/admin/posts/:postId",
@@ -111,14 +122,14 @@ describe("BOLA sweep — authorization is asserted at the data layer", () => {
       .map((b) => `${key(b.route)}  ${b.route.file}:${b.route.line}`)
       .filter((line) => {
         const routeKey = line.slice(0, line.indexOf("  "));
-        return !TENANT_SELECTOR_IN_PATH.has(routeKey) && !KNOWN_OPEN_DEFECTS.has(routeKey);
+        return !TENANT_SELECTOR_IN_PATH.has(routeKey) && !PLATFORM_GLOBAL_RESOURCE.has(routeKey);
       });
     expect(unnamed).toEqual([]);
   });
 
-  it("RATCHET: the open-defect list does not grow", () => {
-    const openNow = unbound.map(key).filter((k) => KNOWN_OPEN_DEFECTS.has(k));
-    expect(new Set(openNow).size).toBeLessThanOrEqual(KNOWN_OPEN_DEFECTS.size);
+  it("RATCHET: the unbound-by-design list does not grow", () => {
+    const openNow = unbound.map(key).filter((k) => PLATFORM_GLOBAL_RESOURCE.has(k));
+    expect(new Set(openNow).size).toBeLessThanOrEqual(PLATFORM_GLOBAL_RESOURCE.size);
   });
 
   it("BOUND-MAJORITY: the overwhelming majority of the surface binds a tenant at the data layer", () => {
@@ -141,5 +152,52 @@ describe("BOLA sweep — authorization is asserted at the data layer", () => {
     );
     expect(controller).toBeDefined();
     expect(controller?.serviceCalls[0]?.args).toContain("u.orgId");
+  });
+});
+
+/**
+ * The five `/blog/admin/*` routes are the one part of the object-addressable
+ * surface that cannot be closed at the data layer, so the gate has to be proved
+ * instead — and proved by running it, not by reading the source. Every
+ * assertion here would have failed before the fix.
+ */
+describe("BOLA — the vendor's global blog is unreachable from any tenant standing", () => {
+  const BLOG_KEYS = [...PLATFORM_ONLY_PERMISSION_KEYS];
+
+  afterEach(() => {
+    delete process.env.PLATFORM_ADMIN_USER_IDS;
+  });
+
+  it("ANTI-VACUITY: the keys the blog admin routes gate on are the platform-only ones", () => {
+    const routes = loadRouteSurface().filter((r) => r.path.startsWith("/blog/admin"));
+    expect(routes.length).toBeGreaterThan(0);
+    const gated = new Set(routes.flatMap((r) => r.permissionKeys));
+    expect([...gated].every((k) => k.startsWith("blog:"))).toBe(true);
+    expect(gated.has("blog:posts:manage")).toBe(true);
+    expect(BLOG_KEYS).toContain("blog:posts:manage");
+    expect(BLOG_KEYS).toContain("blog:categories:manage");
+  });
+
+  it("EXECUTABLE: the owner/org-admin short-circuit no longer confers any blog key", () => {
+    const conferred = allCatalogScopes();
+    for (const blogKey of BLOG_KEYS) expect(conferred[blogKey]).toBeUndefined();
+    expect(conferred["crm:leads:view"]).toBe("all");
+  });
+
+  it("EXECUTABLE: no role grant, delegation or module ownership can confer them", () => {
+    for (const blogKey of BLOG_KEYS) expect(isDelegablePermission(blogKey)).toBe(false);
+    expect(isDelegablePermission("crm:leads:view")).toBe(true);
+  });
+
+  it("EXECUTABLE: with no allowlist configured, nobody holds them", () => {
+    delete process.env.PLATFORM_ADMIN_USER_IDS;
+    expect(platformCapabilityScopes("any-user")).toEqual({});
+  });
+
+  it("EXECUTABLE: a user on the allowlist holds them, so the surface is gated and not merely dead", () => {
+    process.env.PLATFORM_ADMIN_USER_IDS = "operator-1,operator-2";
+    const operator = platformCapabilityScopes("operator-1");
+    for (const blogKey of BLOG_KEYS) expect(operator[blogKey]).toBe("all");
+    expect(platformCapabilityScopes("customer-admin")).toEqual({});
   });
 });

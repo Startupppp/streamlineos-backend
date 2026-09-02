@@ -54,17 +54,37 @@ export class SurveyParticipantService {
     return created;
   }
 
+  /**
+   * Both bulk actions reported the *requested* count, so a mixed-tenant list
+   * came back as a full success while only the caller's own participants moved.
+   * The whole request fails unless every id is this survey's, and a miss is 404.
+   */
+  private async assertOwnsAll(orgId: string, surveyId: number, participantIds: number[]) {
+    const requestedIds = [...new Set(participantIds)];
+    const owned = await this.db
+      .select({ id: surveyParticipants.id })
+      .from(surveyParticipants)
+      .where(and(eq(surveyParticipants.orgId, orgId), eq(surveyParticipants.surveyId, surveyId), inArray(surveyParticipants.id, requestedIds)))
+      .limit(requestedIds.length);
+    if (owned.length !== requestedIds.length)
+      throw new NotFoundException("One or more participant IDs not found in this survey");
+    return requestedIds;
+  }
+
   async invite(orgId: string, surveyId: number, participantIds: number[]) {
+    const requestedIds = await this.assertOwnsAll(orgId, surveyId, participantIds);
     await this.db
       .update(surveyParticipants)
       .set({ status: "invited", invitedAt: new Date() })
-      .where(and(eq(surveyParticipants.orgId, orgId), eq(surveyParticipants.surveyId, surveyId), inArray(surveyParticipants.id, participantIds)));
-    return { success: true, count: participantIds.length };
+      .where(and(eq(surveyParticipants.orgId, orgId), eq(surveyParticipants.surveyId, surveyId), inArray(surveyParticipants.id, requestedIds)));
+    return { success: true, count: requestedIds.length };
   }
 
   async remind(orgId: string, surveyId: number, participantIds: number[]) {
+    const requestedIds = await this.assertOwnsAll(orgId, surveyId, participantIds);
     const rows = await this.db.query.surveyParticipants.findMany({
-      where: and(eq(surveyParticipants.orgId, orgId), eq(surveyParticipants.surveyId, surveyId), inArray(surveyParticipants.id, participantIds)),
+      where: and(eq(surveyParticipants.orgId, orgId), eq(surveyParticipants.surveyId, surveyId), inArray(surveyParticipants.id, requestedIds)),
+      limit: requestedIds.length,
     });
     return { success: true, remindable: rows.filter((r) => r.status !== "completed").length };
   }

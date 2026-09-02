@@ -31,6 +31,13 @@ export interface DriftFinding {
  * A handler's scope evidence is its own body plus the first layer of service it
  * calls: `deals.controller.ts` resolves the scope in the handler, while
  * `work-logs` resolves it inside the service method. Both count.
+ *
+ * A standalone helper counts too. `billing.controller.ts` calls
+ * `resolveRatePreviewSubject`, which resolves the DataScope and returns the
+ * subject the caller is allowed to ask about — the same control, named for what
+ * it returns rather than for what it reads, and invisible to a scan that only
+ * matched `resolve*Scope`. The lookup is by body, not by name, so nothing is
+ * credited for being called something reassuring.
  */
 export function handlerScopeEvidence(route: HandlerRoute, index: SourceIndex): boolean {
   if (resolvesScope(route.body)) return true;
@@ -50,6 +57,10 @@ export function handlerScopeEvidence(route: HandlerRoute, index: SourceIndex): b
   for (const call of route.body.matchAll(/this\.(\w+)\s*\(/g)) {
     const own = index.methodsByClass.get(route.controllerClass)?.get(call[1] as string);
     if (own && resolvesScope(own.body)) return true;
+  }
+  for (const call of route.body.matchAll(/(?:^|[^.\w])([a-z][\w$]*)\s*\(/gm)) {
+    const helper = index.functions.get(call[1] as string);
+    if (helper && resolvesScope(helper.body)) return true;
   }
   return false;
 }

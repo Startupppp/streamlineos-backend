@@ -99,10 +99,34 @@ export class ApprovalsBulkService {
     return updated;
   }
 
+  /**
+   * A mixed-tenant id list must fail the whole request. Both bulk actions used
+   * to fold a foreign id into their ordinary skip path — `isExpectedApprovalSkip`
+   * swallows the `NotFoundException`, and the reject query narrows to the
+   * caller's org in the same predicate as the status filter — so the caller was
+   * told the request succeeded. Tenant membership is checked first and on its
+   * own, which leaves the per-period status and approver skips meaning what they
+   * say. A miss is 404, never 403.
+   */
+  private async assertPeriodsInOrg(orgId: string, periodIds: readonly number[]): Promise<number[]> {
+    const requestedIds = [...new Set(periodIds)];
+    const owned = await this.db
+      .select({ id: timesheetPeriods.id })
+      .from(timesheetPeriods)
+      .where(
+        and(eq(timesheetPeriods.orgId, orgId), inArray(timesheetPeriods.id, requestedIds)),
+      )
+      .limit(requestedIds.length);
+    if (owned.length !== requestedIds.length)
+      throw new NotFoundException("One or more period IDs not found in this organization");
+    return requestedIds;
+  }
+
   async bulkApprove(u: CurrentUserContext, input: BulkApproveInput) {
+    const requestedIds = await this.assertPeriodsInOrg(u.orgId, input.periodIds);
     let approved = 0;
     let skipped = 0;
-    for (const periodId of input.periodIds) {
+    for (const periodId of requestedIds) {
       try {
         await this.approvals.approveSinglePeriod(u, periodId);
         approved++;
@@ -123,6 +147,7 @@ export class ApprovalsBulkService {
   }
 
   async bulkReject(u: CurrentUserContext, input: BulkRejectInput) {
+    const requestedIds = await this.assertPeriodsInOrg(u.orgId, input.periodIds);
     const candidates = await this.db
       .select({
         id: timesheetPeriods.id,
@@ -134,7 +159,7 @@ export class ApprovalsBulkService {
       .where(
         and(
           eq(timesheetPeriods.orgId, u.orgId),
-          inArray(timesheetPeriods.id, input.periodIds),
+          inArray(timesheetPeriods.id, requestedIds),
           eq(timesheetPeriods.status, "SUBMITTED"),
         ),
       );

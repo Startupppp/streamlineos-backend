@@ -7,21 +7,50 @@ import {
   parseInjectedProperties,
   extractServiceCalls,
 } from "./route-surface";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
+import { BACKEND_ROOT } from "./route-surface";
 
 /**
  * The BOLA sweep is only as honest as its enumeration. A parser that silently
- * loses routes reports a smaller unbound set and reads as a pass, so these
- * numbers are pinned against `pnpm check:route-classification`, which is the
+ * loses routes reports a smaller unbound set and reads as a pass, so the totals
+ * are checked against `pnpm check:route-classification`, which is the
  * repository's own authority on the route surface.
+ *
+ * The gate is RUN, not transcribed. Hardcoding its numbers made every route any
+ * other module added fail this suite while proving nothing about the parser —
+ * the property is that the two enumerations agree, not that either equals a
+ * number someone wrote down.
  */
-const OFFICIAL_TOTALS = {
-  total: 3602,
-  public: 236,
-  universal: 100,
-  permissioned: 3206,
-  inService: 60,
-  undeclared: 0,
-} as const;
+interface OfficialTotals {
+  readonly total: number;
+  readonly public: number;
+  readonly universal: number;
+  readonly permissioned: number;
+  readonly inService: number;
+  readonly undeclared: number;
+}
+
+function officialTotals(): OfficialTotals {
+  const report = execFileSync(
+    process.execPath,
+    [join(BACKEND_ROOT, "src/scripts/route-classification-report.mjs")],
+    { cwd: BACKEND_ROOT, encoding: "utf8" },
+  );
+  const read = (label: string): number => {
+    const found = report.match(new RegExp(`${label}\\s*:\\s*(\\d+)`));
+    if (!found?.[1]) throw new Error(`route-classification did not report "${label}"`);
+    return Number(found[1]);
+  };
+  return {
+    total: read("Total handlers"),
+    public: read("public"),
+    universal: read("universal"),
+    permissioned: read("permissioned"),
+    inService: read("in-service"),
+    undeclared: read("UNDECLARED"),
+  };
+}
 
 describe("BOLA sweep — route surface enumeration", () => {
   const routes = loadRouteSurface();
@@ -32,6 +61,8 @@ describe("BOLA sweep — route surface enumeration", () => {
   });
 
   it("AGREES-WITH-GATE: totals match pnpm check:route-classification exactly", () => {
+    const OFFICIAL_TOTALS = officialTotals();
+    expect(OFFICIAL_TOTALS.total).toBeGreaterThan(3000);
     const byClass = routes.reduce<Record<string, number>>((acc, r) => {
       acc[r.classification] = (acc[r.classification] ?? 0) + 1;
       return acc;

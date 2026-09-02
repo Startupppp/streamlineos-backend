@@ -242,14 +242,44 @@ export class NotificationsLifecycleService {
     return { success: true };
   }
 
+  /**
+   * A mixed-tenant id list must fail the whole request. Narrowing the update to
+   * the rows the caller owns and returning `{ success: true }` tells the caller
+   * every id was acted on and turns the response into an existence oracle. The
+   * single-id paths above already do this with `.returning()`; the property was
+   * lost at the bulk boundary.
+   */
+  private async assertOwnsAll(
+    orgId: string,
+    membershipId: number,
+    ids: readonly number[],
+  ): Promise<number[]> {
+    const requestedIds = [...new Set(ids)];
+    const owned = await this.db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(
+        and(
+          inArray(notifications.id, requestedIds),
+          eq(notifications.membershipId, membershipId),
+          eq(notifications.orgId, orgId),
+        ),
+      )
+      .limit(requestedIds.length);
+    if (owned.length !== requestedIds.length)
+      throw new NotFoundException("One or more notification IDs not found for this recipient");
+    return requestedIds;
+  }
+
   async bulkMarkRead(orgId: string, userId: string, input: BulkActionInput) {
     const membershipId = await this.resolveMembershipId(orgId, userId);
+    const requestedIds = await this.assertOwnsAll(orgId, membershipId, input.ids);
     await this.db
       .update(notifications)
       .set({ isRead: true })
       .where(
         and(
-          inArray(notifications.id, input.ids),
+          inArray(notifications.id, requestedIds),
           eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
@@ -262,12 +292,13 @@ export class NotificationsLifecycleService {
 
   async bulkArchive(orgId: string, userId: string, input: BulkActionInput) {
     const membershipId = await this.resolveMembershipId(orgId, userId);
+    const requestedIds = await this.assertOwnsAll(orgId, membershipId, input.ids);
     await this.db
       .update(notifications)
       .set({ archivedAt: new Date() })
       .where(
         and(
-          inArray(notifications.id, input.ids),
+          inArray(notifications.id, requestedIds),
           eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
@@ -280,12 +311,13 @@ export class NotificationsLifecycleService {
 
   async bulkDelete(orgId: string, userId: string, input: BulkActionInput) {
     const membershipId = await this.resolveMembershipId(orgId, userId);
+    const requestedIds = await this.assertOwnsAll(orgId, membershipId, input.ids);
     await this.db
       .update(notifications)
       .set({ deletedAt: new Date() })
       .where(
         and(
-          inArray(notifications.id, input.ids),
+          inArray(notifications.id, requestedIds),
           eq(notifications.membershipId, membershipId),
           eq(notifications.orgId, orgId),
         ),

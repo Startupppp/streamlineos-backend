@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { findBulkSites, classifyBulkMethod, parameterNames } from "./bulk-id-handling";
+import { findBulkSites, classifyBulkMethod, parameterNames, derivedIdLocals } from "./bulk-id-handling";
 import { BACKEND_ROOT } from "./route-surface";
 import { buildSourceIndex } from "./tenant-binding";
 
@@ -12,28 +12,68 @@ import { buildSourceIndex } from "./tenant-binding";
  * "not yours" from "already done".
  */
 
-const BULK_SITE_BASELINE = 55;
-const NO_COUNT_CHECK_BASELINE = 51;
-const FAIL_WHOLE_FLOOR = 4;
+/**
+ * The inventory is a FLOOR, not a cap.
+ *
+ * It used to be `sites.length <= 55`, which counted guarded sites too, so adding
+ * a correct guard could trip the ratchet — a ratchet that punishes the fix is
+ * not a ratchet. The defect count is `no-count-check`; that is what may not
+ * grow. `sites.length` only guards against the scan quietly finding less.
+ */
+const BULK_SITE_FLOOR = 60;
+const NO_COUNT_CHECK_BASELINE = 45;
+const FAIL_WHOLE_FLOOR = 21;
 
 /**
- * Sites read in full and confirmed to process the owned subset silently. Kept
- * explicit so a fix is visible as this list shrinking, rather than as a number
- * moving. Ranked by blast radius.
+ * Confirmed silent-subset sites still open. `inArray(table.id, ids)` beside
+ * `eq(table.orgId, orgId)` narrows the work to the rows the caller owns and
+ * returns success, so the caller is told every id was acted on.
+ *
+ * CRM is out of scope for this release, so the two `DealsCrudService` entries
+ * are recorded rather than repaired. The defect is unchanged: `bulkDelete` and
+ * `bulkUpdate` on `POST /deals/bulk-*` accept a mixed-tenant `dealIds` list,
+ * act on the caller's own deals and report success. The fix is the same count
+ * check as everywhere else, and it belongs to whoever owns `modules/deals`.
  */
 const CONFIRMED_SILENT_SUBSET: readonly string[] = [
-  "NotificationsLifecycleService.bulkDelete",
-  "NotificationsLifecycleService.bulkArchive",
-  "NotificationsLifecycleService.bulkMarkRead",
   "DealsCrudService.bulkDelete",
   "DealsCrudService.bulkUpdate",
+];
+
+/**
+ * Repaired in this pass. Each now fetches under the tenant predicate, compares
+ * the row count against the requested id count, and throws `NotFoundException`
+ * — 404, never 403 — for the WHOLE request on a mismatch.
+ *
+ * `bulkApprove` and `DataQualityResolutionService.resolve` are fixed at their
+ * entry point rather than at the `inArray` site: both had a legitimate per-row
+ * skip (not submitted / already decided) sharing one predicate with the tenant
+ * filter, so a foreign id was indistinguishable from a skipped one. Tenant
+ * membership is now asserted first and on its own, which is why they do not
+ * appear in this list of detector-visible sites.
+ */
+const REPAIRED_FAIL_WHOLE: readonly string[] = [
+  "NotificationsLifecycleService.bulkMarkRead",
+  "NotificationsLifecycleService.bulkArchive",
+  "NotificationsLifecycleService.bulkDelete",
   "RecruitmentCandidateOpsService.bulkReject",
   "RecruitmentCandidateOpsService.bulkShortlist",
+  "RecruitmentAutomationService.enrollSequence",
   "SurveyParticipantService.invite",
   "SurveyParticipantService.remind",
   "KbTagsService.setArticleTags",
   "ApprovalsBulkService.bulkReject",
+];
+
+/**
+ * Methods the scan reports as unguarded whose id list is derived inside the
+ * caller from an already tenant-scoped query, so a mixed-tenant list cannot
+ * reach them. Named so they are not mistaken for open defects, and so a real
+ * one is not hidden behind the same excuse silently.
+ */
+const GUARDED_BY_CALLER: readonly string[] = [
   "DataQualityResolutionService.claim",
+  "DataQualityResolutionService.reopen",
 ];
 
 const source = (rel: string): string => readFileSync(join(BACKEND_ROOT, rel), "utf8");
@@ -54,6 +94,50 @@ describe("BOLA sweep — bulk endpoints refuse a mixed-tenant id list", () => {
     const names = parameterNames("  async bulkUpdate(orgId: string, { dealIds }: Input) ");
     expect(names.has("orgId")).toBe(true);
     expect(names.has("dealIds")).toBe(true);
+  });
+
+  it("SELF-TEST: an id list rebound to a local is still caller-supplied", () => {
+    const method = {
+      signature: "  async f(orgId: string, input: { ids: string[] }) ",
+      body: "const requestedIds = [...new Set(input.ids)]; await q(inArray(t.id, requestedIds));",
+    };
+    expect(derivedIdLocals(method).has("requestedIds")).toBe(true);
+    expect(classifyBulkMethod(method)).toBe("no-count-check");
+  });
+
+  it("SELF-TEST: a guard extracted into a private helper still counts", () => {
+    const siblings = new Map([
+      [
+        "assertOwnsAll",
+        {
+          owner: "X",
+          file: "x.ts",
+          name: "assertOwnsAll",
+          signature: "  private async assertOwnsAll(orgId: string, ids: string[]) ",
+          body: "if (owned.length !== requestedIds.length) throw new NotFoundException();",
+        },
+      ],
+    ]);
+    const caller = {
+      owner: "X",
+      file: "x.ts",
+      name: "f",
+      signature: "  async f(orgId: string, input: { ids: string[] }) ",
+      body: "const requestedIds = await this.assertOwnsAll(orgId, input.ids); await q(inArray(t.id, requestedIds));",
+    };
+    expect(classifyBulkMethod(caller)).toBe("no-count-check");
+    expect(classifyBulkMethod(caller, siblings)).toBe("fail-whole");
+  });
+
+  it("SELF-TEST: a set-difference refusal counts as a guard", () => {
+    const method = {
+      signature: "  async f(orgId: string, input: { templateIds: number[] }) ",
+      body:
+        "const found = await q(inArray(t.id, input.templateIds));\n" +
+        "const missing = input.templateIds.filter((id) => !found.find((f) => f.id === id));\n" +
+        "if (missing.length > 0) throw new NotFoundException(`missing`);",
+    };
+    expect(classifyBulkMethod(method)).toBe("fail-whole");
   });
 
   it("SELF-TEST: a count check is what separates the two verdicts", () => {
@@ -88,17 +172,31 @@ describe("BOLA sweep — bulk endpoints refuse a mixed-tenant id list", () => {
   });
 
   it("RATCHET: no new bulk site appears without a count check", () => {
-    expect(sites.length).toBeLessThanOrEqual(BULK_SITE_BASELINE);
+    expect(sites.length).toBeGreaterThanOrEqual(BULK_SITE_FLOOR);
     expect(noCountCheck.length).toBeLessThanOrEqual(NO_COUNT_CHECK_BASELINE);
     expect(failWhole.length).toBeGreaterThanOrEqual(FAIL_WHOLE_FLOOR);
   });
 
-  it("PINNED: every confirmed silent-subset site is still detected as such", () => {
+  it("FIXED: every repaired site now refuses a partial match", () => {
+    const guarded = new Set(failWhole.map(name));
+    expect(REPAIRED_FAIL_WHOLE.filter((s) => !guarded.has(s))).toEqual([]);
+  });
+
+  it("EXCLUDED-BY-SCOPE: the CRM sites are still open and still detected as such", () => {
     const detected = new Set(noCountCheck.map(name));
     const undetected = CONFIRMED_SILENT_SUBSET.filter(
       (s) => !detected.has(s) && sites.some((site) => name(site) === s),
     );
     expect(undetected).toEqual([]);
+  });
+
+  it("TRIAGED: the remaining unguarded sites are named, not merely counted", () => {
+    const unexplained = noCountCheck
+      .map(name)
+      .filter((s) => CONFIRMED_SILENT_SUBSET.includes(s) || GUARDED_BY_CALLER.includes(s));
+    expect(unexplained.sort()).toEqual(
+      [...CONFIRMED_SILENT_SUBSET, ...GUARDED_BY_CALLER].sort(),
+    );
   });
 });
 
@@ -107,22 +205,29 @@ describe("BOLA sweep — an id list with no tenant column at all", () => {
 
   /**
    * `email_sequence_enrollments` carries no `org_id`, and `enrollSequence`
-   * verifies the sequence but never the candidates, so another organization's
-   * candidate ids attach to the caller's sequence and are reported as enrolled.
-   * `candidate_id` is a foreign key, so an unknown id errors while a real
-   * cross-tenant id succeeds — a clean existence oracle over the candidate table.
+   * verified the sequence but never the candidates, so another organization's
+   * candidate ids attached to the caller's sequence and were reported as
+   * enrolled. `candidate_id` is a foreign key, so an unknown id errored while a
+   * real cross-tenant id succeeded — a clean existence oracle over the candidate
+   * table.
+   *
+   * The assertion is inverted rather than deleted. It used to pin the defect, so
+   * it could not go green and stay honest; as a regression guard it fails if the
+   * ownership check is ever removed. The durable fix is still an `org_id` column
+   * on the enrolment table; this is the service-level guard that closes the
+   * oracle without one.
    */
-  it("KNOWN-OPEN hr/recruitment: enrollSequence does not verify candidate ownership", () => {
+  it("FIXED hr/recruitment: enrollSequence verifies every candidate before inserting", () => {
     const method = index.methodsByClass
       .get("RecruitmentAutomationService")
       ?.get("enrollSequence");
     expect(method).toBeDefined();
     expect(method?.body).toContain("eq(emailSequences.orgId, orgId)");
-
-    const verifiesCandidates =
-      method?.body.includes("candidates.orgId") === true ||
-      method?.body.includes("candidateIds.length") === true;
-    expect(verifiesCandidates).toBe(false);
+    expect(method?.body).toContain("eq(candidates.orgId, orgId)");
+    expect(method?.body).toContain("owned.length !== requestedIds.length");
+    expect(method?.body).toContain("NotFoundException");
+    expect(method?.body).not.toContain("ForbiddenException");
+    expect(classifyBulkMethod(method as never)).toBe("fail-whole");
   });
 
   it("KNOWN-OPEN: the enrollment table has no tenant column to bind", () => {
