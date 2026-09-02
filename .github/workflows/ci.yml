@@ -119,12 +119,27 @@ jobs:
       - name: Repo path resolvers still resolve
         run: pnpm check:repo-paths:self-test
 
-      # NOT WIRED HERE ON PURPOSE. `check:dead-code` measures rc=0 today (knip 0
-      # unused files / 36 other findings, a 9,795-file importer graph, 35 verdicts
-      # with none stale) but src/scripts/check-dead-code.mjs is still UNTRACKED in
-      # this working tree — another ticket authored it during this run. A CI step
-      # naming a script that is not in the commit is a red pipeline, not a gate.
-      # Add the step in the same commit that lands the script.
+      # Ticket 36. Both scripts landed in 0587da30; the step below was held back
+      # only because src/scripts/check-dead-code.mjs was still untracked in the
+      # shared working tree at the time. It is committed now (verified with
+      # `git cat-file -e HEAD:src/scripts/check-dead-code.mjs`), so the gate is
+      # wired here, in `gates` — the job with no `needs:` — and never behind Lint.
+      # Fail-closed: every knip finding needs a KEEP/WIRE/REMOVE verdict, a
+      # verdict knip no longer reports is stale and also fails, and a scan that
+      # comes back under the floor fails as a broken scan rather than passing as
+      # a clean codebase. Measured at head: rc=0, 36 findings, 0 unclassified,
+      # importer graph 9,811 files / 68,259 edges.
+      - name: Dead code is classified, and no verdict is stale
+        run: pnpm check:dead-code:self-test && pnpm check:dead-code
+
+      # Hard zero for `as any` / `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`
+      # in application code, and a zero-GROWTH ledger for `as unknown as` where
+      # every file carries its count, its seam kind and a written invariant. A
+      # file losing a site fails too, so the ledger ratchets down and can never
+      # state a number that is no longer true. Measured at head: rc=0, 3,560
+      # application files, 26 sites in 16 files, 0 banned escapes.
+      - name: Type assertions stay at a proven seam
+        run: pnpm check:type-assertions:self-test && pnpm check:type-assertions
 
       - name: Permission key catalog check
         run: pnpm check:permission-keys
