@@ -1,8 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, asc, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { organizations } from "../../db/schema";
+import { forEachOrg } from "../../common/tenant";
 import { StorageMultipartService } from "../storage/storage-multipart.service";
 import { FileQuarantineService } from "../storage/file-quarantine.service";
 import { StorageService } from "../storage/storage.service";
@@ -39,16 +38,12 @@ export class CronStorageSweepService {
       deleteFailures: 0,
     };
 
-    const orgs = await this.db
-      .select({ id: organizations.id })
-      .from(organizations)
-      .where(and(isNull(organizations.deletedAt), eq(organizations.status, "ACTIVE")))
-      .orderBy(asc(organizations.id));
-
-    for (const org of orgs) {
-      result.organizations += 1;
-      await this.sweepOrg(org.id, result);
-    }
+    // forEachOrg, not a hand-rolled enumeration: it opens the tenant transaction that sets
+    // the org GUC, without which every quarantine and multipart read here dies 42501.
+    const swept = await forEachOrg(this.db, "storage-sweep", async (_tx, orgId) => {
+      await this.sweepOrg(orgId, result);
+    });
+    result.organizations = swept.organizations;
 
     this.logger.log(
       `[storage-sweep] ${result.organizations} orgs, ` +

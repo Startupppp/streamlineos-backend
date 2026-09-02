@@ -3018,6 +3018,11 @@
       "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listGlobalVariables capped at .limit(200); workflow variables are org config, typically <100 2026-09-01"
+    },
+    "/build/core/projects-search.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Extracted verbatim from projects-work-query.service.ts, which carries the same verdict; the gate is path-keyed, so the split uncovered it rather than changing it",
+      "justification": "the only uncapped select reads the caller's own project memberships to build an inArray filter, bounded by how many projects one person belongs to; the ticket read that follows carries an explicit .limit(limit) 2026-09-02"
     }
   }
 }

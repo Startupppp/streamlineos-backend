@@ -1,3 +1,17 @@
+jest.mock("../../common/tenant", () => ({
+  forEachOrg: jest.fn(
+    async (
+      _db: unknown,
+      _sweep: string,
+      fn: (tx: unknown, orgId: string) => Promise<void>,
+    ) => {
+      for (const id of (globalThis as { __sweepOrgIds?: string[] }).__sweepOrgIds ?? [])
+        await fn({}, id);
+      return { organizations: ((globalThis as { __sweepOrgIds?: string[] }).__sweepOrgIds ?? []).length };
+    },
+  ),
+}));
+
 import { CronStorageSweepService } from "./cron-storage-sweep.service";
 import type { StorageMultipartService } from "../storage/storage-multipart.service";
 import type { FileQuarantineService } from "../storage/file-quarantine.service";
@@ -8,6 +22,7 @@ const ORG_A = "org-aaaaaaaa-0000-4000-8000-000000000001";
 const ORG_B = "org-bbbbbbbb-0000-4000-8000-000000000002";
 
 function makeOrgsDb(orgIds: string[]): Db {
+  (globalThis as { __sweepOrgIds?: string[] }).__sweepOrgIds = orgIds;
   const selectBuilder = {
     from: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
