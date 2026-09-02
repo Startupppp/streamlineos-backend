@@ -1,6 +1,11 @@
 import type { Request, Response } from "express";
 import { createStreamAbortSignal } from "../../../../common/http/stream-abort";
-import { pipeAiTextStream, rethrowStreamRouteError, type PipeableAiTextStream } from "./ai-stream-response";
+import {
+  encodeStreamSourcesHeader,
+  pipeAiTextStream,
+  rethrowStreamRouteError,
+  type PipeableAiTextStream,
+} from "./ai-stream-response";
 
 export const AI_TEXT_STREAM_DEADLINE_MS = 60_000;
 
@@ -9,6 +14,30 @@ export interface AiTextStreamRouteOptions {
   orgId: string;
   route: string;
   deadlineMs?: number;
+  /**
+   * Header name the producer's `sources` are published under, URL-encoded JSON.
+   * Citations must reach the client BEFORE the body or a stream the user stops
+   * halfway loses them, and a trailer is not a place a fetch reader can see.
+   */
+  sourcesHeader?: string;
+}
+
+export interface AiTextStreamProduct {
+  stream: PipeableAiTextStream;
+  sources?: readonly unknown[];
+}
+
+function sourceHeaders(
+  options: AiTextStreamRouteOptions,
+  sources: readonly unknown[] | undefined,
+): Record<string, string> | undefined {
+  if (options.sourcesHeader === undefined || sources === undefined) return undefined;
+  const encoded = encodeStreamSourcesHeader(sources);
+  if (encoded === null) return undefined;
+  return {
+    [options.sourcesHeader]: encoded,
+    "access-control-expose-headers": options.sourcesHeader,
+  };
 }
 
 /**
@@ -22,7 +51,7 @@ export async function respondWithAiTextStream(
   req: Request,
   res: Response,
   options: AiTextStreamRouteOptions,
-  produce: (signal: AbortSignal) => Promise<{ stream: PipeableAiTextStream }>,
+  produce: (signal: AbortSignal) => Promise<AiTextStreamProduct>,
 ): Promise<void> {
   const abort = createStreamAbortSignal(
     req,
@@ -31,10 +60,12 @@ export async function respondWithAiTextStream(
   );
 
   try {
-    const { stream } = await produce(abort.signal);
+    const { stream, sources } = await produce(abort.signal);
+    const headers = sourceHeaders(options, sources);
     await pipeAiTextStream(res, stream, {
       feature: options.feature,
       orgId: options.orgId,
+      ...(headers !== undefined ? { headers } : {}),
     });
   } catch (error) {
     rethrowStreamRouteError(error, { route: options.route });

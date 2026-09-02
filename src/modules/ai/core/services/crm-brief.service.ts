@@ -11,7 +11,7 @@ import { CrmMeetingBriefService } from "./crm-meeting-brief.service";
 import { CrmNlSearchService } from "./crm-nl-search.service";
 import type { AiInvokePrompt } from "../gateway/ai-gateway.types";
 import type { AiTextStream } from "../gateway/ai-gateway-stream.helper";
-import type { AccountSummaryInput, MeetingPrepInput, NlSearchInput } from "../dto/request.schemas";
+import type { AccountSummaryInput, NlSearchInput } from "../dto/request.schemas";
 
 const ACCOUNT_SUMMARY_SYSTEM =
   "You are an executive assistant preparing client briefing documents for an Indian investment firm. Generate concise, professional account summaries that help account managers and executives quickly understand the full picture of a client relationship. Be data-driven and specific.";
@@ -152,19 +152,6 @@ Please generate a comprehensive account summary with:
       charge: true,
       ...(signal !== undefined ? { signal } : {}),
     });
-  }
-
-  async meetingPrep(orgId: string, input: MeetingPrepInput, userId?: string) {
-    return this.meetingBrief.meetingPrep(orgId, input, userId);
-  }
-
-  streamMeetingPrep(
-    orgId: string,
-    input: MeetingPrepInput,
-    userId: string,
-    signal?: AbortSignal,
-  ): Promise<AiTextStream> {
-    return this.meetingBrief.streamMeetingPrep(orgId, input, userId, signal);
   }
 
   async nlSearch(orgId: string, input: NlSearchInput, userId?: string) {

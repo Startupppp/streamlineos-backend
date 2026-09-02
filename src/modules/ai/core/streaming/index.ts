@@ -30,5 +30,6 @@ export {
 export {
   respondWithAiTextStream,
   AI_TEXT_STREAM_DEADLINE_MS,
+  type AiTextStreamProduct,
   type AiTextStreamRouteOptions,
 } from "./ai-text-stream-route";

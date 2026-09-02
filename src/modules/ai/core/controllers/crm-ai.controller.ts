@@ -43,7 +43,6 @@ import {
   churnRiskSchema,
   enrichLeadSchema,
   generateEmailSchema,
-  meetingPrepSchema,
   nextActionSchema,
   nlSearchSchema,
   objectionHandlerSchema,
@@ -58,7 +57,6 @@ import {
   type ChurnRiskInput,
   type EnrichLeadInput,
   type GenerateEmailInput,
-  type MeetingPrepInput,
   type NextActionInput,
   type NlSearchInput,
   type ObjectionHandlerInput,
@@ -217,41 +215,6 @@ export class CrmAiController {
         route: "POST /ai/account-summary/stream",
       },
       async (signal) => this.brief.streamAccountSummary(u.orgId, body, u.userId, signal),
-    );
-  }
-
-  @Post("meeting-prep")
-  @Validate({ body: meetingPrepSchema })
-  async meetingPrep(
-    @Body() body: MeetingPrepInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.requireAiFlag(u.orgId, "aiLeadScoring");
-    await this.planLimits.assertFeature(u.orgId, "ai.next-action");
-    this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
-    return this.brief.meetingPrep(u.orgId, body);
-  }
-
-  @Post("meeting-prep/stream")
-  @Validate({ body: meetingPrepSchema })
-  async meetingPrepStream(
-    @Req() req: Request,
-    @Body() body: MeetingPrepInput,
-    @CurrentUser() u: CurrentUserContext,
-    @Res() res: Response,
-  ): Promise<void> {
-    await this.requireAiFlag(u.orgId, "aiLeadScoring");
-    await this.planLimits.assertFeature(u.orgId, "ai.next-action");
-    this.ensureLlm("AI features are not configured. Set OPENAI_API_KEY.");
-    return respondWithAiTextStream(
-      req,
-      res,
-      {
-        feature: "crm.meeting-prep",
-        orgId: u.orgId,
-        route: "POST /ai/meeting-prep/stream",
-      },
-      async (signal) => this.brief.streamMeetingPrep(u.orgId, body, u.userId, signal),
     );
   }
 

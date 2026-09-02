@@ -3,10 +3,13 @@ import {
   Controller,
   ForbiddenException,
   Post,
+  Req,
+  Res,
   ServiceUnavailableException,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -29,7 +32,9 @@ import {
   type MeetingSendConfirmBodyInput,
   type ProposeSendBodyInput,
 } from "../dto/meetings.schemas";
-import { AiRequestAbortInterceptor } from "../streaming";
+import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+
+const MEETING_SOURCES_HEADER = "x-ai-sources";
 
 @Controller("ai/meetings")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
@@ -65,6 +70,47 @@ export class MeetingsAiController {
       includeCrmContext: body.includeCrmContext,
       includeProjectContext: body.includeProjectContext,
     });
+  }
+
+  /**
+   * The streamed representation of the same prep. The buffered sibling above
+   * stays: its product is a Zod-validated record, and this release does not
+   * stream those. This route is the one the calendar panel opens, because an
+   * agenda is prose a client can append and a user should not watch a skeleton
+   * for it. One paid call, the shared helper, and the real sources on the
+   * headers so a stopped stream keeps its citations.
+   */
+  @Post("prep/stream")
+  @Validate({ body: meetingPrepBodySchema })
+  async prepStream(
+    @Req() req: Request,
+    @Body() body: MeetingPrepBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.requireAiFlag(u.orgId);
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "meetings.prep",
+        orgId: u.orgId,
+        route: "POST /ai/meetings/prep/stream",
+        sourcesHeader: MEETING_SOURCES_HEADER,
+      },
+      async (signal) =>
+        this.meetingsPrep.streamAgenda(
+          u.orgId,
+          u.userId,
+          body.eventId,
+          {
+            includeCrmContext: body.includeCrmContext,
+            includeProjectContext: body.includeProjectContext,
+          },
+          signal,
+        ),
+    );
   }
 
   @Post("follow-up")
