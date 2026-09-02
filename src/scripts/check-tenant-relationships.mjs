@@ -121,9 +121,30 @@ async function runCatalogMode() {
   return runQuery(postgres, cleanUrl);
 }
 
+// A freshly reset scratch database has no tenant tables, so it has no single-column
+// tenant FKs either, and this gate reports "zero actionable" at its most confident
+// exactly when it has measured nothing. Below this floor the verdict is refused.
+const MIN_TENANT_TABLES = 400;
+
 async function runQuery(postgres, url) {
   const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {}, connect_timeout: 10, idle_timeout: 15 });
   try {
+    const [{ tenant_tables }] = await sql`
+      SELECT count(*)::int AS tenant_tables
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind = 'r'
+        AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        AND EXISTS (
+          SELECT 1 FROM pg_attribute a
+          WHERE a.attrelid = c.oid
+            AND a.attname IN ('org_id', 'organization_id')
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+        )
+    `;
+    if (tenant_tables < MIN_TENANT_TABLES) return { vacuous: true, tenant_tables };
+
     const rows = await sql`
       WITH tenant AS (
         SELECT c.oid, c.relname, n.nspname
@@ -447,6 +468,17 @@ async function main() {
     } catch (e) {
       process.stderr.write(`[warn] pg_catalog connection failed: ${e.message}\n`);
     }
+  }
+
+  if (catalogResult?.vacuous) {
+    console.error(
+      `check-tenant-relationships: vacuity guard — scratch_boot_a has only ${catalogResult.tenant_tables} tenant table(s) (expected >= ${MIN_TENANT_TABLES}).`,
+    );
+    console.error(
+      `An unbootstrapped database has no tenant FKs to violate, so "zero actionable" here would prove nothing.`,
+    );
+    console.error(`Bootstrap it first, or point TENANT_RELATIONSHIP_DB_URL at a bootstrapped database.`);
+    process.exit(2);
   }
 
   if (catalogResult) {

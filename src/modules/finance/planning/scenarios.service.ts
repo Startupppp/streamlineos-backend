@@ -252,31 +252,30 @@ export class ScenariosService {
       .limit(1);
     const seededByMembershipId = seedActor?.id ?? null;
 
-    for (const scenario of toInsert) {
-      const shouldBeDefault =
-        !hasDefault && scenario.kind === "EXPECTED";
+    const willSetDefault = !hasDefault && toInsert.some((s) => s.kind === "EXPECTED");
 
-      if (shouldBeDefault) {
-        await this.db
-          .update(finCashFlowScenarios)
-          .set({ isDefault: false })
-          .where(
-            and(
-              eq(finCashFlowScenarios.orgId, orgId),
-              eq(finCashFlowScenarios.isDefault, true),
-            ),
-          );
-      }
+    if (willSetDefault) {
+      await this.db
+        .update(finCashFlowScenarios)
+        .set({ isDefault: false })
+        .where(
+          and(
+            eq(finCashFlowScenarios.orgId, orgId),
+            eq(finCashFlowScenarios.isDefault, true),
+          ),
+        );
+    }
 
-      await this.db.insert(finCashFlowScenarios).values({
+    await this.db.insert(finCashFlowScenarios).values(
+      toInsert.map((scenario) => ({
         orgId,
         name: scenario.name,
         kind: scenario.kind,
         assumptions: scenario.assumptions,
-        isDefault: shouldBeDefault,
+        isDefault: willSetDefault && scenario.kind === "EXPECTED",
         createdByMembershipId: seededByMembershipId,
-      });
-    }
+      })),
+    );
 
     this.audit.log({
       action: "scenario.seeded",

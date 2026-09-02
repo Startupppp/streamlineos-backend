@@ -23,42 +23,37 @@ import {
 type TemplateRow = typeof payrollTemplates.$inferSelect;
 
 export async function seedPayrollTemplates(db: Db): Promise<{ seeded: number; skipped: number }> {
-  let seeded = 0;
-  let skipped = 0;
+  const existingRows = await db
+    .select({ key: payrollTemplates.key })
+    .from(payrollTemplates)
+    .where(and(eq(payrollTemplates.isSystem, true), isNull(payrollTemplates.orgId)));
 
-  for (const seed of PAYROLL_TEMPLATE_SEEDS) {
-    const existing = await db.query.payrollTemplates.findFirst({
-      where: and(
-        eq(payrollTemplates.key, seed.key),
-        eq(payrollTemplates.isSystem, true),
-        isNull(payrollTemplates.orgId),
-      ),
-      columns: { id: true },
-    });
+  const existingKeys = new Set<string>(
+    existingRows.flatMap((r) => (r.key != null ? [r.key] : [])),
+  );
 
-    if (existing) {
-      skipped += 1;
-      continue;
-    }
+  const newSeeds = PAYROLL_TEMPLATE_SEEDS.filter((seed) => !existingKeys.has(seed.key));
 
-    await db.insert(payrollTemplates).values({
-      orgId: null,
-      key: seed.key,
-      name: seed.name,
-      description: seed.description,
-      bestFor: seed.bestFor,
-      complexity: seed.complexity,
-      badge: seed.badge ?? null,
-      category: seed.category,
-      isSystem: true,
-      isRecommended: seed.isRecommended,
-      defaultToggles: seed.defaultToggles,
-      defaultComponents: seed.defaultComponents,
-    });
-    seeded += 1;
+  if (newSeeds.length > 0) {
+    await db.insert(payrollTemplates).values(
+      newSeeds.map((seed) => ({
+        orgId: null,
+        key: seed.key,
+        name: seed.name,
+        description: seed.description,
+        bestFor: seed.bestFor,
+        complexity: seed.complexity,
+        badge: seed.badge ?? null,
+        category: seed.category,
+        isSystem: true,
+        isRecommended: seed.isRecommended,
+        defaultToggles: seed.defaultToggles,
+        defaultComponents: seed.defaultComponents,
+      })),
+    );
   }
 
-  return { seeded, skipped };
+  return { seeded: newSeeds.length, skipped: PAYROLL_TEMPLATE_SEEDS.length - newSeeds.length };
 }
 
 @Injectable()

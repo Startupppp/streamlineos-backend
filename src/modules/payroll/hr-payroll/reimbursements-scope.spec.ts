@@ -1,7 +1,5 @@
-import {
-  resolveReimbursementsScope,
-  REIMBURSEMENTS_PERMISSION,
-} from "./reimbursements-scope";
+import { resolveReimbursementsScope } from "./reimbursements-scope";
+import { HR_PAYROLL_LIST_PERMISSION } from "./hr-payroll-permissions";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
@@ -55,14 +53,14 @@ describe("resolveReimbursementsScope", () => {
     mockIsScopable.mockReturnValue(false);
     const access = makeAccess();
     const result = await resolveReimbursementsScope(access, makeUser());
-    expect(mockIsScopable).toHaveBeenCalledWith(REIMBURSEMENTS_PERMISSION);
+    expect(mockIsScopable).toHaveBeenCalledWith(HR_PAYROLL_LIST_PERMISSION);
     expect(result).toBe("all");
     expect(access.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
   it("returns all when scope map contains all for the permission", async () => {
     mockIsScopable.mockReturnValue(true);
-    const scopeMap = new Map<string, DataScope>([[REIMBURSEMENTS_PERMISSION, "all"]]);
+    const scopeMap = new Map<string, DataScope>([[HR_PAYROLL_LIST_PERMISSION, "all"]]);
     const access = makeAccess(scopeMap);
     const result = await resolveReimbursementsScope(access, makeUser());
     expect(result).toBe("all");
@@ -70,7 +68,7 @@ describe("resolveReimbursementsScope", () => {
 
   it("returns own when scope map contains own for the permission", async () => {
     mockIsScopable.mockReturnValue(true);
-    const scopeMap = new Map<string, DataScope>([[REIMBURSEMENTS_PERMISSION, "own"]]);
+    const scopeMap = new Map<string, DataScope>([[HR_PAYROLL_LIST_PERMISSION, "own"]]);
     const access = makeAccess(scopeMap);
     const result = await resolveReimbursementsScope(access, makeUser());
     expect(result).toBe("own");

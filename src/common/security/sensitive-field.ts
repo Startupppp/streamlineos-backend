@@ -4,7 +4,7 @@ import {
   isEnvelopeCiphertext,
   keyReferenceOf,
 } from "./envelope-encryption";
-import { decrypt as decryptLegacy } from "../../modules/hr/onboarding/core/crypto.helpers";
+import { decrypt as decryptLegacy } from "./legacy-crypto";
 
 const LEGACY_PREFIX = "enc:v1:";
 

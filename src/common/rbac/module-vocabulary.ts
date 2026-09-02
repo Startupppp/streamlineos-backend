@@ -1,7 +1,9 @@
 import {
   additionalNamespaces,
   administrableModuleIds,
+  delegableModuleIds,
   planGatedModuleIds,
+  type DelegableModuleId,
   type PlanGatedModuleId,
 } from "./module-registry";
 
@@ -12,6 +14,9 @@ export const MODULE_CATALOG: readonly ModuleKey[] = planGatedModuleIds();
 
 /** What the modules and per-person access screens list, core modules included. */
 export const ADMINISTRABLE_MODULES: readonly string[] = administrableModuleIds();
+
+/** Every module whose access ladder is delegable. */
+export const ACCESS_MANAGED_MODULES: readonly DelegableModuleId[] = delegableModuleIds();
 
 const PLAN_GATED_MODULES: ReadonlySet<string> = new Set<string>(MODULE_CATALOG);
 

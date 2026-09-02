@@ -2,7 +2,7 @@ import { readSensitive, sealSensitive } from "../security/sensitive-field";
 import {
   bankDetailsDecodeSchema,
   type BankDetails,
-} from "../../modules/hr/onboarding/core/crypto.helpers";
+} from "../security/legacy-crypto";
 
 export type { BankDetails };
 

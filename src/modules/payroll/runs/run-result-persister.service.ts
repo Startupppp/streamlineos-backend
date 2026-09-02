@@ -134,34 +134,33 @@ export class RunResultPersisterService {
         }
 
         if (workerOnlyRows.length > 0) {
-          for (const row of workerOnlyRows) {
-            const [inserted] = await tx
-              .insert(payrollRunEmployees)
-              .values(row)
-              .onConflictDoUpdate({
-                target: [payrollRunEmployees.runId, payrollRunEmployees.workerId],
-                set: {
-                  profileId: sql`excluded.profile_id`,
-                  workerType: sql`excluded.worker_type`,
-                  currency: sql`excluded.currency`,
-                  payoutCurrency: sql`excluded.payout_currency`,
-                  fxRate: sql`excluded.fx_rate`,
-                  netPayoutCurrency: sql`excluded.net_payout_currency`,
-                  scheduledDays: sql`excluded.scheduled_days`,
-                  paidDays: sql`excluded.paid_days`,
-                  lopDays: sql`excluded.lop_days`,
-                  overtimeHours: sql`excluded.overtime_hours`,
-                  gross: sql`excluded.gross`,
-                  totalDeductions: sql`excluded.total_deductions`,
-                  employerContributions: sql`excluded.employer_contributions`,
-                  net: sql`excluded.net`,
-                  inputsSnapshot: sql`excluded.inputs_snapshot`,
-                  calculationSnapshot: sql`excluded.calculation_snapshot`,
-                },
-              })
-              .returning({ id: payrollRunEmployees.id, workerId: payrollRunEmployees.workerId });
-            if (inserted?.workerId) empIdBySubject.set(`worker:${inserted.workerId}`, inserted.id);
-          }
+          const upserted = await tx
+            .insert(payrollRunEmployees)
+            .values(workerOnlyRows)
+            .onConflictDoUpdate({
+              target: [payrollRunEmployees.runId, payrollRunEmployees.workerId],
+              set: {
+                profileId: sql`excluded.profile_id`,
+                workerType: sql`excluded.worker_type`,
+                currency: sql`excluded.currency`,
+                payoutCurrency: sql`excluded.payout_currency`,
+                fxRate: sql`excluded.fx_rate`,
+                netPayoutCurrency: sql`excluded.net_payout_currency`,
+                scheduledDays: sql`excluded.scheduled_days`,
+                paidDays: sql`excluded.paid_days`,
+                lopDays: sql`excluded.lop_days`,
+                overtimeHours: sql`excluded.overtime_hours`,
+                gross: sql`excluded.gross`,
+                totalDeductions: sql`excluded.total_deductions`,
+                employerContributions: sql`excluded.employer_contributions`,
+                net: sql`excluded.net`,
+                inputsSnapshot: sql`excluded.inputs_snapshot`,
+                calculationSnapshot: sql`excluded.calculation_snapshot`,
+              },
+            })
+            .returning({ id: payrollRunEmployees.id, workerId: payrollRunEmployees.workerId });
+          for (const row of upserted)
+            if (row.workerId) empIdBySubject.set(`worker:${row.workerId}`, row.id);
         }
       }
 

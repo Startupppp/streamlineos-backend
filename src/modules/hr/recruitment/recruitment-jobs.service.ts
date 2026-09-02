@@ -187,21 +187,25 @@ export class RecruitmentJobsService {
     if (!source) throw new NotFoundException("Job posting not found.");
 
     const baseTitle = source.title.replace(/\s*\(copy(?:\s+\d+)?\)\s*$/i, "").trim();
-    let title = `${baseTitle} (copy)`;
-    let attempt = 1;
-    // Ensure we don't trip the title+location+type uniqueness check forever.
-    while (attempt <= 20) {
-      const clash = await this.db.query.jobPostings.findFirst({
-        where: and(
+    const normalizedBase = baseTitle.trim().toLowerCase();
+    const normalizedLocation = (source.location ?? "").trim().toLowerCase();
+    const existingCopies = await this.db
+      .select({ normTitle: sql<string>`lower(trim(${jobPostings.title}))` })
+      .from(jobPostings)
+      .where(
+        and(
           eq(jobPostings.orgId, orgId),
-          sql`lower(trim(${jobPostings.title})) = ${title.trim().toLowerCase()}`,
-          sql`lower(trim(coalesce(${jobPostings.location}, ''))) = ${(source.location ?? "").trim().toLowerCase()}`,
+          sql`lower(trim(${jobPostings.title})) LIKE ${normalizedBase + " (copy%"}`,
+          sql`lower(trim(coalesce(${jobPostings.location}, ''))) = ${normalizedLocation}`,
           eq(jobPostings.type, source.type ?? "FULL_TIME"),
         ),
-        columns: { id: true },
-      });
-      if (!clash) break;
-      attempt += 1;
+      )
+      .limit(25);
+    const clashingNorm = new Set(existingCopies.map((r) => r.normTitle));
+
+    let title = `${baseTitle} (copy)`;
+    for (let attempt = 2; attempt <= 21; attempt++) {
+      if (!clashingNorm.has(title.trim().toLowerCase())) break;
       title = `${baseTitle} (copy ${attempt})`;
     }
 

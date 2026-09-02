@@ -138,18 +138,24 @@ export class InvoicesPaymentService {
       }
 
       const paidNow = new Date();
-      for (const id of touchedIds) {
-        const [inv] = await tx.select({ status: invoices.status }).from(invoices)
-          .where(and(eq(invoices.id, id), eq(invoices.orgId, orgId))).limit(1);
-        if (inv?.status === "PAID") {
-          await tx.update(finReminderLog).set({ paidAt: paidNow })
-            .where(and(
-              eq(finReminderLog.orgId, orgId),
-              eq(finReminderLog.invoiceId, id),
-              eq(finReminderLog.status, "SENT"),
-              isNull(finReminderLog.paidAt),
-            ));
-        }
+      const touchedIdArr = [...touchedIds];
+      const invStatuses = await tx
+        .select({ id: invoices.id, status: invoices.status })
+        .from(invoices)
+        .where(and(inArray(invoices.id, touchedIdArr), eq(invoices.orgId, orgId)));
+
+      const paidInvoiceIds = invStatuses.filter((inv) => inv.status === "PAID").map((inv) => inv.id);
+
+      if (paidInvoiceIds.length > 0) {
+        await tx
+          .update(finReminderLog)
+          .set({ paidAt: paidNow })
+          .where(and(
+            eq(finReminderLog.orgId, orgId),
+            inArray(finReminderLog.invoiceId, paidInvoiceIds),
+            eq(finReminderLog.status, "SENT"),
+            isNull(finReminderLog.paidAt),
+          ));
       }
 
       await this.posting.postPaymentReceipt(

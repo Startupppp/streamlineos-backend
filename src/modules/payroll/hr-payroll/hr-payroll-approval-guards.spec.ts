@@ -1,7 +1,13 @@
+import { Reflector } from "@nestjs/core";
 import type { Db } from "../../../db/drizzle.module";
 import { LoansService } from "./loans.service";
-import { REIMBURSEMENTS_PERMISSION } from "./reimbursements-scope";
-import { HR_PAYROLL_LIST_PERMISSION } from "./hr-payroll-permissions";
+import { resolveReimbursementsScope } from "./reimbursements-scope";
+import { REQUIRE_PERMISSION } from "../../access/require-permission.decorator";
+import { HrPayrollReimbursementsController } from "./reimbursements.controller";
+import { isScopable } from "../../rbac/permissions";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ORG = "org-1";
 const LOAN_ID = 3;
@@ -62,7 +68,33 @@ describe("a salary loan cannot be decided by the employee who requested it", () 
 });
 
 describe("the reimbursements list scope comes from the key that gates the route", () => {
-  it("resolves scope from the same permission the list endpoint requires", () => {
-    expect(REIMBURSEMENTS_PERMISSION).toBe(HR_PAYROLL_LIST_PERMISSION);
+  const routeKey = new Reflector().get<string>(
+    REQUIRE_PERMISSION,
+    HrPayrollReimbursementsController.prototype.list,
+  );
+
+  it("the list handler declares a permission at all", () => {
+    expect(typeof routeKey).toBe("string");
+  });
+
+  it("resolves scope from the same permission the list endpoint requires", async () => {
+    const resolveUserPermissions = jest.fn().mockResolvedValue(new Map([[routeKey, "own"]]));
+    const user: CurrentUserContext = {
+      userId: "user-1",
+      orgId: "org-1",
+      role: "HR",
+      isOrgOwner: false,
+      sessionId: "session-1",
+      tokenScopes: null,
+      principal: humanSessionPrincipal(1, false),
+    };
+
+    const scope = await resolveReimbursementsScope(
+      { resolveUserPermissions } as unknown as AccessService,
+      user,
+    );
+
+    expect(isScopable(routeKey)).toBe(true);
+    expect(scope).toBe("own");
   });
 });

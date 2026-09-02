@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../../db/drizzle.types";
 import { payrollRunEmployees, salaryLoans } from "../../../db/schema";
@@ -41,17 +41,24 @@ export class LoanRecoveryService {
       .limit(1000);
 
     const now = new Date();
-    for (const loan of loans) {
-      const newPaidEmis = loan.paidEmis + 1;
-      const isRepaid = loan.totalEmis != null && newPaidEmis >= loan.totalEmis;
 
-      const loanUpdate: Partial<typeof salaryLoans.$inferInsert> = { paidEmis: newPaidEmis };
-      if (isRepaid) {
-        loanUpdate.status = "REPAID";
-        loanUpdate.closedAt = now;
-      }
+    const repaidIds = loans
+      .filter((l) => l.totalEmis != null && l.paidEmis + 1 >= l.totalEmis)
+      .map((l) => l.id);
+    const notRepaidIds = loans
+      .filter((l) => l.totalEmis == null || l.paidEmis + 1 < l.totalEmis)
+      .map((l) => l.id);
 
-      await tx.update(salaryLoans).set(loanUpdate).where(and(eq(salaryLoans.id, loan.id), eq(salaryLoans.orgId, orgId)));
-    }
+    if (notRepaidIds.length > 0)
+      await tx
+        .update(salaryLoans)
+        .set({ paidEmis: sql`${salaryLoans.paidEmis} + 1` })
+        .where(and(inArray(salaryLoans.id, notRepaidIds), eq(salaryLoans.orgId, orgId)));
+
+    if (repaidIds.length > 0)
+      await tx
+        .update(salaryLoans)
+        .set({ paidEmis: sql`${salaryLoans.paidEmis} + 1`, status: "REPAID", closedAt: now })
+        .where(and(inArray(salaryLoans.id, repaidIds), eq(salaryLoans.orgId, orgId)));
   }
 }

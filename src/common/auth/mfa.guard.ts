@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  Inject,
   Injectable,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
@@ -9,13 +10,13 @@ import type { Request } from "express";
 import { IS_PUBLIC } from "./public.decorator";
 import { ALLOW_WITHOUT_MFA } from "./allow-without-mfa.decorator";
 import type { CurrentUserContext } from "./backend-claims";
-import { MfaPolicyService } from "../../modules/access/mfa-policy.service";
+import { MFA_POLICY, type IMfaPolicy } from "./mfa-policy.token";
 
 @Injectable()
 export class MfaGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly mfaPolicy: MfaPolicyService,
+    @Inject(MFA_POLICY) private readonly mfaPolicy: IMfaPolicy,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

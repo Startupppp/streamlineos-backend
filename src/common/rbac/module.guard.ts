@@ -1,18 +1,18 @@
-import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Inject, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { REQUIRE_MODULE } from "./require-module.decorator";
 import { ModuleDisabledException } from "../http/api-exceptions";
 import { IS_PUBLIC } from "../auth/public.decorator";
 import type { CurrentUserContext } from "../auth/backend-claims";
-import { AccessService } from "../../modules/access/access.service";
+import { MODULE_GUARD_ACCESS, type IModuleGuardAccess } from "./module-guard.token";
 import { moduleIdFromStored } from "./module-registry";
 
 @Injectable()
 export class ModuleGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly accessSvc: AccessService,
+    @Inject(MODULE_GUARD_ACCESS) private readonly accessSvc: IModuleGuardAccess,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

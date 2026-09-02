@@ -29,17 +29,7 @@ const COMMON = join(SRC, "common");
 const MIN_FILES = 50;
 
 /** path → why it still exists and who must move the symbol. */
-const BASELINE = {
-  "src/common/auth/api-key.guard.ts": "EntitlementsService — relocate to common/access (owner: S01)",
-  "src/common/auth/mfa.guard.ts": "MfaPolicyService — relocate to common/auth (owner: S01)",
-  "src/common/auth/record-route-classification.ts": "REQUIRE_PERMISSION — relocate the metadata key to common/rbac (owner: S01)",
-  "src/common/auth/route-classifier.guard.ts": "REQUIRE_PERMISSION — relocate the metadata key to common/rbac (owner: S01)",
-  "src/common/cache/org-hierarchy-cache.service.ts": "DataScope type — relocate to common/rbac types (owner: S01)",
-  "src/common/hr/canonical-bank-details.ts": "crypto.helpers — relocate to common/security (owner: S04)",
-  "src/common/org/provision-org-modules.ts": "ACCESS_MANAGED_MODULES — relocate to common/rbac (owner: S01)",
-  "src/common/rbac/module.guard.ts": "AccessService — the guard belongs beside the resolver it calls (owner: S01)",
-  "src/common/security/sensitive-field.ts": "crypto.helpers — relocate to common/security (owner: S04)",
-};
+const BASELINE = {};
 
 /**
  * Matches every ES import/re-export form, including `import type`, side-effect
@@ -158,8 +148,8 @@ function runSelfTests() {
     ),
   );
   assert(
-    "BASELINE is non-empty and every entry carries an owner",
-    Object.values(BASELINE).length > 0 && Object.values(BASELINE).every((v) => /owner:/i.test(v)),
+    "BASELINE entries all carry an owner when present",
+    Object.values(BASELINE).every((v) => /owner:/i.test(v)),
   );
   assert(
     "BASELINE entries all name a common file",

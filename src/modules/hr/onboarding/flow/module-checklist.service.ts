@@ -159,32 +159,37 @@ export class ModuleChecklistService {
 
   /** Idempotently creates a checklist + seeded items for each module key. Safe to call repeatedly. */
   async ensureChecklistsForModules(orgId: string, moduleKeys: readonly string[]) {
-    for (const moduleKey of moduleKeys) {
-      const seeds = CHECKLIST_SEEDS[moduleKey];
-      if (!seeds) continue;
+    const seedableKeys = moduleKeys.filter((k) => Boolean(CHECKLIST_SEEDS[k]));
+    if (seedableKeys.length === 0) return;
 
-      const existing = await this.db.query.moduleSetupChecklists.findFirst({
-        where: and(eq(moduleSetupChecklists.orgId, orgId), eq(moduleSetupChecklists.moduleKey, moduleKey)),
-      });
-      if (existing) continue;
+    const existing = await this.db.query.moduleSetupChecklists.findMany({
+      where: and(eq(moduleSetupChecklists.orgId, orgId), inArray(moduleSetupChecklists.moduleKey, seedableKeys)),
+      columns: { moduleKey: true },
+    });
+    const existingKeys = new Set(existing.map((c) => c.moduleKey));
 
+    const missingKeys = seedableKeys.filter((k) => !existingKeys.has(k));
+    for (const moduleKey of missingKeys) {
+      const seeds = CHECKLIST_SEEDS[moduleKey]!;
       await this.db.transaction(async (tx) => {
         const [checklist] = await tx
           .insert(moduleSetupChecklists)
           .values({ orgId, moduleKey, status: "not_started", progress: 0 })
           .returning();
 
-        for (const [index, seed] of seeds.entries()) {
-          await tx.insert(moduleSetupChecklistItems).values({
-            orgId,
-            checklistId: checklist.id,
-            itemKey: seed.itemKey,
-            title: seed.title,
-            description: seed.description,
-            actionHref: seed.actionHref,
-            required: seed.required,
-            sortOrder: index,
-          });
+        if (checklist && seeds.length > 0) {
+          await tx.insert(moduleSetupChecklistItems).values(
+            seeds.map((seed, index) => ({
+              orgId,
+              checklistId: checklist.id,
+              itemKey: seed.itemKey,
+              title: seed.title,
+              description: seed.description,
+              actionHref: seed.actionHref,
+              required: seed.required,
+              sortOrder: index,
+            })),
+          );
         }
       });
     }

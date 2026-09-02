@@ -8,6 +8,9 @@ import { UserModuleAccessController } from "./user-module-access.controller";
 import { UserModuleAccessService } from "./user-module-access.service";
 import { BillingModule } from "../billing/core/billing.module";
 import { ModuleGuard } from "../../common/rbac/module.guard";
+import { MODULE_GUARD_ACCESS } from "../../common/rbac/module-guard.token";
+import { MODULE_ENTITLEMENTS } from "../../common/access/module-entitlements.token";
+import { MFA_POLICY } from "../../common/auth/mfa-policy.token";
 
 @Global()
 @Module({
@@ -20,6 +23,9 @@ import { ModuleGuard } from "../../common/rbac/module.guard";
     PermissionGuard,
     ModuleGuard,
     UserModuleAccessService,
+    { provide: MODULE_GUARD_ACCESS, useExisting: AccessService },
+    { provide: MODULE_ENTITLEMENTS, useExisting: EntitlementsService },
+    { provide: MFA_POLICY, useExisting: MfaPolicyService },
   ],
   exports: [
     AccessService,
@@ -28,6 +34,9 @@ import { ModuleGuard } from "../../common/rbac/module.guard";
     PermissionGuard,
     ModuleGuard,
     UserModuleAccessService,
+    MODULE_GUARD_ACCESS,
+    MODULE_ENTITLEMENTS,
+    MFA_POLICY,
   ],
 })
 export class AccessModule {}

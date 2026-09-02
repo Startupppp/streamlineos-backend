@@ -1,4 +1,6 @@
-export type DataScope = "all" | "team" | "own" | "none";
+import type { DataScope } from "../../common/rbac/data-scope";
+
+export type { DataScope };
 
 export interface VersionEntry {
   version: number;

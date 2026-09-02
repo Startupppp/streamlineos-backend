@@ -1,4 +1,4 @@
-import type { DataScope } from "../modules/access/access.types";
+import type { DataScope } from "../common/rbac/data-scope";
 
 declare global {
   namespace Express {

@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import {
@@ -139,6 +139,36 @@ export class BatchCreatorService {
       .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
     const baseSeq = seqRow?.count ?? 0;
 
+    const preFetchedBatchMap = new Map<string, typeof payrollBankBatches.$inferSelect>();
+    const preFetchedItemsMap = new Map<number, Array<typeof payrollBankBatchItems.$inferSelect>>();
+
+    if (idempotencyKey) {
+      const allSubKeys = [...groupMap.keys()].map((code) => `${idempotencyKey}-${code}`);
+      const preBatches = await this.db
+        .select()
+        .from(payrollBankBatches)
+        .where(and(eq(payrollBankBatches.orgId, orgId), inArray(payrollBankBatches.idempotencyKey, allSubKeys)));
+      for (const b of preBatches)
+        if (b.idempotencyKey) preFetchedBatchMap.set(b.idempotencyKey, b);
+
+      if (preBatches.length > 0) {
+        const batchIds = preBatches.map((b) => b.id);
+        const preItems = requirePayrollReadWithinCap(
+          await this.db
+            .select()
+            .from(payrollBankBatchItems)
+            .where(inArray(payrollBankBatchItems.batchId, batchIds))
+            .limit(PAYROLL_READ_CAP + 1),
+          "prefetch payout batch items",
+        );
+        for (const item of preItems) {
+          const arr = preFetchedItemsMap.get(item.batchId) ?? [];
+          arr.push(item);
+          preFetchedItemsMap.set(item.batchId, arr);
+        }
+      }
+    }
+
     const results: BatchCreateResult[] = [];
     let groupIdx = 0;
 
@@ -147,14 +177,9 @@ export class BatchCreatorService {
       const subKey = idempotencyKey ? `${idempotencyKey}-${currencyCode}` : undefined;
 
       if (subKey) {
-        const existingBatch = await this.db.query.payrollBankBatches.findFirst({
-          where: and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.idempotencyKey, subKey)),
-        });
+        const existingBatch = preFetchedBatchMap.get(subKey);
         if (existingBatch) {
-          const batchItems = requirePayrollReadWithinCap(await this.db.query.payrollBankBatchItems.findMany({
-            where: eq(payrollBankBatchItems.batchId, existingBatch.id),
-            limit: PAYROLL_READ_CAP + 1,
-          }), "replay payout batch items");
+          const batchItems = preFetchedItemsMap.get(existingBatch.id) ?? [];
           results.push({ batch: existingBatch, items: batchItems, fileUrl: null, currencyCode, replayed: true });
           groupIdx++;
           continue;
@@ -193,8 +218,9 @@ export class BatchCreatorService {
       const now = new Date();
 
       let newBatch: typeof payrollBankBatches.$inferSelect | undefined;
+      let newBatchItems: Array<typeof payrollBankBatchItems.$inferSelect> = [];
       try {
-        const [created] = await this.db.transaction(async (tx) => {
+        const txResult = await this.db.transaction(async (tx) => {
           const [batch] = await tx
             .insert(payrollBankBatches)
             .values({
@@ -214,7 +240,7 @@ export class BatchCreatorService {
 
           if (!batch) throw new BadRequestException("Failed to create batch");
 
-          await tx.insert(payrollBankBatchItems).values(
+          const items = await tx.insert(payrollBankBatchItems).values(
             itemsData.map((item) => ({
               orgId,
               batchId: batch.id,
@@ -226,7 +252,7 @@ export class BatchCreatorService {
               ifsc: item.ifsc,
               status: "PENDING" as const,
             })),
-          );
+          ).returning();
 
           await tx.insert(payrollRunEvents).values({
             orgId,
@@ -244,9 +270,10 @@ export class BatchCreatorService {
             },
           });
 
-          return [batch];
+          return { batch, items };
         });
-        newBatch = created;
+        newBatch = txResult.batch;
+        newBatchItems = txResult.items;
       } catch (err: unknown) {
         if (subKey && isDuplicateKeyError(err)) {
           const racedBatch = await this.db.query.payrollBankBatches.findFirst({
@@ -291,12 +318,7 @@ export class BatchCreatorService {
           this.logger.warn("createBatch: no ambient tenant context; CSV upload skipped for batch", { batchId, orgId });
       }
 
-      const batchItems = requirePayrollReadWithinCap(await this.db.query.payrollBankBatchItems.findMany({
-        where: eq(payrollBankBatchItems.batchId, newBatch.id),
-        limit: PAYROLL_READ_CAP + 1,
-      }), "load payout batch items");
-
-      results.push({ batch: newBatch, items: batchItems, fileUrl: null, currencyCode, replayed: false });
+      results.push({ batch: newBatch, items: newBatchItems, fileUrl: null, currencyCode, replayed: false });
       groupIdx++;
     }
 

@@ -189,6 +189,17 @@ export class InputsService {
       if (pulled) pulledInputs.push({ userId: row.userId, pulled });
     }
 
+    const uniqueUserIds = [...new Set(pulledInputs.map((p) => p.userId))];
+    const membershipRows = uniqueUserIds.length > 0
+      ? await this.db
+          .select({ userId: organizationMembers.userId, id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, uniqueUserIds)))
+      : [];
+    const memberIdByUserId = new Map<string, number>(
+      membershipRows.flatMap((r) => r.userId != null ? [[r.userId, r.id]] : []),
+    );
+
     await this.db.transaction(async (tx) => {
       await tx.delete(payrollInputs).where(inArray(payrollInputs.id, idsToDelete));
 
@@ -199,10 +210,7 @@ export class InputsService {
             orgId,
             runId,
             userId,
-            userMembershipId: (await tx.query.organizationMembers.findFirst({
-              where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
-              columns: { id: true },
-            }))?.id,
+            userMembershipId: memberIdByUserId.get(userId),
             source: pulled.source,
             scheduledDays: pulled.scheduledDays,
             paidDays: pulled.paidDays,

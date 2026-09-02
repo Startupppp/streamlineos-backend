@@ -16,7 +16,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { RateLimitService } from "../ratelimit/rate-limit.service";
 import type { ApiKeyContext } from "./api-key.decorator";
-import { EntitlementsService } from "../../modules/access/entitlements.service";
+import {
+  MODULE_ENTITLEMENTS,
+  type IModuleEntitlements,
+} from "../access/module-entitlements.token";
 
 const CRM_LEAD_INGEST_SCOPE = "leads:write";
 
@@ -25,7 +28,7 @@ export class ApiKeyGuard implements CanActivate {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly rateLimit: RateLimitService,
-    private readonly entitlements: EntitlementsService,
+    @Inject(MODULE_ENTITLEMENTS) private readonly entitlements: IModuleEntitlements,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

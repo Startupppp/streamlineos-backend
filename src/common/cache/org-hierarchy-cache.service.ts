@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { DataScope } from "../../modules/access/access.types";
+import type { DataScope } from "../rbac/data-scope";
 import { registerAfterCommit } from "../tenant";
 import { CACHE_TTL } from "./cache-keys";
 import { CacheService } from "./cache.service";

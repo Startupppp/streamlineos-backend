@@ -4,7 +4,7 @@ import type { INestApplication } from "@nestjs/common";
 import { AUTHORIZED_IN_SERVICE } from "./authorized-in-service.decorator";
 import { IS_PUBLIC } from "./public.decorator";
 import { IS_UNIVERSAL } from "./universal.decorator";
-import { REQUIRE_PERMISSION } from "../../modules/access/require-permission.decorator";
+import { REQUIRE_PERMISSION } from "../rbac/require-permission-key";
 import { DEPRECATION_KEY, type DeprecationMeta } from "../deprecation/deprecated.decorator";
 
 export type RouteExposure =
