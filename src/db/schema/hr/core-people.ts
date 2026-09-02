@@ -85,7 +85,6 @@ export const hrPeople = pgTable("hr_people", {
   uniqueIndex("uniq_hr_people_org_person_link")
     .on(table.orgId, table.organizationPersonId)
     .where(sql`${table.organizationPersonId} IS NOT NULL`),
-  index("idx_hr_people_org").on(table.orgId),
   index("idx_hr_people_org_live").on(table.orgId).where(sql`${table.deletedAt} IS NULL`),
   index("idx_hr_people_user").on(table.userId),
   index("idx_hr_people_updated_actor").on(table.orgId, table.updatedByMembershipId),
@@ -159,7 +158,6 @@ export const hrEmployments = pgTable("hr_employments", {
   uniqueIndex("uniq_hr_employments_org_engagement_link")
     .on(table.orgId, table.workerEngagementId)
     .where(sql`${table.workerEngagementId} IS NOT NULL`),
-  index("idx_hr_employments_org").on(table.orgId),
   index("idx_hr_employments_person").on(table.personId),
   index("idx_hr_employments_org_person").on(table.orgId, table.personId),
   index("idx_hr_employments_worker").on(table.orgId, table.workerId),
@@ -231,7 +229,6 @@ export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields",
   foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_employee_sensitive_fields_org_employment" }).onDelete("cascade"),
   unique("uniq_hr_employee_sensitive_fields_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_sensitive_employment").on(table.employmentId),
-  index("idx_hr_sensitive_org").on(table.orgId),
 ]);
 
 export const hrEmploymentHistory = pgTable("hr_employment_history", {
@@ -310,7 +307,7 @@ export const hrReportingLines = pgTable("hr_reporting_lines", {
   effectiveTo: date("effective_to")
     .notNull()
     .default(sql`'infinity'::date`),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_reporting_lines_org_employment" }).onDelete("cascade"),

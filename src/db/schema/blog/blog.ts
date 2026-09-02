@@ -46,7 +46,6 @@ export const blogCategories = pgTable(
     color: varchar("color", { length: 7 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [index("idx_blog_categories_slug").on(table.slug)],
 );
 
 export const blogPosts = pgTable(
@@ -76,7 +75,6 @@ export const blogPosts = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_blog_posts_status").on(table.status),
     index("idx_blog_posts_category").on(table.categoryId),
     index("idx_blog_posts_author").on(table.authorId),
     index("idx_blog_posts_status_published").on(table.status, table.publishedAt.desc()),

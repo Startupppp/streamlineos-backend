@@ -15,7 +15,6 @@ export const hiringFlows = pgTable("hiring_flows", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hiring_flows_org_id").on(table.orgId, table.id),
-  index("idx_hiring_flows_org").on(table.orgId),
   index("idx_hiring_flows_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hiring_flows_created_by_actor" }).onDelete("restrict"),
 ]);
@@ -32,7 +31,6 @@ export const scorecardTemplates = pgTable("scorecard_templates", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_scorecard_templates_org_id").on(table.orgId, table.id),
-  index("idx_scorecard_templates_org").on(table.orgId),
   index("idx_scorecard_templates_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_scorecard_templates_created_by_actor" }).onDelete("restrict"),
 ]);
@@ -98,7 +96,6 @@ export const jobPostings = pgTable("job_postings", {
   foreignKey({ columns: [table.orgId, table.hiringFlowId], foreignColumns: [hiringFlows.orgId, hiringFlows.id], name: "fk_job_postings_hiring_flow_id_org" }),
   foreignKey({ columns: [table.orgId, table.orgDepartmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_job_postings_org_department" }).onDelete("set null"),
   unique("uniq_job_postings_org_id").on(table.orgId, table.id),
-  index("idx_job_postings_org").on(table.orgId),
   index("idx_job_postings_status").on(table.status),
   index("idx_job_postings_org_status").on(table.orgId, table.status),
   index("idx_job_postings_org_posted_by_membership").on(table.orgId, table.postedByMembershipId),
@@ -120,7 +117,6 @@ export const candidateSources = pgTable("candidate_sources", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_candidate_sources_org_id").on(table.orgId, table.id),
-  index("idx_candidate_sources_org").on(table.orgId),
   uniqueIndex("uq_candidate_sources_org_platform").on(table.orgId, table.platform),
   index("idx_candidate_sources_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_candidate_sources_created_by_actor" }).onDelete("restrict"),

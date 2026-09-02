@@ -13,7 +13,6 @@ export const supportMessageMentions = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_support_message_mentions_message_membership").on(table.messageId, table.mentionedUserMembershipId),
-    index("idx_support_message_mentions_message").on(table.messageId),
     unique("uniq_support_message_mentions_org_id").on(table.orgId, table.id),
     index("idx_support_message_mentions_org_mentioned_actor").on(table.orgId, table.mentionedUserMembershipId),
     foreignKey({

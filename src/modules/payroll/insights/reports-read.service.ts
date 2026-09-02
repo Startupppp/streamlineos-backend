@@ -18,6 +18,7 @@ import {
   type RunRow,
 } from "./lib/report-builders";
 import { buildCursorPage } from "../../../common/pagination/cursor";
+import { roundDecimal, subtractDecimals, toDecimal } from "../../accounting/core/money.util";
 import {
   decodePayrollIdCursor,
   decodePayrollNullableTextCursor,
@@ -72,7 +73,7 @@ function prevMonth(month: string): string {
 }
 
 function deltaDec(a: string, b: string): string {
-  return (parseFloat(b) - parseFloat(a)).toFixed(2);
+  return roundDecimal(subtractDecimals(toDecimal(b), toDecimal(a)), 2);
 }
 
 export async function getDepartmentCost(

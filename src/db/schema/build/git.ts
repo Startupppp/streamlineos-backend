@@ -22,7 +22,6 @@ export const gitConnections = build.table("git_connections", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_git_connections_org_project" }).onDelete("set null"),
-  index("idx_git_connections_org").on(table.orgId),
   index("idx_git_connections_project").on(table.projectId),
   unique("uniq_git_connections_org_id").on(table.orgId, table.id),
 ]);
@@ -43,7 +42,6 @@ export const gitTicketLinks = build.table("git_ticket_links", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.connectionId], foreignColumns: [gitConnections.orgId, gitConnections.id], name: "fk_git_ticket_links_org_connection" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_git_ticket_links_org_ticket" }).onDelete("cascade"),
-  index("idx_git_ticket_links_ticket").on(table.ticketId),
   uniqueIndex("uniq_git_ticket_links_ref").on(table.ticketId, table.refType, table.externalId),
   unique("uniq_git_ticket_links_org_id").on(table.orgId, table.id),
 ]);

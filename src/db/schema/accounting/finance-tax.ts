@@ -43,7 +43,6 @@ export const accTaxPayments = pgTable("acc_tax_payments", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.journalEntryId], foreignColumns: [journalEntries.orgId, journalEntries.id], name: "fk_acc_tax_payments_journal_entry_id_org" }),
   unique("uniq_acc_tax_payments_org_id").on(table.orgId, table.id),
-  index("idx_acc_tax_payments_org_type").on(table.orgId, table.taxType),
   index("idx_acc_tax_payments_org_period").on(table.orgId, table.periodStart, table.periodEnd),
   index("idx_acc_tax_payments_org_paid_date_id").on(table.orgId, table.paidDate, table.id),
   index("uniq_acc_tax_payments_org_type_ref").on(table.orgId, table.taxType, table.reference),

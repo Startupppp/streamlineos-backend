@@ -31,9 +31,22 @@ import type {
   RecordVendorPaymentInput,
   UpdatePurchaseBillStatusInput,
 } from "./dto/accounting.schemas";
+import {
+  addDecimals,
+  allocateDecimal,
+  compareDecimals,
+  decimalFromNumber,
+  divideDecimals,
+  formatDecimal,
+  multiplyDecimals,
+  roundDecimal,
+  subtractDecimals,
+  sumDecimals,
+  toDecimal,
+} from "./money.util";
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+function amountOf(quantity: number, rate: number): string {
+  return multiplyDecimals(decimalFromNumber(quantity), decimalFromNumber(rate));
 }
 
 @Injectable()
@@ -75,14 +88,17 @@ export class AccountingPayablesService {
 
   async createPurchaseBill(orgId: string, userId: string, input: CreatePurchaseBillInput) {
     const itemsWithAmounts = input.items.map((it, idx) => {
-      const amount = round2(it.quantity * it.rate);
-      const tax = round2(amount * (it.gstRate / 100));
+      const amount = roundDecimal(amountOf(it.quantity, it.rate), 2);
+      const tax = roundDecimal(
+        divideDecimals(multiplyDecimals(amount, decimalFromNumber(it.gstRate)), "100"),
+        2,
+      );
       return { ...it, amount, tax, lineOrder: idx };
     });
-    const subtotal = round2(itemsWithAmounts.reduce((acc, it) => acc + it.amount, 0));
-    const taxPool = round2(itemsWithAmounts.reduce((acc, it) => acc + it.tax, 0));
-    const discount = round2(input.discount);
-    const total = round2(subtotal + taxPool - discount);
+    const subtotal = sumDecimals(itemsWithAmounts.map((it) => it.amount));
+    const taxPool = sumDecimals(itemsWithAmounts.map((it) => it.tax));
+    const discount = roundDecimal(decimalFromNumber(input.discount), 2);
+    const total = subtractDecimals(addDecimals(subtotal, taxPool), discount);
 
     const supplierStateCode =
       input.supplierGstin && input.supplierGstin.length >= 2
@@ -91,9 +107,10 @@ export class AccountingPayablesService {
     const placeOfSupplyStateCode = input.placeOfSupply ?? supplierStateCode;
 
     const intra = supplierStateCode === placeOfSupplyStateCode && supplierStateCode !== "";
-    const cgst = intra ? round2(taxPool / 2) : 0;
-    const sgst = intra ? round2(taxPool - cgst) : 0;
-    const igst = intra ? 0 : taxPool;
+    const halves = allocateDecimal(taxPool, ["1", "1"]);
+    const cgst = intra ? halves[0] : "0";
+    const sgst = intra ? halves[1] : "0";
+    const igst = intra ? "0" : taxPool;
 
     if (input.status === "POSTED") {
       await this.posting.seedChartOfAccountsForOrg(orgId);
@@ -117,13 +134,13 @@ export class AccountingPayablesService {
           billDate: input.billDate,
           dueDate: input.dueDate ?? null,
           status: input.status,
-          subtotal: subtotal.toFixed(4),
-          taxAmount: taxPool.toFixed(4),
-          cgstAmount: cgst.toFixed(4),
-          sgstAmount: sgst.toFixed(4),
-          igstAmount: igst.toFixed(4),
-          discount: discount.toFixed(4),
-          total: total.toFixed(4),
+          subtotal: formatDecimal(subtotal),
+          taxAmount: formatDecimal(taxPool),
+          cgstAmount: formatDecimal(cgst),
+          sgstAmount: formatDecimal(sgst),
+          igstAmount: formatDecimal(igst),
+          discount: formatDecimal(discount),
+          total: formatDecimal(total),
           currency: "INR",
           placeOfSupply: placeOfSupplyStateCode || null,
           vendorGstin: input.vendorGstin && input.vendorGstin.length > 0 ? input.vendorGstin : null,
@@ -143,10 +160,10 @@ export class AccountingPayablesService {
             billId: inserted.id,
             description: it.description,
             hsnSacCode: it.hsnSacCode ?? null,
-            quantity: it.quantity.toFixed(4),
-            rate: it.rate.toFixed(4),
-            gstRate: it.gstRate.toFixed(2),
-            amount: it.amount.toFixed(4),
+            quantity: decimalFromNumber(it.quantity),
+            rate: decimalFromNumber(it.rate),
+            gstRate: roundDecimal(decimalFromNumber(it.gstRate), 2),
+            amount: formatDecimal(it.amount),
             lineOrder: it.lineOrder,
           })),
         );
@@ -161,10 +178,10 @@ export class AccountingPayablesService {
             billDate: inserted.billDate,
             supplierStateCode,
             placeOfSupplyStateCode,
-            subtotal,
-            discount,
-            taxPool,
-            total,
+            subtotal: Number(subtotal),
+            discount: Number(discount),
+            taxPool: Number(taxPool),
+            total: Number(total),
             expenseAccountCode: input.expenseAccountCode,
             createdBy: userId,
           },
@@ -214,13 +231,14 @@ export class AccountingPayablesService {
           .set({ status: "POSTED", updatedAt: new Date() })
           .where(and(eq(purchaseBills.id, billId), eq(purchaseBills.orgId, orgId)));
 
-        const subtotal = Number(existing.subtotal ?? 0);
-        const discount = Number(existing.discount ?? 0);
-        const cgst = Number(existing.cgstAmount ?? 0);
-        const sgst = Number(existing.sgstAmount ?? 0);
-        const igst = Number(existing.igstAmount ?? 0);
-        const taxPool = Math.round((cgst + sgst + igst) * 100) / 100;
-        const total = Number(existing.total ?? 0);
+        const subtotal = toDecimal(existing.subtotal);
+        const discount = toDecimal(existing.discount);
+        const taxPool = sumDecimals([
+          existing.cgstAmount,
+          existing.sgstAmount,
+          existing.igstAmount,
+        ]);
+        const total = toDecimal(existing.total);
         const supplierStateCode =
           existing.supplierGstin && existing.supplierGstin.length >= 2
             ? existing.supplierGstin.slice(0, 2)
@@ -235,10 +253,10 @@ export class AccountingPayablesService {
             billDate: existing.billDate,
             supplierStateCode,
             placeOfSupplyStateCode,
-            subtotal,
-            discount,
-            taxPool,
-            total,
+            subtotal: Number(subtotal),
+            discount: Number(discount),
+            taxPool: Number(taxPool),
+            total: Number(total),
             expenseAccountCode: existing.expenseAccountCode ?? "5990",
             createdBy: userId,
           },
@@ -288,12 +306,12 @@ export class AccountingPayablesService {
     if (bill.status === "DRAFT") throw new ConflictException("Post the bill before recording a payment");
     if (bill.status === "CANCELLED") throw new ConflictException("Cannot record payment on a cancelled bill");
 
-    const total = Number(bill.total ?? 0);
-    const alreadyPaid = Number(bill.amountPaid ?? 0);
-    const remaining = total - alreadyPaid;
-    if (input.amount > remaining + 0.01) {
+    const total = toDecimal(bill.total);
+    const remaining = subtractDecimals(total, toDecimal(bill.amountPaid));
+    const requested = decimalFromNumber(input.amount);
+    if (compareDecimals(requested, remaining) > 0) {
       throw new BadRequestException(
-        `Payment amount ${input.amount.toFixed(2)} exceeds remaining ${remaining.toFixed(2)}`,
+        `Payment amount ${roundDecimal(requested, 2)} exceeds remaining ${roundDecimal(remaining, 2)}`,
       );
     }
 
@@ -305,7 +323,7 @@ export class AccountingPayablesService {
         .values({
           orgId,
           billId,
-          amount: input.amount.toFixed(2),
+          amount: roundDecimal(requested, 2),
           paymentDate: input.paymentDate,
           paymentMethod: input.paymentMethod,
           referenceNumber: input.referenceNumber ?? null,
@@ -319,12 +337,15 @@ export class AccountingPayablesService {
         .select({ paid: sql<string>`COALESCE(sum(${vendorPayments.amount}::numeric), 0)::text` })
         .from(vendorPayments)
         .where(and(eq(vendorPayments.billId, billId), eq(vendorPayments.orgId, orgId)));
-      const paidSum = Number(newPaidTotal[0]?.paid ?? 0);
-      const nextStatus = paidSum >= total - 0.005 ? "PAID" : "PARTIALLY_PAID";
+      const paidSum = toDecimal(newPaidTotal[0]?.paid);
+      const nextStatus =
+        compareDecimals(roundDecimal(paidSum, 2), roundDecimal(total, 2)) >= 0
+          ? "PAID"
+          : "PARTIALLY_PAID";
 
       await tx
         .update(purchaseBills)
-        .set({ amountPaid: paidSum.toFixed(4), status: nextStatus, updatedAt: new Date() })
+        .set({ amountPaid: formatDecimal(paidSum), status: nextStatus, updatedAt: new Date() })
         .where(and(eq(purchaseBills.id, billId), eq(purchaseBills.orgId, orgId)));
 
       await this.posting.postVendorPayment(
@@ -351,7 +372,7 @@ export class AccountingPayablesService {
       orgId,
       resourceType: "vendor_payment",
       resourceId: String(payment.id),
-      metadata: { billId, amount: input.amount.toFixed(2) },
+      metadata: { billId, amount: roundDecimal(requested, 2) },
       result: "SUCCESS",
     });
 
@@ -374,8 +395,8 @@ export class AccountingPayablesService {
 
     if (bill.currency === baseCurrency) return;
 
-    const bookedRate = Number(bill.exchangeRate ?? 1);
-    const baseAmountBooked = (allocatedAmount * bookedRate).toFixed(4);
+    const allocated = decimalFromNumber(allocatedAmount);
+    const baseAmountBooked = multiplyDecimals(allocated, toDecimal(bill.exchangeRate));
 
     try {
       const settledRate = await this.rateResolver.getRate(
@@ -384,7 +405,7 @@ export class AccountingPayablesService {
         baseCurrency,
         new Date(`${paymentDateIso}T00:00:00.000Z`),
       );
-      const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
+      const baseAmountSettled = multiplyDecimals(allocated, decimalFromNumber(settledRate));
 
       const user = systemActor("accounting.payables.fx-posting", orgId, userId);
 

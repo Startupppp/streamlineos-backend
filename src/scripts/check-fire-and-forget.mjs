@@ -40,6 +40,26 @@ const VOID_SAVE_POSITION_RE = /\bvoid\s+(?:this\.\w+\s*\.\s*savePosition|[\w.]+\
 const DISPATCH_SIGNAL_RE =
   /\b(?:eventKey|targetUserIds|NotificationDispatchService)\b/;
 
+// This gate's coverage is an enumerated list of method names, which means it
+// stops covering a surface the moment someone discards a promise from a method
+// nobody thought of here. It cannot be widened to every `void x.y(` without
+// turning red on ~50 deliberate call sites, so instead it REPORTS what it does
+// not cover: a stable "0 violations" over a shrinking covered surface is exactly
+// how check:ai-charge hid six paid embedding call sites.
+const COVERED_METHODS = ["emit", "savePosition"];
+const ANY_VOID_CALL_RE = /\bvoid\s+(?:this\.)?[\w.]+\.(\w+)\s*\(/g;
+
+export function uncoveredVoidCalls(source) {
+  const counts = new Map();
+  ANY_VOID_CALL_RE.lastIndex = 0;
+  for (const m of source.matchAll(ANY_VOID_CALL_RE)) {
+    const method = m[1];
+    if (COVERED_METHODS.includes(method)) continue;
+    counts.set(method, (counts.get(method) ?? 0) + 1);
+  }
+  return counts;
+}
+
 function collectServiceFiles(dir) {
   const files = [];
   let entries;
@@ -214,8 +234,26 @@ if (SELF_TEST) {
     process.exit(1);
   }
 
+  // Coverage is a name list. Assert that the gate can tell a shape it does NOT
+  // cover from one it does, so the blind spot is reportable rather than silent.
+  const uncoveredProbe = uncoveredVoidCalls(
+    "void this.notifications.send({ orgId });\nvoid this.dispatch.emit({ eventKey: 'x' });\nvoid this.cursor.savePosition(p);",
+  );
+  if (uncoveredProbe.get("send") !== 1) {
+    console.error("SELF-TEST FAILED: an uncovered fire-and-forget shape was not reported as uncovered");
+    process.exit(1);
+  }
+  if (uncoveredProbe.has("emit") || uncoveredProbe.has("savePosition")) {
+    console.error("SELF-TEST FAILED: a covered method was reported as uncovered");
+    process.exit(1);
+  }
+  if (COVERED_METHODS.length === 0) {
+    console.error("SELF-TEST FAILED: the covered-method list is empty — this gate would scan nothing");
+    process.exit(1);
+  }
+
   console.log(
-    `SELF-TEST PASSED: detected ${badViolations.length} violation(s) in bad emit fixture, 0 in good emit fixture; detected ${badCheckpointViolations.length} violation(s) in bad checkpoint fixture, 0 in good checkpoint fixture`,
+    `SELF-TEST PASSED: detected ${badViolations.length} violation(s) in bad emit fixture, 0 in good emit fixture; detected ${badCheckpointViolations.length} violation(s) in bad checkpoint fixture, 0 in good checkpoint fixture; uncovered-shape reporting bites`,
   );
   process.exit(0);
 }
@@ -227,15 +265,35 @@ if (files.length < 50) {
 }
 
 const allViolations = [];
+const uncovered = new Map();
 for (const file of files) {
   const violations = scanFile(file);
   for (const v of violations) {
     allViolations.push({ file: file.replace(/\\/g, "/"), ...v });
   }
+  let src;
+  try {
+    src = readFileSync(file, "utf8");
+  } catch {
+    src = "";
+  }
+  for (const [method, n] of uncoveredVoidCalls(src)) uncovered.set(method, (uncovered.get(method) ?? 0) + n);
+}
+
+const uncoveredTotal = [...uncovered.values()].reduce((a, b) => a + b, 0);
+console.log(`Covered methods: ${COVERED_METHODS.map((m) => `.${m}(`).join(" ")}`);
+if (uncoveredTotal > 0) {
+  console.log(
+    `COVERAGE NOTE — ${uncoveredTotal} discarded-promise call site(s) across ${uncovered.size} other method name(s) are OUTSIDE this gate. "0 violations" says nothing about them:`,
+  );
+  for (const [method, n] of [...uncovered].sort((a, b) => b[1] - a[1]))
+    console.log(`    .${method}()  ${n}`);
 }
 
 if (allViolations.length === 0) {
-  console.log(`check:fire-and-forget PASSED — scanned ${files.length} files, 0 violations`);
+  console.log(
+    `check:fire-and-forget PASSED — scanned ${files.length} files, 0 violations within its covered surface (${COVERED_METHODS.join(", ")})`,
+  );
   process.exit(0);
 } else {
   console.error(`check:fire-and-forget FAILED — ${allViolations.length} fire-and-forget emit violation(s):`);

@@ -14,7 +14,13 @@ import {
   updateMirroredContact,
 } from "../party/party-legacy-contacts";
 import type { ContactInsert } from "../party/party-legacy-writer";
-import { CONTACT_PARTY_COLUMNS, CONTACT_PARTY_JOIN, contactPartyScope } from "./contact-party-reader";
+import {
+  CONTACT_PARTY_COLUMNS,
+  CONTACT_PARTY_JOIN,
+  contactPartyScope,
+  contactPartyViewScope,
+} from "./contact-party-reader";
+import type { DataScope } from "../access/access.types";
 import { queryContacts, searchContacts, getOneContact } from "./contacts-query";
 import type {
   BulkImportContactsInput,
@@ -31,18 +37,20 @@ export class ContactsService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  list(orgId: string, filters: ListInput) {
-    const hash = `${filters.search ?? ""}:${filters.organizationId ?? ""}:${filters.limit ?? ""}:${filters.cursor ?? ""}`;
+  list(orgId: string, userId: string, scope: DataScope, filters: ListInput) {
+    // The scope and the actor are part of the key: caching a scoped result under
+    // an unscoped one serves one caller's rows to the next.
+    const hash = `${scope}:${scope === "all" ? "org" : userId}:${filters.search ?? ""}:${filters.organizationId ?? ""}:${filters.limit ?? ""}:${filters.cursor ?? ""}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.contactsListNamespace(orgId),
       hash,
-      () => queryContacts(this.db, orgId, filters),
+      () => queryContacts(this.db, orgId, userId, scope, filters),
       CACHE_TTL.SHORT,
     );
   }
 
-  search(orgId: string, query: string) {
-    return searchContacts(this.db, orgId, query);
+  search(orgId: string, userId: string, scope: DataScope, query: string) {
+    return searchContacts(this.db, orgId, userId, scope, query);
   }
 
   getContact(orgId: string, id: number) {
@@ -146,7 +154,11 @@ export class ContactsService {
     }
   }
 
-  async *exportCsvChunks(orgId: string): AsyncGenerator<string> {
+  async *exportCsvChunks(
+    orgId: string,
+    userId: string,
+    scope: DataScope,
+  ): AsyncGenerator<string> {
     const headers = [
       "id",
       "name",
@@ -178,6 +190,7 @@ export class ContactsService {
         .where(
           and(
             ...contactPartyScope(orgId),
+            contactPartyViewScope(orgId, userId, scope),
             gt(contactPartyMap.contactId, afterId),
           ),
         )

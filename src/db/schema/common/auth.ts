@@ -56,7 +56,6 @@ export const orgCustomDomains = pgTable("org_custom_domains", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_org_custom_domains_domain").on(table.domain),
-  index("idx_org_custom_domains_org").on(table.orgId),
 ]);
 
 export const orgHolidays = pgTable("org_holidays", {
@@ -78,7 +77,6 @@ export const organizationAllowedEmailDomains = pgTable("organization_allowed_ema
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_org_allowed_domains_org_domain").on(table.orgId, table.domain),
-  index("idx_org_allowed_domains_org").on(table.orgId),
 ]);
 
 export const organizationMembers = pgTable("organization_members", {
@@ -144,7 +142,6 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_users_email").on(table.email),
   index("idx_users_last_active_org").on(table.lastActiveOrgId),
 ]);
 
@@ -217,7 +214,6 @@ export const roles = pgTable("roles", {
 }, (table) => [
   uniqueIndex("uniq_role_slug_org").on(table.slug, table.orgId),
   unique("uniq_roles_org_id").on(table.orgId, table.id),
-  index("idx_roles_org_module").on(table.orgId, table.moduleKey),
   uniqueIndex("uniq_roles_org_module_name_ci").on(
     table.orgId,
     sql`COALESCE(${table.moduleKey}, '')`,

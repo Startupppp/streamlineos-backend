@@ -50,7 +50,6 @@ export const billingProfiles = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    index("billing_profiles_org_idx").on(t.orgId),
     unique("uniq_billing_profiles_org_id").on(t.orgId, t.id),
   ],
 );
@@ -96,7 +95,6 @@ export const appInstallations = pgTable(
   },
   (t) => [
     index("app_installations_org_app_idx").on(t.orgId, t.appId),
-    index("app_installations_org_idx").on(t.orgId),
     unique("uniq_app_installations_org_id").on(t.orgId, t.id),
   ],
 );
@@ -130,7 +128,6 @@ export const orgAiCredits = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    index("org_ai_credits_org_idx").on(t.orgId),
     unique("uniq_org_ai_credits_org_id").on(t.orgId, t.id),
   ],
 );
@@ -155,7 +152,6 @@ export const aiCreditTransactions = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
-    index("ai_credit_txns_org_idx").on(t.orgId),
     index("ai_credit_txns_org_created_idx").on(t.orgId, t.createdAt),
     uniqueIndex("uq_ai_credit_txns_plan_grant_ref").on(t.orgId, t.referenceId).where(sql`type = 'PLAN_GRANT' AND reference_id IS NOT NULL`),
     uniqueIndex("uq_ai_credit_txns_purchase_ref").on(t.orgId, t.referenceId).where(sql`type = 'PURCHASE' AND reference_id IS NOT NULL`),
@@ -209,8 +205,6 @@ export const affiliates = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    index("affiliates_code_idx").on(t.referralCode),
-    index("affiliates_user_idx").on(t.userId),
     index("affiliates_org_mbr_idx").on(t.orgId, t.userMembershipId),
     unique("uniq_affiliates_org_id").on(t.orgId, t.id),
     foreignKey({ columns: [t.orgId, t.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_affiliates_org_user_mbr" }).onDelete("set null"),
@@ -276,7 +270,6 @@ export const revenueEvents = pgTable(
   (t) => [
     index("revenue_events_type_idx").on(t.type),
     index("revenue_events_created_idx").on(t.createdAt),
-    index("revenue_events_org_idx").on(t.orgId),
     unique("uniq_revenue_events_org_id").on(t.orgId, t.id),
   ],
 );

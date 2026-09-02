@@ -21,7 +21,7 @@ export const documentTemplates = pgTable("document_templates", {
   version: integer("version").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true),
   isDefault: boolean("is_default").notNull().default(false),
-  createdBy: text("created_by").notNull().references(() => users.id),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -43,7 +43,7 @@ export const candidateDocuments = pgTable("candidate_documents", {
   signedAt: timestamp("signed_at"),
   declinedAt: timestamp("declined_at"),
   acceptanceDeadline: timestamp("acceptance_deadline"),
-  createdBy: text("created_by").notNull().references(() => users.id),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -64,7 +64,7 @@ export const documentTemplateVersions = pgTable("document_template_versions", {
   htmlContent: text("html_content").notNull(),
   variables: jsonb("variables").$type<string[]>().notNull().default([]),
   archivedAt: timestamp("archived_at").defaultNow().notNull(),
-  archivedBy: text("archived_by").notNull().references(() => users.id),
+  archivedBy: text("archived_by").notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [documentTemplates.orgId, documentTemplates.id], name: "fk_document_template_versions_template_id_org" }).onDelete("cascade"),
   unique("uniq_document_template_versions_org_id").on(table.orgId, table.id),
@@ -78,13 +78,12 @@ export const onboardingTemplates = pgTable("onboarding_templates", {
   departmentId: text("department_id"),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
-  createdBy: text("created_by").notNull().references(() => users.id),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_onboarding_templates_department_id_org" }).onDelete("set null"),
   unique("uniq_onboarding_templates_org_id").on(table.orgId, table.id),
-  index("idx_onboarding_templates_org").on(table.orgId),
 ]);
 
 export const onboardingTemplateSteps = pgTable("onboarding_template_steps", {
@@ -116,7 +115,7 @@ export const onboardingTasks = pgTable("onboarding_tasks", {
   dueDate: timestamp("due_date"),
   status: text("status").$type<OnboardingTaskStatus>().notNull().default("PENDING"),
   completedAt: timestamp("completed_at"),
-  completedBy: text("completed_by").references(() => users.id),
+  completedBy: text("completed_by"),
   dependsOnTaskIds: jsonb("depends_on_task_ids").$type<number[]>().default([]),
   rowVersion: integer("row_version").default(1).notNull(),
   createdByMembershipId: integer("created_by_membership_id"),
@@ -162,7 +161,6 @@ export const documentTypes = pgTable("document_types", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_document_types_org_id").on(table.orgId, table.id),
-  index("idx_doc_types_org").on(table.orgId),
   index("idx_doc_types_org_country").on(table.orgId, table.countryCode),
 ]);
 
@@ -173,8 +171,6 @@ export const documentTypeRoles = pgTable("document_type_roles", {
   roleSlug: text("role_slug").notNull(),
 }, (table) => [
   uniqueIndex("uniq_document_type_roles_type_slug").on(table.documentTypeId, table.roleSlug),
-  index("idx_document_type_roles_org").on(table.orgId),
-  index("idx_document_type_roles_type").on(table.documentTypeId),
   foreignKey({
     columns: [table.orgId, table.documentTypeId],
     foreignColumns: [documentTypes.orgId, documentTypes.id],
@@ -194,7 +190,7 @@ export const onboardingDocuments = pgTable("onboarding_documents", {
   mimeType: text("mime_type"),
   version: integer("version").default(1).notNull(),
   status: onboardingDocumentStatusEnum("status").default("SUBMITTED").notNull(),
-  reviewedBy: text("reviewed_by").references(() => users.id),
+  reviewedBy: text("reviewed_by"),
   reviewedAt: timestamp("reviewed_at"),
   remarks: text("remarks"),
   rowVersion: integer("row_version").default(1).notNull(),
@@ -211,7 +207,6 @@ export const onboardingDocuments = pgTable("onboarding_documents", {
     table.version,
   ),
   index("idx_onboarding_docs_user").on(table.userId),
-  index("idx_onboarding_docs_org").on(table.orgId),
   foreignKey({
     columns: [table.orgId, table.updatedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -226,7 +221,7 @@ export const documentAuditLogs = pgTable("document_audit_logs", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   onboardingDocumentId: integer("onboarding_document_id").notNull(),
   action: docAuditActionEnum("action").notNull(),
-  performedBy: text("performed_by").references(() => users.id).notNull(),
+  performedBy: text("performed_by").notNull(),
   remarks: text("remarks"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -245,19 +240,19 @@ export const resignations = pgTable("resignations", {
   noticePeriodDays: integer("notice_period_days").default(30).notNull(),
   status: resignationStatusEnum("status").default("SUBMITTED").notNull(),
   resignationLetterUrl: text("resignation_letter_url"),
-  approvedBy: text("approved_by").references(() => users.id),
+  approvedBy: text("approved_by"),
   approvedAt: timestamp("approved_at"),
-  hrReviewedBy: text("hr_reviewed_by").references(() => users.id),
+  hrReviewedBy: text("hr_reviewed_by"),
   hrReviewedAt: timestamp("hr_reviewed_at"),
   hrRemarks: text("hr_remarks"),
-  finalReviewedBy: text("final_reviewed_by").references(() => users.id),
+  finalReviewedBy: text("final_reviewed_by"),
   finalReviewedAt: timestamp("final_reviewed_at"),
   finalRemarks: text("final_remarks"),
   willingForExitInterview: boolean("willing_for_exit_interview").default(true).notNull(),
   companyFeedback: text("company_feedback"),
   exitInterviewNotes: text("exit_interview_notes"),
   exitInterviewDate: timestamp("exit_interview_date"),
-  exitInterviewConductedBy: text("exit_interview_conducted_by").references(() => users.id),
+  exitInterviewConductedBy: text("exit_interview_conducted_by"),
   feedback: jsonb("feedback").$type<{ question: string; answer: string }[]>(),
   userMembershipId: integer("user_membership_id"),
   rowVersion: integer("row_version").default(1).notNull(),
@@ -265,7 +260,6 @@ export const resignations = pgTable("resignations", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_resignations_org_id").on(table.orgId, table.id),
-  index("idx_resignations_org").on(table.orgId),
   index("idx_resignations_user").on(table.userId),
   index("idx_resignations_org_user_membership").on(table.orgId, table.userMembershipId),
   foreignKey({
@@ -309,8 +303,8 @@ export const terminations = pgTable("terminations", {
   supportingDocUrls: text("supporting_doc_urls").array().default([]),
   internalNotes: text("internal_notes"),
   status: terminationStatusEnum("status").default("DRAFT").notNull(),
-  initiatedBy: text("initiated_by").references(() => users.id),
-  finalReviewedBy: text("final_reviewed_by").references(() => users.id),
+  initiatedBy: text("initiated_by"),
+  finalReviewedBy: text("final_reviewed_by"),
   finalReviewedAt: timestamp("final_reviewed_at"),
   finalRemarks: text("final_remarks"),
   emailSentAt: timestamp("email_sent_at"),
@@ -320,7 +314,6 @@ export const terminations = pgTable("terminations", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_terminations_org_id").on(table.orgId, table.id),
-  index("idx_terminations_org").on(table.orgId),
   index("idx_terminations_user").on(table.userId),
   index("idx_terminations_status").on(table.status),
   check("chk_terminations_row_version", sql`${table.rowVersion} > 0`),
@@ -341,7 +334,6 @@ export const alumniProfiles = pgTable("alumni_profiles", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_alumni_profiles_org_id").on(table.orgId, table.id),
-  index("idx_alumni_org").on(table.orgId),
 ]);
 
 export const backgroundVerifications = pgTable("background_verifications", {

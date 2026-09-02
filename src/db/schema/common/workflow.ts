@@ -19,7 +19,6 @@ export const workflows = pgTable("workflows", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_workflows_org").on(table.orgId),
   index("idx_workflows_org_status").on(table.orgId, table.status),
   unique("uniq_workflows_org_id").on(table.orgId, table.id),
 ]);
@@ -34,7 +33,6 @@ export const workflowVersions = pgTable("workflow_versions", {
   publishedAt: timestamp("published_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_workflow_versions_workflow").on(table.workflowId),
   index("idx_workflow_versions_workflow_version").on(table.workflowId, table.version),
   index("idx_workflow_versions_org").on(table.orgId, table.workflowId),
   unique("uniq_workflow_versions_org_id").on(table.orgId, table.id),
@@ -60,7 +58,6 @@ export const workflowExecutions = pgTable("workflow_executions", {
   dlqReason: text("dlq_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_workflow_executions_org").on(table.orgId),
   index("idx_workflow_executions_org_status").on(table.orgId, table.status),
   index("idx_workflow_executions_workflow").on(table.workflowId),
   index("idx_workflow_executions_org_created").on(table.orgId, table.createdAt),
@@ -92,7 +89,6 @@ export const workflowExecutionSteps = pgTable("workflow_execution_steps", {
   durationMs: integer("duration_ms"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_workflow_execution_steps_execution").on(table.executionId),
   index("idx_workflow_execution_steps_execution_node").on(table.executionId, table.nodeId),
   unique("uniq_workflow_execution_steps_org_id").on(table.orgId, table.id),
   foreignKey({
@@ -181,7 +177,6 @@ export const workflowSecrets = pgTable("workflow_secrets", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_workflow_secrets_org").on(table.orgId),
   unique("uniq_workflow_secrets_org_id").on(table.orgId, table.id),
 ]);
 
@@ -195,7 +190,6 @@ export const workflowAuditLogs = pgTable("workflow_audit_logs", {
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_workflow_audit_logs_org").on(table.orgId),
   index("idx_workflow_audit_logs_workflow").on(table.workflowId),
   index("idx_workflow_audit_logs_org_created").on(table.orgId, table.createdAt),
   unique("uniq_workflow_audit_logs_org_id").on(table.orgId, table.id),

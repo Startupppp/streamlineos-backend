@@ -38,7 +38,6 @@ export const kbArticleTags = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.articleId, table.tagId] }),
-    index("idx_kb_article_tags_org_article").on(table.orgId, table.articleId),
     index("idx_kb_article_tags_org_tag").on(table.orgId, table.tagId),
     foreignKey({ columns: [table.orgId, table.articleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_article_tags_org_article" }).onDelete("cascade"),
     foreignKey({ columns: [table.orgId, table.tagId], foreignColumns: [kbTags.orgId, kbTags.id], name: "fk_kb_article_tags_org_tag" }).onDelete("cascade"),

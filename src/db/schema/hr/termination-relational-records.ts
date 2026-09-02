@@ -45,11 +45,6 @@ export const terminationReasons = pgTable(
       table.terminationId,
       table.sortOrder,
     ),
-    index("idx_termination_reasons_parent").on(
-      table.organizationId,
-      table.terminationId,
-      table.sortOrder,
-    ),
     foreignKey({
       name: "fk_termination_reasons_parent",
       columns: [table.organizationId, table.terminationId],
@@ -91,11 +86,6 @@ export const terminationSupportingDocuments = pgTable(
       table.legacyUrl,
     ),
     unique("uniq_termination_supporting_documents_order").on(
-      table.organizationId,
-      table.terminationId,
-      table.sortOrder,
-    ),
-    index("idx_termination_supporting_documents_parent").on(
       table.organizationId,
       table.terminationId,
       table.sortOrder,

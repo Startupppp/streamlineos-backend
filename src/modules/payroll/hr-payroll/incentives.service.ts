@@ -10,6 +10,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
+import { divideDecimals, roundDecimal, toDecimal } from "../../accounting/core/money.util";
 import type {
   ApproveIncentiveInput,
   IncentivesQueryInput,
@@ -118,16 +119,16 @@ export class IncentivesService {
       .from(incentives)
       .where(eq(incentives.orgId, orgId));
 
-    const totalRevenue = Number(stats?.totalRevenue ?? 0);
+    const totalRevenue = toDecimal(stats?.totalRevenue);
     const approved = Number(stats?.approvedCount ?? 0);
     const pending = Number(stats?.pendingCount ?? 0);
-    const thisMonth = Number(stats?.thisMonth ?? 0);
+    const thisMonth = toDecimal(stats?.thisMonth);
 
     return {
-      thisMonth: thisMonth.toFixed(2),
-      totalRevenue: totalRevenue.toFixed(2),
+      thisMonth: roundDecimal(thisMonth, 2),
+      totalRevenue: roundDecimal(totalRevenue, 2),
       avgPerConversion:
-        approved > 0 ? (totalRevenue / approved).toFixed(2) : "0.00",
+        approved > 0 ? roundDecimal(divideDecimals(totalRevenue, String(approved)), 2) : "0.00",
       pending,
       approved,
     };

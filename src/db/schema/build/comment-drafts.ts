@@ -14,7 +14,6 @@ export const commentDrafts = build.table("comment_drafts", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_comment_drafts_org_ticket" }).onDelete("cascade"),
   uniqueIndex("uniq_comment_drafts_owner_ticket").on(table.orgId, table.membershipId, table.ticketId),
-  index("idx_comment_drafts_org_member_membership").on(table.orgId, table.membershipId),
   index("idx_comment_drafts_ticket").on(table.ticketId),
   unique("uniq_comment_drafts_org_id").on(table.orgId, table.id),
   foreignKey({

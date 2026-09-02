@@ -1,5 +1,7 @@
 import { eq, isNull, sql, type SQL } from "drizzle-orm";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 
 /**
  * Where this module's reads get their contacts.
@@ -97,4 +99,20 @@ export function contactPartyScope(orgId: string): SQL[] {
 /** One contact, by the numeric id everything outside Party still holds. */
 export function contactIdIs(contactId: number): SQL {
   return eq(contactPartyMap.contactId, contactId);
+}
+
+/**
+ * The caller's DataScope for a contact read.
+ *
+ * `own` is the party's owner, the same column `pushLeadPartyViewScope` and
+ * `clientPartyViewScope` bind, so a rep narrowed to their own book sees the
+ * same set through the list, the search and the export. Applied on all three,
+ * because a scope one read honours and its export ignores is not a scope.
+ */
+export function contactPartyViewScope(
+  orgId: string,
+  userId: string,
+  scope: DataScope,
+): SQL {
+  return applyScope(scope, orgId, userId, { ownerColumn: businessParties.ownerUserId });
 }

@@ -44,14 +44,14 @@ export class ProjectsTicketsDetailService {
         sprint: {
           columns: { id: true, name: true },
         },
-        assignee: { with: { user: { with: { user: { columns: USER_COLS } } } } },
+        assignee: { with: { user: { columns: USER_COLS } } },
         reporter: { columns: USER_COLS },
         assignees: {
           with: { user: { with: { user: { columns: USER_COLS } } } },
         },
         comments: {
           where: isNull(ticketComments.deletedAt),
-          with: { user: { with: { user: { columns: USER_COLS } } } },
+          with: { user: { columns: USER_COLS } },
           orderBy: [desc(ticketComments.createdAt)],
           limit: 50,
         },
@@ -108,14 +108,14 @@ export class ProjectsTicketsDetailService {
         sprint: {
           columns: { id: true, name: true },
         },
-        assignee: { with: { user: { with: { user: { columns: USER_COLS } } } } },
+        assignee: { with: { user: { columns: USER_COLS } } },
         reporter: { columns: USER_COLS },
         assignees: {
           with: { user: { with: { user: { columns: USER_COLS } } } },
         },
         comments: {
           where: isNull(ticketComments.deletedAt),
-          with: { user: { with: { user: { columns: USER_COLS } } } },
+          with: { user: { columns: USER_COLS } },
           orderBy: [desc(ticketComments.createdAt)],
           limit: 50,
         },

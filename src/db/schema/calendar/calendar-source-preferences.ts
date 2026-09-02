@@ -35,7 +35,6 @@ export const calendarSourcePreferences = pgTable(
       table.membershipId,
       table.sourceKey,
     ),
-    index("idx_cal_src_pref_org_membership").on(table.orgId, table.membershipId),
     foreignKey({
       columns: [table.orgId, table.membershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],

@@ -44,7 +44,6 @@ export interface UploadJobResult {
   quarantineId: string;
   status: "pending_scan";
   key: string;
-  url: string;
   mimeType: string;
   size: number;
   sha256: string;

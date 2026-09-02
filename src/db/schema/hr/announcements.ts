@@ -46,7 +46,6 @@ export const announcementReads = pgTable("announcement_reads", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.announcementId], foreignColumns: [announcements.orgId, announcements.id], name: "fk_announcement_reads_announcement_id_org" }).onDelete("cascade"),
   uniqueIndex("idx_announcement_reads_unique").on(table.announcementId, table.userId),
-  index("idx_announcement_reads_announcement").on(table.announcementId),
   index("idx_announcement_reads_user").on(table.userId),
   index("idx_announcement_reads_org_user").on(table.orgId, table.userId),
 ]);

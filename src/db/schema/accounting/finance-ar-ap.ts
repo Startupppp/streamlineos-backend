@@ -16,7 +16,7 @@ export const creditNotes = pgTable("credit_notes", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   creditNoteNumber: text("credit_note_number").notNull(),
   clientId: integer("client_id").references(() => clients.id),
-  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  invoiceId: integer("invoice_id"),
   status: finCreditNoteStatusEnum("status").default("DRAFT").notNull(),
   reason: text("reason"),
   subtotal: decimal("subtotal", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -35,6 +35,7 @@ export const creditNotes = pgTable("credit_notes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.invoiceId], foreignColumns: [invoices.orgId, invoices.id], name: "fk_credit_notes_invoice_id_org" }).onDelete("set null"),
   unique("uniq_credit_notes_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_credit_notes_org_number").on(table.orgId, table.creditNoteNumber),
   index("idx_credit_notes_org_status").on(table.orgId, table.status),
@@ -45,7 +46,7 @@ export const creditNotes = pgTable("credit_notes", {
 export const creditNoteItems = pgTable("credit_note_items", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  creditNoteId: integer("credit_note_id").references(() => creditNotes.id, { onDelete: "cascade" }).notNull(),
+  creditNoteId: integer("credit_note_id").notNull(),
   description: text("description").notNull(),
   hsnSacCode: text("hsn_sac_code"),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
@@ -54,6 +55,7 @@ export const creditNoteItems = pgTable("credit_note_items", {
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   lineOrder: integer("line_order").notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.creditNoteId], foreignColumns: [creditNotes.orgId, creditNotes.id], name: "fk_credit_note_items_credit_note_id_org" }).onDelete("cascade"),
   index("idx_credit_note_items_org_cn").on(table.orgId, table.creditNoteId),
 ]);
 
@@ -69,7 +71,6 @@ export const finPaymentAllocations = pgTable("fin_payment_allocations", {
   foreignKey({ columns: [table.orgId, table.paymentId], foreignColumns: [payments.orgId, payments.id], name: "fk_fin_payment_allocations_payment_id_org" }).onDelete("cascade"),
   unique("uniq_fin_payment_allocations_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_payment_allocations_pay_inv").on(table.paymentId, table.invoiceId),
-  index("idx_fin_payment_allocations_org").on(table.orgId),
   index("idx_fin_payment_allocations_invoice").on(table.invoiceId),
 ]);
 
@@ -78,7 +79,7 @@ export const vendorCredits = pgTable("vendor_credits", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   vendorCreditNumber: text("vendor_credit_number").notNull(),
   vendorId: integer("vendor_id").references(() => clients.id),
-  billId: integer("bill_id").references(() => purchaseBills.id, { onDelete: "set null" }),
+  billId: integer("bill_id"),
   status: finCreditNoteStatusEnum("status").default("DRAFT").notNull(),
   reason: text("reason"),
   subtotal: decimal("subtotal", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -91,6 +92,7 @@ export const vendorCredits = pgTable("vendor_credits", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.billId], foreignColumns: [purchaseBills.orgId, purchaseBills.id], name: "fk_vendor_credits_bill_id_org" }).onDelete("set null"),
   unique("uniq_vendor_credits_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_vendor_credits_org_number").on(table.orgId, table.vendorCreditNumber),
   index("idx_vendor_credits_org_status").on(table.orgId, table.status),
@@ -100,7 +102,7 @@ export const vendorCredits = pgTable("vendor_credits", {
 export const vendorCreditItems = pgTable("vendor_credit_items", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  vendorCreditId: integer("vendor_credit_id").references(() => vendorCredits.id, { onDelete: "cascade" }).notNull(),
+  vendorCreditId: integer("vendor_credit_id").notNull(),
   description: text("description").notNull(),
   hsnSacCode: text("hsn_sac_code"),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
@@ -109,6 +111,7 @@ export const vendorCreditItems = pgTable("vendor_credit_items", {
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   lineOrder: integer("line_order").notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.vendorCreditId], foreignColumns: [vendorCredits.orgId, vendorCredits.id], name: "fk_vendor_credit_items_vendor_credit_id_org" }).onDelete("cascade"),
   index("idx_vendor_credit_items_org_vc").on(table.orgId, table.vendorCreditId),
 ]);
 
@@ -124,7 +127,6 @@ export const finVendorPaymentAllocations = pgTable("fin_vendor_payment_allocatio
   foreignKey({ columns: [table.orgId, table.vendorPaymentId], foreignColumns: [vendorPayments.orgId, vendorPayments.id], name: "fk_fin_vendor_payment_allocations_vendor_payment_id_org" }).onDelete("cascade"),
   unique("uniq_fin_vendor_pay_alloc_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_vendor_pay_alloc_pay_bill").on(table.vendorPaymentId, table.billId),
-  index("idx_fin_vendor_payment_allocations_org").on(table.orgId),
   index("idx_fin_vendor_payment_allocations_bill").on(table.billId),
 ]);
 
@@ -145,7 +147,6 @@ export const finRecurringInvoiceTemplates = pgTable("fin_recurring_invoice_templ
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_fin_recur_inv_tmpls_org_id").on(table.orgId, table.id),
-  index("idx_fin_recurring_invoice_templates_org").on(table.orgId),
 ]);
 
 export const finRecurringBillTemplates = pgTable("fin_recurring_bill_templates", {
@@ -164,7 +165,6 @@ export const finRecurringBillTemplates = pgTable("fin_recurring_bill_templates",
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_fin_recur_bill_tmpls_org_id").on(table.orgId, table.id),
-  index("idx_fin_recurring_bill_templates_org").on(table.orgId),
 ]);
 
 export const finReminderPolicies = pgTable("fin_reminder_policies", {
@@ -180,7 +180,6 @@ export const finReminderPolicies = pgTable("fin_reminder_policies", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_fin_reminder_policies_org_id").on(table.orgId, table.id),
-  index("idx_fin_reminder_policies_org").on(table.orgId),
 ]);
 
 export const finReminderLog = pgTable("fin_reminder_log", {
@@ -198,7 +197,6 @@ export const finReminderLog = pgTable("fin_reminder_log", {
   foreignKey({ columns: [table.orgId, table.invoiceId], foreignColumns: [invoices.orgId, invoices.id], name: "fk_fin_reminder_log_invoice_id_org" }).onDelete("cascade"),
   unique("uniq_fin_reminder_log_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_reminder_log_org_inv_offset").on(table.orgId, table.invoiceId, table.offsetDays),
-  index("idx_fin_reminder_log_org_invoice").on(table.orgId, table.invoiceId),
   index("idx_fin_reminder_log_org_sent_id").on(table.orgId, table.sentAt, table.id),
 ]);
 

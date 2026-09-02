@@ -53,7 +53,6 @@ export const hrMoodCheckins = pgTable(
     unique("uniq_hr_mood_checkins_org_id").on(t.orgId, t.id),
     uniqueIndex("uniq_mood_org_user_date").on(t.orgId, t.userId, t.date),
     index("idx_mood_checkins_org_date").on(t.orgId, t.date),
-    index("idx_mood_checkins_org_user_membership").on(t.orgId, t.userMembershipId),
     uniqueIndex("uniq_mood_org_membership_date").on(t.orgId, t.userMembershipId, t.date),
     foreignKey({ columns: [t.orgId, t.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_mood_checkins_user_actor" }).onDelete("restrict"),
   ],
@@ -75,7 +74,6 @@ export const hrBadges = pgTable(
   (t) => [
     unique("uniq_hr_badges_org_id").on(t.orgId, t.id),
     uniqueIndex("uniq_badge_org_name").on(t.orgId, t.name),
-    index("idx_badges_org").on(t.orgId),
   ],
 );
 
@@ -162,7 +160,6 @@ export const hrPollVotes = pgTable(
   (t) => [
   foreignKey({ columns: [t.orgId, t.pollId], foreignColumns: [hrPolls.orgId, hrPolls.id], name: "fk_hr_poll_votes_org_poll" }).onDelete("cascade"),
     uniqueIndex("uniq_poll_vote_poll_user").on(t.pollId, t.userId),
-    index("idx_poll_votes_poll").on(t.pollId),
     index("idx_poll_votes_org_poll_user").on(t.orgId, t.pollId, t.userId),
   ],
 );
@@ -187,7 +184,6 @@ export const hrCommunities = pgTable(
   (t) => [
     unique("uniq_hr_communities_org_id").on(t.orgId, t.id),
     uniqueIndex("uniq_community_org_name").on(t.orgId, t.name),
-    index("idx_communities_org").on(t.orgId),
     index("idx_communities_org_created_by_membership").on(t.orgId, t.createdByMembershipId),
     foreignKey({ columns: [t.orgId, t.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_communities_created_by_actor" }).onDelete("restrict"),
   ],
@@ -209,7 +205,6 @@ export const hrCommunityMembers = pgTable(
   (t) => [
   foreignKey({ columns: [t.orgId, t.communityId], foreignColumns: [hrCommunities.orgId, hrCommunities.id], name: "fk_hr_community_members_org_community" }).onDelete("cascade"),
     uniqueIndex("uniq_community_member").on(t.communityId, t.userId),
-    index("idx_community_members_community").on(t.communityId),
     index("idx_community_members_user").on(t.userId),
     index("idx_community_members_org_community_user").on(t.orgId, t.communityId, t.userId),
   ],

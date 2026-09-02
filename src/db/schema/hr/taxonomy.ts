@@ -24,7 +24,6 @@ export const hrPositionStatuses = pgTable(
   (table) => [
     unique("uniq_hr_position_statuses_org_id").on(table.orgId, table.id),
     unique("uniq_hr_position_statuses_org_name").on(table.orgId, table.name),
-    index("idx_hr_position_statuses_org").on(table.orgId),
   ],
 );
 

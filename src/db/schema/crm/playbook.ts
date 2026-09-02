@@ -14,7 +14,6 @@ export const playbookEntries = pgTable("playbook_entries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_playbook_entries_org").on(table.orgId),
   unique("uniq_playbook_entries_org_id").on(table.orgId, table.id),
 ]);
 

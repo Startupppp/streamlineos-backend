@@ -14,7 +14,6 @@ export const biometricDevices = pgTable("biometric_devices", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_biometric_devices_org_id").on(table.orgId, table.id),
-  index("idx_biometric_devices_org").on(table.orgId),
 ]);
 
 export const biometricLogs = pgTable("biometric_logs", {

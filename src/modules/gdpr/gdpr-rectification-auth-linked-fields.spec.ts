@@ -47,17 +47,18 @@ function harness() {
   }));
 
   function selectRows(value: unknown[]) {
-    return {
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue(value),
-          then: (
-            resolve: (v: unknown) => unknown,
-            reject?: (r: unknown) => unknown,
-          ) => Promise.resolve(value).then(resolve, reject),
-        }),
-      }),
+    const terminal = {
+      limit: jest.fn().mockResolvedValue(value),
+      then: (
+        resolve: (v: unknown) => unknown,
+        reject?: (r: unknown) => unknown,
+      ) => Promise.resolve(value).then(resolve, reject),
     };
+    const afterFrom: Record<string, unknown> = {
+      where: jest.fn().mockReturnValue(terminal),
+    };
+    afterFrom["innerJoin"] = jest.fn().mockReturnValue(afterFrom);
+    return { from: jest.fn().mockReturnValue(afterFrom) };
   }
 
   let selectCount = 0;

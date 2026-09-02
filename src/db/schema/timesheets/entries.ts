@@ -74,7 +74,6 @@ export const timesheets = pgTable("timesheets", {
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_timesheets_user_membership",
   }).onDelete("set null"),
-  index("idx_timesheets_org_status").on(table.orgId, table.status),
   index("idx_timesheets_org_payroll").on(table.orgId, table.payrollStatus, table.date),
   index("idx_timesheets_org_project_date").on(table.orgId, table.projectId, table.date),
   index("idx_timesheets_org_invoicing").on(table.orgId, table.invoicingStatus),

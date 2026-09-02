@@ -49,7 +49,6 @@ export const projectApprovals = build.table("project_approvals", {
   index("idx_project_approvals_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   index("idx_project_approvals_approver_status").on(t.orgId, t.approverMembershipId, t.status),
   index("idx_project_approvals_entity").on(t.entityType, t.entityId),
-  index("idx_project_approvals_org_approver_membership").on(t.orgId, t.approverMembershipId),
   unique("uniq_project_approvals_org_id").on(t.orgId, t.id),
   foreignKey({
     columns: [t.orgId, t.approverMembershipId],

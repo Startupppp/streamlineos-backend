@@ -39,7 +39,6 @@ export const auditLogs = pgTable(
       sql`(${table.orgId} IS NULL) = ${table.isPlatformEvent}`,
     ),
     index("idx_audit_logs_user_id").on(table.userId),
-    index("idx_audit_logs_org_id").on(table.orgId),
     index("idx_audit_logs_org_actor_membership").on(table.orgId, table.actorMembershipId),
     foreignKey({
       columns: [table.orgId, table.actorMembershipId],

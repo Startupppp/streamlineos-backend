@@ -156,6 +156,7 @@ export class HrSettingsHubService {
           eq(hrWorkflowDefinitions.orgId, orgId),
           eq(hrWorkflowDefinitions.name, root.name),
           eq(hrWorkflowDefinitions.objectType, root.objectType),
+          isNull(hrWorkflowDefinitions.deletedAt),
         ),
       )
       .orderBy(desc(hrWorkflowDefinitions.version))

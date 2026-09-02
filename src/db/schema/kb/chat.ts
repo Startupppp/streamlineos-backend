@@ -23,7 +23,6 @@ export const kbChatConversations = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    index("idx_kb_chat_conversations_org_mbr").on(table.orgId, table.userMembershipId),
     unique("uniq_kb_chat_conversations_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_chat_conv_org_user_mbr" }).onDelete("cascade"),
   ],

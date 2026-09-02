@@ -49,7 +49,6 @@ export const surveyVersions = pgTable("survey_versions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_versions_survey_id_org" }).onDelete("cascade"),
-  index("idx_survey_versions_survey").on(table.surveyId),
   unique("uq_survey_versions_survey_number").on(table.surveyId, table.versionNumber),
   unique("uniq_survey_versions_org_id").on(table.orgId, table.id),
   foreignKey({

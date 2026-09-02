@@ -29,7 +29,6 @@ export const payrollInputs = pgTable("payroll_inputs", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [payrollRuns.orgId, payrollRuns.id], name: "fk_payroll_inputs_run_id_org" }).onDelete("cascade"),
   unique("uniq_payroll_inputs_org_id").on(table.orgId, table.id),
-  index("idx_payroll_inputs_run").on(table.runId),
   index("idx_payroll_inputs_org_user").on(table.orgId, table.userId),
   uniqueIndex("uniq_payroll_inputs_run_user").on(table.runId, table.userId),
   index("idx_payroll_inputs_org_user_actor").on(table.orgId, table.userMembershipId),

@@ -70,7 +70,7 @@ export class CalendarEventsAggregateService {
   ): Promise<CalendarEventsResult> {
     const ctx: CalendarSourceContext = { orgId, userId, start, end, scope: "all" };
 
-    const { events: projections, toggleList, failures: rawFailures } =
+    const { events: projections, toggleList, failures: rawFailures, truncatedKeys } =
       await this.registry.loadAll(ctx);
 
     const labelMap = new Map<string, string>(toggleList.map((t) => [t.key, t.label]));
@@ -84,11 +84,11 @@ export class CalendarEventsAggregateService {
     for (const projection of projections) result.push(projectionToItem(projection));
 
     const sorted = result.sort((a, b) => a.start.getTime() - b.start.getTime());
-    const truncated = sorted.length > CALENDAR_EVENTS_CAP;
+    const overCap = sorted.length > CALENDAR_EVENTS_CAP;
     return {
-      events: truncated ? sorted.slice(0, CALENDAR_EVENTS_CAP) : sorted,
+      events: overCap ? sorted.slice(0, CALENDAR_EVENTS_CAP) : sorted,
       failures,
-      truncated,
+      truncated: overCap || truncatedKeys.length > 0,
     };
   }
 }

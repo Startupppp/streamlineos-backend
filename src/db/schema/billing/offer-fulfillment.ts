@@ -62,7 +62,6 @@ export const offerFulfillmentComponents = pgTable(
       table.crmOfferId,
       table.invSkuId,
     ),
-    index("idx_offer_fulfillment_components_offer").on(table.orgId, table.crmOfferId),
     index("idx_offer_fulfillment_components_sku").on(table.orgId, table.invSkuId),
   ],
 );

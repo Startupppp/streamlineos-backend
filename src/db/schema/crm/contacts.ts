@@ -67,7 +67,6 @@ export const clientAccounts = pgTable("client_accounts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_client_accounts_org").on(table.orgId),
   index("idx_client_accounts_sales_rep").on(table.salesRepId),
   index("idx_client_accounts_status").on(table.orgId, table.status),
   unique("uniq_client_accounts_org_id").on(table.orgId, table.id),
@@ -106,7 +105,6 @@ export const crmOrganizations = pgTable("crm_organizations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_crm_organizations_org").on(table.orgId),
   index("idx_crm_organizations_parent").on(table.orgId, table.parentId),
   foreignKey({ columns: [table.parentId], foreignColumns: [table.id] }).onDelete("set null"),
   foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),
@@ -136,7 +134,6 @@ export const contacts = pgTable("contacts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_contacts_org").on(table.orgId),
   index("idx_contacts_organization").on(table.organizationId),
   index("idx_contacts_name_email").on(table.orgId, table.name, table.email),
   unique("uniq_contacts_org_id").on(table.orgId, table.id),
@@ -158,7 +155,6 @@ export const clientOpportunities = pgTable("client_opportunities", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_client_opps_org").on(table.orgId),
   index("idx_client_opps_client").on(table.clientId),
   unique("uniq_client_opportunities_org_id").on(table.orgId, table.id),
 ]);
@@ -174,7 +170,6 @@ export const clientOnboardingTemplates = pgTable("client_onboarding_templates", 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_client_onboarding_templates_org").on(table.orgId),
   unique("uniq_client_onboarding_tmpls_org_id").on(table.orgId, table.id),
 ]);
 
@@ -196,7 +191,6 @@ export const clientOnboardingItems = pgTable("client_onboarding_items", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_onboarding_items_client").on(table.clientId),
-  index("idx_onboarding_items_org").on(table.orgId),
   unique("uniq_client_onboarding_items_org_id").on(table.orgId, table.id),
 ]);
 
@@ -216,7 +210,6 @@ export const csatSurveys = pgTable("csat_surveys", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_csat_surveys_org").on(table.orgId),
   uniqueIndex("idx_csat_surveys_token").on(table.publicToken),
   unique("uniq_csat_surveys_org_id").on(table.orgId, table.id),
 ]);

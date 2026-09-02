@@ -30,7 +30,6 @@ export const paymentProviders = pgTable("payment_providers", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_payment_providers_org_provider_key").on(table.orgId, table.providerKey),
-  index("idx_payment_providers_org").on(table.orgId),
   unique("uniq_payment_providers_org_id").on(table.orgId, table.id),
 ]);
 

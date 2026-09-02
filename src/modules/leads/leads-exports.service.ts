@@ -7,7 +7,13 @@ import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { findDuplicateLeads } from "./duplicate-leads";
-import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN, leadPartyScope } from "./lead-party-reader";
+import {
+  LEAD_PARTY_COLUMNS,
+  LEAD_PARTY_JOIN,
+  leadPartyScope,
+  pushLeadPartyViewScope,
+} from "./lead-party-reader";
+import type { DataScope } from "../access/access.types";
 import type { CheckDuplicatesQuery, ExportQuery } from "./dto/lead-reports.schemas";
 
 @Injectable()
@@ -63,10 +69,13 @@ export class LeadsExportsService {
     return { duplicates };
   }
 
-  async exportCsv(orgId: string, filters: ExportQuery) {
+  async exportCsv(orgId: string, userId: string, scope: DataScope, filters: ExportQuery) {
     const conditions = leadPartyScope(orgId);
+    pushLeadPartyViewScope(conditions, orgId, scope, userId);
     if (filters.status) conditions.push(eq(LEAD_PARTY_COLUMNS.status, filters.status));
     if (filters.priority) conditions.push(eq(LEAD_PARTY_COLUMNS.priority, filters.priority));
+    // The caller may narrow to another rep only when their own scope already
+    // reaches beyond themselves; below `all` the scope predicate above holds.
     if (filters.assigneeId)
       conditions.push(eq(LEAD_PARTY_COLUMNS.assignedToId, filters.assigneeId));
 

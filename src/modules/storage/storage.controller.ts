@@ -208,7 +208,6 @@ export class StorageController {
       quarantineId,
       status: "pending_scan",
       key,
-      url: key,
       mimeType: compressedMimeType,
       size,
       sha256,

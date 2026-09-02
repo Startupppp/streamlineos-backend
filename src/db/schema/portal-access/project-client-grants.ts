@@ -42,10 +42,6 @@ export const projectClientGrants = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_project_client_grants_org_grant").on(
-      table.organizationId,
-      table.projectClientGrantId,
-    ),
     index("idx_project_client_grants_membership").on(
       table.organizationId,
       table.portalMembershipId,

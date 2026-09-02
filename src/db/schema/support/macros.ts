@@ -42,7 +42,6 @@ export const supportMacros = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_support_macros_org").on(table.orgId),
     unique("uniq_support_macros_org_id").on(table.orgId, table.id),
     index("idx_support_macros_org_created_actor").on(table.orgId, table.createdByMembershipId),
     foreignKey({

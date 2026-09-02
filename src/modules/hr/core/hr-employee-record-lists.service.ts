@@ -34,6 +34,7 @@ const PERSON_SEARCH_CAP = 500;
 const PERSON_JOIN_COND = and(
   eq(organizationPeople.organizationId, hrPeople.orgId),
   eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+  isNull(organizationPeople.deletedAt),
 );
 
 const PERSON_VIEW_COLUMNS = {

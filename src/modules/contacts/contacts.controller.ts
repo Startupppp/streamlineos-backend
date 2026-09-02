@@ -21,7 +21,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
 import { ContactsService } from "./contacts.service";
+import { resolveContactsViewScope } from "./contacts-scope";
 import { buildVcard, vcardFilename } from "./vcard";
 import {
   bulkImportContactsSchema,
@@ -46,16 +48,20 @@ const contactIdParams = z.object({ contactId: z.coerce.number().int().positive()
 @Controller("contacts")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ContactsController {
-  constructor(private readonly contacts: ContactsService) {}
+  constructor(
+    private readonly contacts: ContactsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get()
   @RequirePermission("crm:contacts:view")
   @Validate({ query: listSchema })
-  list(
+  async list(
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.contacts.list(u.orgId, filters);
+    const scope = await resolveContactsViewScope(this.access, u);
+    return this.contacts.list(u.orgId, u.userId, scope, filters);
   }
 
   @Deprecated({ sunset: "2026-10-25", link: "/party/parties/:partyId/contacts" })
@@ -89,7 +95,8 @@ export class ContactsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
-    for await (const chunk of this.contacts.exportCsvChunks(u.orgId)) {
+    const scope = await resolveContactsViewScope(this.access, u);
+    for await (const chunk of this.contacts.exportCsvChunks(u.orgId, u.userId, scope)) {
       if (res.destroyed) return;
       if (!res.write(chunk)) await once(res, "drain");
     }
@@ -99,11 +106,12 @@ export class ContactsController {
   @Get("search")
   @RequirePermission("crm:contacts:view")
   @Validate({ query: searchSchema })
-  search(
+  async search(
     @Query() query: SearchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.contacts.search(u.orgId, query.q);
+    const scope = await resolveContactsViewScope(this.access, u);
+    return this.contacts.search(u.orgId, u.userId, scope, query.q);
   }
 
   @Get(":contactId")

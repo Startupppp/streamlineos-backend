@@ -4,6 +4,7 @@ import { EmbeddingsService, EMBEDDING_MODEL } from "../providers/embeddings.serv
 import { AiUsageService } from "../services/ai-usage.service";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
+import { AiCallMetrics } from "../telemetry/ai-call-metrics";
 import { type AiCreditLedger } from "./credit-ledger.interface";
 import type {
   AiInvokeFailure,
@@ -14,6 +15,8 @@ import type {
 } from "./ai-gateway.types";
 
 const PROVIDER_UNAVAILABLE_MESSAGE = "Embedding provider is temporarily unavailable";
+/** Embedding has no fast/standard split; the label keeps the metric shape uniform. */
+const EMBEDDING_TIER = "embedding";
 
 function estimateEmbedTokens(text: string): number {
   return Math.ceil(text.length / 4);
@@ -30,41 +33,57 @@ export class AiGatewayEmbedHelper {
     private readonly usageSvc: AiUsageService,
   ) {}
 
-  async run(opts: EmbedQueryOpts, correlationId: string): Promise<EmbedQueryResult> {
+  async run(
+    opts: EmbedQueryOpts,
+    correlationId: string,
+    metrics?: AiCallMetrics,
+  ): Promise<EmbedQueryResult> {
     const { text, orgId, feature, charge } = opts;
+    const call = metrics ?? AiCallMetrics.begin({ feature, tier: EMBEDDING_TIER, orgId });
 
     const reservation = await this.reserve(orgId, feature, charge, correlationId);
-    if (!reservation.ok) return reservation.failure;
+    if (!reservation.ok) {
+      call.finish("quota_exceeded");
+      return reservation.failure;
+    }
 
     const start = Date.now();
     let vector: number[];
     try {
-      vector = await this.embeddings.embedQueryRaw(text);
+      vector = await call.provider(() => this.embeddings.embedQueryRaw(text));
     } catch (error: unknown) {
-      return this.failAfterReservation(reservation.reservationId, orgId, feature, start, correlationId, error);
+      return this.failAfterReservation(reservation.reservationId, orgId, feature, start, correlationId, error, call);
     }
 
-    await this.meter(reservation.reservationId, orgId, feature, estimateEmbedTokens(text), charge, start, correlationId, 1);
+    await this.meter(reservation.reservationId, orgId, feature, estimateEmbedTokens(text), charge, start, correlationId, 1, call);
 
     return { ok: true, vector, vectorLiteral: this.embeddings.toVectorLiteral(vector) };
   }
 
-  async runBatch(opts: EmbedBatchOpts, correlationId: string): Promise<EmbedBatchResult> {
+  async runBatch(
+    opts: EmbedBatchOpts,
+    correlationId: string,
+    metrics?: AiCallMetrics,
+  ): Promise<EmbedBatchResult> {
     const { texts, orgId, feature, charge } = opts;
+    const call = metrics ?? AiCallMetrics.begin({ feature, tier: EMBEDDING_TIER, orgId });
 
     const reservation = await this.reserve(orgId, feature, charge, correlationId);
-    if (!reservation.ok) return reservation.failure;
+    if (!reservation.ok) {
+      call.finish("quota_exceeded");
+      return reservation.failure;
+    }
 
     const start = Date.now();
     let vectors: number[][];
     try {
-      vectors = await this.embeddings.embedBatchRaw(texts);
+      vectors = await call.provider(() => this.embeddings.embedBatchRaw(texts));
     } catch (error: unknown) {
-      return this.failAfterReservation(reservation.reservationId, orgId, feature, start, correlationId, error);
+      return this.failAfterReservation(reservation.reservationId, orgId, feature, start, correlationId, error, call);
     }
 
     const promptTokens = texts.reduce((sum, t) => sum + estimateEmbedTokens(t), 0);
-    await this.meter(reservation.reservationId, orgId, feature, promptTokens, charge, start, correlationId, texts.length);
+    await this.meter(reservation.reservationId, orgId, feature, promptTokens, charge, start, correlationId, texts.length, call);
 
     return { ok: true, vectors };
   }
@@ -101,7 +120,9 @@ export class AiGatewayEmbedHelper {
     start: number,
     correlationId: string,
     cause: unknown,
+    call: AiCallMetrics,
   ): Promise<AiInvokeFailure> {
+    const timings = call.finish("provider_unavailable", { model: EMBEDDING_MODEL });
     await this.releaseReservation(reservationId, orgId, correlationId, cause);
     await this.usageSvc.track({
       orgId,
@@ -109,7 +130,8 @@ export class AiGatewayEmbedHelper {
       model: EMBEDDING_MODEL,
       latencyMs: Date.now() - start,
       correlationId,
-      outcome: "error",
+      outcome: "provider_unavailable",
+      timings,
     });
     return {
       ok: false,
@@ -128,10 +150,19 @@ export class AiGatewayEmbedHelper {
     start: number,
     correlationId: string,
     batchSize: number,
+    call: AiCallMetrics,
   ): Promise<void> {
     const { costUsd, milliCredits } = charge
       ? computeTokenCharge(EMBEDDING_MODEL, promptTokens, 0)
       : { costUsd: 0, milliCredits: 0 };
+
+    const timings = call.finish("ok", {
+      model: EMBEDDING_MODEL,
+      promptTokens,
+      completionTokens: 0,
+      creditsMilli: milliCredits,
+      costUsd,
+    });
 
     await this.settle(reservationId, orgId, promptTokens, milliCredits, costUsd, correlationId);
 
@@ -146,6 +177,7 @@ export class AiGatewayEmbedHelper {
       outcome: "ok",
       creditsMilli: milliCredits,
       metadata: { tokenEstimate: true, batchSize },
+      timings,
     });
   }
 

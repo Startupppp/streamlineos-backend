@@ -1,5 +1,6 @@
 import { makeFakeDb } from "../../../test/fake-select-db";
 import type { Db } from "../../../db/drizzle.module";
+import { hrWorkflowDefinitions } from "../../../db/schema";
 import { HrSettingsHubService } from "./hr-settings-hub.service";
 
 const ORG = "org-1";
@@ -28,7 +29,7 @@ describe("HR settings hub version lineage excludes soft-deleted rows", () => {
           definition({ id: 2, version: 2, deleted_at: new Date() }),
         ],
       },
-      { hrWorkflowDefinitions: "hr_workflow_definitions" },
+      { hrWorkflowDefinitions },
     );
     const service = new HrSettingsHubService(db as unknown as Db, { evaluatePolicy: jest.fn() } as never);
 
@@ -42,7 +43,7 @@ describe("HR settings hub version lineage excludes soft-deleted rows", () => {
       {
         hr_workflow_definitions: [definition({ id: 1, version: 1 }), definition({ id: 2, version: 2 })],
       },
-      { hrWorkflowDefinitions: "hr_workflow_definitions" },
+      { hrWorkflowDefinitions },
     );
     const service = new HrSettingsHubService(db as unknown as Db, { evaluatePolicy: jest.fn() } as never);
 

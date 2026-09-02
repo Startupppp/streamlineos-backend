@@ -45,10 +45,13 @@ function makeLedger(overrides: Partial<AiCreditLedger> = {}): jest.Mocked<AiCred
   } as jest.Mocked<AiCreditLedger>;
 }
 
-function makeEmbeddings(overrides: Partial<{ embedQueryRaw: jest.Mock }> = {}) {
+function makeEmbeddings(overrides: Partial<{ embedQueryRaw: jest.Mock; embedBatchRaw: jest.Mock }> = {}) {
   return {
     isConfigured: jest.fn().mockReturnValue(true),
     embedQueryRaw: overrides.embedQueryRaw ?? jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+    embedBatchRaw:
+      overrides.embedBatchRaw ??
+      jest.fn().mockImplementation((texts: string[]) => Promise.resolve(texts.map(() => [0.1, 0.2, 0.3]))),
     embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
     embedBatch: jest.fn().mockResolvedValue([[0.1]]),
     embedQueryDeduped: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
@@ -587,6 +590,159 @@ describe("AiGatewayService", () => {
       expect(result.vectorLiteral).toBe("[0.1,0.2,0.3]");
       expect(ledger.reserve).not.toHaveBeenCalled();
       expect(ledger.settle).not.toHaveBeenCalled();
+    });
+  });
+  describe("embedBatchWithCredit — one reservation for the whole batch (ticket 10)", () => {
+    const INDEX_FEATURE = "kb.indexing";
+    const RESERVE_CEILING_MILLI = 1000;
+
+    it("reserves ONCE for the whole batch, not once per text", async () => {
+      const { svc, ledger, mockEmbeddings } = await buildModule();
+      const texts = Array.from({ length: 120 }, (_, i) => `chunk ${i} `.repeat(50));
+
+      const result = await svc.embedBatchWithCredit({
+        texts,
+        orgId: ACTOR.orgId,
+        feature: INDEX_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.vectors).toHaveLength(120);
+      expect(ledger.reserve).toHaveBeenCalledTimes(1);
+      expect(ledger.settle).toHaveBeenCalledTimes(1);
+      expect(mockEmbeddings.embedBatchRaw).toHaveBeenCalledTimes(1);
+      expect(ledger.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({ feature: INDEX_FEATURE, credits: RESERVE_CEILING_MILLI }),
+      );
+    });
+
+    it("settles on the summed actual tokens of the batch, not the per-call floor", async () => {
+      const { svc, ledger } = await buildModule();
+      const texts = Array.from({ length: 10 }, () => "x".repeat(4_000));
+
+      await svc.embedBatchWithCredit({
+        texts,
+        orgId: ACTOR.orgId,
+        feature: INDEX_FEATURE,
+        charge: true,
+      });
+
+      const settle = ledger.settle.mock.calls[0]?.[1];
+      expect(settle?.promptTokens).toBe(10_000);
+      expect(settle?.actualMilli).toBe(30);
+      expect(settle?.actualMilli).not.toBe(RESERVE_CEILING_MILLI);
+    });
+
+    it("takes exactly one concurrency slot for the whole batch and releases it", async () => {
+      const { svc, mockConcurrencyLimiter } = await buildModule();
+      await svc.embedBatchWithCredit({
+        texts: Array.from({ length: 200 }, (_, i) => `t${i}`),
+        orgId: ACTOR.orgId,
+        feature: INDEX_FEATURE,
+        charge: true,
+      });
+
+      expect(mockConcurrencyLimiter.acquire).toHaveBeenCalledTimes(1);
+      expect(mockConcurrencyLimiter.release).toHaveBeenCalledTimes(1);
+    });
+
+    it("never calls the provider when the wallet is short", async () => {
+      const ledger = makeLedger({
+        reserve: jest.fn().mockRejectedValue(new InsufficientAiCreditsException()),
+      });
+      const { svc, mockEmbeddings, mockConcurrencyLimiter } = await buildModule(undefined, ledger);
+
+      const result = await svc.embedBatchWithCredit({
+        texts: ["a", "b"],
+        orgId: ACTOR.orgId,
+        feature: INDEX_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.kind).toBe("quota_exceeded");
+      expect(mockEmbeddings.embedBatchRaw).not.toHaveBeenCalled();
+      expect(mockConcurrencyLimiter.release).toHaveBeenCalledTimes(1);
+    });
+
+    it("releases the reservation when the provider throws mid-batch", async () => {
+      const embeddings = makeEmbeddings({
+        embedBatchRaw: jest.fn().mockRejectedValue(new Error("openai down")),
+      });
+      const { svc, ledger } = await buildModule(undefined, undefined, { embeddings });
+
+      const result = await svc.embedBatchWithCredit({
+        texts: ["a", "b"],
+        orgId: ACTOR.orgId,
+        feature: INDEX_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.kind).toBe("provider_unavailable");
+      expect(ledger.release).toHaveBeenCalledWith(42, "embedding_error", ACTOR.orgId);
+      expect(ledger.settle).not.toHaveBeenCalled();
+    });
+
+    it("an empty batch spends nothing: no slot, no reservation, no provider call", async () => {
+      const { svc, ledger, mockEmbeddings, mockConcurrencyLimiter } = await buildModule();
+
+      const result = await svc.embedBatchWithCredit({
+        texts: [],
+        orgId: ACTOR.orgId,
+        feature: INDEX_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.vectors).toEqual([]);
+      expect(mockConcurrencyLimiter.acquire).not.toHaveBeenCalled();
+      expect(ledger.reserve).not.toHaveBeenCalled();
+      expect(mockEmbeddings.embedBatchRaw).not.toHaveBeenCalled();
+    });
+
+    it("returns concurrency_exceeded without reserving or calling the provider", async () => {
+      const { svc, ledger, mockEmbeddings } = await buildModule(undefined, undefined, {
+        limiter: { acquire: jest.fn().mockResolvedValue(false), release: jest.fn() },
+      });
+
+      const result = await svc.embedBatchWithCredit({
+        texts: ["a"],
+        orgId: ACTOR.orgId,
+        feature: INDEX_FEATURE,
+        charge: true,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.kind).toBe("concurrency_exceeded");
+      expect(ledger.reserve).not.toHaveBeenCalled();
+      expect(mockEmbeddings.embedBatchRaw).not.toHaveBeenCalled();
+    });
+
+    it("records one usage row for the batch carrying the settled milli-credits", async () => {
+      const { svc, mockUsage } = await buildModule();
+      await svc.embedBatchWithCredit({
+        texts: Array.from({ length: 10 }, () => "x".repeat(4_000)),
+        orgId: ACTOR.orgId,
+        feature: INDEX_FEATURE,
+        charge: true,
+      });
+
+      expect(mockUsage.track).toHaveBeenCalledTimes(1);
+      expect(mockUsage.track).toHaveBeenCalledWith(
+        expect.objectContaining({
+          feature: INDEX_FEATURE,
+          creditsMilli: 30,
+          promptTokens: 10_000,
+          metadata: expect.objectContaining({ batchSize: 10 }),
+        }),
+      );
     });
   });
 });

@@ -23,6 +23,19 @@ const FINANCE_RESOURCE_TYPES = [
 
 const AUDIT_EXPORT_CAP = 10_000;
 
+const AUDIT_COLUMNS = {
+  id: auditLogs.id,
+  action: auditLogs.action,
+  userId: auditLogs.userId,
+  orgId: auditLogs.orgId,
+  resourceType: auditLogs.resourceType,
+  resourceId: auditLogs.resourceId,
+  actorUserId: auditLogs.actorUserId,
+  ipAddress: auditLogs.ipAddress,
+  metadata: auditLogs.metadata,
+  createdAt: auditLogs.createdAt,
+} as const;
+
 @Injectable()
 export class AuditSurfaceService {
   constructor(
@@ -36,13 +49,13 @@ export class AuditSurfaceService {
     if (pos) conditions.push(keysetBeforeId(auditLogs.createdAt, auditLogs.id, pos));
 
     const rows = await this.db
-      .select()
+      .select(AUDIT_COLUMNS)
       .from(auditLogs)
       .where(and(...conditions))
       .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
       .limit(query.limit + 1);
 
-    return buildCursorPage(rows as AuditRow[], query.limit, (r) => ({
+    return buildCursorPage(rows, query.limit, (r) => ({
       sortValue: r.createdAt.toISOString(),
       id: String(r.id),
     }));
@@ -50,7 +63,7 @@ export class AuditSurfaceService {
 
   async timeline(orgId: string, resourceType: string, resourceId: string) {
     return this.db
-      .select()
+      .select(AUDIT_COLUMNS)
       .from(auditLogs)
       .where(
         and(
@@ -67,7 +80,7 @@ export class AuditSurfaceService {
     const conditions = this.buildConditions(orgId, query);
 
     const rows = await this.db
-      .select()
+      .select(AUDIT_COLUMNS)
       .from(auditLogs)
       .where(and(...conditions))
       .orderBy(desc(auditLogs.createdAt))

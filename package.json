@@ -301,7 +301,11 @@
     "check:module-registration": "node src/scripts/check-module-registration.mjs",
     "check:module-registration:self-test": "node src/scripts/check-module-registration.mjs --self-test",
     "check:hardcoded-secrets": "node src/scripts/check-hardcoded-secrets.mjs",
-    "check:hardcoded-secrets:self-test": "node src/scripts/check-hardcoded-secrets.mjs --self-test"
+    "check:hardcoded-secrets:self-test": "node src/scripts/check-hardcoded-secrets.mjs --self-test",
+    "check:repo-paths:self-test": "node src/scripts/check-repo-paths.mjs --self-test",
+    "check:alert-ack:self-test": "node src/scripts/check-alert-ack.mjs --self-test",
+    "check:set-null-column-lists": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-set-null-column-lists.ts",
+    "check:set-null-column-lists:self-test": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-set-null-column-lists.ts --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

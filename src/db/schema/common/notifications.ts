@@ -113,7 +113,6 @@ export const notificationTemplates = pgTable("notification_templates", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_notification_templates_key_locale_version").on(table.orgId, table.templateKey, table.locale, table.version),
-  index("idx_notification_templates_org").on(table.orgId),
   index("idx_notification_templates_channel").on(table.channel),
   index("idx_notification_templates_active").on(table.isActive),
   unique("uniq_notification_templates_org_id").on(table.orgId, table.id),
@@ -145,7 +144,6 @@ export const notificationAuditLogs = pgTable("notification_audit_logs", {
   }).onDelete("set null"),
   index("idx_notif_audit_org_action").on(table.orgId, table.action),
   index("idx_notif_audit_org_created").on(table.orgId, table.createdAt),
-  index("idx_notif_audit_notification").on(table.notificationId),
   unique("uniq_notification_audit_logs_org_id").on(table.orgId, table.id),
 ]);
 
@@ -181,7 +179,6 @@ export const notificationPreferences = pgTable("notification_preferences", {
   // SCH-011: was a bare UNIQUE(user_id), so a user in two orgs shared one row and
   // the second org's write overwrote the first.
   uniqueIndex("uniq_notification_preferences_org_membership").on(table.orgId, table.membershipId),
-  index("idx_notification_preferences_org_membership").on(table.orgId, table.membershipId),
   foreignKey({
     name: "fk_notification_preferences_actor",
     columns: [table.orgId, table.membershipId],

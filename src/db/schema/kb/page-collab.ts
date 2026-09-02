@@ -73,7 +73,6 @@ export const kbPageTemplates = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_kb_page_templates_org").on(table.orgId),
     unique("uniq_kb_page_templates_org_id").on(table.orgId, table.id),
   ],
 );

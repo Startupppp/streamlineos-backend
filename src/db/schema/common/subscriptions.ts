@@ -22,7 +22,6 @@ export const subscriptions = pgTable("subscriptions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_subscriptions_org").on(table.orgId),
   index("idx_subscriptions_status").on(table.status),
   index("idx_subscriptions_razorpay").on(table.razorpaySubscriptionId),
   unique("uniq_subscriptions_org_id").on(table.orgId, table.id),
@@ -43,7 +42,6 @@ export const subscriptionPayments = pgTable("subscription_payments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_subscription_payments_razorpay_payment").on(table.razorpayPaymentId).where(sql`razorpay_payment_id IS NOT NULL`),
-  index("idx_sub_payments_org").on(table.orgId),
   index("idx_sub_payments_sub").on(table.subscriptionId),
   unique("uniq_subscription_payments_org_id").on(table.orgId, table.id),
   foreignKey({ columns: [table.orgId, table.subscriptionId], foreignColumns: [subscriptions.orgId, subscriptions.id], name: "fk_sub_payments_org_sub" }).onDelete("cascade"),
@@ -68,9 +66,7 @@ export const coupons = pgTable("coupons", {
   // a code deny it to every other org and turn the 409 into an existence oracle.
   uniqueIndex("uniq_coupons_platform_code").on(table.code).where(sql`org_id IS NULL`),
   uniqueIndex("uniq_coupons_org_code").on(table.orgId, table.code).where(sql`org_id IS NOT NULL`),
-  index("idx_coupons_code").on(table.code),
   index("idx_coupons_is_active").on(table.isActive),
-  index("idx_coupons_org").on(table.orgId),
 ]);
 
 export const couponRedemptions = pgTable("coupon_redemptions", {
@@ -86,8 +82,6 @@ export const couponRedemptions = pgTable("coupon_redemptions", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.couponId], foreignColumns: [coupons.orgId, coupons.id], name: "fk_coupon_redemptions_coupon_id_org" }).onDelete("cascade"),
   unique("uq_coupon_redemptions_coupon_org").on(table.couponId, table.orgId),
-  index("idx_coupon_redemptions_coupon").on(table.couponId),
-  index("idx_coupon_redemptions_org").on(table.orgId),
   index("idx_coupon_redemptions_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_coupon_redemptions_org_id").on(table.orgId, table.id),
   foreignKey({

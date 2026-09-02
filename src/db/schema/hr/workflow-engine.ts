@@ -144,7 +144,6 @@ export const hrWorkflowStepActions = pgTable("hr_workflow_step_actions", {
   foreignKey({ columns: [table.orgId, table.instanceId], foreignColumns: [hrWorkflowInstances.orgId, hrWorkflowInstances.id], name: "fk_hr_workflow_step_actions_org_instance" }).onDelete("cascade"),
   unique("uniq_hr_workflow_step_actions_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_actions_org_instance").on(table.orgId, table.instanceId),
-  index("idx_hr_wf_actions_org_acted_by_membership").on(table.orgId, table.actedByMembershipId),
   index("idx_hr_wf_actions_org_approver_membership").on(table.orgId, table.approverMembershipId),
   foreignKey({ columns: [table.orgId, table.approverMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_step_actions_approver_actor" }).onDelete("restrict"),
   foreignKey({ columns: [table.orgId, table.actedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_step_actions_acted_by_actor" }).onDelete("restrict"),
@@ -158,7 +157,6 @@ export const hrWorkflowInstanceAttachments = pgTable("hr_workflow_instance_attac
   name: text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_hr_wf_inst_attachments_org").on(table.orgId),
   index("idx_hr_wf_inst_attachments_action").on(table.actionId),
   foreignKey({
     columns: [table.orgId, table.actionId],
@@ -183,8 +181,6 @@ export const hrWorkflowDelegations = pgTable("hr_workflow_delegations", {
 }, (table) => [
   unique("uniq_hr_workflow_delegations_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_delegations_org_delegator_active").on(table.orgId, table.delegatorUserId, table.active),
-  index("idx_hr_wf_delegations_org_delegator_membership").on(table.orgId, table.delegatorMembershipId),
-  index("idx_hr_wf_delegations_org_delegate_membership").on(table.orgId, table.delegateMembershipId),
   foreignKey({ columns: [table.orgId, table.delegatorMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_delegations_delegator_actor" }).onDelete("restrict"),
   foreignKey({ columns: [table.orgId, table.delegateMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_delegations_delegate_actor" }).onDelete("restrict"),
 ]);

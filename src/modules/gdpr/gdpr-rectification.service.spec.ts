@@ -283,13 +283,12 @@ describe("GdprRectificationService — hr_sensitive.bank_details", () => {
         })
         .mockReturnValueOnce({
           from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue(hasPeople ? [{ id: 7 }] : []),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue(hasEmployment ? [{ id: 99 }] : []),
+            innerJoin: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({
+                limit: jest
+                  .fn()
+                  .mockResolvedValue(hasPeople && hasEmployment ? [{ id: 99 }] : []),
+              }),
             }),
           }),
         })

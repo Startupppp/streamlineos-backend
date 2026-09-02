@@ -16,7 +16,6 @@ export const hrRoleSkillRequirements = pgTable("hr_role_skill_requirements", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.jobRoleId], foreignColumns: [hrJobRoles.orgId, hrJobRoles.id], name: "fk_hr_role_skill_requirements_org_job_role" }).onDelete("cascade"),
   unique("uniq_hr_role_skill_requirements_org_id").on(table.orgId, table.id),
-  index("idx_role_skill_req_org").on(table.orgId),
   index("idx_role_skill_req_job_role").on(table.jobRoleId),
 ]);
 
@@ -29,13 +28,12 @@ export const hrSuccessionPlans = pgTable("hr_succession_plans", {
   successorId: text("successor_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   readiness: successionReadinessEnum("readiness").default("ready_now").notNull(),
   note: text("note"),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.jobRoleId], foreignColumns: [hrJobRoles.orgId, hrJobRoles.id], name: "fk_hr_succession_plans_org_job_role" }).onDelete("set null"),
   unique("uniq_hr_succession_plans_org_id").on(table.orgId, table.id),
-  index("idx_succession_org").on(table.orgId),
   index("idx_succession_role").on(table.orgId, table.jobRoleId),
 ]);
 

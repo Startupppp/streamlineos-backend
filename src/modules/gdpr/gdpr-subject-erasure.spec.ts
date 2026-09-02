@@ -5,6 +5,7 @@ import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 import { GdprController } from "./gdpr.controller";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { SubjectFileKey } from "../storage/storage-key-catalog";
+import { users } from "../../db/schema";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -108,13 +109,18 @@ function makeDb(opts: {
   let txInsertCount = 0;
 
   const tx = {
-    select: jest.fn().mockImplementation(() => {
-      txSelectCount++;
-      if (txSelectCount === 1) return hrPeopleChain;
-      if (txSelectCount === 2) return hrEmpChain;
-      if (txSelectCount === 3) return otherMemberChain;
-      return fluentChain([]);
-    }),
+    select: jest.fn().mockImplementation(() => ({
+      // The support-ticket erasure probes `users.email` inside the transaction; it is
+      // not one of the positional id pages, so it must not consume the counter.
+      from: jest.fn().mockImplementation((table: unknown) => {
+        if (table === users) return fluentChain([]);
+        txSelectCount++;
+        if (txSelectCount === 1) return hrPeopleChain;
+        if (txSelectCount === 2) return hrEmpChain;
+        if (txSelectCount === 3) return otherMemberChain;
+        return fluentChain([]);
+      }),
+    })),
     update: jest.fn().mockImplementation(() => {
       txUpdateCount++;
       if (txUpdateCount === 1) return opUpdateChain;

@@ -73,10 +73,6 @@ export const workerEngagements = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    unique("uniq_worker_engagements_org_engagement").on(
-      table.organizationId,
-      table.workerEngagementId,
-    ),
     unique("uniq_worker_engagements_org_worker_engagement").on(
       table.organizationId,
       table.workerId,
@@ -90,7 +86,6 @@ export const workerEngagements = pgTable(
       .where(
         sql`${table.isPrimary} = true AND ${table.status} = 'ACTIVE' AND ${table.archivedAt} IS NULL`,
       ),
-    index("idx_worker_engagements_org").on(table.organizationId),
     index("idx_worker_engagements_worker").on(table.workerId),
     index("idx_worker_engagements_org_status").on(
       table.organizationId,

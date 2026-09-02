@@ -49,7 +49,6 @@ export const externalReferrals = pgTable("external_referrals", {
   foreignKey({ columns: [table.orgId, table.referrerId], foreignColumns: [externalReferrers.orgId, externalReferrers.id], name: "fk_external_referrals_org_referrer" }).onDelete("cascade"),
   unique("uniq_external_referrals_org_id").on(table.orgId, table.id),
   uniqueIndex("idx_external_referrals_referrer_candidate").on(table.referrerId, table.candidateId),
-  index("idx_external_referrals_org").on(table.orgId),
   index("idx_external_referrals_candidate").on(table.candidateId),
 ]);
 

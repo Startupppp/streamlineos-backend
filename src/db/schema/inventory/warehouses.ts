@@ -25,7 +25,6 @@ export const invWarehouses = pgTable("inv_warehouses", {
 }, (table) => [
   uniqueIndex("uniq_inv_warehouses_org_code").on(table.orgId, table.code),
   unique("uniq_inv_warehouses_org_id").on(table.orgId, table.id),
-  index("idx_inv_warehouses_org").on(table.orgId),
   index("idx_inv_warehouses_branch").on(table.branchId),
 ]);
 
@@ -47,8 +46,6 @@ export const invLocations = pgTable("inv_locations", {
 }, (table) => [
   uniqueIndex("uniq_inv_locations_warehouse_code").on(table.warehouseId, table.code),
   unique("uniq_inv_locations_org_id").on(table.orgId, table.id),
-  index("idx_inv_locations_org").on(table.orgId),
-  index("idx_inv_locations_warehouse").on(table.warehouseId),
   index("idx_inv_locations_parent").on(table.parentLocationId),
   foreignKey({ columns: [table.parentLocationId], foreignColumns: [table.id], name: "fk_inv_locations_parent" }).onDelete("set null"),
 ]);
@@ -65,7 +62,6 @@ export const invUserWarehouses = pgTable("inv_user_warehouses", {
 }, (table) => [
   uniqueIndex("uniq_inv_user_warehouses_key").on(table.orgId, table.userId, table.warehouseId),
   unique("uniq_inv_user_warehouses_org_id").on(table.orgId, table.id),
-  index("idx_inv_user_warehouses_org_user").on(table.orgId, table.userId),
   foreignKey({
     columns: [table.orgId, table.warehouseId],
     foreignColumns: [invWarehouses.orgId, invWarehouses.id],

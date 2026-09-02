@@ -61,8 +61,6 @@ export const journalEntries = pgTable("journal_entries", {
   unique("uniq_je_org_number").on(table.orgId, table.entryNumber),
   unique("uniq_je_idempotency").on(table.orgId, table.sourceType, table.sourceId, table.sourceEvent),
   index("idx_je_org_date").on(table.orgId, table.entryDate),
-  index("idx_je_org_source").on(table.orgId, table.sourceType, table.sourceId),
-  index("idx_je_org_status").on(table.orgId, table.status),
   index("idx_je_org_status_date").on(table.orgId, table.status, table.entryDate),
   index("idx_je_org_created_by_mbr").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.reversedEntryId], foreignColumns: [table.orgId, table.id], name: "fk_je_org_reversed" }),

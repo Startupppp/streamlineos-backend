@@ -47,11 +47,6 @@ export const onboardingTaskDependencies = pgTable(
       table.onboardingTaskId,
       table.sortOrder,
     ),
-    index("idx_onboarding_task_dependencies_task").on(
-      table.organizationId,
-      table.onboardingTaskId,
-      table.sortOrder,
-    ),
     index("idx_onboarding_task_dependencies_prerequisite").on(
       table.organizationId,
       table.prerequisiteTaskId,

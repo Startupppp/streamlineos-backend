@@ -11,7 +11,9 @@ import {
   CONTACT_PARTY_JOIN,
   contactIdIs,
   contactPartyScope,
+  contactPartyViewScope,
 } from "./contact-party-reader";
+import type { DataScope } from "../access/access.types";
 import type { ListInput } from "./dto/contact.schemas";
 
 /**
@@ -135,7 +137,13 @@ export function listConditions(orgId: string, filters: ListInput, employerPartyI
   return conditions;
 }
 
-export async function queryContacts(db: Db, orgId: string, filters: ListInput) {
+export async function queryContacts(
+  db: Db,
+  orgId: string,
+  userId: string,
+  scope: DataScope,
+  filters: ListInput,
+) {
   const employerPartyId = filters.organizationId
     ? ((await partyIdsOfCrmOrgs(db, orgId, [filters.organizationId])).get(
         filters.organizationId,
@@ -145,6 +153,7 @@ export async function queryContacts(db: Db, orgId: string, filters: ListInput) {
 
   const after = decodeCursor(filters.cursor);
   const conditions = listConditions(orgId, filters, employerPartyId);
+  conditions.push(contactPartyViewScope(orgId, userId, scope));
   const afterId = after ? Number(after.id) : Number.NaN;
   if (after && !Number.isNaN(afterId)) {
     const keyset = or(
@@ -192,7 +201,13 @@ export async function queryContacts(db: Db, orgId: string, filters: ListInput) {
   };
 }
 
-export function searchContacts(db: Db, orgId: string, query: string) {
+export function searchContacts(
+  db: Db,
+  orgId: string,
+  userId: string,
+  scope: DataScope,
+  query: string,
+) {
   const q = `%${query}%`;
   return db
     .select({
@@ -209,6 +224,7 @@ export function searchContacts(db: Db, orgId: string, query: string) {
     .where(
       and(
         ...contactPartyScope(orgId),
+        contactPartyViewScope(orgId, userId, scope),
         or(
           ilike(CONTACT_PARTY_COLUMNS.name, q),
           ilike(CONTACT_PARTY_COLUMNS.email, q),

@@ -6,6 +6,11 @@ import {
   UNIVERSAL_MEMBER_PERMISSION_GRANTS,
 } from "../rbac/permissions";
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
+import {
+  isPlatformOnlyPermission,
+  PLATFORM_ONLY_PERMISSION_KEYS,
+} from "../../common/rbac/grantability";
+import { isPlatformAdmin } from "../../common/rbac/platform-operators";
 import type { DataScope } from "./access.types";
 import { MODULE_CATALOG } from "./entitlements.service";
 
@@ -114,10 +119,32 @@ export const EMPLOYEE_SELF_SERVICE_GRANTS: ReadonlyArray<{
   })),
 );
 
+/**
+ * Every catalog key a member of *an organization* can hold, at scope `all`.
+ *
+ * Platform-only keys are excluded on purpose: they administer resources the
+ * vendor owns globally, and this function is what the owner/org-admin
+ * short-circuit returns. Including them let every customer administrator edit
+ * and hard-delete the vendor's marketing blog, because a global table has no
+ * tenant column to stop them at the data layer.
+ */
 export function allCatalogScopes(): Record<string, DataScope> {
   const catalogScopes: Record<string, DataScope> = {};
-  for (const permission of PERMISSIONS) catalogScopes[permission.name] = "all";
+  for (const permission of PERMISSIONS) {
+    if (isPlatformOnlyPermission(permission.name)) continue;
+    catalogScopes[permission.name] = "all";
+  }
   return catalogScopes;
+}
+
+/** The platform-only keys, held only by the deployment's own operators. */
+export function platformCapabilityScopes(
+  userId: string,
+): Record<string, DataScope> {
+  if (!isPlatformAdmin(userId)) return {};
+  const scopes: Record<string, DataScope> = {};
+  for (const key of PLATFORM_ONLY_PERMISSION_KEYS) scopes[key] = "all";
+  return scopes;
 }
 
 export function deriveAccessViewImplication(

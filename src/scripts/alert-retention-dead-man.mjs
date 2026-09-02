@@ -16,9 +16,39 @@ import { resolve } from "node:path";
 import * as dotenv from "dotenv";
 
 export const HEARTBEAT_KEY_PREFIX = "cron:heartbeat:";
+export const LAST_ERROR_KEY_PREFIX = "cron:last-error:";
 
 // maxAgeMs: 26h allows for daily scheduling jitter without false positives.
+// Mirrors src/modules/cron/retention-schedule.ts. `retention-schedule-parity.spec.ts`
+// fails if the two drift — a monitored list shorter than the scheduled list is a sweep
+// that can die unobserved, which is the exact failure this alert exists to catch.
+// maxAgeMs: 26h allows for daily scheduling jitter without false positives.
 export const MONITORED_SWEEPS = [
+  {
+    jobKey: "hr-policy-retention-sweep",
+    label: "HR policy retention (documents, employees, cases, attendance)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    jobKey: "helpdesk-retention-sweep",
+    label: "Helpdesk ticket retention (resolved tickets older than 2 years)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    jobKey: "mail-metadata-retention-sweep",
+    label: "Mail metadata retention (synced metadata older than 1 year)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    jobKey: "announcements-retention-sweep",
+    label: "Announcements retention (expired after grace, aged beyond 2 years)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    jobKey: "ai-usage-retention-sweep",
+    label: "AI usage log retention (730-day window, explicit non-dry-run)",
+    maxAgeMs: 26 * 3_600_000,
+  },
   {
     jobKey: "notifications-retention-sweep",
     label: "Notification body + record purge (email_outbox, notification_deliveries)",
@@ -26,12 +56,32 @@ export const MONITORED_SWEEPS = [
   },
   {
     jobKey: "notification-outbox-retention-sweep",
-    label: "Notification outbox retention (notification_outbox — 30-day terminal state purge)",
+    label: "Notification outbox retention (30-day terminal state purge)",
     maxAgeMs: 26 * 3_600_000,
   },
   {
     jobKey: "outbox-events-retention-sweep",
-    label: "Outbox events retention (outbox_events + inbox_records — 30-day terminal state purge)",
+    label: "Outbox events retention (outbox_events + inbox_records, 30-day terminal purge)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    jobKey: "kb-chat-history-purge",
+    label: "KB chat history purge (per-org chat_history_retention_days)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    jobKey: "kb-chunk-retention-sweep",
+    label: "KB chunk retention (orphaned chunks whose parent is gone)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    jobKey: "build-retention-prune",
+    label: "Build webhook delivery retention (completed attempts older than 90 days)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    jobKey: "notifications-retention-detach",
+    label: "Notification partition maintenance (DETACH CONCURRENTLY + DROP)",
     maxAgeMs: 26 * 3_600_000,
   },
 ];
@@ -73,6 +123,44 @@ export function isVacuous(heartbeats) {
   return [...heartbeats.values()].every((v) => v === null || v === undefined);
 }
 
+/**
+ * Partial failure is a different fault from staleness and must be signalled separately.
+ *
+ * `forEachOrg` isolates a failing tenant so the rest of the sweep still drains, and
+ * `CronSweepFailureSinkService` writes that outcome to `cron:last-error:<jobKey>`. The
+ * heartbeat is still written — the sweep did run — so a run that failed for a subset of
+ * tenants is invisible to a staleness check alone.
+ *
+ * records: Map<jobKey, string|null>  (the raw JSON written by the sink or the lease)
+ */
+export function classifyFailures(sweeps, records, now = Date.now()) {
+  const failing = [];
+  for (const sweep of sweeps) {
+    const raw = records.get(sweep.jobKey) ?? null;
+    if (typeof raw !== "string") continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      failing.push({ ...sweep, error: "unparseable failure record", ts: "(unknown)" });
+      continue;
+    }
+    const ts = typeof parsed?.ts === "string" ? parsed.ts : null;
+    const at = ts === null ? NaN : new Date(ts).getTime();
+    // Older than the staleness window means the sweep has succeeded since; the record
+    // is kept for 7 days purely for post-mortem and must not fire for ever.
+    if (Number.isFinite(at) && now - at > sweep.maxAgeMs) continue;
+    failing.push({
+      ...sweep,
+      error: typeof parsed?.error === "string" ? parsed.error : "unknown failure",
+      ts: ts ?? "(unknown)",
+      partial: parsed?.partial === true,
+      failedOrgIds: Array.isArray(parsed?.failedOrgIds) ? parsed.failedOrgIds : [],
+    });
+  }
+  return failing;
+}
+
 // Detect direct execution vs. import (works on both ESM and CommonJS/ts-jest).
 const isMain =
   process.argv[1]?.replace(/\\/g, "/").endsWith("scripts/alert-retention-dead-man.mjs") ?? false;
@@ -94,8 +182,10 @@ if (isMain) {
 function runSelfTests() {
   let passed = 0;
   let failed = 0;
+  const checks = {};
 
   function assert(label, condition) {
+    checks[label] = condition === true;
     if (condition) {
       passed++;
     } else {
@@ -106,96 +196,120 @@ function runSelfTests() {
 
   const NOW = Date.now();
   const MAX_AGE = 26 * 3_600_000;
+  const RECENT = new Date(NOW - 3_600_000).toISOString();
+  const OLD = new Date(NOW - 48 * 3_600_000).toISOString();
 
+  assert("recentHeartbeatHealthy", !isStale(RECENT, MAX_AGE, NOW));
   assert(
-    "a heartbeat 1 hour old is healthy",
-    !isStale(new Date(NOW - 3_600_000).toISOString(), MAX_AGE, NOW),
-  );
-  assert(
-    "a heartbeat exactly at the boundary is not stale",
+    "boundaryHeartbeatNotStale",
     !isStale(new Date(NOW - MAX_AGE).toISOString(), MAX_AGE, NOW),
   );
+  assert("oldHeartbeatStale", isStale(OLD, MAX_AGE, NOW));
+  assert("nullHeartbeatStale", isStale(null, MAX_AGE, NOW));
+  assert("undefinedHeartbeatStale", isStale(undefined, MAX_AGE, NOW));
+  assert("unparseableHeartbeatStale", isStale("not-a-date", MAX_AGE, NOW));
+
+  assert("monitorsAtLeastTwelveSweeps", MONITORED_SWEEPS.length >= 12);
   assert(
-    "a heartbeat 27 hours old is stale — the central bite proof",
-    isStale(new Date(NOW - 27 * 3_600_000).toISOString(), MAX_AGE, NOW),
+    "everyMonitoredSweepHasAKeyAndWindow",
+    MONITORED_SWEEPS.every(
+      (s) => typeof s.jobKey === "string" && s.jobKey.length > 0 && s.maxAgeMs > 0,
+    ),
   );
-  assert("a null heartbeat (sweep never ran) is stale", isStale(null, MAX_AGE, NOW));
-  assert("an undefined heartbeat is stale", isStale(undefined, MAX_AGE, NOW));
-  assert("an unparseable timestamp is stale", isStale("not-a-date", MAX_AGE, NOW));
+  assert(
+    "monitoredJobKeysAreUnique",
+    new Set(MONITORED_SWEEPS.map((s) => s.jobKey)).size === MONITORED_SWEEPS.length,
+  );
 
   {
-    const ts = new Date(NOW - 3_600_000).toISOString();
-    const beats = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, ts]));
+    const beats = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, RECENT]));
     const { stale, healthy } = classifySweeps(MONITORED_SWEEPS, beats, NOW);
     assert(
-      "all recent heartbeats → healthy list, none stale",
+      "allRecentHeartbeatsHealthy",
       stale.length === 0 && healthy.length === MONITORED_SWEEPS.length,
     );
   }
 
   {
-    const staleTs = new Date(NOW - 48 * 3_600_000).toISOString();
-    const recentTs = new Date(NOW - 3_600_000).toISOString();
+    // One stale, one absent, the rest recent — the mixed case a real fleet produces.
+    const [first, second, ...rest] = MONITORED_SWEEPS;
     const beats = new Map([
-      ["notifications-retention-sweep", staleTs],
-      ["notification-outbox-retention-sweep", recentTs],
-      ["outbox-events-retention-sweep", null],
+      [first.jobKey, OLD],
+      [second.jobKey, null],
+      ...rest.map((s) => [s.jobKey, RECENT]),
     ]);
     const { stale, healthy } = classifySweeps(MONITORED_SWEEPS, beats, NOW);
-    assert("48h-old heartbeat is stale — stale list has 2 entries", stale.length === 2);
+    assert("mixedFleetStaleCountIsTwo", stale.length === 2);
+    assert("mixedFleetHealthyCountIsTheRest", healthy.length === MONITORED_SWEEPS.length - 2);
+    assert("staleListNamesTheOldOne", stale.some((s) => s.jobKey === first.jobKey));
     assert(
-      "stale list names notifications-retention-sweep",
-      stale.some((s) => s.jobKey === "notifications-retention-sweep"),
-    );
-    assert(
-      "null heartbeat (never ran) is stale — outbox-events-retention-sweep",
-      stale.some((s) => s.jobKey === "outbox-events-retention-sweep"),
-    );
-    assert(
-      "recent heartbeat is healthy — notification-outbox-retention-sweep",
-      healthy.length === 1 && healthy[0].jobKey === "notification-outbox-retention-sweep",
-    );
-    assert(
-      "stale entry carries lastRun=(never) when the key was absent",
-      stale.some((s) => s.jobKey === "outbox-events-retention-sweep" && s.lastRun === "(never)"),
+      "absentHeartbeatReportsNever",
+      stale.some((s) => s.jobKey === second.jobKey && s.lastRun === "(never)"),
     );
   }
 
   {
     const allNull = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, null]));
-    assert("all-null heartbeats trigger vacuity guard", isVacuous(allNull));
-
-    const onePresent = new Map([
-      ["notifications-retention-sweep", new Date(NOW - 3_600_000).toISOString()],
-      ["notification-outbox-retention-sweep", null],
-      ["outbox-events-retention-sweep", null],
-    ]);
-    assert("one present heartbeat does not trigger vacuity guard", !isVacuous(onePresent));
+    assert("allNullTriggersVacuityGuard", isVacuous(allNull));
+    const onePresent = new Map(allNull);
+    onePresent.set(MONITORED_SWEEPS[0].jobKey, RECENT);
+    assert("onePresentDoesNotTriggerVacuityGuard", !isVacuous(onePresent));
   }
 
   {
-    const healthyBeats = new Map(
-      MONITORED_SWEEPS.map((s) => [s.jobKey, new Date(NOW - 3_600_000).toISOString()]),
-    );
-    const staleBeats = new Map(
-      MONITORED_SWEEPS.map((s) => [s.jobKey, new Date(NOW - 48 * 3_600_000).toISOString()]),
-    );
-    const healthyResult = classifySweeps(MONITORED_SWEEPS, healthyBeats, NOW);
-    const staleResult = classifySweeps(MONITORED_SWEEPS, staleBeats, NOW);
+    const records = new Map();
+    assert("noFailureRecordsMeansNoAlert", classifyFailures(MONITORED_SWEEPS, records, NOW).length === 0);
+
+    const partial = JSON.stringify({
+      error: "3 of 250 organisation(s) failed during mail-metadata-retention",
+      ts: RECENT,
+      partial: true,
+      failedOrgIds: ["org-0007", "org-0113", "org-0250"],
+    });
+    records.set("mail-metadata-retention-sweep", partial);
+    const firing = classifyFailures(MONITORED_SWEEPS, records, NOW);
+    assert("recentPartialFailureFires", firing.length === 1);
+    assert("partialFailureIsFlaggedPartial", firing[0]?.partial === true);
+    assert("partialFailureNamesTheTenants", firing[0]?.failedOrgIds.length === 3);
+
+    const stale = new Map([
+      ["mail-metadata-retention-sweep", JSON.stringify({ error: "old", ts: OLD })],
+    ]);
     assert(
-      "healthy and stale fixtures produce different outcomes — a probe whose failure equals its success proves nothing",
-      healthyResult.stale.length === 0 && staleResult.stale.length > 0,
+      "failureRecordOlderThanTheWindowDoesNotFireForever",
+      classifyFailures(MONITORED_SWEEPS, stale, NOW).length === 0,
+    );
+
+    const junk = new Map([["mail-metadata-retention-sweep", "{not json"]]);
+    assert(
+      "unparseableFailureRecordFires",
+      classifyFailures(MONITORED_SWEEPS, junk, NOW).length === 1,
     );
   }
 
-  if (failed > 0) {
-    process.stderr.write(
-      `alert-retention-dead-man self-tests: ${failed} failed, ${passed} passed\n`,
+  {
+    const healthyBeats = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, RECENT]));
+    const staleBeats = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, OLD]));
+    assert(
+      "healthyAndStaleFixturesDiffer",
+      classifySweeps(MONITORED_SWEEPS, healthyBeats, NOW).stale.length === 0 &&
+        classifySweeps(MONITORED_SWEEPS, staleBeats, NOW).stale.length ===
+          MONITORED_SWEEPS.length,
     );
-    process.exit(1);
   }
-  process.stdout.write(`alert-retention-dead-man self-tests: ${passed} passed\n`);
-  process.exit(0);
+
+  const pass = failed === 0;
+  process.stdout.write(
+    JSON.stringify({
+      selfTest: true,
+      pass,
+      checks,
+      monitoredSweeps: MONITORED_SWEEPS.length,
+      passed,
+      failedCount: failed,
+    }) + "\n",
+  );
+  process.exit(pass ? 0 : 1);
 }
 
 async function redisGet(redisUrl, redisToken, key) {
@@ -219,17 +333,28 @@ async function runMain() {
   }
 
   const heartbeats = new Map();
+  const failureRecords = new Map();
   const fetchErrors = [];
 
   for (const sweep of MONITORED_SWEEPS) {
-    const heartbeatKey = `${HEARTBEAT_KEY_PREFIX}${sweep.jobKey}`;
     try {
-      heartbeats.set(sweep.jobKey, await redisGet(redisUrl, redisToken, heartbeatKey));
+      heartbeats.set(
+        sweep.jobKey,
+        await redisGet(redisUrl, redisToken, `${HEARTBEAT_KEY_PREFIX}${sweep.jobKey}`),
+      );
     } catch (err) {
       fetchErrors.push(
         `  ${sweep.jobKey}: ${err instanceof Error ? err.message : String(err)}`,
       );
       heartbeats.set(sweep.jobKey, null);
+    }
+    try {
+      failureRecords.set(
+        sweep.jobKey,
+        await redisGet(redisUrl, redisToken, `${LAST_ERROR_KEY_PREFIX}${sweep.jobKey}`),
+      );
+    } catch {
+      failureRecords.set(sweep.jobKey, null);
     }
   }
 
@@ -251,10 +376,11 @@ async function runMain() {
   }
 
   const { stale, healthy } = classifySweeps(MONITORED_SWEEPS, heartbeats);
+  const failing = classifyFailures(MONITORED_SWEEPS, failureRecords);
 
   process.stdout.write(
     `alert-retention-dead-man: ${MONITORED_SWEEPS.length} sweeps checked — ` +
-      `${healthy.length} healthy, ${stale.length} stale\n`,
+      `${healthy.length} healthy, ${stale.length} stale, ${failing.length} with a recent failure\n`,
   );
   for (const s of healthy)
     process.stdout.write(`  OK     ${s.jobKey}  last=${s.lastRun}\n`);
@@ -267,8 +393,20 @@ async function runMain() {
           `         ${s.label}\n`,
       );
     }
-    process.exit(1);
   }
 
-  process.exit(0);
+  if (failing.length > 0) {
+    process.stderr.write("Sweeps with a recent failure record (total or per-tenant):\n");
+    for (const f of failing) {
+      process.stderr.write(
+        `  FAILED ${f.jobKey}  at=${f.ts}  partial=${String(f.partial === true)}\n` +
+          `         ${f.error}\n` +
+          (f.failedOrgIds && f.failedOrgIds.length > 0
+            ? `         tenants: ${f.failedOrgIds.join(", ")}\n`
+            : ""),
+      );
+    }
+  }
+
+  process.exit(stale.length > 0 || failing.length > 0 ? 1 : 0);
 }

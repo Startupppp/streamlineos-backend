@@ -11,6 +11,7 @@ function makeService(projections: CalendarEventProjection[]): CalendarEventsAggr
       events: projections,
       toggleList: [],
       failures: [],
+      truncatedKeys: [],
     }),
   } as unknown as CalendarSourceRegistry;
   return new CalendarEventsAggregateService(db, registry);

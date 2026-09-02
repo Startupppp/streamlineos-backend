@@ -102,9 +102,7 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
     .where(sql`expires_at is not null`),
   uniqueIndex("uq_notification_deliveries_idempotency").on(table.idempotencyKey),
   index("idx_notification_deliveries_due").on(table.orgId, table.status, table.nextAttemptAt),
-  index("idx_notification_deliveries_notification").on(table.notificationId),
   index("idx_notification_deliveries_membership_channel").on(table.orgId, table.membershipId, table.channel, table.createdAt),
-  index("idx_notification_deliveries_org_membership").on(table.orgId, table.membershipId),
   foreignKey({
     name: "fk_notification_deliveries_actor",
     columns: [table.orgId, table.membershipId],
@@ -134,11 +132,9 @@ export const notificationQueue = pgTable("notification_queue", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.deliveryId], foreignColumns: [notificationDeliveries.orgId, notificationDeliveries.id], name: "fk_notification_queue_delivery_id_org" }).onDelete("cascade"),
   index("idx_notification_queue_due").on(table.status, table.runAt),
-  index("idx_notification_queue_delivery").on(table.deliveryId),
   // SCH-015: one queue job per delivery. The worker already updates rather than
   // re-inserting; this makes that the database's invariant, not the caller's.
   uniqueIndex("uniq_notification_queue_delivery").on(table.deliveryId),
-  index("idx_notification_queue_org").on(table.orgId),
   unique("uniq_notification_queue_org_id").on(table.orgId, table.id),
 ]);
 
@@ -158,7 +154,6 @@ export const notificationPolicyDefaults = pgTable("notification_policy_defaults"
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   uniqueIndex("uq_notification_policy_scope").on(table.orgId, table.scopeType, table.scopeId),
-  index("idx_notification_policy_org_scope").on(table.orgId, table.scopeType),
   unique("uniq_notif_policy_defaults_org_id").on(table.orgId, table.id),
 ]);
 
@@ -288,8 +283,6 @@ export const notificationPreferenceRules = pgTable(
   },
   (t) => [
     uniqueIndex("uniq_notification_pref_rule").on(t.orgId, t.membershipId, t.scopeType, t.scopeKey, t.channel),
-    index("idx_notification_pref_rule_lookup").on(t.orgId, t.membershipId, t.scopeType, t.scopeKey),
-    index("idx_notification_pref_rules_org_membership").on(t.orgId, t.membershipId),
     uniqueIndex("uniq_notification_preference_rules_org_id").on(t.orgId, t.id),
     foreignKey({
       name: "fk_notification_pref_rules_actor",
@@ -328,7 +321,6 @@ export const notificationConsents = pgTable(
   },
   (t) => [
     uniqueIndex("uniq_notification_consents_current").on(t.orgId, t.membershipId, t.channel, t.destination),
-    index("idx_notification_consents_org_membership").on(t.orgId, t.membershipId),
     uniqueIndex("uniq_notification_consents_org_id").on(t.orgId, t.id),
     foreignKey({
       name: "fk_notification_consents_actor",
@@ -473,7 +465,6 @@ export const broadcastReadReceipts = pgTable(
   (t) => [
   foreignKey({ columns: [t.orgId, t.broadcastId], foreignColumns: [broadcasts.orgId, broadcasts.id], name: "fk_broadcast_read_receipts_broadcast_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_broadcast_read_receipts_org_membership_broadcast").on(t.orgId, t.broadcastId, t.membershipId),
-    index("idx_broadcast_read_receipts_admin").on(t.orgId, t.broadcastId),
     index("idx_broadcast_read_receipts_org_membership").on(t.orgId, t.membershipId),
     foreignKey({
       name: "fk_broadcast_read_receipts_actor",

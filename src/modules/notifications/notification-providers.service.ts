@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, sql } from "drizzle-orm";
 import { notificationProviderAccounts, notificationAuditLogs, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -34,13 +34,20 @@ export class NotificationProvidersService {
     });
   }
 
+  /** The ciphertext is derived to a boolean in SQL, so provider credentials never leave the database. */
   async list(orgId: string) {
-    const rows = await this.db.query.notificationProviderAccounts.findMany({
+    return this.db.query.notificationProviderAccounts.findMany({
+      columns: { configEncrypted: false },
+      extras: {
+        hasCredentials:
+          sql<boolean>`${notificationProviderAccounts.configEncrypted} IS NOT NULL`.as(
+            "has_credentials",
+          ),
+      },
       where: eq(notificationProviderAccounts.orgId, orgId),
       orderBy: [desc(notificationProviderAccounts.createdAt)],
       limit: 100,
     });
-    return rows.map((r) => this.sanitize(r));
   }
 
   private encryptConfig(config: Record<string, unknown> | undefined): string | null {

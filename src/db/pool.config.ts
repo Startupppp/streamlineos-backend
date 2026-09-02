@@ -8,6 +8,7 @@ const NEON_HOST = /\.neon\.tech/i;
 const POOLED_HOST = /-pooler\./i;
 
 const DEFAULT_APPLICATION_NAME = "streamlineos-api";
+const PINNED_TIME_ZONE = "UTC";
 const DEFAULT_SLOW_ACQUIRE_MS = SEAM_BUDGETS['db.pool.wait'].thresholdMs;
 const DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5;
 const DIRECT_ENDPOINT_SAFE_MAX = 10;
@@ -41,6 +42,10 @@ export interface TransactionGuards {
   statementTimeoutMs: number;
   idleInTransactionMs: number;
   lockTimeoutMs: number;
+}
+
+export interface PoolRuntime {
+  utcOffsetMinutes: number;
 }
 
 export interface ResolvedPoolConfig {
@@ -101,12 +106,32 @@ function parsePoolEnv(env: NodeJS.ProcessEnv): z.infer<typeof poolEnvSchema> {
 }
 
 /**
+ * 1388 of the schema's timestamp columns are `timestamp without time zone`. The
+ * driver writes a JS Date as a `timestamptz` literal and reads a naive column back
+ * with a bare `new Date(text)`, so the value only survives the round trip while the
+ * session's TimeZone and the process's TZ agree. Measured against PostgreSQL 18.4:
+ * with the session on `Asia/Kolkata` and the process on UTC, `2026-09-02T12:00:00Z`
+ * reads back as `17:30:00Z`; pinning the session to UTC while the process stays on
+ * `Asia/Kolkata` shifts it the other way, to `06:30:00Z`. Pinning the session is
+ * therefore only half the fix — the image sets `TZ=UTC` for the other half, and a
+ * process running anywhere else gets told below.
+ */
+export function describeTimezoneRisk(utcOffsetMinutes: number): string | null {
+  if (utcOffsetMinutes === 0) return null;
+  const hours = -utcOffsetMinutes / 60;
+  return `The database session is pinned to ${PINNED_TIME_ZONE} but this process runs at UTC${hours >= 0 ? "+" : ""}${hours}. Every \`timestamp without time zone\` column will read back shifted by ${hours} hours. Set TZ=UTC on the process (the container image already does).`;
+}
+
+/**
  * Defaults differ by endpoint because the constraints do: a Neon compute suspends
  * when idle and caps `max_connections` low on a direct endpoint, while its
  * transaction-mode pooler multiplexes many clients onto few server connections
  * but cannot serve prepared statements.
  */
-export function resolvePoolConfig(env: NodeJS.ProcessEnv): ResolvedPoolConfig {
+export function resolvePoolConfig(
+  env: NodeJS.ProcessEnv,
+  runtime: PoolRuntime = { utcOffsetMinutes: new Date().getTimezoneOffset() },
+): ResolvedPoolConfig {
   const raw = env.APP_DATABASE_URL || env.DATABASE_URL;
   if (!raw)
     throw new Error("[db-pool] APP_DATABASE_URL or DATABASE_URL is required");
@@ -131,6 +156,7 @@ export function resolvePoolConfig(env: NodeJS.ProcessEnv): ResolvedPoolConfig {
 
   const connection: NonNullable<PoolOptions["connection"]> = {
     application_name: tuning.DB_APPLICATION_NAME ?? DEFAULT_APPLICATION_NAME,
+    TimeZone: PINNED_TIME_ZONE,
   };
 
   const options: PoolOptions = {
@@ -154,7 +180,14 @@ export function resolvePoolConfig(env: NodeJS.ProcessEnv): ResolvedPoolConfig {
     isPooled,
     connectionString,
     replicaConnectionString: replicaRaw ? normalizeDatabaseUrl(replicaRaw) : undefined,
-    warnings: collectWarnings({ max, isNeon, isPooled, isProduction, guards }),
+    warnings: collectWarnings({
+      max,
+      isNeon,
+      isPooled,
+      isProduction,
+      guards,
+      utcOffsetMinutes: runtime.utcOffsetMinutes,
+    }),
     role: env.APP_DATABASE_URL ? "application" : "owner",
     slowAcquireMs: tuning.DB_SLOW_ACQUIRE_MS ?? DEFAULT_SLOW_ACQUIRE_MS,
     shutdownTimeoutSeconds:
@@ -168,9 +201,13 @@ function collectWarnings(input: {
   isPooled: boolean;
   max: number;
   guards: TransactionGuards;
+  utcOffsetMinutes: number;
 }): string[] {
   const warnings: string[] = [];
   const { statementTimeoutMs, idleInTransactionMs } = input.guards;
+
+  const timezoneRisk = describeTimezoneRisk(input.utcOffsetMinutes);
+  if (timezoneRisk) warnings.push(timezoneRisk);
 
   if (input.isNeon && !input.isPooled && input.max > DIRECT_ENDPOINT_SAFE_MAX)
     warnings.push(

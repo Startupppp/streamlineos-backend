@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, max, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
 
 const PIPELINE_AUTOMATION_CAP = 100;
 const EMAIL_SEQUENCE_CAP = 100;
@@ -312,6 +312,19 @@ export class RecruitmentAutomationService {
 
     const nextSendAt = firstStep ? new Date(Date.now() + firstStep.delayDays * 86_400_000) : null;
 
+    // `email_sequence_enrollments` has no `org_id`, and `candidate_id` is a
+    // foreign key, so an unknown id used to raise an FK violation while another
+    // organisation's real id succeeded — one request per id enumerated the
+    // global candidate table. The whole request fails unless every candidate is
+    // this organisation's, and a miss is 404 rather than 403.
+    const owned = await this.db
+      .select({ id: candidates.id })
+      .from(candidates)
+      .where(and(eq(candidates.orgId, orgId), inArray(candidates.id, input.candidateIds)))
+      .limit(input.candidateIds.length);
+    if (owned.length !== new Set(input.candidateIds).size)
+      throw new NotFoundException("One or more candidates not found in this organization");
+
     const rows = input.candidateIds.map((candidateId) => ({
       sequenceId,
       candidateId,
@@ -320,7 +333,11 @@ export class RecruitmentAutomationService {
       nextSendAt,
     }));
 
-    await this.db.insert(emailSequenceEnrollments).values(rows).onConflictDoNothing();
-    return { enrolled: rows.length };
+    const inserted = await this.db
+      .insert(emailSequenceEnrollments)
+      .values(rows)
+      .onConflictDoNothing()
+      .returning({ id: emailSequenceEnrollments.id });
+    return { enrolled: inserted.length };
   }
 }

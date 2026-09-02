@@ -150,11 +150,28 @@ describe("retention dead-man — heartbeat keys, which fail loud rather than ine
     expect(scriptPrefix).toBe(servicePrefix);
   });
 
+  const CRON_LEASE_TAKERS = [
+    "cron-notifications.controller.ts",
+    "cron-outbox.controller.ts",
+    "cron-hr.controller.ts",
+    "cron-platform.controller.ts",
+    "cron-support.controller.ts",
+    "cron-build.controller.ts",
+    "cron-retention-scheduler.service.ts",
+    "retention-schedule.ts",
+  ];
+
   it.each(
     [...new Set([...script.matchAll(/jobKey:\s*"([^"]+)"/g)].map((m) => m[1]))].map((k) => [k]),
   )("a sweep really does take the lease under %s", (jobKey) => {
-    const controllers = read(SRC, "modules", "cron", "cron-notifications.controller.ts")
-      .concat(read(SRC, "modules", "cron", "cron-outbox.controller.ts"));
-    expect(controllers).toContain(`withLease("${jobKey}"`);
+    const sources = CRON_LEASE_TAKERS.map((file) =>
+      read(SRC, "modules", "cron", file),
+    ).join("\n");
+    // Either a controller takes it directly, or the in-process scheduler takes it from
+    // its declaration — `notifications-retention-detach` is only the latter, because the
+    // partition service holds its own distributed lease behind the route.
+    expect(
+      sources.includes(`withLease("${jobKey}"`) || sources.includes(`jobKey: "${jobKey}"`),
+    ).toBe(true);
   });
 });

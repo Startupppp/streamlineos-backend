@@ -171,7 +171,6 @@ export const feedbucketSubmissions = build.table(
     index("idx_feedbucket_submissions_widget").on(t.orgId, t.widgetId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_org_status").on(t.orgId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_assignee").on(t.orgId, t.assigneeMembershipId).where(sql`deleted_at IS NULL`),
-    index("idx_feedbucket_submissions_org_assignee_membership").on(t.orgId, t.assigneeMembershipId).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_crm_contact").on(t.orgId, t.crmContactId).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_crm_org").on(t.orgId, t.crmOrganizationId).where(sql`deleted_at IS NULL`),
     unique("uniq_feedbucket_submissions_org_id").on(t.orgId, t.id),

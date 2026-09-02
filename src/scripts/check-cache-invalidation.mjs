@@ -24,10 +24,21 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  findFalsePrefixDeletes,
+  findNamespaceCounterMismatches,
+  parseCacheKeyFactories,
+  resolveAllSites,
+  resolveFileSites,
+  segmentPrefix,
+} from "./check-cache-key-shapes.mjs";
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_SRC = resolve(__dirname, "..");
 
 const MIN_SERVICE_FILES = 30;
+const MIN_WRITE_SITES = 100;
+const MIN_INVALIDATE_SITES = 200;
 const SELF_TEST = process.argv.includes("--self-test");
 
 // ─── table → cache key families ──────────────────────────────────────────────
@@ -91,7 +102,9 @@ const TABLE_TO_CACHE_FAMILIES = [
     ],
   },
   {
-    table: "org_hierarchy",
+    // The Drizzle object is `orgUnits` (`org_units`); there has never been an
+    // `org_hierarchy` table, which is why this row matched nothing.
+    table: "org_units",
     families: [
       { key: "org:hierarchy:", invalidationKeywords: ["org:hierarchy", "invalidateAfterMutation"] },
       { key: "hr:headcount:", invalidationKeywords: ["hr:headcount", "invalidateAfterMutation"] },
@@ -377,16 +390,64 @@ function readFile(path) {
   }
 }
 
-function fileWritesToTable(content, table) {
-  const patterns = [
-    new RegExp(`\\.insert\\s*\\(\\s*${table}\\b`),
-    new RegExp(`\\.update\\s*\\(\\s*${table}\\b`),
-    new RegExp(`\\.delete\\s*\\)\\s*\\.from\\s*\\(\\s*${table}\\b`),
-    new RegExp(`tx\\.insert\\s*\\(\\s*${table}\\b`),
-    new RegExp(`tx\\.update\\s*\\(\\s*${table}\\b`),
-  ];
-  return patterns.some((p) => p.test(content));
+/**
+ * Drizzle schema objects are camelCase; TABLE_TO_CACHE_FAMILIES names the
+ * snake_case Postgres tables. Matching only the snake_case form made all 10
+ * entries match 0 of 1069 files, so not one family check ever executed — the
+ * `org_hierarchy -> hr:headcount` row that was meant to guard the headcount
+ * defect had never run. Both spellings are accepted now, and
+ * `tableMatchCoverage` fails the gate if any entry matches nothing.
+ */
+export function snakeToCamel(name) {
+  return name.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
 }
+
+export function tableIdentifiers(table) {
+  const camel = snakeToCamel(table);
+  return camel === table ? [table] : [table, camel];
+}
+
+function fileWritesToTable(content, table) {
+  for (const ident of tableIdentifiers(table)) {
+    const patterns = [
+      new RegExp(`\\.insert\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`\\.update\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`\\.delete\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`\\.delete\\s*\\)\\s*\\.from\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`tx\\.insert\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`tx\\.update\\s*\\(\\s*${ident}\\b`),
+      new RegExp(`tx\\.delete\\s*\\(\\s*${ident}\\b`),
+    ];
+    if (patterns.some((pat) => pat.test(content))) return true;
+  }
+  return false;
+}
+
+/** How many scanned files write to each declared table. A zero is a rotted map. */
+export function tableMatchCoverage(tables, contents) {
+  const coverage = new Map();
+  for (const table of tables)
+    coverage.set(table, contents.filter((c) => fileWritesToTable(c, table)).length);
+  return coverage;
+}
+
+/**
+ * Namespace-counter mismatches that are known, reported and owned elsewhere.
+ * Each entry must still be a live finding — a stale entry fails the gate, so
+ * this cannot rot into a silent permanent exemption.
+ */
+const NAMESPACE_MISMATCH_ALLOWLIST = [
+  {
+    shape: "chat:unread:*",
+    reason:
+      "report 20b F2 (P2): two invalidateNamespace bumps with zero cachedVersioned readers anywhere. Chat module, not this ticket.",
+  },
+  {
+    shape: "fin:forecast:*",
+    reason:
+      "report 20b F3 (P2): finForecastNamespace is bumped but never read through cachedVersioned. Finance module, not this ticket.",
+  },
+];
 
 function fileHasPattern(content, keywords) {
   return keywords.some((kw) => {
@@ -598,7 +659,86 @@ function runFullScan() {
 
   findings.push(...checkModuleEnableSessionBust());
 
-  return { findings, vacuityFailed: false, fileCount: serviceFiles.length };
+  // ── Table-map vacuity: the lookup table must actually match something ──────
+  // 10 entries matched 0 of 1069 files for the whole life of this gate.
+  const allSrcContents = walkDir(BACKEND_SRC).map((f) => readFile(f));
+  const coverage = tableMatchCoverage(
+    TABLE_TO_CACHE_FAMILIES.map((e) => e.table),
+    allSrcContents,
+  );
+  const deadTableEntries = [...coverage].filter(([, n]) => n === 0).map(([t]) => t);
+  if (deadTableEntries.length > 0) {
+    findings.push({
+      id: "table-map-rotted",
+      severity: "CRITICAL",
+      file: "src/scripts/check-cache-invalidation.mjs",
+      line: "TABLE_TO_CACHE_FAMILIES",
+      description: `${deadTableEntries.length} of ${coverage.size} table entries match no file in src/ (${deadTableEntries.join(", ")}). Those family checks do not run, so a green result says nothing about them.`,
+      kind: "vacuous-lookup-table",
+    });
+  }
+
+  // ── Key-shape analysis (the defect class the keyword tests cannot see) ─────
+  const shapes = resolveAllSites(BACKEND_SRC, join(BACKEND_SRC, "common", "cache", "cache-keys.ts"));
+  const shapeCounts = {
+    writeSites: shapes.writes.length,
+    writeShapes: new Set(shapes.writes.map((w) => w.shape)).size,
+    invalidateSites: shapes.invalidates.length,
+    cacheKeyFactories: shapes.cacheKeyFactories.size,
+  };
+
+  if (shapeCounts.writeSites < MIN_WRITE_SITES || shapeCounts.invalidateSites < MIN_INVALIDATE_SITES) {
+    findings.push({
+      id: "shape-scan-vacuous",
+      severity: "CRITICAL",
+      file: "src/common/cache",
+      line: "N/A",
+      description: `Key-shape scan resolved ${shapeCounts.writeSites} write sites (floor ${MIN_WRITE_SITES}) and ${shapeCounts.invalidateSites} invalidate sites (floor ${MIN_INVALIDATE_SITES}). The resolver is broken; a clean result proves nothing.`,
+      kind: "vacuous-shape-scan",
+    });
+  }
+
+  for (const f of findFalsePrefixDeletes(shapes.writes, shapes.invalidates)) {
+    findings.push({
+      id: `false-prefix:${f.shape}`,
+      severity: "CRITICAL",
+      file: f.file,
+      line: f.line,
+      description: `${f.method}("${f.shape}") deletes a key nothing writes. There is no prefix delete — invalidate() is redis.del(exactKey). What is actually written: ${f.written.slice(0, 3).join(", ")}`,
+      kind: "false-prefix-delete",
+    });
+  }
+
+  const seenAllowlist = new Set();
+  for (const f of findNamespaceCounterMismatches(shapes.writes, shapes.invalidates)) {
+    const allow = NAMESPACE_MISMATCH_ALLOWLIST.find((a) => a.shape === f.shape);
+    if (allow) {
+      seenAllowlist.add(allow.shape);
+      continue;
+    }
+    findings.push({
+      id: `namespace-mismatch:${f.shape}`,
+      severity: "MEDIUM",
+      file: f.file,
+      line: f.line,
+      description: `${f.method} bumps generation counter "${f.shape}" but no cachedVersioned* read uses that namespace. The bump reaches nothing. Note that <ORG>: is significant: the *ForOrg family writes a different Redis key from the global family.`,
+      kind: "namespace-counter-mismatch",
+    });
+  }
+
+  for (const entry of NAMESPACE_MISMATCH_ALLOWLIST) {
+    if (seenAllowlist.has(entry.shape)) continue;
+    findings.push({
+      id: `stale-allowlist:${entry.shape}`,
+      severity: "MEDIUM",
+      file: "src/scripts/check-cache-invalidation.mjs",
+      line: "NAMESPACE_MISMATCH_ALLOWLIST",
+      description: `Allowlisted namespace "${entry.shape}" is no longer a finding — remove the entry. (${entry.reason})`,
+      kind: "stale-allowlist",
+    });
+  }
+
+  return { findings, vacuityFailed: false, fileCount: serviceFiles.length, shapeCounts, coverage };
 }
 
 export function moduleEnableBustsEveryMember(source) {
@@ -642,7 +782,7 @@ if (SELF_TEST) {
   process.exit(allPass ? 0 : 3);
 }
 
-const { findings, vacuityFailed, fileCount } = runFullScan();
+const { findings, vacuityFailed, fileCount, shapeCounts, coverage } = runFullScan();
 
 if (vacuityFailed) {
   process.exit(2);
@@ -652,7 +792,13 @@ const critical = findings.filter((f) => f.severity === "CRITICAL");
 const medium = findings.filter((f) => f.severity === "MEDIUM");
 const low = findings.filter((f) => f.severity === "LOW");
 
-process.stdout.write(`\n=== cache-invalidation gate — ${fileCount} service files scanned ===\n\n`);
+process.stdout.write(`\n=== cache-invalidation gate — ${fileCount} service files scanned ===\n`);
+process.stdout.write(
+  `Key shapes: ${shapeCounts.writeSites} write sites / ${shapeCounts.writeShapes} distinct shapes · ${shapeCounts.invalidateSites} invalidate sites · ${shapeCounts.cacheKeyFactories} CACHE_KEYS factories\n`,
+);
+process.stdout.write(
+  `Table map: ${[...coverage].filter(([, n]) => n > 0).length} of ${coverage.size} entries match at least one file\n\n`,
+);
 
 if (critical.length > 0) {
   process.stdout.write(`CRITICAL (${critical.length}):\n`);

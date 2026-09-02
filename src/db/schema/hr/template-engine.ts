@@ -110,7 +110,6 @@ export const hrTemplates = pgTable("hr_templates", {
 }, (table) => [
   unique("uniq_hr_templates_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_templates_org_kind_name_ver").on(table.orgId, table.kind, table.name, table.version),
-  index("idx_hr_templates_org_kind").on(table.orgId, table.kind),
   index("idx_hr_templates_org_status").on(table.orgId, table.status),
 ]);
 

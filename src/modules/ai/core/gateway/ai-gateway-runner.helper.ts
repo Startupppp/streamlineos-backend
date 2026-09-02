@@ -5,6 +5,7 @@ import {
   milliToCredits,
 } from "../billing/ai-model-pricing.constants";
 import { getReserveEstimateMilli as getCatalogEstimateMilli } from "../billing/ai-cost-catalog";
+import { AiCallMetrics, type AiCallOutcome } from "../telemetry/ai-call-metrics";
 import { AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
 import type {
   AiInvokeResult,
@@ -27,16 +28,46 @@ function boundedMaxTokens(requested: number | undefined): number {
   return Math.min(requested, MAX_OUTPUT_TOKENS_DEFAULT);
 }
 
+/**
+ * A client that hung up did not make the provider fail, and counting it as a
+ * provider failure is how a breaker trips on a busy afternoon of people closing
+ * tabs. Recorded as its own outcome instead.
+ */
+function outcomeForError(signal: AbortSignal | undefined): AiCallOutcome | undefined {
+  return signal?.aborted === true ? "cancelled" : undefined;
+}
+
 export class AiGatewayRunnerHelper {
   constructor(
     private readonly llm: LlmService,
     private readonly credit: AiGatewayCreditHelper,
   ) {}
 
+  /**
+   * Defaulted rather than required so the call sites that pass only a correlation
+   * id still compile — but never absent, so a path can lose its metrics only by
+   * deleting the default, not by forgetting an argument.
+   */
+  private metricsFor(
+    opts: { feature: string; tier?: string; actor: { orgId: string } },
+    metrics: AiCallMetrics | undefined,
+  ): AiCallMetrics {
+    return (
+      metrics ??
+      AiCallMetrics.begin({
+        feature: opts.feature,
+        ...(opts.tier !== undefined ? { tier: opts.tier } : {}),
+        orgId: opts.actor.orgId,
+      })
+    );
+  }
+
   async runStructured<T>(
     opts: InvokeStructuredOpts<T>,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeResult<T>> {
+    const call = this.metricsFor(opts, metrics);
     const { actor, feature, tier, maxTokens, maxContextChars, charge, redact = true } = opts;
     const prompt = redact
       ? {
@@ -46,6 +77,7 @@ export class AiGatewayRunnerHelper {
       : opts.prompt;
 
     if (contextExceedsLimit(prompt, maxContextChars ?? MAX_CONTEXT_CHARS_DEFAULT)) {
+      call.finish("context_too_large");
       return {
         ok: false,
         kind: "context_too_large",
@@ -64,28 +96,33 @@ export class AiGatewayRunnerHelper {
         feature,
         correlationId,
       );
-      if (!reserveResult.reserved)
+      if (!reserveResult.reserved) {
+        call.finish(reserveResult.kind);
         return {
           ok: false,
           kind: reserveResult.kind,
           message: reserveResult.message,
           correlationId: reserveResult.correlationId,
         };
+      }
       reservationId = reserveResult.reservationId;
     }
 
     const start = Date.now();
 
     try {
-      const result = await this.llm.invokeStructuredWithUsage({
-        model: tier ?? "fast",
-        schema: opts.schema,
-        schemaName: feature.replace(/[^a-z0-9]/gi, "_"),
-        system: prompt.system,
-        user: prompt.user,
-        maxTokens: boundedMaxTokens(maxTokens),
-        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-      });
+      const result = await call.provider(() =>
+        this.llm.invokeStructuredWithUsage({
+          model: tier ?? "fast",
+          schema: opts.schema,
+          schemaName: feature.replace(/[^a-z0-9]/gi, "_"),
+          system: prompt.system,
+          user: prompt.user,
+          maxTokens: boundedMaxTokens(maxTokens),
+          onRetry: () => call.retried(),
+          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+        }),
+      );
 
       const latencyMs = Date.now() - start;
       const usage = result.usage;
@@ -98,20 +135,29 @@ export class AiGatewayRunnerHelper {
           )
         : { costUsd: 0, milliCredits: 0 };
 
-      await this.credit.settleAndTrack(
+      const timings = call.finish("ok", {
+        model: result.model,
+        promptTokens: usage.promptTokens ?? 0,
+        completionTokens: usage.completionTokens ?? 0,
+        creditsMilli: milliCredits,
+        costUsd,
+      });
+
+      await this.credit.settleAndTrack({
         reservationId,
-        charge ? { milli: reserveMilli } : undefined,
-        result.model,
+        charge: charge ? { milli: reserveMilli } : undefined,
+        model: result.model,
         usage,
         actor,
         feature,
-        opts.prompt,
+        prompt: opts.prompt,
         correlationId,
         latencyMs,
-        "ok",
-        milliCredits,
+        outcome: "ok",
+        actualMilli: milliCredits,
         costUsd,
-      );
+        timings,
+      });
 
       return {
         ok: true,
@@ -127,23 +173,28 @@ export class AiGatewayRunnerHelper {
       };
     } catch (error) {
       const latencyMs = Date.now() - start;
-      return this.credit.handleProviderError(
+      const cancelled = outcomeForError(opts.signal);
+      const timings = call.finish(cancelled ?? "error");
+      return this.credit.handleProviderError({
         error,
         reservationId,
         actor,
         feature,
-        opts.prompt,
+        prompt: opts.prompt,
         correlationId,
         latencyMs,
-      );
+        ...(cancelled !== undefined ? { outcome: cancelled } : {}),
+        timings,
+      });
     }
   }
 
   async runStructuredWithUsage<T>(
     opts: InvokeStructuredOpts<T>,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeWithUsageResult<T>> {
-    const result = await this.runStructured(opts, correlationId);
+    const result = await this.runStructured(opts, correlationId, metrics);
     if (!result.ok) return result;
 
     const { costUsd, milliCredits } = computeTokenCharge(
@@ -167,7 +218,9 @@ export class AiGatewayRunnerHelper {
   async runStructuredWithImage<T>(
     opts: InvokeStructuredWithImageOpts<T>,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeResult<T>> {
+    const call = this.metricsFor(opts, metrics);
     const { actor, feature, tier, maxTokens, maxContextChars, charge, redact = true } = opts;
     const prompt = redact
       ? {
@@ -177,6 +230,7 @@ export class AiGatewayRunnerHelper {
       : opts.prompt;
 
     if (contextExceedsLimit(prompt, maxContextChars ?? MAX_CONTEXT_CHARS_DEFAULT)) {
+      call.finish("context_too_large");
       return {
         ok: false,
         kind: "context_too_large",
@@ -195,29 +249,34 @@ export class AiGatewayRunnerHelper {
         feature,
         correlationId,
       );
-      if (!reserveResult.reserved)
+      if (!reserveResult.reserved) {
+        call.finish(reserveResult.kind);
         return {
           ok: false,
           kind: reserveResult.kind,
           message: reserveResult.message,
           correlationId: reserveResult.correlationId,
         };
+      }
       reservationId = reserveResult.reservationId;
     }
 
     const start = Date.now();
 
     try {
-      const result = await this.llm.invokeStructuredWithImageWithUsage({
-        model: tier ?? "fast",
-        schema: opts.schema,
-        schemaName: feature.replace(/[^a-z0-9]/gi, "_"),
-        system: prompt.system,
-        user: prompt.user,
-        images: opts.images,
-        maxTokens: boundedMaxTokens(maxTokens),
-        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-      });
+      const result = await call.provider(() =>
+        this.llm.invokeStructuredWithImageWithUsage({
+          model: tier ?? "fast",
+          schema: opts.schema,
+          schemaName: feature.replace(/[^a-z0-9]/gi, "_"),
+          system: prompt.system,
+          user: prompt.user,
+          images: opts.images,
+          maxTokens: boundedMaxTokens(maxTokens),
+          onRetry: () => call.retried(),
+          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+        }),
+      );
 
       const latencyMs = Date.now() - start;
       const usage = result.usage;
@@ -230,20 +289,29 @@ export class AiGatewayRunnerHelper {
           )
         : { costUsd: 0, milliCredits: 0 };
 
-      await this.credit.settleAndTrack(
+      const timings = call.finish("ok", {
+        model: result.model,
+        promptTokens: usage.promptTokens ?? 0,
+        completionTokens: usage.completionTokens ?? 0,
+        creditsMilli: milliCredits,
+        costUsd,
+      });
+
+      await this.credit.settleAndTrack({
         reservationId,
-        charge ? { milli: reserveMilli } : undefined,
-        result.model,
+        charge: charge ? { milli: reserveMilli } : undefined,
+        model: result.model,
         usage,
         actor,
         feature,
-        opts.prompt,
+        prompt: opts.prompt,
         correlationId,
         latencyMs,
-        "ok",
-        milliCredits,
+        outcome: "ok",
+        actualMilli: milliCredits,
         costUsd,
-      );
+        timings,
+      });
 
       return {
         ok: true,
@@ -259,22 +327,28 @@ export class AiGatewayRunnerHelper {
       };
     } catch (error) {
       const latencyMs = Date.now() - start;
-      return this.credit.handleProviderError(
+      const cancelled = outcomeForError(opts.signal);
+      const timings = call.finish(cancelled ?? "error");
+      return this.credit.handleProviderError({
         error,
         reservationId,
         actor,
         feature,
-        opts.prompt,
+        prompt: opts.prompt,
         correlationId,
         latencyMs,
-      );
+        ...(cancelled !== undefined ? { outcome: cancelled } : {}),
+        timings,
+      });
     }
   }
 
   async runText(
     opts: InvokeTextOpts,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeResult<string>> {
+    const call = this.metricsFor(opts, metrics);
     const { actor, feature, tier, maxTokens, maxContextChars, charge, redact = true } = opts;
     const prompt = redact
       ? {
@@ -284,6 +358,7 @@ export class AiGatewayRunnerHelper {
       : opts.prompt;
 
     if (contextExceedsLimit(prompt, maxContextChars ?? MAX_CONTEXT_CHARS_DEFAULT)) {
+      call.finish("context_too_large");
       return {
         ok: false,
         kind: "context_too_large",
@@ -302,26 +377,31 @@ export class AiGatewayRunnerHelper {
         feature,
         correlationId,
       );
-      if (!reserveResult.reserved)
+      if (!reserveResult.reserved) {
+        call.finish(reserveResult.kind);
         return {
           ok: false,
           kind: reserveResult.kind,
           message: reserveResult.message,
           correlationId: reserveResult.correlationId,
         };
+      }
       reservationId = reserveResult.reservationId;
     }
 
     const start = Date.now();
 
     try {
-      const result = await this.llm.invokeTextWithUsage({
-        model: tier ?? "fast",
-        system: prompt.system,
-        user: prompt.user,
-        maxTokens: boundedMaxTokens(maxTokens),
-        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
-      });
+      const result = await call.provider(() =>
+        this.llm.invokeTextWithUsage({
+          model: tier ?? "fast",
+          system: prompt.system,
+          user: prompt.user,
+          maxTokens: boundedMaxTokens(maxTokens),
+          onRetry: () => call.retried(),
+          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+        }),
+      );
 
       const latencyMs = Date.now() - start;
       const usage = result.usage;
@@ -334,20 +414,29 @@ export class AiGatewayRunnerHelper {
           )
         : { costUsd: 0, milliCredits: 0 };
 
-      await this.credit.settleAndTrack(
+      const timings = call.finish("ok", {
+        model: result.model,
+        promptTokens: usage.promptTokens ?? 0,
+        completionTokens: usage.completionTokens ?? 0,
+        creditsMilli: milliCredits,
+        costUsd,
+      });
+
+      await this.credit.settleAndTrack({
         reservationId,
-        charge ? { milli: reserveMilli } : undefined,
-        result.model,
+        charge: charge ? { milli: reserveMilli } : undefined,
+        model: result.model,
         usage,
         actor,
         feature,
-        opts.prompt,
+        prompt: opts.prompt,
         correlationId,
         latencyMs,
-        "ok",
-        milliCredits,
+        outcome: "ok",
+        actualMilli: milliCredits,
         costUsd,
-      );
+        timings,
+      });
 
       return {
         ok: true,
@@ -363,23 +452,28 @@ export class AiGatewayRunnerHelper {
       };
     } catch (error) {
       const latencyMs = Date.now() - start;
-      return this.credit.handleProviderError(
+      const cancelled = outcomeForError(opts.signal);
+      const timings = call.finish(cancelled ?? "error");
+      return this.credit.handleProviderError({
         error,
         reservationId,
         actor,
         feature,
-        opts.prompt,
+        prompt: opts.prompt,
         correlationId,
         latencyMs,
-      );
+        ...(cancelled !== undefined ? { outcome: cancelled } : {}),
+        timings,
+      });
     }
   }
 
   async runTextWithUsage(
     opts: InvokeTextOpts,
     correlationId: string,
+    metrics?: AiCallMetrics,
   ): Promise<AiInvokeWithUsageResult<string>> {
-    const result = await this.runText(opts, correlationId);
+    const result = await this.runText(opts, correlationId, metrics);
     if (!result.ok) return result;
 
     const { costUsd, milliCredits } = computeTokenCharge(

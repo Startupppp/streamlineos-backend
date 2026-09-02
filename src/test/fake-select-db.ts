@@ -1,4 +1,4 @@
-import { Column, SQL, getTableName, type Table } from "drizzle-orm";
+import { Column, SQL, getTableColumns, getTableName, type Table } from "drizzle-orm";
 import { matchesPredicate, type FakeRow, type RowSets } from "./sql-predicate";
 
 export type TableRows = Record<string, FakeRow[]>;
@@ -7,8 +7,15 @@ type Join = { name: string; on: SQL | undefined; inner: boolean };
 
 type Projection = Record<string, unknown>;
 
-function project(projection: Projection | undefined, scope: RowSets, baseName: string): FakeRow {
-  if (projection === undefined) return { ...(scope[baseName]?.[0] ?? {}) };
+function decodeRow(table: Table | undefined, row: FakeRow): FakeRow {
+  if (table === undefined) return { ...row };
+  return Object.fromEntries(
+    Object.entries(getTableColumns(table)).map(([property, column]) => [property, row[column.name] ?? null]),
+  );
+}
+
+function project(projection: Projection | undefined, scope: RowSets, baseName: string, baseTable?: Table): FakeRow {
+  if (projection === undefined) return decodeRow(baseTable, scope[baseName]?.[0] ?? {});
   const out: FakeRow = {};
   for (const [key, value] of Object.entries(projection)) {
     if (value instanceof Column) {
@@ -23,6 +30,7 @@ function project(projection: Projection | undefined, scope: RowSets, baseName: s
 
 class SelectBuilder implements PromiseLike<FakeRow[]> {
   private baseName = "";
+  private baseTable: Table | undefined;
   private readonly joins: Join[] = [];
   private predicate: SQL | undefined;
   private rowLimit = Number.POSITIVE_INFINITY;
@@ -34,6 +42,7 @@ class SelectBuilder implements PromiseLike<FakeRow[]> {
 
   from(table: Table): this {
     this.baseName = getTableName(table);
+    this.baseTable = table;
     return this;
   }
 
@@ -96,7 +105,7 @@ class SelectBuilder implements PromiseLike<FakeRow[]> {
     return scopes
       .filter((scope) => matchesPredicate(this.predicate, scope))
       .slice(0, this.rowLimit)
-      .map((scope) => project(this.projection, scope, this.baseName));
+      .map((scope) => project(this.projection, scope, this.baseName, this.baseTable));
   }
 
   then<TResult1 = FakeRow[], TResult2 = never>(
@@ -116,15 +125,18 @@ export type FakeDb = {
   execute: () => Promise<FakeRow[]>;
 };
 
-export function makeFakeDb(tables: TableRows, relationalTables: Record<string, string> = {}): FakeDb {
+export function makeFakeDb(tables: TableRows, relationalTables: Record<string, Table> = {}): FakeDb {
   const query: FakeDb["query"] = {};
-  for (const [key, tableName] of Object.entries(relationalTables)) {
+  for (const [key, table] of Object.entries(relationalTables)) {
+    const tableName = getTableName(table);
+    const columns = Object.entries(getTableColumns(table)).map(([property, column]) => [property, column.name] as const);
+    const decode = (row: FakeRow): FakeRow => Object.fromEntries(columns.map(([property, name]) => [property, row[name] ?? null]));
     const rows = () => tables[tableName] ?? [];
+    const select = (args?: { where?: SQL }) =>
+      rows().filter((row) => matchesPredicate(args?.where, { [tableName]: [row] })).map(decode);
     query[key] = {
-      findMany: (args) =>
-        Promise.resolve(rows().filter((row) => matchesPredicate(args?.where, { [tableName]: [row] }))),
-      findFirst: (args) =>
-        Promise.resolve(rows().find((row) => matchesPredicate(args?.where, { [tableName]: [row] }))),
+      findMany: (args) => Promise.resolve(select(args)),
+      findFirst: (args) => Promise.resolve(select(args)[0]),
     };
   }
   const db: FakeDb = {

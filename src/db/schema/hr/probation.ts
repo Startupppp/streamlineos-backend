@@ -23,7 +23,6 @@ export const hrProbationReviews = pgTable("hr_probation_reviews", {
   foreignKey({ columns: [table.orgId, table.personId], foreignColumns: [hrPeople.orgId, hrPeople.id], name: "fk_hr_probation_reviews_org_person" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.reviewTemplateId], foreignColumns: [hrTemplates.orgId, hrTemplates.id], name: "fk_hr_probation_reviews_org_review_template" }).onDelete("set null"),
   unique("uniq_hr_probation_reviews_org_id").on(table.orgId, table.id),
-  index("idx_hr_probation_reviews_org").on(table.orgId),
   index("idx_hr_probation_reviews_employment").on(table.employmentId),
   index("idx_hr_probation_reviews_status").on(table.orgId, table.status),
 ]);

@@ -184,6 +184,7 @@ describe("CalendarSourceRegistry", () => {
       const result = await registry.loadAll(ctx);
 
       expect(result.events.length).toBe(CALENDAR_PER_SOURCE_CAP);
+      expect(result.truncatedKeys).toEqual(["noisy"]);
     });
 
     it("does not truncate a source whose event count is at or below the cap", async () => {
@@ -196,6 +197,7 @@ describe("CalendarSourceRegistry", () => {
       const result = await registry.loadAll(ctx);
 
       expect(result.events.length).toBe(CALENDAR_PER_SOURCE_CAP);
+      expect(result.truncatedKeys).toEqual([]);
     });
 
     it("caps each source independently so a noisy source cannot exceed its share of the merged list", async () => {
@@ -211,6 +213,7 @@ describe("CalendarSourceRegistry", () => {
 
       expect(result.events.length).toBe(CALENDAR_PER_SOURCE_CAP + 1);
       expect(result.events.some((e) => e.id === "quiet-1")).toBe(true);
+      expect(result.truncatedKeys).toEqual(["noisy"]);
     });
   });
 

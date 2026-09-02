@@ -79,7 +79,6 @@ export const supportTicketEmbeddings = pgTable(
   (table) => [
   foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [supportTickets.orgId, supportTickets.id], name: "fk_support_ticket_embeddings_ticket_id_org" }).onDelete("cascade"),
     uniqueIndex("idx_support_ticket_embeddings_ticket").on(table.ticketId),
-    index("idx_support_ticket_embeddings_org").on(table.orgId),
     unique("uniq_support_ticket_embeddings_org_id").on(table.orgId, table.id),
   ],
 );

@@ -62,7 +62,6 @@ export const ticketCommentMentions = build.table("ticket_comment_mentions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.commentId], foreignColumns: [ticketComments.orgId, ticketComments.id], name: "fk_ticket_comment_mentions_org_comment" }).onDelete("cascade"),
-  index("idx_ticket_comment_mentions_comment").on(table.commentId),
   uniqueIndex("uniq_ticket_comment_mentions_comment_user").on(table.commentId, table.mentionedUserId),
   unique("uniq_ticket_comment_mentions_org_id").on(table.orgId, table.id),
   foreignKey({

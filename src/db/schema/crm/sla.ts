@@ -44,7 +44,6 @@ export const crmSla = pgTable("crm_sla_policies", {
   priorityText: text("priority_text"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_crm_sla_org").on(table.orgId),
   unique("uniq_crm_sla_policies_org_id").on(table.orgId, table.id),
 ]);
 

@@ -80,7 +80,6 @@ export const finCashFlowScenarios = pgTable("fin_cash_flow_scenarios", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_fin_cash_flow_scenarios_created_by_membership" }).onDelete("set null"),
   unique("uniq_fin_cash_flow_scenarios_org_id").on(table.orgId, table.id),
-  index("idx_fin_cash_flow_scenarios_org").on(table.orgId),
 ]);
 
 export const finBudgetsRelations = relations(finBudgets, ({ one, many }) => ({

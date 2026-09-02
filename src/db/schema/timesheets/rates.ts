@@ -27,7 +27,6 @@ export const timesheetRateCards = pgTable("timesheet_rate_cards", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
-  index("idx_timesheet_rate_cards_org").on(t.orgId),
   uniqueIndex("uniq_timesheet_rate_cards_org_name").on(t.orgId, t.name),
 ]);
 

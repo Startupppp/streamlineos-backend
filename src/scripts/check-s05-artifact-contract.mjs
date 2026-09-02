@@ -12,11 +12,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { WORKSPACE_ROOT, workspaceAvailable, workspaceUnreachableReason } from "./check-repo-paths.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const backendDir = resolve(scriptDir, "../..");
-const repoDir = resolve(backendDir, "..");
-const templatePath = resolve(repoDir, "architecture-refactor/decisions/README.md");
+// The decisions tree lives in the workspace docs repository, which is a sibling
+// on a split checkout. Guessing "backendDir/.." resolved outside both repos and
+// the gate died with a raw stack trace instead of saying it could not measure.
+const templatePath = workspaceAvailable
+  ? resolve(WORKSPACE_ROOT, "architecture-refactor/decisions/README.md")
+  : null;
 const bundlePath = resolve(backendDir, "src/scripts/evidence/s05-evidence-bundle.json");
 const REQUIRED_CHECKS = [
   "compliance",
@@ -44,7 +49,14 @@ function containsAll(text, values, label) {
 }
 
 function validateApprovalTemplate() {
-  assert(existsSync(templatePath), "approval/evidence template exists");
+  if (templatePath === null) {
+    process.stderr.write(
+      "INCONCLUSIVE — check:s05-artifact-contract: the approval/evidence template could not be located, so the artifact contract was not validated.\n",
+    );
+    process.stderr.write(`  ${workspaceUnreachableReason()}\n`);
+    process.exit(2);
+  }
+  assert(existsSync(templatePath), `approval/evidence template exists at ${templatePath}`);
   const text = readFileSync(templatePath, "utf8");
   containsAll(
     text,

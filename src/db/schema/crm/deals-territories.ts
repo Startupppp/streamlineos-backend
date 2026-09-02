@@ -54,7 +54,6 @@ export const territories = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
-    index("territories_org_id_idx").on(table.orgId),
     unique("uniq_territories_org_id").on(table.orgId, table.id),
     index("idx_territories_org_live")
       .on(table.orgId, table.priority)
@@ -82,8 +81,6 @@ export const territoryReps = pgTable(
       table.territoryId,
       table.crmPersonId,
     ),
-    index("idx_territory_reps_org").on(table.orgId),
-    index("idx_territory_reps_territory").on(table.territoryId),
     foreignKey({
       columns: [table.orgId, table.territoryId],
       foreignColumns: [territories.orgId, territories.id],
@@ -110,7 +107,6 @@ export const territoryLocations = pgTable(
       table.value,
     ),
     index("idx_territory_locations_org").on(table.orgId),
-    index("idx_territory_locations_territory").on(table.territoryId),
     foreignKey({
       columns: [table.orgId, table.territoryId],
       foreignColumns: [territories.orgId, territories.id],
@@ -140,8 +136,6 @@ export const crmSlaBreachLog = pgTable(
       table.leadId,
       table.policyId,
     ),
-    index("idx_sla_breach_org_idx").on(table.orgId),
-    index("idx_sla_breach_lead_idx").on(table.leadId),
   ],
 );
 

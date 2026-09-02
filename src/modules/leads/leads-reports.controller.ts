@@ -131,7 +131,8 @@ export class LeadsReportsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const result = await this.exports.exportCsv(u.orgId, query);
+    const scope = await resolveLeadsViewScope(this.access, u);
+    const result = await this.exports.exportCsv(u.orgId, u.userId, scope, query);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="leads-export.csv"');
     if (result.truncated) res.setHeader("X-Truncated", "true");

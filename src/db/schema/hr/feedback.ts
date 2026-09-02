@@ -11,7 +11,7 @@ export const feedbackCycles = pgTable("feedback_cycles", {
   endDate: text("end_date").notNull(),
   isAnonymous: boolean("is_anonymous").default(true).notNull(),
   questions: jsonb("questions").$type<{ id: string; text: string; type: "rating" | "text" }[]>().default([]).notNull(),
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_feedback_cycles_org_id").on(table.orgId, table.id),

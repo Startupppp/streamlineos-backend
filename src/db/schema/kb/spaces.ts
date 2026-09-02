@@ -38,7 +38,6 @@ export const kbSpaces = pgTable(
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (table) => [
-    index("idx_kb_spaces_org").on(table.orgId),
     index("idx_kb_spaces_org_live").on(table.orgId).where(sql`${table.deletedAt} IS NULL`),
     index("idx_kb_spaces_org_created_by_mbr").on(table.orgId, table.createdByMembershipId),
     uniqueIndex("uniq_kb_spaces_org_slug").on(table.orgId, table.slug),

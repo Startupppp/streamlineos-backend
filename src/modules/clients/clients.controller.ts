@@ -98,8 +98,9 @@ export class ClientsController {
   @RequirePermission("crm:clients:read")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="clients-export.csv"')
-  exportCsv(@CurrentUser() u: CurrentUserContext) {
-    return this.clients.exportCsv(u.orgId);
+  async exportCsv(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveClientsReadScope(this.access, u);
+    return this.clients.exportCsv(u.orgId, u.userId, scope);
   }
 
   @Get("health")

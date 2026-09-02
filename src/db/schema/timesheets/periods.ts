@@ -34,14 +34,12 @@ export const timesheetPeriods = pgTable("timesheet_periods", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
   uniqueIndex("uniq_timesheet_periods_user_membership_range").on(t.orgId, t.userMembershipId, t.periodStart, t.periodEnd),
-  index("idx_timesheet_periods_user_membership_start").on(t.orgId, t.userMembershipId, t.periodStart),
   index("idx_timesheet_periods_org_user_membership").on(t.orgId, t.userMembershipId),
   foreignKey({
     columns: [t.orgId, t.userMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_timesheet_periods_user_membership",
   }).onDelete("set null"),
-  index("idx_timesheet_periods_org_status").on(t.orgId, t.status, t.submittedAt),
   index("idx_timesheet_periods_current_approver_membership").on(t.orgId, t.currentApproverMembershipId),
   index("idx_timesheet_periods_org_approved_actor").on(t.orgId, t.approvedByMembershipId),
   foreignKey({

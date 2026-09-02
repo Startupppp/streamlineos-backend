@@ -51,10 +51,6 @@ export const roleAssignments = pgTable(
       table.organizationMembershipId,
       table.roleId,
     ),
-    index("idx_role_assignments_org_membership").on(
-      table.orgId,
-      table.organizationMembershipId,
-    ),
     index("idx_role_assignments_org_role").on(table.orgId, table.roleId),
     foreignKey({
       columns: [table.orgId, table.organizationMembershipId],
@@ -93,7 +89,6 @@ export const rolePermissionGrants = pgTable(
       table.roleId,
       table.permissionKey,
     ),
-    index("idx_role_permission_grants_org_role").on(table.orgId, table.roleId),
     foreignKey({
       columns: [table.orgId, table.roleId],
       foreignColumns: [roles.orgId, roles.id],
@@ -126,10 +121,6 @@ export const userPermissionGrants = pgTable(
       table.orgId,
       table.organizationMembershipId,
       table.permissionKey,
-    ),
-    index("idx_user_permission_grants_org_membership").on(
-      table.orgId,
-      table.organizationMembershipId,
     ),
     index("idx_user_permission_grants_org_module").on(
       table.orgId,
@@ -192,10 +183,6 @@ export const userModuleAccess = pgTable(
       table.organizationMembershipId,
       table.moduleKey,
     ),
-    index("idx_user_module_access_org_membership").on(
-      table.orgId,
-      table.organizationMembershipId,
-    ),
     foreignKey({
       name: "fk_user_module_access_membership",
       columns: [table.orgId, table.organizationMembershipId],
@@ -225,7 +212,6 @@ export const orgModules = pgTable(
   },
   (t) => [
     uniqueIndex("org_modules_unique_idx").on(t.orgId, t.moduleKey),
-    index("org_modules_org_idx").on(t.orgId),
   ],
 );
 
@@ -294,7 +280,6 @@ export const principalGroups = pgTable(
   foreignKey({ columns: [table.orgId, table.orgUnitId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_principal_groups_org_unit_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_principal_groups_org_name").on(table.orgId, table.name),
     uniqueIndex("uniq_principal_groups_org_id").on(table.orgId, table.id),
-    index("idx_principal_groups_org").on(table.orgId),
     index("idx_principal_groups_org_unit").on(table.orgUnitId),
   ],
 );
@@ -320,7 +305,6 @@ export const principalGroupMembers = pgTable(
       table.orgId,
       table.organizationMembershipId,
     ),
-    index("idx_principal_group_members_group").on(table.principalGroupId),
     foreignKey({
       columns: [table.orgId, table.organizationMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -350,10 +334,6 @@ export const groupRoleAssignments = pgTable(
       table.orgId,
       table.principalGroupId,
       table.roleId,
-    ),
-    index("idx_group_role_assignments_org_group").on(
-      table.orgId,
-      table.principalGroupId,
     ),
     foreignKey({
       columns: [table.orgId, table.principalGroupId],
@@ -445,7 +425,6 @@ export const kbSpaceGrants = pgTable(
       t.principalId,
       t.permissionKey,
     ),
-    index("idx_kb_space_grants_org_space").on(t.orgId, t.spaceId),
     index("idx_kb_space_grants_principal").on(
       t.orgId,
       t.principalType,

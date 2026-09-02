@@ -89,7 +89,6 @@ export const payrollAccountingMappings = pgTable("payroll_accounting_mappings", 
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_payroll_accounting_mappings_org_id").on(table.orgId, table.id),
-  index("idx_payroll_accounting_mappings_org").on(table.orgId),
   uniqueIndex("uq_payroll_accounting_mappings_org_component").on(table.orgId, table.componentId).where(sql`${table.componentId} IS NOT NULL`),
   uniqueIndex("uq_payroll_accounting_mappings_org_category").on(table.orgId, table.category).where(sql`${table.componentId} IS NULL`),
 ]);

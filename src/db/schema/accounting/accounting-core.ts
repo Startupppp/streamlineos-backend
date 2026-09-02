@@ -65,7 +65,6 @@ export const accountingDimensionValues = pgTable("accounting_dimension_values", 
   foreignKey({ columns: [table.orgId, table.dimensionId], foreignColumns: [accountingDimensions.orgId, accountingDimensions.id], name: "fk_accounting_dimension_values_dimension_id_org" }).onDelete("cascade"),
   unique("uniq_accounting_dim_values_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_accounting_dim_values_org_dim_code").on(table.orgId, table.dimensionId, table.code),
-  index("idx_accounting_dim_values_org_dim").on(table.orgId, table.dimensionId),
 ]);
 
 export interface PaymentTerm {
@@ -118,7 +117,6 @@ export const accSystemAccountMap = pgTable("acc_system_account_map", {
   foreignKey({ columns: [table.orgId, table.accountId], foreignColumns: [ledgerAccounts.orgId, ledgerAccounts.id], name: "fk_acc_system_account_map_account_id_org" }).onDelete("restrict"),
   unique("uniq_acc_system_account_map_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_system_account_map_org_purpose").on(table.orgId, table.purpose),
-  index("idx_acc_system_account_map_org").on(table.orgId),
 ]);
 
 export const finExchangeRates = pgTable("fin_exchange_rates", {
@@ -187,7 +185,6 @@ export const finRecurringJournalTemplates = pgTable("fin_recurring_journal_templ
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_fin_recur_journal_tmpls_org_id").on(table.orgId, table.id),
-  index("idx_fin_recurring_journal_templates_org").on(table.orgId),
 ]);
 
 export const accountingPeriodsRelations = relations(accountingPeriods, ({ one }) => ({

@@ -22,6 +22,53 @@ export interface ForEachOrgResult {
 }
 
 /**
+ * A sweep that failed for some tenants and succeeded for the rest.
+ *
+ * The loop deliberately isolates a failing organisation so the others still drain,
+ * but that made the failure a counter in a return value: the HTTP route still
+ * answered 200 and `withLease` still wrote a success heartbeat, so a tenant whose
+ * retention sweep had thrown every night for a month looked exactly like one that
+ * had nothing to delete.
+ */
+export interface SweepPartialFailure {
+  sweep: string;
+  organizations: number;
+  succeeded: number;
+  failed: number;
+  failedOrgIds: readonly string[];
+  at: string;
+}
+
+export type SweepFailureSink = (event: SweepPartialFailure) => void | Promise<void>;
+
+let sweepFailureSink: SweepFailureSink | null = null;
+
+/**
+ * Installs the durable sink. `common/tenant` must not depend on Redis, so the
+ * process that owns a durable store registers itself here at boot instead.
+ * Passing `null` removes it.
+ */
+export function registerSweepFailureSink(sink: SweepFailureSink | null): void {
+  sweepFailureSink = sink;
+}
+
+export function hasSweepFailureSink(): boolean {
+  return sweepFailureSink !== null;
+}
+
+async function emitPartialFailure(event: SweepPartialFailure): Promise<void> {
+  const sink = sweepFailureSink;
+  if (!sink) return;
+  try {
+    await sink(event);
+  } catch (err: unknown) {
+    logger.error(`[${event.sweep}] failed to record the partial-failure event`, {
+      cause: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * Returns the db that should be used for the organizations enumeration query.
  *
  * When `CELL_ID` is set on this process, the sweep must only enumerate
@@ -114,7 +161,7 @@ export async function forEachOrg(
     .orderBy(asc(organizations.id));
 
   let succeeded = 0;
-  let failed = 0;
+  const failedOrgIds: string[] = [];
   const ambient = getObservabilityContext();
   const runId = randomUUID();
 
@@ -155,8 +202,24 @@ export async function forEachOrg(
     );
 
     if (ok) succeeded += 1;
-    else failed += 1;
+    else failedOrgIds.push(org.id);
   }
 
-  return { organizations: orgs.length, succeeded, failed };
+  const result: ForEachOrgResult = {
+    organizations: orgs.length,
+    succeeded,
+    failed: failedOrgIds.length,
+  };
+
+  if (failedOrgIds.length > 0)
+    await emitPartialFailure({
+      sweep,
+      organizations: result.organizations,
+      succeeded: result.succeeded,
+      failed: result.failed,
+      failedOrgIds,
+      at: new Date().toISOString(),
+    });
+
+  return result;
 }

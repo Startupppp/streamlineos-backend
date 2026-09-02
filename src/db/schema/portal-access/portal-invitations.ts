@@ -39,10 +39,6 @@ export const portalInvitations = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_portal_invitations_org_invitation").on(
-      table.organizationId,
-      table.portalInvitationId,
-    ),
     uniqueIndex("uniq_portal_invitations_org_email_audience_pending")
       .on(table.organizationId, table.email, table.audience)
       .where(sql`status = 'PENDING'`),

@@ -262,7 +262,7 @@ export class ClientsService {
     return { events, total: events.length };
   }
 
-  async exportCsv(orgId: string): Promise<string> {
+  async exportCsv(orgId: string, userId: string, scope: DataScope): Promise<string> {
     const rows = await this.db
       .select({
         id: CLIENT_PARTY_COLUMNS.id,
@@ -279,7 +279,7 @@ export class ClientsService {
       })
       .from(clientPartyMap)
       .innerJoin(businessParties, CLIENT_PARTY_JOIN)
-      .where(and(...clientPartyScope(orgId)))
+      .where(and(...clientPartyScope(orgId), clientPartyViewScope(orgId, userId, scope)))
       .orderBy(asc(CLIENT_PARTY_COLUMNS.name), asc(CLIENT_PARTY_COLUMNS.id));
 
     const headers = [

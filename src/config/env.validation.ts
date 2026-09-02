@@ -38,6 +38,8 @@ const baseSchema = z
     APP_RELEASE: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Set to "false" to disable RouteClassifierGuard's boot-time and request-time enforcement. */
     REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(emptyToUndefined, z.string().optional()),
+    /** Comma-separated user ids holding the vendor's platform-only capabilities (global blog administration). Unset means nobody. */
+    PLATFORM_ADMIN_USER_IDS: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Comma-separated regions this deployment serves; each secondary needs its own REGION_<KEY>_APP_DATABASE_URL. */
     REGION_KEYS: z.preprocess(emptyToUndefined, z.string().optional()),
     /** The cell this deployment is. Defaults to `legacy-1`, the pre-cell production deployment. */

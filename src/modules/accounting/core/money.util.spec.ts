@@ -2,9 +2,17 @@ import {
   addDecimals,
   subtractDecimals,
   multiplyDecimals,
+  divideDecimals,
   compareDecimals,
   isZero,
   formatDecimal,
+  roundDecimal,
+  negateDecimal,
+  absDecimal,
+  toDecimal,
+  decimalFromNumber,
+  sumDecimals,
+  allocateDecimal,
   assertDebitsEqualsCredits,
 } from "./money.util";
 
@@ -156,5 +164,111 @@ describe("assertDebitsEqualsCredits", () => {
 
   it("throws for empty lines (0 !== 0 is false — actually passes)", () => {
     expect(() => assertDebitsEqualsCredits([])).not.toThrow();
+  });
+});
+
+describe("sumDecimals", () => {
+  it("sums the canonical float hazard to an exact third", () => {
+    expect(0.1 + 0.2).not.toBe(0.3);
+    expect(sumDecimals(["0.1", "0.2"])).toBe("0.3000");
+  });
+
+  it("treats null, undefined and empty text from a nullable numeric column as zero", () => {
+    expect(sumDecimals([null, undefined, "", "5.25"])).toBe("5.2500");
+  });
+
+  it("stays exact over a hundred thousand rows, where a double has already lost the fourth decimal", () => {
+    const rows = new Array(100_000).fill("1234.5600");
+    const floatTotal = rows.reduce((acc, row) => acc + Number(row), 0);
+    expect(floatTotal).not.toBe(123_456_000);
+    expect(sumDecimals(rows)).toBe("123456000.0000");
+  });
+
+  it("sums an empty ledger to zero rather than to NaN", () => {
+    expect(sumDecimals([])).toBe("0.0000");
+  });
+});
+
+describe("roundDecimal", () => {
+  it("rounds half away from zero, the way a printed statement does", () => {
+    expect(roundDecimal("1.005", 2)).toBe("1.01");
+    expect(roundDecimal("-1.005", 2)).toBe("-1.01");
+    expect(roundDecimal("1.0049", 2)).toBe("1.00");
+  });
+
+  it("never prints a negative zero", () => {
+    expect(roundDecimal("-0.0001", 2)).toBe("0.00");
+  });
+
+  it("rounds to whole units and pads beyond the stored scale", () => {
+    expect(roundDecimal("2.5", 0)).toBe("3");
+    expect(roundDecimal("2.5", 6)).toBe("2.500000");
+  });
+});
+
+describe("toDecimal and decimalFromNumber", () => {
+  it("normalises a nullable numeric column to the ledger scale", () => {
+    expect(toDecimal(null)).toBe("0.0000");
+    expect(toDecimal("  12.5 ")).toBe("12.5000");
+  });
+
+  it("pins a JSON number to the ledger scale once, at the boundary", () => {
+    expect(decimalFromNumber(0.1 + 0.2)).toBe("0.3000");
+    expect(decimalFromNumber(-7)).toBe("-7.0000");
+  });
+
+  it("refuses a non-finite amount instead of storing NaN", () => {
+    expect(() => decimalFromNumber(Number.NaN)).toThrow(/finite/);
+  });
+
+  it("refuses text that is not a decimal instead of silently reading it as zero", () => {
+    expect(() => toDecimal("twelve")).toThrow(/decimal/);
+  });
+});
+
+describe("negateDecimal and absDecimal", () => {
+  it("flips and strips sign exactly", () => {
+    expect(negateDecimal("1.2345")).toBe("-1.2345");
+    expect(absDecimal("-1.2345")).toBe("1.2345");
+  });
+});
+
+describe("divideDecimals", () => {
+  it("divides with half-up rounding at the ledger scale", () => {
+    expect(divideDecimals("10", "4")).toBe("2.5000");
+    expect(divideDecimals("1", "3")).toBe("0.3333");
+    expect(divideDecimals("-1", "3")).toBe("-0.3333");
+  });
+
+  it("refuses division by zero rather than returning Infinity", () => {
+    expect(() => divideDecimals("1", "0")).toThrow(/zero/);
+  });
+});
+
+describe("allocateDecimal", () => {
+  it("splits a total that does not divide evenly without losing or inventing a paisa", () => {
+    const parts = allocateDecimal("100.0000", ["1", "1", "1"]);
+    expect(sumDecimals(parts)).toBe("100.0000");
+    expect(parts).toEqual(["33.3334", "33.3333", "33.3333"]);
+  });
+
+  it("splits proportionally and still sums to the total", () => {
+    const parts = allocateDecimal("1000.0000", ["1", "2", "7"]);
+    expect(parts).toEqual(["100.0000", "200.0000", "700.0000"]);
+    expect(sumDecimals(parts)).toBe("1000.0000");
+  });
+
+  it("keeps a negative total exact and negative", () => {
+    const parts = allocateDecimal("-100.0000", ["1", "1", "1"]);
+    expect(sumDecimals(parts)).toBe("-100.0000");
+  });
+
+  it("gives every share zero when no weight carries any magnitude", () => {
+    expect(allocateDecimal("100.0000", ["0", "0"])).toEqual(["0.0000", "0.0000"]);
+  });
+
+  it("sums to the total for a hundred uneven weights, which is what a tax apportionment looks like", () => {
+    const weights = Array.from({ length: 100 }, (_value, index) => String(index + 1));
+    expect(sumDecimals(allocateDecimal("7919.4321", weights))).toBe("7919.4321");
   });
 });

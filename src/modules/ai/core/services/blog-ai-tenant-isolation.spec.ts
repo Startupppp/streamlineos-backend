@@ -85,6 +85,13 @@ describe("BlogAiService — tenant isolation (global content, scoped billing)", 
 
     expect(result.content).toContain("Improved content");
     expect(gateway.invokeText).toHaveBeenCalledTimes(1);
+    expect(gateway.invokeText.mock.calls[0]?.[0]).toMatchObject({
+      actor: { orgId: OWNER_ORG, userId: USER_ID },
+      charge: true,
+    });
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: OWNER_ORG, userId: USER_ID }),
+    );
 
     const [, , opts] = runInTenantTransaction.mock.calls[0] as [unknown, unknown, { orgId: string }];
     expect(opts.orgId).toBe(OWNER_ORG);

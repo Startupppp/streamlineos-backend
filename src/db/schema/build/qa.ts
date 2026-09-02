@@ -169,7 +169,6 @@ export const bugs = build.table("bugs", {
   index("idx_bugs_org_project_severity").on(table.orgId, table.projectId, table.severity).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_bugs_project_number").on(table.projectId, table.bugNumber),
   index("idx_bugs_assignee").on(table.orgId, table.assigneeMembershipId),
-  index("idx_bugs_org_assignee_membership").on(table.orgId, table.assigneeMembershipId),
   index("idx_bugs_org_qa_owner_membership").on(table.orgId, table.qaOwnerMembershipId),
   unique("uniq_bugs_org_id").on(table.orgId, table.id),
   foreignKey({

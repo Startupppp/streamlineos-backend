@@ -28,7 +28,6 @@ export const projectWebhooks = build.table(
   (t) => [
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_webhooks_org_project" }).onDelete("cascade"),
     index("idx_project_webhooks_project_id").on(t.projectId),
-    index("idx_project_webhooks_org_id").on(t.orgId),
     unique("uniq_project_webhooks_org_id").on(t.orgId, t.id),
   ],
 );
@@ -121,7 +120,6 @@ export const projectAutomations = build.table(
   (t) => [
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_automations_org_project" }).onDelete("cascade"),
     index("idx_project_automations_project_id").on(t.projectId),
-    index("idx_project_automations_org_id").on(t.orgId),
     unique("uniq_project_automations_org_id").on(t.orgId, t.id),
   ],
 );

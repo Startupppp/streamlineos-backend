@@ -62,7 +62,6 @@ export const hrWellnessCheckins = pgTable("hr_wellness_checkins", {
   unique("uniq_hr_wellness_checkins_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_wellness_org_user_date").on(table.orgId, table.userId, table.date),
   index("idx_hr_wellness_org_date").on(table.orgId, table.date),
-  index("idx_hr_wellness_org_user").on(table.orgId, table.userId),
   index("idx_hr_wellness_org_user_membership").on(table.orgId, table.userMembershipId),
 ]);
 

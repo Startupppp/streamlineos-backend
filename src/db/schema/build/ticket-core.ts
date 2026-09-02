@@ -103,7 +103,6 @@ export const tickets = build.table(
     index("idx_tickets_org_assignee_due_open")
       .on(t.orgId, t.assigneeMembershipId, t.dueDate)
       .where(sql`status <> 'DONE'`),
-    index("idx_tickets_org_assignee_membership").on(t.orgId, t.assigneeMembershipId),
     index("idx_tickets_org_reporter_membership").on(t.orgId, t.reporterMembershipId),
     index("idx_tickets_sprint").on(t.sprintId),
     index("idx_tickets_org_status_priority").on(t.orgId, t.status, t.priority),
@@ -168,7 +167,6 @@ export const workItemRelations = build.table(
       table.workItemId,
       table.relatedWorkItemId,
     ),
-    index("idx_work_item_relations_item").on(table.workItemId),
     index("idx_work_item_relations_related").on(table.relatedWorkItemId),
   ],
 );

@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { surveyAssessmentAttempts, surveyCertificates, surveyForms } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -29,7 +29,7 @@ export class SurveyAssessmentService {
   }
 
   async createAttempt(orgId: string, surveyId: number, participantId: number | null) {
-    const survey = await this.db.query.surveyForms.findFirst({ where: and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId)) });
+    const survey = await this.db.query.surveyForms.findFirst({ where: and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId), isNull(surveyForms.archivedAt)) });
     if (!survey) throw new NotFoundException("Survey not found");
     if (survey.mode !== "assessment") throw new BadRequestException("Survey is not in assessment mode");
     if (!survey.activeVersionId) throw new BadRequestException("Assessment has not been published");

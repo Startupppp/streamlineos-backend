@@ -23,7 +23,6 @@ export const supportChannels = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_support_channels_org_type").on(table.orgId, table.type),
     uniqueIndex("uniq_support_channels_org_type_name").on(table.orgId, table.type, table.name),
     unique("uniq_support_channels_org_id").on(table.orgId, table.id),
   ],

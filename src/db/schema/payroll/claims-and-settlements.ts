@@ -148,7 +148,6 @@ export const reimbursements = pgTable(
   },
   (table) => [
     unique("uniq_reimbursements_org_id").on(table.orgId, table.id),
-    index("idx_reimbursements_org").on(table.orgId),
     index("idx_reimbursements_user").on(table.userId),
     index("idx_reimbursements_org_user_actor").on(table.orgId, table.userMembershipId),
     index("idx_reimbursements_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
@@ -194,7 +193,6 @@ export const salaryLoans = pgTable(
   },
   (table) => [
     unique("uniq_salary_loans_org_id").on(table.orgId, table.id),
-    index("idx_loans_org").on(table.orgId),
     index("idx_loans_user").on(table.userId),
     index("idx_loans_org_status").on(table.orgId, table.status),
     index("idx_salary_loans_org_user_actor").on(table.orgId, table.userMembershipId),

@@ -376,7 +376,6 @@ export const dataQualityHealthSnapshots = pgTable(
      */
     uniqueIndex("uniq_data_quality_health_snapshots_day").on(t.organizationId, t.capturedOn),
     /** The series read: one tenant, newest first, bounded by a window. */
-    index("idx_data_quality_health_snapshots_series").on(t.organizationId, t.capturedOn),
     /** The composite tenant key, for anything that later points at a snapshot. */
     unique("uniq_data_quality_health_snapshots_org_id").on(t.organizationId, t.snapshotId),
   ],

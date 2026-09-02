@@ -24,7 +24,6 @@ export const kbResearchBriefs = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_kb_research_briefs_org").on(table.orgId),
     index("idx_kb_research_briefs_org_mbr").on(table.orgId, table.userMembershipId),
     index("idx_kb_research_briefs_job").on(table.jobId),
     unique("uniq_kb_research_briefs_org_id").on(table.orgId, table.id),

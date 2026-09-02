@@ -105,7 +105,6 @@ export const okrLinks = build.table("okr_links", {
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_okr_links_org_project" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_okr_links_org_ticket" }).onDelete("cascade"),
   uniqueIndex("uniq_okr_links_goal_ticket").on(table.goalId, table.ticketId),
-  index("idx_okr_links_goal").on(table.goalId),
   unique("uniq_okr_links_org_id").on(table.orgId, table.id),
 ]);
 

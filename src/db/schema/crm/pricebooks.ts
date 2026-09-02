@@ -16,7 +16,6 @@ export const crmPricebooks = pgTable("crm_pricebooks", {
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
   uniqueIndex("uniq_crm_pricebooks_org_name").on(table.orgId, table.name),
-  index("idx_crm_pricebooks_org").on(table.orgId),
   unique("uniq_crm_pricebooks_org_id").on(table.orgId, table.id),
 ]);
 
@@ -62,7 +61,6 @@ export const crmQuoteTemplates = pgTable("crm_quote_templates", {
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
   uniqueIndex("uniq_crm_quote_templates_org_name").on(table.orgId, table.name),
-  index("idx_crm_quote_templates_org").on(table.orgId),
   unique("uniq_crm_quote_templates_org_id").on(table.orgId, table.id),
 ]);
 

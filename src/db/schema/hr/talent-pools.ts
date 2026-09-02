@@ -8,12 +8,11 @@ export const talentPools = pgTable("talent_pools", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   description: text("description"),
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_talent_pools_org_id").on(table.orgId, table.id),
-  index("idx_talent_pools_org").on(table.orgId),
 ]);
 
 export const talentPoolMembers = pgTable("talent_pool_members", {
@@ -22,14 +21,13 @@ export const talentPoolMembers = pgTable("talent_pool_members", {
   candidateId: integer("candidate_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   notes: text("notes"),
-  addedBy: text("added_by").references(() => users.id),
+  addedBy: text("added_by"),
   addedAt: timestamp("added_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_talent_pool_members_org_candidate" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.poolId], foreignColumns: [talentPools.orgId, talentPools.id], name: "fk_talent_pool_members_org_pool" }).onDelete("cascade"),
   unique("uniq_talent_pool_members_org_id").on(table.orgId, table.id),
   uniqueIndex("uq_talent_pool_members_pool_candidate").on(table.poolId, table.candidateId),
-  index("idx_talent_pool_members_pool").on(table.poolId),
   index("idx_talent_pool_members_candidate").on(table.candidateId),
 ]);
 

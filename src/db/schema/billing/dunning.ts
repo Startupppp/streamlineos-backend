@@ -29,7 +29,6 @@ export const dunningAttempts = pgTable(
       t.periodStart,
       t.milestone,
     ),
-    index("idx_dunning_attempts_org_sub_period").on(t.orgId, t.subscriptionId, t.periodStart),
     index("idx_dunning_attempts_pending_milestone").on(t.milestone, t.orgId).where(
       sql`status = 'PENDING'`,
     ),

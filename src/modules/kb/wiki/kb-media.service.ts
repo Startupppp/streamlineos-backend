@@ -10,7 +10,6 @@ import type { AppConfig } from "../../../config/env.validation";
 import { AvScanner } from "../../../common/security/av-scan";
 
 export interface KbMediaUploadResult extends UploadResult {
-  url: string;
   name: string;
 }
 
@@ -138,6 +137,6 @@ export class KbMediaService {
         });
     }
 
-    return { ...result, url: result.key, name: originalname };
+    return { ...result, name: originalname };
   }
 }

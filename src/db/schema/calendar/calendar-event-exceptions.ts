@@ -40,7 +40,6 @@ export const calendarEventExceptions = pgTable(
       table.eventId,
       table.occurrenceStart,
     ),
-    index("idx_cal_exc_org_event").on(table.orgId, table.eventId),
     foreignKey({
       columns: [table.orgId, table.eventId],
       foreignColumns: [calendarEvents.orgId, calendarEvents.id],

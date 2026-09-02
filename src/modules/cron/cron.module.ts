@@ -81,6 +81,8 @@ import { CronStorageSweepService } from "./cron-storage-sweep.service";
 import { CronStorageController } from "./cron-storage.controller";
 import { CronOutboxRetentionService } from "./cron-outbox-retention.service";
 import { CronNotificationOutboxRetentionService } from "./cron-notification-outbox-retention.service";
+import { CronRetentionSchedulerService } from "./cron-retention-scheduler.service";
+import { CronSweepFailureSinkService } from "./cron-sweep-failure-sink.service";
 
 @Module({
   imports: [
@@ -170,6 +172,8 @@ import { CronNotificationOutboxRetentionService } from "./cron-notification-outb
     CronStorageSweepService,
     CronOutboxRetentionService,
     CronNotificationOutboxRetentionService,
+    CronSweepFailureSinkService,
+    CronRetentionSchedulerService,
   ],
 })
 export class CronModule {}

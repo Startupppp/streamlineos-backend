@@ -3,6 +3,9 @@
 // Cross-tenant isolation tests for all directory services.
 // HARD RULE: no production source files modified.
 
+import type { Redis } from "@upstash/redis";
+import { CacheService } from "../../../common/cache/cache.service";
+import { InMemoryRedis } from "../../../common/cache/in-memory-redis.test-double";
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { AccessRequestsService } from "./access-requests.service";
@@ -106,12 +109,8 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock; innerJoin: jest.Mo
   return { db, where, innerJoin: builder.innerJoin, findMany, findFirst };
 }
 
-function makeCacheMock() {
-  return {
-    cached: jest.fn().mockImplementation((_key: string, cb: () => unknown) => cb()),
-    cachedVersioned: jest.fn().mockImplementation((_k: string, _v: number, cb: () => unknown) => cb()),
-    invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-  };
+function makeCacheMock(): CacheService {
+  return new CacheService(new InMemoryRedis() as unknown as Redis);
 }
 
 function makeEmploymentFactsMock() {

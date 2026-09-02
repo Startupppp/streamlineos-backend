@@ -44,7 +44,6 @@ export const ticketAssignees = build.table(
       table.membershipId,
       table.ticketId,
     ),
-    index("idx_ticket_assignees_org_member_membership").on(table.orgId, table.membershipId),
     foreignKey({
       columns: [table.orgId, table.membershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -252,7 +251,6 @@ export const ticketCustomFieldValues = build.table(
       table.ticketId,
       table.fieldDefinitionId,
     ),
-    index("idx_ticket_custom_field_values_ticket").on(table.ticketId),
     unique("uniq_tcfv_org_id").on(table.orgId, table.id),
   ],
 );
@@ -280,7 +278,6 @@ export const ticketCommentReactions = build.table(
       t.membershipId,
       t.emoji,
     ),
-    index("idx_comment_reactions_comment_id").on(t.commentId),
     index("idx_comment_reactions_org_membership").on(t.orgId, t.membershipId),
     unique("uniq_ticket_comment_reactions_org_id").on(t.orgId, t.id),
     foreignKey({

@@ -1,3 +1,5 @@
+import { allocateDecimal, decimalFromNumber } from "./money.util";
+
 export const ACCOUNT_CODES = {
   cash: "1000",
   bank: "1100",
@@ -21,18 +23,21 @@ interface GstContext {
   placeOfSupplyStateCode: string;
 }
 
-const round2 = (n: number): number => Math.round(n * 100) / 100;
-
 function isIntraState(ctx: GstContext): boolean {
   return ctx.supplierStateCode === ctx.placeOfSupplyStateCode;
 }
 
+/**
+ * The two halves are allocated rather than each rounded, so `cgst + sgst` is the
+ * pool to the last paisa and the journal the caller builds from them balances.
+ */
 export function splitTaxPool(taxPool: number, ctx: GstContext): GstSplit {
+  const pool = decimalFromNumber(taxPool);
   if (isIntraState(ctx)) {
-    const half = round2(taxPool / 2);
-    return { cgst: half, sgst: round2(taxPool - half), igst: 0, total: taxPool };
+    const [cgst, sgst] = allocateDecimal(pool, ["1", "1"]);
+    return { cgst: Number(cgst), sgst: Number(sgst), igst: 0, total: Number(pool) };
   }
-  return { cgst: 0, sgst: 0, igst: round2(taxPool), total: taxPool };
+  return { cgst: 0, sgst: 0, igst: Number(pool), total: Number(pool) };
 }
 
 export function paymentMethodToAccountCode(method: string): "1000" | "1100" {

@@ -149,7 +149,6 @@ export const hrBenefitEnrollments = pgTable(
     uniqueIndex("uniq_hr_benefit_enrollments_org_plan_user").on(table.orgId, table.planId, table.userId),
     index("idx_hr_benefit_enrollments_org_user").on(table.orgId, table.userId),
     index("idx_hr_benefit_enrollments_org_user_membership").on(table.orgId, table.userMembershipId),
-    index("idx_hr_benefit_enrollments_org_plan").on(table.orgId, table.planId),
     foreignKey({
       columns: [table.orgId, table.userMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -206,7 +205,7 @@ export const hrInsuranceClaims = pgTable(
     documents: jsonb("documents").$type<{ url: string; name: string }[]>(),
     submittedAt: timestamp("submitted_at").defaultNow().notNull(),
     decidedAt: timestamp("decided_at"),
-    decidedBy: text("decided_by").references(() => users.id, { onDelete: "set null" }),
+    decidedBy: text("decided_by"),
     decidedByMembershipId: integer("decided_by_membership_id"),
     rejectionReason: text("rejection_reason"),
     payoutRoute: hrClaimPayoutRouteEnum("payout_route"),

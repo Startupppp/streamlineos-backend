@@ -284,6 +284,14 @@ describe("KbMediaService", () => {
     });
   });
 
+  describe("wire contract", () => {
+    it("returns the object key and no field named url", async () => {
+      const result = await service.upload(makeFile("image/jpeg", JPEG_BUF, "photo.jpg"), makeUser());
+      expect(result.key).toBe(MOCK_RESULT.key);
+      expect(result).not.toHaveProperty("url");
+    });
+  });
+
   describe("audit logging", () => {
     it("logs kb.media_upload action with file metadata", async () => {
       await service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser("org-log"));

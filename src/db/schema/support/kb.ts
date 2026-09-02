@@ -90,7 +90,6 @@ export const kbArticles = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_kb_articles_org_slug").on(table.orgId, table.slug),
-    index("idx_kb_articles_org_status").on(table.orgId, table.status),
     index("idx_kb_articles_org_category").on(table.orgId, table.categoryId),
     index("idx_kb_articles_space").on(table.spaceId),
     index("idx_kb_articles_org_updated").on(table.orgId, table.updatedAt),

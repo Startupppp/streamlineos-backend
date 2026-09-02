@@ -14,6 +14,7 @@ export interface CalendarSourceOutput {
   events: CalendarEventProjection[];
   toggleList: ReadonlyArray<ToggleEntry>;
   failures: ReadonlyArray<{ key: string; error: unknown }>;
+  truncatedKeys: ReadonlyArray<string>;
 }
 
 export const CALENDAR_PER_SOURCE_CAP = 400;
@@ -94,21 +95,21 @@ export class CalendarSourceRegistry {
 
     const events: CalendarEventProjection[] = [];
     const failures: Array<{ key: string; error: unknown }> = [];
+    const truncatedKeys: string[] = [];
 
     for (const [i, result] of settled.entries()) {
       const key = keys[i];
       if (!key) continue;
       if (result.status === "fulfilled") {
         const sourceEvents = result.value;
-        events.push(
-          ...(sourceEvents.length > CALENDAR_PER_SOURCE_CAP
-            ? sourceEvents.slice(0, CALENDAR_PER_SOURCE_CAP)
-            : sourceEvents),
-        );
+        if (sourceEvents.length > CALENDAR_PER_SOURCE_CAP) {
+          truncatedKeys.push(key);
+          events.push(...sourceEvents.slice(0, CALENDAR_PER_SOURCE_CAP));
+        } else events.push(...sourceEvents);
       } else
         failures.push({ key, error: result.reason });
     }
 
-    return { events, toggleList, failures };
+    return { events, toggleList, failures, truncatedKeys };
   }
 }

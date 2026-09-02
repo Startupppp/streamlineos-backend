@@ -12,6 +12,7 @@ import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 const PERSON_JOIN_COND = and(
   eq(organizationPeople.organizationId, hrPeople.orgId),
   eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+  isNull(organizationPeople.deletedAt),
 );
 
 const PERSON_VIEW_COLUMNS = {

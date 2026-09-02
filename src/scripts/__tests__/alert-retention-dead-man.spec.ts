@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SCRIPT = join(__dirname, "../alert-retention-dead-man.mjs");
@@ -15,19 +16,23 @@ function run(args: string[]): { stdout: string; stderr: string; status: number |
 // ── self-test mode ────────────────────────────────────────────────────────────
 
 describe("alert-retention-dead-man --self-test", () => {
-  it("exits 0 and reports all passed", () => {
+  it("exits 0 and emits the {pass:true} line check-alert-system.mjs consumes", () => {
     const { stdout, stderr, status } = run(["--self-test"]);
     expect(status).toBe(0);
-    expect(stdout).toMatch(/self-tests: \d+ passed/);
+    const last = stdout.trim().split("\n").at(-1) ?? "";
+    const parsed = JSON.parse(last) as { pass: boolean; selfTest: boolean };
+    expect(parsed.selfTest).toBe(true);
+    expect(parsed.pass).toBe(true);
     expect(stderr).toBe("");
   });
 
   it("passes at least 10 assertions (vacuity: self-test is not hollow)", () => {
     const { stdout, status } = run(["--self-test"]);
     expect(status).toBe(0);
-    const match = stdout.match(/self-tests: (\d+) passed/);
-    expect(match).not.toBeNull();
-    expect(Number(match![1])).toBeGreaterThanOrEqual(10);
+    const last = stdout.trim().split("\n").at(-1) ?? "";
+    const parsed = JSON.parse(last) as { passed: number; failedCount: number };
+    expect(parsed.passed).toBeGreaterThanOrEqual(10);
+    expect(parsed.failedCount).toBe(0);
   });
 });
 
@@ -50,7 +55,7 @@ describe("alert-retention-dead-man — missing env vars", () => {
 
 const HEARTBEAT_KEY_PREFIX = "cron:heartbeat:";
 
-const MONITORED_SWEEPS = [
+const FIXTURE_SWEEPS = [
   {
     jobKey: "notifications-retention-sweep",
     label: "Notification body + record purge (email_outbox, notification_deliveries)",
@@ -76,12 +81,12 @@ function isStale(ts: string | null | undefined, maxAgeMs: number, now: number): 
 }
 
 function classifySweeps(
-  sweeps: typeof MONITORED_SWEEPS,
+  sweeps: typeof FIXTURE_SWEEPS,
   heartbeats: Map<string, string | null | undefined>,
   now: number,
 ) {
-  const stale: Array<(typeof MONITORED_SWEEPS)[number] & { lastRun: string }> = [];
-  const healthy: Array<(typeof MONITORED_SWEEPS)[number] & { lastRun: string }> = [];
+  const stale: Array<(typeof FIXTURE_SWEEPS)[number] & { lastRun: string }> = [];
+  const healthy: Array<(typeof FIXTURE_SWEEPS)[number] & { lastRun: string }> = [];
   for (const sweep of sweeps) {
     const ts = heartbeats.get(sweep.jobKey) ?? null;
     if (isStale(ts, sweep.maxAgeMs, now))
@@ -105,20 +110,38 @@ describe("HEARTBEAT_KEY_PREFIX", () => {
   });
 });
 
-describe("MONITORED_SWEEPS", () => {
-  it("monitors exactly 3 sweeps", () => {
-    expect(MONITORED_SWEEPS).toHaveLength(3);
+// The list the SCRIPT actually monitors, read from source rather than mirrored:
+// a monitored list shorter than the scheduled list is a sweep that can die unobserved,
+// which is exactly the fault this alert exists to catch.
+const SCRIPT_SOURCE = readFileSync(SCRIPT, "utf8");
+const SCRIPT_JOB_KEYS = [...SCRIPT_SOURCE.matchAll(/jobKey:\s*"([^"]+)"/g)].map((m) => m[1]);
+
+describe("MONITORED_SWEEPS declared by the script", () => {
+  it("monitors every retention sweep, not the three it started with", () => {
+    expect(SCRIPT_JOB_KEYS.length).toBeGreaterThanOrEqual(12);
+    for (const key of [
+      "hr-policy-retention-sweep",
+      "helpdesk-retention-sweep",
+      "mail-metadata-retention-sweep",
+      "announcements-retention-sweep",
+      "ai-usage-retention-sweep",
+      "notifications-retention-sweep",
+      "notification-outbox-retention-sweep",
+      "outbox-events-retention-sweep",
+      "kb-chat-history-purge",
+      "kb-chunk-retention-sweep",
+      "build-retention-prune",
+      "notifications-retention-detach",
+    ])
+      expect(SCRIPT_JOB_KEYS).toContain(key);
   });
 
-  it("includes all three retention sweeps", () => {
-    const keys = MONITORED_SWEEPS.map((s) => s.jobKey);
-    expect(keys).toContain("notifications-retention-sweep");
-    expect(keys).toContain("notification-outbox-retention-sweep");
-    expect(keys).toContain("outbox-events-retention-sweep");
+  it("declares each job key exactly once", () => {
+    expect(new Set(SCRIPT_JOB_KEYS).size).toBe(SCRIPT_JOB_KEYS.length);
   });
 
-  it("every sweep has a positive maxAgeMs and a non-empty label", () => {
-    for (const s of MONITORED_SWEEPS) {
+  it("every fixture sweep has a positive maxAgeMs and a non-empty label", () => {
+    for (const s of FIXTURE_SWEEPS) {
       expect(s.maxAgeMs).toBeGreaterThan(0);
       expect(s.label.length).toBeGreaterThan(10);
     }
@@ -154,10 +177,10 @@ describe("isStale", () => {
 describe("classifySweeps", () => {
   it("(healthy) all recent heartbeats → zero stale, all healthy", () => {
     const ts = new Date(NOW - 3_600_000).toISOString();
-    const beats = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, ts]));
-    const { stale, healthy } = classifySweeps(MONITORED_SWEEPS, beats, NOW);
+    const beats = new Map(FIXTURE_SWEEPS.map((s) => [s.jobKey, ts]));
+    const { stale, healthy } = classifySweeps(FIXTURE_SWEEPS, beats, NOW);
     expect(stale).toHaveLength(0);
-    expect(healthy).toHaveLength(MONITORED_SWEEPS.length);
+    expect(healthy).toHaveLength(FIXTURE_SWEEPS.length);
   });
 
   it("(stale fixture bite) 48h-old and null heartbeats are classified stale", () => {
@@ -168,7 +191,7 @@ describe("classifySweeps", () => {
       ["notification-outbox-retention-sweep", recentTs],
       ["outbox-events-retention-sweep", null],
     ]);
-    const { stale, healthy } = classifySweeps(MONITORED_SWEEPS, beats, NOW);
+    const { stale, healthy } = classifySweeps(FIXTURE_SWEEPS, beats, NOW);
     expect(stale).toHaveLength(2);
     expect(healthy).toHaveLength(1);
     expect(stale.map((s) => s.jobKey)).toContain("notifications-retention-sweep");
@@ -177,16 +200,16 @@ describe("classifySweeps", () => {
   });
 
   it("absent heartbeat sets lastRun=(never) on the stale entry", () => {
-    const beats = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, null]));
-    const { stale } = classifySweeps(MONITORED_SWEEPS, beats, NOW);
+    const beats = new Map(FIXTURE_SWEEPS.map((s) => [s.jobKey, null]));
+    const { stale } = classifySweeps(FIXTURE_SWEEPS, beats, NOW);
     for (const s of stale) expect(s.lastRun).toBe("(never)");
   });
 
   it("(probe-whose-failure-equals-success guard) healthy and stale fixtures differ", () => {
-    const h = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, new Date(NOW - 3_600_000).toISOString()]));
-    const x = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, new Date(NOW - 48 * 3_600_000).toISOString()]));
-    const healthy = classifySweeps(MONITORED_SWEEPS, h, NOW);
-    const stale = classifySweeps(MONITORED_SWEEPS, x, NOW);
+    const h = new Map(FIXTURE_SWEEPS.map((s) => [s.jobKey, new Date(NOW - 3_600_000).toISOString()]));
+    const x = new Map(FIXTURE_SWEEPS.map((s) => [s.jobKey, new Date(NOW - 48 * 3_600_000).toISOString()]));
+    const healthy = classifySweeps(FIXTURE_SWEEPS, h, NOW);
+    const stale = classifySweeps(FIXTURE_SWEEPS, x, NOW);
     expect(healthy.stale).toHaveLength(0);
     expect(stale.stale.length).toBeGreaterThan(0);
   });
@@ -194,12 +217,12 @@ describe("classifySweeps", () => {
 
 describe("isVacuous", () => {
   it("(empty/vacuous) returns true when all heartbeats are null", () => {
-    const allNull = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, null]));
+    const allNull = new Map(FIXTURE_SWEEPS.map((s) => [s.jobKey, null]));
     expect(isVacuous(allNull)).toBe(true);
   });
 
   it("(unreachable simulation) returns true when all values are undefined", () => {
-    const allUndefined = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, undefined]));
+    const allUndefined = new Map(FIXTURE_SWEEPS.map((s) => [s.jobKey, undefined]));
     expect(isVacuous(allUndefined)).toBe(true);
   });
 
@@ -213,7 +236,7 @@ describe("isVacuous", () => {
   });
 
   it("(bite proof) vacuous and non-vacuous produce different boolean results", () => {
-    const allNull = new Map(MONITORED_SWEEPS.map((s) => [s.jobKey, null]));
+    const allNull = new Map(FIXTURE_SWEEPS.map((s) => [s.jobKey, null]));
     const onePresent = new Map([
       ["notifications-retention-sweep", new Date(NOW - 3_600_000).toISOString()],
       ["notification-outbox-retention-sweep", null as string | null],

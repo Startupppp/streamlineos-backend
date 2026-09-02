@@ -37,7 +37,6 @@ export const onboardingFlowSessions = pgTable("onboarding_flow_sessions", {
 }, (table) => [
   index("idx_onb_flow_sessions_org_membership_type").on(table.orgId, table.membershipId, table.type),
   index("idx_onb_flow_sessions_status").on(table.orgId, table.status),
-  index("idx_onb_flow_sessions_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_onb_flow_sessions_org_id").on(table.orgId, table.id),
   foreignKey({
     name: "fk_onboarding_flow_sessions_actor",
@@ -76,7 +75,6 @@ export const moduleSetupChecklistItems = pgTable("module_setup_checklist_items",
   skippedAt: timestamp("skipped_at"),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.checklistId], foreignColumns: [moduleSetupChecklists.orgId, moduleSetupChecklists.id], name: "fk_module_setup_checklist_items_checklist_id_org" }).onDelete("cascade"),
-  index("idx_module_checklist_items_checklist").on(table.checklistId),
   unique("uq_module_checklist_items_checklist_key").on(table.checklistId, table.itemKey),
   unique("uniq_module_checklist_items_org_id").on(table.orgId, table.id),
 ]);
@@ -109,7 +107,6 @@ export const userTourProgress = pgTable("user_tour_progress", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_user_tour_progress_org_membership_tour").on(table.orgId, table.membershipId, table.tourKey),
-  index("idx_user_tour_progress_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_user_tour_progress_org_id").on(table.orgId, table.id),
   foreignKey({
     name: "fk_user_tour_progress_actor",

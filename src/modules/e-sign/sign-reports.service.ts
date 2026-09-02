@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, avg, count, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, avg, count, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import {
   organizationMembers,
   signAuditEvents,
@@ -24,7 +24,11 @@ export class SignReportsService {
     private readonly settings: SignSettingsService,
   ) {}
 
-  async getDashboard(orgId: string, membershipId: number | null) {
+  async getDashboard(
+    orgId: string,
+    membershipId: number | null,
+    scope: { viewAll: boolean },
+  ) {
     if (membershipId == null) {
       return { awaitingMe: 0, sentPending: 0, completedThisMonth: 0, expiringSoon: 0, failedOrBounced: 0, recentActivity: [] };
     }
@@ -75,11 +79,39 @@ export class SignReportsService {
         .from(signRecipients)
         .innerJoin(signEnvelopes, eq(signRecipients.envelopeId, signEnvelopes.id))
         .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderMembershipId, membershipId), eq(signRecipients.status, "bounced"))),
-      this.db.query.signAuditEvents.findMany({
-        where: eq(signAuditEvents.orgId, orgId),
-        orderBy: (e, { desc }) => [desc(e.createdAt)],
-        limit: 10,
-      }),
+      // Every other tile on this dashboard binds `senderMembershipId`; the
+      // activity feed used to bind only the org, so an `own`-scoped sender read
+      // the last ten audit events of every envelope in the organisation.
+      this.db
+        .select({
+          id: signAuditEvents.id,
+          envelopeId: signAuditEvents.envelopeId,
+          recipientId: signAuditEvents.recipientId,
+          actorType: signAuditEvents.actorType,
+          actorName: signAuditEvents.actorName,
+          actorEmail: signAuditEvents.actorEmail,
+          eventType: signAuditEvents.eventType,
+          eventMessage: signAuditEvents.eventMessage,
+          createdAt: signAuditEvents.createdAt,
+        })
+        .from(signAuditEvents)
+        .innerJoin(
+          signEnvelopes,
+          and(
+            eq(signEnvelopes.orgId, signAuditEvents.orgId),
+            eq(signEnvelopes.id, signAuditEvents.envelopeId),
+          ),
+        )
+        .where(
+          scope.viewAll
+            ? eq(signAuditEvents.orgId, orgId)
+            : and(
+                eq(signAuditEvents.orgId, orgId),
+                eq(signEnvelopes.senderMembershipId, membershipId),
+              ),
+        )
+        .orderBy(desc(signAuditEvents.createdAt))
+        .limit(10),
     ]);
 
     return {

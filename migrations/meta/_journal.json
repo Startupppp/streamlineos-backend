@@ -4460,6 +4460,41 @@
       "when": 1803000010087,
       "tag": "0991_calendar_event_local_version",
       "breakpoints": true
+    },
+    {
+      "idx": 769,
+      "version": "7",
+      "when": 1803000010088,
+      "tag": "0992_set_null_referential_actions_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 770,
+      "version": "7",
+      "when": 1803000010089,
+      "tag": "0993_coupons_tenant_scoped_code_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 771,
+      "version": "7",
+      "when": 1803000010090,
+      "tag": "0994_s08_rls_for_unpoliced_inventory_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 772,
+      "version": "7",
+      "when": 1803000010091,
+      "tag": "0995_s08_credit_note_tenant_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 773,
+      "version": "7",
+      "when": 1803000010092,
+      "tag": "0996_s08_leading_tenant_indexes",
+      "breakpoints": true
     }
   ]
 }

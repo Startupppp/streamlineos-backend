@@ -18,7 +18,6 @@ export const invUom = pgTable("inv_uom", {
 }, (table) => [
   uniqueIndex("uniq_inv_uom_org_name").on(table.orgId, table.name),
   unique("uniq_inv_uom_org_id").on(table.orgId, table.id),
-  index("idx_inv_uom_org").on(table.orgId),
 ]);
 
 export const invCategories = pgTable("inv_categories", {
@@ -33,7 +32,6 @@ export const invCategories = pgTable("inv_categories", {
 }, (table) => [
   uniqueIndex("uniq_inv_categories_org_name").on(table.orgId, table.name),
   unique("uniq_inv_categories_org_id").on(table.orgId, table.id),
-  index("idx_inv_categories_org").on(table.orgId),
   index("idx_inv_categories_parent").on(table.parentCategoryId),
   foreignKey({ columns: [table.parentCategoryId], foreignColumns: [table.id], name: "fk_inv_categories_parent" }).onDelete("set null"),
 ]);
@@ -111,7 +109,6 @@ export const invProductUomConversions = pgTable("inv_product_uom_conversions", {
 }, (table) => [
   uniqueIndex("uniq_inv_product_uom_conversions_key").on(table.orgId, table.productId, table.uomId),
   unique("uniq_inv_product_uom_conversions_org_id").on(table.orgId, table.id),
-  index("idx_inv_product_uom_conversions_product").on(table.orgId, table.productId),
   check("chk_inv_product_uom_conversions_factor", sql`factor_to_base > 0`),
   foreignKey({
     columns: [table.orgId, table.productId],

@@ -37,7 +37,6 @@ export const invChannelStockPublications = pgTable("inv_channel_stock_publicatio
 }, (table) => [
   uniqueIndex("uniq_inv_pub_org_channel_variant").on(table.orgId, table.channelId, table.productVariantId),
   unique("uniq_inv_channel_stock_pub_org_id").on(table.orgId, table.id),
-  index("idx_inv_pub_org_channel").on(table.orgId, table.channelId),
   index("idx_inv_pub_status").on(table.orgId, table.status),
 ]);
 

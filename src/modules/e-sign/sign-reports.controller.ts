@@ -1,4 +1,5 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Controller, Get, Req, UseGuards } from "@nestjs/common";
+import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -7,6 +8,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
+import { readRequestScope } from "../organization/core/read-request-scope";
 import { SignReportsService } from "./sign-reports.service";
 
 @RequireModule("sign")
@@ -17,8 +19,10 @@ export class SignReportsController {
 
   @Get("dashboard")
   @RequirePermission("sign:envelope:view")
-  getDashboard(@CurrentUser() u: CurrentUserContext) {
-    return this.reports.getDashboard(u.orgId, actingMembershipId(u.principal));
+  getDashboard(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.reports.getDashboard(u.orgId, actingMembershipId(u.principal), {
+      viewAll: readRequestScope(req) === "all",
+    });
   }
 
   @Get("summary")

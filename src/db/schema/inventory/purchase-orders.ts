@@ -28,7 +28,6 @@ export const invVendors = pgTable("inv_vendors", {
 }, (table) => [
   uniqueIndex("uniq_inv_vendors_org_code").on(table.orgId, table.code),
   unique("uniq_inv_vendors_org_id").on(table.orgId, table.id),
-  index("idx_inv_vendors_org").on(table.orgId),
   index("idx_inv_vendors_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
 ]);
 

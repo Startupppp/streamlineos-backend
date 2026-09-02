@@ -23,6 +23,7 @@ import {
   type JournalBatchSummary,
   type JournalReconStatus,
 } from "./journal-batch-read-model";
+import { decimalFromNumber, roundDecimal } from "../../accounting/core/money.util";
 import { buildCursorPage, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import {
@@ -37,7 +38,7 @@ export type {
   JournalReconStatus,
 } from "./journal-batch-read-model";
 
-const money = (n: number): string => (Math.round(n * 100) / 100).toFixed(2);
+const money = (n: number): string => roundDecimal(decimalFromNumber(n), 2);
 
 /**
  * A batch is identified by the exact journal content it was built from, so

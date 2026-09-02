@@ -27,7 +27,6 @@ export const supportBusinessHours = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_support_business_hours_org").on(table.orgId),
     unique("uniq_support_business_hours_org_id").on(table.orgId, table.id),
   ],
 );

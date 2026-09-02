@@ -31,7 +31,6 @@ export const leaveBalances = pgTable("leave_balances", {
   foreignKey({ columns: [table.orgId, table.leaveTypeId], foreignColumns: [leaveTypes.orgId, leaveTypes.id], name: "fk_leave_balances_org_leave_type" }).onDelete("cascade"),
   unique("uniq_leave_balances_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_leave_balances_user_type_year").on(table.userId, table.leaveTypeId, table.year),
-  index("idx_leave_balances_org_year").on(table.orgId, table.year),
   check("chk_leave_balance_non_negative", sql`${table.balance} >= 0`),
 ]);
 

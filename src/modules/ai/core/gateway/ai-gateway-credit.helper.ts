@@ -6,10 +6,12 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import { logger } from "../../../../common/logger/logger.service";
 import { type AiCreditLedger } from "./credit-ledger.interface";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
+import type { AiCallOutcome, AiCallTimings } from "../telemetry/ai-call-metrics";
 import type {
   AiInvokeResult,
   AiInvokeFailure,
   AiInvokeBaseOpts,
+  AiTokenUsage,
 } from "./ai-gateway.types";
 
 export type ReserveResult =
@@ -31,6 +33,9 @@ export interface StreamSettlement {
   feature: string;
   ttftMs?: number;
   appOverheadMs?: number;
+  /** Queue wait, provider time, retries and cache state for the streamed turn. */
+  timings?: AiCallTimings;
+  outcome?: AiCallOutcome;
 }
 
 export async function settleStream(
@@ -60,7 +65,38 @@ export async function settleStream(
     creditsMilli: milliCredits,
     ttftMs,
     appOverheadMs,
+    outcome: settlement.outcome ?? "ok",
+    ...(settlement.timings ? { timings: settlement.timings } : {}),
   });
+}
+
+export interface SettleAndTrackInput {
+  reservationId: number;
+  charge: { milli: number } | undefined;
+  model: string;
+  usage: AiTokenUsage;
+  actor: AiInvokeBaseOpts["actor"];
+  feature: string;
+  prompt: AiInvokeBaseOpts["prompt"];
+  correlationId: string;
+  latencyMs: number;
+  outcome: AiCallOutcome;
+  actualMilli?: number;
+  costUsd?: number;
+  timings?: AiCallTimings;
+}
+
+export interface HandleProviderErrorInput {
+  error: unknown;
+  reservationId: number;
+  actor: AiInvokeBaseOpts["actor"];
+  feature: string;
+  prompt: AiInvokeBaseOpts["prompt"];
+  correlationId: string;
+  latencyMs: number;
+  /** `cancelled` when the caller hung up; the provider did not fail. */
+  outcome?: AiCallOutcome;
+  timings?: AiCallTimings;
 }
 
 export class AiGatewayCreditHelper {
@@ -96,24 +132,23 @@ export class AiGatewayCreditHelper {
     }
   }
 
-  async settleAndTrack(
-    reservationId: number,
-    charge: { milli: number } | undefined,
-    model: string,
-    usage: {
-      promptTokens: number | null;
-      completionTokens: number | null;
-      totalTokens: number | null;
-    },
-    actor: AiInvokeBaseOpts["actor"],
-    feature: string,
-    prompt: AiInvokeBaseOpts["prompt"],
-    correlationId: string,
-    latencyMs: number,
-    outcome: "ok" | "error",
-    actualMilli = 0,
-    costUsd = 0,
-  ): Promise<void> {
+  async settleAndTrack(input: SettleAndTrackInput): Promise<void> {
+    const {
+      reservationId,
+      charge,
+      model,
+      usage,
+      actor,
+      feature,
+      prompt,
+      correlationId,
+      latencyMs,
+      outcome,
+      actualMilli = 0,
+      costUsd = 0,
+      timings,
+    } = input;
+
     if (charge && reservationId !== 0) {
       // Awaited: this is the debit. Swallowing it silently loses revenue and,
       // once the caller opts out of the request transaction, would run with no
@@ -153,6 +188,7 @@ export class AiGatewayCreditHelper {
       correlationId,
       outcome,
       creditsMilli: actualMilli,
+      ...(timings ? { timings } : {}),
     });
 
     this.audit.log({
@@ -200,15 +236,14 @@ export class AiGatewayCreditHelper {
     }
   }
 
-  async handleProviderError(
-    error: unknown,
-    reservationId: number,
-    actor: AiInvokeBaseOpts["actor"],
-    feature: string,
-    prompt: AiInvokeBaseOpts["prompt"],
-    correlationId: string,
-    latencyMs: number,
-  ): Promise<AiInvokeResult<never>> {
+  async handleProviderError(input: HandleProviderErrorInput): Promise<AiInvokeResult<never>> {
+    const { error, reservationId, actor, feature, prompt, correlationId, latencyMs, timings } = input;
+    const noUsage: AiTokenUsage = {
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+    };
+
     if (error instanceof ZodError) {
       await this.releaseReservation(
         reservationId,
@@ -216,18 +251,19 @@ export class AiGatewayCreditHelper {
         actor.orgId,
         correlationId,
       );
-      await this.settleAndTrack(
-        0,
-        undefined,
-        "unknown",
-        { promptTokens: null, completionTokens: null, totalTokens: null },
+      await this.settleAndTrack({
+        reservationId: 0,
+        charge: undefined,
+        model: "unknown",
+        usage: noUsage,
         actor,
         feature,
         prompt,
         correlationId,
         latencyMs,
-        "error",
-      );
+        outcome: input.outcome ?? "invalid_output",
+        ...(timings ? { timings } : {}),
+      });
       return {
         ok: false,
         kind: "invalid_output",
@@ -253,18 +289,19 @@ export class AiGatewayCreditHelper {
       ? "not_configured"
       : "provider_unavailable";
 
-    await this.settleAndTrack(
-      0,
-      undefined,
-      "unknown",
-      { promptTokens: null, completionTokens: null, totalTokens: null },
+    await this.settleAndTrack({
+      reservationId: 0,
+      charge: undefined,
+      model: "unknown",
+      usage: noUsage,
       actor,
       feature,
       prompt,
       correlationId,
       latencyMs,
-      "error",
-    );
+      outcome: input.outcome ?? kind,
+      ...(timings ? { timings } : {}),
+    });
 
     return { ok: false, kind, message, correlationId };
   }

@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { applyScope } from "../access/apply-scope";
+import type { DataScope } from "../access/access.types";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { DealsForecastService } from "./deals-forecast.service";
 import type {
@@ -52,9 +54,10 @@ export class DealsAnalyticsService {
     };
   }
 
-  async getAging(orgId: string) {
+  async getAging(orgId: string, userId: string, scope: DataScope) {
+    if (scope === "none") return { summary: { total: 0, stale: 0, critical: 0 }, deals: [] };
     return this.cache.cached(
-      `deals:aging:${orgId}`,
+      `deals:aging:${orgId}:${scope}:${scope === "all" ? "org" : userId}`,
       async () => {
         const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
         const allDeals = await this.db
@@ -70,7 +73,14 @@ export class DealsAnalyticsService {
           })
           .from(deals)
           .leftJoin(users, eq(deals.assignedToId, users.id))
-          .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys])))
+          .where(
+            and(
+              eq(deals.orgId, orgId),
+              isNull(deals.deletedAt),
+              notInArray(deals.stage, [...wonKeys, ...lostKeys]),
+              applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
+            ),
+          )
           .orderBy(sql`${deals.updatedAt} asc`)
           .limit(100);
 

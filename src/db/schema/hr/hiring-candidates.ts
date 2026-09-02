@@ -41,7 +41,6 @@ export const candidates = pgTable("candidates", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.duplicateOfId], foreignColumns: [table.orgId, table.id], name: "fk_candidates_duplicate_of_id_org" }),
   unique("uniq_candidates_org_id").on(table.orgId, table.id),
-  index("idx_candidates_org").on(table.orgId),
   index("idx_candidates_status").on(table.status),
   index("idx_candidates_email").on(table.email),
   index("idx_candidates_org_status").on(table.orgId, table.status),
@@ -87,7 +86,7 @@ export const candidateReferrals = pgTable("candidate_referrals", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   candidateId: integer("candidate_id").notNull(),
-  referredBy: text("referred_by").references(() => users.id).notNull(),
+  referredBy: text("referred_by").notNull(),
   referredByMembershipId: integer("referred_by_membership_id"),
   jobPostingId: integer("job_posting_id"),
   relationship: text("relationship"),
@@ -104,7 +103,6 @@ export const candidateReferrals = pgTable("candidate_referrals", {
   unique("uniq_candidate_referrals_org_id").on(table.orgId, table.id),
   index("idx_referrals_candidate").on(table.candidateId),
   index("idx_referrals_referred_by").on(table.referredBy),
-  index("idx_referrals_org").on(table.orgId),
   index("idx_referrals_org_referred_by_membership").on(table.orgId, table.referredByMembershipId),
   foreignKey({
     columns: [table.orgId, table.referredByMembershipId],
@@ -125,13 +123,12 @@ export const candidateDocumentsVault = pgTable("candidate_documents_vault", {
   documentType: text("document_type"),
   avResult: text("av_result").$type<"PENDING" | "CLEAN" | "INFECTED">().notNull().default("PENDING"),
   expiresAt: date("expires_at"),
-  uploadedBy: text("uploaded_by").references(() => users.id).notNull(),
+  uploadedBy: text("uploaded_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_candidate_documents_vault_org_candidate" }).onDelete("cascade"),
   unique("uniq_candidate_documents_vault_org_id").on(table.orgId, table.id),
   index("idx_vault_candidate").on(table.candidateId),
-  index("idx_vault_org").on(table.orgId),
 ]);
 
 export const vaultAccessLogs = pgTable("vault_access_logs", {
@@ -141,7 +138,7 @@ export const vaultAccessLogs = pgTable("vault_access_logs", {
   vaultDocumentId: integer("vault_document_id"),
   filename: text("filename").notNull(),
   documentType: text("document_type"),
-  accessedBy: text("accessed_by").references(() => users.id).notNull(),
+  accessedBy: text("accessed_by").notNull(),
   action: text("action").$type<"VIEW" | "DOWNLOAD" | "DELETE">().notNull().default("VIEW"),
   accessedAt: timestamp("accessed_at").defaultNow().notNull(),
 }, (table) => [
@@ -166,14 +163,13 @@ export const candidateReferenceChecks = pgTable("candidate_reference_checks", {
   outcome: text("outcome"),
   notes: text("notes"),
   contactedAt: timestamp("contacted_at"),
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_candidate_reference_checks_org_candidate" }).onDelete("cascade"),
   unique("uniq_candidate_reference_checks_org_id").on(table.orgId, table.id),
   index("idx_reference_checks_candidate").on(table.candidateId),
-  index("idx_reference_checks_org").on(table.orgId),
 ]);
 
 export type CandidateMessageDirection = "INBOUND" | "OUTBOUND";
@@ -187,7 +183,7 @@ export const candidateMessages = pgTable("candidate_messages", {
   channel: text("channel").$type<CandidateMessageChannel>().notNull().default("EMAIL"),
   subject: text("subject"),
   body: text("body").notNull(),
-  sentBy: text("sent_by").references(() => users.id),
+  sentBy: text("sent_by"),
   sentAt: timestamp("sent_at").defaultNow().notNull(),
   readAt: timestamp("read_at"),
   externalId: text("external_id"),
@@ -195,7 +191,6 @@ export const candidateMessages = pgTable("candidate_messages", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_candidate_messages_org_candidate" }).onDelete("cascade"),
   unique("uniq_candidate_messages_org_id").on(table.orgId, table.id),
-  index("idx_candidate_messages_org").on(table.orgId),
   index("idx_candidate_messages_candidate").on(table.candidateId),
   index("idx_candidate_messages_sent").on(table.sentAt),
 ]);

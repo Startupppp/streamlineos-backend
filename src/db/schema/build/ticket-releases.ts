@@ -58,6 +58,5 @@ export const releaseTickets = build.table(
   foreignKey({ columns: [table.orgId, table.releaseId], foreignColumns: [projectReleases.orgId, projectReleases.id], name: "fk_release_tickets_org_release" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_release_tickets_org_ticket" }).onDelete("cascade"),
     uniqueIndex("uniq_release_tickets").on(table.releaseId, table.ticketId),
-    index("idx_release_tickets_release").on(table.releaseId),
   ],
 );

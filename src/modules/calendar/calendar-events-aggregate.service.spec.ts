@@ -47,6 +47,7 @@ describe("CalendarEventsAggregateService — partial failures", () => {
           { key: "bad", label: "Bad Source", module: "build", enabled: true },
         ],
         failures: [{ key: "bad", error: new Error("database timeout") }],
+        truncatedKeys: [],
       }),
     };
 
@@ -73,6 +74,7 @@ describe("CalendarEventsAggregateService — partial failures", () => {
         events: [],
         toggleList: [{ key: "src", label: "Source", module: "hr", enabled: true }],
         failures: [{ key: "src", error: new Error("internal db secret") }],
+        truncatedKeys: [],
       }),
     };
 
@@ -100,6 +102,7 @@ describe("CalendarEventsAggregateService — partial failures", () => {
         events: [],
         toggleList: [],
         failures: [{ key: "orphan-source", error: new Error("gone") }],
+        truncatedKeys: [],
       }),
     };
 
@@ -124,6 +127,7 @@ describe("CalendarEventsAggregateService — partial failures", () => {
         events: [projection("p1")],
         toggleList: [{ key: "src", label: "Source", module: "hr", enabled: true }],
         failures: [],
+        truncatedKeys: [],
       }),
     };
 
@@ -155,6 +159,7 @@ describe("CalendarEventsAggregateService — event cap", () => {
         events: manyProjections(CALENDAR_EVENTS_CAP),
         toggleList: [],
         failures: [],
+        truncatedKeys: [],
       }),
     };
 
@@ -181,6 +186,7 @@ describe("CalendarEventsAggregateService — event cap", () => {
         events: manyProjections(over),
         toggleList: [],
         failures: [],
+        truncatedKeys: [],
       }),
     };
 
@@ -199,6 +205,32 @@ describe("CalendarEventsAggregateService — event cap", () => {
     expect(result.events.length).toBe(CALENDAR_EVENTS_CAP);
   });
 
+  it("reports truncated:true when a single source was capped, even though the merged list is small", async () => {
+    const db = makeMinimalDb();
+    const mockRegistry = {
+      loadAll: jest.fn().mockResolvedValue({
+        events: manyProjections(3),
+        toggleList: [{ key: "noisy", label: "Noisy", module: "hr", enabled: true }],
+        failures: [],
+        truncatedKeys: ["noisy"],
+      }),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        CalendarEventsAggregateService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: CalendarSourceRegistry, useValue: mockRegistry },
+      ],
+    }).compile();
+
+    const service = module.get(CalendarEventsAggregateService);
+    const result = await service.getEvents("org-1", "user-1", new Date(), new Date());
+
+    expect(result.events.length).toBe(3);
+    expect(result.truncated).toBe(true);
+  });
+
   it("still surfaces source failures in the response when the cap is hit", async () => {
     const db = makeMinimalDb();
     const over = CALENDAR_EVENTS_CAP + 1;
@@ -207,6 +239,7 @@ describe("CalendarEventsAggregateService — event cap", () => {
         events: manyProjections(over),
         toggleList: [{ key: "src", label: "Source", module: "hr", enabled: true }],
         failures: [{ key: "src", error: new Error("timeout") }],
+        truncatedKeys: [],
       }),
     };
 

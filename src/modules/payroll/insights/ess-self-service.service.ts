@@ -16,6 +16,7 @@ import { syncCanonicalSensitiveFields } from "../../../common/hr/sync-canonical-
 import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
 import type { EssBank } from "./dto/insights.schemas";
 import { EssService } from "./ess.service";
+import { multiplyDecimals, roundDecimal, toDecimal } from "../../accounting/core/money.util";
 
 @Injectable()
 export class EssSelfServiceService {
@@ -57,7 +58,10 @@ export class EssSelfServiceService {
     const loans = await this.loansService.listLoans(orgId, userId, membershipId, false);
     return loans.map((l) => ({
       ...l,
-      balance: (((l.totalEmis ?? 0) - l.paidEmis) * parseFloat(l.emiAmount ?? "0")).toFixed(2),
+      balance: roundDecimal(
+        multiplyDecimals(String((l.totalEmis ?? 0) - l.paidEmis), toDecimal(l.emiAmount)),
+        2,
+      ),
     }));
   }
 

@@ -47,7 +47,7 @@ export class BlogAiService {
     const user = `Post title: "${post.title}"\nContent to improve:\n${sourceContent}\n\nProvide improved content.`;
 
     const result = await this.gateway.invokeText({
-      actor: { orgId: "", userId },
+      actor: { orgId, userId },
       feature: "blog.improve-writing",
       prompt: { system, user },
       tier: "standard",
@@ -56,7 +56,7 @@ export class BlogAiService {
     });
 
     const content = unwrapAiResult(result);
-    this.audit.log({ action: "ai.blog.improve-writing", userId, orgId: "", resourceType: "blog_post", resourceId: postId });
+    this.audit.log({ action: "ai.blog.improve-writing", userId, orgId, resourceType: "blog_post", resourceId: postId });
     return { content: content.slice(0, 4000) };
   }
 
@@ -74,7 +74,7 @@ export class BlogAiService {
     const user = `Current title: "${post.title}"\nContent excerpt:\n${sourceText}\n\nSuggest an improved title.`;
 
     const result = await this.gateway.invokeText({
-      actor: { orgId: "", userId },
+      actor: { orgId, userId },
       feature: "blog.suggest-title",
       prompt: { system, user },
       tier: "fast",
@@ -100,7 +100,7 @@ export class BlogAiService {
     const user = `Post title: "${post.title}"\nContent:\n${sourceText}\n\nWrite a concise excerpt.`;
 
     const result = await this.gateway.invokeText({
-      actor: { orgId: "", userId },
+      actor: { orgId, userId },
       feature: "blog.summarize",
       prompt: { system, user },
       tier: "fast",

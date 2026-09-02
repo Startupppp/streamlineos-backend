@@ -9,6 +9,7 @@ import {
   resolveBuildDashboardScope,
 } from "./dashboard-scope";
 import { DashboardProjectService } from "./dashboard-project.service";
+import { isScopable } from "../rbac/permissions";
 
 const dialect = new PgDialect();
 const ORG = "org_proj_1";
@@ -38,9 +39,18 @@ describe("DASHBOARD_BUILD_PERMISSION constant", () => {
 });
 
 describe("resolveBuildDashboardScope", () => {
-  it("returns all regardless of access service because build:tickets:view is not a scopable permission", async () => {
+  /**
+   * These two used to assert the opposite: that a non-scopable key resolves
+   * `all` without consulting the access service at all. `build:tickets:view`
+   * carries no `scopable: true` entry, so that branch was permanently live and
+   * the recent-projects section resolved `all` for every caller — a gate that
+   * read as present in review and admitted everyone at runtime. The old
+   * expectations encoded the vulnerability.
+   */
+  it("denies rather than admits when the caller holds nothing", async () => {
+    expect(isScopable(DASHBOARD_BUILD_PERMISSION)).toBe(false);
     const result = await resolveBuildDashboardScope(makeAccess("none"), makeUser(USER, ORG));
-    expect(result).toBe("all");
+    expect(result).toBe("none");
   });
 
   it("returns all when the user has all scope", async () => {
@@ -48,16 +58,17 @@ describe("resolveBuildDashboardScope", () => {
     expect(result).toBe("all");
   });
 
-  it("never calls scopeFor — build:tickets:view is non-scopable so the isScopable guard short-circuits", async () => {
+  it("asks the access service for this key rather than short-circuiting past it", async () => {
     const keysSeen: string[] = [];
     const access = {
       scopeFor: async (_u: CurrentUserContext, key: string) => {
         keysSeen.push(key);
-        return "all" as DataScope;
+        return "own" as DataScope;
       },
     } as unknown as AccessService;
-    await resolveBuildDashboardScope(access, makeUser(USER, ORG));
-    expect(keysSeen).toHaveLength(0);
+    const result = await resolveBuildDashboardScope(access, makeUser(USER, ORG));
+    expect(keysSeen).toEqual([DASHBOARD_BUILD_PERMISSION]);
+    expect(result).toBe("own");
   });
 });
 
@@ -140,7 +151,9 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
       select: () => db,
       from: () => db,
       innerJoin: () => db,
-      where: () => Promise.resolve([]),
+      where: () => db,
+      orderBy: () => db,
+      limit: () => Promise.resolve([]),
       query: {
         organizationMembers: { findFirst: async () => ({ id: 1 }) },
         projects: { findMany: async () => [] },

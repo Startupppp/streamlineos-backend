@@ -10,6 +10,7 @@ import { pageVisibleTo } from "./kb-page-visibility";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
+import type { DataScope } from "../../access/access.types";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KbCandidateService } from "./kb-candidate.service";
@@ -44,6 +45,7 @@ export class KbSearchService {
   async search(
     user: CurrentUserContext,
     input: SearchInput,
+    scope: DataScope,
   ): Promise<{
     items: {
       id: number;
@@ -61,6 +63,9 @@ export class KbSearchService {
     pageSize: number;
     totalPages: number;
   }> {
+    if (scope === "none")
+      return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
+
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0) {
       return { items: [], total: 0, page: input.page, pageSize: input.pageSize, totalPages: 0 };
@@ -78,6 +83,16 @@ export class KbSearchService {
       keywordCond,
     ];
     if (!isAdmin) conditions.push(this.candidates.articleRestrictionFilter(user.orgId, principal));
+    // The same narrowing `GET /kb/articles` applies, in the predicate rather than
+    // downstream: these rows carry article text and are what retrieval hands on.
+    if (scope !== "all") {
+      const membershipId = actingMembershipId(user.principal);
+      conditions.push(
+        membershipId === null
+          ? sql`false`
+          : eq(kbArticles.ownerMembershipId, membershipId),
+      );
+    }
     if (input.spaceId) conditions.push(eq(kbArticles.spaceId, input.spaceId));
     const where = and(...conditions);
 

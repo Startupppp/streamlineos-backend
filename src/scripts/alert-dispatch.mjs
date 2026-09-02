@@ -29,6 +29,12 @@ const REGISTRY = {
   "pool-saturation": { owner: "platform-reliability", runbookAnchor: "#database-cell-failure", severity: "high" },
   "tenant-cost": { owner: "platform-reliability", runbookAnchor: "#tenant-cost", severity: "high" },
   "cell-recovery": { owner: "platform-reliability", runbookAnchor: "#cell-recovery", severity: "critical" },
+  "retention-dead-man": {
+    owner: "platform-reliability",
+    runbookFile: FAILURE_RUNBOOK,
+    runbookAnchor: "#retention-dead-man",
+    severity: "critical",
+  },
 };
 
 const RUNBOOK_BASE =

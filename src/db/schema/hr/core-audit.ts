@@ -26,7 +26,6 @@ export const hrAuditLogs = pgTable("hr_audit_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_hr_audit_logs_org_id").on(table.orgId, table.id),
-  index("idx_hr_audit_logs_org").on(table.orgId),
   index("idx_hr_audit_logs_org_entity").on(table.orgId, table.entityType, table.entityId),
   index("idx_hr_audit_logs_org_actor_membership").on(table.orgId, table.actorMembershipId),
   index("idx_hr_audit_logs_created_at").on(table.createdAt),

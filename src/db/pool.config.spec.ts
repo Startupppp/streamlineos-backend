@@ -1,20 +1,30 @@
-import { normalizeDatabaseUrl, resolvePoolConfig, resolveTransactionGuards } from "./pool.config";
+import {
+  describeTimezoneRisk,
+  normalizeDatabaseUrl,
+  resolvePoolConfig,
+  resolveTransactionGuards,
+} from "./pool.config";
 
 const POOLED = "postgres://streamline_app:pw@ep-x-pooler.us-east-2.aws.neon.tech/db?sslmode=require";
 const DIRECT = "postgres://streamline_app:pw@ep-x.us-east-2.aws.neon.tech/db?sslmode=require";
 const SELF_HOSTED = "postgres://app:pw@db.internal:5432/streamlineos";
 
-function resolve(env: NodeJS.ProcessEnv) {
-  return resolvePoolConfig({ NODE_ENV: "production", APP_DATABASE_URL: POOLED, ...env });
+const UTC_PROCESS = { utcOffsetMinutes: 0 };
+const IST_PROCESS = { utcOffsetMinutes: -330 };
+
+function resolve(env: NodeJS.ProcessEnv, runtime = UTC_PROCESS) {
+  return resolvePoolConfig({ NODE_ENV: "production", APP_DATABASE_URL: POOLED, ...env }, runtime);
 }
 
 describe("resolvePoolConfig", () => {
   it("throws when neither database url is set", () => {
-    expect(() => resolvePoolConfig({ NODE_ENV: "production" })).toThrow(/is required/);
+    expect(() => resolvePoolConfig({ NODE_ENV: "production" }, UTC_PROCESS)).toThrow(/is required/);
   });
 
   it("reports the owner role when APP_DATABASE_URL is absent, because BYPASSRLS disables every policy", () => {
-    expect(resolvePoolConfig({ NODE_ENV: "production", DATABASE_URL: POOLED }).role).toBe("owner");
+    expect(
+      resolvePoolConfig({ NODE_ENV: "production", DATABASE_URL: POOLED }, UTC_PROCESS).role,
+    ).toBe("owner");
     expect(resolve({}).role).toBe("application");
   });
 
@@ -34,9 +44,14 @@ describe("resolvePoolConfig", () => {
     expect(resolve({}).options.prepare).toBe(false);
   });
 
-  it("sends only application_name as a startup parameter, the one Neon's pooler honours", () => {
+  it("sends application_name and a pinned TimeZone, the startup parameters the pooler tracks", () => {
     const { connection } = resolve({}).options;
-    expect(connection).toEqual({ application_name: "streamlineos-api" });
+    expect(connection).toEqual({ application_name: "streamlineos-api", TimeZone: "UTC" });
+  });
+
+  it("keeps TimeZone pinned even when the application name is overridden", () => {
+    const { connection } = resolve({ DB_APPLICATION_NAME: "streamlineos-api-cron" }).options;
+    expect(connection?.TimeZone).toBe("UTC");
   });
 
   it("keeps the timeouts out of the startup packet, where the pooler drops them", () => {
@@ -126,6 +141,25 @@ describe("resolveTransactionGuards", () => {
 
   it("honours overrides", () => {
     expect(resolveTransactionGuards({ DB_LOCK_TIMEOUT_MS: "0" }).lockTimeoutMs).toBe(0);
+  });
+});
+
+describe("timezone pinning", () => {
+  it("says nothing when the process already runs at UTC, which is the only safe pairing", () => {
+    expect(describeTimezoneRisk(0)).toBeNull();
+    expect(resolve({}).warnings).toEqual([]);
+  });
+
+  it("names the exact drift when the process is not at UTC, because pinning only one end shifts every naive column", () => {
+    const risk = describeTimezoneRisk(-330);
+    expect(risk).toMatch(/UTC\+5\.5/);
+    expect(risk).toMatch(/shifted by 5\.5 hours/);
+    expect(risk).toMatch(/TZ=UTC/);
+    expect(resolve({}, IST_PROCESS).warnings.join(" ")).toMatch(/timestamp without time zone/);
+  });
+
+  it("reports a western offset with its sign, not its magnitude", () => {
+    expect(describeTimezoneRisk(300)).toMatch(/UTC-5/);
   });
 });
 

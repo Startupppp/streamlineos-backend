@@ -25,7 +25,6 @@ export const crmContactChannelConsent = pgTable("crm_contact_channel_consent", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_crm_consent_org_contact").on(table.orgId, table.contactId),
   index("idx_crm_consent_org_channel_status").on(table.orgId, table.channel, table.status),
   uniqueIndex("uniq_crm_consent_org_contact_channel").on(table.orgId, table.contactId, table.channel),
   unique("uniq_crm_consent_org_id").on(table.orgId, table.id),
@@ -96,6 +95,5 @@ export const crmSuppressionHashes = pgTable(
       table.channel,
       table.addressHash,
     ),
-    index("idx_crm_suppression_org_channel").on(table.orgId, table.channel),
   ],
 );

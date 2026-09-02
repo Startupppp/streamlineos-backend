@@ -30,7 +30,6 @@ export const reviewCycles = pgTable("review_cycles", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [hrTemplates.orgId, hrTemplates.id], name: "fk_review_cycles_org_template" }).onDelete("set null"),
   unique("uniq_review_cycles_org_id").on(table.orgId, table.id),
-  index("idx_review_cycles_org").on(table.orgId),
   index("idx_review_cycles_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_review_cycles_created_by_actor" }).onDelete("restrict"),
 ]);
@@ -62,7 +61,6 @@ export const performanceReviews = pgTable("performance_reviews", {
   index("idx_perf_reviews_org_created_id").on(table.orgId, table.createdAt.desc(), table.id.desc()),
   index("idx_perf_reviews_org_user_created_id").on(table.orgId, table.userId, table.createdAt.desc(), table.id.desc()),
   index("idx_perf_reviews_org_period_start_id").on(table.orgId, table.periodStart.desc(), table.id.desc()),
-  index("idx_perf_reviews_org_reviewer_membership").on(table.orgId, table.reviewerMembershipId),
   foreignKey({
     columns: [table.orgId, table.reviewerMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -88,7 +86,6 @@ export const oneOnOneMeetings = pgTable("one_on_one_meetings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_one_on_one_meetings_org_id").on(table.orgId, table.id),
-  index("idx_one_on_ones_org").on(table.orgId),
   index("idx_one_on_ones_manager").on(table.managerId),
   index("idx_one_on_ones_scheduled").on(table.scheduledAt),
 ]);
@@ -168,7 +165,6 @@ export const pulseSurveys = pgTable("pulse_surveys", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_pulse_surveys_org_id").on(table.orgId, table.id),
-  index("idx_surveys_org").on(table.orgId),
   index("idx_surveys_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_pulse_surveys_created_by_actor" }).onDelete("restrict"),
 ]);
@@ -242,10 +238,7 @@ export const recognitions = pgTable("recognitions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_recognitions_org_id").on(table.orgId, table.id),
-  index("idx_recognitions_org").on(table.orgId),
   index("idx_recognitions_to_user").on(table.toUserId),
-  index("idx_recognitions_org_from_membership").on(table.orgId, table.fromMembershipId),
-  index("idx_recognitions_org_to_membership").on(table.orgId, table.toMembershipId),
   foreignKey({ columns: [table.orgId, table.fromMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_recognitions_from_actor" }).onDelete("restrict"),
   foreignKey({ columns: [table.orgId, table.toMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_recognitions_to_actor" }).onDelete("restrict"),
 ]);
@@ -279,7 +272,6 @@ export const skillAssessments = pgTable("skill_assessments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_skill_assessments_org_id").on(table.orgId, table.id),
-  index("idx_skill_assessments_org").on(table.orgId),
   index("idx_skill_assessments_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_skill_assessments_created_by_actor" }).onDelete("restrict"),
 ]);
@@ -384,8 +376,6 @@ export const hrCalibrationEntries = pgTable("hr_calibration_entries", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.cycleId], foreignColumns: [reviewCycles.orgId, reviewCycles.id], name: "fk_hr_calibration_entries_org_cycle" }).onDelete("cascade"),
   unique("uniq_hr_calibration_entries_org_id").on(table.orgId, table.id),
-  index("idx_calibration_entries_org").on(table.orgId),
-  index("idx_calibration_entries_cycle").on(table.cycleId),
   uniqueIndex("uniq_calibration_cycle_employee").on(table.cycleId, table.employeeId),
 ]);
 

@@ -13,9 +13,11 @@ import {
 import { forEachOrg } from "../../common/tenant";
 import type { ForEachOrgResult } from "../../common/tenant/for-each-org";
 import { expandToOccurrences } from "./calendar-occurrence.service";
+import { drainByKeyset } from "./calendar-keyset-drain";
 
 const REMINDER_WINDOW_MS = 20 * 60 * 1000;
 const EVENT_BATCH_LIMIT = 200;
+const EXCEPTION_PAGE_SIZE = 2000;
 const ATTENDEE_PAGE_SIZE = 1000;
 const OUTBOX_INSERT_CHUNK = 500;
 
@@ -43,51 +45,61 @@ export class CalendarReminderSweepService {
     let intentsWritten = 0;
 
     const organizations = await forEachOrg(this.db, "calendar-reminder-sweep", async (tx, orgId) => {
-      const nonRecurring = await tx
-        .select({ id: calendarEvents.id, title: calendarEvents.title, startDate: calendarEvents.startDate })
-        .from(calendarEvents)
-        .where(
-          and(
-            eq(calendarEvents.orgId, orgId),
-            eq(calendarEvents.reminder15MinSent, false),
-            eq(calendarEvents.allDay, false),
-            isNull(calendarEvents.rrule),
-            gte(calendarEvents.startDate, now),
-            lte(calendarEvents.startDate, dueBy),
-          ),
-        )
-        .limit(EVENT_BATCH_LIMIT);
+      const nonRecurring = await drainByKeyset(EVENT_BATCH_LIMIT, (afterId) =>
+        tx
+          .select({ id: calendarEvents.id, title: calendarEvents.title, startDate: calendarEvents.startDate })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.orgId, orgId),
+              eq(calendarEvents.reminder15MinSent, false),
+              eq(calendarEvents.allDay, false),
+              isNull(calendarEvents.rrule),
+              gte(calendarEvents.startDate, now),
+              lte(calendarEvents.startDate, dueBy),
+              gt(calendarEvents.id, afterId),
+            ),
+          )
+          .orderBy(asc(calendarEvents.id))
+          .limit(EVENT_BATCH_LIMIT),
+      );
 
-      const recurring = await tx
-        .select({
-          id: calendarEvents.id,
-          title: calendarEvents.title,
-          startDate: calendarEvents.startDate,
-          endDate: calendarEvents.endDate,
-          allDay: calendarEvents.allDay,
-          timezone: calendarEvents.timezone,
-          orgId: calendarEvents.orgId,
-          rrule: calendarEvents.rrule,
-          recurrenceEnd: calendarEvents.recurrenceEnd,
-        })
-        .from(calendarEvents)
-        .where(
-          and(
-            eq(calendarEvents.orgId, orgId),
-            eq(calendarEvents.allDay, false),
-            isNotNull(calendarEvents.rrule),
-            lte(calendarEvents.startDate, dueBy),
-            or(isNull(calendarEvents.recurrenceEnd), gte(calendarEvents.recurrenceEnd, now)),
-          ),
-        )
-        .limit(EVENT_BATCH_LIMIT);
+      const recurring = await drainByKeyset(EVENT_BATCH_LIMIT, (afterId) =>
+        tx
+          .select({
+            id: calendarEvents.id,
+            title: calendarEvents.title,
+            startDate: calendarEvents.startDate,
+            endDate: calendarEvents.endDate,
+            allDay: calendarEvents.allDay,
+            timezone: calendarEvents.timezone,
+            orgId: calendarEvents.orgId,
+            rrule: calendarEvents.rrule,
+            recurrenceEnd: calendarEvents.recurrenceEnd,
+          })
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.orgId, orgId),
+              eq(calendarEvents.allDay, false),
+              isNotNull(calendarEvents.rrule),
+              lte(calendarEvents.startDate, dueBy),
+              or(isNull(calendarEvents.recurrenceEnd), gte(calendarEvents.recurrenceEnd, now)),
+              gt(calendarEvents.id, afterId),
+            ),
+          )
+          .orderBy(asc(calendarEvents.id))
+          .limit(EVENT_BATCH_LIMIT),
+      );
 
       const recurringIds = recurring.map((e) => e.id);
       const exceptions =
         recurringIds.length === 0
           ? []
-          : await tx
+          : await drainByKeyset(EXCEPTION_PAGE_SIZE, (afterId) =>
+              tx
               .select({
+                id: calendarEventExceptions.id,
                 eventId: calendarEventExceptions.eventId,
                 occurrenceStart: calendarEventExceptions.occurrenceStart,
                 isCancelled: calendarEventExceptions.isCancelled,
@@ -99,6 +111,7 @@ export class CalendarReminderSweepService {
                 and(
                   eq(calendarEventExceptions.orgId, orgId),
                   inArray(calendarEventExceptions.eventId, recurringIds),
+                  gt(calendarEventExceptions.id, afterId),
                   or(
                     and(
                       gte(calendarEventExceptions.occurrenceStart, now),
@@ -112,7 +125,9 @@ export class CalendarReminderSweepService {
                   ),
                 ),
               )
-              .limit(EVENT_BATCH_LIMIT * 10);
+              .orderBy(asc(calendarEventExceptions.id))
+              .limit(EXCEPTION_PAGE_SIZE),
+            );
 
       const cancelledKeys = new Set(
         exceptions.filter((e) => e.isCancelled).map((e) => `${e.eventId}:${e.occurrenceStart.getTime()}`),

@@ -34,7 +34,6 @@ export const employeeShiftAssignments = pgTable("employee_shift_assignments", {
   foreignKey({ columns: [table.orgId, table.shiftId], foreignColumns: [shiftTemplates.orgId, shiftTemplates.id], name: "fk_employee_shift_assignments_org_shift" }).onDelete("cascade"),
   unique("uniq_employee_shift_assignments_org_id").on(table.orgId, table.id),
   index("idx_shift_assignments_user").on(table.userId, table.isActive),
-  index("idx_shift_assignments_org").on(table.orgId),
   index("idx_shift_assignments_org_user_membership").on(table.orgId, table.userMembershipId),
   foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_shift_assignments_user_actor" }).onDelete("set null"),
 ]);

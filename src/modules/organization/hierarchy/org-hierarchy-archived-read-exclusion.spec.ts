@@ -1,5 +1,6 @@
 import { makeFakeDb } from "../../../test/fake-select-db";
 import type { Db } from "../../../db/drizzle.module";
+import { orgUnits } from "../../../db/schema";
 import { OrgHierarchyBranchesService } from "./org-hierarchy-branches.service";
 import { OrgHierarchyDepartmentsService } from "./org-hierarchy-departments.service";
 import { OrgHierarchyTeamsService } from "./org-hierarchy-teams.service";
@@ -105,7 +106,7 @@ describe("organization hierarchy reads exclude archived and deleted rows", () =>
         head_member: [],
         team_departments: [],
       },
-      { orgUnits: "org_units" },
+      { orgUnits },
     );
     const service = new OrgHierarchyTeamsService(db as unknown as Db, cache() as never, audit() as never);
 
@@ -124,7 +125,7 @@ describe("organization hierarchy reads exclude archived and deleted rows", () =>
         head_member: [],
         team_departments: [],
       },
-      { orgUnits: "org_units" },
+      { orgUnits },
     );
     const service = new OrgHierarchyTeamsService(db as unknown as Db, cache() as never, audit() as never);
 

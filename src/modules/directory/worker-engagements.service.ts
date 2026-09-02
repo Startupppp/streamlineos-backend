@@ -90,6 +90,7 @@ export class WorkerEngagementsService {
         and(
           eq(workerEngagements.workerEngagementId, workerEngagementId),
           eq(workerEngagements.organizationId, organizationId),
+          isNull(workerEngagements.archivedAt),
         ),
       )
       .limit(1);
@@ -215,6 +216,7 @@ export class WorkerEngagementsService {
         and(
           eq(workerEngagements.organizationId, organizationId),
           eq(workerEngagements.workerId, workerId),
+          isNull(workerEngagements.archivedAt),
         ),
       );
   }

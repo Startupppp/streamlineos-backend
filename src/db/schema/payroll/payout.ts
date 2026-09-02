@@ -19,7 +19,6 @@ export const payslipTemplates = pgTable("payslip_templates", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_payslip_templates_org_id").on(table.orgId, table.id),
-  index("idx_payslip_templates_org").on(table.orgId),
 ]);
 
 export const payrollBankBatches = pgTable("payroll_bank_batches", {
@@ -67,7 +66,6 @@ export const payrollBankBatchItems = pgTable("payroll_bank_batch_items", {
   foreignKey({ columns: [table.orgId, table.runEmployeeId], foreignColumns: [payrollRunEmployees.orgId, payrollRunEmployees.id], name: "fk_payroll_bank_batch_items_run_employee_id_org" }).onDelete("cascade"),
   unique("uniq_payroll_bank_batch_items_org_id").on(table.orgId, table.id),
   index("idx_payroll_bank_batch_items_batch_status").on(table.batchId, table.status),
-  index("idx_payroll_bank_batch_items_org").on(table.orgId),
   index("idx_payroll_bank_batch_items_org_worker").on(table.orgId, table.workerId),
   check(
     "chk_payroll_bank_batch_items_subject",

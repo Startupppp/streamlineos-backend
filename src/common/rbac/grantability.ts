@@ -21,6 +21,20 @@ const ORG_ONLY_PERMISSION_KEYS: ReadonlySet<string> = new Set([
   "chat:org-settings:manage",
 ]);
 
+/**
+ * Keys that administer a resource the vendor owns globally rather than one a
+ * tenant owns. `blog_posts` and `blog_categories` have no `org_id` because they
+ * are the vendor's public marketing site, so no tenant standing — owner, org
+ * admin, module owner, role grant or delegation — may confer them. They are
+ * held only through `isPlatformAdmin` (`platform-operators.ts`), which is
+ * deployment configuration and not organization data.
+ */
+export const PLATFORM_ONLY_PERMISSION_KEYS: ReadonlySet<string> = new Set([
+  "blog:posts:manage",
+  "blog:categories:manage",
+  "blog:ai:use",
+]);
+
 function isOrgOnlyNamespace(key: string): boolean {
   return ORG_ONLY_NAMESPACES.includes(key.split(":")[0] ?? "");
 }
@@ -29,8 +43,12 @@ export function isOrgOnlyPermission(key: string): boolean {
   return isOrgOnlyNamespace(key) || ORG_ONLY_PERMISSION_KEYS.has(key);
 }
 
+export function isPlatformOnlyPermission(key: string): boolean {
+  return PLATFORM_ONLY_PERMISSION_KEYS.has(key);
+}
+
 export function isDelegablePermission(key: string): boolean {
-  return !isOrgOnlyPermission(key);
+  return !isOrgOnlyPermission(key) && !isPlatformOnlyPermission(key);
 }
 
 export const ORG_ADMIN_PERMISSION_KEY = "settings:manage";
@@ -126,6 +144,13 @@ export function assertPermissionsGrantable(
   if (orgOnly.length > 0) {
     throw new ForbiddenException(
       `Platform billing is managed by the organization owner and administrators only, and cannot be granted: ${orgOnly.join(", ")}`,
+    );
+  }
+
+  const platformOnly = requestedKeys.filter(isPlatformOnlyPermission);
+  if (platformOnly.length > 0) {
+    throw new ForbiddenException(
+      `Platform-owned content is administered by the vendor, not by an organization, and cannot be granted: ${platformOnly.join(", ")}`,
     );
   }
 

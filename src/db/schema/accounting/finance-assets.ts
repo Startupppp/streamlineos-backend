@@ -27,7 +27,6 @@ export const accAssetCategories = pgTable("acc_asset_categories", {
   foreignKey({ columns: [table.orgId, table.depreciationExpenseAccountId], foreignColumns: [ledgerAccounts.orgId, ledgerAccounts.id], name: "fk_acc_asset_categories_depreciation_expense_account_id_org" }),
   unique("uniq_acc_asset_categories_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_asset_categories_org_name").on(table.orgId, table.name),
-  index("idx_acc_asset_categories_org").on(table.orgId),
 ]);
 
 export const accFixedAssets = pgTable("acc_fixed_assets", {

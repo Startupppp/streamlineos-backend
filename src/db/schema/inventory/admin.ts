@@ -29,7 +29,6 @@ export const invSettings = pgTable("inv_settings", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_inv_settings_org_id").on(table.orgId, table.id),
-  index("idx_inv_settings_org").on(table.orgId),
 ]);
 
 export const invReasonCodes = pgTable("inv_reason_codes", {
@@ -136,7 +135,6 @@ export const invWebhooks = pgTable("inv_webhooks", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_inv_webhooks_org_id").on(table.orgId, table.id),
-  index("idx_inv_webhooks_org").on(table.orgId),
 ]);
 
 export const invWebhookEvents = pgTable("inv_webhook_events", {

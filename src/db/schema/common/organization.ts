@@ -104,7 +104,6 @@ export const orgUnits = pgTable(
       "chk_org_units_parent_not_self",
       sql`${table.parentId} IS NULL OR ${table.parentId} <> ${table.id}`,
     ),
-    index("idx_org_units_org_kind").on(table.orgId, table.kind),
     index("idx_org_units_head_membership").on(table.orgId, table.headMembershipId),
     index("idx_org_units_parent").on(table.parentId),
     uniqueIndex("uniq_org_units_org_kind_code").on(
@@ -137,7 +136,6 @@ export const orgUnitMembers = pgTable(
       table.membershipId,
     ),
     index("idx_org_unit_members_membership").on(table.orgId, table.membershipId),
-    index("idx_org_unit_members_unit").on(table.orgUnitId),
     foreignKey({
       name: "fk_org_unit_members_membership",
       columns: [table.orgId, table.membershipId],

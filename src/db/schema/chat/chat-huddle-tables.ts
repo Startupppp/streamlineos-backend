@@ -54,7 +54,6 @@ export const chatHuddles = pgTable(
   },
   (table) => [
     index("idx_chat_huddles_channel").on(table.channelId, table.status),
-    index("idx_chat_huddles_org").on(table.orgId),
     unique("uniq_chat_huddles_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_huddles_org_channel" }),
     foreignKey({ columns: [table.orgId, table.startedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_huddles_org_starter_membership" }).onDelete("cascade"),
@@ -82,8 +81,6 @@ export const chatHuddleParticipants = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_huddle_participant").on(table.huddleId, table.membershipId),
-    index("idx_huddle_participants_huddle").on(table.huddleId),
-    index("idx_chat_huddle_participants_org").on(table.orgId),
     unique("uniq_chat_huddle_participants_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.huddleId], foreignColumns: [chatHuddles.orgId, chatHuddles.id], name: "fk_chat_huddle_participants_org_huddle" }),
     foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_huddle_participants_org_membership" }).onDelete("cascade"),

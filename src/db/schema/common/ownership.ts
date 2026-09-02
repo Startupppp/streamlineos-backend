@@ -35,7 +35,6 @@ export const moduleOwnerships = pgTable(
   },
   (table) => [
     unique("uniq_module_ownerships_org_module").on(table.orgId, table.moduleKey),
-    index("idx_module_ownerships_org").on(table.orgId),
     foreignKey({
       name: "fk_module_ownerships_member",
       columns: [table.orgId, table.ownerMembershipId],

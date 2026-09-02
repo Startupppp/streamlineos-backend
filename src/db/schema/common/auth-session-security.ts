@@ -91,7 +91,6 @@ export const devices = pgTable("devices", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_devices_user_fingerprint").on(table.userId, table.fingerprint),
-  index("idx_devices_user").on(table.userId),
 ]);
 
 export const loginHistory = pgTable("login_history", {

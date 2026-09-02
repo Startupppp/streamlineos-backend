@@ -16,7 +16,6 @@ export const hrJobRoles = pgTable("hr_job_roles", {
 }, (table) => [
   unique("uniq_hr_job_roles_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_job_roles_org_name").on(table.orgId, table.name),
-  index("idx_hr_job_roles_org").on(table.orgId),
 ]);
 
 export const hrJobLevels = pgTable("hr_job_levels", {
@@ -33,7 +32,6 @@ export const hrJobLevels = pgTable("hr_job_levels", {
 }, (table) => [
   unique("uniq_hr_job_levels_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_job_levels_org_name").on(table.orgId, table.name),
-  index("idx_hr_job_levels_org").on(table.orgId),
 ]);
 
 export const hrEmploymentCustomFieldValues = pgTable(

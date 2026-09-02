@@ -30,6 +30,7 @@ describe("CalendarReminderSweepService — cross-tenant isolation", () => {
   function makeTx(wheres: unknown[]) {
     const chain = Object.assign(Promise.resolve([]), {
       limit: jest.fn().mockResolvedValue([]),
+      orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
     });
     const from = jest.fn().mockReturnValue({
       where: jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return chain; }),

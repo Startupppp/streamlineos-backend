@@ -31,6 +31,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { SessionsService } from "../sessions/sessions.service";
+import { anonymiseSubjectSupportTickets } from "../support/core/support-ticket-erasure";
 import { GdprStoragePurgeService, type PurgeManifest } from "./gdpr-storage-purge.service";
 
 const ERASED_NAME = "ERASED";
@@ -104,8 +105,10 @@ const NO_STORAGE_WORK: SubjectErasureStorageResult = {
  * Idempotent, tenant-scoped PII erasure for a single subject.
  * Anonymises: organization_people, hr_employee_sensitive_fields, hr_dependents,
  * ai_chat_conversations (title), ai_chat_messages (content), chat_messages (content),
- * and (when no other org memberships remain) the global users identity row.
- * Hard-deletes: kb_chat_messages, kb_chat_conversations, kb_article_chunks and the
+ * support_tickets (requester_email/requester_name) and (when no other org memberships
+ * remain) the global users identity row.
+ * Hard-deletes: support_ticket_embeddings, kb_chat_messages, kb_chat_conversations,
+ * kb_article_chunks and the
  * kb_ingestion_checkpoints that mirror them, where the subject authored the source page,
  * article, or uploaded source document (embedding + chunk text are a reproduction of the
  * subject's text and must be fully removed).
@@ -171,6 +174,8 @@ export class GdprSubjectErasureService {
           "ai_chat_conversations",
           "ai_chat_messages",
           "chat_messages",
+          "support_tickets",
+          "support_ticket_embeddings",
           "kb_chat_messages",
           "kb_chat_conversations",
           "kb_article_chunks",
@@ -327,6 +332,12 @@ export class GdprSubjectErasureService {
         )
         .returning({ id: chatMessages.id });
       if (chatMsgResult.length > 0) tablesAnonymised.push("chat_messages");
+
+      // Must precede the `users.email` update below: `support_tickets.requester_email`
+      // is free text with no FK to the subject, so the live address is the only link.
+      const supportErasure = await anonymiseSubjectSupportTickets(tx, { orgId, subjectUserId });
+      if (supportErasure.ticketsAnonymised > 0) tablesAnonymised.push("support_tickets");
+      if (supportErasure.embeddingsDeleted > 0) tablesAnonymised.push("support_ticket_embeddings");
 
       const [otherMembership] = await tx
         .select({ id: organizationMembers.id })

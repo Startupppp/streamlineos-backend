@@ -1,6 +1,9 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
 import { NotFoundException } from "@nestjs/common";
+import type { Redis } from "@upstash/redis";
+import { CacheService } from "../../../common/cache/cache.service";
+import { InMemoryRedis } from "../../../common/cache/in-memory-redis.test-double";
 import * as applyScopeModule from "../../access/apply-scope";
 import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
@@ -146,24 +149,30 @@ describe("employee directory scope", () => {
     expect(db.select).toHaveBeenCalledTimes(1);
   });
 
-  it("scopes directory rows and isolates their cache by actor and scope", async () => {
+  it("scopes directory rows and never serves one viewer's directory to another", async () => {
+    let visible: Array<Record<string, unknown>> = [
+      { id: "actor-1", name: "Actor One", email: "one@example.com", role: "MEMBER" },
+    ];
     const members = limitedSelect([]);
-    const cache = executingCache();
+    members.limit.mockImplementation(() => Promise.resolve(visible));
+    const cache = new CacheService(new InMemoryRedis() as unknown as Redis);
     const db = {
       select: jest.fn().mockReturnValue(members),
       query: { orgUnits: { findMany: jest.fn().mockResolvedValue([]) } },
     };
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
     const employment = { getFactsBatch: jest.fn().mockResolvedValue(new Map()) };
-    const service = new OrgStructureService(db as never, cache as never, employment as never, undefined as never);
+    const service = new OrgStructureService(db as never, cache, employment as never, undefined as never);
 
-    await service.getDirectory("org-1", "actor-1", "none");
+    const first = await service.getDirectory("org-1", "actor-1", "none");
+    expect(first).toHaveLength(1);
 
-    expect(cache.cached).toHaveBeenCalledWith(
-      "hr:directory:org-1:actor-1:none",
-      expect.any(Function),
-      expect.any(Number),
-    );
+    visible = [];
+    await expect(service.getDirectory("org-1", "actor-2", "none")).resolves.toEqual([]);
+    await expect(service.getDirectory("org-2", "actor-1", "none")).resolves.toEqual([]);
+    await expect(service.getDirectory("org-1", "actor-1", "team")).resolves.toEqual([]);
+    await expect(service.getDirectory("org-1", "actor-1", "none")).resolves.toHaveLength(1);
+
     expect(scopeSpy).toHaveBeenCalledWith(
       "none",
       "org-1",

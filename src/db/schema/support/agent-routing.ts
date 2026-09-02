@@ -15,7 +15,6 @@ export const supportAgentSkills = pgTable(
     uniqueIndex("uniq_support_agent_skills_org_membership_skill").on(table.orgId, table.userMembershipId, table.skill),
     index("idx_support_agent_skills_org").on(table.orgId, table.skill),
     unique("uniq_support_agent_skills_org_id").on(table.orgId, table.id),
-    index("idx_support_agent_skills_org_user_actor").on(table.orgId, table.userMembershipId),
     foreignKey({
       columns: [table.orgId, table.userMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -37,7 +36,6 @@ export const supportAgentAvailability = pgTable(
   (table) => [
     uniqueIndex("uniq_support_agent_availability_org_membership").on(table.orgId, table.userMembershipId),
     unique("uniq_support_agent_avail_org_id").on(table.orgId, table.id),
-    index("idx_support_agent_avail_org_user_actor").on(table.orgId, table.userMembershipId),
     foreignKey({
       columns: [table.orgId, table.userMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],

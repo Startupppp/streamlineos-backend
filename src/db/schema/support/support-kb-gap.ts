@@ -37,7 +37,6 @@ export const supportKnowledgeGaps = pgTable(
   foreignKey({ columns: [table.orgId, table.proposedArticleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_support_knowledge_gaps_proposed_article_id_org" }).onDelete("set null"),
     uniqueIndex("uniq_support_knowledge_gaps_org_cluster").on(table.orgId, table.clusterKey),
     index("idx_support_knowledge_gaps_org_status_created").on(table.orgId, table.status, table.createdAt),
-    index("idx_support_knowledge_gaps_org").on(table.orgId),
     unique("uniq_support_knowledge_gaps_org_id").on(table.orgId, table.id),
   ],
 );

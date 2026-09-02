@@ -151,7 +151,6 @@ export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hr_helpdesk_routing_org_id").on(table.orgId, table.id),
-  index("idx_hr_helpdesk_routing_org").on(table.orgId),
   uniqueIndex("uniq_helpdesk_routing_org_category").on(table.orgId, table.category),
 ]);
 

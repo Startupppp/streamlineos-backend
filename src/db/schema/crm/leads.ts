@@ -150,7 +150,6 @@ export const leadScoringRules = pgTable("lead_scoring_rules", {
   dimension: text("dimension").notNull().default("fit"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_lead_scoring_rules_org").on(table.orgId),
   unique("uniq_lead_scoring_rules_org_id").on(table.orgId, table.id),
 ]);
 
@@ -175,7 +174,6 @@ export const leadAssignmentRules = pgTable("lead_assignment_rules", {
   assignmentTypeText: text("assignment_type_text"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_lead_assignment_rules_org").on(table.orgId),
   unique("uniq_lead_assignment_rules_org_id").on(table.orgId, table.id),
 ]);
 
@@ -200,7 +198,6 @@ export const leadImportBatches = pgTable("lead_import_batches", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   completedAt: timestamp("completed_at"),
 }, (table) => [
-  index("idx_lead_batches_org").on(table.orgId),
   unique("uniq_lead_import_batches_org_id").on(table.orgId, table.id),
 ]);
 
@@ -220,8 +217,6 @@ export const webLeadForms = pgTable("web_lead_forms", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("web_lead_forms_org_id_idx").on(table.orgId),
-  uniqueIndex("web_lead_forms_token_idx").on(table.publicToken),
   unique("uniq_web_lead_forms_org_id").on(table.orgId, table.id),
 ]);
 

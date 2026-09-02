@@ -10,7 +10,7 @@ export const jobBoardPostings = pgTable("job_board_postings", {
   platform: text("platform").notNull(),
   externalPostUrl: text("external_post_url"),
   status: text("status").default("DRAFT").notNull(),
-  postedBy: text("posted_by").references(() => users.id),
+  postedBy: text("posted_by"),
   postedAt: timestamp("posted_at"),
   expiryDate: timestamp("expiry_date"),
   spend: decimal("spend", { precision: 12, scale: 2 }),
@@ -18,14 +18,13 @@ export const jobBoardPostings = pgTable("job_board_postings", {
   qualifiedCount: integer("qualified_count").default(0).notNull(),
   hiredCount: integer("hired_count").default(0).notNull(),
   notes: text("notes"),
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.jobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_job_board_postings_org_job_posting" }).onDelete("cascade"),
   unique("uniq_job_board_postings_org_id").on(table.orgId, table.id),
   index("idx_job_board_postings_job").on(table.jobPostingId),
-  index("idx_job_board_postings_org").on(table.orgId),
 ]);
 
 export const jobBoardPostingsRelations = relations(jobBoardPostings, ({ one }) => ({

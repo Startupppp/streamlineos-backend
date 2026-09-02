@@ -72,7 +72,6 @@ export const projects = build.table(
     uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key).where(sql`deleted_at IS NULL`),
     index("idx_projects_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     index("idx_projects_manager").on(table.orgId, table.managerMembershipId),
-    index("idx_projects_org_manager_membership").on(table.orgId, table.managerMembershipId),
     index("idx_projects_org_client_membership").on(table.orgId, table.clientMembershipId),
     index("idx_projects_deal").on(table.dealId),
     index("idx_projects_managed_product").on(table.managedProductId),
@@ -208,7 +207,6 @@ export const modules = build.table(
   (table) => [
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_modules_org_project" }).onDelete("cascade"),
     index("idx_modules_project").on(table.projectId),
-    index("idx_modules_org").on(table.orgId),
     unique("uniq_modules_org_id").on(table.orgId, table.id),
   ],
 );

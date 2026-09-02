@@ -13,7 +13,6 @@ export const webhookEndpoints = pgTable("webhook_endpoints", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_webhook_endpoints_org").on(table.orgId),
   unique("uniq_webhook_endpoints_org_id").on(table.orgId, table.id),
 ]);
 

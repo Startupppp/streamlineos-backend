@@ -171,7 +171,6 @@ export const incentives = pgTable(
   },
   (table) => [
   foreignKey({ columns: [table.orgId, table.branchId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_incentives_branch_id_org" }).onDelete("set null"),
-    index("idx_incentives_org").on(table.orgId),
     index("idx_incentives_sales_rep").on(table.salesRepId),
     index("idx_incentives_status").on(table.status),
     unique("uniq_incentives_org_id").on(table.orgId, table.id),

@@ -57,7 +57,6 @@ export const interviewScorecards = pgTable("interview_scorecards", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.interviewId], foreignColumns: [interviews.orgId, interviews.id], name: "fk_interview_scorecards_org_interview" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [scorecardTemplates.orgId, scorecardTemplates.id], name: "fk_interview_scorecards_org_scorecard_template" }),
-  index("idx_scorecards_interview").on(table.interviewId),
   index("idx_scorecards_interviewer").on(table.interviewerId),
   uniqueIndex("uniq_scorecard_interview_interviewer").on(table.interviewId, table.interviewerId),
   uniqueIndex("uniq_scorecard_interview_membership").on(table.interviewId, table.interviewerMembershipId),
@@ -91,7 +90,6 @@ export const interviewBookingLinks = pgTable("interview_booking_links", {
   foreignKey({ columns: [table.orgId, table.jobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_interview_booking_links_job_posting_id_org" }),
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_interview_booking_links_org_candidate" }).onDelete("cascade"),
   unique("uniq_interview_booking_links_org_id").on(table.orgId, table.id),
-  index("idx_booking_links_token").on(table.token),
   index("idx_booking_links_candidate").on(table.candidateId),
   index("idx_booking_links_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_interview_booking_links_created_by_actor" }).onDelete("restrict"),
@@ -147,7 +145,6 @@ export const calibrationSessions = pgTable("calibration_sessions", {
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_calibration_sessions_org_candidate" }).onDelete("cascade"),
   unique("uniq_calibration_sessions_org_id").on(table.orgId, table.id),
   index("idx_calibration_sessions_candidate").on(table.candidateId),
-  index("idx_calibration_sessions_org").on(table.orgId),
   index("idx_calibration_sessions_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_calibration_sessions_created_by_actor" }).onDelete("restrict"),
 ]);
@@ -195,7 +192,6 @@ export const candidateSlaTracking = pgTable("candidate_sla_tracking", {
   unique("uniq_candidate_sla_tracking_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_sla_tracking_candidate_stage").on(table.candidateId, table.stage),
   index("idx_sla_tracking_org_status").on(table.orgId, table.status),
-  index("idx_sla_tracking_candidate").on(table.candidateId),
 ]);
 
 export const interviewQuestions = pgTable("interview_questions", {
@@ -215,7 +211,6 @@ export const interviewQuestions = pgTable("interview_questions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_interview_questions_org_id").on(table.orgId, table.id),
-  index("idx_interview_questions_org").on(table.orgId),
   index("idx_interview_questions_category").on(table.orgId, table.category),
   index("idx_interview_questions_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_interview_questions_created_by_actor" }).onDelete("restrict"),

@@ -13,7 +13,9 @@ import { TerminationService } from "./termination.service";
 import { TerminationReadService } from "./termination-read.service";
 import { TerminationCommunicationsService } from "./termination-communications.service";
 import { ExperienceLetterService } from "./experience-letter.service";
-import type { CacheService } from "../../../common/cache/cache.service";
+import type { Redis } from "@upstash/redis";
+import { CacheService } from "../../../common/cache/cache.service";
+import { InMemoryRedis } from "../../../common/cache/in-memory-redis.test-double";
 import type { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -111,11 +113,7 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock; findMany: jest.Moc
 }
 
 function makeCacheMock(): CacheService {
-  return {
-    cached: jest.fn().mockImplementation((_key: string, cb: () => Promise<unknown>) => cb()),
-    cachedVersioned: jest.fn().mockImplementation((_k: string, _v: string, cb: () => Promise<unknown>) => cb()),
-    invalidateNamespace: jest.fn(),
-  } as unknown as CacheService;
+  return new CacheService(new InMemoryRedis() as unknown as Redis);
 }
 
 const OWNER = "org-owner";

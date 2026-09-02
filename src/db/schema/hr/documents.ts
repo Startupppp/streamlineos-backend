@@ -12,13 +12,12 @@ export const richDocuments = pgTable("rich_documents", {
   templateType: text("template_type"),
   isPublished: boolean("is_published").default(false).notNull(),
   version: integer("version").default(1).notNull(),
-  createdBy: text("created_by").references(() => users.id).notNull(),
-  updatedBy: text("updated_by").references(() => users.id),
+  createdBy: text("created_by").notNull(),
+  updatedBy: text("updated_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_rich_documents_org_id").on(table.orgId, table.id),
-  index("idx_rich_documents_org").on(table.orgId),
   index("idx_rich_documents_org_updated").on(table.orgId, table.updatedAt),
 ]);
 
@@ -43,7 +42,7 @@ export const documents = pgTable("documents", {
   expiryReminderSent: boolean("expiry_reminder_sent").default(false).notNull(),
   tags: text("tags").array().default([]).notNull(),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  uploadedBy: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+  uploadedBy: text("uploaded_by"),
   userMembershipId: integer("user_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -71,12 +70,11 @@ export const handbookVersions = pgTable("handbook_versions", {
   documentUrl: text("document_url"),
   changelog: text("changelog"),
   publishedAt: timestamp("published_at"),
-  publishedBy: text("published_by").references(() => users.id),
+  publishedBy: text("published_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.documentId], foreignColumns: [richDocuments.orgId, richDocuments.id], name: "fk_handbook_versions_document_id_org" }),
   unique("uniq_handbook_versions_org_id").on(table.orgId, table.id),
-  index("idx_handbook_org").on(table.orgId),
 ]);
 
 export const policyAcknowledgments = pgTable("policy_acknowledgments", {
@@ -104,12 +102,11 @@ export const emailTemplates = pgTable("hr_email_templates", {
   body: text("body").notNull(),
   category: text("category").default("GENERAL").notNull(),
   variables: text("variables").array(),
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hr_email_templates_org_id").on(table.orgId, table.id),
-  index("idx_email_templates_org").on(table.orgId),
 ]);
 
 export const teamEvents = pgTable("team_events", {
@@ -122,11 +119,10 @@ export const teamEvents = pgTable("team_events", {
   time: text("time"),
   location: text("location"),
   maxParticipants: integer("max_participants"),
-  organizedBy: text("organized_by").references(() => users.id),
+  organizedBy: text("organized_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_team_events_org_id").on(table.orgId, table.id),
-  index("idx_team_events_org").on(table.orgId),
 ]);
 
 export const teamEventParticipants = pgTable("team_event_participants", {

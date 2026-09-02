@@ -1,0 +1,550 @@
+#!/usr/bin/env node
+/**
+ * Production-shaped load for the named heavy read paths — reminder, export, fanout,
+ * unread, free/busy, recurrence, search/vector and dashboard.
+ *
+ * Layered on top of `src/scripts/seed-scratch-e2e.mjs`, which must run first: it creates the
+ * organizations, users and memberships this script attaches volume to.
+ *
+ * Three organizations of deliberately different sizes. ANN recall and every RLS-post-filtered
+ * plan look better than they are when measured on the majority tenant, so the small org exists
+ * to be measured, not to pad the row count.
+ *
+ * Usage:
+ *   SCRATCH_DATABASE_URL=<owner url> node test/perf/seed-heavy-query-load.mjs [--purge] [--scale=0.25]
+ */
+
+import postgres from "postgres";
+import * as dotenv from "dotenv";
+import { resolve } from "node:path";
+import {
+  ORG_PROFILES,
+  LARGE_ORG,
+  MID_ORG,
+  SMALL_ORG,
+  assertScratchTarget,
+  scaled,
+} from "./heavy-query-fixtures.mjs";
+
+dotenv.config({ path: resolve(process.cwd(), ".env") });
+
+if (process.argv.includes("--self-test")) {
+  const cases = [
+    ["rejects a non-scratch database", assertScratchTarget("postgres://u:p@h/neondb", []).ok, false],
+    ["accepts a scratch database", assertScratchTarget("postgres://u:p@h/scratch_boot_d", []).ok, true],
+    ["rejects a url equal to a live url", assertScratchTarget("postgres://u:p@h/scratch_x", ["postgres://u:p@h/scratch_x"]).ok, false],
+    ["rejects an unparseable url", assertScratchTarget("nope", []).ok, false],
+    ["scale never collapses a section to zero", scaled(10, 0.001) >= 1, true],
+    ["scale is proportional", scaled(1000, 0.5), 500],
+  ];
+  let failed = false;
+  for (const [label, actual, wanted] of cases) {
+    if (actual === wanted) console.log(`  [pass] ${label}`);
+    else { console.error(`  [FAIL] ${label}: expected ${wanted}, got ${actual}`); failed = true; }
+  }
+  console.log(failed ? "\nSELF-TEST FAILED" : "\nSELF-TEST PASSED");
+  process.exit(failed ? 1 : 0);
+}
+
+if (process.env.NODE_ENV === "production") {
+  console.error("Refusing to run against NODE_ENV=production.");
+  process.exit(1);
+}
+
+const URL_ = process.env.SCRATCH_DATABASE_URL;
+if (!URL_) {
+  console.error("SCRATCH_DATABASE_URL is required (owner role — RLS is bypassed during load).");
+  process.exit(1);
+}
+const target = assertScratchTarget(URL_, [process.env.DATABASE_URL, process.env.APP_DATABASE_URL]);
+if (!target.ok) {
+  console.error(`seed-heavy-query-load: ${target.reason}`);
+  process.exit(1);
+}
+
+const PURGE = process.argv.includes("--purge");
+const scaleArg = process.argv.find((a) => a.startsWith("--scale="));
+const SCALE = scaleArg ? Number(scaleArg.slice("--scale=".length)) : 1;
+if (!Number.isFinite(SCALE) || SCALE <= 0) {
+  console.error("--scale must be a positive number");
+  process.exit(1);
+}
+
+const ssl = URL_.includes("sslmode=disable") ? false : "require";
+const sql = postgres(URL_, { max: 1, prepare: false, ssl, onnotice: () => {} });
+
+const started = Date.now();
+const log = (m) => console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${m}`);
+const failures = [];
+
+/** A section that throws is recorded and re-reported at exit; a warning that never fails is a lie. */
+async function section(label, fn) {
+  try {
+    await fn();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`[${((Date.now() - started) / 1000).toFixed(1)}s] FAIL ${label}: ${message}`);
+    failures.push(`${label}: ${message}`);
+  }
+}
+
+const count = async (table, where, params) => {
+  const rows = await sql.unsafe(`SELECT count(*)::int AS n FROM ${table} WHERE ${where}`, params);
+  return rows[0].n;
+};
+
+async function ensureMidOrg() {
+  const [existing] = await sql.unsafe(`SELECT id FROM organizations WHERE id = $1`, [MID_ORG]);
+  if (existing) return;
+  const ownerUserId = "bbbbbbbb-8888-0000-0000-000000000003";
+  await sql.unsafe(
+    `INSERT INTO users (id, name, email, email_verified, first_name, last_name, is_active, created_at, updated_at)
+     VALUES ($1, 'Perf Mid Owner', 'owner-mid@scratch-seed.test', now(), 'Perf', 'MidOwner', true, now(), now())
+     ON CONFLICT (id) DO NOTHING`,
+    [ownerUserId],
+  );
+  const [{ next_id: nextId }] = await sql.unsafe(
+    `SELECT nextval('organization_members_id_seq') AS next_id`,
+  );
+  await sql.begin(async (tx) => {
+    await tx.unsafe(
+      `INSERT INTO organizations (id, name, slug, status, owner_membership_id, created_at, updated_at)
+       VALUES ($1, 'Scratch Mid Org', 'scratch-mid-org', 'ACTIVE', $2, now(), now())`,
+      [MID_ORG, nextId],
+    );
+    await tx.unsafe(
+      `INSERT INTO organization_members (id, user_id, org_id, role, is_owner, status, joined_at)
+       VALUES ($1, $2, $3, 'OWNER', true, 'ACTIVE', now())`,
+      [nextId, ownerUserId, MID_ORG],
+    );
+  });
+  log(`  created mid org (owner membership ${nextId})`);
+}
+
+async function ensureMembers(orgId, label, wanted) {
+  const have = await count("organization_members", "org_id = $1", [orgId]);
+  if (have >= wanted) return;
+  for (let i = have; i < wanted; i++) {
+    const uid = `bbbbbbbb-${label.slice(0, 4).padEnd(4, "x")}-${String(i).padStart(4, "0")}-0000-000000000001`;
+    await sql.unsafe(
+      `INSERT INTO users (id, name, email, email_verified, first_name, last_name, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, now(), 'Perf', $4, true, now(), now())
+       ON CONFLICT (id) DO NOTHING`,
+      [uid, `Perf ${label} ${i}`, `perf-${label}-${i}@scratch-seed.test`, `${label}${i}`],
+    );
+    await sql.unsafe(
+      `INSERT INTO organization_members (user_id, org_id, role, is_owner, status, joined_at)
+       VALUES ($1, $2, 'MEMBER', false, 'ACTIVE', now() - ($3 || ' days')::interval)
+       ON CONFLICT DO NOTHING`,
+      [uid, orgId, i + 1],
+    );
+  }
+  log(`  ${label}: members ${have} -> ${await count("organization_members", "org_id = $1", [orgId])}`);
+}
+
+async function seedCalendarEvents(orgId, label, wanted) {
+  const have = await count("calendar_events", "org_id = $1", [orgId]);
+  if (have >= wanted) {
+    log(`  ${label}: calendar_events already ${have}`);
+    return;
+  }
+  const [{ id: creator }] = await sql.unsafe(
+    `SELECT id FROM organization_members WHERE org_id = $1 ORDER BY id LIMIT 1`,
+    [orgId],
+  );
+  const need = wanted - have;
+  // 15% recurring; half of those open-ended. start_date spans two years so that a
+  // `start_date <= now()` predicate really does face the org's whole history.
+  await sql.unsafe(
+    `INSERT INTO calendar_events
+       (org_id, title, description, location, start_date, end_date, all_day, category,
+        timezone, rrule, recurrence_end, reminder_15min_sent, created_by_membership_id, visibility, color)
+     SELECT $1,
+            'Event ' || g,
+            'Seeded description for event ' || g,
+            'Room ' || (g % 40),
+            now() - ((g % 730) || ' days')::interval + ((g % 24) || ' hours')::interval,
+            now() - ((g % 730) || ' days')::interval + ((g % 24) || ' hours')::interval + interval '45 minutes',
+            false,
+            (ARRAY['meeting','review','interview','standup'])[1 + (g % 4)],
+            'UTC',
+            CASE WHEN g % 7 = 0 THEN 'FREQ=WEEKLY;INTERVAL=1' ELSE NULL END,
+            CASE WHEN g % 7 = 0 AND g % 14 = 0 THEN now() + interval '400 days' ELSE NULL END,
+            (g % 3 <> 0),
+            $2::int,
+            CASE WHEN g % 11 = 0 THEN 'private' ELSE 'org' END,
+            '#4f46e5'
+     FROM generate_series($3::int + 1, $3::int + $4::int) g`,
+    [orgId, creator, have, need],
+  );
+  log(`  ${label}: calendar_events ${have} -> ${await count("calendar_events", "org_id = $1", [orgId])}`);
+}
+
+/** A handful of events inside the sweep's 20-minute window, so the reminder path has candidates. */
+async function seedReminderWindow(orgId, label) {
+  const due = await count(
+    "calendar_events",
+    "org_id = $1 AND reminder_15min_sent = false AND all_day = false AND rrule IS NULL AND start_date >= now() AND start_date <= now() + interval '20 minutes'",
+    [orgId],
+  );
+  if (due >= 12) return;
+  const [{ id: creator }] = await sql.unsafe(
+    `SELECT id FROM organization_members WHERE org_id = $1 ORDER BY id LIMIT 1`,
+    [orgId],
+  );
+  await sql.unsafe(
+    `INSERT INTO calendar_events
+       (org_id, title, start_date, end_date, all_day, category, timezone, rrule,
+        reminder_15min_sent, created_by_membership_id, visibility)
+     SELECT $1, 'Due soon ' || g,
+            now() + ((g % 18) || ' minutes')::interval,
+            now() + ((g % 18) + 30 || ' minutes')::interval,
+            false, 'meeting', 'UTC', NULL, false, $2::int, 'org'
+     FROM generate_series(1, $3::int) g`,
+    [orgId, creator, 12 - due],
+  );
+  log(`  ${label}: reminder-window events -> 12`);
+}
+
+async function seedAttendees(orgId, label, perEvent) {
+  const have = await count("event_attendees", "org_id = $1", [orgId]);
+  const events = await count("calendar_events", "org_id = $1", [orgId]);
+  if (have >= events * perEvent * 0.9) {
+    log(`  ${label}: event_attendees already ${have}`);
+    return;
+  }
+  await sql.unsafe(
+    `INSERT INTO event_attendees (org_id, event_id, membership_id, status)
+     SELECT $1, e.id, m.id,
+            (ARRAY['pending','accepted','declined'])[1 + ((e.id + m.id) % 3)]
+     FROM calendar_events e
+     JOIN LATERAL (
+       SELECT id FROM organization_members
+       WHERE org_id = $1 AND status = 'ACTIVE'
+       ORDER BY ((id * 7 + e.id) % 10007)
+       LIMIT $2::int
+     ) m ON true
+     WHERE e.org_id = $1
+     ON CONFLICT DO NOTHING`,
+    [orgId, perEvent],
+  );
+  // A large recurring meeting is what makes the reminder fan-out page loop run more than once.
+  await sql.unsafe(
+    `INSERT INTO event_attendees (org_id, event_id, membership_id, status)
+     SELECT $1, e.id, m.id, 'accepted'
+     FROM calendar_events e
+     CROSS JOIN organization_members m
+     WHERE e.org_id = $1 AND m.org_id = $1 AND m.status = 'ACTIVE'
+       AND e.reminder_15min_sent = false AND e.rrule IS NULL
+       AND e.start_date >= now() AND e.start_date <= now() + interval '20 minutes'
+     ON CONFLICT DO NOTHING`,
+    [orgId],
+  );
+  log(`  ${label}: event_attendees ${have} -> ${await count("event_attendees", "org_id = $1", [orgId])}`);
+}
+
+async function seedExceptions(orgId, label, wanted) {
+  const have = await count("calendar_event_exceptions", "org_id = $1", [orgId]);
+  if (have >= wanted) return;
+  await sql.unsafe(
+    `INSERT INTO calendar_event_exceptions
+       (org_id, event_id, occurrence_start, is_cancelled, modified_title, modified_start, modified_end)
+     SELECT $1, e.id,
+            e.start_date + ((g * 7) || ' days')::interval,
+            (g % 5 = 0),
+            CASE WHEN g % 3 = 0 THEN 'Moved: ' || e.title ELSE NULL END,
+            CASE WHEN g % 3 = 0 THEN e.start_date + ((g * 7) || ' days')::interval + interval '30 minutes' ELSE NULL END,
+            CASE WHEN g % 3 = 0 THEN e.start_date + ((g * 7) || ' days')::interval + interval '90 minutes' ELSE NULL END
+     FROM (SELECT id, start_date, title FROM calendar_events WHERE org_id = $1 AND rrule IS NOT NULL ORDER BY id LIMIT $2::int) e
+     CROSS JOIN generate_series(1, 4) g
+     ON CONFLICT DO NOTHING`,
+    [orgId, Math.ceil(wanted / 4)],
+  );
+  log(`  ${label}: calendar_event_exceptions ${have} -> ${await count("calendar_event_exceptions", "org_id = $1", [orgId])}`);
+}
+
+async function seedNotifications(orgId, label, wanted) {
+  const have = await count("notifications", "org_id = $1", [orgId]);
+  if (have >= wanted) {
+    log(`  ${label}: notifications already ${have}`);
+    return;
+  }
+  const need = wanted - have;
+  const CHUNK = 50000;
+  for (let done = 0; done < need; done += CHUNK) {
+    const batch = Math.min(CHUNK, need - done);
+    await sql.unsafe(
+      `INSERT INTO notifications
+         (org_id, user_id, membership_id, type, priority, category, source_module, event_key,
+          entity_type, entity_id, title, message, link, is_read, pinned, metadata, channel,
+          archived_at, deleted_at, created_at, updated_at)
+       SELECT $1, m.user_id, m.id,
+              'INFO'::notification_type,
+              (ARRAY['LOW','NORMAL','HIGH'])[1 + (g % 3)]::notification_priority,
+              (ARRAY['SYSTEM','WORKFLOW','PROJECTS'])[1 + (g % 3)]::notification_category,
+              CASE WHEN g % 9 = 0 THEN 'broadcast' ELSE 'build' END,
+              (ARRAY['build.ticket.assigned','chat.mention','calendar.reminder'])[1 + (g % 3)],
+              'ticket', (g % 5000)::text,
+              'Notification ' || g,
+              'Seeded notification body for row ' || g,
+              '/notifications',
+              (g % 10 <> 0),
+              (g % 97 = 0),
+              jsonb_build_object('seq', g, 'note', 'perf seed'),
+              'IN_APP',
+              CASE WHEN g % 23 = 0 THEN now() - ((g % 200) || ' days')::interval ELSE NULL END,
+              CASE WHEN g % 51 = 0 THEN now() - ((g % 200) || ' days')::interval ELSE NULL END,
+              now() - ((g % 330) || ' days')::interval - ((g % 1440) || ' minutes')::interval,
+              now()
+       FROM generate_series($2::int + 1, $2::int + $3::int) g
+       JOIN LATERAL (
+         SELECT id, user_id FROM organization_members
+         WHERE org_id = $1 AND status = 'ACTIVE'
+         ORDER BY id
+         OFFSET (g % GREATEST(1, (SELECT count(*) FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE')))
+         LIMIT 1
+       ) m ON true`,
+      [orgId, have + done, batch],
+    );
+  }
+  log(`  ${label}: notifications ${have} -> ${await count("notifications", "org_id = $1", [orgId])}`);
+
+  await sql.unsafe(
+    `INSERT INTO notification_read_watermarks (org_id, user_id, membership_id, last_read_notification_id)
+     SELECT $1, m.user_id, m.id,
+            COALESCE((SELECT max(n.id) - 25 FROM notifications n WHERE n.org_id = $1 AND n.membership_id = m.id), 0)
+     FROM organization_members m
+     WHERE m.org_id = $1 AND m.status = 'ACTIVE'
+     ON CONFLICT (org_id, membership_id) DO NOTHING`,
+    [orgId],
+  );
+}
+
+async function seedFanoutTargets(orgId, label) {
+  const have = await count("roles", "org_id = $1 AND slug LIKE 'PERF_%'", [orgId]);
+  if (have === 0) {
+    await sql.unsafe(
+      `INSERT INTO roles (org_id, name, slug, is_system, module_key, rank)
+       SELECT $1, 'Perf Role ' || g, 'PERF_ROLE_' || g, false, 'build', 40
+       FROM generate_series(1, 3) g
+       ON CONFLICT DO NOTHING`,
+      [orgId],
+    );
+  }
+  const roles = await sql.unsafe(
+    `SELECT id FROM roles WHERE org_id = $1 AND slug LIKE 'PERF_%' ORDER BY id`,
+    [orgId],
+  );
+  if (roles.length === 0) return;
+  // One in five members carries the first perf role — a selective semi-join branch.
+  await sql.unsafe(
+    `INSERT INTO role_assignments (org_id, organization_membership_id, role_id)
+     SELECT $1, m.id, $2::int
+     FROM organization_members m
+     WHERE m.org_id = $1 AND m.status = 'ACTIVE' AND (m.id % 5) = 0
+     ON CONFLICT DO NOTHING`,
+    [orgId, roles[0].id],
+  );
+
+  const broadcasts = await count("broadcasts", "org_id = $1 AND title LIKE 'Perf broadcast%'", [orgId]);
+  if (broadcasts === 0) {
+    const [{ user_id: creator }] = await sql.unsafe(
+      `SELECT user_id FROM organization_members WHERE org_id = $1 ORDER BY id LIMIT 1`,
+      [orgId],
+    );
+    await sql.unsafe(
+      `INSERT INTO broadcasts (org_id, title, message, audience, audience_type, status, created_by)
+       VALUES ($1, 'Perf broadcast roles', 'seeded', '{"type":"roles"}'::jsonb, 'roles', 'DRAFT', $2)`,
+      [orgId, creator],
+    );
+  }
+  const [bc] = await sql.unsafe(
+    `SELECT id FROM broadcasts WHERE org_id = $1 AND title LIKE 'Perf broadcast%' ORDER BY id LIMIT 1`,
+    [orgId],
+  );
+  if (bc)
+    await sql.unsafe(
+      `INSERT INTO broadcast_audience_targets (org_id, broadcast_id, kind, target_id)
+       VALUES ($1, $2::int, 'ROLE', $3)
+       ON CONFLICT DO NOTHING`,
+      [orgId, bc.id, String(roles[0].id)],
+    );
+  log(`  ${label}: fanout targets ready (roles ${roles.length})`);
+}
+
+async function seedKbPages(orgId, label, wantedPages) {
+  const have = await count("kb_pages", "org_id = $1", [orgId]);
+  if (have >= wantedPages) return;
+  await sql.unsafe(
+    `INSERT INTO kb_spaces (org_id, name, slug, audience, created_at, updated_at)
+     VALUES ($1, 'Perf Space', 'perf-space-' || substr($1, 1, 8), 'internal', now(), now())
+     ON CONFLICT DO NOTHING`,
+    [orgId],
+  );
+  const [space] = await sql.unsafe(
+    `SELECT id FROM kb_spaces WHERE org_id = $1 ORDER BY id LIMIT 1`,
+    [orgId],
+  );
+  if (!space) return;
+  const [member] = await sql.unsafe(
+    `SELECT id, user_id FROM organization_members WHERE org_id = $1 ORDER BY id LIMIT 1`,
+    [orgId],
+  );
+  await sql.unsafe(
+    `INSERT INTO kb_pages (org_id, space_id, title, content, status, visibility, sort_order,
+                           created_by_id, created_by_membership_id, last_edited_by_id,
+                           last_edited_by_membership_id, created_at, updated_at)
+     SELECT $1, $2::int, 'Perf Page ' || g, '{}'::jsonb, 'published', 'org', g, $3, $4::int, $3, $4::int,
+            now() - (g || ' hours')::interval, now() - (g || ' minutes')::interval
+     FROM generate_series($5::int + 1, $6::int) g`,
+    [orgId, space.id, member.user_id, member.id, have, wantedPages],
+  );
+  log(`  ${label}: kb_pages ${have} -> ${await count("kb_pages", "org_id = $1", [orgId])}`);
+}
+
+async function seedChunks(orgId, label, wanted) {
+  const have = await count("kb_article_chunks", "org_id = $1", [orgId]);
+  if (have >= wanted) {
+    log(`  ${label}: kb_article_chunks already ${have}`);
+    return;
+  }
+  const [member] = await sql.unsafe(
+    `SELECT id FROM organization_members WHERE org_id = $1 ORDER BY id LIMIT 1`,
+    [orgId],
+  );
+  const need = wanted - have;
+  const CHUNK = 2000;
+  for (let done = 0; done < need; done += CHUNK) {
+    const batch = Math.min(CHUNK, need - done);
+    await sql.unsafe(
+      `INSERT INTO kb_article_chunks
+         (org_id, page_id, source, chunk_index, content, embedding, embedding_model,
+          page_visibility, page_created_by_membership_id, acl_revision, content_revision, content_hash)
+       SELECT $1, p.id, 'page', g,
+              'Seeded knowledge chunk ' || g || ' for page ' || p.id ||
+                '. Retrieval corpus filler text repeated to give the row a realistic width.',
+              (SELECT ('[' || string_agg((random() + 0 * (s.i + g))::real::text, ',') || ']')::vector
+                 FROM generate_series(1, 1536) s(i)),
+              'text-embedding-3-small', 'org', $2::int, 1, 1,
+              md5($1 || ':' || p.id || ':' || g)
+       FROM generate_series($3::int + 1, $3::int + $4::int) g
+       JOIN LATERAL (
+         SELECT id FROM kb_pages
+         WHERE org_id = $1 AND deleted_at IS NULL
+         ORDER BY id
+         OFFSET (g % GREATEST(1, (SELECT count(*) FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL)))
+         LIMIT 1
+       ) p ON true
+       ON CONFLICT DO NOTHING`,
+      [orgId, member.id, have + done, batch],
+    );
+    log(`    ${label}: chunks +${batch}`);
+  }
+  log(`  ${label}: kb_article_chunks ${have} -> ${await count("kb_article_chunks", "org_id = $1", [orgId])}`);
+}
+
+async function purge() {
+  log("Purging perf load...");
+  for (const { id } of ORG_PROFILES) {
+    await sql.unsafe(`DELETE FROM kb_article_chunks WHERE org_id = $1`, [id]);
+    await sql.unsafe(`DELETE FROM event_attendees WHERE org_id = $1`, [id]);
+    await sql.unsafe(`DELETE FROM calendar_event_exceptions WHERE org_id = $1`, [id]);
+    await sql.unsafe(`DELETE FROM calendar_events WHERE org_id = $1`, [id]);
+    await sql.unsafe(`DELETE FROM notification_read_watermarks WHERE org_id = $1`, [id]);
+    await sql.unsafe(`DELETE FROM notifications WHERE org_id = $1`, [id]);
+    await sql.unsafe(`DELETE FROM broadcast_audience_targets WHERE org_id = $1`, [id]);
+    await sql.unsafe(`DELETE FROM broadcasts WHERE org_id = $1 AND title LIKE 'Perf broadcast%'`, [id]);
+    await sql.unsafe(
+      `DELETE FROM role_assignments WHERE org_id = $1 AND role_id IN (SELECT id FROM roles WHERE org_id = $1 AND slug LIKE 'PERF_%')`,
+      [id],
+    );
+    await sql.unsafe(`DELETE FROM roles WHERE org_id = $1 AND slug LIKE 'PERF_%'`, [id]);
+  }
+  log("Purge complete.");
+}
+
+const VACUUM_TABLES = [
+  "calendar_events",
+  "calendar_event_exceptions",
+  "event_attendees",
+  "notifications",
+  "notification_read_watermarks",
+  "kb_article_chunks",
+  "kb_pages",
+  "organization_members",
+  "role_assignments",
+  "broadcast_audience_targets",
+];
+
+async function main() {
+  await sql`SET statement_timeout = 0`;
+  log(`target database ${target.database} · scale ${SCALE}`);
+
+  if (PURGE) await purge();
+
+  await section("mid org", ensureMidOrg);
+
+  for (const profile of ORG_PROFILES) {
+    const events = scaled(profile.events, SCALE);
+    const notifications = scaled(profile.notifications, SCALE);
+    const chunks = scaled(profile.chunks, SCALE);
+    log(`org ${profile.label} (${profile.id.slice(0, 8)}) → events ${events} · notifications ${notifications} · chunks ${chunks}`);
+    await section(`${profile.label}/members`, () => ensureMembers(profile.id, profile.label, profile.members));
+    await section(`${profile.label}/calendar_events`, () => seedCalendarEvents(profile.id, profile.label, events));
+    await section(`${profile.label}/reminder_window`, () => seedReminderWindow(profile.id, profile.label));
+    await section(`${profile.label}/attendees`, () => seedAttendees(profile.id, profile.label, 2));
+    await section(`${profile.label}/exceptions`, () => seedExceptions(profile.id, profile.label, Math.max(40, Math.round(events / 8))));
+    await section(`${profile.label}/notifications`, () => seedNotifications(profile.id, profile.label, notifications));
+    await section(`${profile.label}/fanout`, () => seedFanoutTargets(profile.id, profile.label));
+    await section(`${profile.label}/kb_pages`, () => seedKbPages(profile.id, profile.label, Math.max(30, Math.round(chunks / 20))));
+    await section(`${profile.label}/chunks`, () => seedChunks(profile.id, profile.label, chunks));
+  }
+
+  // A count or a plan read before this is read against stale statistics and an empty
+  // visibility map, which is the difference between an index-only scan and a heap scan.
+  log("VACUUM ANALYZE...");
+  for (const t of VACUUM_TABLES) await sql.unsafe(`VACUUM ANALYZE ${t}`);
+  log("VACUUM ANALYZE complete.");
+
+  console.log("\n--- ROW COUNTS BY ORGANIZATION ---");
+  const summary = await sql.unsafe(
+    `SELECT o.id, o.name,
+            (SELECT count(*) FROM organization_members m WHERE m.org_id = o.id) AS members,
+            (SELECT count(*) FROM calendar_events e WHERE e.org_id = o.id) AS events,
+            (SELECT count(*) FROM calendar_events e WHERE e.org_id = o.id AND e.rrule IS NOT NULL) AS recurring,
+            (SELECT count(*) FROM event_attendees a WHERE a.org_id = o.id) AS attendees,
+            (SELECT count(*) FROM calendar_event_exceptions x WHERE x.org_id = o.id) AS exceptions,
+            (SELECT count(*) FROM notifications n WHERE n.org_id = o.id) AS notifications,
+            (SELECT count(*) FROM notifications n WHERE n.org_id = o.id AND n.is_read = false AND n.deleted_at IS NULL AND n.archived_at IS NULL) AS unread,
+            (SELECT count(*) FROM kb_article_chunks c WHERE c.org_id = o.id) AS chunks
+     FROM organizations o ORDER BY 3 DESC`,
+  );
+  for (const r of summary)
+    console.log(
+      `  ${r.name.padEnd(24)} members=${String(r.members).padStart(5)} events=${String(r.events).padStart(6)}` +
+        ` recur=${String(r.recurring).padStart(5)} attendees=${String(r.attendees).padStart(7)}` +
+        ` exc=${String(r.exceptions).padStart(5)} notif=${String(r.notifications).padStart(7)}` +
+        ` unread=${String(r.unread).padStart(6)} chunks=${String(r.chunks).padStart(6)}`,
+    );
+  const [totals] = await sql.unsafe(
+    `SELECT (SELECT count(*) FROM kb_article_chunks) AS chunks, (SELECT count(*) FROM notifications) AS notifications`,
+  );
+  console.log(`  TOTAL chunks=${totals.chunks} notifications=${totals.notifications}`);
+}
+
+main()
+  .then(async () => {
+    await sql.end();
+    if (failures.length > 0) {
+      console.error(`\n${failures.length} section(s) failed:`);
+      for (const f of failures) console.error(`  FAIL: ${f}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log("\nSeed complete — every section succeeded.");
+  })
+  .catch(async (e) => {
+    await sql.end();
+    console.error("SEED FAILED:", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  });

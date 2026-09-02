@@ -47,7 +47,7 @@ function pgField(err: unknown, field: string): string | undefined {
  * delete can never succeed until the constraint changes. Left unclassified it
  * escapes as a 500, which is how this failed silently before 0992.
  */
-function departureBlockMessage(err: unknown): string | null {
+export function departureBlockMessage(err: unknown): string | null {
   const code = pgField(err, "code");
   if (code === PG_FK_VIOLATION || code === PG_RESTRICT_VIOLATION) {
     return `a related record still references the membership (constraint: ${pgField(err, "constraint") ?? "unknown"})`;

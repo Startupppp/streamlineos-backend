@@ -53,7 +53,6 @@ export const projectTeamMembers = build.table(
   (t) => [
   foreignKey({ columns: [t.orgId, t.teamId], foreignColumns: [projectTeams.orgId, projectTeams.id], name: "fk_project_team_members_org_team" }).onDelete("cascade"),
     uniqueIndex("uniq_project_team_members_team_user").on(t.teamId, t.membershipId),
-    index("idx_project_team_members_org").on(t.orgId),
     index("idx_project_team_members_org_membership").on(t.orgId, t.membershipId),
     unique("uniq_project_team_members_org_id").on(t.orgId, t.id),
     foreignKey({
@@ -81,8 +80,6 @@ export const projectWorkspaceMembers = build.table(
       t.orgId,
       t.membershipId,
     ),
-    index("idx_project_workspace_members_org").on(t.orgId),
-    index("idx_project_workspace_members_org_membership").on(t.orgId, t.membershipId),
     unique("uniq_project_workspace_members_org_id").on(t.orgId, t.id),
     foreignKey({
       columns: [t.orgId, t.pmWorkspaceId],
@@ -117,9 +114,7 @@ export const projectTeamAssignments = build.table(
       t.projectId,
       t.teamId,
     ),
-    index("idx_project_team_assignments_org").on(t.orgId),
     index("idx_project_team_assignments_team").on(t.teamId),
-    index("idx_project_team_assignments_project").on(t.projectId),
     unique("uniq_project_team_assignments_org_id").on(t.orgId, t.id),
   ],
 );

@@ -66,7 +66,6 @@ export const employeeSalaryProfiles = pgTable("employee_salary_profiles", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.policyVersionId], foreignColumns: [payrollPolicyVersions.orgId, payrollPolicyVersions.id], name: "fk_employee_salary_profiles_policy_version_id_org" }).onDelete("set null"),
   unique("uniq_employee_salary_profiles_org_id").on(table.orgId, table.id),
-  index("idx_employee_salary_profiles_org_user_effective").on(table.orgId, table.userId, table.effectiveFrom),
   index("idx_employee_salary_profiles_org_worker").on(table.orgId, table.workerId),
   index("idx_employee_salary_profiles_org_status").on(table.orgId, table.status),
   index("idx_employee_salary_profiles_org_user_actor").on(table.orgId, table.userMembershipId),
@@ -106,8 +105,6 @@ export const employeeSalaryProfileComponents = pgTable("employee_salary_profile_
   foreignKey({ columns: [table.orgId, table.componentId], foreignColumns: [salaryComponents.orgId, salaryComponents.id], name: "fk_employee_salary_profile_components_component_id_org" }),
   foreignKey({ columns: [table.orgId, table.profileId], foreignColumns: [employeeSalaryProfiles.orgId, employeeSalaryProfiles.id], name: "fk_employee_salary_profile_components_org_profile" }).onDelete("cascade"),
   unique("uniq_employee_salary_profile_components_org_id").on(table.orgId, table.id),
-  index("idx_employee_salary_profile_components_profile").on(table.profileId),
-  index("idx_employee_salary_profile_components_org").on(table.orgId),
   uniqueIndex("uniq_esp_components_profile_component").on(table.profileId, table.componentId),
 ]);
 

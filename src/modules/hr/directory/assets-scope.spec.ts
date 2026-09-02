@@ -1,19 +1,8 @@
-import {
-  resolveAssetsScope,
-  ASSETS_PERMISSION,
-} from "./assets-scope";
+import { resolveAssetsScope, ASSETS_PERMISSION } from "./assets-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
-import * as permissionsConstants from "../../rbac/permissions";
-
-jest.mock("../../rbac/permissions", () => ({
-  isScopable: jest.fn(),
-}));
-
-const mockIsScopable = permissionsConstants.isScopable as jest.MockedFunction<
-  typeof permissionsConstants.isScopable
->;
+import { isScopable } from "../../rbac/permissions";
 
 function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -39,7 +28,6 @@ describe("resolveAssetsScope", () => {
     jest.clearAllMocks();
   });
 
-
   it("returns all when user is org owner", async () => {
     const access = makeAccess();
     const result = await resolveAssetsScope(
@@ -50,17 +38,22 @@ describe("resolveAssetsScope", () => {
     expect(access.resolveUserPermissions).not.toHaveBeenCalled();
   });
 
-  it("returns all when permission is not scopable", async () => {
-    mockIsScopable.mockReturnValue(false);
-    const access = makeAccess();
+  /**
+   * This spec used to assert the opposite — that a non-scopable key resolves
+   * `all` without consulting the grants at all. `hr:assets:manage` carries no
+   * `scopable: true` entry, so that branch was permanently live and every caller
+   * of `GET /hr/asset-returns` (gated on `hr:assets:view`) read the whole
+   * organization. The old expectation encoded the vulnerability.
+   */
+  it("does not admit everyone just because the key is not marked scopable", async () => {
+    expect(isScopable(ASSETS_PERMISSION)).toBe(false);
+    const access = makeAccess(new Map());
     const result = await resolveAssetsScope(access, makeUser());
-    expect(mockIsScopable).toHaveBeenCalledWith(ASSETS_PERMISSION);
-    expect(result).toBe("all");
-    expect(access.resolveUserPermissions).not.toHaveBeenCalled();
+    expect(result).toBe("none");
+    expect(access.resolveUserPermissions).toHaveBeenCalledWith("org-1", "user-1");
   });
 
   it("returns all when scope map contains all for the permission", async () => {
-    mockIsScopable.mockReturnValue(true);
     const scopeMap = new Map<string, DataScope>([[ASSETS_PERMISSION, "all"]]);
     const access = makeAccess(scopeMap);
     const result = await resolveAssetsScope(access, makeUser());
@@ -68,7 +61,6 @@ describe("resolveAssetsScope", () => {
   });
 
   it("returns own when scope map contains own for the permission", async () => {
-    mockIsScopable.mockReturnValue(true);
     const scopeMap = new Map<string, DataScope>([[ASSETS_PERMISSION, "own"]]);
     const access = makeAccess(scopeMap);
     const result = await resolveAssetsScope(access, makeUser());
@@ -76,7 +68,6 @@ describe("resolveAssetsScope", () => {
   });
 
   it("returns none when permission is not present in the scope map", async () => {
-    mockIsScopable.mockReturnValue(true);
     const access = makeAccess(new Map());
     const result = await resolveAssetsScope(access, makeUser());
     expect(result).toBe("none");

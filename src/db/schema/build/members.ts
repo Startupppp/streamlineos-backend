@@ -65,7 +65,6 @@ export const projectViews = build.table("project_views", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_views_org_project" }).onDelete("cascade"),
   index("idx_project_views_project").on(table.projectId),
-  index("idx_project_views_org").on(table.orgId),
   index("idx_project_views_org_scope").on(table.orgId, table.scope),
   unique("uniq_project_views_org_id").on(table.orgId, table.id),
 ]);
@@ -112,7 +111,6 @@ export const pages = build.table("pages", {
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_pages_org_project" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.parentPageId], foreignColumns: [table.orgId, table.id], name: "fk_pages_org_parent" }).onDelete("cascade"),
   index("idx_pages_project").on(table.projectId),
-  index("idx_pages_org").on(table.orgId),
   index("idx_pages_parent").on(table.parentPageId),
   unique("uniq_pages_org_id").on(table.orgId, table.id),
 ]);

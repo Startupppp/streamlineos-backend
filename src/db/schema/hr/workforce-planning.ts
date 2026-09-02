@@ -22,7 +22,6 @@ export const hrHeadcountPlans = pgTable(
   foreignKey({ columns: [table.orgId, table.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_hr_headcount_plans_org_department" }).onDelete("set null"),
     unique("uniq_hr_headcount_plans_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_headcount_plans_org_year_dept").on(table.orgId, table.fiscalYear, table.departmentId),
-    index("idx_hr_headcount_plans_org").on(table.orgId),
   ],
 );
 

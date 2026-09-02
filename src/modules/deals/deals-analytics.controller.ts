@@ -4,7 +4,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AccessService } from "../access/access.service";
 import { DealsAnalyticsService } from "./deals-analytics.service";
+import { resolveDealsReadScope } from "./deals-scope";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import {
   forecastSnapshotsQuerySchema,
@@ -26,7 +28,10 @@ const snapshotIdParams = z.object({ snapshotId: z.string().min(1) }).strict();
 @Controller("deals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class DealsAnalyticsController {
-  constructor(private readonly analytics: DealsAnalyticsService) {}
+  constructor(
+    private readonly analytics: DealsAnalyticsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Get("stats")
   @RequirePermission("crm:deals:read")
@@ -36,8 +41,9 @@ export class DealsAnalyticsController {
 
   @Get("aging")
   @RequirePermission("crm:deals:read")
-  getAging(@CurrentUser() u: CurrentUserContext) {
-    return this.analytics.getAging(u.orgId);
+  async getAging(@CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveDealsReadScope(this.access, u);
+    return this.analytics.getAging(u.orgId, u.userId, scope);
   }
 
   @Get("forecast")

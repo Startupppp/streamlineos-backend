@@ -27,7 +27,6 @@ export const billingProducts = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    index("idx_billing_products_slug").on(t.slug),
     index("idx_billing_products_active").on(t.isActive),
   ],
 );
@@ -47,7 +46,6 @@ export const billingPlans = pgTable(
   },
   (t) => [
     uniqueIndex("uq_billing_plans_product_slug").on(t.productId, t.slug),
-    index("idx_billing_plans_product").on(t.productId),
     index("idx_billing_plans_tier").on(t.planTier),
   ],
 );
@@ -87,7 +85,6 @@ export const billingPlanEntitlements = pgTable(
   },
   (t) => [
     uniqueIndex("uq_billing_plan_ent_plan_key_from").on(t.planId, t.featureKey, t.effectiveFrom),
-    index("idx_billing_plan_ent_plan").on(t.planId),
     index("idx_billing_plan_ent_key").on(t.featureKey),
   ],
 );
@@ -109,7 +106,6 @@ export const orgEntitlementOverrides = pgTable(
   (t) => [
     uniqueIndex("uq_org_ent_overrides_org_key_from").on(t.orgId, t.featureKey, t.effectiveFrom),
     uniqueIndex("uq_org_ent_overrides_idem").on(t.orgId, t.idempotencyKey).where(sql`idempotency_key IS NOT NULL`),
-    index("idx_org_ent_overrides_org_key").on(t.orgId, t.featureKey),
     unique("uniq_org_entitlement_overrides_org_id").on(t.orgId, t.id),
   ],
 );

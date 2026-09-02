@@ -86,7 +86,6 @@ export const supportTicketAttachments = pgTable("support_ticket_attachments", {
   mimeType: text("mime_type"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_support_ticket_attachments_org").on(table.orgId),
   index("idx_support_ticket_attachments_message").on(table.messageId),
   unique("uniq_support_ticket_attachments_org_id").on(table.orgId, table.id),
 ]);

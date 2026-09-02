@@ -44,7 +44,6 @@ export const tasks = pgTable(
   },
   (table) => [
   foreignKey({ columns: [table.orgId, table.parentTaskId], foreignColumns: [table.orgId, table.id], name: "fk_tasks_parent_task_id_org" }).onDelete("set null"),
-    index("idx_tasks_org").on(table.orgId),
     index("idx_tasks_assignee").on(table.assigneeId),
     index("idx_tasks_status").on(table.status),
     index("idx_tasks_due_date").on(table.dueDate),

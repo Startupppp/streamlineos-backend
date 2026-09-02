@@ -46,11 +46,6 @@ export const hrEmployeeSensitiveDisciplinaryRecords = pgTable(
       table.sensitiveFieldsId,
       table.sourceOrdinal,
     ),
-    index("idx_hr_sensitive_disciplinary_parent").on(
-      table.organizationId,
-      table.sensitiveFieldsId,
-      table.sourceOrdinal,
-    ),
     foreignKey({
       name: "fk_hr_sensitive_disciplinary_parent",
       columns: [table.organizationId, table.sensitiveFieldsId],
@@ -90,11 +85,6 @@ export const hrEmployeeSensitiveGrievanceRecords = pgTable(
       columns: [table.organizationId, table.grievanceRecordId],
     }),
     unique("uniq_hr_sensitive_grievance_parent_order").on(
-      table.organizationId,
-      table.sensitiveFieldsId,
-      table.sourceOrdinal,
-    ),
-    index("idx_hr_sensitive_grievance_parent").on(
       table.organizationId,
       table.sensitiveFieldsId,
       table.sourceOrdinal,

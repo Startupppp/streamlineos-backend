@@ -33,6 +33,9 @@ function flatten(node: unknown, out: Token[]): void {
   throw new Error(`sql-predicate: unsupported chunk ${String(node)}`);
 }
 
+const KEYWORDS =
+  /(\(|\)|,|\bis not null\b|\bis null\b|\band\b|\bor\b|\bnot\b|\bilike\b|\bin\b|\blower\b|\btrue\b|\bfalse\b|<>|>=|<=|=|>|<)/i;
+
 function tokenize(node: SQL): Token[] {
   const raw: Token[] = [];
   flatten(node, raw);
@@ -51,7 +54,7 @@ function tokenize(node: SQL): Token[] {
   return merged.flatMap((token) =>
     token.kind === "text"
       ? token.text
-          .split(/(\(|\)|,)/)
+          .split(KEYWORDS)
           .map((piece) => piece.trim())
           .filter((piece) => piece !== "")
           .map((piece): Token => ({ kind: "text", text: piece }))
@@ -138,6 +141,11 @@ class Parser {
     if (this.text() === "not") {
       this.index += 1;
       return !this.term();
+    }
+    const literal = this.text();
+    if (literal === "true" || literal === "false") {
+      this.index += 1;
+      return literal === "true";
     }
     return this.comparison();
   }

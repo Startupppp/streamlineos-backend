@@ -7,6 +7,7 @@ import type { SubjectFileKey } from "../storage/storage-key-catalog";
 import {
   kbArticleChunks,
   kbIngestionCheckpoints,
+  users,
 } from "../../db/schema";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
@@ -52,11 +53,16 @@ function makeHarness(options: HarnessOptions = {}) {
 
   let txSelectCount = 0;
   const tx = {
-    select: jest.fn().mockImplementation(() => {
-      const page = selectPages[txSelectCount] ?? [];
-      txSelectCount++;
-      return chain(page);
-    }),
+    select: jest.fn().mockImplementation(() => ({
+      // The support-ticket erasure probes `users.email` inside the transaction; it is
+      // not one of the positional id pages, so it must not consume the counter.
+      from: jest.fn().mockImplementation((table: unknown) => {
+        if (table === users) return chain([]);
+        const page = selectPages[txSelectCount] ?? [];
+        txSelectCount++;
+        return chain(page);
+      }),
+    })),
     update: jest.fn().mockImplementation(() => chain([])),
     insert: jest.fn().mockImplementation(() => chain([])),
     delete: jest.fn().mockImplementation((table: unknown) => {

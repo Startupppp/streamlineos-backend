@@ -2,6 +2,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { SessionsService } from "../sessions/sessions.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
+import { users } from "../../db/schema";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -80,16 +81,21 @@ function makeKbDb(opts: KbDbOpts = {}) {
   let txSelectCount = 0;
 
   const tx = {
-    select: jest.fn().mockImplementation(() => {
-      txSelectCount++;
-      if (txSelectCount === 1) return chain([{ id: 10 }]);
-      if (txSelectCount === 2) return chain([{ id: 20 }]);
-      if (txSelectCount === 3) return chain([]);
-      if (txSelectCount === 4) return chain(authoredArticleIds);
-      if (txSelectCount === 5) return chain(ownedSourceIds);
-      if (txSelectCount === 6) return chain(uploadedAttachmentIds);
-      return chain([]);
-    }),
+    select: jest.fn().mockImplementation(() => ({
+      // The support-ticket erasure probes `users.email` inside the transaction; it is
+      // not one of the positional id pages, so it must not consume the counter.
+      from: jest.fn().mockImplementation((table: unknown) => {
+        if (table === users) return chain([]);
+        txSelectCount++;
+        if (txSelectCount === 1) return chain([{ id: 10 }]);
+        if (txSelectCount === 2) return chain([{ id: 20 }]);
+        if (txSelectCount === 3) return chain([]);
+        if (txSelectCount === 4) return chain(authoredArticleIds);
+        if (txSelectCount === 5) return chain(ownedSourceIds);
+        if (txSelectCount === 6) return chain(uploadedAttachmentIds);
+        return chain([]);
+      }),
+    })),
     update: jest.fn().mockReturnValue(chain([{ id: 99 }])),
     insert: jest.fn().mockReturnValue(chain([])),
     delete: jest.fn().mockImplementation(() => {

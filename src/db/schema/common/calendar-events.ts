@@ -92,7 +92,6 @@ export const eventAttendees = pgTable(
       table.eventId,
       table.membershipId,
     ),
-    index("idx_event_attendees_org_event").on(table.orgId, table.eventId),
     index("idx_event_attendees_membership_id").on(
       table.orgId,
       table.membershipId,

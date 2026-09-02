@@ -42,7 +42,6 @@ export const finExpensePolicies = pgTable("fin_expense_policies", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.categoryId], foreignColumns: [expenseCategories.orgId, expenseCategories.id], name: "fk_fin_expense_policies_category_id_org" }).onDelete("set null"),
   unique("uniq_fin_expense_policies_org_id").on(table.orgId, table.id),
-  index("idx_fin_expense_policies_org").on(table.orgId),
 ]);
 
 export const finReimbursementBatchesRelations = relations(finReimbursementBatches, ({ one }) => ({

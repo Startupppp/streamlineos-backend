@@ -30,12 +30,11 @@ export const pipelineAutomations = pgTable("pipeline_automations", {
   triggerConditions: jsonb("trigger_conditions").$type<Record<string, unknown>>().default({}),
   action: text("action").$type<PipelineAction>().notNull(),
   actionPayload: jsonb("action_payload").$type<Record<string, unknown>>().default({}),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_pipeline_automations_org_id").on(table.orgId, table.id),
-  index("idx_pipeline_automations_org").on(table.orgId),
   index("idx_pipeline_automations_trigger").on(table.trigger),
 ]);
 
@@ -45,12 +44,11 @@ export const offerLetterTemplates = pgTable("offer_letter_templates", {
   name: text("name").notNull(),
   htmlContent: text("html_content").notNull(),
   isDefault: boolean("is_default").notNull().default(false),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_offer_letter_templates_org_id").on(table.orgId, table.id),
-  index("idx_offer_letter_templates_org").on(table.orgId),
 ]);
 
 export const candidateOffers = pgTable("candidate_offers", {
@@ -58,7 +56,7 @@ export const candidateOffers = pgTable("candidate_offers", {
   orgId: text("org_id").notNull().references(() => organizations.id),
   candidateId: integer("candidate_id").notNull(),
   jobPostingId: integer("job_posting_id"),
-  offeredBy: text("offered_by").references(() => users.id),
+  offeredBy: text("offered_by"),
   offerStatus: text("offer_status").notNull().default("DRAFT"),
   offeredSalary: decimal("offered_salary", { precision: 15, scale: 2 }),
   offeredDesignation: text("offered_designation"),
@@ -69,7 +67,7 @@ export const candidateOffers = pgTable("candidate_offers", {
   sentAt: timestamp("sent_at"),
   viewedAt: timestamp("viewed_at"),
   respondedAt: timestamp("responded_at"),
-  approvedBy: text("approved_by").references(() => users.id),
+  approvedBy: text("approved_by"),
   approvedAt: timestamp("approved_at"),
   approvalRemarks: text("approval_remarks"),
   acceptanceToken: text("acceptance_token").unique(),
@@ -81,7 +79,6 @@ export const candidateOffers = pgTable("candidate_offers", {
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_candidate_offers_org_candidate" }).onDelete("cascade"),
   unique("uniq_candidate_offers_org_id").on(table.orgId, table.id),
   index("idx_candidate_offers_candidate").on(table.candidateId),
-  index("idx_candidate_offers_org").on(table.orgId),
   index("idx_candidate_offers_org_status").on(table.orgId, table.offerStatus),
 ]);
 
@@ -96,7 +93,7 @@ export const offerVersions = pgTable("offer_versions", {
   validUntil: date("valid_until"),
   notes: text("notes"),
   changeReason: text("change_reason"),
-  changedBy: text("changed_by").references(() => users.id),
+  changedBy: text("changed_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.offerId], foreignColumns: [candidateOffers.orgId, candidateOffers.id], name: "fk_offer_versions_org_offer" }).onDelete("cascade"),
@@ -114,7 +111,7 @@ export const offerNegotiations = pgTable("offer_negotiations", {
   proposedSalary: decimal("proposed_salary", { precision: 15, scale: 2 }),
   proposedJoiningDate: date("proposed_joining_date"),
   message: text("message"),
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.offerId], foreignColumns: [candidateOffers.orgId, candidateOffers.id], name: "fk_offer_negotiations_org_offer" }).onDelete("cascade"),
@@ -133,12 +130,11 @@ export const emailSequences = pgTable("email_sequences", {
   isActive: boolean("is_active").notNull().default(true),
   triggerType: text("trigger_type").$type<EmailSequenceTrigger>().notNull().default("MANUAL"),
   targetAudience: jsonb("target_audience").$type<Record<string, unknown>>().default({}),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_email_sequences_org_id").on(table.orgId, table.id),
-  index("idx_email_sequences_org").on(table.orgId),
 ]);
 
 export const emailSequenceSteps = pgTable("email_sequence_steps", {
@@ -188,12 +184,11 @@ export const recruitmentVendors = pgTable("recruitment_vendors", {
   replacementGuaranteeDays: integer("replacement_guarantee_days"),
   portalToken: text("portal_token"),
   portalTokenExpiresAt: timestamp("portal_token_expires_at"),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_recruitment_vendors_org_id").on(table.orgId, table.id),
-  index("idx_recruitment_vendors_org").on(table.orgId),
   uniqueIndex("idx_recruitment_vendors_portal_token").on(table.portalToken),
 ]);
 
@@ -224,14 +219,14 @@ export const headcountRequests = pgTable("headcount_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   orgDepartmentId: text("org_department_id"),
-  requestedBy: text("requested_by").references(() => users.id).notNull(),
+  requestedBy: text("requested_by").notNull(),
   requestedByMembershipId: integer("requested_by_membership_id"),
   requestedRole: text("requested_role").notNull(),
   level: text("level"),
   justification: text("justification"),
   targetDate: date("target_date"),
   status: text("status").$type<HeadcountRequestStatus>().notNull().default("DRAFT"),
-  approvedBy: text("approved_by").references(() => users.id),
+  approvedBy: text("approved_by"),
   approvedByMembershipId: integer("approved_by_membership_id"),
   approvedAt: timestamp("approved_at"),
   rejectedReason: text("rejected_reason"),
@@ -242,7 +237,6 @@ export const headcountRequests = pgTable("headcount_requests", {
   foreignKey({ columns: [table.orgId, table.linkedJobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_headcount_requests_org_job_posting" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.orgDepartmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_headcount_requests_org_department" }).onDelete("set null"),
   unique("uniq_headcount_requests_org_id").on(table.orgId, table.id),
-  index("idx_headcount_requests_org").on(table.orgId),
   index("idx_headcount_requests_status").on(table.status),
   index("idx_headcount_requests_org_dept").on(table.orgDepartmentId),
   index("idx_headcount_requests_org_requested_by_membership").on(table.orgId, table.requestedByMembershipId),
@@ -267,12 +261,11 @@ export const jobRecruiters = pgTable("job_recruiters", {
   jobPostingId: integer("job_posting_id").notNull(),
   userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
-  assignedBy: text("assigned_by").references(() => users.id).notNull(),
+  assignedBy: text("assigned_by").notNull(),
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.jobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_job_recruiters_org_job_posting" }).onDelete("cascade"),
   uniqueIndex("uq_job_recruiters_job_user").on(table.jobPostingId, table.userId),
-  index("idx_job_recruiters_job").on(table.jobPostingId),
   index("idx_job_recruiters_user").on(table.userId),
   index("idx_job_recruiters_org_job_user").on(table.orgId, table.jobPostingId, table.userId),
 ]);
@@ -290,7 +283,6 @@ export const recruiterActivityLog = pgTable("recruiter_activity_log", {
   foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_recruiter_activity_log_org_candidate" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.jobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_recruiter_activity_log_org_job_posting" }).onDelete("set null"),
   unique("uniq_recruiter_activity_log_org_id").on(table.orgId, table.id),
-  index("idx_recruiter_activity_org").on(table.orgId),
   index("idx_recruiter_activity_recruiter").on(table.recruiterId),
   index("idx_recruiter_activity_created").on(table.createdAt),
 ]);
@@ -318,7 +310,6 @@ export const scheduledReports = pgTable("scheduled_reports", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_scheduled_reports_org_id").on(table.orgId, table.id),
-  index("idx_scheduled_reports_org").on(table.orgId),
 ]);
 
 export const pipelineAutomationsRelations = relations(pipelineAutomations, ({ one }) => ({
