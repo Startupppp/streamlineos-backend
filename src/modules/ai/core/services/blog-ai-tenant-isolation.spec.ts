@@ -27,7 +27,6 @@ describe("BlogAiService — tenant isolation (global content, scoped billing)", 
 
   beforeEach(() => {
     jest.resetAllMocks();
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     runInTenantTransaction = jest.requireMock(
       "../../../../common/tenant/run-in-tenant-transaction",
     ).runInTenantTransaction;

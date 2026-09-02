@@ -16,6 +16,8 @@ import {
   AiCallMetrics,
 } from "./ai-call-metrics";
 import { resolveAiCorrelationId } from "./ai-correlation";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 function capture(): FinishedSpan[] {
   const spans: FinishedSpan[] = [];
@@ -258,9 +260,8 @@ describe("outcomes fit the column that stores them", () => {
   );
 
   it("(anti-vacuous) the declared width matches the column in the Drizzle schema", () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const source: string = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "../../../../db/schema/common/ai-usage.ts"),
+    const source = readFileSync(
+      join(__dirname, "../../../../db/schema/common/ai-usage.ts"),
       "utf8",
     );
     const declared = /outcome:\s*varchar\("outcome",\s*\{\s*length:\s*(\d+)\s*\}\)/.exec(source);

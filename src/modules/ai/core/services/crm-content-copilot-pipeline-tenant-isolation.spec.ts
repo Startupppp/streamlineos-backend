@@ -20,7 +20,6 @@ describe("CrmContentService — cross-tenant isolation", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     runInTenantTransaction = jest.requireMock(
       "../../../../common/tenant/run-in-tenant-transaction",
     ).runInTenantTransaction;
@@ -58,7 +57,6 @@ describe("CrmCopilotService — cross-tenant isolation", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     runInTenantTransaction = jest.requireMock(
       "../../../../common/tenant/run-in-tenant-transaction",
     ).runInTenantTransaction;

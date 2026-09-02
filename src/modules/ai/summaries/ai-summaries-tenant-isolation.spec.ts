@@ -1,5 +1,3 @@
-import { NotFoundException } from "@nestjs/common";
-import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AiSummariesService } from "./ai-summaries.service";
 
 const OWNER_ORG = "org-owner-001";
@@ -17,7 +15,6 @@ describe("AiSummariesService — tenant isolation", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     runInTenantTransaction = jest.requireMock(
       "../../../common/tenant/run-in-tenant-transaction",
     ).runInTenantTransaction;
