@@ -42,6 +42,11 @@ import {
   type CursorPosition,
 } from "../../../common/pagination/cursor";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
+import {
+  buildCursorPredicate,
+  buildMineCursorPredicate,
+  serializeSortValue,
+} from "./projects-work-query.cursor";
 
 const WORK_ROW_SELECTION = {
   id: tickets.id,
@@ -73,54 +78,6 @@ const WORK_ROW_SELECTION = {
   assigneeEmail: users.email,
   assigneeImage: users.image,
 } as const;
-
-function serializeSortValue(
-  row: { rank: string | null; createdAt: Date | null; updatedAt: Date | null; priority: string | null; dueDate: string | null },
-  sortKey: WorkSortKey,
-): string {
-  switch (sortKey) {
-    case "rank": return row.rank ?? "";
-    case "created": return row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? "");
-    case "updated": return row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt ?? "");
-    case "priority": return row.priority ?? "";
-    case "dueDate": return row.dueDate ?? "";
-  }
-}
-
-function buildCursorPredicate(
-  sortKey: WorkSortKey,
-  dir: SortDirection,
-  position: CursorPosition,
-): SQL<unknown> {
-  const col = { created: tickets.createdAt, updated: tickets.updatedAt, priority: tickets.priority, dueDate: tickets.dueDate, rank: tickets.rank }[sortKey];
-  const id = Number(position.id);
-  if (sortKey === "created" || sortKey === "updated") {
-    const d = new Date(position.sortValue);
-    return dir === "asc"
-      ? sql`(${col}, ${tickets.id}) > (${sql.param(d, col)}, ${sql.param(id, tickets.id)})`
-      : sql`(${col}, ${tickets.id}) < (${sql.param(d, col)}, ${sql.param(id, tickets.id)})`;
-  }
-  return dir === "asc"
-    ? sql`(${col}, ${tickets.id}) > (${sql.param(position.sortValue, col)}, ${sql.param(id, tickets.id)})`
-    : sql`(${col}, ${tickets.id}) < (${sql.param(position.sortValue, col)}, ${sql.param(id, tickets.id)})`;
-}
-
-function buildMineCursorPredicate(
-  sortKey: WorkSortKey,
-  dir: SortDirection,
-  position: CursorPosition,
-): SQL<unknown> {
-  const id = Number(position.id);
-  if (sortKey === "created" || sortKey === "updated") {
-    const d = new Date(position.sortValue);
-    return dir === "asc"
-      ? sql`(u.sort_col, u.id) > (${sql.param(d.toISOString())}, ${sql.param(id)})`
-      : sql`(u.sort_col, u.id) < (${sql.param(d.toISOString())}, ${sql.param(id)})`;
-  }
-  return dir === "asc"
-    ? sql`(u.sort_col, u.id) > (${sql.param(String(position.sortValue))}, ${sql.param(id)})`
-    : sql`(u.sort_col, u.id) < (${sql.param(String(position.sortValue))}, ${sql.param(id)})`;
-}
 
 @Injectable()
 export class ProjectsWorkQueryService {
