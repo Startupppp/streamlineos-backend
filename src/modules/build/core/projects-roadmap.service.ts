@@ -19,6 +19,7 @@ import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { ProjectsChangelogService } from "./projects-changelog.service";
 import { ProjectsFeedbackService } from "./projects-feedback.service";
+import { assertRoadmapTargetsInOrg } from "./roadmap-references";
 
 @Injectable()
 export class ProjectsRoadmapService {
@@ -70,6 +71,7 @@ export class ProjectsRoadmapService {
   }
 
   async createRoadmap(orgId: string, userId: string, input: CreateRoadmapInput) {
+    await assertRoadmapTargetsInOrg(this.db, orgId, input);
     const [item] = await this.db
       .insert(roadmapItems)
       .values({
@@ -98,6 +100,7 @@ export class ProjectsRoadmapService {
   }
 
   async updateRoadmap(orgId: string, itemId: number, input: UpdateRoadmapInput) {
+    await assertRoadmapTargetsInOrg(this.db, orgId, input);
     const [updated] = await this.db
       .update(roadmapItems)
       .set({ ...input, updatedAt: new Date() })

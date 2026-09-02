@@ -31,9 +31,9 @@ describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
   }
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
-    ["get", "/product-management/workspaces"],
-    ["post", "/product-management/workspaces"],
-    [`get`, `/product-management/workspaces/${WORKSPACE_ID}`],
+    ["get", "/build/workspaces"],
+    ["post", "/build/workspaces"],
+    [`get`, `/build/workspaces/${WORKSPACE_ID}`],
     ["get", "/build/teams"],
     ["post", "/build/teams"],
     [`get`, `/build/teams/${TEAM_ID}`],
@@ -60,13 +60,13 @@ describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("403 on POST /product-management/workspaces without build:workspaces:create", async () => {
+  it("403 on POST /build/workspaces without build:workspaces:create", async () => {
     const token = await signToken({
       permissions: ["build:workspaces:view"],
       enabledModules: ALL_MODULES,
     });
     const res = await request(app.getHttpServer())
-      .post("/product-management/workspaces")
+      .post("/build/workspaces")
       .set("Authorization", `Bearer ${token}`)
       .send({ name: "My Workspace" });
     expect(res.status).toBe(403);
@@ -119,7 +119,7 @@ describe("Build module uncovered controllers auth/RBAC (e2e)", () => {
     });
     const OTHER_ORG_WORKSPACE = "ffffffff-ffff-ffff-ffff-ffffffffffff";
     const res = await request(app.getHttpServer())
-      .get(`/product-management/workspaces/${OTHER_ORG_WORKSPACE}`)
+      .get(`/build/workspaces/${OTHER_ORG_WORKSPACE}`)
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).not.toBe(403);
   });

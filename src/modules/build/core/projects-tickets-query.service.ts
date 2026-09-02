@@ -115,15 +115,26 @@ export class ProjectsTicketsQueryService {
     body: BulkUpdateInput,
   ) {
     if (!u.isOrgOwner) {
-      const member = await this.db.query.projectMembers.findFirst({
-        where: and(
-          eq(projectMembers.projectId, projectId),
-          eq(projectMembers.membershipId, organizationMembers.id),
-          eq(organizationMembers.userId, u.userId),
-        ),
-        columns: { id: true },
-      });
-      if (!member) throw new ForbiddenException("Not a project member.");
+      const member = await this.db
+        .select({ id: projectMembers.id })
+        .from(projectMembers)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.id, projectMembers.membershipId),
+            eq(organizationMembers.orgId, projectMembers.orgId),
+            eq(organizationMembers.userId, u.userId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        )
+        .where(
+          and(
+            eq(projectMembers.projectId, projectId),
+            eq(projectMembers.orgId, u.orgId),
+          ),
+        )
+        .limit(1);
+      if (member.length === 0) throw new ForbiddenException("Not a project member.");
     }
 
     let updated: Array<{ id: number }> = [];

@@ -37,7 +37,7 @@ const pmWorkspaceIdParams = z.object({ pmWorkspaceId: z.string().min(1) }).stric
 const pmWorkspaceIdpmWorkspaceMembershipIdParams = z.object({ pmWorkspaceId: z.string().min(1), pmWorkspaceMembershipId: z.string().min(1) }).strict();
 
 @RequireModule("build")
-@Controller("product-management/workspaces")
+@Controller("build/workspaces")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PmWorkspacesController {
   constructor(

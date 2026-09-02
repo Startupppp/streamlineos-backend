@@ -34,8 +34,9 @@ describe("WorkflowsController (e2e)", () => {
     });
   });
 
-  describe("Module disabled", () => {
-    it("402 GET /workflows when WORKFLOWS module is disabled", async () => {
+  // Workflows is registered planGated:false, so isCoreModuleKey makes it always available — it must never be paywalled, only permission-gated.
+  describe("Module entitlement — workflows is free and always on", () => {
+    it("does not paywall GET /workflows when the module is absent from enabledModules", async () => {
       const token = await signToken({
         permissions: ["workflows:workflows:view"],
         enabledModules: ALL_MODULES.filter((m) => m !== WORKFLOW_MODULE),
@@ -43,10 +44,22 @@ describe("WorkflowsController (e2e)", () => {
       const res = await request(app.getHttpServer())
         .get("/workflows")
         .set("Authorization", `Bearer ${token}`);
-      expect(res.status).toBe(402);
+      expect(res.status).not.toBe(402);
+      expect(res.status).toBe(200);
     });
 
-    it("402 GET /workflows/analytics when WORKFLOWS module is disabled", async () => {
+    it("still enforces permission when the module is absent from enabledModules", async () => {
+      const token = await signToken({
+        permissions: [],
+        enabledModules: ALL_MODULES.filter((m) => m !== WORKFLOW_MODULE),
+      });
+      const res = await request(app.getHttpServer())
+        .get("/workflows")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+    });
+
+    it("does not paywall GET /workflows/analytics when the module is absent from enabledModules", async () => {
       const token = await signToken({
         permissions: ["workflows:analytics:view"],
         enabledModules: ALL_MODULES.filter((m) => m !== WORKFLOW_MODULE),
@@ -54,7 +67,8 @@ describe("WorkflowsController (e2e)", () => {
       const res = await request(app.getHttpServer())
         .get("/workflows/analytics")
         .set("Authorization", `Bearer ${token}`);
-      expect(res.status).toBe(402);
+      expect(res.status).not.toBe(402);
+      expect(res.status).toBe(200);
     });
   });
 

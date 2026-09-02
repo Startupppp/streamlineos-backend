@@ -31,9 +31,10 @@ describe("Secret sink: execution record — executionContextSchema strips inject
 describe("Secret sink: error message — NotFoundException messages are static and never embed submitted values", () => {
   it("deleteGlobalSecret message is static 'Secret not found', does not embed secretId", async () => {
     const SENTINEL = "super-secret-value-sentinel";
-    const findFirst = jest.fn().mockResolvedValue(null);
     const db = {
-      query: { workflowSecrets: { findFirst } },
+      delete: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+      }),
     } as unknown as Db;
     const svc = new WorkflowsSecretsService(db);
 
@@ -71,12 +72,11 @@ describe("Secret sink: error message — NotFoundException messages are static a
   it("deleteSecret message is static 'Secret not found', does not embed secretId", async () => {
     const SENTINEL_SECRET_ID = "secret-id-sentinel";
     const workflowFindFirst = jest.fn().mockResolvedValue({ id: "wf-uuid" });
-    const secretFindFirst = jest.fn().mockResolvedValue(null);
     const db = {
-      query: {
-        workflows: { findFirst: workflowFindFirst },
-        workflowSecrets: { findFirst: secretFindFirst },
-      },
+      query: { workflows: { findFirst: workflowFindFirst } },
+      delete: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+      }),
     } as unknown as Db;
     const svc = new WorkflowsSecretsService(db);
 

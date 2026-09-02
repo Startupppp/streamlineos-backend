@@ -243,7 +243,7 @@ export class WorkspaceViewsController {
 }
 
 @RequireModule("build")
-@Controller("whiteboards")
+@Controller("build/whiteboards")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class WhiteboardsHubController {
   constructor(private readonly whiteboards: WhiteboardsService) {}

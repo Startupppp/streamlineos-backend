@@ -141,6 +141,7 @@ export class ProjectsTicketsReadService {
       .innerJoin(
         organizationMembers,
         and(
+          eq(organizationMembers.id, projectMembers.membershipId),
           eq(organizationMembers.userId, userId),
           eq(organizationMembers.orgId, orgId),
           eq(organizationMembers.status, "ACTIVE"),
@@ -149,7 +150,7 @@ export class ProjectsTicketsReadService {
       .where(
         and(
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.membershipId, organizationMembers.id),
+          eq(projectMembers.orgId, orgId),
         ),
       )
       .limit(1);
@@ -161,13 +162,24 @@ export class ProjectsTicketsReadService {
       .from(projectTeamAssignments)
       .innerJoin(
         projectTeamMembers,
-        eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+        and(
+          eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+          eq(projectTeamMembers.orgId, projectTeamAssignments.orgId),
+        ),
+      )
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.id, projectTeamMembers.membershipId),
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
       )
       .where(
         and(
           eq(projectTeamAssignments.projectId, projectId),
           eq(projectTeamAssignments.orgId, orgId),
-          eq(projectTeamMembers.membershipId, organizationMembers.id),
         ),
       )
       .limit(1);
@@ -405,15 +417,39 @@ export class ProjectsTicketsReadService {
     return { data, pagination: page.pagination };
   }
 
-  async getColumnCounts(orgId: string, projectId: number): Promise<Record<string, number>> {
+  async getColumnCounts(
+    u: CurrentUserContext,
+    projectId: number,
+  ): Promise<Record<string, number>> {
+    const { hasAccess } = await this.checkProjectAccess(
+      u.orgId,
+      u.userId,
+      projectId,
+      actingMembershipId(u.principal),
+    );
+    if (!hasAccess) throw new NotFoundException("Not found");
+
+    const scope = await resolveTicketsScope(this.access, u);
+    if (scope === "none") return {};
+
+    const scopeClause =
+      scope !== "all"
+        ? or(
+            sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
+            eq(tickets.reporterId, u.userId),
+            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id WHERE ta.org_id = ${u.orgId} AND om.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
+          )
+        : undefined;
+
     const rows = await this.db
       .select({ status: tickets.status, cnt: sql<string>`count(*)` })
       .from(tickets)
       .where(
         and(
-          eq(tickets.orgId, orgId),
+          eq(tickets.orgId, u.orgId),
           eq(tickets.projectId, projectId),
           isNull(tickets.deletedAt),
+          scopeClause,
         ),
       )
       .groupBy(tickets.status);

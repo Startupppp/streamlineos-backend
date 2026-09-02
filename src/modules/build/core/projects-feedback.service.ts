@@ -4,6 +4,7 @@ import { feedbackPosts, feedbackVotes } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { assertLinkedRoadmapItemInOrg } from "./roadmap-references";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import type {
   CreateFeedbackInput,
@@ -62,6 +63,7 @@ export class ProjectsFeedbackService {
   }
 
   async createFeedback(orgId: string, userId: string, input: CreateFeedbackInput) {
+    await assertLinkedRoadmapItemInOrg(this.db, orgId, input.linkedRoadmapItemId);
     const [post] = await this.db
       .insert(feedbackPosts)
       .values({
@@ -88,6 +90,7 @@ export class ProjectsFeedbackService {
   }
 
   async updateFeedback(orgId: string, postId: number, input: UpdateFeedbackInput) {
+    await assertLinkedRoadmapItemInOrg(this.db, orgId, input.linkedRoadmapItemId);
     const [updated] = await this.db
       .update(feedbackPosts)
       .set({ ...input, updatedAt: new Date() })

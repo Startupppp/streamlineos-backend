@@ -60,18 +60,13 @@ export class WorkflowsSecretsService {
     });
     if (!workflow) throw new NotFoundException("Workflow not found");
 
-    const existing = await this.db.query.workflowSecrets.findFirst({
-      where: and(
-        eq(workflowSecrets.id, secretId),
-        eq(workflowSecrets.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-    if (!existing) throw new NotFoundException("Secret not found");
-
-    await this.db
+    const [deleted] = await this.db
       .delete(workflowSecrets)
-      .where(eq(workflowSecrets.id, secretId));
+      .where(
+        and(eq(workflowSecrets.id, secretId), eq(workflowSecrets.orgId, orgId)),
+      )
+      .returning({ id: workflowSecrets.id });
+    if (!deleted) throw new NotFoundException("Secret not found");
   }
 
   listGlobalSecrets(orgId: string) {
@@ -109,16 +104,12 @@ export class WorkflowsSecretsService {
   }
 
   async deleteGlobalSecret(orgId: string, secretId: string) {
-    const existing = await this.db.query.workflowSecrets.findFirst({
-      where: and(
-        eq(workflowSecrets.id, secretId),
-        eq(workflowSecrets.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-    if (!existing) throw new NotFoundException("Secret not found");
-    await this.db
+    const [deleted] = await this.db
       .delete(workflowSecrets)
-      .where(eq(workflowSecrets.id, secretId));
+      .where(
+        and(eq(workflowSecrets.id, secretId), eq(workflowSecrets.orgId, orgId)),
+      )
+      .returning({ id: workflowSecrets.id });
+    if (!deleted) throw new NotFoundException("Secret not found");
   }
 }
