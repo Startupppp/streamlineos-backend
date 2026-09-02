@@ -41,7 +41,7 @@ const ALL_GRANT_ROWS: GrantRow[] = GRANTED_KEYS.map((permissionKey, index) => ({
 }));
 
 interface Chain {
-  from: () => Chain;
+  from: (table?: unknown) => Chain;
   where: () => Chain;
   innerJoin: () => Chain;
   orderBy: () => Chain;
@@ -49,15 +49,16 @@ interface Chain {
 }
 
 /**
- * Serves the six non-drain reads in their fixed order, and the grant drain by
- * page. The drain is the only read that calls `orderBy`, so the chain routes on
- * shape rather than on call position — restoring the bare limit then changes the
- * number of pages served without knocking the other reads out of sequence.
+ * Serves the five non-drain reads in their fixed order, and the role-grant drain
+ * by page. Two reads now drain by keyset — role grants and per-person grants —
+ * so `orderBy` alone no longer identifies this one; the chain routes on the
+ * projection instead, which is unique per read. Restoring the bare limit then
+ * changes the number of pages served without knocking the other reads out of
+ * sequence.
  */
 function makeDb(grantRows: GrantRow[]): { db: Db; grantPageCalls: () => number } {
   const nonDrain: unknown[][] = [
     [{ roleId: ROLE_ID, expiresAt: null }],
-    [],
     [],
     [],
     [{ id: ROLE_ID, slug: "CRM_MODULE_ADMIN" }],
@@ -74,23 +75,25 @@ function makeDb(grantRows: GrantRow[]): { db: Db; grantPageCalls: () => number }
           Promise.resolve({ isOwner: false, status: "ACTIVE", id: 1, role: "MEMBER" }),
       },
     },
-    select: () => {
-      let ordered = false;
+    select: (projection?: Record<string, unknown>) => {
+      const columns = new Set(Object.keys(projection ?? {}));
+      const isRoleGrantDrain =
+        columns.has("roleId") && columns.has("permissionKey");
+      const isUserGrantDrain =
+        columns.has("scope") && columns.has("permissionKey") && !columns.has("roleId");
       const chain: Chain = {
         from: () => chain,
         where: () => chain,
         innerJoin: () => chain,
-        orderBy: () => {
-          ordered = true;
-          return chain;
-        },
+        orderBy: () => chain,
         limit: () => {
-          if (ordered) {
+          if (isRoleGrantDrain) {
             grantPages += 1;
             const page = grantRows.slice(cursor, cursor + PAGE_SIZE);
             cursor += page.length;
             return Promise.resolve(page);
           }
+          if (isUserGrantDrain) return Promise.resolve([]);
           const result = nonDrain[nonDrainCall] ?? [];
           nonDrainCall += 1;
           return Promise.resolve(result);

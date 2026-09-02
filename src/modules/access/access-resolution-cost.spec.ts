@@ -26,11 +26,13 @@ function makeSelectChain(rows: unknown[]): Record<string, jest.Mock> {
     from: jest.fn(),
     where: jest.fn(),
     innerJoin: jest.fn(),
+    orderBy: jest.fn(),
     limit: jest.fn().mockResolvedValue(rows),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
   return chain;
 }
 

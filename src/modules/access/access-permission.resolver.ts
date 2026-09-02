@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import {
   groupRoleAssignments,
@@ -6,10 +6,8 @@ import {
   organizationMembers,
   principalGroupMembers,
   roleAssignments,
-  rolePermissionGrants,
   roles,
   userDelegationPermissions,
-  userPermissionGrants,
   userDelegations,
 } from "../../db/schema";
 import { logger } from "../../common/logger/logger.service";
@@ -36,14 +34,13 @@ import {
   NO_TRANSITIONS,
   SYSTEM_CLOCK,
 } from "./snapshot-validity";
+import {
+  drainRolePermissionGrants,
+  drainUserPermissionGrants,
+  type SafeAccessTableRead,
+} from "./access-grant-drains";
 
-/** One page of the role-grant drain. Pages, never a cap: see `drainRolePermissionGrants`. */
-const ROLE_GRANT_PAGE_SIZE = 500;
-
-export type SafeAccessTableRead = <Result>(
-  read: () => PromiseLike<Result>,
-  fallback: Result,
-) => Promise<Result>;
+export type { SafeAccessTableRead };
 
 export interface ResolvedPermissions {
   perms: Record<string, DataScope>;
@@ -189,25 +186,11 @@ export class AccessPermissionResolver {
             .limit(100),
         [] as { moduleKey: string }[],
       ),
-      this.safeAccessTableRead(
-        () =>
-          this.db
-            .select({
-              permissionKey: userPermissionGrants.permissionKey,
-              scope: userPermissionGrants.scope,
-            })
-            .from(userPermissionGrants)
-            .where(
-              and(
-                eq(userPermissionGrants.orgId, orgId),
-                eq(
-                  userPermissionGrants.organizationMembershipId,
-                  membershipId,
-                ),
-              ),
-            )
-            .limit(500),
-        [] as { permissionKey: string; scope: DataScope }[],
+      drainUserPermissionGrants(
+        this.db,
+        this.safeAccessTableRead,
+        orgId,
+        membershipId,
       ),
     ]);
 
@@ -293,7 +276,12 @@ export class AccessPermissionResolver {
         roleRecords.map((record) => [record.id, record]),
       );
 
-      const grantRows = await this.drainRolePermissionGrants(orgId, roleIdList);
+      const grantRows = await drainRolePermissionGrants(
+        this.db,
+        this.safeAccessTableRead,
+        orgId,
+        roleIdList,
+      );
       const grantsByRole = new Map<
         number,
         { permissionKey: string; scope: DataScope }[]
@@ -383,61 +371,6 @@ export class AccessPermissionResolver {
         ),
       },
     };
-  }
-
-  /**
-   * Every `(role, key)` grant the member's roles carry, drained by keyset.
-   *
-   * This was a bare, unordered `.limit(500)`. One row per (role, key) across
-   * every role held, and the 14 module-admin rungs sum to 564 keys — so a
-   * member holding nine of them silently lost permissions past the 500th, and
-   * with no `ORDER BY`, a *different* set on each request. An authorization
-   * decision that is both wrong and non-deterministic, raising no error either
-   * way. A larger cap is the same defect with a later trigger.
-   */
-  private async drainRolePermissionGrants(
-    orgId: string,
-    roleIdList: readonly number[],
-  ): Promise<{ permissionKey: string; scope: DataScope; roleId: number }[]> {
-    const drained: { permissionKey: string; scope: DataScope; roleId: number }[] = [];
-    let afterId = 0;
-    for (;;) {
-      const page = await this.safeAccessTableRead(
-        () =>
-          this.db
-            .select({
-              id: rolePermissionGrants.id,
-              roleId: rolePermissionGrants.roleId,
-              permissionKey: rolePermissionGrants.permissionKey,
-              scope: rolePermissionGrants.scope,
-            })
-            .from(rolePermissionGrants)
-            .where(
-              and(
-                eq(rolePermissionGrants.orgId, orgId),
-                inArray(rolePermissionGrants.roleId, [...roleIdList]),
-                gt(rolePermissionGrants.id, afterId),
-              ),
-            )
-            .orderBy(asc(rolePermissionGrants.id))
-            .limit(ROLE_GRANT_PAGE_SIZE),
-        [] as {
-          id: number;
-          roleId: number;
-          permissionKey: string;
-          scope: DataScope;
-        }[],
-      );
-      for (const row of page)
-        drained.push({
-          roleId: row.roleId,
-          permissionKey: row.permissionKey,
-          scope: row.scope,
-        });
-      const last = page[page.length - 1];
-      if (page.length < ROLE_GRANT_PAGE_SIZE || last === undefined) return drained;
-      afterId = last.id;
-    }
   }
 
   async getMembershipAccessState(
