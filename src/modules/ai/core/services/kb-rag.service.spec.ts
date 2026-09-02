@@ -17,6 +17,7 @@ import { streamText } from "ai";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { KbRagService } from "./kb-rag.service";
+import { KbRagRetrievalService } from "./kb-rag-retrieval.service";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AiUsageService } from "./ai-usage.service";
 import { AI_CREDIT_LEDGER } from "../gateway/credit-ledger.interface";
@@ -109,6 +110,7 @@ describe("KbRagService", () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        KbRagRetrievalService,
         KbRagService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AiGatewayService, useValue: mockGateway },

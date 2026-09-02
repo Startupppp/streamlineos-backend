@@ -10,6 +10,7 @@ jest.mock("../../../integrations/core/composio.gateway", () => ({
 
 import { NotFoundException } from "@nestjs/common";
 import { KbRagService } from "./kb-rag.service";
+import { KbRagRetrievalService } from "./kb-rag-retrieval.service";
 import { SurveyAiService } from "./survey-ai.service";
 import { OrgFeaturesService } from "./org-features.service";
 import { MeetingsPrepService } from "./meetings-prep.service";
@@ -84,8 +85,12 @@ describe("KbRagService tenant isolation", () => {
     const mockLedger = { reserve: jest.fn(), settle: jest.fn(), release: jest.fn() };
     const mockUsageSvc = { track: jest.fn() };
 
+    const retrievalSvc = new KbRagRetrievalService(
+      mockDb as unknown as ConstructorParameters<typeof KbRagRetrievalService>[0],
+      mockGateway as unknown as ConstructorParameters<typeof KbRagRetrievalService>[1],
+    );
     const svc = new KbRagService(
-      mockDb as unknown as Db,
+      retrievalSvc,
       mockGateway as unknown as ConstructorParameters<typeof KbRagService>[1],
       mockLedger as unknown as ConstructorParameters<typeof KbRagService>[2],
       mockUsageSvc as unknown as ConstructorParameters<typeof KbRagService>[3],
@@ -133,8 +138,12 @@ describe("KbRagService tenant isolation", () => {
     const mockLedger = { reserve: jest.fn(), settle: jest.fn(), release: jest.fn() };
     const mockUsageSvc = { track: jest.fn() };
 
+    const retrievalSvc = new KbRagRetrievalService(
+      mockDb as unknown as ConstructorParameters<typeof KbRagRetrievalService>[0],
+      mockGateway as unknown as ConstructorParameters<typeof KbRagRetrievalService>[1],
+    );
     const svc = new KbRagService(
-      mockDb as unknown as Db,
+      retrievalSvc,
       mockGateway as unknown as ConstructorParameters<typeof KbRagService>[1],
       mockLedger as unknown as ConstructorParameters<typeof KbRagService>[2],
       mockUsageSvc as unknown as ConstructorParameters<typeof KbRagService>[3],

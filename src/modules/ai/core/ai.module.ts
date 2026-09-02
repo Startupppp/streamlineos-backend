@@ -20,6 +20,7 @@ import { HrRecruitmentAiService } from "./services/hr-recruitment-ai.service";
 import { HrPolicyAiService } from "./services/hr-policy-ai.service";
 import { HrHelpdeskAiService } from "./services/hr-helpdesk-ai.service";
 import { KbRagService } from "./services/kb-rag.service";
+import { KbRagRetrievalService } from "./services/kb-rag-retrieval.service";
 import { ChatAssistantService } from "./services/chat-assistant.service";
 import { ChatHistoryService } from "./services/chat-history.service";
 import { OrgFeaturesService } from "./services/org-features.service";
@@ -71,6 +72,7 @@ import { SurveyAiService } from "./services/survey-ai.service";
     HrRecruitmentAiService,
     HrPolicyAiService,
     HrHelpdeskAiService,
+    KbRagRetrievalService,
     KbRagService,
     ChatAssistantService,
     ChatHistoryService,
