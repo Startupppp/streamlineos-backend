@@ -19,6 +19,8 @@ import { PermissionGuard } from "../access/permission.guard";
 import { Validate } from "../../common/validation/validate.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
+import { AccessService } from "../access/access.service";
+import { authorize } from "../access/authorize";
 import { GdprService } from "./gdpr.service";
 import { GdprExportService } from "./gdpr-export.service";
 import { exportRequestBodySchema, type ExportRequestBody } from "./dto/gdpr.schemas";
@@ -30,6 +32,8 @@ import {
   type GdprRectificationBody,
 } from "./dto/gdpr-rectification.schemas";
 import { GdprRectificationService } from "./gdpr-rectification.service";
+import { gdprErasureBodySchema, type GdprErasureBody } from "./dto/gdpr-erasure.schemas";
+import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 
 @Controller("gdpr")
 export class GdprController {
@@ -37,6 +41,8 @@ export class GdprController {
     private readonly gdpr: GdprService,
     private readonly gdprExport: GdprExportService,
     private readonly gdprRectification: GdprRectificationService,
+    private readonly gdprErasure: GdprSubjectErasureService,
+    private readonly access: AccessService,
   ) {}
 
   @AuthorizedInService(
@@ -55,7 +61,7 @@ export class GdprController {
       user.orgId,
       "all",
     );
-    await this.gdpr.recordExportRequest(user.orgId, user.userId, user.userId, body.reason);
+    await this.gdpr.recordExportRequest(user.orgId, user.userId, user.userId, body.reason, result.exportIncomplete);
     return result;
   }
 
@@ -87,7 +93,7 @@ export class GdprController {
     if (!user.orgId) throw new ForbiddenException("An active organization is required");
     const scope: DataScope = req.rbacScope ?? "none";
     const result = await this.gdpr.exportSubjectData(personId, user.userId, user.orgId, scope);
-    await this.gdpr.recordExportRequest(user.orgId, personId, user.userId, body.reason);
+    await this.gdpr.recordExportRequest(user.orgId, personId, user.userId, body.reason, result.exportIncomplete);
     return result;
   }
 
@@ -130,10 +136,10 @@ export class GdprController {
   async getExportJobStatus(
     @Param("jobId") jobId: string,
     @CurrentUser() user: CurrentUserContext,
-    @Req() req: Request & { rbacScope?: DataScope },
   ) {
     if (!user.orgId) throw new ForbiddenException("An active organization is required");
-    const isAdmin = (req.rbacScope ?? "none") === "all";
+    const authResult = await authorize(this.access, user, "hr:retention:manage");
+    const isAdmin = authResult.allow && authResult.scope === "all";
     return this.gdprExport.get(user.userId, user.orgId, jobId, isAdmin);
   }
 
@@ -146,11 +152,11 @@ export class GdprController {
   async downloadExportJob(
     @Param("jobId") jobId: string,
     @CurrentUser() user: CurrentUserContext,
-    @Req() req: Request & { rbacScope?: DataScope },
     @Res() res: Response,
   ) {
     if (!user.orgId) throw new ForbiddenException("An active organization is required");
-    const isAdmin = (req.rbacScope ?? "none") === "all";
+    const authResult = await authorize(this.access, user, "hr:retention:manage");
+    const isAdmin = authResult.allow && authResult.scope === "all";
     const { job, file } = await this.gdprExport.download(user.userId, user.orgId, jobId, isAdmin);
     if (!job.fileName) throw new BadRequestException("File name missing");
     res.setHeader(
@@ -161,5 +167,20 @@ export class GdprController {
     if (file.contentLength !== undefined)
       res.setHeader("Content-Length", String(file.contentLength));
     file.body.pipe(res);
+  }
+
+  @UseGuards(PermissionGuard)
+  @RequirePermission("hr:retention:manage")
+  @Post("erasure/:subjectId")
+  @Validate({ body: gdprErasureBodySchema })
+  async eraseSubjectData(
+    @Param("subjectId") subjectId: string,
+    @CurrentUser() user: CurrentUserContext,
+    @Body() body: GdprErasureBody,
+  ) {
+    if (!user.orgId) throw new ForbiddenException("An active organization is required");
+    return this.gdprErasure.eraseSubject(subjectId, user.orgId, user.userId, {
+      dryRun: body.dryRun ?? false,
+    });
   }
 }

@@ -2,6 +2,9 @@ import { ForbiddenException } from "@nestjs/common";
 import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { GdprController } from "./gdpr.controller";
+import { authorize } from "../access/authorize";
+
+jest.mock("../access/authorize");
 
 const USER = {
   userId: "user-caller",
@@ -10,10 +13,23 @@ const USER = {
 
 function buildController() {
   const gdpr = { exportSubjectData: jest.fn(), recordExportRequest: jest.fn() };
-  const gdprExport = { create: jest.fn().mockResolvedValue({ id: "job-1" }) };
+  const gdprExport = {
+    create: jest.fn().mockResolvedValue({ id: "job-1" }),
+    get: jest.fn().mockResolvedValue({ id: "job-1", status: "pending" }),
+    download: jest.fn().mockResolvedValue({
+      job: { id: "job-1", fileName: "export.json" },
+      file: { body: { pipe: jest.fn() }, contentType: "application/json" },
+    }),
+  };
   const gdprRectification = { rectifyOwnProfile: jest.fn().mockResolvedValue({ requestId: 1 }) };
+  const access = {};
   return {
-    controller: new GdprController(gdpr as never, gdprExport as never, gdprRectification as never),
+    controller: new GdprController(
+      gdpr as never,
+      gdprExport as never,
+      gdprRectification as never,
+      access as never,
+    ),
     gdprExport,
     gdprRectification,
   };
@@ -69,5 +85,47 @@ describe("GdprController self-service rectification", () => {
       { field: "profile.name", value: "Ananya Rao" },
       "127.0.0.1",
     );
+  });
+});
+
+describe("GdprController.getExportJobStatus — G1: admin view uses authorize(), not req.rbacScope", () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it("passes isAdmin=true to get() when the caller holds hr:retention:manage with all scope", async () => {
+    (authorize as jest.Mock).mockResolvedValue({ allow: true, scope: "all" });
+    const { controller, gdprExport } = buildController();
+
+    await controller.getExportJobStatus("job-1", USER);
+
+    expect(gdprExport.get).toHaveBeenCalledWith(USER.userId, USER.orgId, "job-1", true);
+  });
+
+  it("passes isAdmin=false to get() when the caller lacks hr:retention:manage", async () => {
+    (authorize as jest.Mock).mockResolvedValue({ allow: false, scope: "none", reason: "FORBIDDEN" });
+    const { controller, gdprExport } = buildController();
+
+    await controller.getExportJobStatus("job-1", USER);
+
+    expect(gdprExport.get).toHaveBeenCalledWith(USER.userId, USER.orgId, "job-1", false);
+  });
+
+  it("passes isAdmin=false when the caller holds the permission with own scope (not all)", async () => {
+    (authorize as jest.Mock).mockResolvedValue({ allow: true, scope: "own" });
+    const { controller, gdprExport } = buildController();
+
+    await controller.getExportJobStatus("job-1", USER);
+
+    expect(gdprExport.get).toHaveBeenCalledWith(USER.userId, USER.orgId, "job-1", false);
+  });
+
+  it("throws ForbiddenException when orgId is absent, before calling authorize", async () => {
+    (authorize as jest.Mock).mockResolvedValue({ allow: true, scope: "all" });
+    const { controller } = buildController();
+    const noOrg = { ...USER, orgId: undefined } as unknown as CurrentUserContext;
+
+    await expect(controller.getExportJobStatus("job-1", noOrg)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(authorize).not.toHaveBeenCalled();
   });
 });

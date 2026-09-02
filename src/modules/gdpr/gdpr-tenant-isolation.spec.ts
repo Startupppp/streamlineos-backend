@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
+import { auditLogs, organizationMembers, users } from "../../db/schema";
 import { GdprService } from "./gdpr.service";
 
 const CALLER_ORG = "org-caller";
@@ -78,5 +79,52 @@ describe("GdprService.exportSubjectData tenant isolation", () => {
 
     if (result !== null)
       expect(result.memberships.every((m) => m.orgId === OTHER_ORG)).toBe(true);
+  });
+});
+
+describe("GdprService.exportSubjectData — G3: sync export cap and truncation notice", () => {
+  const MEMBER_ROW = { orgId: CALLER_ORG, role: "MEMBER", status: "ACTIVE", joinedAt: null };
+  const SUBJECT_ROW = { id: SUBJECT, email: "subject@example.invalid", name: null };
+  const AUDIT_ROW = {
+    id: 1, action: "test.action", targetId: null, targetType: null,
+    actorUserId: null, resourceType: null, resourceId: null,
+    metadata: null, createdAt: new Date(),
+  };
+
+  function makeOverflowDb(): Db {
+    return {
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockImplementation((table: unknown) => ({
+          where: jest.fn().mockReturnValue({
+            then: (res: (v: unknown[]) => unknown) =>
+              res(table === organizationMembers ? [MEMBER_ROW] : []),
+            limit: jest.fn().mockImplementation(() => {
+              if (table === users) return Promise.resolve([SUBJECT_ROW]);
+              if (table === auditLogs) return Promise.resolve(Array(501).fill(AUDIT_ROW));
+              return Promise.resolve([]);
+            }),
+          }),
+          innerJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
+        })),
+      })),
+    } as unknown as Db;
+  }
+
+  it("reports a truncation notice in exportIncomplete when audit entries exceed the 500-row cap", async () => {
+    const service = new GdprService(makeOverflowDb());
+    const result = await service.exportSubjectData(SUBJECT, SUBJECT, CALLER_ORG, "all");
+
+    expect(result.auditEntries).toHaveLength(500);
+    expect(result.exportIncomplete.some((s) => s.includes("audit_logs") && s.includes("truncated"))).toBe(true);
+  });
+
+  it("always includes the three design-time incomplete notices regardless of truncation", async () => {
+    const service = new GdprService(makeOverflowDb());
+    const result = await service.exportSubjectData(SUBJECT, SUBJECT, CALLER_ORG, "all");
+
+    expect(result.exportIncomplete.some((s) => s.includes("blob storage"))).toBe(true);
+    expect(result.exportIncomplete.some((s) => s.includes("chat_messages"))).toBe(true);
   });
 });

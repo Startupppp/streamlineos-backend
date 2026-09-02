@@ -48,6 +48,7 @@ export const hrDataRequestStatusEnum = pgEnum("hr_data_request_status", [
   "processing",
   "completed",
   "rejected",
+  "partial",
 ]);
 
 export const hrProxyScopeEnum = pgEnum("hr_proxy_scope", ["approvals", "hr_admin", "manager_tasks"]);

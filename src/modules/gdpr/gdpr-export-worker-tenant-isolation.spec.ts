@@ -188,6 +188,48 @@ describe("GdprExportWorkerService — cross-tenant isolation", () => {
   });
 });
 
+describe("GdprExportWorkerService — storage not configured (G2)", () => {
+  it("throws from wake() when storage is not configured, so the outbox event is not silently acknowledged", async () => {
+    const { db } = makeDb();
+    const { mockJobs } = makeServices(OWNER_ORG);
+    const unconfiguredStorage = {
+      isConfigured: jest.fn().mockReturnValue(false),
+      uploadFile: jest.fn(),
+    };
+
+    const module = await Test.createTestingModule({
+      providers: [
+        GdprExportWorkerService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: GdprExportService, useValue: mockJobs },
+        { provide: StorageService, useValue: unconfiguredStorage },
+      ],
+    }).compile();
+    const svc = module.get(GdprExportWorkerService);
+
+    expect(() => svc.wake()).toThrow("GDPR_EXPORT_STORAGE_NOT_CONFIGURED");
+  });
+
+  it("does not throw from wake() when storage is configured", async () => {
+    const { db } = makeDb();
+    const { mockJobs, mockStorage } = makeServices(OWNER_ORG);
+
+    (forEachOrg as jest.Mock).mockResolvedValue({ organizations: 0 });
+
+    const module = await Test.createTestingModule({
+      providers: [
+        GdprExportWorkerService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: GdprExportService, useValue: mockJobs },
+        { provide: StorageService, useValue: mockStorage },
+      ],
+    }).compile();
+    const svc = module.get(GdprExportWorkerService);
+
+    expect(() => svc.wake()).not.toThrow();
+  });
+});
+
 describe("drainExportPages", () => {
   it("resumes after the batch boundary and never truncates an available section", async () => {
     const first = Array.from({ length: 200 }, (_, index) => ({ id: index + 1 }));

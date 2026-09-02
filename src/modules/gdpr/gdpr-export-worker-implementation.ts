@@ -115,6 +115,8 @@ export class GdprExportWorkerImplementation
   }
 
   wake() {
+    if (!this.storage.isConfigured())
+      throw new Error("GDPR_EXPORT_STORAGE_NOT_CONFIGURED: object storage is not configured; job will not be processed");
     void this.tick();
   }
 

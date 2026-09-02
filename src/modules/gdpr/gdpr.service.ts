@@ -1,4 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+
+const SYNC_EXPORT_CAP = 500;
 import { and, eq, isNull } from "drizzle-orm";
 import {
   auditLogs,
@@ -108,7 +110,13 @@ export class GdprService {
 
     if (!subject) throw new NotFoundException("Subject not found");
 
-    const hrPersonRows = await this.db
+    const exportIncomplete: string[] = [
+      "audit_logs: existence confirmed only — full extract requires elevated tooling",
+      "blob storage: R2 object keys require R2_ENDPOINT + credentials (see purge-user.mjs)",
+      "chat_messages, mail_messages: not included — contact support under regulatory order",
+    ];
+
+    const hrPersonRowsRaw = await this.db
       .select({
         orgId: hrPeople.orgId,
         hrPersonId: hrPeople.id,
@@ -120,7 +128,11 @@ export class GdprService {
           eq(hrPeople.orgId, callerOrgId),
           isNull(hrPeople.deletedAt),
         ),
-      );
+      )
+      .limit(SYNC_EXPORT_CAP + 1);
+    if (hrPersonRowsRaw.length > SYNC_EXPORT_CAP)
+      exportIncomplete.push(`hr_people: truncated at ${SYNC_EXPORT_CAP} records — use async export for full extract`);
+    const hrPersonRows = hrPersonRowsRaw.slice(0, SYNC_EXPORT_CAP);
 
     const employment: SubjectExportResult["employment"] = [];
     for (const person of hrPersonRows) {
@@ -141,8 +153,11 @@ export class GdprService {
             eq(hrPeople.orgId, callerOrgId),
             isNull(hrEmployments.deletedAt),
           ),
-        );
-      for (const r of rows)
+        )
+        .limit(SYNC_EXPORT_CAP + 1);
+      if (rows.length > SYNC_EXPORT_CAP)
+        exportIncomplete.push(`hr_employments: truncated at ${SYNC_EXPORT_CAP} records for person ${person.hrPersonId} — use async export for full extract`);
+      for (const r of rows.slice(0, SYNC_EXPORT_CAP))
         employment.push({
           orgId: r.orgId,
           lifecycleStatus: r.lifecycleStatus,
@@ -153,7 +168,7 @@ export class GdprService {
         });
     }
 
-    const dataRequests = await this.db
+    const dataRequestsRaw = await this.db
       .select({
         id: hrDataRequests.id,
         orgId: hrDataRequests.orgId,
@@ -169,9 +184,13 @@ export class GdprService {
           eq(hrDataRequests.orgId, callerOrgId),
           isNull(hrDataRequests.deletedAt),
         ),
-      );
+      )
+      .limit(SYNC_EXPORT_CAP + 1);
+    if (dataRequestsRaw.length > SYNC_EXPORT_CAP)
+      exportIncomplete.push(`hr_data_requests: truncated at ${SYNC_EXPORT_CAP} records — use async export for full extract`);
+    const dataRequests = dataRequestsRaw.slice(0, SYNC_EXPORT_CAP);
 
-    const legalHoldsRows = await this.db
+    const legalHoldsRaw = await this.db
       .select({
         id: hrLegalHolds.id,
         orgId: hrLegalHolds.orgId,
@@ -187,9 +206,13 @@ export class GdprService {
           eq(hrLegalHolds.orgId, callerOrgId),
           isNull(hrLegalHolds.deletedAt),
         ),
-      );
+      )
+      .limit(SYNC_EXPORT_CAP + 1);
+    if (legalHoldsRaw.length > SYNC_EXPORT_CAP)
+      exportIncomplete.push(`hr_legal_holds: truncated at ${SYNC_EXPORT_CAP} records — use async export for full extract`);
+    const legalHoldsRows = legalHoldsRaw.slice(0, SYNC_EXPORT_CAP);
 
-    const auditEntries = await this.db
+    const auditEntriesRaw = await this.db
       .select({
         id: auditLogs.id,
         action: auditLogs.action,
@@ -202,7 +225,11 @@ export class GdprService {
         createdAt: auditLogs.createdAt,
       })
       .from(auditLogs)
-      .where(and(eq(auditLogs.userId, subjectUserId), eq(auditLogs.orgId, callerOrgId)));
+      .where(and(eq(auditLogs.userId, subjectUserId), eq(auditLogs.orgId, callerOrgId)))
+      .limit(SYNC_EXPORT_CAP + 1);
+    if (auditEntriesRaw.length > SYNC_EXPORT_CAP)
+      exportIncomplete.push(`audit_logs: truncated at ${SYNC_EXPORT_CAP} records — use async export for full extract`);
+    const auditEntries = auditEntriesRaw.slice(0, SYNC_EXPORT_CAP);
 
     return {
       exportedAt: new Date().toISOString(),
@@ -240,11 +267,7 @@ export class GdprService {
         metadata: entry.metadata ?? null,
       })),
       auditEntriesPresent: auditEntries.length > 0,
-      exportIncomplete: [
-        "audit_logs: existence confirmed only — full extract requires elevated tooling",
-        "blob storage: R2 object keys require R2_ENDPOINT + credentials (see purge-user.mjs)",
-        "chat_messages, mail_messages: not included — contact support under regulatory order",
-      ],
+      exportIncomplete,
     };
   }
 
@@ -253,14 +276,16 @@ export class GdprService {
     subjectUserId: string,
     requestedBy: string,
     reason: string | undefined,
+    exportIncomplete: string[],
   ): Promise<number> {
+    const status = exportIncomplete.length > 0 ? "partial" : "completed";
     const [row] = await this.db
       .insert(hrDataRequests)
       .values({
         orgId,
         subjectUserId,
         type: "export",
-        status: "completed",
+        status,
         requestedBy,
         reason: reason ?? null,
         completedAt: new Date(),
