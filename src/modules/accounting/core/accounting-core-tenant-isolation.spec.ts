@@ -67,7 +67,10 @@ const cache = {
 const audit = { log: jest.fn() } as unknown as AuditService;
 const dispatch = { emit: jest.fn() } as unknown as NotificationDispatchService;
 const cashFlow = { cashFlow: jest.fn() } as unknown as AccountingCashFlowService;
-const journalEntry = { create: jest.fn(), update: jest.fn() } as unknown as AccountingJournalEntryService;
+const journalEntry = {
+  createJournalEntry: jest.fn(),
+  reverseJournalEntry: jest.fn(),
+} as unknown as AccountingJournalEntryService;
 
 describe("accounting core services — cross-tenant isolation", () => {
   describe("AccountingGstService", () => {
