@@ -23,7 +23,20 @@ function buildMockDb() {
     values: jest.fn().mockReturnThis(),
     returning: jest.fn().mockResolvedValue([{ id: 1, key: "TST-001", orgId: ORG_ID, name: "Test Project" }]),
   };
+  const membershipRow = {
+    id: 1,
+    orgId: ORG_ID,
+    userId: CREATOR_ID,
+    role: "ADMIN",
+    isOwner: true,
+    status: "ACTIVE",
+  };
   return {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue([membershipRow]),
+      }),
+    }),
     transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) =>
       fn({
         insert: jest.fn().mockReturnValue(insertChain),
