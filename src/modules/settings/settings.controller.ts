@@ -23,25 +23,19 @@ import {
   createApiKeySchema,
   createAutomationSchema,
   createCustomFieldSchema,
-  createGitConnectionSchema,
   customFieldsListSchema,
   featureFlagSchema,
   updateAutomationSchema,
   updateCustomFieldSchema,
-  updateGitConnectionSchema,
-  updateUserRoleSchema,
   listAutomationsQuerySchema,
   type CreateApiKeyInput,
   type CreateAutomationInput,
   type CreateCustomFieldInput,
-  type CreateGitConnectionInput,
   type CustomFieldsListInput,
   type FeatureFlagInput,
   type ListAutomationsQueryInput,
   type UpdateAutomationInput,
   type UpdateCustomFieldInput,
-  type UpdateGitConnectionInput,
-  type UpdateUserRoleInput,
   settingsProvenanceQuerySchema,
   type SettingsProvenanceQuery,
 } from "./dto/settings.schemas";
@@ -52,8 +46,6 @@ import { z } from "zod";
 const keyIdParams = z.object({ keyId: z.string().min(1) }).strict();
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
-const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
-const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 @Controller("settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -78,12 +70,6 @@ export class SettingsController {
   @Get("permissions")
   getPermissions() {
     return this.settings.getPermissions();
-  }
-
-  @RequirePermission("settings:manage")
-  @Get("ai-usage")
-  getAiUsage(@CurrentUser() u: CurrentUserContext) {
-    return this.settings.getAiUsage(u);
   }
 
   @RequirePermission("settings:manage")
@@ -178,13 +164,13 @@ export class SettingsController {
   }
 
   @Get("custom-fields")
-  @RequirePermission("settings:custom-fields:manage")
+  @RequirePermission("settings:custom-fields:view")
   @Validate({ query: customFieldsListSchema })
   listCustomFields(
     @Query() query: CustomFieldsListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.listCustomFields(u.orgId, query.entityType);
+    return this.customFields.listCustomFields(u.orgId, query);
   }
 
   @Post("custom-fields")
@@ -234,56 +220,5 @@ export class SettingsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateFeatureFlag(u, body);
-  }
-
-  @Get("integrations/git")
-  @RequirePermission("settings:manage")
-  listGitConnections(@CurrentUser() u: CurrentUserContext) {
-    return this.settings.listGitConnections(u.orgId);
-  }
-
-  @Post("integrations/git")
-  @HttpCode(201)
-  @Idempotent("settings.gitConnection.create")
-  @RequirePermission("settings:manage")
-  @Validate({ body: createGitConnectionSchema })
-  createGitConnection(
-    @Body() body: CreateGitConnectionInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.settings.createGitConnection(u.orgId, u.userId, body);
-  }
-
-  @Patch("integrations/git/:connectionId")
-  @RequirePermission("settings:manage")
-  @Validate({ params: connectionIdParams, body: updateGitConnectionSchema })
-  updateGitConnection(
-    @Param("connectionId", ParseIntPipe) connectionId: number,
-    @Body() body: UpdateGitConnectionInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.settings.updateGitConnection(u.orgId, connectionId, body);
-  }
-
-  @Delete("integrations/git/:connectionId")
-  @RequirePermission("settings:manage")
-  @Validate({ params: connectionIdParams })
-  deleteGitConnection(
-    @Param("connectionId", ParseIntPipe) connectionId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.settings.deleteGitConnection(u.orgId, connectionId);
-  }
-
-  @RequirePermission("settings:rbac:manage")
-  @Post("users/:userId/role")
-  @Idempotent("settings.userRole.update")
-  @Validate({ params: userIdParams, body: updateUserRoleSchema })
-  updateUserRole(
-    @Param("userId") userId: string,
-    @Body() body: UpdateUserRoleInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.settings.updateUserRole(u, userId, body.role);
   }
 }

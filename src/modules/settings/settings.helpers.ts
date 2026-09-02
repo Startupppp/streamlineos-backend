@@ -1,5 +1,4 @@
 import { createHash, randomBytes } from "crypto";
-import { appUrl } from "../email/app-url";
 
 export const VALID_API_KEY_SCOPES = [
   "leads:read",
@@ -31,10 +30,6 @@ const DEFAULT_FEATURE_FLAGS: OrgFeatureFlags = {
   supportAi: true,
 };
 
-export function generateWebhookSecret(): string {
-  return randomBytes(30).toString("base64url").slice(0, 40);
-}
-
 export function generateApiKey(): { id: string; rawKey: string; keyHash: string; keyPrefix: string } {
   const rawKey = `streamlineos_${randomBytes(32).toString("hex")}`;
   const keyHash = createHash("sha256").update(rawKey).digest("hex");
@@ -44,15 +39,6 @@ export function generateApiKey(): { id: string; rawKey: string; keyHash: string;
     keyHash,
     keyPrefix: rawKey.slice(0, 16),
   };
-}
-
-export function maskSecret(secret: string): string {
-  if (secret.length <= 4) return "••••";
-  return `${secret.slice(0, 4)}${"•".repeat(8)}`;
-}
-
-export function gitWebhookUrl(connectionId: number): string {
-  return `${appUrl()}/api/integrations/git/webhook?connectionId=${connectionId}`;
 }
 
 export function parseOrgFeatureFlags(

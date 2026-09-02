@@ -29,3 +29,13 @@ export const EXECUTIVE_BRIEF_PERMISSIONS: Permission[] = [
     description: "Trigger generation of a new executive brief",
   },
 ];
+
+export const AI_USAGE_PERMISSIONS: Permission[] = [
+  {
+    name: "ai:usage:view",
+    resource: "ai:usage",
+    action: "view",
+    description:
+      "View organization-wide AI usage, spend, latency and acceptance",
+  },
+];

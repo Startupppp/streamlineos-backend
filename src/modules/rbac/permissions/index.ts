@@ -42,7 +42,7 @@ export {
   PROJECT_WORKFLOW_PERMISSIONS,
 } from "./build";
 export { FEEDBUCKET_PERMISSIONS } from "./feedbucket";
-export { AI_SUMMARIES_PERMISSIONS, EXECUTIVE_BRIEF_PERMISSIONS } from "./ai";
+export { AI_SUMMARIES_PERMISSIONS, AI_USAGE_PERMISSIONS, EXECUTIVE_BRIEF_PERMISSIONS } from "./ai";
 export { DIRECTORY_PERMISSIONS } from "./directory";
 export { PARTY_PERMISSIONS } from "./party";
 export { MAIL_PERMISSIONS } from "./mail";

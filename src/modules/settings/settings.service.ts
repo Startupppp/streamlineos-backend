@@ -6,48 +6,26 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, like } from "drizzle-orm";
-import {
-  apiKeys,
-  auditLogs,
-  gitConnections,
-  organizations,
-  organizationMembers,
-  users,
-} from "../../db/schema";
+import { apiKeys, auditLogs, organizations, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isStructuralOrgAdminContext } from "../../common/rbac/is-structural-org-admin";
-import { queryAiUsage } from "./ai-usage.query";
 import { PERMISSIONS } from "../rbac/permissions";
-import { AccessService } from "../access/access.service";
-import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
-import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
-import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import {
   VALID_API_KEY_SCOPES,
   generateApiKey,
-  generateWebhookSecret,
-  gitWebhookUrl,
-  maskSecret,
   parseOrgFeatureFlags,
 } from "./settings.helpers";
-import type {
-  CreateApiKeyInput,
-  CreateGitConnectionInput,
-  FeatureFlagInput,
-  UpdateGitConnectionInput,
-} from "./dto/settings.schemas";
+import type { CreateApiKeyInput, FeatureFlagInput } from "./dto/settings.schemas";
 
 @Injectable()
 export class SettingsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly planLimits: PlanLimitsService,
-    private readonly access: AccessService,
+    private readonly orgMembership: OrgMembershipService,
     private readonly cache: CacheService,
   ) {}
 
@@ -107,13 +85,6 @@ export class SettingsService {
         ];
       }),
     );
-  }
-
-  getAiUsage(u: CurrentUserContext) {
-    if (!isStructuralOrgAdminContext(u)) {
-      throw new ForbiddenException("Forbidden");
-    }
-    return queryAiUsage(this.db, u.orgId);
   }
 
   async listApiKeys(u: CurrentUserContext) {
@@ -214,149 +185,26 @@ export class SettingsService {
     return { success: true, flag: input.flag, enabled: input.enabled };
   }
 
-  async listGitConnections(orgId: string) {
-    const rows = await this.db
-      .select({
-        id: gitConnections.id,
-        provider: gitConnections.provider,
-        projectId: gitConnections.projectId,
-        repoUrl: gitConnections.repoUrl,
-        repoName: gitConnections.repoName,
-        isActive: gitConnections.isActive,
-        webhookSecret: gitConnections.webhookSecret,
-        createdAt: gitConnections.createdAt,
-        updatedAt: gitConnections.updatedAt,
-      })
-      .from(gitConnections)
-      .where(eq(gitConnections.orgId, orgId))
-      .orderBy(desc(gitConnections.id));
-
-    return rows.map((row) => ({
-      id: row.id,
-      provider: row.provider,
-      projectId: row.projectId,
-      repoUrl: row.repoUrl,
-      repoName: row.repoName,
-      isActive: row.isActive,
-      maskedSecret: maskSecret(row.webhookSecret),
-      webhookUrl: gitWebhookUrl(row.id),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
-  }
-
-  async createGitConnection(orgId: string, userId: string, input: CreateGitConnectionInput) {
-    const secret = generateWebhookSecret();
-
-    const [created] = await this.db
-      .insert(gitConnections)
-      .values({
-        orgId,
-        provider: input.provider,
-        repoUrl: input.repoUrl,
-        repoName: input.repoName ?? null,
-        projectId: input.projectId ?? null,
-        webhookSecret: secret,
-        createdBy: userId,
-      })
-      .returning();
-
-    return {
-      id: created.id,
-      provider: created.provider,
-      projectId: created.projectId,
-      repoUrl: created.repoUrl,
-      repoName: created.repoName,
-      isActive: created.isActive,
-      webhookUrl: gitWebhookUrl(created.id),
-      webhookSecret: secret,
-      createdAt: created.createdAt,
-      updatedAt: created.updatedAt,
-    };
-  }
-
-  async updateGitConnection(orgId: string, connectionId: number, input: UpdateGitConnectionInput) {
-    if (
-      input.isActive === undefined &&
-      input.repoUrl === undefined &&
-      input.repoName === undefined &&
-      input.projectId === undefined
-    ) {
-      throw new BadRequestException("No fields to update");
-    }
-
-    const [updated] = await this.db
-      .update(gitConnections)
-      .set({
-        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-        ...(input.repoUrl !== undefined ? { repoUrl: input.repoUrl } : {}),
-        ...(input.repoName !== undefined ? { repoName: input.repoName } : {}),
-        ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(gitConnections.id, connectionId), eq(gitConnections.orgId, orgId)))
-      .returning();
-
-    if (!updated) throw new NotFoundException("Connection not found");
-
-    return {
-      id: updated.id,
-      provider: updated.provider,
-      projectId: updated.projectId,
-      repoUrl: updated.repoUrl,
-      repoName: updated.repoName,
-      isActive: updated.isActive,
-      createdAt: updated.createdAt,
-      updatedAt: updated.updatedAt,
-    };
-  }
-
-  async deleteGitConnection(orgId: string, connectionId: number) {
-    const [deleted] = await this.db
-      .delete(gitConnections)
-      .where(and(eq(gitConnections.id, connectionId), eq(gitConnections.orgId, orgId)))
-      .returning({ id: gitConnections.id });
-
-    if (!deleted) throw new NotFoundException("Connection not found");
-    return { success: true };
-  }
-
+  /**
+   * The published `/settings` path, served by the organization membership
+   * service that owns the operation.
+   *
+   * This handler used to be a second implementation of the same write, reached
+   * through a *different* permission key, and it was the weaker of the two: no
+   * `FOR UPDATE` on the member row, no last-structural-admin check, no
+   * module-ownership check, no audit entry and no role-changed notification. A
+   * caller who held `settings:rbac:manage` could therefore demote the last
+   * org admin and orphan a module's ownership — through a route the
+   * organization module already refuses. Two mechanisms for one job; the
+   * rewrite absorbs this one rather than standing beside it.
+   */
   async updateUserRole(u: CurrentUserContext, targetUserId: string, role: string) {
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.userId, targetUserId),
-        eq(organizationMembers.orgId, u.orgId),
-      ),
-      columns: { id: true, isOwner: true },
-    });
-    if (!member) throw new NotFoundException("User not found in this organization");
-
-    if (member.isOwner) {
-      throw new BadRequestException(
-        "The organization owner's role cannot be changed here. Use the ownership transfer flow instead.",
-      );
-    }
-
-    await assertMayGrantRole(this.access, u.orgId, u, role);
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(organizationMembers)
-        .set({ role })
-        .where(
-          and(
-            eq(organizationMembers.userId, targetUserId),
-            eq(organizationMembers.orgId, u.orgId),
-          ),
-        );
-      await syncStructuralRoleAssignment(tx, u.orgId, member.id, role);
-    });
-
-    await Promise.all([
-      bustMembershipStatusCache(this.cache, targetUserId, u.orgId),
-      this.cache.invalidate(CACHE_KEYS.userSession(targetUserId)),
-    ]);
-
+    await this.orgMembership.updateMemberRole(
+      u.orgId,
+      { userId: u.userId, isOrgOwner: u.isOrgOwner },
+      targetUserId,
+      role,
+    );
     return { success: true, userId: targetUserId, role };
   }
 }

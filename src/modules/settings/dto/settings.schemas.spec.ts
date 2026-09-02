@@ -1,12 +1,10 @@
 import {
   createApiKeySchema,
   createAutomationSchema,
-  createGitConnectionSchema,
   customFieldsListSchema,
   featureFlagSchema,
   listAutomationsQuerySchema,
   updateAutomationSchema,
-  updateGitConnectionSchema,
   updateUserRoleSchema,
 } from "./settings.schemas";
 
@@ -20,12 +18,6 @@ describe("settings request schemas reject unknown keys", () => {
     ["createApiKeySchema", createApiKeySchema, { name: "key" }],
     ["customFieldsListSchema", customFieldsListSchema, { entityType: "lead" }],
     ["featureFlagSchema", featureFlagSchema, { flag: "aiChat", enabled: true }],
-    [
-      "createGitConnectionSchema",
-      createGitConnectionSchema,
-      { provider: "github", repoUrl: "https://example.com/a/b" },
-    ],
-    ["updateGitConnectionSchema", updateGitConnectionSchema, { isActive: true }],
     [
       "createAutomationSchema",
       createAutomationSchema,

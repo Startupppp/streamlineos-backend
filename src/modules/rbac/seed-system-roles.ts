@@ -60,10 +60,21 @@ const MODULE_MEMBER_KEY_SCOPE_OVERRIDE: Record<string, "own" | "team" | "all"> =
  * Named here rather than only in the backfill, so a newly seeded organisation
  * and a backfilled one resolve to the same capability; migration 0226 exists
  * because that invariant was broken once already.
+ *
+ * `integrations:git:*` is the same shape for Build. Repository connections are
+ * the Build module's own settings page (`/build/settings/integrations`) and
+ * `git_connections.project_id` points at a Build project, but the keys sit in
+ * the `integrations` namespace, so `moduleScopedPermissions("build")` skips
+ * them. Until this entry existed the page was gated on `settings:manage` —
+ * organisation administration — and a `BUILD_MODULE_ADMIN` could not open their
+ * own module's integrations. The pair is deliberately narrow: it reaches
+ * repository connections and nothing else in `integrations`, and `RoleGrantReconciler`
+ * delivers it to organisations that already exist.
  */
 const MODULE_ADMIN_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {
   hr: ["settings:view", "settings:organization:manage"],
   crm: ["settings:record-layouts:manage"],
+  build: ["integrations:git:view", "integrations:git:manage"],
 };
 
 const MODULE_MEMBER_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {

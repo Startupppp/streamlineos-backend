@@ -1,8 +1,8 @@
 import { desc, eq, sql, sum } from "drizzle-orm";
-import { aiUsageLogs } from "../../db/schema";
-import { aiFeedback } from "../../db/schema/ai/ai-feedback";
-import { supportAiSuggestions } from "../../db/schema/support/support-ai";
-import { type Db } from "../../db/drizzle.module";
+import { aiUsageLogs } from "../../../db/schema";
+import { aiFeedback } from "../../../db/schema/ai/ai-feedback";
+import { supportAiSuggestions } from "../../../db/schema/support/support-ai";
+import { type Db } from "../../../db/drizzle.module";
 
 export async function queryAiUsage(db: Db, orgId: string) {
   const [totals, byFeature, daily, latencyStats, feedbackByFeature, suggestionCounts] = await Promise.all([

@@ -8,12 +8,31 @@ export const createApiKeySchema = z.object({
   expiresAt: z.string().datetime().optional(),
 }).strict();
 
+/**
+ * The entity types this route owns, and the whole of them.
+ *
+ * `custom_field_definitions` is shared: Support writes `ticket` rows, HR writes
+ * `employee` rows, Build writes its own. Every other module constrains its reads
+ * AND its writes to its own constant; this route constrained neither, so a
+ * `settings:custom-fields:manage` holder could edit or delete another module's
+ * definition by id through a global path. The constant is exported so the
+ * service predicates and the request schemas cannot drift apart.
+ */
+export const CRM_CUSTOM_FIELD_ENTITY_TYPES = ["lead", "deal", "contact"] as const;
+
+/**
+ * The filter is the same enum the create payload accepts. It was `z.string()`,
+ * which let any value through to an equality predicate and hid the fact that
+ * this surface is CRM-only — the enum is the evidence.
+ */
 export const customFieldsListSchema = z.object({
-  entityType: z.string().optional(),
+  entityType: z.enum(CRM_CUSTOM_FIELD_ENTITY_TYPES).optional(),
+  limit: pageSizeField(50),
+  cursor: z.string().optional(),
 }).strict();
 
 export const createCustomFieldSchema = z.object({
-  entityType: z.enum(["lead", "deal", "contact"]),
+  entityType: z.enum(CRM_CUSTOM_FIELD_ENTITY_TYPES),
   name: z
     .string()
     .min(1)
@@ -53,20 +72,6 @@ export const featureFlagSchema = z.object({
     "supportAi",
   ]),
   enabled: z.boolean(),
-}).strict();
-
-export const createGitConnectionSchema = z.object({
-  provider: z.enum(["github", "gitlab", "bitbucket"]),
-  repoUrl: z.string().url().max(500),
-  repoName: z.string().max(200).optional(),
-  projectId: z.number().int().positive().nullable().optional(),
-}).strict();
-
-export const updateGitConnectionSchema = z.object({
-  isActive: z.boolean().optional(),
-  repoUrl: z.string().url().max(500).optional(),
-  repoName: z.string().max(200).nullable().optional(),
-  projectId: z.number().int().positive().nullable().optional(),
 }).strict();
 
 const automationTriggerSchema = z.enum([
@@ -224,12 +229,6 @@ export type CustomFieldsListInput = z.infer<typeof customFieldsListSchema>;
 export type CreateCustomFieldInput = z.infer<typeof createCustomFieldSchema>;
 export type UpdateCustomFieldInput = z.infer<typeof updateCustomFieldSchema>;
 export type FeatureFlagInput = z.infer<typeof featureFlagSchema>;
-export type CreateGitConnectionInput = z.infer<
-  typeof createGitConnectionSchema
->;
-export type UpdateGitConnectionInput = z.infer<
-  typeof updateGitConnectionSchema
->;
 export type CreateAutomationInput = z.infer<typeof createAutomationSchema>;
 export type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>;
 export type UpdateUserRoleInput = z.infer<typeof updateUserRoleSchema>;
