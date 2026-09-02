@@ -37,9 +37,20 @@ function harness() {
     limit: jest.fn().mockResolvedValue([]),
   };
   const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
+  const unusedCollaborator = (name: string) =>
+    new Proxy(
+      {},
+      {
+        get() {
+          throw new Error(`${name} must not be reached while marking a channel read`);
+        },
+      },
+    );
   const impl = new ChatChannelMembersImplementation(
     db as unknown as Db,
     cache as unknown as CacheService,
+    unusedCollaborator("EntityReferenceService") as never,
+    unusedCollaborator("AblyService") as never,
   );
   return { impl, setCalls, cache };
 }
