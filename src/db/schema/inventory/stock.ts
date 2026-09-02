@@ -22,6 +22,7 @@ export const invStockLevels = pgTable("inv_stock_levels", {
   averageCost: decimal("average_cost", { precision: 18, scale: 4 }),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  index("idx_inv_stock_org").on(table.orgId),
   index("idx_inv_stock_variant").on(table.productVariantId),
   index("idx_inv_stock_location").on(table.locationId),
   index("idx_inv_stock_lot").on(table.lotId),
@@ -59,6 +60,7 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   index("idx_inv_txn_idempotency").on(table.orgId, table.idempotencyKey),
   index("idx_inv_txn_created").on(table.createdAt),
   index("idx_inv_txn_org_created").on(table.orgId, table.createdAt),
+  index("idx_inv_txn_org_variant").on(table.orgId, table.productVariantId),
   index("idx_inv_txn_org_variant_type_created").on(table.orgId, table.productVariantId, table.transactionType, table.createdAt),
   index("idx_inv_txn_org_posting_date").on(table.orgId, table.postingDate),
   unique("uniq_inv_stock_transactions_org_id").on(table.orgId, table.id),

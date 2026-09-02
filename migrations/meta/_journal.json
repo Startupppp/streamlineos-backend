@@ -4565,6 +4565,20 @@
       "when": 1803000010102,
       "tag": "1006_s09_drop_redundant_single_column_tenant_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 784,
+      "version": "7",
+      "when": 1803000010103,
+      "tag": "1007_s09_restore_measured_tenant_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 785,
+      "version": "7",
+      "when": 1803000010104,
+      "tag": "1008_s09_hash_support_inbound_secrets",
+      "breakpoints": true
     }
   ]
 }

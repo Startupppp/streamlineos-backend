@@ -73,6 +73,7 @@ export const chatChannelMembers = pgTable(
       .notNull(),
   },
   (table) => [
+    index("idx_chat_channel_members_org").on(table.orgId),
     uniqueIndex("uniq_chat_channel_member_membership").on(table.orgId, table.channelId, table.membershipId),
     index("idx_chat_members_channel").on(table.channelId),
     unique("uniq_chat_channel_members_org_id").on(table.orgId, table.id),

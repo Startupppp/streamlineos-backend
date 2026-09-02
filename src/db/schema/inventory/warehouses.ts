@@ -46,6 +46,7 @@ export const invLocations = pgTable("inv_locations", {
 }, (table) => [
   uniqueIndex("uniq_inv_locations_warehouse_code").on(table.warehouseId, table.code),
   unique("uniq_inv_locations_org_id").on(table.orgId, table.id),
+  index("idx_inv_locations_org").on(table.orgId),
   index("idx_inv_locations_parent").on(table.parentLocationId),
   foreignKey({ columns: [table.parentLocationId], foreignColumns: [table.id], name: "fk_inv_locations_parent" }).onDelete("set null"),
 ]);

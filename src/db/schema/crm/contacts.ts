@@ -135,6 +135,7 @@ export const contacts = pgTable("contacts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_contacts_organization").on(table.organizationId),
+  index("idx_contacts_org").on(table.orgId),
   index("idx_contacts_name_email").on(table.orgId, table.name, table.email),
   unique("uniq_contacts_org_id").on(table.orgId, table.id),
   foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),

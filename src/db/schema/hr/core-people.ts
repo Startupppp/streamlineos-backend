@@ -85,6 +85,7 @@ export const hrPeople = pgTable("hr_people", {
   uniqueIndex("uniq_hr_people_org_person_link")
     .on(table.orgId, table.organizationPersonId)
     .where(sql`${table.organizationPersonId} IS NOT NULL`),
+  index("idx_hr_people_org").on(table.orgId),
   index("idx_hr_people_org_live").on(table.orgId).where(sql`${table.deletedAt} IS NULL`),
   index("idx_hr_people_user").on(table.userId),
   index("idx_hr_people_updated_actor").on(table.orgId, table.updatedByMembershipId),
