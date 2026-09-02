@@ -102,6 +102,6 @@ export class AnnouncementsController {
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,
   ) {
-    return this.service.markRead(id, u.userId);
+    return this.service.markRead(u.orgId, id, u.userId);
   }
 }

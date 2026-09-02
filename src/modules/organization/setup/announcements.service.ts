@@ -100,9 +100,21 @@ export class AnnouncementsService {
       .where(and(eq(announcements.id, id), eq(announcements.orgId, orgId)));
   }
 
-  async markRead(announcementId: number, userId: string) {
+  async markRead(orgId: string, announcementId: number, userId: string) {
+    // Resolve the announcement inside the caller's organisation first. Without this the
+    // insert accepted any announcement id in the system: `announcement_reads.org_id` is
+    // nullable, and a composite foreign key with a NULL column is not enforced, so
+    // fk_announcement_reads_announcement_id_org never fired on the omitted org_id.
+    // A cross-tenant id must be indistinguishable from a missing one, so this is 404.
+    const [announcement] = await this.db
+      .select({ id: announcements.id })
+      .from(announcements)
+      .where(and(eq(announcements.id, announcementId), eq(announcements.orgId, orgId)))
+      .limit(1);
+    if (!announcement) throw new NotFoundException("Announcement not found");
+
     await this.db.insert(announcementReads)
-      .values({ announcementId, userId })
+      .values({ orgId, announcementId, userId })
       .onConflictDoNothing();
   }
 }

@@ -63,4 +63,40 @@ describe("AnnouncementsService — cross-tenant isolation", () => {
     expect(sqlValues(targetWhere.mock.calls[0]?.[0])).toContain(OWNER);
     expect(targetsBuilder.limit).toHaveBeenCalledWith(1000);
   });
+
+  // Regression: markRead took no orgId at all and inserted a read receipt for ANY
+  // announcement id in the system. Found by a live cross-tenant HTTP probe --
+  // control 201, cross-tenant 201, absent-org 500, i.e. the object really was resolved.
+  // announcement_reads.org_id is nullable and the composite FK to (org_id, id) is not
+  // enforced when a column is NULL, so nothing in the database caught it either.
+  function makeReadService(ownedRows: unknown[]) {
+    const { builder, where } = makeSelectChain(ownedRows);
+    const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockReturnValue({ onConflictDoNothing });
+    const insert = jest.fn().mockReturnValue({ values });
+    const db = { select: jest.fn().mockReturnValue(builder), insert } as unknown as Db;
+    return { svc: new AnnouncementsService(db), where, insert, values };
+  }
+
+  it("markRead refuses an announcement owned by another org, and writes nothing", async () => {
+    // The ownership lookup finds no row for the attacker's org.
+    const { svc, where, insert } = makeReadService([]);
+    await expect(svc.markRead(ATTACKER, ANN.id, "user-attacker")).rejects.toThrow("Announcement not found");
+    // 404, never 403: a cross-tenant id must be indistinguishable from a missing one.
+    expect(insert).not.toHaveBeenCalled();
+    const vals = sqlValues(where.mock.calls[0]?.[0]);
+    expect(vals).toContain(ATTACKER);
+    expect(vals).toContain(ANN.id);
+  });
+
+  it("markRead accepts the owning org and stamps org_id so the composite FK engages", async () => {
+    const { svc, values } = makeReadService([{ id: ANN.id }]);
+    await svc.markRead(OWNER, ANN.id, "user-owner");
+    expect(values).toHaveBeenCalledTimes(1);
+    expect(values.mock.calls[0]?.[0]).toEqual({
+      orgId: OWNER,
+      announcementId: ANN.id,
+      userId: "user-owner",
+    });
+  });
 });
