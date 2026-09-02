@@ -14,6 +14,7 @@ import {
 } from "../../../storage/storage-key-catalog";
 
 const OBJECT_DELETE_ATTEMPTS = 3;
+const PURGE_BOOKKEEPING_CHUNK = 200;
 
 export type PurgeAdapterResult = {
   state: "CONFIRMED" | "FAILED" | "NOT_APPLICABLE";
@@ -109,28 +110,95 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
       }
 
       const failedKeys: string[] = [];
+      const confirmedKeys: string[] = [];
+      const failures: Array<{ key: string; reason: string }> = [];
 
-      for (const key of keys) {
+      const flushBookkeeping = async (): Promise<void> => {
+        if (confirmedKeys.length === 0 && failures.length === 0) return;
+        const confirmed = confirmedKeys.splice(0, confirmedKeys.length);
+        const failedRows = failures.splice(0, failures.length);
         try {
           await runInNewTenantTransaction(db, orgId, async (tx) => {
+            for (let i = 0; i < confirmed.length; i += PURGE_BOOKKEEPING_CHUNK)
+              await tx
+                .update(storagePendingPurge)
+                .set({
+                  status: "confirmed",
+                  confirmedAt: new Date(),
+                  lastAttemptedAt: new Date(),
+                  attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
+                })
+                .where(
+                  and(
+                    eq(storagePendingPurge.orgId, orgId),
+                    inArray(
+                      storagePendingPurge.storageKey,
+                      confirmed.slice(i, i + PURGE_BOOKKEEPING_CHUNK),
+                    ),
+                  ),
+                );
+
+            for (let i = 0; i < failedRows.length; i += PURGE_BOOKKEEPING_CHUNK)
+              await tx
+                .insert(storagePendingPurge)
+                .values(
+                  failedRows.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((row) => ({
+                    orgId,
+                    storageKey: row.key,
+                    purpose: "org-purge",
+                    status: "failed",
+                    failedReason: row.reason,
+                    lastAttemptedAt: new Date(),
+                  })),
+                )
+                .onConflictDoUpdate({
+                  target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
+                  set: {
+                    status: "failed",
+                    failedReason: sql`excluded.failed_reason`,
+                    lastAttemptedAt: new Date(),
+                    attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
+                  },
+                });
+          });
+        } catch {
+        }
+      };
+
+      /*
+       * The pending row must exist before its object is deleted, or a crash
+       * between the two loses the only record that the object was ever ours to
+       * remove. That ordering is preserved — but it is one bulk upsert for the
+       * whole key set rather than one transaction per key, which is what this
+       * used to be: three transactions and two pooled-connection borrows for
+       * every single object.
+       */
+      try {
+        await runInNewTenantTransaction(db, orgId, async (tx) => {
+          for (let i = 0; i < keys.length; i += PURGE_BOOKKEEPING_CHUNK)
             await tx
               .insert(storagePendingPurge)
-              .values({
-                orgId,
-                storageKey: key,
-                purpose: "org-purge",
-                status: "pending",
-              })
+              .values(
+                keys.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((key) => ({
+                  orgId,
+                  storageKey: key,
+                  purpose: "org-purge",
+                  status: "pending",
+                })),
+              )
               .onConflictDoUpdate({
                 target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
                 set: { status: "pending", lastAttemptedAt: null, failedReason: null },
               });
-          });
-        } catch (err) {
-          failedKeys.push(key);
-          continue;
-        }
+        });
+      } catch (err) {
+        return {
+          state: "FAILED",
+          detail: `Failed to register ${keys.length} object-storage key(s) for purge: ${String(err)}`,
+        };
+      }
 
+      for (const key of keys) {
         try {
           let lastError: unknown;
           for (let attempt = 1; attempt <= OBJECT_DELETE_ATTEMPTS; attempt++) {
@@ -147,45 +215,15 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
           if (typeof storage.fileExists === "function" && await storage.fileExists(orgId, key)) {
             throw new Error("object remains after delete verification");
           }
-          await runInNewTenantTransaction(db, orgId, async (tx) => {
-            await tx
-              .update(storagePendingPurge)
-              .set({
-                status: "confirmed",
-                confirmedAt: new Date(),
-                lastAttemptedAt: new Date(),
-                attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
-              })
-              .where(
-                and(
-                  eq(storagePendingPurge.orgId, orgId),
-                  eq(storagePendingPurge.storageKey, key),
-                ),
-              );
-          });
+          confirmedKeys.push(key);
         } catch (err) {
           failedKeys.push(key);
-          try {
-            await runInNewTenantTransaction(db, orgId, async (tx) => {
-              await tx
-                .update(storagePendingPurge)
-                .set({
-                  status: "failed",
-                  failedReason: String(err),
-                  lastAttemptedAt: new Date(),
-                  attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
-                })
-                .where(
-                  and(
-                    eq(storagePendingPurge.orgId, orgId),
-                    eq(storagePendingPurge.storageKey, key),
-                  ),
-                );
-            });
-          } catch {
-          }
+          failures.push({ key, reason: String(err) });
         }
+        if (confirmedKeys.length + failures.length >= PURGE_BOOKKEEPING_CHUNK)
+          await flushBookkeeping();
       }
+      await flushBookkeeping();
 
       let remaining: string[];
       try {

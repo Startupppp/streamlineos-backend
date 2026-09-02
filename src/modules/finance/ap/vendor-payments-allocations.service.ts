@@ -51,7 +51,21 @@ export class VendorPaymentsAllocationsService {
       );
     }
 
-    const billIds = input.allocations.map((a) => a.billId);
+    /*
+     * Collapsed by bill before anything is validated or written. A request naming
+     * the same bill twice used to upsert the allocation row twice — the last
+     * amount won — while incrementing the bill's paid total by both, so the
+     * allocation and the bill disagreed. It also made the set-based upsert below
+     * illegal (`ON CONFLICT DO UPDATE cannot affect row a second time`). One
+     * entry per bill carrying the request's total for it is the consistent
+     * reading of the same intent.
+     */
+    const amountByBill = new Map<number, number>();
+    for (const alloc of input.allocations)
+      amountByBill.set(alloc.billId, round2((amountByBill.get(alloc.billId) ?? 0) + alloc.amount));
+    const allocations = [...amountByBill].map(([billId, amount]) => ({ billId, amount }));
+
+    const billIds = allocations.map((a) => a.billId);
     const billRows = billIds.length > 0
       ? await this.db
           .select()
@@ -61,7 +75,7 @@ export class VendorPaymentsAllocationsService {
       : [];
     const billMap = new Map(billRows.map((b) => [b.id, b]));
 
-    for (const alloc of input.allocations) {
+    for (const alloc of allocations) {
       const bill = billMap.get(alloc.billId);
       if (!bill) throw new NotFoundException(`Purchase bill ${alloc.billId} not found`);
       if (bill.status === "CANCELLED") {
@@ -76,39 +90,52 @@ export class VendorPaymentsAllocationsService {
       }
     }
 
+    /*
+     * Two statements for the whole request instead of three per allocation, and
+     * the bill balance moves with atomic SQL.
+     *
+     * The previous shape read `amount_paid`, added the allocation in JavaScript
+     * and wrote the sum back. Two allocations settling against the same bill at
+     * the same time both read the same balance and the second write erased the
+     * first — money silently unapplied. `amount_paid + v.amount` is evaluated by
+     * the database against the row it is already locking, so there is no window.
+     */
     await this.db.transaction(async (tx) => {
-      for (const alloc of input.allocations) {
-        await tx
-          .insert(finVendorPaymentAllocations)
-          .values({
+      if (allocations.length === 0) return;
+
+      await tx
+        .insert(finVendorPaymentAllocations)
+        .values(
+          allocations.map((alloc) => ({
             orgId,
             vendorPaymentId: input.vendorPaymentId,
             billId: alloc.billId,
             amount: alloc.amount.toFixed(4),
-          })
-          .onConflictDoUpdate({
-            target: [finVendorPaymentAllocations.vendorPaymentId, finVendorPaymentAllocations.billId],
-            set: { amount: alloc.amount.toFixed(4) },
-          });
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [finVendorPaymentAllocations.vendorPaymentId, finVendorPaymentAllocations.billId],
+          set: { amount: sql`excluded.amount` },
+        });
 
-        const billCurrent = await tx
-          .select({ amountPaid: purchaseBills.amountPaid, total: purchaseBills.total })
-          .from(purchaseBills)
-          .where(and(eq(purchaseBills.id, alloc.billId), eq(purchaseBills.orgId, orgId)))
-          .limit(1);
+      const applied = sql.join(
+        allocations.map(
+          (alloc) => sql`(${alloc.billId}::integer, ${alloc.amount.toFixed(4)}::numeric)`,
+        ),
+        sql`, `,
+      );
 
-        const bc = billCurrent[0];
-        if (bc) {
-          const newPaid = round2(Number(bc.amountPaid ?? 0) + alloc.amount);
-          const total = Number(bc.total ?? 0);
-          const newStatus = newPaid >= total - 0.005 ? "PAID" : "PARTIALLY_PAID";
-
-          await tx
-            .update(purchaseBills)
-            .set({ amountPaid: newPaid.toFixed(4), status: newStatus, updatedAt: new Date() })
-            .where(and(eq(purchaseBills.id, alloc.billId), eq(purchaseBills.orgId, orgId)));
-        }
-      }
+      await tx.execute(sql`
+        UPDATE ${purchaseBills} AS b
+        SET amount_paid = round(b.amount_paid + v.amount, 4),
+            status = CASE
+              WHEN b.amount_paid + v.amount >= b.total - 0.005 THEN 'PAID'
+              ELSE 'PARTIALLY_PAID'
+            END,
+            updated_at = now()
+        FROM (VALUES ${applied}) AS v(bill_id, amount)
+        WHERE b.id = v.bill_id AND b.org_id = ${orgId}
+      `);
     });
 
     this.audit.log({

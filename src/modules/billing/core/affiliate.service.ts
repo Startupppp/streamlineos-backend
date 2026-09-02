@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { affiliateCommissions, affiliates, organizationMembers } from "../../../db/schema";
@@ -91,12 +91,18 @@ export class AffiliateService {
         amountInPaise: commissionAmount,
         status: "PENDING",
       });
+      /*
+       * Atomic increments, not JavaScript arithmetic over a row read before the
+       * transaction opened. Two subscription webhooks for the same referral code
+       * each inserted their own commission row but both wrote the same
+       * `pendingPayout`, so the affiliate was paid for one of the two.
+       */
       await tx
         .update(affiliates)
         .set({
-          totalEarned: affiliate.totalEarned + commissionAmount,
-          pendingPayout: affiliate.pendingPayout + commissionAmount,
-          signupCount: affiliate.signupCount + 1,
+          totalEarned: sql`${affiliates.totalEarned} + ${commissionAmount}`,
+          pendingPayout: sql`${affiliates.pendingPayout} + ${commissionAmount}`,
+          signupCount: sql`${affiliates.signupCount} + 1`,
           updatedAt: new Date(),
         })
         .where(eq(affiliates.id, affiliate.id));

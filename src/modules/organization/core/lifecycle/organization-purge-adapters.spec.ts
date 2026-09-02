@@ -97,7 +97,13 @@ describe("PURGE_ADAPTER_REGISTRY — object_storage", () => {
     const result = await PURGE_ADAPTER_REGISTRY.object_storage.confirm(ORG_A, PURGE_JOB, FAKE_DB, storage);
 
     expect(result.state).toBe("FAILED");
-    expect(result.detail).toMatch(/failed keys/i);
+    // The guarantee is that a failed bookkeeping write stops the purge before
+    // anything is deleted, and says why. Ticket 21 moved the pending-row write
+    // from one transaction per key to one bulk upsert for the whole set, so the
+    // failure is now reported at registration rather than per key — the two
+    // behavioural assertions either side of this are the contract.
+    expect(result.detail).toMatch(/failed to register|failed keys/i);
+    expect(result.detail).toMatch(/RLS denied/);
     expect(storage.deleteFile).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { signEnvelopes, signPublicForms, signRecipients } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -79,7 +79,7 @@ export class SignPublicFormService {
           .where(eq(signRecipients.id, recipient.id));
         await tx
           .update(signPublicForms)
-          .set({ submissionCount: form.submissionCount + 1 })
+          .set({ submissionCount: sql`${signPublicForms.submissionCount} + 1` })
           .where(eq(signPublicForms.id, form.id));
 
         await this.audit.record({

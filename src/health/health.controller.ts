@@ -12,6 +12,11 @@ import type { Redis } from "@upstash/redis";
 import { DB_POOL_CONFIG, DRIZZLE } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
 import { poolTelemetry, type PoolTelemetrySnapshot } from "../db/pool-telemetry";
+import {
+  queryTelemetry,
+  type QueryFingerprintStat,
+  type QueryTelemetrySnapshot,
+} from "../db/query-telemetry";
 import type { ResolvedPoolConfig } from "../db/pool.config";
 import { Public } from "../common/auth/public.decorator";
 import { CacheService, REDIS } from "../common/cache/cache.service";
@@ -47,6 +52,8 @@ interface PoolHealth {
   latencyMs: number;
   endpoint: { host: string; pooled: boolean; role: ResolvedPoolConfig["role"] };
   pool: PoolTelemetrySnapshot;
+  queries: QueryTelemetrySnapshot;
+  slowestFingerprints: QueryFingerprintStat[];
 }
 
 @Public()
@@ -204,6 +211,13 @@ export class HealthController implements BeforeApplicationShutdown {
         role: this.poolConfig.role,
       },
       pool,
+      queries: queryTelemetry.snapshot(),
+      /*
+       * Shapes only. `fingerprintQuery` normalises every literal and `$n`
+       * placeholder to `?` before a shape is ever stored, so this endpoint
+       * cannot disclose a bind value even though it is the slow-query view.
+       */
+      slowestFingerprints: queryTelemetry.topFingerprints(),
     };
   }
 }

@@ -1,7 +1,7 @@
 import {
   BadRequestException, Inject, Injectable, NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -78,13 +78,25 @@ export class DepreciationReverseService {
         assetAmounts.set(row.assetId, prev + Number(row.amount));
       }
 
-      for (const [assetId, amt] of assetAmounts) {
-        const [asset] = await tx
-          .select()
-          .from(accFixedAssets)
-          .where(and(eq(accFixedAssets.id, assetId), eq(accFixedAssets.orgId, u.orgId)))
-          .limit(1);
-        if (!asset) continue;
+      /*
+       * The assets are read once by id set rather than one SELECT per asset —
+       * a run over a thousand-asset register was two thousand round trips.
+       */
+      const assetIds = [...assetAmounts.keys()];
+      const assets = assetIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: accFixedAssets.id,
+              accumulatedDepreciation: accFixedAssets.accumulatedDepreciation,
+              status: accFixedAssets.status,
+            })
+            .from(accFixedAssets)
+            .where(and(inArray(accFixedAssets.id, assetIds), eq(accFixedAssets.orgId, u.orgId)))
+            .limit(assetIds.length);
+
+      for (const asset of assets) {
+        const amt = assetAmounts.get(asset.id) ?? 0;
         const newAccum = Math.max(
           0,
           Math.round((Number(asset.accumulatedDepreciation) - amt) * 10000) / 10000,
@@ -93,7 +105,7 @@ export class DepreciationReverseService {
         await tx
           .update(accFixedAssets)
           .set({ accumulatedDepreciation: String(newAccum), status: newStatus, updatedAt: new Date() })
-          .where(and(eq(accFixedAssets.id, assetId), eq(accFixedAssets.orgId, u.orgId)));
+          .where(and(eq(accFixedAssets.id, asset.id), eq(accFixedAssets.orgId, u.orgId)));
       }
 
       await tx

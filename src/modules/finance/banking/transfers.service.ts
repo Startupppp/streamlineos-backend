@@ -1,10 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -173,19 +174,43 @@ export class TransfersService {
         },
       ]).onConflictDoNothing();
 
-      await tx
+      /*
+       * Both balances move with atomic SQL, and the debit re-asserts sufficiency
+       * inside the write.
+       *
+       * The sufficiency check above reads `fromAccount` before this transaction
+       * opens, so it is advisory only: two 80-unit transfers out of a 100-unit
+       * account both passed it, and because each then wrote an absolute value
+       * computed from the same stale read, one debit vanished entirely and the
+       * account was overdrawn against a guard that had said yes. The predicate
+       * here is evaluated by the database against the row it is locking, so the
+       * second transfer matches no row and is rejected rather than silently
+       * losing the first.
+       */
+      const debited = await tx
         .update(finBankAccounts)
         .set({
-          currentBalance: String((currentBalance - transferAmount).toFixed(4)),
+          currentBalance: sql`${finBankAccounts.currentBalance} - ${input.amount}::numeric`,
           updatedAt: new Date(),
         })
-        .where(and(eq(finBankAccounts.id, input.fromBankAccountId), eq(finBankAccounts.orgId, orgId)));
+        .where(
+          and(
+            eq(finBankAccounts.id, input.fromBankAccountId),
+            eq(finBankAccounts.orgId, orgId),
+            gte(finBankAccounts.currentBalance, input.amount),
+          ),
+        )
+        .returning({ id: finBankAccounts.id });
 
-      const toBalance = parseFloat(toAccount.currentBalance) + transferAmount;
+      if (debited.length === 0)
+        throw new ConflictException(
+          "The source account no longer has enough balance for this transfer. Refresh and try again.",
+        );
+
       await tx
         .update(finBankAccounts)
         .set({
-          currentBalance: String(toBalance.toFixed(4)),
+          currentBalance: sql`${finBankAccounts.currentBalance} + ${input.amount}::numeric`,
           updatedAt: new Date(),
         })
         .where(and(eq(finBankAccounts.id, input.toBankAccountId), eq(finBankAccounts.orgId, orgId)));

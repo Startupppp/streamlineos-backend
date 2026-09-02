@@ -2,7 +2,7 @@ import { Injectable, Inject } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { invWebhooks, invWebhookEvents, invWebhookEventSubscriptions } from "../../../db/schema";
 import { createHmac } from "crypto";
 import type { WebhookEventType } from "./dto/webhooks.schemas";
@@ -126,7 +126,7 @@ export class InventoryWebhookEmitter {
             .update(invWebhookEvents)
             .set({
               status,
-              attempts: event.attempts + 1,
+              attempts: sql`${invWebhookEvents.attempts} + 1`,
               ...(status === "DELIVERED" && { deliveredAt: new Date() }),
             })
             .where(eq(invWebhookEvents.id, event.id));

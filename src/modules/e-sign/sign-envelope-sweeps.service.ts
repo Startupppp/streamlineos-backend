@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, lte, notInArray } from "drizzle-orm";
+import { and, eq, inArray, lte, notInArray, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { organizationMembers, signEnvelopes, signRecipients } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -107,7 +107,7 @@ export class SignEnvelopeSweepsService {
       await this.db
         .update(signEnvelopes)
         .set({
-          reminderSentCount: envelope.reminderSentCount + 1,
+          reminderSentCount: sql`${signEnvelopes.reminderSentCount} + 1`,
           lastReminderAt: now,
         })
         .where(eq(signEnvelopes.id, envelope.id));

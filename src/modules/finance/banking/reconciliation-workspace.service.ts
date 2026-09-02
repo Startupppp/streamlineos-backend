@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -10,6 +10,8 @@ import {
   journalLines,
 } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+const MATCHES_PER_TRANSACTION_CAP = 100;
 
 @Injectable()
 export class ReconciliationWorkspaceService {
@@ -63,21 +65,48 @@ export class ReconciliationWorkspaceService {
         ),
     ]);
 
-    const suggestedWithMatches = await Promise.all(
-      suggested.map(async (txn) => {
-        const matches = await this.db
-          .select()
-          .from(finReconciliationMatches)
-          .where(
-            and(
-              eq(finReconciliationMatches.orgId, orgId),
-              eq(finReconciliationMatches.bankTransactionId, txn.id),
-            ),
-          )
-          .limit(100);
-        return { ...txn, suggestedMatches: matches };
-      }),
-    );
+    /*
+     * One query for every suggested transaction's matches, not one per
+     * transaction: `suggested` is capped at 100, so this was 100 round trips on
+     * a screen that renders one page.
+     *
+     * The per-transaction cap is preserved rather than replaced by a global one,
+     * and the statement's own budget is the sum of those caps, so no transaction
+     * can starve another. `MatchingService.suggestMatches` writes at most one
+     * row per bank transaction per run, so this budget is not reachable in
+     * practice — it exists to keep the read bounded, not to trim a real result.
+     */
+    const suggestedIds = suggested.map((txn) => txn.id);
+    const matchRows =
+      suggestedIds.length === 0
+        ? []
+        : await this.db
+            .select()
+            .from(finReconciliationMatches)
+            .where(
+              and(
+                eq(finReconciliationMatches.orgId, orgId),
+                inArray(finReconciliationMatches.bankTransactionId, suggestedIds),
+              ),
+            )
+            .orderBy(
+              asc(finReconciliationMatches.bankTransactionId),
+              asc(finReconciliationMatches.id),
+            )
+            .limit(suggestedIds.length * MATCHES_PER_TRANSACTION_CAP);
+
+    const matchesByTransaction = new Map<number, typeof matchRows>();
+    for (const match of matchRows) {
+      const bucket = matchesByTransaction.get(match.bankTransactionId);
+      if (bucket) {
+        if (bucket.length < MATCHES_PER_TRANSACTION_CAP) bucket.push(match);
+      } else matchesByTransaction.set(match.bankTransactionId, [match]);
+    }
+
+    const suggestedWithMatches = suggested.map((txn) => ({
+      ...txn,
+      suggestedMatches: matchesByTransaction.get(txn.id) ?? [],
+    }));
 
     const ledgerBalance = await this.computeLedgerBalance(
       orgId,

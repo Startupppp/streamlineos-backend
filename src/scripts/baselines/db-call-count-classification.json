@@ -163,6 +163,14 @@
       "verdict": "N+1-FIXED",
       "note": "ticket 21: one UPDATE per upcoming holiday with an identical SET, now a single inArray UPDATE. Proved by db-call-count-contract.spec.ts, and mutation-tested \u2014 reverting the fix takes the assertion from 1 update to 50"
     },
+    "/cron/cron-hr-retention-documents.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop \u2014 onboardingRows.map(r => sql`${r.id}`) builds a sql fragment list for a single IN clause WHERE; the sql` that follows is that same single batch query's WHERE, not a per-row call. Re-keyed 2026-09-02 (ticket 37) when the document sweep moved out of cron-hr-retention.service.ts."
+    },
+    "/cron/cron-hr-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop:88 \u2014 `for (const policy of policies)` fans out over the org's active retention policies, at most one per record type (employee, case, attendance, document, payroll). Each iteration issues a different statement against a different table, so there is no single query the loop could collapse into. Split out from the document-sweep entry 2026-09-02 (ticket 37), which moved to cron-hr-retention-documents.ts."
+    },
     "/cron/cron-hr.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "both sites write an identical SET per row (certifications.reminderSent, users.onboardingCompletedAt). Collect the ids and issue one inArray UPDATE after the automation fan-out"
@@ -282,6 +290,10 @@
     "/finance/planning/scenarios.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "seedDefaults hoists the conditional default update and bulk-inserts all scenarios; 2-4 round trips down to 1-2"
+    },
+    "/gdpr/gdpr-subject-erasure-chat-attachments.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "chunked multi-key delete \u2014 the loop steps by ERASURE_ID_PAGE and each iteration deletes a whole page with inArray, returning its file keys. Read and classified by ticket 21; the file itself belongs to the GDPR erasure lane and was not edited"
     },
     "/gdpr/gdpr.service.ts": {
       "verdict": "ACTIONABLE",
@@ -670,14 +682,6 @@
     "/workflows/engine/workflow-schedule-tick.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "each due schedule triggers a different workflow; the call in the loop is that schedule's own trigger, not a repeated lookup"
-    },
-    "/cron/cron-hr-retention-documents.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Loop \u2014 onboardingRows.map(r => sql`${r.id}`) builds a sql fragment list for a single IN clause WHERE; the sql` that follows is that same single batch query's WHERE, not a per-row call. Re-keyed 2026-09-02 (ticket 37) when the document sweep moved out of cron-hr-retention.service.ts."
-    },
-    "/cron/cron-hr-retention.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Loop:88 \u2014 `for (const policy of policies)` fans out over the org's active retention policies, at most one per record type (employee, case, attendance, document, payroll). Each iteration issues a different statement against a different table, so there is no single query the loop could collapse into. Split out from the document-sweep entry 2026-09-02 (ticket 37), which moved to cron-hr-retention-documents.ts."
     }
   }
 }

@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { milliToCredits } from "../../ai/core/billing/ai-model-pricing.constants";
-import { and, eq, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -16,12 +16,14 @@ import {
   orgAiCredits,
 } from "../../../db/schema";
 import { TRIAL_GRANT_MILLI } from "./ai-credit-units";
-import { runInTenantTransaction, runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { forEachOrg } from "../../../common/tenant";
 import type {
   AiCreditReserveInput,
   AiCreditSettleInput,
 } from "../../ai/core/gateway/credit-ledger.interface";
+
+const SWEEP_PAGE_SIZE = 500;
 
 @Injectable()
 export class AiCreditsReservationService {
@@ -277,32 +279,70 @@ export class AiCreditsReservationService {
     );
   }
 
+  /**
+   * Drains every expired reservation for each organisation inside the one tenant
+   * transaction `forEachOrg` already opened.
+   *
+   * It used to open `runInNewTenantTransaction` per row — up to 500 fresh
+   * transactions per organisation, each borrowing a second pooled connection
+   * while the sweep's own transaction sat idle holding the first. The claim is
+   * now a single compare-and-set `UPDATE … WHERE status = 'RESERVED' RETURNING`,
+   * which cannot double-release a row a concurrent settle already took, and the
+   * wallet is credited with atomic SQL rather than a read-modify-write.
+   *
+   * The page is bounded so no single statement locks an unbounded row set; the
+   * loop keeps going until the organisation is drained, so nothing is silently
+   * left behind the way a bare `.limit(500)` left it.
+   */
   async sweepExpiredReservations(): Promise<number> {
     const now = new Date();
     let swept = 0;
     await forEachOrg(this.db, "sweep:expired-ai-reservations", async (tx, orgId) => {
-      const expired = await tx
-        .select({ id: aiCreditReservations.id })
-        .from(aiCreditReservations)
-        .where(
-          and(
-            eq(aiCreditReservations.orgId, orgId),
-            eq(aiCreditReservations.status, "RESERVED"),
-            lte(aiCreditReservations.expiresAt, now),
-          ),
-        )
-        .limit(500);
-      for (const row of expired) {
-        try {
-          await runInNewTenantTransaction(this.db, orgId, () =>
-            this.release(row.id, "expired", orgId),
-          );
-          swept++;
-        } catch (err) {
-          this.logger.warn(
-            `Failed to sweep expired reservation ${row.id}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
+      for (;;) {
+        const due = await tx
+          .select({ id: aiCreditReservations.id })
+          .from(aiCreditReservations)
+          .where(
+            and(
+              eq(aiCreditReservations.orgId, orgId),
+              eq(aiCreditReservations.status, "RESERVED"),
+              lte(aiCreditReservations.expiresAt, now),
+            ),
+          )
+          .limit(SWEEP_PAGE_SIZE);
+        if (due.length === 0) return;
+
+        const claimed = await tx
+          .update(aiCreditReservations)
+          .set({
+            status: "RELEASED",
+            metadata: { reason: "expired" },
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(aiCreditReservations.orgId, orgId),
+              eq(aiCreditReservations.status, "RESERVED"),
+              inArray(
+                aiCreditReservations.id,
+                due.map((row) => row.id),
+              ),
+            ),
+          )
+          .returning({ credits: aiCreditReservations.credits });
+
+        const refunded = claimed.reduce((sum, row) => sum + row.credits, 0);
+        if (refunded > 0)
+          await tx
+            .update(orgAiCredits)
+            .set({
+              balance: sql`${orgAiCredits.balance} + ${refunded}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(orgAiCredits.orgId, orgId));
+
+        swept += claimed.length;
+        if (due.length < SWEEP_PAGE_SIZE) return;
       }
     });
     return swept;

@@ -6,6 +6,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { ImportParticipantsInput, ListParticipantsInput } from "./dto/survey-participants.schemas";
 
+const PARTICIPANT_INSERT_CHUNK = 500;
+
 function hashToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
@@ -26,13 +28,20 @@ export class SurveyParticipantService {
     });
   }
 
+  /**
+   * One multi-row INSERT per chunk instead of one per participant.
+   *
+   * The raw token is generated before the write and never leaves this method
+   * except in the return value, so pairing it back to the inserted row means
+   * keeping the two arrays aligned — `RETURNING` preserves the order of the
+   * VALUES list, which is what makes the pairing sound.
+   */
   async import(orgId: string, surveyId: number, input: ImportParticipantsInput) {
-    const created: Array<{ id: number; accessToken: string | null }> = [];
-    for (const participant of input.participants) {
+    const prepared = input.participants.map((participant) => {
       const rawToken = randomBytes(24).toString("hex");
-      const [row] = await this.db
-        .insert(surveyParticipants)
-        .values({
+      return {
+        rawToken,
+        values: {
           orgId,
           surveyId,
           collectorId: input.collectorId ?? null,
@@ -43,13 +52,25 @@ export class SurveyParticipantService {
           name: participant.name ?? null,
           email: participant.email ?? null,
           phone: participant.phone ?? null,
-          status: "invited",
+          status: "invited" as const,
           accessTokenHash: hashToken(rawToken),
           metadata: participant.metadata ?? {},
           invitedAt: new Date(),
-        })
-        .returning();
-      created.push({ id: row.id, accessToken: rawToken });
+        },
+      };
+    });
+
+    const created: Array<{ id: number; accessToken: string | null }> = [];
+    for (let offset = 0; offset < prepared.length; offset += PARTICIPANT_INSERT_CHUNK) {
+      const chunk = prepared.slice(offset, offset + PARTICIPANT_INSERT_CHUNK);
+      const rows = await this.db
+        .insert(surveyParticipants)
+        .values(chunk.map((entry) => entry.values))
+        .returning({ id: surveyParticipants.id });
+      rows.forEach((row, index) => {
+        const entry = chunk[index];
+        if (entry) created.push({ id: row.id, accessToken: entry.rawToken });
+      });
     }
     return created;
   }

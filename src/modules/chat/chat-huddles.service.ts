@@ -66,7 +66,11 @@ export class ChatHuddlesService {
   async getActiveHuddle(channelId: number, userId: string, orgId: string) {
     await this.assertMember(channelId, userId, orgId);
     const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.channelId, channelId), eq(chatHuddles.status, "active")),
+      where: and(
+        eq(chatHuddles.orgId, orgId),
+        eq(chatHuddles.channelId, channelId),
+        eq(chatHuddles.status, "active"),
+      ),
       columns: { id: true, channelId: true, startedByMembershipId: true, status: true, calendarEventId: true, startedAt: true, endedAt: true, hasVideo: true },
     });
     if (!huddle) return null;

@@ -149,6 +149,7 @@ export async function rankTicket(
       .from(projectMembers)
       .where(
         and(
+          eq(projectMembers.orgId, orgId),
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.membershipId, context.membershipId ?? -1),
         ),

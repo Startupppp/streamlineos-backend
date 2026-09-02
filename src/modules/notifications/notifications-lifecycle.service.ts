@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and, isNull, inArray, max } from "drizzle-orm";
+import { eq, and, isNull, inArray, max, sql } from "drizzle-orm";
 import { notifications, notificationReadWatermarks, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -114,7 +114,17 @@ export class NotificationsLifecycleService {
         .values({ orgId, userId, membershipId, lastReadNotificationId: maxId })
         .onConflictDoUpdate({
           target: [notificationReadWatermarks.orgId, notificationReadWatermarks.membershipId],
-          set: { lastReadNotificationId: maxId, updatedAt: new Date() },
+          /*
+           * GREATEST, not assignment. Two "mark all read" calls in flight commit
+           * in either order, and a plain write lets the older maxId rewind the
+           * cursor — notifications the user has already dismissed come back.
+           * `chat-channel-members-implementation.ts` already does this; the
+           * notifications watermark did not.
+           */
+          set: {
+            lastReadNotificationId: sql`GREATEST(${notificationReadWatermarks.lastReadNotificationId}, excluded.last_read_notification_id)`,
+            updatedAt: new Date(),
+          },
         });
     }
     await this.invalidateCache(userId, orgId);

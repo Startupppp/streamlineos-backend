@@ -92,6 +92,7 @@ export class BuildEntityActions {
     if (actor.isOrgOwner) return true;
     const membership = await this.db.query.projectMembers.findFirst({
       where: and(
+        eq(projectMembers.orgId, actor.orgId),
         eq(projectMembers.projectId, projectId),
         eq(projectMembers.membershipId, actor.membershipId ?? -1),
       ),

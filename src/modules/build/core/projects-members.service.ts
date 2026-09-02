@@ -82,6 +82,7 @@ export class ProjectsMembersService {
       .from(projectMembers)
       .where(
         and(
+          eq(projectMembers.orgId, u.orgId),
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.membershipId, callerMid ?? -1),
         ),
@@ -112,6 +113,7 @@ export class ProjectsMembersService {
       .from(projectMembers)
       .where(
         and(
+          eq(projectMembers.orgId, u.orgId),
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.membershipId, callerMid ?? -1),
         ),
@@ -252,7 +254,9 @@ export class ProjectsMembersService {
     }
 
     const existing = await this.db.query.projectMembers.findFirst({
+      columns: { id: true },
       where: and(
+        eq(projectMembers.orgId, orgId),
         eq(projectMembers.projectId, projectId),
         eq(projectMembers.membershipId, actor.membershipId),
       ),

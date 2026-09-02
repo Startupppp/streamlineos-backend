@@ -1,5 +1,17 @@
 import { startSpan } from "../common/observability/tracing";
 import type { SeamKey } from "../common/observability/seam-budgets";
+import { noteStatementEnd, noteStatementStart } from "./borrow-scope";
+import {
+  QueryFingerprintRegistry,
+  type FingerprintTotals,
+  type QueryFingerprintStat,
+} from "./query-fingerprint-registry";
+
+export {
+  FINGERPRINT_CAP,
+  SLOW_QUERY_MS,
+  type QueryFingerprintStat,
+} from "./query-fingerprint-registry";
 
 export const RESERVOIR_CAP = 1_024;
 
@@ -47,12 +59,12 @@ export interface SeamSnapshot {
   p95Ms: number;
 }
 
-export interface QueryTelemetrySnapshot {
+export type QueryTelemetrySnapshot = {
   "db.guc.setup": SeamSnapshot;
   "db.query.execute": SeamSnapshot;
-}
+} & FingerprintTotals;
 
-type Settle = (status: "ok" | "error") => void;
+type Settle = (status: "ok" | "error", outcome?: unknown) => void;
 
 export interface Thenable {
   then(onOk?: ((value: unknown) => unknown) | null, onErr?: ((reason: unknown) => unknown) | null): unknown;
@@ -63,18 +75,24 @@ export class QueryTelemetryTracker {
   private readonly queryReservoir = new BoundedReservoir(RESERVOIR_CAP);
   private gucCount = 0;
   private queryCount = 0;
+  private readonly fingerprints = new QueryFingerprintRegistry();
 
   observe<T extends object>(pending: T, queryText: string): T {
     const seamKey = classifyQuerySeam(queryText);
     const startedAt = Date.now();
     const span = startSpan(seamKey, { attributes: { seam: seamKey } });
     let settled = false;
+    noteStatementStart(startedAt);
 
-    const settle: Settle = (status) => {
+    const settle: Settle = (status, outcome) => {
       if (settled) return;
       settled = true;
+      const durationMs = Date.now() - startedAt;
       try {
-        this.record(seamKey, Date.now() - startedAt);
+        noteStatementEnd();
+        this.record(seamKey, durationMs);
+        if (seamKey === "db.query.execute")
+          this.fingerprints.record(queryText, durationMs, status, outcome);
         span.end(status);
       } catch {
         return;
@@ -88,12 +106,19 @@ export class QueryTelemetryTracker {
     return {
       "db.guc.setup": { count: this.gucCount, p95Ms: this.gucReservoir.p95() },
       "db.query.execute": { count: this.queryCount, p95Ms: this.queryReservoir.p95() },
+      ...this.fingerprints.totals(),
     };
+  }
+
+  /** Slowest fingerprints by total time — where the round trips actually went. */
+  topFingerprints(limit = 10): QueryFingerprintStat[] {
+    return this.fingerprints.top(limit);
   }
 
   reset(): void {
     this.gucCount = 0;
     this.queryCount = 0;
+    this.fingerprints.clear();
     this.gucReservoir.clear();
     this.queryReservoir.clear();
   }
@@ -115,11 +140,11 @@ export class QueryTelemetryTracker {
           return (onOk?: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>
             (raw as unknown as Thenable).then(
               (value: unknown) => {
-                settle("ok");
+                settle("ok", value);
                 return onOk ? onOk(value) : value;
               },
               (reason: unknown) => {
-                settle("error");
+                settle("error", reason);
                 if (onErr) return onErr(reason);
                 throw reason;
               },

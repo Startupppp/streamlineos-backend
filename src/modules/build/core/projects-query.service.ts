@@ -310,10 +310,12 @@ export class ProjectsQueryService {
           .from(projectMembers)
           .where(
             and(
+              eq(projectMembers.orgId, u.orgId),
               eq(projectMembers.membershipId, callerMid ?? -1),
               eq(projectMembers.projectId, projectId),
             ),
-          );
+          )
+          .limit(1);
         if (memberOf.length === 0) {
           const teamAccess = await this.db
             .select({ id: projectTeamMembers.id })

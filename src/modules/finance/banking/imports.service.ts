@@ -23,6 +23,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateBankImportInput, BankImportsQuery } from "./dto/imports.schemas";
 
 const MAX_IMPORT_ROWS = 2000;
+const IMPORT_INSERT_CHUNK = 500;
 
 interface ParsedRow {
   date: string;
@@ -146,51 +147,55 @@ export class ImportsService {
 
     if (!importRecord) throw new Error("Failed to create import record");
 
-    let importedCount = 0;
-    let duplicateCount = 0;
-    const newTransactionIds: number[] = [];
-
+    /*
+     * One SELECT plus one INSERT per row is up to 4,000 round trips for a
+     * MAX_IMPORT_ROWS file, and the SELECT was also a lost-update race: two
+     * imports of the same statement both saw "not present" and both inserted,
+     * or collided on `uniq_fin_bank_txn_org_account_fp` and 500'd the request.
+     *
+     * `ON CONFLICT DO NOTHING` against that same unique index is the existence
+     * check — decided by the constraint, inside the write, with no window — so
+     * the probe disappears rather than moving. What comes back from RETURNING is
+     * exactly the set that was new; everything else is a duplicate.
+     */
+    const seenFingerprints = new Set<string>();
+    const candidates: Array<typeof finBankTransactions.$inferInsert> = [];
     for (const row of parsed) {
       const fingerprint = computeFingerprint(orgId, input.bankAccountId, row.date, row.amount, row.description ?? "");
+      if (seenFingerprints.has(fingerprint)) continue;
+      seenFingerprints.add(fingerprint);
+      candidates.push({
+        orgId,
+        bankAccountId: input.bankAccountId,
+        importId: importRecord.id,
+        txnDate: row.date,
+        description: row.description,
+        reference: row.reference,
+        amount: row.amount,
+        counterparty: row.counterparty,
+        fingerprint,
+        status: "UNMATCHED",
+      });
+    }
 
-      const [existing] = await this.db
-        .select({ id: finBankTransactions.id })
-        .from(finBankTransactions)
-        .where(
-          and(
-            eq(finBankTransactions.orgId, orgId),
-            eq(finBankTransactions.bankAccountId, input.bankAccountId),
-            eq(finBankTransactions.fingerprint, fingerprint),
-          ),
-        )
-        .limit(1);
-
-      if (existing) {
-        duplicateCount++;
-        continue;
-      }
-
-      const [txn] = await this.db
+    const newTransactionIds: number[] = [];
+    for (let i = 0; i < candidates.length; i += IMPORT_INSERT_CHUNK) {
+      const inserted = await this.db
         .insert(finBankTransactions)
-        .values({
-          orgId,
-          bankAccountId: input.bankAccountId,
-          importId: importRecord.id,
-          txnDate: row.date,
-          description: row.description,
-          reference: row.reference,
-          amount: row.amount,
-          counterparty: row.counterparty,
-          fingerprint,
-          status: "UNMATCHED",
+        .values(candidates.slice(i, i + IMPORT_INSERT_CHUNK))
+        .onConflictDoNothing({
+          target: [
+            finBankTransactions.orgId,
+            finBankTransactions.bankAccountId,
+            finBankTransactions.fingerprint,
+          ],
         })
         .returning({ id: finBankTransactions.id });
-
-      if (txn) {
-        newTransactionIds.push(txn.id);
-        importedCount++;
-      }
+      for (const txn of inserted) newTransactionIds.push(txn.id);
     }
+
+    const importedCount = newTransactionIds.length;
+    const duplicateCount = parsed.length - importedCount;
 
     await this.db
       .update(finBankImports)

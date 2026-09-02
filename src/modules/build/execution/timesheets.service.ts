@@ -398,7 +398,9 @@ export class TimesheetsService {
 
     if (!isOwnerOrAdmin && !isManager) {
       const membership = await this.db.query.projectMembers.findFirst({
+        columns: { id: true },
         where: and(
+          eq(projectMembers.orgId, user.orgId),
           eq(projectMembers.projectId, ticket.project.id),
           eq(projectMembers.membershipId, membershipId ?? -1),
         ),

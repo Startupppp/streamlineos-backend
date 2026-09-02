@@ -174,7 +174,7 @@ export class CoaService {
     const [lineRef] = await this.db
       .select({ id: journalLines.id })
       .from(journalLines)
-      .where(eq(journalLines.accountId, accountId))
+      .where(and(eq(journalLines.orgId, u.orgId), eq(journalLines.accountId, accountId)))
       .limit(1);
 
     if (lineRef) {

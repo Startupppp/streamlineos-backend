@@ -352,9 +352,12 @@ export class RetentionService {
     let processed = 0;
     let skipped = 0;
 
+    /* Loop-invariant: the organisation-wide hold is a property of the org, not of
+     * the request, so it was being asked once per stranded request. */
+    const orgHeld = await this.isOrgUnderLegalHold(orgId);
+
     for (const req of stranded) {
-      const hrHeld = await isUnderLegalHold(orgId, req.subjectUserId, this.db);
-      const orgHeld = await this.isOrgUnderLegalHold(orgId);
+      const hrHeld = orgHeld ? false : await isUnderLegalHold(orgId, req.subjectUserId, this.db);
       if (hrHeld || orgHeld) {
         skipped++;
         logger.warn("[retention-sweep] stranded delete request blocked by legal hold", {

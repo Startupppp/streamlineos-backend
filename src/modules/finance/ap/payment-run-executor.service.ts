@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -26,10 +26,6 @@ import { RateResolverService } from "../controls/rate-resolver.service";
 import { FxService } from "../controls/fx.service";
 import { systemActor } from "../../../common/auth/system-actor";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
 
 @Injectable()
 export class PaymentRunExecutorService {
@@ -129,14 +125,22 @@ export class PaymentRunExecutorService {
 
           const billRow = item.billId !== null ? (billMap.get(item.billId) ?? null) : null;
           if (billRow) {
-            const newPaid = round2(Number(billRow.amountPaid ?? 0) + Number(item.amount));
-            const total = Number(billRow.total ?? 0);
-            const newStatus = newPaid >= total - 0.005 ? "PAID" : "PARTIALLY_PAID";
-
-            await tx
+            /*
+             * `billMap` is a snapshot taken once for the whole run. Writing an
+             * absolute `amount_paid` computed from it silently reverts any
+             * manual payment or credit application that committed in between.
+             * The increment and the status both move in SQL against the row the
+             * statement is already locking.
+             */
+            const [settled] = await tx
               .update(purchaseBills)
-              .set({ amountPaid: newPaid.toFixed(4), status: newStatus, updatedAt: new Date() })
-              .where(and(eq(purchaseBills.id, item.billId), eq(purchaseBills.orgId, orgId)));
+              .set({
+                amountPaid: sql`round(${purchaseBills.amountPaid} + ${item.amount}::numeric, 4)`,
+                status: sql`CASE WHEN ${purchaseBills.amountPaid} + ${item.amount}::numeric >= ${purchaseBills.total} - 0.005 THEN 'PAID' ELSE 'PARTIALLY_PAID' END`,
+                updatedAt: new Date(),
+              })
+              .where(and(eq(purchaseBills.id, item.billId), eq(purchaseBills.orgId, orgId)))
+              .returning({ status: purchaseBills.status });
 
             await this.journalPosting.postVendorPayment(
               {
@@ -151,7 +155,10 @@ export class PaymentRunExecutorService {
               tx,
             );
 
-            if (newStatus === "PAID") {
+            /* Read back from the write, not from the pre-run snapshot: whether this
+             * payment is the one that settles the bill depends on what else has
+             * committed since `billMap` was built. */
+            if (settled?.status === "PAID") {
               await OutboxWriter.emit(tx, {
                 eventId: randomUUID(),
                 organizationId: orgId,
