@@ -110,7 +110,6 @@ const PAYMENTS_MUTATIONS: ReadonlyArray<readonly [string, string, string]> = [
   ["PATCH", "/payments/providers/razorpay", "payments:providers:manage"],
   ["POST", "/payments/providers/razorpay/disable", "payments:providers:manage"],
   ["POST", "/payments/providers/razorpay/credentials", "payments:credentials:manage"],
-  ["POST", "/payments/providers/razorpay/credentials/rotate", "payments:credentials:manage"],
   ["POST", "/payments/providers/razorpay/disconnect", "payments:credentials:manage"],
   ["POST", "/payments/providers/razorpay/test-transactions", "payments:test:run"],
   ["POST", "/payments/providers/razorpay/webhooks/generate", "payments:webhooks:manage"],

@@ -133,20 +133,20 @@ export class BillingService {
     return this.couponAdmin.validate(code, orgId, plan);
   }
 
-  listCoupons() {
-    return this.couponAdmin.list();
+  listCoupons(orgId: string) {
+    return this.couponAdmin.list(orgId);
   }
 
-  createCoupon(data: CreateCouponInput) {
-    return this.couponAdmin.create(data);
+  createCoupon(orgId: string, data: CreateCouponInput) {
+    return this.couponAdmin.create(orgId, data);
   }
 
-  updateCoupon(id: number, data: UpdateCouponInput) {
-    return this.couponAdmin.update(id, data);
+  updateCoupon(orgId: string, id: number, data: UpdateCouponInput) {
+    return this.couponAdmin.update(orgId, id, data);
   }
 
-  deleteCoupon(id: number) {
-    return this.couponAdmin.remove(id);
+  deleteCoupon(orgId: string, id: number) {
+    return this.couponAdmin.remove(orgId, id);
   }
 
 
@@ -161,6 +161,13 @@ export class BillingService {
 
   listProvisioningFailures(orgId: string) {
     return this.webhooks.listProvisioningFailures(orgId);
+  }
+
+  redriveStuckProviderEvents(
+    orgId: string,
+    window: { minAgeMs: number; maxAgeMs: number; limit: number },
+  ) {
+    return this.webhooks.redriveUnprocessed(orgId, window);
   }
 
   getPlans() {

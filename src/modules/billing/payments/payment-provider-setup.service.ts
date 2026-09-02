@@ -165,6 +165,7 @@ export class PaymentProviderSetupService {
 
     const existing = await this.db.query.paymentProviderCredentials.findFirst({
       where: and(
+        eq(paymentProviderCredentials.orgId, orgId),
         eq(paymentProviderCredentials.providerId, provider.id),
         eq(paymentProviderCredentials.environment, input.environment),
       ),
@@ -185,7 +186,12 @@ export class PaymentProviderSetupService {
       ? await this.db
           .update(paymentProviderCredentials)
           .set(values)
-          .where(eq(paymentProviderCredentials.id, existing.id))
+          .where(
+            and(
+              eq(paymentProviderCredentials.id, existing.id),
+              eq(paymentProviderCredentials.orgId, orgId),
+            ),
+          )
           .returning()
       : await this.db
           .insert(paymentProviderCredentials)

@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
 } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
@@ -38,6 +39,8 @@ function redactPayload(
 
 @Injectable()
 export class PaymentWebhookReceiverService {
+  private readonly logger = new Logger(PaymentWebhookReceiverService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly providers: PaymentProviderResolver,
@@ -297,7 +300,31 @@ export class PaymentWebhookReceiverService {
           },
         );
       }
-    } catch {
+    } catch (err: unknown) {
+      // The event is already recorded, so a retry would short-circuit as a duplicate and never
+      // re-run the bridge. Mark the row failed instead so the webhook health surface shows it.
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error("Finance bridge did not record the provider payment", {
+        orgId: params.orgId,
+        providerKey: params.providerKey,
+        providerEventId,
+        cause: message,
+      });
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          await tx
+            .update(paymentWebhookEvents)
+            .set({ processingStatus: "failed", errorMessage: message.slice(0, 1000) })
+            .where(
+              and(
+                eq(paymentWebhookEvents.orgId, params.orgId),
+                eq(paymentWebhookEvents.id, inserted.id),
+              ),
+            );
+        },
+        { orgId: params.orgId },
+      );
     }
 
     return { status: 200, body: { ok: true } };

@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lt } from "drizzle-orm";
 import { providerWebhookEvents } from "../../../db/schema/billing/provider-webhook-events";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
@@ -100,6 +100,36 @@ export class ProviderEventLedger {
       .limit(100);
 
     return { events: rows, total: rows.length };
+  }
+
+  /**
+   * Recorded but never finished, and old enough that the request that recorded it is gone.
+   * `maxAgeMs` is the dead-letter boundary: past it the row is left for `listUnprocessed` and
+   * an operator, so a permanently failing event cannot be retried forever.
+   */
+  listRedrivable(
+    orgId: string,
+    window: { minAgeMs: number; maxAgeMs: number; limit: number },
+    now: Date,
+  ) {
+    return this.db
+      .select({
+        provider: providerWebhookEvents.provider,
+        providerEventId: providerWebhookEvents.providerEventId,
+        eventType: providerWebhookEvents.eventType,
+        rawPayload: providerWebhookEvents.rawPayload,
+      })
+      .from(providerWebhookEvents)
+      .where(
+        and(
+          eq(providerWebhookEvents.orgId, orgId),
+          isNull(providerWebhookEvents.processedAt),
+          lt(providerWebhookEvents.createdAt, new Date(now.getTime() - window.minAgeMs)),
+          gt(providerWebhookEvents.createdAt, new Date(now.getTime() - window.maxAgeMs)),
+        ),
+      )
+      .orderBy(asc(providerWebhookEvents.createdAt))
+      .limit(window.limit);
   }
 
   private matches(key: ProviderEventKey) {

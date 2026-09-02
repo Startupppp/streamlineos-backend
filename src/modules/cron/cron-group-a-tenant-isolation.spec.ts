@@ -19,6 +19,7 @@ import { CronInvitationExpiryService } from "./cron-invitation-expiry.service";
 import { HrAutomationEngineService } from "../hr/automations/hr-automation-engine.service";
 import { AttendancePolicyService } from "../hr/time/attendance-policy.service";
 import { AiCreditsService } from "../billing/core/ai-credits.service";
+import { BillingService } from "../billing/core/billing.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -113,6 +114,7 @@ describe("CronAttendanceService — cross-tenant isolation", () => {
       providers: [
         CronAttendanceService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
         { provide: AttendancePolicyService, useValue: { getAttendanceRules: jest.fn().mockResolvedValue(null) } },
       ],
@@ -132,6 +134,7 @@ describe("CronAttendanceService — cross-tenant isolation", () => {
       providers: [
         CronAttendanceService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
         { provide: AttendancePolicyService, useValue: { getAttendanceRules: jest.fn().mockResolvedValue(null) } },
       ],
@@ -161,6 +164,7 @@ describe("CronBillingService — cross-tenant isolation", () => {
       providers: [
         CronBillingService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: AiCreditsService, useValue: billingDeps.aiCredits },
         { provide: PlanLimitsService, useValue: billingDeps.planLimits },
         { provide: RevenueAnalyticsService, useValue: billingDeps.revenue },
@@ -181,6 +185,7 @@ describe("CronBillingService — cross-tenant isolation", () => {
       providers: [
         CronBillingService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: AiCreditsService, useValue: billingDeps.aiCredits },
         { provide: PlanLimitsService, useValue: billingDeps.planLimits },
         { provide: RevenueAnalyticsService, useValue: billingDeps.revenue },
@@ -230,6 +235,7 @@ describe("CronBuildSnapshotsService — cross-tenant isolation", () => {
       providers: [
         CronBuildSnapshotsService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: ProjectsReportsService, useValue: reports },
       ],
     }).compile().then((m) => m.get(CronBuildSnapshotsService));
@@ -247,6 +253,7 @@ describe("CronBuildSnapshotsService — cross-tenant isolation", () => {
       providers: [
         CronBuildSnapshotsService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: ProjectsReportsService, useValue: reports },
       ],
     }).compile().then((m) => m.get(CronBuildSnapshotsService));
@@ -268,6 +275,7 @@ describe("CronCrmTasksService — cross-tenant isolation", () => {
       providers: [
         CronCrmTasksService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: CrmAutomationBusService, useValue: bus },
       ],
     }).compile().then((m) => m.get(CronCrmTasksService));
@@ -285,6 +293,7 @@ describe("CronCrmTasksService — cross-tenant isolation", () => {
       providers: [
         CronCrmTasksService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: CrmAutomationBusService, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronCrmTasksService));
@@ -327,6 +336,7 @@ describe("CronHrEnginesService — cross-tenant isolation", () => {
       providers: [
         CronHrEnginesService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: HrWorkflowEngineService, useValue: { sweepOverdueSteps: jest.fn().mockResolvedValue({ swept: 0 }) } },
         { provide: HrEffectiveChangesService, useValue: { applyDueChanges: jest.fn().mockResolvedValue({ applied: 0 }) } },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
@@ -364,6 +374,7 @@ describe("CronHrService — cross-tenant isolation", () => {
       providers: [
         CronHrService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: AutomationService, useValue: { runAutomationsForEvent: jest.fn() } },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
@@ -430,6 +441,7 @@ describe("CronInvitationExpiryService — cross-tenant isolation", () => {
       providers: [
         CronInvitationExpiryService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: SeatLedgerService, useValue: seatLedger },
       ],
     }).compile().then((m) => m.get(CronInvitationExpiryService));
@@ -447,6 +459,7 @@ describe("CronInvitationExpiryService — cross-tenant isolation", () => {
       providers: [
         CronInvitationExpiryService,
         { provide: DRIZZLE, useValue: db },
+        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronInvitationExpiryService));

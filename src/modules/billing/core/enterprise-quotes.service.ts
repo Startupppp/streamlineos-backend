@@ -8,6 +8,7 @@ import { enterpriseQuotes } from "../../../db/schema/billing/billing";
 import { users } from "../../../db/schema/common/auth";
 import { clientAccounts } from "../../../db/schema/crm/contacts";
 import { deals } from "../../../db/schema/crm/deals";
+import { PlanLimitsService } from "./plan-limits.service";
 import type {
   CreateEnterpriseQuoteInput,
   ApproveEnterpriseQuoteInput,
@@ -17,7 +18,10 @@ import type {
 
 @Injectable()
 export class EnterpriseQuotesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly planLimits: PlanLimitsService,
+  ) {}
 
   private generateRef(seq: number): string {
     return `EQ-${String(seq).padStart(4, "0")}`;
@@ -166,6 +170,8 @@ export class EnterpriseQuotesService {
       .update(enterpriseQuotes)
       .set({ status: "ACCEPTED", acceptedAt: new Date() })
       .where(and(eq(enterpriseQuotes.orgId, orgId), eq(enterpriseQuotes.id, id)));
+    // The accepted quote is what `fetchNegotiatedSeats` reads, so the entitlement cache is now stale.
+    await this.planLimits.bust(orgId);
     return { success: true };
   }
 }

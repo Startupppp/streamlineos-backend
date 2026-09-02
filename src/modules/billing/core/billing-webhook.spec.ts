@@ -695,6 +695,82 @@ describe("provider substitution — same billing flow, different adapter", () =>
   });
 });
 
+describe("stuck provider events are re-driven after the provider stops retrying", () => {
+  const REDRIVE_WINDOW = { minAgeMs: 5 * 60 * 1000, maxAgeMs: 24 * 60 * 60 * 1000, limit: 100 };
+
+  it("applies the effects of a recorded-but-unfinished event and acknowledges it", async () => {
+    const { service, db, aiCredits } = await buildHarness();
+    db._store.providerEvent = { processedAt: null, visible: true };
+    db._store.unprocessed = [
+      {
+        provider: "razorpay",
+        providerEventId: "pay_test_002",
+        eventType: "payment.captured",
+        rawPayload: JSON.parse(CAPTURE_EVENT_BODY) as Record<string, unknown>,
+      },
+    ];
+
+    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+
+    expect(result).toEqual({ attempted: 1, recovered: 1, failed: 0 });
+    expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledTimes(1);
+    expect(db._store.providerEvent?.processedAt).not.toBeNull();
+    expect(db._store.order).toContain("acknowledge");
+  });
+
+  it("does not re-verify a signature, because the stored row is the proof it was verified", async () => {
+    const adapter = new FakeProviderAdapter();
+    const verify = jest.spyOn(adapter, "verifyWebhookSignature");
+    const { service, db } = await buildHarness({ providers: makeResolver(adapter) });
+    db._store.providerEvent = { processedAt: null, visible: true };
+    db._store.unprocessed = [
+      {
+        provider: "razorpay",
+        providerEventId: "pay_test_002",
+        eventType: "payment.captured",
+        rawPayload: JSON.parse(CAPTURE_EVENT_BODY) as Record<string, unknown>,
+      },
+    ];
+
+    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+
+    expect(result.recovered).toBe(1);
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("counts an unresolvable provider as failed rather than reporting success", async () => {
+    const { service, db } = await buildHarness({
+      providers: { resolve: jest.fn().mockResolvedValue(null) } as unknown as PaymentProviderResolver,
+    });
+    db._store.unprocessed = [
+      {
+        provider: "gone",
+        providerEventId: "pay_test_002",
+        eventType: "payment.captured",
+        rawPayload: JSON.parse(CAPTURE_EVENT_BODY) as Record<string, unknown>,
+      },
+    ];
+
+    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+
+    expect(result).toEqual({ attempted: 1, recovered: 0, failed: 1 });
+  });
+
+  it("bounds the claim window at both ends, so an event past the dead-letter age is left alone", async () => {
+    const { service, db } = await buildHarness();
+    const where = jest.fn().mockReturnValue({ orderBy: () => ({ limit: () => Promise.resolve([]) }) });
+    db.select = jest.fn().mockReturnValue({ from: () => ({ where, limit: () => Promise.resolve([]) }) });
+
+    await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+
+    const rendered = dialect.sqlToQuery(where.mock.calls[0]?.[0] as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(rendered.sql).toContain('"processed_at" is null');
+    expect(rendered.sql).toContain('"created_at" <');
+    expect(rendered.sql).toContain('"created_at" >');
+    expect(rendered.params).toContain("org1");
+  });
+});
+
 describe("legacy Razorpay webhook compatibility route", () => {
   it("preserves the old URL contract while delegating to the provider-neutral handler", async () => {
     const handlePaymentProviderWebhook = jest.fn().mockResolvedValue({ status: 200, body: { ok: true } });

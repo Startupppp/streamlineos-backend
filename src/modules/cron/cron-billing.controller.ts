@@ -71,6 +71,18 @@ export class CronBillingController {
     return this.runAutoTopUpFlush(authorization);
   }
 
+  @Get("provider-webhook-redrive")
+  getProviderWebhookRedrive(@Headers("authorization") authorization?: string) {
+    return this.runProviderWebhookRedrive(authorization);
+  }
+
+  @Post("provider-webhook-redrive")
+  @BodylessAction()
+  @HttpCode(200)
+  postProviderWebhookRedrive(@Headers("authorization") authorization?: string) {
+    return this.runProviderWebhookRedrive(authorization);
+  }
+
   @Get("ai-jobs-flush")
   getAiJobsFlush(@Headers("authorization") authorization?: string) {
     return this.runAiJobsFlush(authorization);
@@ -155,6 +167,25 @@ export class CronBillingController {
       };
     } catch (error) {
       logger.error("Auto top-up flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runProviderWebhookRedrive(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("provider-webhook-redrive", 300, () =>
+        this.billing.redriveStuckProviderEvents(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "provider-webhook-redrive already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Provider webhook redrive: ${result.attempted} attempted, ${result.recovered} recovered, ${result.failed} failed`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Provider webhook redrive cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

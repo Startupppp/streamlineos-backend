@@ -13,6 +13,7 @@ import { type Db } from "../../db/drizzle.module";
 import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
 import { AiCreditsService } from "../billing/core/ai-credits.service";
+import { BillingService } from "../billing/core/billing.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
 import { PLAN_PRICES_PAISE } from "../billing/core/plan-entitlements.constants";
@@ -24,6 +25,9 @@ const REMINDER_DAYS = [7, 3, 1] as const;
 const DUNNING_SCHEDULE_DAYS = [7, 3, 1] as const;
 const SUSPENSION_DAY = 14;
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const REDRIVE_MIN_AGE_MS = 5 * 60 * 1000;
+const REDRIVE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const REDRIVE_BATCH = 100;
 
 interface DunningMeta {
   pastDueAt?: string;
@@ -36,6 +40,7 @@ interface DunningMeta {
 export class CronBillingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly billing: BillingService,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
     private readonly revenue: RevenueAnalyticsService,
@@ -167,6 +172,30 @@ export class CronBillingService {
       released += await this.aiCredits.sweepExpiredReservations();
     });
     return { released };
+  }
+
+  /**
+   * A provider gives up retrying long before a multi-hour outage ends, leaving a paid-for grant
+   * recorded but never applied. Events older than `MAX_AGE` are left for an operator instead of
+   * being retried forever, so this sweep cannot loop on a permanently failing event.
+   */
+  async redriveStuckProviderEvents(): Promise<{ attempted: number; recovered: number; failed: number }> {
+    let attempted = 0;
+    let recovered = 0;
+    let failed = 0;
+
+    await forEachOrg(this.db, "billing-provider-event-redrive", async (_tx, orgId) => {
+      const result = await this.billing.redriveStuckProviderEvents(orgId, {
+        minAgeMs: REDRIVE_MIN_AGE_MS,
+        maxAgeMs: REDRIVE_MAX_AGE_MS,
+        limit: REDRIVE_BATCH,
+      });
+      attempted += result.attempted;
+      recovered += result.recovered;
+      failed += result.failed;
+    });
+
+    return { attempted, recovered, failed };
   }
 
   async processAutoTopUps(): Promise<{ topped: number; skipped: number; failed: number }> {
