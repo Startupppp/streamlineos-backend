@@ -46,6 +46,7 @@ function buildScheduler(
     s[9] as never,
     s[10] as never,
     s[11] as never,
+    s[12] as never,
   );
 }
 
@@ -69,7 +70,7 @@ function makeHarness(options: { heartbeats?: Record<string, string> } = {}): Har
       }),
     ),
   };
-  const services = Array.from({ length: 12 }, () => stub());
+  const services = Array.from({ length: RETENTION_JOBS.length }, () => stub());
   const service = buildScheduler(redis as never, lease as unknown as CronLeaseService, services);
   return { service, lease, redis, services };
 }
@@ -83,12 +84,12 @@ beforeEach(() => {
 });
 
 describe("CronRetentionSchedulerService — every declared sweep actually runs", () => {
-  it("runs all twelve declared retention jobs in one tick when nothing has a heartbeat", async () => {
+  it("runs every declared retention job in one tick when nothing has a heartbeat", async () => {
     const { service, lease } = makeHarness();
 
     const outcome = await service.tick();
 
-    expect(RETENTION_JOBS.length).toBe(12);
+    expect(RETENTION_JOBS.length).toBe(13);
     expect(outcome.considered).toBe(RETENTION_JOBS.length);
     expect(outcome.ran).toHaveLength(RETENTION_JOBS.length);
     expect(outcome.failed).toEqual([]);
@@ -174,7 +175,7 @@ describe("CronRetentionSchedulerService — the heartbeat decides, so an externa
         }),
       ),
     };
-    const services = Array.from({ length: 12 }, () => stub());
+    const services = Array.from({ length: RETENTION_JOBS.length }, () => stub());
     const service = buildScheduler(null, lease as unknown as CronLeaseService, services);
 
     const first = await service.tick();

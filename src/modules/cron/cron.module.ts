@@ -31,6 +31,7 @@ import { CronInvitationExpiryController } from "./cron-invitation-expiry.control
 import { CronHrController } from "./cron-hr.controller";
 import { CronHrNotificationsController } from "./cron-hr-notifications.controller";
 import { CronPlatformController } from "./cron-platform.controller";
+import { CronGdprController } from "./cron-gdpr.controller";
 import { CronNotificationsController } from "./cron-notifications.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
 import { CronSupportController } from "./cron-support.controller";
@@ -83,6 +84,7 @@ import { CronOutboxRetentionService } from "./cron-outbox-retention.service";
 import { CronNotificationOutboxRetentionService } from "./cron-notification-outbox-retention.service";
 import { CronRetentionSchedulerService } from "./cron-retention-scheduler.service";
 import { CronSweepFailureSinkService } from "./cron-sweep-failure-sink.service";
+import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
 
 @Module({
   imports: [
@@ -126,6 +128,7 @@ import { CronSweepFailureSinkService } from "./cron-sweep-failure-sink.service";
     CronHrController,
     CronHrNotificationsController,
     CronPlatformController,
+    CronGdprController,
     CronNotificationsController,
     CronOutboxController,
     CronSupportController,
@@ -172,6 +175,7 @@ import { CronSweepFailureSinkService } from "./cron-sweep-failure-sink.service";
     CronStorageSweepService,
     CronOutboxRetentionService,
     CronNotificationOutboxRetentionService,
+    CronGdprExportRetentionService,
     CronSweepFailureSinkService,
     CronRetentionSchedulerService,
   ],

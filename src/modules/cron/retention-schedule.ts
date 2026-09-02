@@ -115,6 +115,14 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
     label: "Build webhook delivery retention (completed attempts older than 90 days)",
   },
   {
+    jobKey: "gdpr-export-artifact-retention",
+    sweepName: "gdpr-export-retention",
+    leaseSeconds: 900,
+    intervalMs: HOUR_MS,
+    maxAgeMs: 3 * HOUR_MS,
+    label: "GDPR subject-export artifact retention (72h expiry, object purge, stale-job reclaim)",
+  },
+  {
     jobKey: "notifications-retention-detach",
     sweepName: null,
     leaseSeconds: 300,

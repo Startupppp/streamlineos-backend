@@ -134,6 +134,15 @@ const RETENTION_MATRIX = {
     worker: "CronOutboxRetentionService",
     notes: "30-day retention for terminal states (DELIVERED, DEAD, SUPPRESSED). PENDING and IN_FLIGHT rows are never touched. Global sweep (owner role, no tenant GUC), batch 1000. inbox_records processed_at < cutoff also swept.",
   },
+  gdpr_export_jobs: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronGdprExportRetentionService",
+    notes:
+      "The export artifact is a complete dump of one subject's personal data. 72h expiry from " +
+      "GdprExportService.EXPIRY_MS; the sweep marks the row expired, deletes the object from " +
+      "storage and only then clears file_key, and reclaims jobs a dead worker left in 'running'. " +
+      "forEachOrg, keyset page 100, hourly.",
+  },
   audit_logs: {
     decision: "KEEP-FOREVER",
     worker: null,

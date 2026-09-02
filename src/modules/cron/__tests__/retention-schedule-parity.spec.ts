@@ -17,6 +17,7 @@ const CONTROLLERS = [
   "cron-outbox.controller.ts",
   "cron-support.controller.ts",
   "cron-build.controller.ts",
+  "cron-gdpr.controller.ts",
 ].map(cron);
 
 const ALERT_SCRIPT = readFileSync(

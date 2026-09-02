@@ -5,7 +5,7 @@ import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 import { GdprController } from "./gdpr.controller";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { SubjectFileKey } from "../storage/storage-key-catalog";
-import { users } from "../../db/schema";
+import { gdprExportJobs, users } from "../../db/schema";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -121,7 +121,9 @@ function makeDb(opts: {
         return fluentChain([]);
       }),
     })),
-    update: jest.fn().mockImplementation(() => {
+    update: jest.fn().mockImplementation((table: unknown) => {
+      // The export-artifact retirement is not one of the positional identity updates.
+      if (table === gdprExportJobs) return fluentChain([], []);
       txUpdateCount++;
       if (txUpdateCount === 1) return opUpdateChain;
       if (txUpdateCount === 2) return sfUpdateChain;
@@ -164,6 +166,13 @@ function makeDb(opts: {
       insertChains: [dataReqInsertChain, auditInsertChain],
     },
   };
+}
+
+/** Every tx.update except the export-artifact retirement, which is a storage sink. */
+function identityUpdates(txMocks: TxMocks): unknown[][] {
+  return txMocks.tx.update.mock.calls.filter(
+    (call: unknown[]) => call[0] !== gdprExportJobs,
+  );
 }
 
 function makeStoragePurge(keys: SubjectFileKey[] = []) {
@@ -437,8 +446,10 @@ describe("GdprSubjectErasureService — global identity", () => {
 
     expect(result.globalIdentityAnonymised).toBe(true);
     expect(result.tablesAnonymised).toContain("users");
-    // 7 update calls: org_people, sensitive_fields, dependents, ai_chat_conversations, ai_chat_messages, chat_messages, users
-    expect(txMocks.tx.update).toHaveBeenCalledTimes(7);
+    // 7 identity updates: org_people, sensitive_fields, dependents, ai_chat_conversations,
+    // ai_chat_messages, chat_messages, users. The gdpr_export_jobs retirement is excluded
+    // so this assertion keeps meaning what its comment says as sinks are added.
+    expect(identityUpdates(txMocks)).toHaveLength(7);
   });
 
   it("(bite proof) globalIdentityAnonymised is false when subject has another membership — test catches if the guard is skipped", async () => {
@@ -451,8 +462,9 @@ describe("GdprSubjectErasureService — global identity", () => {
 
     expect(result.globalIdentityAnonymised).toBe(false);
     expect(result.tablesAnonymised).not.toContain("users");
-    // 6 update calls: org_people, sensitive_fields, dependents, ai_chat_conversations, ai_chat_messages, chat_messages (no users)
-    expect(txMocks.tx.update).toHaveBeenCalledTimes(6);
+    // 6 identity updates: org_people, sensitive_fields, dependents, ai_chat_conversations,
+    // ai_chat_messages, chat_messages (no users).
+    expect(identityUpdates(txMocks)).toHaveLength(6);
   });
 });
 
@@ -614,7 +626,7 @@ describe("GdprSubjectErasureService — AI and chat content erasure", () => {
     const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
     expect(result.tablesAnonymised).toContain("ai_chat_conversations");
-    expect(txMocks.tx.update).toHaveBeenCalledTimes(7);
+    expect(identityUpdates(txMocks)).toHaveLength(7);
   });
 
   it("includes ai_chat_messages in tablesAnonymised when update affects rows", async () => {

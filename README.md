@@ -111,6 +111,7 @@ route takes.
 | KB chunk retention | `POST /cron/kb-chunk-retention-sweep` | daily | 600s |
 | Build webhook delivery retention | `POST /cron/build-retention-prune` | daily | 120s |
 | Notification partition detach/drop | `POST /cron/notifications-retention-detach` | daily | 300s |
+| GDPR subject-export artifact retention | `POST /cron/gdpr-export-artifact-retention` | hourly | 900s |
 
 The two mechanisms compose rather than compete. Due-ness is read from the same
 `cron:heartbeat:<jobKey>` key the lease writes on every successful run, so an external

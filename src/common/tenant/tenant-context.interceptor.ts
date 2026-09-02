@@ -20,6 +20,11 @@ import { withTenant } from "./with-tenant";
 import type { PlacementIntent } from "../region/placement";
 import { bindObservabilityContext, reportError } from "../observability";
 import { runInNewTenantTransaction } from "./run-in-tenant-transaction";
+import {
+  createStreamAbortSignal,
+  type CloseableRequest as StreamAbortRequest,
+  type EndableResponse,
+} from "../http/stream-abort";
 
 interface TenantBearingRequest {
   method?: string;
@@ -27,14 +32,9 @@ interface TenantBearingRequest {
   portalUser?: { organizationId?: string };
 }
 
-interface CloseableRequest extends TenantBearingRequest {
-  on(event: "close", listener: () => void): unknown;
-  off(event: "close", listener: () => void): unknown;
-}
+interface CloseableRequest extends TenantBearingRequest, StreamAbortRequest {}
 
-interface WritableResponse {
-  writableEnded: boolean;
-}
+type WritableResponse = EndableResponse;
 
 const READ_ONLY_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -86,18 +86,11 @@ export class TenantContextInterceptor implements NestInterceptor {
     const resolved = resolveTenant(req);
     if (!resolved) return next.handle();
 
-    const controller = new AbortController();
-
-    function onClose() {
-      if (!res.writableEnded)
-        controller.abort();
-    }
-
-    req.on("close", onClose);
+    const abort = createStreamAbortSignal(req, res, null);
 
     return from(
-      this.runInTenantTransaction(resolved, next, controller.signal).finally(() => {
-        req.off("close", onClose);
+      this.runInTenantTransaction(resolved, next, abort.signal).finally(() => {
+        abort.dispose();
       }),
     );
   }

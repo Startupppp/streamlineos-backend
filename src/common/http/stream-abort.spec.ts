@@ -1,4 +1,4 @@
-import { createStreamAbortSignal } from "./ai-stream-abort";
+import { createStreamAbortSignal } from "./stream-abort";
 
 interface Emitter {
   on(event: "close", listener: () => void): unknown;

@@ -4,7 +4,7 @@ export {
   type EndableResponse,
   type StreamAbortHandle,
   type StreamAbortReason,
-} from "./ai-stream-abort";
+} from "../../../../common/http/stream-abort";
 export {
   getAiRequestAbortSignal,
   runWithAiRequestAbort,

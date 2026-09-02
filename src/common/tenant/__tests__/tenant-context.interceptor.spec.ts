@@ -57,7 +57,7 @@ describe("TenantContextInterceptor", () => {
       getType: () => "http",
       switchToHttp: () => ({
         getRequest: () => fullReq,
-        getResponse: () => ({ writableEnded: false }),
+        getResponse: () => ({ writableEnded: false, on: jest.fn(), off: jest.fn() }),
       }),
       getHandler: () => handler,
       getClass: () => class StubController {},
@@ -184,7 +184,7 @@ describe("TenantContextInterceptor — after-commit hooks", () => {
       getType: () => "http",
       switchToHttp: () => ({
         getRequest: () => fullReq,
-        getResponse: () => ({ writableEnded: false }),
+        getResponse: () => ({ writableEnded: false, on: jest.fn(), off: jest.fn() }),
       }),
       getHandler: () => handler,
       getClass: () => class StubController {},

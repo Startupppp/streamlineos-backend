@@ -16,6 +16,7 @@ import { CronOutboxRetentionService } from "./cron-outbox-retention.service";
 import { CronKbChatRetentionService } from "./cron-kb-chat-retention.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
 import { NotificationRetentionService } from "../notifications/notification-retention.service";
 
 const DEFAULT_TICK_MS = 10 * 60_000;
@@ -73,6 +74,7 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
     kbChatRetention: CronKbChatRetentionService,
     kbChunkRetention: CronKbChunkRetentionService,
     buildRetention: CronBuildRetentionService,
+    gdprExportRetention: CronGdprExportRetentionService,
     partitionRetention: NotificationRetentionService,
   ) {
     this.runners = new Map<string, () => Promise<unknown>>([
@@ -87,6 +89,7 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
       ["kb-chat-history-purge", () => kbChatRetention.purgeExpiredConversations()],
       ["kb-chunk-retention-sweep", () => kbChunkRetention.pruneStaleChunks()],
       ["build-retention-prune", () => buildRetention.pruneWebhookDeliveries()],
+      ["gdpr-export-artifact-retention", () => gdprExportRetention.sweep()],
       ["notifications-retention-detach", () => partitionRetention.sweep()],
     ]);
   }

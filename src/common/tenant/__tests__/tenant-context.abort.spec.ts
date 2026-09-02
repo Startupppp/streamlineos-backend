@@ -63,9 +63,24 @@ describe("TenantContextInterceptor — abort signal on client disconnect", () =>
     return { handle: () => of(value) };
   }
 
+  /**
+   * Express drains the body before a handler runs, so on a healthy request
+   * `req` is already `complete` and emits `close`. The response is what stays
+   * open for the length of the call. A fake response without `on`/`off` cannot
+   * express either fact, which is how the previous version of this file passed
+   * while the interceptor aborted every healthy transactional request.
+   */
+  function makeReq(orgId: string, complete: boolean) {
+    return Object.assign(new EventEmitter(), { user: { orgId }, complete });
+  }
+
+  function makeRes(writableEnded: boolean) {
+    return Object.assign(new EventEmitter(), { writableEnded });
+  }
+
   function makeContext(
     req: EventEmitter & { user?: { orgId?: string } },
-    res: { writableEnded: boolean },
+    res: EventEmitter & { writableEnded: boolean },
   ): ExecutionContext {
     return {
       getType: () => "http",
@@ -81,8 +96,8 @@ describe("TenantContextInterceptor — abort signal on client disconnect", () =>
   it("aborts the signal when close fires before the response is sent", async () => {
     let capturedSignal: AbortSignal | undefined;
 
-    const req = Object.assign(new EventEmitter(), { user: { orgId: "org-abort" } });
-    const res = { writableEnded: false };
+    const req = makeReq("org-abort", false);
+    const res = makeRes(false);
 
     mockTenant.run.mockImplementationOnce(
       async (ctx: TenantContext, fn: () => Promise<unknown>) => {
@@ -100,8 +115,8 @@ describe("TenantContextInterceptor — abort signal on client disconnect", () =>
   it("does not abort the signal when close fires after the response is already sent", async () => {
     let capturedSignal: AbortSignal | undefined;
 
-    const req = Object.assign(new EventEmitter(), { user: { orgId: "org-normal" } });
-    const res = { writableEnded: true };
+    const req = makeReq("org-normal", true);
+    const res = makeRes(true);
 
     mockTenant.run.mockImplementationOnce(
       async (ctx: TenantContext, fn: () => Promise<unknown>) => {
@@ -116,6 +131,44 @@ describe("TenantContextInterceptor — abort signal on client disconnect", () =>
     expect(capturedSignal?.aborted).toBe(false);
   });
 
+  it("does NOT abort a healthy request whose body simply finished arriving", async () => {
+    let capturedSignal: AbortSignal | undefined;
+
+    const req = makeReq("org-healthy", true);
+    const res = makeRes(false);
+
+    mockTenant.run.mockImplementationOnce(
+      async (ctx: TenantContext, fn: () => Promise<unknown>) => {
+        capturedSignal = ctx.abortSignal;
+        req.emit("close");
+        return fn();
+      },
+    );
+
+    await lastValueFrom(interceptor.intercept(makeContext(req, res), makeCallHandler()));
+
+    expect(capturedSignal?.aborted).toBe(false);
+  });
+
+  it("aborts when the response closes before it finished — a real client hang-up", async () => {
+    let capturedSignal: AbortSignal | undefined;
+
+    const req = makeReq("org-hangup", true);
+    const res = makeRes(false);
+
+    mockTenant.run.mockImplementationOnce(
+      async (ctx: TenantContext, fn: () => Promise<unknown>) => {
+        capturedSignal = ctx.abortSignal;
+        res.emit("close");
+        return fn();
+      },
+    );
+
+    await lastValueFrom(interceptor.intercept(makeContext(req, res), makeCallHandler()));
+
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
   it("still runs after-commit hooks even when the client disconnected during the request", async () => {
     let hookResolve!: () => void;
     const hookSettled = new Promise<void>((r) => {
@@ -125,8 +178,8 @@ describe("TenantContextInterceptor — abort signal on client disconnect", () =>
       hookResolve();
     });
 
-    const req = Object.assign(new EventEmitter(), { user: { orgId: "org-hook-disconnect" } });
-    const res = { writableEnded: false };
+    const req = makeReq("org-hook-disconnect", false);
+    const res = makeRes(false);
 
     mockTenant.run.mockImplementationOnce(
       async (ctx: TenantContext, fn: () => Promise<unknown>) => {

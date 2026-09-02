@@ -36,7 +36,7 @@ export interface StreamAbortHandle {
 export function createStreamAbortSignal(
   req: CloseableRequest,
   res: EndableResponse,
-  deadlineMs: number,
+  deadlineMs: number | null,
 ): StreamAbortHandle {
   const controller = new AbortController();
   let reason: StreamAbortReason | null = null;
@@ -60,8 +60,11 @@ export function createStreamAbortSignal(
   req.on("close", onRequestClose);
   res.on("close", onResponseClose);
 
-  const timer = setTimeout(() => abortWith("deadline_exceeded"), deadlineMs);
-  timer.unref();
+  const timer =
+    deadlineMs === null
+      ? null
+      : setTimeout(() => abortWith("deadline_exceeded"), deadlineMs);
+  timer?.unref();
 
   return {
     signal: controller.signal,
@@ -69,7 +72,7 @@ export function createStreamAbortSignal(
     dispose: () => {
       if (disposed) return;
       disposed = true;
-      clearTimeout(timer);
+      if (timer !== null) clearTimeout(timer);
       req.off("close", onRequestClose);
       res.off("close", onResponseClose);
     },

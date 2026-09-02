@@ -80,6 +80,11 @@ export const MONITORED_SWEEPS = [
     maxAgeMs: 26 * 3_600_000,
   },
   {
+    jobKey: "gdpr-export-artifact-retention",
+    label: "GDPR subject-export artifact retention (72h expiry, object purge, stale-job reclaim)",
+    maxAgeMs: 3 * 3_600_000,
+  },
+  {
     jobKey: "notifications-retention-detach",
     label: "Notification partition maintenance (DETACH CONCURRENTLY + DROP)",
     maxAgeMs: 26 * 3_600_000,

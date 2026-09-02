@@ -9,7 +9,7 @@ import {
   createStreamAbortSignal,
   type CloseableRequest,
   type EndableResponse,
-} from "./ai-stream-abort";
+} from "../../../../common/http/stream-abort";
 import { runWithAiRequestAbort } from "./ai-request-abort";
 
 export const AI_REQUEST_DEADLINE_MS = 120_000;

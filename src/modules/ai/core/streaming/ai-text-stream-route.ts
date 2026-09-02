@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { createStreamAbortSignal } from "./ai-stream-abort";
+import { createStreamAbortSignal } from "../../../../common/http/stream-abort";
 import { pipeAiTextStream, rethrowStreamRouteError, type PipeableAiTextStream } from "./ai-stream-response";
 
 export const AI_TEXT_STREAM_DEADLINE_MS = 60_000;

@@ -2,7 +2,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { SessionsService } from "../sessions/sessions.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
-import { users } from "../../db/schema";
+import { gdprExportJobs, users } from "../../db/schema";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -96,7 +96,10 @@ function makeKbDb(opts: KbDbOpts = {}) {
         return chain([]);
       }),
     })),
-    update: jest.fn().mockReturnValue(chain([{ id: 99 }])),
+    update: jest.fn().mockImplementation((table: unknown) =>
+      // The export-artifact retirement is not one of the positional identity updates.
+      table === gdprExportJobs ? chain([]) : chain([{ id: 99 }]),
+    ),
     insert: jest.fn().mockReturnValue(chain([])),
     delete: jest.fn().mockImplementation(() => {
       txDeleteCount++;

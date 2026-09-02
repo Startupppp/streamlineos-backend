@@ -33,6 +33,10 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { SessionsService } from "../sessions/sessions.service";
 import { anonymiseSubjectSupportTickets } from "../support/core/support-ticket-erasure";
 import { GdprStoragePurgeService, type PurgeManifest } from "./gdpr-storage-purge.service";
+import {
+  collectSubjectExportArtifactKeys,
+  retireSubjectExportArtifacts,
+} from "./gdpr-subject-erasure-export-artifacts";
 
 const ERASED_NAME = "ERASED";
 const ERASED_CONTENT = "[ERASED]";
@@ -107,6 +111,8 @@ const NO_STORAGE_WORK: SubjectErasureStorageResult = {
  * ai_chat_conversations (title), ai_chat_messages (content), chat_messages (content),
  * support_tickets (requester_email/requester_name) and (when no other org memberships
  * remain) the global users identity row.
+ * Expires (and purges the object of): gdpr_export_jobs, whose artifact is a complete dump
+ * of the subject's personal data.
  * Hard-deletes: support_ticket_embeddings, kb_chat_messages, kb_chat_conversations,
  * kb_article_chunks and the
  * kb_ingestion_checkpoints that mirror them, where the subject authored the source page,
@@ -163,6 +169,16 @@ export class GdprSubjectErasureService {
       [orgId],
     );
 
+    // A sink the catalog cannot reach on its own: `gdpr_export_jobs.subject_user_id` is a
+    // bare `text` column with no foreign key to `users`, so `collectSubjectFileKeys...`
+    // classifies the table as org-scoped and `purgeFromManifest` deliberately skips
+    // org-scoped keys — which left the subject's own export archive, a complete dump of
+    // their personal data, alive in the bucket after their erasure.
+    if (!storageManifest.blocked)
+      storageManifest.keys.push(
+        ...(await collectSubjectExportArtifactKeys(this.db, { orgId, subjectUserId })),
+      );
+
     if (options.dryRun) {
       return {
         blocked: false,
@@ -176,6 +192,7 @@ export class GdprSubjectErasureService {
           "chat_messages",
           "support_tickets",
           "support_ticket_embeddings",
+          "gdpr_export_jobs",
           "kb_chat_messages",
           "kb_chat_conversations",
           "kb_article_chunks",
@@ -332,6 +349,12 @@ export class GdprSubjectErasureService {
         )
         .returning({ id: chatMessages.id });
       if (chatMsgResult.length > 0) tablesAnonymised.push("chat_messages");
+
+      const artifactsRetired = await retireSubjectExportArtifacts(tx, {
+        orgId,
+        subjectUserId,
+      });
+      if (artifactsRetired > 0) tablesAnonymised.push("gdpr_export_jobs");
 
       // Must precede the `users.email` update below: `support_tickets.requester_email`
       // is free text with no FK to the subject, so the live address is the only link.
