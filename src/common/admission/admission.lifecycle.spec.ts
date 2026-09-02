@@ -7,13 +7,14 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import type { CallHandler } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import { ModuleRef, Reflector } from "@nestjs/core";
 import { lastValueFrom, of, Subject, throwError, type Observable } from "rxjs";
 import type { AdmissionConfig } from "./admission.config";
 import { AdmissionGuard } from "./admission.guard";
 import { AdmissionInterceptor } from "./admission.interceptor";
 import { AdmissionService } from "./admission.service";
 import type { WorkClass } from "./work-class";
+import { WORK_CLASS_KEY } from "./work-class.decorator";
 
 const BASE_CONFIG: AdmissionConfig = {
   maxConcurrent: 20,
@@ -50,14 +51,23 @@ interface Pipeline {
   releaseSpy: jest.SpyInstance;
 }
 
+const emptyModuleRef = (): ModuleRef =>
+  ({
+    get: jest.fn(() => {
+      throw new Error("provider not found");
+    }),
+  }) as unknown as ModuleRef;
+
 function makePipeline(workClass: WorkClass | undefined, config = BASE_CONFIG): Pipeline {
   const service = new AdmissionService(config);
   const reflector = {
-    getAllAndOverride: jest.fn().mockReturnValue(workClass),
+    getAllAndOverride: jest.fn((key: string) =>
+      key === WORK_CLASS_KEY ? workClass : undefined,
+    ),
   } as unknown as Reflector;
   return {
     service,
-    guard: new AdmissionGuard(reflector, service),
+    guard: new AdmissionGuard(reflector, service, emptyModuleRef()),
     interceptor: new AdmissionInterceptor(service),
     releaseSpy: jest.spyOn(service, "release"),
   };

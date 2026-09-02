@@ -1,11 +1,12 @@
 import { ExecutionContext, ServiceUnavailableException } from "@nestjs/common";
-import { Reflector } from "@nestjs/core";
+import { ModuleRef, Reflector } from "@nestjs/core";
 import type { CallHandler } from "@nestjs/common";
 import { lastValueFrom, of, throwError } from "rxjs";
 import type { AdmissionConfig } from "./admission.config";
 import { AdmissionGuard } from "./admission.guard";
 import { AdmissionInterceptor } from "./admission.interceptor";
 import { AdmissionService } from "./admission.service";
+import { WORK_CLASS_KEY } from "./work-class.decorator";
 
 const BASE_CONFIG: AdmissionConfig = {
   maxConcurrent: 5,
@@ -41,15 +42,25 @@ function makeContext(opts: {
 
 function makeReflector(workClass: string | undefined): Reflector {
   return {
-    getAllAndOverride: jest.fn().mockReturnValue(workClass),
+    getAllAndOverride: jest.fn((key: string) =>
+      key === WORK_CLASS_KEY ? workClass : undefined,
+    ),
   } as unknown as Reflector;
+}
+
+function makeModuleRef(): ModuleRef {
+  return {
+    get: jest.fn(() => {
+      throw new Error("provider not found");
+    }),
+  } as unknown as ModuleRef;
 }
 
 describe("AdmissionGuard — refusal carries retry information", () => {
   it("throws ServiceUnavailableException with retryAfterSeconds in body", () => {
     const svc = new AdmissionService({ ...BASE_CONFIG, maxConcurrent: 1, reservedFraction: 0 });
     svc.tryAdmit("ordinary-write", "org-fill");
-    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc);
+    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc, makeModuleRef());
     const { ctx } = makeContext({ workClass: "ordinary-write", orgId: "org-b" });
     expect(() => guard.canActivate(ctx)).toThrow(ServiceUnavailableException);
   });
@@ -57,7 +68,7 @@ describe("AdmissionGuard — refusal carries retry information", () => {
   it("sets Retry-After header on refusal", () => {
     const svc = new AdmissionService({ ...BASE_CONFIG, maxConcurrent: 1, reservedFraction: 0 });
     svc.tryAdmit("ordinary-write", "org-fill");
-    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc);
+    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc, makeModuleRef());
     const { ctx, res } = makeContext({ workClass: "ordinary-write", orgId: "org-b" });
     expect(() => guard.canActivate(ctx)).toThrow();
     expect(res.set).toHaveBeenCalledWith("Retry-After", expect.any(String));
@@ -68,7 +79,7 @@ describe("AdmissionGuard — refusal carries retry information", () => {
   it("includes retryAfterSeconds in the exception body", () => {
     const svc = new AdmissionService({ ...BASE_CONFIG, maxConcurrent: 1, reservedFraction: 0 });
     svc.tryAdmit("ordinary-write", "org-fill");
-    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc);
+    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc, makeModuleRef());
     const { ctx } = makeContext({ workClass: "ordinary-write", orgId: "org-b" });
     let thrown: unknown;
     try {
@@ -90,14 +101,14 @@ describe("AdmissionGuard — unclassified route defaults to ordinary-write", () 
     svc.tryAdmit("authentication", "org-fill");
     svc.tryAdmit("authentication", "org-fill");
     svc.tryAdmit("authentication", "org-fill");
-    const guard = new AdmissionGuard(makeReflector(undefined), svc);
+    const guard = new AdmissionGuard(makeReflector(undefined), svc, makeModuleRef());
     const { ctx } = makeContext({ orgId: "org-b" });
     expect(() => guard.canActivate(ctx)).toThrow(ServiceUnavailableException);
   });
 
   it("is admitted at low load (ordinary-write threshold not reached)", () => {
     const svc = new AdmissionService(BASE_CONFIG);
-    const guard = new AdmissionGuard(makeReflector(undefined), svc);
+    const guard = new AdmissionGuard(makeReflector(undefined), svc, makeModuleRef());
     const { ctx } = makeContext({ orgId: "org-a" });
     expect(() => guard.canActivate(ctx)).not.toThrow();
     expect(guard.canActivate(ctx)).toBe(true);
@@ -111,7 +122,7 @@ describe("AdmissionGuard — reserved class survives sheddable saturation", () =
     svc.tryAdmit("authentication", "fill-2");
     svc.tryAdmit("authentication", "fill-3");
     svc.tryAdmit("authentication", "fill-4");
-    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc);
+    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc, makeModuleRef());
     const { ctx: sheddableCtx } = makeContext({ workClass: "ordinary-write", orgId: "org-shed" });
     expect(() => guard.canActivate(sheddableCtx)).toThrow(ServiceUnavailableException);
 
@@ -120,7 +131,7 @@ describe("AdmissionGuard — reserved class survives sheddable saturation", () =
     svc2.tryAdmit("authentication", "fill-2");
     svc2.tryAdmit("authentication", "fill-3");
     svc2.tryAdmit("authentication", "fill-4");
-    const guard2 = new AdmissionGuard(makeReflector("authentication"), svc2);
+    const guard2 = new AdmissionGuard(makeReflector("authentication"), svc2, makeModuleRef());
     const { ctx: reservedCtx } = makeContext({ workClass: "authentication", orgId: "org-reserved" });
     const result = guard2.canActivate(reservedCtx);
     expect(result).toBe(true);
@@ -131,7 +142,7 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
   it("returns to zero after a successful handler", async () => {
     const svc = new AdmissionService(BASE_CONFIG);
     const reflector = makeReflector("ordinary-write");
-    const guard = new AdmissionGuard(reflector, svc);
+    const guard = new AdmissionGuard(reflector, svc, makeModuleRef());
     const interceptor = new AdmissionInterceptor(svc);
 
     const req: Record<string, unknown> = {
@@ -157,7 +168,7 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
   it("returns to zero after a throwing handler", async () => {
     const svc = new AdmissionService(BASE_CONFIG);
     const reflector = makeReflector("ordinary-write");
-    const guard = new AdmissionGuard(reflector, svc);
+    const guard = new AdmissionGuard(reflector, svc, makeModuleRef());
     const interceptor = new AdmissionInterceptor(svc);
 
     const req: Record<string, unknown> = {
@@ -206,7 +217,7 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
 
   it("sets _admissionOrgId on the request when admitted", () => {
     const svc = new AdmissionService(BASE_CONFIG);
-    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc);
+    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc, makeModuleRef());
     const req: Record<string, unknown> = {
       user: { orgId: "org-check" },
       _admissionOrgId: undefined,
@@ -224,7 +235,7 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
 
   it("uses __public__ as orgId for unauthenticated requests", () => {
     const svc = new AdmissionService(BASE_CONFIG);
-    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc);
+    const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc, makeModuleRef());
     const req: Record<string, unknown> = { user: undefined, _admissionOrgId: undefined };
     const res = { set: jest.fn() };
     const ctx = {

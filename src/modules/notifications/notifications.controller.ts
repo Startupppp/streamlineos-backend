@@ -24,6 +24,8 @@ import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { UseAdmissionTenantHint } from "../../common/admission/admission-tenant-hint";
+import { UseWorkClass } from "../../common/admission/work-class.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { NotificationsService } from "./notifications.service";
 import { NotificationEventService } from "./notification-event.service";
@@ -80,6 +82,8 @@ export class NotificationsController {
   @Sse()
   @Public()
   @NoTenantTransaction()
+  @UseWorkClass("non-mandatory-notification")
+  @UseAdmissionTenantHint(NotificationEventService)
   stream(
     @Headers("authorization") authorization: string | undefined,
   ): Observable<MessageEvent> {
