@@ -158,6 +158,56 @@
       "measuredDbCalls": null,
       "measuredLatencyP95Ms": null,
       "note": "Attachment download URL — returns a signed/temporary download URL, not the binary; small response"
+    },
+    "GET /dashboard/personal": {
+      "maxDbCalls": 12,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 65536,
+      "maxLatencyP95Ms": 800,
+      "maxMemoryMb": 64,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Home/personal dashboard — aggregates myTasks (2 queries), timesheets (1), leaveBalance (3-4), upcomingEvents (1), unreadNotifications (0-4 cached). Budget is the cache-miss ceiling: selfMember(1) + getMyIssues(2) + timesheets(1) + leaveBalance(4) + upcomingEvents(1) + unreadCount(3) = 12."
+    },
+    "GET /chat/channels": {
+      "maxDbCalls": 7,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 131072,
+      "maxLatencyP95Ms": 500,
+      "maxMemoryMb": 64,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Chat channel list — listMemberChannels path: getMembershipId(1) + pageRows(1) + findMany-channels-with-members(1) + unreadRows(1) + lastMessageRows(1) + resolvePeopleIdentities(1) + entity-resolution(0-1) = 6-7."
+    },
+    "GET /chat/unread": {
+      "maxDbCalls": 3,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 1024,
+      "maxLatencyP95Ms": 200,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Chat global unread count — getUnreadTotal: resolveMembershipId(1) + count-query(1) = 2; ceiling 3 covers the Redis read."
+    },
+    "GET /calendar/events": {
+      "maxDbCalls": 15,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 524288,
+      "maxLatencyP95Ms": 1500,
+      "maxMemoryMb": 128,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Calendar range aggregate — runs up to 5 parallel sources (native, build, HR leaves, HR holidays, tasks); each source 1-3 DB queries + moduleAvailabilityFor per source + getDisabledKeys(1). Ceiling covers all sources enabled with cache-miss access checks."
+    },
+    "GET /notifications/unread-count": {
+      "maxDbCalls": 5,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 1024,
+      "maxLatencyP95Ms": 200,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Notifications unread count — Redis-cached path is 0 DB calls; cache-miss path: resolveMembershipId(1) + fetchLastReadId calls resolveMembershipId again(1) + watermark-select(1) + count-query(1) = 4. Ceiling 5 adds one slack for future watermark refactor."
     }
   }
 }

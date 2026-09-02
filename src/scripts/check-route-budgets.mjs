@@ -265,5 +265,19 @@ if (total > 0) {
   process.exit(1);
 }
 
+if (budgetCount > 0 && pendingMeasurement === budgetCount) {
+  process.stdout.write(
+    `  INCONCLUSIVE — manifest is valid, but every declared budget is unmeasured, so "no budgets exceeded" proves nothing. Populate the measured fields before citing this gate as evidence.\n`,
+  );
+  process.exit(0);
+}
+
+if (pendingMeasurement > 0) {
+  process.stdout.write(
+    `  PARTIAL — ${String(budgetCount - pendingMeasurement)} of ${String(budgetCount)} budgets measured and within ceiling; ${String(pendingMeasurement)} unmeasured and therefore unenforced\n`,
+  );
+  process.exit(0);
+}
+
 process.stdout.write(`  OK — route budget manifest is valid and no budgets exceeded\n`);
 process.exit(0);
