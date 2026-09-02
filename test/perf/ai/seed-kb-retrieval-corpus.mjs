@@ -19,6 +19,8 @@ import {
   TOPIC_POOL,
   TOPIC_VECTOR_SQL,
   TOTAL_CHUNKS,
+  jitterIndexSql,
+  topicIndexSql,
 } from "./kb-retrieval-corpus.mjs";
 
 const url = process.env.PERF_DATABASE_URL;
@@ -101,7 +103,7 @@ async function rebuildAnnIndex() {
 
 async function loadChunks() {
   await sql`DELETE FROM kb_article_chunks WHERE org_id LIKE 'perf_kb_%'`;
-  for (const { orgId, chunks } of CORPUS) {
+  for (const { orgId, chunks, seed } of CORPUS) {
     const done = step(`${orgId}: ${chunks.toLocaleString()} chunks`);
     const batch = 4_000;
     for (let offset = 0; offset < chunks; offset += batch) {
@@ -121,13 +123,45 @@ async function loadChunks() {
            $2,
            1
          FROM generate_series($3::int, $3::int + $4::int - 1) g
-         JOIN perf_topic_pool tp ON tp.id = (g * 7919) % ${TOPIC_POOL}
-         JOIN perf_jitter_pool jp ON jp.id = (g * 104729) % ${JITTER_POOL}`,
+         JOIN perf_topic_pool tp ON tp.id = ${topicIndexSql(seed)}
+         JOIN perf_jitter_pool jp ON jp.id = ${jitterIndexSql(seed)}`,
         [orgId, EMBEDDING_MODEL, offset, size],
       );
     }
     done();
   }
+}
+
+/**
+ * A corpus of `n` rows drawn from `k` distinct points is a duplicate table, not
+ * an ANN workload: HNSW over exact copies answers from the first neighbourhood
+ * it enters and the post-filter cost this benchmark exists to measure never
+ * materialises. The previous pool arithmetic produced 1,536 distinct embeddings
+ * for 20,000 rows, so the ratio is asserted rather than assumed.
+ */
+async function assertCorpusIsNotDegenerate() {
+  const rows = await sql`
+    SELECT org_id,
+           count(*)::int AS chunks,
+           count(DISTINCT embedding)::int AS distinct_embeddings
+    FROM kb_article_chunks
+    WHERE org_id LIKE 'perf_kb_%'
+    GROUP BY org_id`;
+  for (const row of rows)
+    if (row.distinct_embeddings < row.chunks)
+      throw new Error(
+        `${row.org_id} holds ${row.chunks} rows but only ${row.distinct_embeddings} distinct ` +
+          `embeddings — the pool arithmetic is cycling and the corpus is not realistic.`,
+      );
+  const [{ distinct_embeddings: distinctOverall, chunks: totalChunks }] = await sql`
+    SELECT count(*)::int AS chunks, count(DISTINCT embedding)::int AS distinct_embeddings
+    FROM kb_article_chunks WHERE org_id LIKE 'perf_kb_%'`;
+  console.log(
+    `\nDistinct embeddings: ${distinctOverall.toLocaleString()} of ` +
+      `${totalChunks.toLocaleString()} rows`,
+  );
+  if (distinctOverall < totalChunks)
+    throw new Error("Two organisations share a point — the per-org seed offsets collide.");
 }
 
 async function main() {
@@ -138,6 +172,7 @@ async function main() {
   await buildPools();
   await dropAnnIndex();
   await loadChunks();
+  await assertCorpusIsNotDegenerate();
   await rebuildAnnIndex();
 
   const done = step("VACUUM ANALYZE");

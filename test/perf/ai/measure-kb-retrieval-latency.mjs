@@ -40,7 +40,16 @@ for (const [name, url] of [
   }
 
 const args = process.argv.slice(2);
-const runs = Math.max(5, Number.parseInt(args.find((a) => a.startsWith("--runs="))?.slice(7) ?? "25", 10));
+/**
+ * A p99 needs at least 100 samples to name a real observation; below that
+ * `ceil(0.99 n) - 1` lands on the maximum and the "p99" is just the slowest run
+ * wearing a percentile's name. The floor is therefore 100, not a suggestion.
+ */
+const MIN_RUNS_FOR_P99 = 100;
+const runs = Math.max(
+  MIN_RUNS_FOR_P99,
+  Number.parseInt(args.find((a) => a.startsWith("--runs="))?.slice(7) ?? "100", 10),
+);
 const jsonOut = args.find((a) => a.startsWith("--json="))?.slice(7);
 
 const owner = postgres(ownerUrl, { max: 1, onnotice: () => {} });
@@ -181,7 +190,9 @@ async function measure(scenario, orgId, vectors) {
     runs: durations.length,
     p50Ms: Number(percentile(durations, 0.5).toFixed(2)),
     p95Ms: Number(percentile(durations, 0.95).toFixed(2)),
+    p99Ms: Number(percentile(durations, 0.99).toFixed(2)),
     medianBuffers: percentile(buffers, 0.5),
+    p95Buffers: percentile(buffers, 0.95),
     rowsReturned,
     plan,
   };
@@ -200,6 +211,7 @@ async function main() {
   const total = counts.reduce((s, r) => s + r.chunks, 0);
 
   console.log(`Target ${db} · measured as ${roleName} (no BYPASSRLS, tenant GUC set)`);
+  console.log(`${runs} timed samples per cell after 3 discarded warm-ups`);
   console.log(`Corpus ${total.toLocaleString()} chunks (declared ${TOTAL_CHUNKS.toLocaleString()})`);
   for (const { orgId, label } of CORPUS)
     console.log(
@@ -214,14 +226,17 @@ async function main() {
   for (const scenario of SCENARIOS) {
     console.log(`\n${scenario.label}`);
     console.log(
-      `  ${"org".padEnd(16)} ${"share".padStart(7)} ${"p50 ms".padStart(9)} ${"p95 ms".padStart(9)} ${"buffers".padStart(9)} ${"rows".padStart(6)}  plan`,
+      `  ${"org".padEnd(16)} ${"share".padStart(7)} ${"p50 ms".padStart(9)} ${"p95 ms".padStart(9)} ` +
+        `${"p99 ms".padStart(9)} ${"buffers".padStart(9)} ${"rows".padStart(6)}  plan`,
     );
     for (const { orgId } of CORPUS) {
       const row = await measure(scenario, orgId, vectors);
       results.push({ ...row, chunks: byOrg.get(orgId) ?? 0 });
       const share = (((byOrg.get(orgId) ?? 0) / total) * 100).toFixed(1) + "%";
       console.log(
-        `  ${orgId.padEnd(16)} ${share.padStart(7)} ${String(row.p50Ms).padStart(9)} ${String(row.p95Ms).padStart(9)} ${String(row.medianBuffers).padStart(9)} ${String(row.rowsReturned).padStart(6)}  ${row.plan}`,
+        `  ${orgId.padEnd(16)} ${share.padStart(7)} ${String(row.p50Ms).padStart(9)} ` +
+          `${String(row.p95Ms).padStart(9)} ${String(row.p99Ms).padStart(9)} ` +
+          `${String(row.medianBuffers).padStart(9)} ${String(row.rowsReturned).padStart(6)}  ${row.plan}`,
       );
     }
   }
@@ -238,7 +253,25 @@ async function main() {
   );
 
   if (jsonOut) {
-    writeFileSync(jsonOut, JSON.stringify({ db, role: roleName, runs, results }, null, 2));
+    writeFileSync(
+      jsonOut,
+      JSON.stringify(
+        {
+          db,
+          role: roleName,
+          runs,
+          corpus: CORPUS.map((o) => ({
+            ...o,
+            seeded: byOrg.get(o.orgId) ?? 0,
+            share: Number((((byOrg.get(o.orgId) ?? 0) / total) * 100).toFixed(2)),
+          })),
+          totalChunks: total,
+          results,
+        },
+        null,
+        2,
+      ),
+    );
     console.log(`\nWrote ${jsonOut}`);
   }
 
