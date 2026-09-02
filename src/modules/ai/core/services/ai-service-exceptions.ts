@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from "@nestjs/common";
+import { RequestTimeoutException, ServiceUnavailableException } from "@nestjs/common";
 
 /**
  * The two 503s an AI surface can raise mean genuinely different things to the
@@ -34,6 +34,24 @@ export class AiConcurrencyLimitException extends ServiceUnavailableException {
     super({
       code: AI_CONCURRENCY_LIMIT_CODE,
       message: message.trim() ? message : CONCURRENCY_LIMIT_DEFAULT,
+    });
+  }
+}
+
+export const AI_REQUEST_CANCELLED_CODE = "AI_REQUEST_CANCELLED";
+
+const REQUEST_CANCELLED_DEFAULT = "AI request was cancelled before it completed";
+
+/**
+ * The caller hung up or the deadline fired. Distinct from a provider fault on
+ * purpose: nothing failed, so this must never feed the circuit breaker and must
+ * never settle a full charge.
+ */
+export class AiRequestCancelledException extends RequestTimeoutException {
+  constructor(message: string = REQUEST_CANCELLED_DEFAULT) {
+    super({
+      code: AI_REQUEST_CANCELLED_CODE,
+      message: message.trim() ? message : REQUEST_CANCELLED_DEFAULT,
     });
   }
 }

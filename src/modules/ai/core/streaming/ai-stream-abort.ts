@@ -3,10 +3,18 @@ export type StreamAbortReason = "client_disconnected" | "deadline_exceeded";
 export interface CloseableRequest {
   on(event: "close", listener: () => void): unknown;
   off(event: "close", listener: () => void): unknown;
+  /**
+   * Node sets this once the body has been fully received. The `close` event is
+   * emitted in that case too, so it is the only thing that separates "the client
+   * finished sending" from "the connection died".
+   */
+  readonly complete?: boolean;
 }
 
 export interface EndableResponse {
   readonly writableEnded: boolean;
+  on(event: "close", listener: () => void): unknown;
+  off(event: "close", listener: () => void): unknown;
 }
 
 export interface StreamAbortHandle {
@@ -16,9 +24,14 @@ export interface StreamAbortHandle {
 }
 
 /**
- * A client disconnect and a wall-clock deadline both have to reach the provider,
- * and `res.on("close")` also fires on a *successful* response — so the disconnect
- * arm is gated on `writableEnded` the same way `TenantContextInterceptor` gates it.
+ * The request stream is the wrong place to watch for a hang-up. Express drains
+ * the body before the handler runs, so `req` is already `complete` and
+ * `destroyed`: a listener attached early fires immediately on a perfectly
+ * healthy request, and one attached late never fires at all — which is what a
+ * real disconnect then looks like. The response is what stays open for the
+ * length of the call, so `res.close` before `writableEnded` is the arm that
+ * actually detects the client leaving; the request arm is kept only for the
+ * premature-termination case Node marks with `complete === false`.
  */
 export function createStreamAbortSignal(
   req: CloseableRequest,
@@ -35,11 +48,17 @@ export function createStreamAbortSignal(
     controller.abort();
   };
 
-  const onClose = (): void => {
+  const onRequestClose = (): void => {
+    if (req.complete === true) return;
     if (!res.writableEnded) abortWith("client_disconnected");
   };
 
-  req.on("close", onClose);
+  const onResponseClose = (): void => {
+    if (!res.writableEnded) abortWith("client_disconnected");
+  };
+
+  req.on("close", onRequestClose);
+  res.on("close", onResponseClose);
 
   const timer = setTimeout(() => abortWith("deadline_exceeded"), deadlineMs);
   timer.unref();
@@ -51,7 +70,8 @@ export function createStreamAbortSignal(
       if (disposed) return;
       disposed = true;
       clearTimeout(timer);
-      req.off("close", onClose);
+      req.off("close", onRequestClose);
+      res.off("close", onResponseClose);
     },
   };
 }

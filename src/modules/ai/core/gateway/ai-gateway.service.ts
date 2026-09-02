@@ -1,4 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
+import { Redis } from "@upstash/redis";
 import { createHash } from "crypto";
 import { LlmService } from "../providers/llm.service";
 import { EmbeddingsService } from "../providers/embeddings.service";
@@ -18,6 +19,13 @@ import { AiGatewayRunnerHelper } from "./ai-gateway-runner.helper";
 import { AiGatewayEmbedHelper } from "./ai-gateway-embed.helper";
 import { AiResponseCacheService } from "./ai-response-cache.service";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
+import { getAiRequestAbortSignal } from "../streaming/ai-request-abort";
+import { REDIS } from "../../../../common/cache/cache.service";
+import {
+  AiGatewayStreamHelper,
+  type AiStreamTextOpts,
+  type AiTextStream,
+} from "./ai-gateway-stream.helper";
 import type {
   AiInvokeResult,
   AiInvokeWithUsageResult,
@@ -34,6 +42,8 @@ import type {
 } from "./ai-gateway.types";
 
 export type {
+  AiStreamTextOpts,
+  AiTextStream,
   InvokeStructuredOpts,
   InvokeStructuredWithImageOpts,
   InvokeTextOpts,
@@ -44,6 +54,7 @@ export type {
 };
 
 const CONCURRENCY_EXCEEDED_MESSAGE = "Too many concurrent AI requests for this organization";
+const CANCELLED_MESSAGE = "AI request was cancelled before it completed";
 const EMBEDDING_TIER = "embedding";
 
 function resolveCacheOpts(cache: AiResponseCacheOpts | undefined): AiResponseCacheOpts | null {
@@ -58,6 +69,7 @@ export class AiGatewayService {
   >();
   private readonly runner: AiGatewayRunnerHelper;
   private readonly embedder: AiGatewayEmbedHelper;
+  private readonly streamer: AiGatewayStreamHelper;
 
   constructor(
     private readonly llm: LlmService,
@@ -67,10 +79,22 @@ export class AiGatewayService {
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
     private readonly responseCache: AiResponseCacheService,
     private readonly concurrencyLimiter: AiConcurrencyLimiter,
+    @Optional() @Inject(REDIS) redis: Redis | null = null,
   ) {
     const credit = new AiGatewayCreditHelper(ledger, usageSvc, audit);
     this.runner = new AiGatewayRunnerHelper(llm, credit);
     this.embedder = new AiGatewayEmbedHelper(embeddings, ledger, usageSvc);
+    this.streamer = new AiGatewayStreamHelper(ledger, usageSvc, concurrencyLimiter, redis);
+  }
+
+  /**
+   * The streaming sibling of `invokeText`. Reserves before the paid call and
+   * settles token-metered after it, so a streamed surface bills the same way a
+   * buffered one does — and a cancelled stream releases instead of settling.
+   */
+  async streamTextWithUsage(opts: AiStreamTextOpts): Promise<AiTextStream> {
+    const signal = opts.signal ?? getAiRequestAbortSignal();
+    return this.streamer.run({ ...opts, ...(signal !== undefined ? { signal } : {}) });
   }
 
   /**
@@ -98,13 +122,22 @@ export class AiGatewayService {
   async embedQueryWithCredit(opts: EmbedQueryOpts): Promise<EmbedQueryResult> {
     const call = this.beginCall({ feature: opts.feature, tier: EMBEDDING_TIER, orgId: opts.orgId });
     const correlationId = call.correlationId;
+    const signal = opts.signal ?? getAiRequestAbortSignal();
+    if (signal?.aborted === true) {
+      call.finish("cancelled");
+      return { ok: false, kind: "cancelled", message: CANCELLED_MESSAGE, correlationId };
+    }
     const allowed = await call.queue(() => this.concurrencyLimiter.acquire(opts.orgId));
     if (!allowed) {
       call.finish("concurrency_exceeded");
       return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
     }
     try {
-      return await this.embedder.run(opts, correlationId, call);
+      return await this.embedder.run(
+        { ...opts, ...(signal !== undefined ? { signal } : {}) },
+        correlationId,
+        call,
+      );
     } finally {
       this.concurrencyLimiter.release(opts.orgId);
     }
@@ -113,6 +146,11 @@ export class AiGatewayService {
   async embedBatchWithCredit(opts: EmbedBatchOpts): Promise<EmbedBatchResult> {
     const call = this.beginCall({ feature: opts.feature, tier: EMBEDDING_TIER, orgId: opts.orgId });
     const correlationId = call.correlationId;
+    const signal = opts.signal ?? getAiRequestAbortSignal();
+    if (signal?.aborted === true) {
+      call.finish("cancelled");
+      return { ok: false, kind: "cancelled", message: CANCELLED_MESSAGE, correlationId };
+    }
     if (opts.texts.length === 0) {
       call.finish("ok", { promptTokens: 0, completionTokens: 0, creditsMilli: 0 });
       return { ok: true, vectors: [] };
@@ -124,7 +162,11 @@ export class AiGatewayService {
       return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
     }
     try {
-      return await this.embedder.runBatch(opts, correlationId, call);
+      return await this.embedder.runBatch(
+        { ...opts, ...(signal !== undefined ? { signal } : {}) },
+        correlationId,
+        call,
+      );
     } finally {
       this.concurrencyLimiter.release(opts.orgId);
     }

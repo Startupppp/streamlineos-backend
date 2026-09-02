@@ -11,6 +11,7 @@ import {
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiRequestCancelledException } from "./ai-service-exceptions";
 import {
   runInTenantTransaction,
   runInNewTenantTransaction,
@@ -118,9 +119,11 @@ export class KbRagRetrievalService {
     orgId: string,
     question: string,
     articleId?: number,
+    signal?: AbortSignal,
   ): Promise<KbContext | null> {
-    const vector = await this.embedQuestion(question, orgId);
+    const vector = await this.embedQuestion(question, orgId, signal);
     if (vector === null) return null;
+    signal?.throwIfAborted();
     const chunks = await this.fetchChunks(orgId, vector, articleId);
     if (chunks.length === 0) return null;
     const sources = this.dedupeSources(chunks);
@@ -128,18 +131,25 @@ export class KbRagRetrievalService {
     return { sources, system, userContext };
   }
 
-  private async embedQuestion(text: string, orgId: string): Promise<string | null> {
+  private async embedQuestion(
+    text: string,
+    orgId: string,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
     const embedResult = await this.aiGateway.embedQueryWithCredit({
       text,
       orgId,
       feature: "kb.public-embedding",
       charge: true,
+      ...(signal !== undefined ? { signal } : {}),
     });
     if (!embedResult.ok) {
       if (embedResult.kind === "quota_exceeded")
         throw new InsufficientAiCreditsException({ message: embedResult.message });
       if (embedResult.kind === "concurrency_exceeded")
         throw new ServiceUnavailableException(embedResult.message);
+      if (embedResult.kind === "cancelled")
+        throw new AiRequestCancelledException(embedResult.message);
       throw new ServiceUnavailableException("AI provider is temporarily unavailable");
     }
     return embedResult.vectorLiteral;

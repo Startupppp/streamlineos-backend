@@ -6,6 +6,8 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import { logger } from "../../../../common/logger/logger.service";
 import { type AiCreditLedger } from "./credit-ledger.interface";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
+
+export const AI_CANCELLED_MESSAGE = "AI request was cancelled before it completed";
 import type { AiCallOutcome, AiCallTimings } from "../telemetry/ai-call-metrics";
 import type {
   AiInvokeResult,
@@ -272,22 +274,25 @@ export class AiGatewayCreditHelper {
       };
     }
 
+    const cancelled = input.outcome === "cancelled";
+
     await this.releaseReservation(
       reservationId,
-      "provider_error",
+      cancelled ? "cancelled" : "provider_error",
       actor.orgId,
       correlationId,
     );
 
-    const message =
+    const providerMessage =
       error instanceof ServiceUnavailableException
         ? error.message
         : "AI provider is temporarily unavailable";
-    const kind: AiInvokeFailure["kind"] = message
-      .toLowerCase()
-      .includes("not configured")
-      ? "not_configured"
-      : "provider_unavailable";
+    const message = cancelled ? AI_CANCELLED_MESSAGE : providerMessage;
+    const kind: AiInvokeFailure["kind"] = cancelled
+      ? "cancelled"
+      : providerMessage.toLowerCase().includes("not configured")
+        ? "not_configured"
+        : "provider_unavailable";
 
     await this.settleAndTrack({
       reservationId: 0,

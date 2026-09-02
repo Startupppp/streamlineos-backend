@@ -22,7 +22,7 @@ const ACTOR: CurrentUserContext = {
 
 const BODY = { messages: [{ role: "user", content: "hi" }] };
 
-function makeRequest(): Request & { emitClose: () => void } {
+function closeEmitter() {
   const listeners = new Set<() => void>();
   return {
     on: (_event: string, listener: () => void) => listeners.add(listener),
@@ -30,11 +30,23 @@ function makeRequest(): Request & { emitClose: () => void } {
     emitClose: () => {
       for (const l of [...listeners]) l();
     },
-  } as unknown as Request & { emitClose: () => void };
+  };
 }
 
-function makeResponse(): Response & { end: jest.Mock } {
-  return { writableEnded: false, end: jest.fn() } as unknown as Response & { end: jest.Mock };
+/**
+ * `complete: true` is what a real Express request looks like by the time a
+ * handler runs — the body is already drained and the request stream is closed.
+ * A fake without it cannot tell a hang-up from a normal request.
+ */
+function makeRequest(): Request & { emitClose: () => void } {
+  return { ...closeEmitter(), complete: true } as unknown as Request & { emitClose: () => void };
+}
+
+function makeResponse(): Response & { end: jest.Mock; emitClose: () => void } {
+  return { ...closeEmitter(), writableEnded: false, end: jest.fn() } as unknown as Response & {
+    end: jest.Mock;
+    emitClose: () => void;
+  };
 }
 
 function makeController(processChat: jest.Mock, aiChat = true) {
@@ -126,6 +138,36 @@ describe("ChatAssistantController — cancellation reaches the service", () => {
   it("hands processChat a signal that aborts on a client disconnect mid-flight", async () => {
     let signal: AbortSignal | undefined;
     const req = makeRequest();
+    const res = makeResponse();
+    const controller = makeController(
+      jest
+        .fn()
+        .mockImplementation(
+          (
+            _messages: unknown,
+            _actor: unknown,
+            _conversationId: unknown,
+            _persona: unknown,
+            s: AbortSignal,
+          ) => {
+            signal = s;
+            res.emitClose();
+            return Promise.resolve({
+              pipeTextStreamToResponse: jest.fn().mockResolvedValue(undefined),
+            });
+          },
+        ),
+    );
+
+    await controller.chatAssistant(req, BODY, ACTOR, res);
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("does NOT abort because the request body was fully received", async () => {
+    let signal: AbortSignal | undefined;
+    const req = makeRequest();
+    const res = makeResponse();
     const controller = makeController(
       jest
         .fn()
@@ -146,8 +188,8 @@ describe("ChatAssistantController — cancellation reaches the service", () => {
         ),
     );
 
-    await controller.chatAssistant(req, BODY, ACTOR, makeResponse());
+    await controller.chatAssistant(req, BODY, ACTOR, res);
 
-    expect(signal?.aborted).toBe(true);
+    expect(signal?.aborted).toBe(false);
   });
 });

@@ -7,7 +7,7 @@
  *
  * Methods checked: invokeStructured, invokeStructuredWithUsage, invokeStructuredWithImage,
  * invokeStructuredWithImageWithUsage, invokeText, invokeTextWithUsage,
- * embedQueryWithCredit, embedBatchWithCredit.
+ * embedQueryWithCredit, embedBatchWithCredit, streamTextWithUsage.
  * The self-test derives this list from AiGatewayService itself, so a new paid
  * entry point fails the gate rather than escaping the scan.
  *
@@ -34,7 +34,7 @@ import { join, relative } from "node:path";
 // (see assertCoversEveryPaidEntryPoint) so a new entry point fails this gate
 // instead of silently escaping it.
 const INVOKE_RE =
-  /\.(invokeStructured(?:WithImage)?(?:WithUsage)?|invokeText(?:WithUsage)?|embed(?:Query|Batch)WithCredit)\s*\(/g;
+  /\.(invokeStructured(?:WithImage)?(?:WithUsage)?|invokeText(?:WithUsage)?|embed(?:Query|Batch)WithCredit|streamTextWithUsage)\s*\(/g;
 
 const GATEWAY_SERVICE_REL = "src/modules/ai/core/gateway/ai-gateway.service.ts";
 
@@ -48,7 +48,7 @@ export function paidEntryPointsFromGateway(source) {
   for (const m of source.matchAll(/^\s{2}(?:async\s+)?([a-zA-Z][A-Za-z0-9_]*)\s*[(<]/gm)) {
     const name = m[1];
     if (/^(?:constructor|private|public|protected|get|set|if|for|while|return|catch)$/.test(name)) continue;
-    if (/^(?:invoke|embed)/.test(name) && !/^is[A-Z]/.test(name)) names.add(name);
+    if (/^(?:invoke|embed|stream)/.test(name) && !/^is[A-Z]/.test(name)) names.add(name);
   }
   return names;
 }

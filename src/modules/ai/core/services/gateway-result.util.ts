@@ -3,6 +3,7 @@ import { InsufficientAiCreditsException } from "../../../../common/http/api-exce
 import {
   AiConcurrencyLimitException,
   AiProviderUnavailableException,
+  AiRequestCancelledException,
 } from "./ai-service-exceptions";
 import type {
   AiInvokeFailure,
@@ -26,6 +27,8 @@ export function throwOnAiFailure(result: AiInvokeFailure): never {
       throw new BadRequestException(result.message);
     case "concurrency_exceeded":
       throw new AiConcurrencyLimitException(result.message);
+    case "cancelled":
+      throw new AiRequestCancelledException(result.message);
     default:
       assertNever(result.kind);
   }

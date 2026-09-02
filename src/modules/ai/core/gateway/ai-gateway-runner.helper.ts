@@ -6,7 +6,8 @@ import {
 } from "../billing/ai-model-pricing.constants";
 import { getReserveEstimateMilli as getCatalogEstimateMilli } from "../billing/ai-cost-catalog";
 import { AiCallMetrics, type AiCallOutcome } from "../telemetry/ai-call-metrics";
-import { AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
+import { AI_CANCELLED_MESSAGE, AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
+import { getAiRequestAbortSignal } from "../streaming/ai-request-abort";
 import type {
   AiInvokeResult,
   AiInvokeWithUsageResult,
@@ -35,6 +36,18 @@ function boundedMaxTokens(requested: number | undefined): number {
  */
 function outcomeForError(signal: AbortSignal | undefined): AiCallOutcome | undefined {
   return signal?.aborted === true ? "cancelled" : undefined;
+}
+
+/**
+ * Explicit wins over ambient, so a caller holding its own handle (the streaming
+ * routes) keeps its deadline; everything else inherits the request's.
+ */
+function resolveSignal(explicit: AbortSignal | undefined): AbortSignal | undefined {
+  return explicit ?? getAiRequestAbortSignal();
+}
+
+function cancelledFailure(correlationId: string): AiInvokeResult<never> {
+  return { ok: false, kind: "cancelled", message: AI_CANCELLED_MESSAGE, correlationId };
 }
 
 export class AiGatewayRunnerHelper {
@@ -86,6 +99,12 @@ export class AiGatewayRunnerHelper {
       };
     }
 
+    const signal = resolveSignal(opts.signal);
+    if (signal?.aborted === true) {
+      call.finish("cancelled");
+      return cancelledFailure(correlationId);
+    }
+
     const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
 
@@ -120,7 +139,7 @@ export class AiGatewayRunnerHelper {
           user: prompt.user,
           maxTokens: boundedMaxTokens(maxTokens),
           onRetry: () => call.retried(),
-          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+          ...(signal !== undefined ? { signal } : {}),
         }),
       );
 
@@ -173,7 +192,7 @@ export class AiGatewayRunnerHelper {
       };
     } catch (error) {
       const latencyMs = Date.now() - start;
-      const cancelled = outcomeForError(opts.signal);
+      const cancelled = outcomeForError(signal);
       const timings = call.finish(cancelled ?? "error");
       return this.credit.handleProviderError({
         error,
@@ -239,6 +258,12 @@ export class AiGatewayRunnerHelper {
       };
     }
 
+    const signal = resolveSignal(opts.signal);
+    if (signal?.aborted === true) {
+      call.finish("cancelled");
+      return cancelledFailure(correlationId);
+    }
+
     const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
 
@@ -274,7 +299,7 @@ export class AiGatewayRunnerHelper {
           images: opts.images,
           maxTokens: boundedMaxTokens(maxTokens),
           onRetry: () => call.retried(),
-          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+          ...(signal !== undefined ? { signal } : {}),
         }),
       );
 
@@ -327,7 +352,7 @@ export class AiGatewayRunnerHelper {
       };
     } catch (error) {
       const latencyMs = Date.now() - start;
-      const cancelled = outcomeForError(opts.signal);
+      const cancelled = outcomeForError(signal);
       const timings = call.finish(cancelled ?? "error");
       return this.credit.handleProviderError({
         error,
@@ -367,6 +392,12 @@ export class AiGatewayRunnerHelper {
       };
     }
 
+    const signal = resolveSignal(opts.signal);
+    if (signal?.aborted === true) {
+      call.finish("cancelled");
+      return cancelledFailure(correlationId);
+    }
+
     const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
 
@@ -399,7 +430,7 @@ export class AiGatewayRunnerHelper {
           user: prompt.user,
           maxTokens: boundedMaxTokens(maxTokens),
           onRetry: () => call.retried(),
-          ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+          ...(signal !== undefined ? { signal } : {}),
         }),
       );
 
@@ -452,7 +483,7 @@ export class AiGatewayRunnerHelper {
       };
     } catch (error) {
       const latencyMs = Date.now() - start;
-      const cancelled = outcomeForError(opts.signal);
+      const cancelled = outcomeForError(signal);
       const timings = call.finish(cancelled ?? "error");
       return this.credit.handleProviderError({
         error,

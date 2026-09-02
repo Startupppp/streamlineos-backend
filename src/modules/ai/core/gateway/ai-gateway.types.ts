@@ -26,7 +26,14 @@ export interface AiInvokeSuccess<T> {
 
 export interface AiInvokeFailure {
   ok: false;
-  kind: "not_configured" | "provider_unavailable" | "quota_exceeded" | "invalid_output" | "context_too_large" | "concurrency_exceeded";
+  kind:
+    | "not_configured"
+    | "provider_unavailable"
+    | "quota_exceeded"
+    | "invalid_output"
+    | "context_too_large"
+    | "concurrency_exceeded"
+    | "cancelled";
   message: string;
   correlationId: string;
 }
@@ -89,6 +96,7 @@ export interface EmbedQueryOpts {
   orgId: string;
   feature: string;
   charge: boolean;
+  signal?: AbortSignal;
 }
 
 export interface EmbedQuerySuccess {
@@ -104,6 +112,7 @@ export interface EmbedBatchOpts {
   orgId: string;
   feature: string;
   charge: boolean;
+  signal?: AbortSignal;
 }
 
 export interface EmbedBatchSuccess {

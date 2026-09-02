@@ -7,6 +7,7 @@ import {
   Res,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { Public } from "../../../../common/auth/public.decorator";
@@ -22,6 +23,7 @@ import {
   pipeAiTextStream,
   rethrowStreamRouteError,
 } from "../streaming";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 export const KB_STREAM_DEADLINE_MS = 60_000;
 const KB_SOURCES_HEADER = "x-kb-sources";
@@ -29,6 +31,7 @@ const KB_SOURCES_HEADER = "x-kb-sources";
 @Public()
 @Controller("public/kb")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class KbRagController {
   constructor(private readonly kbRag: KbRagService) {}
 

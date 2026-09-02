@@ -1,4 +1,10 @@
-import { Controller, Get, Post, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -9,10 +15,12 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { ExecutiveBriefService } from "./executive-brief.service";
 import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("ai/executive-brief")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class ExecutiveBriefController {
   constructor(private readonly service: ExecutiveBriefService) {}
 

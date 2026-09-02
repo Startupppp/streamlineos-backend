@@ -15,6 +15,7 @@ import type {
 } from "./ai-gateway.types";
 
 const PROVIDER_UNAVAILABLE_MESSAGE = "Embedding provider is temporarily unavailable";
+const CANCELLED_MESSAGE = "AI request was cancelled before it completed";
 /** Embedding has no fast/standard split; the label keeps the metric shape uniform. */
 const EMBEDDING_TIER = "embedding";
 
@@ -41,6 +42,11 @@ export class AiGatewayEmbedHelper {
     const { text, orgId, feature, charge } = opts;
     const call = metrics ?? AiCallMetrics.begin({ feature, tier: EMBEDDING_TIER, orgId });
 
+    if (opts.signal?.aborted === true) {
+      call.finish("cancelled");
+      return { ok: false, kind: "cancelled", message: CANCELLED_MESSAGE, correlationId };
+    }
+
     const reservation = await this.reserve(orgId, feature, charge, correlationId);
     if (!reservation.ok) {
       call.finish("quota_exceeded");
@@ -50,9 +56,9 @@ export class AiGatewayEmbedHelper {
     const start = Date.now();
     let vector: number[];
     try {
-      vector = await call.provider(() => this.embeddings.embedQueryRaw(text));
+      vector = await call.provider(() => this.embeddings.embedQueryRaw(text, opts.signal));
     } catch (error: unknown) {
-      return this.failAfterReservation(reservation.reservationId, orgId, feature, start, correlationId, error, call);
+      return this.failAfterReservation(reservation.reservationId, orgId, feature, start, correlationId, error, call, opts.signal);
     }
 
     await this.meter(reservation.reservationId, orgId, feature, estimateEmbedTokens(text), charge, start, correlationId, 1, call);
@@ -68,6 +74,11 @@ export class AiGatewayEmbedHelper {
     const { texts, orgId, feature, charge } = opts;
     const call = metrics ?? AiCallMetrics.begin({ feature, tier: EMBEDDING_TIER, orgId });
 
+    if (opts.signal?.aborted === true) {
+      call.finish("cancelled");
+      return { ok: false, kind: "cancelled", message: CANCELLED_MESSAGE, correlationId };
+    }
+
     const reservation = await this.reserve(orgId, feature, charge, correlationId);
     if (!reservation.ok) {
       call.finish("quota_exceeded");
@@ -77,9 +88,9 @@ export class AiGatewayEmbedHelper {
     const start = Date.now();
     let vectors: number[][];
     try {
-      vectors = await call.provider(() => this.embeddings.embedBatchRaw(texts));
+      vectors = await call.provider(() => this.embeddings.embedBatchRaw(texts, opts.signal));
     } catch (error: unknown) {
-      return this.failAfterReservation(reservation.reservationId, orgId, feature, start, correlationId, error, call);
+      return this.failAfterReservation(reservation.reservationId, orgId, feature, start, correlationId, error, call, opts.signal);
     }
 
     const promptTokens = texts.reduce((sum, t) => sum + estimateEmbedTokens(t), 0);
@@ -121,22 +132,26 @@ export class AiGatewayEmbedHelper {
     correlationId: string,
     cause: unknown,
     call: AiCallMetrics,
+    signal?: AbortSignal,
   ): Promise<AiInvokeFailure> {
-    const timings = call.finish("provider_unavailable", { model: EMBEDDING_MODEL });
-    await this.releaseReservation(reservationId, orgId, correlationId, cause);
+    const cancelled = signal?.aborted === true;
+    const timings = call.finish(cancelled ? "cancelled" : "provider_unavailable", {
+      model: EMBEDDING_MODEL,
+    });
+    await this.releaseReservation(reservationId, orgId, correlationId, cause, cancelled);
     await this.usageSvc.track({
       orgId,
       feature,
       model: EMBEDDING_MODEL,
       latencyMs: Date.now() - start,
       correlationId,
-      outcome: "provider_unavailable",
+      outcome: cancelled ? "cancelled" : "provider_unavailable",
       timings,
     });
     return {
       ok: false,
-      kind: "provider_unavailable",
-      message: PROVIDER_UNAVAILABLE_MESSAGE,
+      kind: cancelled ? "cancelled" : "provider_unavailable",
+      message: cancelled ? CANCELLED_MESSAGE : PROVIDER_UNAVAILABLE_MESSAGE,
       correlationId,
     };
   }
@@ -215,10 +230,11 @@ export class AiGatewayEmbedHelper {
     orgId: string,
     correlationId: string,
     cause: unknown,
+    cancelled = false,
   ): Promise<void> {
     if (reservationId === 0) return;
     try {
-      await this.ledger.release(reservationId, "embedding_error", orgId);
+      await this.ledger.release(reservationId, cancelled ? "cancelled" : "embedding_error", orgId);
     } catch (error: unknown) {
       logger.error("AI embedding credit release failed — reserved credits stay held until the sweep", {
         error: error instanceof Error ? (error.stack ?? error.message) : String(error),

@@ -14,6 +14,7 @@ import {
   Req,
   Res,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import type { Request, Response } from "express";
@@ -63,6 +64,7 @@ import {
   pipeAiTextStream,
   rethrowStreamRouteError,
 } from "../streaming";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 export const CHAT_STREAM_DEADLINE_MS = 120_000;
 
@@ -113,6 +115,7 @@ const confirmActionBodySchema = z.object({ token: z.string().min(1) });
 
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@UseInterceptors(AiRequestAbortInterceptor)
 export class ChatAssistantController {
   constructor(
     private readonly chat: ChatAssistantService,

@@ -9,6 +9,7 @@ import {
   Query,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
@@ -24,6 +25,7 @@ import { CrmCopilotService } from "../services/crm-copilot.service";
 import { CrmBriefService } from "../services/crm-brief.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
@@ -75,6 +77,7 @@ type StalePipelineQuery = z.infer<typeof stalePipelineQuerySchema>;
 @RequirePermission("crm:ai:use")
 @UseRateLimit("ai:invoke")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class CrmCopilotController {
   constructor(
     private readonly llm: LlmService,

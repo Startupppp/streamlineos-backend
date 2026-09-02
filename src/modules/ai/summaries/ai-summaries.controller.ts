@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -20,12 +21,14 @@ import type { SnapshotWithDiff } from "./ai-summaries.types";
 import type { AiSummarySnapshot } from "../../../db/schema/ai/ai-summaries";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { AiRequestAbortInterceptor } from "../core/streaming";
 
 const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
 
 @Controller("ai/summaries")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class AiSummariesController {
   constructor(private readonly aiSummaries: AiSummariesService) {}
 

@@ -6,6 +6,7 @@ import {
   Post,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
@@ -45,6 +46,7 @@ import {
   type ScoreCandidateInput,
 } from "../dto/request.schemas";
 import type { HelpdeskReplyResult } from "../dto/output.schemas";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 const ADVISORY_DISCLAIMER = "AI estimate only. Human decision required.";
 
@@ -52,6 +54,7 @@ const ADVISORY_DISCLAIMER = "AI estimate only. Human decision required.";
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @UseRateLimit("ai:invoke")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class HrAiController {
   constructor(
     private readonly llm: LlmService,

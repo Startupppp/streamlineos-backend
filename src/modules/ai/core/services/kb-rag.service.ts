@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import { streamText, type ToolSet } from "ai";
@@ -130,7 +130,12 @@ export class KbRagService {
       return { hasContext: false, answer: KB_NO_CONTEXT_ANSWER, sources: [] };
     }
 
-    const ctx = await this.retrieval.retrieveContext(opts.orgId, opts.question, opts.articleId);
+    const ctx = await this.retrieval.retrieveContext(
+      opts.orgId,
+      opts.question,
+      opts.articleId,
+      signal,
+    );
     if (!ctx) {
       this.retrieval.recordNoContext(opts.orgId, opts.question);
       call.finish("ok", { promptTokens: 0, completionTokens: 0, creditsMilli: 0 });

@@ -3,8 +3,11 @@ import {
   Controller,
   Param,
   Post,
+  Req,
+  Res,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
@@ -18,6 +21,8 @@ import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transac
 import { LlmService } from "../providers/llm.service";
 import { BlogAiService } from "../services/blog-ai.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
+import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import type { Request, Response } from "express";
 
 const postIdParams = z.object({ postId: z.string().min(1) }).strict();
 
@@ -36,6 +41,7 @@ type SummarizeInput = z.infer<typeof summarizeSchema>;
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @UseRateLimit("ai:invoke")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class BlogAiController {
   constructor(
     private readonly llm: LlmService,
@@ -80,5 +86,74 @@ export class BlogAiController {
   ) {
     this.ensureLlm();
     return this.blogAi.summarize(u.orgId, u.userId, postId, body);
+  }
+
+  @Post("blog/posts/:postId/improve-writing/stream")
+  @RequirePermission("blog:ai:use")
+  @Validate({ params: postIdParams, body: improveWritingSchema })
+  async improveWritingStream(
+    @Req() req: Request,
+    @Param("postId") postId: string,
+    @Body() body: ImproveWritingInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "blog.improve-writing",
+        orgId: u.orgId,
+        route: "POST /ai/blog/posts/:postId/improve-writing/stream",
+      },
+      (signal) => this.blogAi.streamImproveWriting(u.orgId, u.userId, postId, body, signal),
+    );
+  }
+
+  @Post("blog/posts/:postId/suggest-title/stream")
+  @RequirePermission("blog:ai:use")
+  @Validate({ params: postIdParams, body: suggestTitleSchema })
+  async suggestTitleStream(
+    @Req() req: Request,
+    @Param("postId") postId: string,
+    @Body() body: SuggestTitleInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "blog.suggest-title",
+        orgId: u.orgId,
+        route: "POST /ai/blog/posts/:postId/suggest-title/stream",
+      },
+      (signal) => this.blogAi.streamSuggestTitle(u.orgId, u.userId, postId, body, signal),
+    );
+  }
+
+  @Post("blog/posts/:postId/summarize/stream")
+  @RequirePermission("blog:ai:use")
+  @Validate({ params: postIdParams, body: summarizeSchema })
+  async summarizeStream(
+    @Req() req: Request,
+    @Param("postId") postId: string,
+    @Body() body: SummarizeInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "blog.summarize",
+        orgId: u.orgId,
+        route: "POST /ai/blog/posts/:postId/summarize/stream",
+      },
+      (signal) => this.blogAi.streamSummarize(u.orgId, u.userId, postId, body, signal),
+    );
   }
 }

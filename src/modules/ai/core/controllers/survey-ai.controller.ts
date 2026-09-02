@@ -5,6 +5,7 @@ import {
   Post,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
@@ -19,6 +20,7 @@ import { SurveyAiService } from "../services/survey-ai.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
@@ -26,6 +28,7 @@ const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @UseRateLimit("ai:invoke")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class SurveyAiController {
   constructor(
     private readonly llm: LlmService,

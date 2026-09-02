@@ -12,6 +12,7 @@ import {
   Query,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
@@ -64,6 +65,7 @@ import {
   type SuggestionsQueryInput,
   type SummarizeInput,
 } from "../dto/request.schemas";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 const scoreLeadBodySchema = z.union([scoreLeadBatchSchema, scoreLeadSingleSchema]);
 
@@ -76,6 +78,7 @@ function hasLeadIds(body: unknown): body is { leadIds: unknown } {
 @RequirePermission("crm:ai:use")
 @UseRateLimit("ai:invoke")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class CrmAiController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,

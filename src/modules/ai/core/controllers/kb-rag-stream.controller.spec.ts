@@ -20,7 +20,7 @@ const SOURCES = [
   },
 ];
 
-function makeRequest(): Request & { emitClose: () => void } {
+function closeEmitter() {
   const listeners = new Set<() => void>();
   return {
     on: (_event: string, listener: () => void) => listeners.add(listener),
@@ -28,15 +28,25 @@ function makeRequest(): Request & { emitClose: () => void } {
     emitClose: () => {
       for (const l of [...listeners]) l();
     },
-  } as unknown as Request & { emitClose: () => void };
+  };
 }
 
-function makeResponse(): Response & { writeHead: jest.Mock; end: jest.Mock } {
+/**
+ * `complete: true` is what a real Express request looks like by the time a
+ * handler runs — the body is already drained and the request stream is closed.
+ * A fake without it cannot tell a hang-up from a normal request.
+ */
+function makeRequest(): Request & { emitClose: () => void } {
+  return { ...closeEmitter(), complete: true } as unknown as Request & { emitClose: () => void };
+}
+
+function makeResponse(): Response & { writeHead: jest.Mock; end: jest.Mock; emitClose: () => void } {
   return {
+    ...closeEmitter(),
     writableEnded: false,
     writeHead: jest.fn(),
     end: jest.fn(),
-  } as unknown as Response & { writeHead: jest.Mock; end: jest.Mock };
+  } as unknown as Response & { writeHead: jest.Mock; end: jest.Mock; emitClose: () => void };
 }
 
 function makeController(overrides: Partial<KbRagService> = {}) {
@@ -166,11 +176,13 @@ describe("KbRagController.streamAsk — cancellation reaches the service", () =>
       }),
     } as unknown as Partial<KbRagService>);
     const req = makeRequest();
+    const res = makeResponse();
 
-    await controller.streamAsk(req, BODY, makeResponse());
+    await controller.streamAsk(req, BODY, res);
 
     expect(signal?.aborted).toBe(false);
     req.emitClose();
+    res.emitClose();
     expect(signal?.aborted).toBe(false);
   });
 
@@ -181,7 +193,7 @@ describe("KbRagController.streamAsk — cancellation reaches the service", () =>
     const { controller } = makeController({
       streamAnswer: jest.fn().mockImplementation((_opts: unknown, s: AbortSignal) => {
         signal = s;
-        req.emitClose();
+        res.emitClose();
         return Promise.resolve({
           hasContext: true,
           sources: [],

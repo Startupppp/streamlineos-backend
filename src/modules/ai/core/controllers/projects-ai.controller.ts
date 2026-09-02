@@ -6,6 +6,7 @@ import {
   Post,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
@@ -40,6 +41,7 @@ import {
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 const projectIdParams = z.object({ projectId: z.string().min(1) }).strict();
 const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1) }).strict();
@@ -60,6 +62,7 @@ function parseProjectId(raw: string): number {
 @RequirePermission("build:ai:use")
 @UseRateLimit("ai:invoke")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class ProjectsAiController {
   constructor(
     private readonly llm: LlmService,

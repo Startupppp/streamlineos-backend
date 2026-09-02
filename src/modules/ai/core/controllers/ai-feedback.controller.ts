@@ -1,4 +1,13 @@
-import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -13,10 +22,12 @@ import {
   type CreateFeedbackDto,
   type FeedbackSummaryQuery,
 } from "../dto/ai-feedback.schemas";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 @Controller("ai/feedback")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class AiFeedbackController {
   constructor(private readonly aiFeedback: AiFeedbackService) {}
 

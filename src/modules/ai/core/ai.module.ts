@@ -54,6 +54,7 @@ import { BlogAiController } from "./controllers/blog-ai.controller";
 import { BlogAiService } from "./services/blog-ai.service";
 import { SurveyAiController } from "./controllers/survey-ai.controller";
 import { SurveyAiService } from "./services/survey-ai.service";
+import { AiRequestAbortInterceptor } from "./streaming";
 
 @Module({
   imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, MailModule, AiGatewayModule],
@@ -94,6 +95,7 @@ import { SurveyAiService } from "./services/survey-ai.service";
     MeetingsPrepService,
     BlogAiService,
     SurveyAiService,
+    AiRequestAbortInterceptor,
   ],
   exports: [AiGatewayModule, OrgFeaturesService],
 })

@@ -5,6 +5,7 @@ import {
   Post,
   ServiceUnavailableException,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
@@ -28,12 +29,14 @@ import {
   type MeetingSendConfirmBodyInput,
   type ProposeSendBodyInput,
 } from "../dto/meetings.schemas";
+import { AiRequestAbortInterceptor } from "../streaming";
 
 @Controller("ai/meetings")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("calendar:ai:use")
 @UseRateLimit("ai:invoke")
 @NoTenantTransaction()
+@UseInterceptors(AiRequestAbortInterceptor)
 export class MeetingsAiController {
   constructor(
     private readonly meetingsPrep: MeetingsPrepService,
