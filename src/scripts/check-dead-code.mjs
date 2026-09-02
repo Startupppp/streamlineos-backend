@@ -137,7 +137,6 @@ const FINDING_VERDICTS = new Map([
   ["src/modules/notifications/notifications.service.ts:NotificationCategoryValue", { verdict: "REMOVE", reason: "re-exported type with no consumer. Owned by the notifications workstream" }],
 
   // ---- dependencies --------------------------------------------------------
-  ["dep:express", { verdict: "WIRE", reason: "`src/health/shutdown-drain.spec.ts` imports express, and pnpm's strict layout does not link an undeclared package at the repo root — `require.resolve(\"express\")` fails from here. It needs a devDependencies entry with the lockfile updated in the same change" }],
   ["dep:@jitl/quickjs-wasmfile-release-sync", { verdict: "KEEP", reason: "not a direct dependency by design. `script.executor.ts` resolves it with `require.resolve(spec, { paths: [dirname(require.resolve(\"quickjs-emscripten\"))] })`, i.e. from the declared dependency's own directory, to get a CJS build of the WASM module that Jest can load. Verified resolvable; knip reports it because it does not model the `paths` option" }],
 ]);
 
