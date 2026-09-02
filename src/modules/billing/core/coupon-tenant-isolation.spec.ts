@@ -13,12 +13,16 @@ function render(condition: unknown) {
   return dialect.sqlToQuery(condition as Condition);
 }
 
-function findFirstDb(captured: { where?: unknown }, row: unknown = undefined) {
+function findFirstDb(
+  captured: { where?: unknown; orderBy?: unknown },
+  row: unknown = undefined,
+) {
   return {
     query: {
       coupons: {
-        findFirst: jest.fn(async (args: { where?: unknown }) => {
+        findFirst: jest.fn(async (args: { where?: unknown; orderBy?: unknown }) => {
           captured.where = args.where;
+          captured.orderBy = args.orderBy;
           return row;
         }),
         findMany: jest.fn(async () => []),
@@ -52,6 +56,41 @@ describe("BillingCoupons — tenant isolation", () => {
     const query = render(captured.where);
     expect(query.sql).toContain('"coupons"."org_id"');
     expect(query.params).toContain(OWNER_ORG);
+  });
+
+  /**
+   * `coupons.code` is unique per tenant and unique among platform coupons, but not
+   * across the two — migration 0993 replaced one global unique with two partial ones.
+   * So an organisation can own a code that also exists platform-wide, and an unordered
+   * `findFirst` then resolves it arbitrarily: the same request can price against the
+   * tenant's coupon on one connection and the platform's on the next.
+   */
+  it("resolves a colliding code to the org's own coupon, not the platform one", async () => {
+    const captured: { where?: unknown; orderBy?: unknown } = {};
+    const coupons = new BillingCoupons(findFirstDb(captured));
+
+    await coupons.validate("SAVE10", OWNER_ORG, "STARTER");
+
+    const order = captured.orderBy as unknown[];
+    expect(Array.isArray(order)).toBe(true);
+    expect(order.length).toBeGreaterThanOrEqual(1);
+    // The ownership key must come first. Ordering by id first would hand the row to
+    // whichever coupon was created earlier, which is exactly the arbitrary choice.
+    const primary = render(order[0]).sql.toLowerCase();
+    expect(primary).toContain('"coupons"."org_id"');
+    expect(primary).toContain("is null");
+    expect(primary).not.toContain("desc");
+  });
+
+  it("evaluate needs no ordering because it keys on the primary key", async () => {
+    const captured: { where?: unknown; orderBy?: unknown } = {};
+    const coupons = new BillingCoupons(findFirstDb(captured));
+
+    await coupons.evaluate(7, OWNER_ORG, "STARTER", 100_000);
+
+    const query = render(captured.where);
+    expect(query.sql).toContain('"coupons"."id"');
+    expect(query.params).toContain(7);
   });
 
   it("list returns only redeemable coupons and only the caller's own redemptions", async () => {

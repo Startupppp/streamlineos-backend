@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { coupons, couponRedemptions } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -70,12 +70,16 @@ export class BillingCoupons {
     message: string;
   }> {
     const normalizedCode = code.trim().toUpperCase();
+    // `code` is unique per tenant and unique among platform coupons, but not across the
+    // two, so an organisation may own a code that also exists platform-wide. Its own
+    // coupon wins: `org_id IS NULL` sorts false-before-true, putting the tenant row first.
     const coupon = await this.db.query.coupons.findFirst({
       where: and(
         eq(coupons.code, normalizedCode),
         eq(coupons.isActive, true),
         redeemableBy(orgId),
       ),
+      orderBy: [asc(sql`${coupons.orgId} IS NULL`), asc(coupons.id)],
     });
 
     if (!coupon) {
