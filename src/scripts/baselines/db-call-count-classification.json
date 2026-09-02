@@ -139,19 +139,19 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
     },
-    "/inventory/stock/inv-stock-transfers.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "4 DB call(s) detected inside loop body — batch with inArray or Promise.all"
-    },
-    "/inventory/stock/inv-stock.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
-    },
     "/inventory/stock-engine/stock-engine.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
     },
     "/inventory/stock-engine/valuation.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/stock/inv-stock-transfers.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "4 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/stock/inv-stock.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
     },
@@ -182,6 +182,14 @@
     "/kb/wiki/kb-page-tree.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "purgeExpired uses for(;;) chunked batch delete — SELECT batch IDs + DELETE batch; not per-row N+1"
+    },
+    "/notifications/broadcasts-audience.queries.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) at L101 is keyset streaming, not per-recipient: gt(organizationMembers.id, cursor) + .limit(PAGE_SIZE=500), returning when rows.length < PAGE_SIZE. That is one page query per 500 members, the pattern this gate exists to encourage. The flagged sql at L168 is a scalar subquery supplying notificationCreatedAt inside .values({}) of that one insert."
+    },
+    "/notifications/notification-dispatch-persistence.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for (const decision of routingResult.channels) iterates the NotificationChannel union - IN_APP|EMAIL|PUSH|SMS|WHATSAPP|WEBHOOK, six members fixed at compile time, minus IN_APP which continues at L156, so at most five. It does not grow with recipients or tenant data. The flagged sql template at L168 is a scalar subquery supplying notificationCreatedAt inside .values({}) of that single insert."
     },
     "/notifications/notification-dispatch.service.ts": {
       "verdict": "ACTIONABLE",

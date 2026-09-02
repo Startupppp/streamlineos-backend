@@ -146,8 +146,17 @@ function braceDepthChange(line) {
   return depth;
 }
 
+/**
+ * A `{` that opens a loop body, not one inside a template-literal placeholder.
+ *
+ * The raw `/{/` test counted the brace in `${id}`, so a self-contained one-liner
+ * like `ids.map((id) => sql`${id}`)` looked as though it opened a multi-line
+ * body. The skip for a balanced single-line loop was then disabled and the
+ * scanner walked 30 lines forward into whatever construct followed, reporting a
+ * DB call that belonged to something else entirely.
+ */
 function loopBodyOpenedOnLine(line) {
-  return /{/.test(line);
+  return /{/.test(line.replaceAll("${", ""));
 }
 
 function loopParensBalanced(line) {
@@ -290,6 +299,42 @@ function runSelfTests() {
       console.error(
         `SELF-TEST FAIL: loop with no DB call inside was incorrectly flagged (${v.length} violations)`,
       );
+      process.exit(1);
+    }
+  }
+  {
+    // The shape the brace test used to miss: a self-contained one-line .map whose
+    // template literal contains `${`. It must not open a body and drag the next
+    // 30 lines in with it.
+    const knownGoodInterpolatedOneLiner = `
+      async build(ids: number[]) {
+        const joined = sql.join(ids.map((id) => sql\`\${id}\`), sql\`, \`);
+        const rows = await this.db.select({ id: t.id }).from(t).where(sql\`x IN (\${joined})\`);
+        return rows;
+      }
+    `;
+    const v = detectLoopDbCalls(knownGoodInterpolatedOneLiner);
+    if (v.length > 0) {
+      console.error(
+        `SELF-TEST FAIL: a one-line .map containing \${} was treated as opening a loop body (${v.length} violations)`,
+      );
+      process.exit(1);
+    }
+  }
+  {
+    // The inverse, so the fix cannot be "ignore every brace": a genuine
+    // multi-line loop whose opener also carries a template literal still bites.
+    const knownBadInterpolatedLoop = `
+      async each(ids: number[]) {
+        for (const id of ids) {
+          const row = await this.db.query.records.findFirst({ where: eq(records.id, id) });
+          console.log(\`row \${row?.id}\`);
+        }
+      }
+    `;
+    const v = detectLoopDbCalls(knownBadInterpolatedLoop);
+    if (v.length === 0) {
+      console.error("SELF-TEST FAIL: a genuine N+1 loop was missed after the brace fix");
       process.exit(1);
     }
   }

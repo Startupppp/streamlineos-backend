@@ -1,10 +1,12 @@
 import { z } from "zod";
 
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
+
 export const quarantineListQuerySchema = z
   .object({
     status: z.enum(["pending_scan", "clean", "infected", "error"]).optional(),
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    cursor: z.string().optional(),
+    limit: pageSizeField(20, 100),
   })
   .strict();
 export type QuarantineListQuery = z.infer<typeof quarantineListQuerySchema>;

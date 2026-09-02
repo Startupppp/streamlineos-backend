@@ -10,6 +10,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../common/pagination/cursor";
+import { keysetBeforeUuid } from "../../common/pagination/keyset";
 
 const fileQuarantineRecords = pgTable(
   "file_quarantine_records",
@@ -76,13 +78,8 @@ export interface BeginQuarantineParams {
 
 export interface ListQuarantineOptions {
   limit: number;
-  offset: number;
+  cursor?: string;
   status?: QuarantineStatus;
-}
-
-export interface QuarantinePage {
-  data: QuarantineRecord[];
-  total: number;
 }
 
 @Injectable()
@@ -246,45 +243,48 @@ export class FileQuarantineService {
     return rows[0] ?? null;
   }
 
-  async list(orgId: string, opts: ListQuarantineOptions): Promise<QuarantinePage> {
-    const whereClause = opts.status
-      ? and(
-          eq(fileQuarantineRecords.orgId, orgId),
-          eq(fileQuarantineRecords.status, opts.status),
-          isNull(fileQuarantineRecords.deletedAt),
-        )
-      : and(
-          eq(fileQuarantineRecords.orgId, orgId),
-          isNull(fileQuarantineRecords.deletedAt),
-        );
+  async list(
+    orgId: string,
+    opts: ListQuarantineOptions,
+  ): Promise<CursorPage<QuarantineRecord>> {
+    const position = decodeCursor(opts.cursor);
+    const conditions = [
+      eq(fileQuarantineRecords.orgId, orgId),
+      isNull(fileQuarantineRecords.deletedAt),
+    ];
+    if (opts.status) conditions.push(eq(fileQuarantineRecords.status, opts.status));
+    if (position)
+      conditions.push(
+        keysetBeforeUuid(
+          fileQuarantineRecords.createdAt,
+          fileQuarantineRecords.id,
+          position,
+        ),
+      );
 
-    const [rows, countRows] = await Promise.all([
-      this.db
-        .select({
-          id: fileQuarantineRecords.id,
-          orgId: fileQuarantineRecords.orgId,
-          storageKey: fileQuarantineRecords.storageKey,
-          filename: fileQuarantineRecords.filename,
-          mimeType: fileQuarantineRecords.mimeType,
-          fileSizeBytes: fileQuarantineRecords.fileSizeBytes,
-          sha256: fileQuarantineRecords.sha256,
-          status: fileQuarantineRecords.status,
-          threatName: fileQuarantineRecords.threatName,
-          idempotencyKey: fileQuarantineRecords.idempotencyKey,
-          uploadedBy: fileQuarantineRecords.uploadedBy,
-          createdAt: fileQuarantineRecords.createdAt,
-        })
-        .from(fileQuarantineRecords)
-        .where(whereClause)
-        .orderBy(desc(fileQuarantineRecords.createdAt))
-        .limit(opts.limit)
-        .offset(opts.offset),
-      this.db
-        .select({ count: sql<number>`COUNT(*)` })
-        .from(fileQuarantineRecords)
-        .where(whereClause),
-    ]);
+    const rows = await this.db
+      .select({
+        id: fileQuarantineRecords.id,
+        orgId: fileQuarantineRecords.orgId,
+        storageKey: fileQuarantineRecords.storageKey,
+        filename: fileQuarantineRecords.filename,
+        mimeType: fileQuarantineRecords.mimeType,
+        fileSizeBytes: fileQuarantineRecords.fileSizeBytes,
+        sha256: fileQuarantineRecords.sha256,
+        status: fileQuarantineRecords.status,
+        threatName: fileQuarantineRecords.threatName,
+        idempotencyKey: fileQuarantineRecords.idempotencyKey,
+        uploadedBy: fileQuarantineRecords.uploadedBy,
+        createdAt: fileQuarantineRecords.createdAt,
+      })
+      .from(fileQuarantineRecords)
+      .where(and(...conditions))
+      .orderBy(desc(fileQuarantineRecords.createdAt), desc(fileQuarantineRecords.id))
+      .limit(opts.limit + 1);
 
-    return { data: rows, total: Number(countRows[0]?.count ?? 0) };
+    return buildCursorPage(rows, opts.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.id,
+    }));
   }
 }

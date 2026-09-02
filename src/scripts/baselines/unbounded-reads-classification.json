@@ -401,8 +401,8 @@
       "note": "Offset pagination; needs keyset migration or proven depth bound"
     },
     "/storage/file-quarantine.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Offset pagination in quarantine list; storage module (excluded territory) — needs keyset migration"
+      "verdict": "KEYSET-MIGRATED",
+      "note": "GET /storage/quarantine now pages by (created_at DESC, id DESC) with keysetBeforeUuid + buildCursorPage and limit+1 sentinel; the automatic COUNT(*) is gone. Zero frontend callers, so the envelope change from {data,total,page,limit} to CursorPage was backend-only."
     },
     "/users/user-profile.service.ts": {
       "verdict": "ACTIONABLE",

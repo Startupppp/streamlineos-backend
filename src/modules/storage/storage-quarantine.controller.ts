@@ -44,18 +44,11 @@ export class StorageQuarantineController {
     @Query() query: QuarantineListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const offset = (query.page - 1) * query.limit;
-    const page = await this.quarantine.list(u.orgId, {
+    return this.quarantine.list(u.orgId, {
       limit: query.limit,
-      offset,
+      cursor: query.cursor,
       status: query.status,
     });
-    return {
-      data: page.data,
-      total: page.total,
-      page: query.page,
-      limit: query.limit,
-    };
   }
 
   @Get(":quarantineId")
