@@ -25,6 +25,12 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
+import {
+  canReadOthersExpenses,
+  resolveExpenseReadScope,
+  type ExpenseReadScope,
+} from "./expenses-scope";
 import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
 import { ExpenseLifecycleService } from "./expense-lifecycle.service";
@@ -64,13 +70,16 @@ export class ExpensesController {
     private readonly expensesWrite: ExpensesWriteService,
     private readonly lifecycle: ExpenseLifecycleService,
     private readonly access: AccessService,
+    private readonly employment: EmploymentFactsService,
     private readonly exportJobs: ExpenseExportService,
   ) {}
 
+  private readScope(u: CurrentUserContext): Promise<ExpenseReadScope> {
+    return resolveExpenseReadScope(this.access, this.employment, u);
+  }
+
   private async canApprove(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner) return true;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    return perms.has("hr:expenses:approve");
+    return canReadOthersExpenses(await this.readScope(u));
   }
 
   @Get()
@@ -80,7 +89,7 @@ export class ExpensesController {
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.list(u.orgId, u.userId, await this.canApprove(u), filters);
+    return this.expenses.list(u.orgId, u.userId, await this.readScope(u), filters);
   }
 
   @Post()
@@ -127,7 +136,7 @@ export class ExpensesController {
     @Query() filters: PageDataInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.getPageData(u.orgId, u.userId, await this.canApprove(u), filters);
+    return this.expenses.getPageData(u.orgId, u.userId, await this.readScope(u), filters);
   }
 
   @Get("report")
@@ -137,7 +146,7 @@ export class ExpensesController {
     @Query() filters: ReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.expenses.getReport(u.orgId, u.userId, await this.canApprove(u), filters);
+    return this.expenses.getReport(u.orgId, u.userId, await this.readScope(u), filters);
   }
 
   @Post("export/jobs")

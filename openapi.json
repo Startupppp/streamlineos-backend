@@ -71267,7 +71267,7 @@
     },
     "/cron/certification-expiry": {
       "get": {
-        "operationId": "CronHrController_getCertificationExpiry",
+        "operationId": "CronHrNotificationsController_getCertificationExpiry",
         "parameters": [
           {
             "name": "authorization",
@@ -71293,13 +71293,13 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated"
       },
       "post": {
-        "operationId": "CronHrController_postCertificationExpiry",
+        "operationId": "CronHrNotificationsController_postCertificationExpiry",
         "parameters": [
           {
             "name": "authorization",
@@ -71331,7 +71331,7 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated",
@@ -71559,7 +71559,7 @@
     },
     "/cron/daily-notifications": {
       "get": {
-        "operationId": "CronHrController_getDailyNotifications",
+        "operationId": "CronHrNotificationsController_getDailyNotifications",
         "parameters": [
           {
             "name": "authorization",
@@ -71585,13 +71585,13 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated"
       },
       "post": {
-        "operationId": "CronHrController_postDailyNotifications",
+        "operationId": "CronHrNotificationsController_postDailyNotifications",
         "parameters": [
           {
             "name": "authorization",
@@ -71623,7 +71623,7 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated",
@@ -71632,7 +71632,7 @@
     },
     "/cron/document-expiry": {
       "get": {
-        "operationId": "CronHrController_getDocumentExpiry",
+        "operationId": "CronHrNotificationsController_getDocumentExpiry",
         "parameters": [
           {
             "name": "authorization",
@@ -71658,13 +71658,13 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated"
       },
       "post": {
-        "operationId": "CronHrController_postDocumentExpiry",
+        "operationId": "CronHrNotificationsController_postDocumentExpiry",
         "parameters": [
           {
             "name": "authorization",
@@ -71696,7 +71696,7 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated",
@@ -72070,7 +72070,7 @@
     },
     "/cron/holiday-notifications": {
       "get": {
-        "operationId": "CronHrController_getHolidayNotifications",
+        "operationId": "CronHrNotificationsController_getHolidayNotifications",
         "parameters": [
           {
             "name": "authorization",
@@ -72096,13 +72096,13 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated"
       },
       "post": {
-        "operationId": "CronHrController_postHolidayNotifications",
+        "operationId": "CronHrNotificationsController_postHolidayNotifications",
         "parameters": [
           {
             "name": "authorization",
@@ -72134,7 +72134,7 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated",
@@ -73554,7 +73554,7 @@
     },
     "/cron/offer-deadline-reminders": {
       "get": {
-        "operationId": "CronHrController_getOfferDeadlineReminders",
+        "operationId": "CronHrNotificationsController_getOfferDeadlineReminders",
         "parameters": [
           {
             "name": "authorization",
@@ -73580,13 +73580,13 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated"
       },
       "post": {
-        "operationId": "CronHrController_postOfferDeadlineReminders",
+        "operationId": "CronHrNotificationsController_postOfferDeadlineReminders",
         "parameters": [
           {
             "name": "authorization",
@@ -73618,7 +73618,7 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated",
@@ -74790,7 +74790,7 @@
     },
     "/cron/weekly-exec-recap": {
       "get": {
-        "operationId": "CronHrController_getWeeklyExecRecap",
+        "operationId": "CronHrNotificationsController_getWeeklyExecRecap",
         "parameters": [
           {
             "name": "authorization",
@@ -74816,13 +74816,13 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated"
       },
       "post": {
-        "operationId": "CronHrController_postWeeklyExecRecap",
+        "operationId": "CronHrNotificationsController_postWeeklyExecRecap",
         "parameters": [
           {
             "name": "authorization",
@@ -74854,7 +74854,7 @@
           }
         },
         "tags": [
-          "CronHr"
+          "CronHrNotifications"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated",
@@ -82902,6 +82902,81 @@
         },
         "x-idempotency-command": "accounting.bank-transfer.create",
         "x-idempotent": true
+      }
+    },
+    "/gdpr/erasure/{subjectId}": {
+      "post": {
+        "operationId": "GdprController_eraseSubjectData",
+        "parameters": [
+          {
+            "name": "subjectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Gdpr"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "hr:retention:manage",
+        "description": "Exposure: permission — hr:retention:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "dryRun": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/gdpr/export-async/{jobId}/download": {
@@ -239939,9 +240014,13 @@
                   },
                   "events": {
                     "default": [],
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "^[\\w.*:-]+$"
                     }
                   }
                 },
@@ -240064,9 +240143,13 @@
                     "type": "string"
                   },
                   "events": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "^[\\w.*:-]+$"
                     }
                   },
                   "isActive": {

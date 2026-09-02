@@ -1,10 +1,10 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { ApprovalActionsService } from "./approval-actions.service";
+import { LockingService } from "./locking.service";
 import type { AccessService } from "../../access/access.service";
 import type { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import type { AuditService } from "../../../common/audit/audit.service";
-import type { GenerateService } from "../runs/generate.service";
 import type { PayrollApproverResolverService } from "./payroll-approver-resolver.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -53,12 +53,12 @@ describe("ApprovalActionsService — cross-tenant isolation", () => {
   const access = { holds: jest.fn(), resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as unknown as AccessService;
   const notifications = { notifyApprovalPending: jest.fn() } as unknown as PayrollNotificationsService;
   const audit = { log: jest.fn() } as unknown as AuditService;
-  const generate = { postPayrollLock: jest.fn() } as unknown as GenerateService;
   const resolver = { resolveApprovers: jest.fn().mockResolvedValue([]) } as unknown as PayrollApproverResolverService;
+  const locking = { commitLock: jest.fn().mockResolvedValue(undefined) } as unknown as LockingService;
 
   it("throws NotFoundException when approval belongs to a different org — cross-tenant isolation", async () => {
     const { db, findApproval, findRun } = makeDb(null, null);
-    const svc = new ApprovalActionsService(db, access, notifications, audit, generate, resolver);
+    const svc = new ApprovalActionsService(db, access, notifications, audit, resolver, locking);
 
     await expect(svc.approveStage(ATTACKER_ORG, USER_ID, RUN_ID, APPROVAL_ID)).rejects.toThrow(NotFoundException);
 
@@ -70,7 +70,7 @@ describe("ApprovalActionsService — cross-tenant isolation", () => {
 
   it("throws NotFoundException when rejection targets a different org's run — cross-tenant isolation", async () => {
     const { db, findApproval, findRun } = makeDb(null, null);
-    const svc = new ApprovalActionsService(db, access, notifications, audit, generate, resolver);
+    const svc = new ApprovalActionsService(db, access, notifications, audit, resolver, locking);
 
     await expect(svc.rejectStage(ATTACKER_ORG, USER_ID, RUN_ID, APPROVAL_ID, "reason")).rejects.toThrow(NotFoundException);
 

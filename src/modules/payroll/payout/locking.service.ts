@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
@@ -15,14 +21,38 @@ import {
   payrollTdsYtdLedger,
 } from "../../../db/schema";
 import { canTransitionRun } from "../payroll.types";
-import type { CalculationSnapshot } from "../payroll.types";
+import type { CalculationSnapshot, PayrollRunStatus } from "../payroll.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import { GenerateService } from "../runs/generate.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { toPaise } from "../runs/lib/money";
 import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
-import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
+import {
+  PAYROLL_READ_CAP,
+  requirePayrollReadWithinCap,
+} from "../lib/query-bounds";
 import { PAYROLL_RUN_POSTING_INTENT_EVENT } from "./payroll-posting-intent.consumer";
+
+export type PayrollLockTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+export interface LockCommitRun {
+  month: string;
+  status: PayrollRunStatus;
+  grossTotal: string | null;
+  deductionTotal: string | null;
+  netTotal: string | null;
+  employerCostTotal: string | null;
+}
+
+export interface LockCommitInput {
+  orgId: string;
+  userId: string;
+  runId: number;
+  run: LockCommitRun;
+  membershipId: number | null;
+  now: Date;
+  alsoMarkApproved: boolean;
+}
 
 function fiscalYearFromMonth(month: string): string {
   const [y, m] = month.split("-").map(Number);
@@ -54,8 +84,12 @@ export class LockingService {
       throw new ConflictException(`Cannot lock run in status ${run.status}`);
     }
 
-    const lockActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+    const lockActor = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId,
+    }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError)
+        throw organizationActorHttpError(e);
       throw e;
     });
 
@@ -77,38 +111,14 @@ export class LockingService {
         );
       }
 
-      await tx
-        .update(payrollRuns)
-        .set({ status: "LOCKED", lockedAt: now, lockedBy: userId, lockedByMembershipId: lockActor.membershipId, postingState: "pending" })
-        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
-
-      await tx.insert(payrollRunEvents).values({
+      await this.commitLock(tx, {
         orgId,
+        userId,
         runId,
-        type: "LOCKED",
-        actorId: userId,
-      });
-
-      await this.generate.postPayrollLock(orgId, runId, tx);
-      await this.writeTdsYtdLedger(tx, orgId, runId, run.month);
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "payroll_run",
-        aggregateId: String(runId),
-        aggregateVersion: 1,
-        eventType: PAYROLL_RUN_POSTING_INTENT_EVENT,
-        payload: {
-          runId,
-          month: run.month,
-          gross: run.grossTotal ?? "0",
-          deductions: run.deductionTotal ?? "0",
-          net: run.netTotal ?? "0",
-          employerCost: run.employerCostTotal ?? "0",
-          actorUserId: userId,
-          orgId,
-        },
-        occurredAt: now,
+        run,
+        membershipId: lockActor.membershipId,
+        now,
+        alsoMarkApproved: false,
       });
     });
 
@@ -125,6 +135,71 @@ export class LockingService {
   }
 
   /**
+   * The single place a payroll run becomes LOCKED: status guard, run events, snapshot
+   * posting, TDS ledger and the Accounting posting intent all commit on the caller's tx.
+   */
+  async commitLock(tx: PayrollLockTx, input: LockCommitInput): Promise<void> {
+    const { orgId, userId, runId, run, membershipId, now } = input;
+
+    const locked = await tx
+      .update(payrollRuns)
+      .set({
+        status: "LOCKED",
+        lockedAt: now,
+        lockedBy: userId,
+        lockedByMembershipId: membershipId,
+        postingState: "pending",
+        ...(input.alsoMarkApproved
+          ? { approvedAt: now, approvedByMembershipId: membershipId }
+          : {}),
+      })
+      .where(
+        and(
+          eq(payrollRuns.id, runId),
+          eq(payrollRuns.orgId, orgId),
+          eq(payrollRuns.status, run.status),
+        ),
+      )
+      .returning({ id: payrollRuns.id });
+    if (locked.length === 0) {
+      throw new ConflictException(
+        `Payroll run ${runId} left status ${run.status} before the lock committed`,
+      );
+    }
+
+    await tx.insert(payrollRunEvents).values(
+      input.alsoMarkApproved
+        ? [
+            { orgId, runId, type: "APPROVED", actorId: userId },
+            { orgId, runId, type: "LOCKED", actorId: userId },
+          ]
+        : [{ orgId, runId, type: "LOCKED", actorId: userId }],
+    );
+
+    await this.generate.postPayrollLock(orgId, runId, tx);
+    await this.writeTdsYtdLedger(tx, orgId, runId, run.month);
+    await OutboxWriter.emit(tx, {
+      eventId: randomUUID(),
+      organizationId: orgId,
+      aggregateType: "payroll_run",
+      aggregateId: String(runId),
+      aggregateVersion: 1,
+      eventType: PAYROLL_RUN_POSTING_INTENT_EVENT,
+      payload: {
+        runId,
+        month: run.month,
+        gross: run.grossTotal ?? "0",
+        deductions: run.deductionTotal ?? "0",
+        net: run.netTotal ?? "0",
+        employerCost: run.employerCostTotal ?? "0",
+        actorUserId: userId,
+        orgId,
+      },
+      occurredAt: now,
+    });
+  }
+
+  /**
    * Persist per-employee TDS YTD ledger rows from locked calculation snapshots.
    * Safe / idempotent via unique (org, user, fy, periodKey).
    */
@@ -135,25 +210,31 @@ export class LockingService {
     month: string,
   ): Promise<void> {
     const fy = fiscalYearFromMonth(month);
-    const emps = requirePayrollReadWithinCap(await tx
-      .select({
-        userId: payrollRunEmployees.userId,
-        workerId: payrollRunEmployees.workerId,
-        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
-        gross: payrollRunEmployees.gross,
-      })
-      .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
-      .limit(PAYROLL_READ_CAP + 1), "write TDS ledger");
+    const emps = requirePayrollReadWithinCap(
+      await tx
+        .select({
+          userId: payrollRunEmployees.userId,
+          workerId: payrollRunEmployees.workerId,
+          calculationSnapshot: payrollRunEmployees.calculationSnapshot,
+          gross: payrollRunEmployees.gross,
+        })
+        .from(payrollRunEmployees)
+        .where(
+          and(
+            eq(payrollRunEmployees.runId, runId),
+            eq(payrollRunEmployees.orgId, orgId),
+          ),
+        )
+        .limit(PAYROLL_READ_CAP + 1),
+      "write TDS ledger",
+    );
 
     for (const emp of emps) {
       if (!emp.userId && !emp.workerId) continue;
       const snap = emp.calculationSnapshot as CalculationSnapshot | null;
       const tdsLine = snap?.lines?.find(
         (l) =>
-          l.code === "TDS" ||
-          l.code === "INCOME_TAX" ||
-          l.category === "TAX",
+          l.code === "TDS" || l.code === "INCOME_TAX" || l.category === "TAX",
       );
       const tdsPaise = tdsLine ? toPaise(tdsLine.amount) : 0;
       const taxablePaise = toPaise(emp.gross ?? "0");
@@ -241,18 +322,40 @@ export class LockingService {
       throw new ConflictException(`Cannot reopen run in status ${run.status}`);
     }
 
-    const reopenActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+    const reopenActor = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId,
+    }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError)
+        throw organizationActorHttpError(e);
       throw e;
     });
 
     const now = new Date();
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const reopened = await tx
         .update(payrollRuns)
-        .set({ status: "REOPENED", reopenedAt: now, reopenedBy: userId, reopenedByMembershipId: reopenActor.membershipId, reopenReason: reason })
-        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
+        .set({
+          status: "REOPENED",
+          reopenedAt: now,
+          reopenedBy: userId,
+          reopenedByMembershipId: reopenActor.membershipId,
+          reopenReason: reason,
+        })
+        .where(
+          and(
+            eq(payrollRuns.id, runId),
+            eq(payrollRuns.orgId, orgId),
+            eq(payrollRuns.status, run.status),
+          ),
+        )
+        .returning({ id: payrollRuns.id });
+      if (reopened.length === 0) {
+        throw new ConflictException(
+          `Payroll run ${runId} left status ${run.status} before the reopen committed`,
+        );
+      }
 
       await tx.insert(payrollRunEvents).values({
         orgId,
@@ -288,18 +391,39 @@ export class LockingService {
       throw new ConflictException(`Cannot close run in status ${run.status}`);
     }
 
-    const closeActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+    const closeActor = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId,
+    }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError)
+        throw organizationActorHttpError(e);
       throw e;
     });
 
     const now = new Date();
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const closed = await tx
         .update(payrollRuns)
-        .set({ status: "CLOSED", closedAt: now, closedBy: userId, closedByMembershipId: closeActor.membershipId })
-        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
+        .set({
+          status: "CLOSED",
+          closedAt: now,
+          closedBy: userId,
+          closedByMembershipId: closeActor.membershipId,
+        })
+        .where(
+          and(
+            eq(payrollRuns.id, runId),
+            eq(payrollRuns.orgId, orgId),
+            eq(payrollRuns.status, run.status),
+          ),
+        )
+        .returning({ id: payrollRuns.id });
+      if (closed.length === 0) {
+        throw new ConflictException(
+          `Payroll run ${runId} left status ${run.status} before the close committed`,
+        );
+      }
 
       await tx.insert(payrollRunEvents).values({
         orgId,

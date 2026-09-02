@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { ReimbursementsService } from "./reimbursements.service";
 import { resolveReimbursementsScope } from "./reimbursements-scope";
+import { HR_PAYROLL_LIST_PERMISSION } from "./hr-payroll-permissions";
 import { AccessService } from "../../access/access.service";
 import {
   createReimbursementSchema,
@@ -34,7 +35,9 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const reimbursementIdParams = z.object({ reimbursementId: z.coerce.number().int().positive() }).strict();
+const reimbursementIdParams = z
+  .object({ reimbursementId: z.coerce.number().int().positive() })
+  .strict();
 
 @RequireModule("payroll")
 @Controller("hr/reimbursements")
@@ -46,29 +49,41 @@ export class HrPayrollReimbursementsController {
   ) {}
 
   @Get()
-  @RequirePermission("hr:payroll:view")
+  @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
   @Validate({ query: listPageQuerySchema })
   async list(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListPageQueryInput,
   ) {
     const scope = await resolveReimbursementsScope(this.access, u);
-    return this.reimbursements.listReimbursements(u.orgId, u.userId, actingMembershipId(u.principal), scope, query.page ?? 1, query.limit ?? 100);
+    return this.reimbursements.listReimbursements(
+      u.orgId,
+      u.userId,
+      actingMembershipId(u.principal),
+      scope,
+      query.page ?? 1,
+      query.limit ?? 100,
+    );
   }
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("hr:payroll:view")
+  @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
   @Validate({ body: createReimbursementSchema })
   create(
     @Body() body: CreateReimbursementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reimbursements.createReimbursement(u.orgId, u.userId, actingMembershipId(u.principal), body);
+    return this.reimbursements.createReimbursement(
+      u.orgId,
+      u.userId,
+      actingMembershipId(u.principal),
+      body,
+    );
   }
 
   @Patch(":reimbursementId")
-  @RequirePermission("hr:payroll:view")
+  @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
   @Validate({ params: reimbursementIdParams, body: patchReimbursementSchema })
   async update(
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
@@ -82,10 +97,18 @@ export class HrPayrollReimbursementsController {
       }
     }
 
-    const result = await this.reimbursements.updateStatus(u.orgId, u.userId, reimbursementId, body);
+    const result = await this.reimbursements.updateStatus(
+      u.orgId,
+      u.userId,
+      reimbursementId,
+      body,
+    );
     if (!result.ok) {
-      if (result.reason === "not_found") throw new NotFoundException("Not found.");
-      throw new ForbiddenException("You cannot approve or reject your own reimbursement.");
+      if (result.reason === "not_found")
+        throw new NotFoundException("Not found.");
+      throw new ForbiddenException(
+        "You cannot approve or reject your own reimbursement.",
+      );
     }
     return { success: true };
   }

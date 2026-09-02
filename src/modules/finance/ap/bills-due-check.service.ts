@@ -60,7 +60,7 @@ export class BillsDueCheckService {
         alreadyNotified = stored === "SENT";
       } catch (err: unknown) {
         logSideEffectFailure("bills-due dedup cache read", { orgId: bill.orgId, billId: bill.id })(err);
-        alreadyNotified = false;
+        continue;
       }
 
       if (alreadyNotified) continue;

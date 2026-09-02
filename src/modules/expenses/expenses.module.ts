@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
 import { AccountingModule } from "../accounting/core/accounting.module";
+import { EmploymentFactsModule } from "../directory/employment-facts.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import {
@@ -22,7 +23,7 @@ import { ExpenseExportService } from "./expense-export.service";
 import { ExpenseExportWorkerService } from "./expense-export-worker.service";
 
 @Module({
-  imports: [AutomationModule, AccountingModule, NotificationsModule, OutboxModule],
+  imports: [AutomationModule, AccountingModule, NotificationsModule, OutboxModule, EmploymentFactsModule],
   controllers: [EmployeeExpensesController, ExpensesController, ExpenseCategoriesController, ExpensesImportController, TravelController],
   providers: [
     ExpensesService,

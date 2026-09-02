@@ -24,6 +24,11 @@ import type {
   PageDataInput,
   ReportInput,
 } from "./dto/expense.schemas";
+import {
+  canReadOthersExpenses,
+  expenseOwnerPredicate,
+  type ExpenseReadScope,
+} from "./expenses-scope";
 
 const ALL_EXPENSE_STATUSES_SET = new Set<string>([
   "DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID",
@@ -46,27 +51,24 @@ export class ExpensesService {
     private readonly audit: AuditService,
   ) {}
 
-  list(orgId: string, userId: string, isAdmin: boolean, filters: ListInput) {
-    const key = `${userId}:${isAdmin ? "admin" : "self"}:${filters.userId ?? ""}:${filters.status ?? ""}:${filters.page ?? ""}:${filters.limit ?? ""}:${filters.startDate ?? ""}:${filters.endDate ?? ""}`;
+  list(orgId: string, userId: string, read: ExpenseReadScope, filters: ListInput) {
+    const key = `${userId}:${read.scope}:${read.teamUserIds.join("|")}:${filters.userId ?? ""}:${filters.status ?? ""}:${filters.page ?? ""}:${filters.limit ?? ""}:${filters.startDate ?? ""}:${filters.endDate ?? ""}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.expensesListNamespace(orgId),
       key,
-      () => this.getExpenses(orgId, userId, isAdmin, filters),
+      () => this.getExpenses(orgId, userId, read, filters),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async getExpenses(orgId: string, userId: string, isAdmin: boolean, filters: ListInput) {
+  private async getExpenses(orgId: string, userId: string, read: ExpenseReadScope, filters: ListInput) {
     const page = filters.page ?? 1;
     const limit = filters.limit ?? 20;
     const offset = (page - 1) * limit;
 
     const conditions = [eq(expenses.orgId, orgId)];
-    if (!isAdmin) {
-      conditions.push(eq(expenses.userId, userId));
-    } else if (filters.userId) {
-      conditions.push(eq(expenses.userId, filters.userId));
-    }
+    const ownerPredicate = expenseOwnerPredicate(read, userId, filters.userId);
+    if (ownerPredicate) conditions.push(ownerPredicate);
     if (filters.status) conditions.push(eq(expenses.status, filters.status));
     if (filters.startDate) conditions.push(gte(expenses.expenseDate, filters.startDate));
     if (filters.endDate) conditions.push(lte(expenses.expenseDate, filters.endDate));
@@ -180,14 +182,11 @@ export class ExpensesService {
     return category;
   }
 
-  private buildPageConditions(orgId: string, userId: string, isAdmin: boolean, filters: PageDataInput) {
+  private buildPageConditions(orgId: string, userId: string, read: ExpenseReadScope, filters: PageDataInput) {
     const conditions = [eq(expenses.orgId, orgId)];
 
-    if (!isAdmin) {
-      conditions.push(eq(expenses.userId, userId));
-    } else if (filters.userId) {
-      conditions.push(eq(expenses.userId, filters.userId));
-    }
+    const ownerPredicate = expenseOwnerPredicate(read, userId, filters.userId);
+    if (ownerPredicate) conditions.push(ownerPredicate);
 
     if (filters.month) {
       const [year, mon] = filters.month.split("-");
@@ -231,19 +230,21 @@ export class ExpensesService {
     return conditions;
   }
 
-  async getPageData(orgId: string, userId: string, isAdmin: boolean, filters: PageDataInput) {
+  async getPageData(orgId: string, userId: string, read: ExpenseReadScope, filters: PageDataInput) {
+    const isAdmin = canReadOthersExpenses(read);
+    const pendingOwnerPredicate = expenseOwnerPredicate(read, userId);
     const page = filters.page;
     const pageSize = filters.pageSize;
     const offset = (page - 1) * pageSize;
 
-    const conditions = this.buildPageConditions(orgId, userId, isAdmin, filters);
+    const conditions = this.buildPageConditions(orgId, userId, read, filters);
     const baseFilters: PageDataInput = {
       page,
       pageSize,
       sortBy: filters.sortBy,
       sortOrder: filters.sortOrder,
     };
-    const baseConditions = this.buildPageConditions(orgId, userId, isAdmin, baseFilters);
+    const baseConditions = this.buildPageConditions(orgId, userId, read, baseFilters);
 
     const sortColumns = {
       date: expenses.expenseDate,
@@ -290,7 +291,11 @@ export class ExpensesService {
         .where(and(...baseConditions)),
       isAdmin
         ? this.db.query.expenses.findMany({
-            where: and(eq(expenses.orgId, orgId), eq(expenses.status, "PENDING")),
+            where: and(
+              eq(expenses.orgId, orgId),
+              eq(expenses.status, "PENDING"),
+              ...(pendingOwnerPredicate ? [pendingOwnerPredicate] : []),
+            ),
             with: {
           user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
           approver: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
@@ -338,14 +343,16 @@ export class ExpensesService {
     };
   }
 
-  async getReport(orgId: string, userId: string, isAdmin: boolean, filters: ReportInput) {
+  async getReport(orgId: string, userId: string, read: ExpenseReadScope, filters: ReportInput) {
+    const isAdmin = canReadOthersExpenses(read);
     const conditions = [
       eq(expenses.orgId, orgId),
       gte(expenses.expenseDate, filters.startDate),
       lte(expenses.expenseDate, filters.endDate),
     ];
 
-    if (!isAdmin) conditions.push(eq(expenses.userId, userId));
+    const ownerPredicate = expenseOwnerPredicate(read, userId);
+    if (ownerPredicate) conditions.push(ownerPredicate);
 
     const [allExpenses, byCategory, byMonth, byStatus, topExpenses, byEmployee] = await Promise.all([
       this.db

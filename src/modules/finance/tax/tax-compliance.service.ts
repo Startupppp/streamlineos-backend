@@ -1,16 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, sum } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { invoices, purchaseBills } from "../../../db/schema/crm/invoicing";
 import { organizations } from "../../../db/schema/common/auth";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { getTenantContext } from "../../../common/tenant";
 
 const INVOICE_POSTED = ["ISSUED", "PAID", "FAILED"] as const;
 const BILL_POSTED = ["POSTED", "PARTIALLY_PAID", "PAID"] as const;
 const DUE_WARNING_DAYS = 5;
+const TAX_DEDUPE_TTL = 7 * 24 * 60 * 60;
+const TAX_DEDUPE_KEY = (orgId: string, period: string) => `fin:tax:due-notified:${orgId}:${period}`;
 
 interface DueResult {
   orgId: string;
@@ -25,6 +28,7 @@ interface DueResult {
 export class TaxComplianceService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
@@ -59,6 +63,18 @@ export class TaxComplianceService {
       const liability = await this.computeNetLiability(oid);
       if (liability <= 0) continue;
 
+      const dedupeKey = TAX_DEDUPE_KEY(oid, gstr1Due);
+      let alreadyNotified: boolean;
+      try {
+        const stored = await this.cache.cached<string>(dedupeKey, async () => "PENDING", TAX_DEDUPE_TTL);
+        alreadyNotified = stored === "SENT";
+      } catch (err: unknown) {
+        logSideEffectFailure("tax-due dedup cache read", { orgId: oid })(err);
+        continue;
+      }
+
+      if (alreadyNotified) continue;
+
       const result: DueResult = {
         orgId: oid,
         liabilityAmount: liability,
@@ -85,6 +101,10 @@ export class TaxComplianceService {
           period: `${from} to ${to}`,
         },
       }).catch(logSideEffectFailure("tax compliance notification dispatch", { orgId: oid }));
+
+      await this.cache
+        .set(dedupeKey, "SENT", TAX_DEDUPE_TTL)
+        .catch(logSideEffectFailure("tax-due dedup cache write", { orgId: oid }));
     }
 
     return results;
@@ -130,7 +150,11 @@ export class TaxComplianceService {
   }
 
   private async getAllActiveOrgIds(): Promise<string[]> {
-    const rows = await this.db.select({ id: organizations.id }).from(organizations).limit(500);
+    const rows = await this.db
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(and(isNull(organizations.deletedAt), eq(organizations.status, "ACTIVE")))
+      .orderBy(asc(organizations.id));
     return rows.map((r) => r.id);
   }
 

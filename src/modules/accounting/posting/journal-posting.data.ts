@@ -83,6 +83,9 @@ export interface SeedAccount {
   accountType: "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE";
 }
 
+export const INVOICE_SOURCE_TYPE = "invoice";
+export const INVOICE_SEND_SOURCE_EVENT = "send";
+
 export const ACCOUNTS_PAYABLE = "2000";
 export const INPUT_CGST = "1410";
 export const INPUT_SGST = "1411";

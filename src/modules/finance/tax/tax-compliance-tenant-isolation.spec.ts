@@ -37,8 +37,9 @@ describe("TaxComplianceService — cross-tenant isolation (background sweep)", (
         return { from: jest.fn().mockReturnValue({ where, innerJoin: jest.fn().mockReturnValue({ where }) }) };
       }),
     } as unknown as Db;
-    const dispatch = { sendNotification: jest.fn() } as never;
-    const svc = new TaxComplianceService(db, dispatch);
+    const dispatch = { sendNotification: jest.fn(), emit: jest.fn() } as never;
+    const cache = { cached: jest.fn().mockResolvedValue("PENDING") } as never;
+    const svc = new TaxComplianceService(db, cache, dispatch);
 
     await svc.checkTaxDue(TARGET_ORG);
 
@@ -57,8 +58,9 @@ describe("TaxComplianceService — cross-tenant isolation (background sweep)", (
         return { from: jest.fn().mockReturnValue({ where }) };
       }),
     } as unknown as Db;
-    const dispatch = { sendNotification: jest.fn() } as never;
-    const svc = new TaxComplianceService(db, dispatch);
+    const dispatch = { sendNotification: jest.fn(), emit: jest.fn() } as never;
+    const cache = { cached: jest.fn().mockResolvedValue("PENDING") } as never;
+    const svc = new TaxComplianceService(db, cache, dispatch);
 
     const result = await svc.checkTaxDue(TARGET_ORG);
 

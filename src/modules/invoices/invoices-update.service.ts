@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { invoiceItems, invoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { resolveSupplierStateCode } from "./lib/invoice-helpers";
+import { canPatchInvoiceStatus } from "./lib/invoice-transitions";
 import type { UpdateInvoiceInput } from "./dto/invoice-write.schemas";
 
 @Injectable()
@@ -28,8 +29,12 @@ export class InvoicesUpdateService {
     if (!existing) throw new NotFoundException("Invoice not found");
 
     if (input.status) {
-      const willPost =
-        input.status === "ISSUED" && existing.status !== "ISSUED";
+      if (!canPatchInvoiceStatus(existing.status, input.status)) {
+        throw new ConflictException(
+          `Invoice in status ${existing.status} cannot move to ${input.status}`,
+        );
+      }
+      const willPost = input.status === "ISSUED";
       if (willPost) await this.posting.seedChartOfAccountsForOrg(orgId);
 
       await this.db.transaction(async (tx) => {
