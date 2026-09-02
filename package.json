@@ -318,6 +318,8 @@
     "check:test-suppressions:self-test": "node src/scripts/check-test-suppressions.mjs --self-test",
     "check:transaction-callbacks": "node src/scripts/check-transaction-callbacks.mjs",
     "check:transaction-callbacks:self-test": "node src/scripts/check-transaction-callbacks.mjs --self-test",
+    "check:authz-deny": "node src/scripts/check-authz-deny.mjs",
+    "check:authz-deny:self-test": "node src/scripts/check-authz-deny.mjs --self-test",
     "check:evidence-seal": "node src/scripts/check-evidence-seal.mjs",
     "check:evidence-seal:self-test": "node src/scripts/check-evidence-seal.mjs --self-test",
     "check:cache-key-shapes": "node src/scripts/check-cache-key-shapes.mjs",
