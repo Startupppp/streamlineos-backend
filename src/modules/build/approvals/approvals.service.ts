@@ -24,6 +24,7 @@ import {
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
 import type { OrganizationActor } from "../../../common/organization/organization-actor";
+import { assertProjectAccess } from "../core/project-access";
 import type {
   CreateApprovalInput,
   DecideApprovalInput,
@@ -67,14 +68,6 @@ export class ApprovalsService {
       `Approval requested: ${title}`,
       { type: "approval_requested", projectId },
     );
-  }
-
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
   }
 
   private async loadApproval(orgId: string, projectId: number, approvalId: number) {
@@ -123,8 +116,9 @@ export class ApprovalsService {
       .limit(100);
   }
 
-  async listApprovals(orgId: string, projectId: number, query: ListApprovalsQuery) {
-    await this.assertProject(orgId, projectId);
+  async listApprovals(u: CurrentUserContext, projectId: number, query: ListApprovalsQuery) {
+    const { orgId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db
       .select()
       .from(projectApprovals)
@@ -146,15 +140,15 @@ export class ApprovalsService {
   }
 
   async createApproval(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     input: CreateApprovalInput,
   ) {
+    const { orgId, userId } = u;
     if (input.approverId === userId) {
       throw new BadRequestException("Approver cannot be the requester");
     }
-    await this.assertProject(orgId, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
     let approverActor: OrganizationActor;
     try {

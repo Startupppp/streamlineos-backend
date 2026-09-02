@@ -46,7 +46,7 @@ export class ChangeRequestsController {
     @Query() query: ListCrQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listChangeRequests(u.orgId, projectId, query);
+    return this.svc.listChangeRequests(u, projectId, query);
   }
 
   @Get(":changeRequestId")
@@ -69,7 +69,7 @@ export class ChangeRequestsController {
     @Body() body: CreateChangeRequestInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createChangeRequest(u.orgId, u.userId, projectId, body);
+    return this.svc.createChangeRequest(u, projectId, body);
   }
 
   @Patch(":changeRequestId")

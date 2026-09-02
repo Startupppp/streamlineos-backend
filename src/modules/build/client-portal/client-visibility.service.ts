@@ -1,27 +1,24 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { projectMilestones, projects, ticketAttachments, ticketComments, tickets } from "../../../db/schema";
+import { projectMilestones, ticketAttachments, ticketComments, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertProjectAccess } from "../core/project-access";
 
 @Injectable()
 export class ClientVisibilityService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
     private readonly audit: AuditService,
   ) {}
 
-  private async assertProject(orgId: string, projectId: number) {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
-
-  async getVisibilitySummary(orgId: string, projectId: number) {
-    await this.assertProject(orgId, projectId);
+  async getVisibilitySummary(u: CurrentUserContext, projectId: number) {
+    const { orgId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [ticketList, milestoneList] = await Promise.all([
       this.db
         .select({
