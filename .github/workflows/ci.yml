@@ -200,8 +200,9 @@ jobs:
         run: pnpm check:module-registration:self-test && pnpm check:module-registration
 
       # A union-typed injection or a mistyped provider token boots as a silent
-      # null under @Optional.
-      - name: Module DI tokens resolve
+      # null under @Optional, and an @Injectable() no module provides is never
+      # constructed at all -- green typecheck, green spec, absent feature.
+      - name: Module DI tokens resolve and every provider is registered
         run: pnpm check:module-di:self-test && pnpm check:module-di
 
       - name: Every resolved DataScope reaches a predicate
@@ -313,6 +314,16 @@ jobs:
       # (22 -> 11 -> 9). Ratcheted at 9; a new one fails immediately.
       - name: Transaction doubles run their callback
         run: pnpm check:transaction-callbacks:self-test && pnpm check:transaction-callbacks
+
+      # check:route-classification proves every handler DECLARES an exposure and
+      # check:module-gate / :scope-application gate the source side; nothing
+      # asserted a deny TEST exists per gated handler. A gate whose deny branch is
+      # never exercised is an assertion about the decorator, not about the guard.
+      # Measured 3,220 authorization-gated handlers, 767 with an attributable deny
+      # test. Ratcheted at 2,453 uncovered; a NEW gated handler that lands without
+      # one pushes the count above the ratchet and is named by the failure.
+      - name: Gated handlers have a deny test
+        run: pnpm check:authz-deny:self-test && pnpm check:authz-deny
 
       # An honest skip names an infrastructure blocker; a quarantine hides live
       # assertions. Both are the same string to a grep, so the registry records

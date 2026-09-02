@@ -33,6 +33,17 @@
  *    custom provider object.
  * 5. Report every export token absent from providers and from imports.
  *
+ * CHECK D — a provider class NO reachable module registers
+ * The three checks below all presuppose the class is in the injector. Check D
+ * asks whether it is there at all: an @Injectable() listed in no module's
+ * `providers` is never constructed, so its onModuleInit never fires and the
+ * feature it implements silently does not exist, with a green typecheck and a
+ * green unit spec throughout. Detection walks the real module graph from
+ * AppModule — resolving hoisted `imports: BUILD_MODULES` consts, barrel
+ * re-exports, forwardRef, `Foo.forRoot()` and `useClass:` — and reports every
+ * decorated class the walk never reaches. See the section header for the
+ * exemption taxonomy.
+ *
  * ADDITIONAL DI CONSTRUCTOR CHECKS (Checks A, B, C)
  * Check A — undeclared token: a constructor parameter whose type resolves to a
  *   class not in the module's providers, not in any imported module's exports,
@@ -59,12 +70,13 @@
  *
  * Exit codes:
  *   0 — clean (or self-test passed)
- *   1 — invalid exports or DI violations found (or self-test failed)
+ *   1 — invalid exports, DI violations or unregistered providers found
+ *       (or self-test failed)
  *   2 — scan is broken (vacuity check failed)
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve, relative, basename } from "node:path";
+import { dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SELF_TEST = process.argv.includes("--self-test");
@@ -830,6 +842,404 @@ function runDiConstructorChecks(registry, classIndex) {
   return { findings, checkedCount, skipped };
 }
 
+// ─── CHECK D — @Injectable/@Controller CLASSES NO REACHABLE MODULE REGISTERS ─
+//
+// THE BLINDSPOT THIS CLOSES
+// Everything above answers "do the modules that exist resolve?". None of it
+// answers "does this class exist in the injector at all?". An @Injectable()
+// listed in no module's `providers` is never constructed by Nest: its
+// onModuleInit never fires, its dependencies are never resolved, and the
+// feature it implements silently does not exist. Nothing in the file looks
+// wrong — it typechecks and its unit spec passes, because a spec constructs the
+// class directly and never consults the module graph. This release was already
+// bitten by the same shape from the other direction: an outbox consumer was
+// unregistered, so OutboxPublisherService.deliver() threw "no dispatch handler"
+// and every ticket status change dead-lettered after 8 retries, with green
+// specs throughout.
+//
+// The graph walker below is the one written for check-outbox-consumers.mjs
+// (analyseSources / isRuntimeSource). It is duplicated rather than imported
+// because that script runs its whole scan at module scope and calls
+// process.exit, so importing it would execute a second gate. Two corrections it
+// carries are load-bearing here:
+//   · modules do NOT always write `imports: [ ... ]` inline. build.module.ts,
+//     kb.module.ts and the finance, hr and inventory modules hoist their
+//     children into `const BUILD_MODULES = [...]` first. A matcher keyed on
+//     `imports: [` misses every one and reports correctly-wired children as
+//     orphans — that cost the outbox agent a false report of seven.
+//   · module imports resolve through the importing file's OWN import
+//     statements, so two modules sharing a class name stay distinct.
+// One correction is new here: those import statements frequently point at a
+// barrel (`from "./kb-gap"`), and the barrel re-exports the module from a third
+// file. Without following `export { X } from "./y"` and `export * from "./y"`,
+// SupportKbGapModule's four classes read as orphans when the module is wired
+// correctly through src/modules/support/kb-gap/index.ts.
+//
+// EXEMPTIONS — each is a real registration this walker cannot see, so each is
+// classified and reported rather than failed or deleted:
+//   enhancer   — named by class in @UseGuards/@UseInterceptors/@UsePipes/
+//                @UseFilters or a @Param(..., Pipe); Nest instantiates it.
+//   factory    — constructed explicitly somewhere (`new X(`).
+//   base-class — abstract, or extended by another class; the subclass is what
+//                gets provided.
+//   aliased    — provided under a name a re-export renames onto this class.
+// forwardRef, `Foo.forRoot()`, `{ provide: T, useClass: X }` and @Global()
+// modules need no exemption: the walker resolves all four.
+
+const RUNTIME_SOURCE_FLOOR = 500;
+const REACHABLE_MODULE_FLOOR = 100;
+const REGISTERED_CLASS_FLOOR = 500;
+const DECORATED_CLASS_FLOOR = 500;
+
+/** The ratchet. Measured at 0 after registering the two IngressModule orphans;
+ *  never raise it to go green — register the class, or classify it above. */
+const MAX_UNREGISTERED = 0;
+
+/**
+ * Test files are not runtime sources. A class that exists only in a spec must
+ * not read as a provider, and a spec is not a place a provider can be wired.
+ */
+export function isRuntimeSource(path) {
+  if (!path.endsWith(".ts")) return false;
+  if (path.endsWith(".d.ts")) return false;
+  if (/\.(?:spec|e2e-spec|test)\.ts$/.test(path)) return false;
+  return !/(?:^|[/\\])(?:__tests__|__mocks__|test)[/\\]/.test(path);
+}
+
+function collectRuntimeSources(dir, out = []) {
+  for (const entry of readdirSync(dir)) {
+    if (entry === "node_modules" || entry === "dist" || entry === ".git") continue;
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) collectRuntimeSources(full, out);
+    else if (isRuntimeSource(full)) out.push(full);
+  }
+  return out;
+}
+
+/** The balanced (…)/[…]/{…} region starting at `openIndex`, brackets included. */
+function balancedSlice(src, openIndex, open, close) {
+  let depth = 0;
+  for (let i = openIndex; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return src.slice(openIndex, i + 1);
+    }
+  }
+  return null;
+}
+
+/** Module-level `const NAME = [ … ]` array literals, as raw text. */
+function arrayConstants(src) {
+  const consts = new Map();
+  for (const m of src.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=\s*\[/g)) {
+    const slice = balancedSlice(src, src.indexOf("[", m.index + m[0].length - 1), "[", "]");
+    if (slice) consts.set(m[1], slice);
+  }
+  return consts;
+}
+
+/** The `key:` section of a @Module object — inline array OR hoisted const. */
+function moduleArraySection(decoratorBody, key, arrayConsts) {
+  const inline = decoratorBody.search(new RegExp(`\\b${key}\\s*:\\s*\\[`));
+  if (inline !== -1)
+    return balancedSlice(decoratorBody, decoratorBody.indexOf("[", inline), "[", "]");
+  const viaConst = new RegExp(`\\b${key}\\s*:\\s*([A-Za-z_$][\\w$]*)`).exec(decoratorBody);
+  if (viaConst) return arrayConsts.get(viaConst[1]) ?? null;
+  return null;
+}
+
+const ANY_IDENTIFIER = /[A-Za-z_$][\w$]*/g;
+
+/**
+ * Class names a @Module section references. Deliberately generous — every
+ * capitalised identifier — so `ConfigModule.forRoot({...})`,
+ * `forwardRef(() => XModule)` and `{ provide: APP_GUARD, useClass: JwtAuthGuard }`
+ * all yield their class. Over-collecting can only make a class look MORE
+ * registered, and reachability from AppModule is what keeps the gate honest.
+ */
+function referencedClasses(section, arrayConsts = new Map(), seen = new Set()) {
+  if (!section) return [];
+  const names = new Set();
+  for (const m of section.matchAll(ANY_IDENTIFIER)) {
+    const name = m[0];
+    if (!/^[A-Z]/.test(name)) continue;
+    if (arrayConsts.has(name) && !seen.has(name)) {
+      seen.add(name);
+      for (const nested of referencedClasses(arrayConsts.get(name), arrayConsts, seen))
+        names.add(nested);
+      continue;
+    }
+    names.add(name);
+  }
+  return [...names];
+}
+
+const NAMED_IMPORT_RE = /\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+const NAMED_REEXPORT_RE = /\bexport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+const STAR_REEXPORT_RE = /\bexport\s+\*\s*from\s*["']([^"']+)["']/g;
+
+function resolveSpecifier(filePath, spec, fileSet) {
+  if (!spec.startsWith(".")) return null;
+  const base = resolve(dirname(filePath), spec);
+  return [`${base}.ts`, join(base, "index.ts")].find((c) => fileSet.has(c)) ?? null;
+}
+
+/** Symbol → absolute file path, from a file's own import statements. */
+function importedSymbolPaths(filePath, src, fileSet) {
+  const map = new Map();
+  for (const m of src.matchAll(NAMED_IMPORT_RE)) {
+    const target = resolveSpecifier(filePath, m[2], fileSet);
+    if (!target) continue;
+    for (const raw of m[1].split(",")) {
+      const name = raw.replace(/\btype\b/, "").split(/\bas\b/)[0].trim();
+      if (name) map.set(name, target);
+    }
+  }
+  return map;
+}
+
+/** A file's re-exports: `export { A as B } from "./x"` and `export * from "./y"`. */
+function reexportMap(filePath, src, fileSet) {
+  const named = new Map();
+  const stars = [];
+  for (const m of src.matchAll(NAMED_REEXPORT_RE)) {
+    const target = resolveSpecifier(filePath, m[2], fileSet);
+    if (!target) continue;
+    for (const raw of m[1].split(",")) {
+      const cleaned = raw.replace(/\btype\b/, "").trim();
+      if (!cleaned) continue;
+      const parts = cleaned.split(/\s+as\s+/).map((x) => x.trim());
+      named.set(parts[1] ?? parts[0], { target, original: parts[0] });
+    }
+  }
+  for (const m of src.matchAll(STAR_REEXPORT_RE)) {
+    const target = resolveSpecifier(filePath, m[1], fileSet);
+    if (target) stars.push(target);
+  }
+  return { named, stars };
+}
+
+const NEXT_CLASS_DECL = /\bclass\s+([A-Za-z_$][\w$]*)/;
+
+/** Every @Module in a file, keyed by the class its decorator is attached to. */
+function parseNestModules(filePath, src) {
+  const modules = [];
+  const arrayConsts = arrayConstants(src);
+  for (const m of src.matchAll(/@Module\s*\(/g)) {
+    const call = balancedSlice(src, src.indexOf("(", m.index), "(", ")");
+    if (!call) continue;
+    const decl = NEXT_CLASS_DECL.exec(src.slice(m.index + call.length));
+    if (!decl) continue;
+    modules.push({
+      file: filePath,
+      className: decl[1],
+      imports: referencedClasses(moduleArraySection(call, "imports", arrayConsts), arrayConsts),
+      providers: referencedClasses(moduleArraySection(call, "providers", arrayConsts), arrayConsts),
+      controllers: referencedClasses(
+        moduleArraySection(call, "controllers", arrayConsts),
+        arrayConsts,
+      ),
+    });
+  }
+  return modules;
+}
+
+/**
+ * Providers named by a DynamicModule returned from `static forRoot()` /
+ * `register()` — those `providers:` arrays sit in a method body, not in the
+ * @Module decorator, so parseNestModules cannot see them. Read from reachable
+ * module files only.
+ */
+function dynamicModuleRegistrations(src) {
+  const arrayConsts = arrayConstants(src);
+  const names = new Set();
+  for (const key of ["providers", "controllers"]) {
+    for (const m of src.matchAll(new RegExp(`\\b${key}\\s*:\\s*`, "g"))) {
+      const at = m.index + m[0].length;
+      const rest = src.slice(at);
+      if (rest.startsWith("[")) {
+        for (const n of referencedClasses(balancedSlice(src, at, "[", "]"), arrayConsts))
+          names.add(n);
+        continue;
+      }
+      const ident = /^([A-Za-z_$][\w$]*)/.exec(rest);
+      if (ident && arrayConsts.has(ident[1]))
+        for (const n of referencedClasses(arrayConsts.get(ident[1]), arrayConsts)) names.add(n);
+    }
+  }
+  return names;
+}
+
+const DECORATED_CLASS_RE =
+  /@(Injectable|Controller)\s*\(([^)]*)\)\s*(?:@[\w$]+\s*\([^)]*\)\s*)*(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g;
+const ENHANCER_RE =
+  /@(?:UseGuards|UseInterceptors|UsePipes|UseFilters|Param|Query|Body|Headers)\s*\(/g;
+const CONSTRUCTED_RE = /\bnew\s+([A-Z][\w$]*)\s*\(/g;
+const EXTENDS_RE = /\bextends\s+([A-Z][\w$]*)/g;
+
+/**
+ * The whole Check-D detector over a path → source map. The gate and the
+ * self-test both call this, so the self-test exercises the real walker rather
+ * than a re-declared copy of its rules.
+ */
+export function analyseRegistration(sourceByFile, options = {}) {
+  const rootFile = options.rootModuleFile ?? join(SRC_ROOT, "app.module.ts");
+  const rootClass = options.rootModuleClass ?? "AppModule";
+  const fileSet = new Set(sourceByFile.keys());
+
+  const modulesByFile = new Map();
+  const importPathsByFile = new Map();
+  const reexportByFile = new Map();
+  const decorated = [];
+  const enhancerNames = new Set();
+  const constructedNames = new Set();
+  const extendedNames = new Set();
+
+  for (const [filePath, src] of sourceByFile) {
+    reexportByFile.set(filePath, reexportMap(filePath, src, fileSet));
+
+    for (const m of src.matchAll(DECORATED_CLASS_RE))
+      decorated.push({
+        file: filePath,
+        kind: m[1],
+        className: m[3],
+        abstract: /\babstract\s+class\b/.test(m[0]),
+      });
+
+    for (const m of src.matchAll(ENHANCER_RE)) {
+      const args = balancedSlice(src, m.index + m[0].length - 1, "(", ")");
+      if (!args) continue;
+      for (const ident of args.matchAll(ANY_IDENTIFIER))
+        if (/^[A-Z]/.test(ident[0])) enhancerNames.add(ident[0]);
+    }
+    for (const m of src.matchAll(CONSTRUCTED_RE)) constructedNames.add(m[1]);
+    for (const m of src.matchAll(EXTENDS_RE)) extendedNames.add(m[1]);
+
+    if (!src.includes("@Module(")) continue;
+    const parsed = parseNestModules(filePath, src);
+    if (parsed.length === 0) continue;
+    modulesByFile.set(filePath, parsed);
+    importPathsByFile.set(filePath, importedSymbolPaths(filePath, src, fileSet));
+  }
+
+  /** Follow re-export barrels to the file that actually declares `className`. */
+  const locate = (file, className, wanted, seen = new Set()) => {
+    if (!file) return null;
+    const key = `${file}#${className}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    const hit = wanted(file, className);
+    if (hit) return hit;
+    const re = reexportByFile.get(file);
+    if (!re) return null;
+    const named = re.named.get(className);
+    if (named) {
+      const viaNamed = locate(named.target, named.original, wanted, seen);
+      if (viaNamed) return viaNamed;
+    }
+    for (const star of re.stars) {
+      const viaStar = locate(star, className, wanted, seen);
+      if (viaStar) return viaStar;
+    }
+    return null;
+  };
+
+  const wantModule = (file, className) => {
+    const mod = (modulesByFile.get(file) ?? []).find((m) => m.className === className);
+    return mod ? { file, mod } : null;
+  };
+  const wantClass = (file, className) =>
+    new RegExp(`\\bclass\\s+${className}\\b`).test(sourceByFile.get(file) ?? "")
+      ? `${file}#${className}`
+      : null;
+
+  const registeredNames = new Set();
+  const registeredIdentities = new Set();
+  const reachableModules = new Set();
+  const reachableFiles = new Set();
+  const queue = (modulesByFile.get(rootFile) ?? [])
+    .filter((m) => m.className === rootClass)
+    .map((m) => ({ file: rootFile, mod: m }));
+
+  while (queue.length > 0) {
+    const { file, mod } = queue.pop();
+    const key = `${file}#${mod.className}`;
+    if (reachableModules.has(key)) continue;
+    reachableModules.add(key);
+    reachableFiles.add(file);
+
+    const importPaths = importPathsByFile.get(file) ?? new Map();
+    for (const name of [...mod.providers, ...mod.controllers]) {
+      registeredNames.add(name);
+      // A provider may be listed under a name a re-export renames onto the real
+      // class — GdprExportWorkerImplementation is provided as
+      // GdprExportWorkerService. Resolve to the declaring file so the alias
+      // does not read as an orphan.
+      const identity = locate(importPaths.get(name) ?? null, name, wantClass);
+      if (identity) registeredIdentities.add(identity);
+    }
+
+    for (const imported of mod.imports) {
+      const viaImport = locate(importPaths.get(imported) ?? null, imported, wantModule);
+      if (viaImport) {
+        queue.push(viaImport);
+        continue;
+      }
+      for (const [f, ms] of modulesByFile)
+        for (const m of ms) if (m.className === imported) queue.push({ file: f, mod: m });
+    }
+  }
+
+  for (const file of reachableFiles)
+    for (const name of dynamicModuleRegistrations(sourceByFile.get(file) ?? ""))
+      registeredNames.add(name);
+
+  const registeredAnywhere = new Set();
+  for (const [, mods] of modulesByFile)
+    for (const mod of mods)
+      for (const name of [...mod.providers, ...mod.controllers]) registeredAnywhere.add(name);
+
+  const classify = (entry) => {
+    if (registeredNames.has(entry.className)) return null;
+    if (registeredIdentities.has(`${entry.file}#${entry.className}`)) return "aliased";
+    if (entry.abstract || extendedNames.has(entry.className)) return "base-class";
+    if (enhancerNames.has(entry.className)) return "enhancer";
+    if (constructedNames.has(entry.className)) return "factory";
+    return registeredAnywhere.has(entry.className) ? "unreachable-module" : "unregistered";
+  };
+
+  const findings = [];
+  const exempt = [];
+  for (const entry of decorated) {
+    const verdict = classify(entry);
+    if (verdict === null) continue;
+    if (verdict === "unregistered" || verdict === "unreachable-module")
+      findings.push({ ...entry, verdict });
+    else exempt.push({ ...entry, verdict });
+  }
+
+  return {
+    decorated,
+    findings,
+    exempt,
+    registeredNames,
+    registeredIdentities,
+    reachableModules,
+    modulesByFile,
+  };
+}
+
+function isRegistrationScanVacuous(result, fileCount) {
+  return (
+    fileCount < RUNTIME_SOURCE_FLOOR ||
+    result.reachableModules.size < REACHABLE_MODULE_FLOOR ||
+    result.registeredNames.size < REGISTERED_CLASS_FLOOR ||
+    result.decorated.length < DECORATED_CLASS_FLOOR
+  );
+}
+
 // ─── SELF-TEST ──────────────────────────────────────────────────────────────
 
 function runSelfTest() {
@@ -1119,7 +1529,242 @@ export class M {}`,
     }
   }
 
-  const totalCases = exportCases.length + 8 + 8;
+  // ── Check D: a provider class no reachable module registers ─────────────
+  //
+  // Every fixture below is a shape measured in this repository. The corpus is
+  // fed to the real analyseRegistration, so the self-test exercises the walker
+  // rather than a re-declared copy of its rules.
+
+  let checkDAssertions = 0;
+  {
+    const assertD = (label, condition) => {
+      checkDAssertions++;
+      if (!condition) {
+        console.error(`SELF-TEST FAIL [D]: ${label}`);
+        failures++;
+      }
+    };
+
+    const base = "/repo/src";
+    const opts = { rootModuleFile: `${base}/app.module.ts`, rootModuleClass: "AppModule" };
+    const wired = `@Injectable()\nexport class WiredService {}`;
+    // The reference defect: a complete @Injectable() that no module provides.
+    const orphan = `@Injectable()\nexport class OrphanService {}`;
+    const feature = `import { WiredService } from "./wired.service";\n@Module({ providers: [WiredService] })\nexport class FeatureModule {}`;
+    const app = `import { FeatureModule } from "./b/feature.module";\n@Module({ imports: [FeatureModule] })\nexport class AppModule {}`;
+
+    const sources = new Map([
+      [`${base}/b/wired.service.ts`, wired],
+      [`${base}/b/orphan.service.ts`, orphan],
+      [`${base}/b/feature.module.ts`, feature],
+      [`${base}/app.module.ts`, app],
+    ]);
+    const result = analyseRegistration(sources, opts);
+    const flagged = (r, name) => r.findings.some((f) => f.className === name);
+    const exemptAs = (r, name, verdict) =>
+      r.exempt.some((e) => e.className === name && e.verdict === verdict);
+
+    assertD("an @Injectable no module provides IS flagged", flagged(result, "OrphanService"));
+    assertD("a provided @Injectable is NOT flagged", !flagged(result, "WiredService"));
+    assertD("exactly one orphan is reported", result.findings.length === 1);
+    assertD("the orphan is classified 'unregistered'", result.findings[0].verdict === "unregistered");
+
+    // A module nobody imports registers nothing at runtime, however complete
+    // its @Module block looks — the check-module-registration failure mode.
+    const detached = new Map(sources);
+    detached.set(`${base}/app.module.ts`, `@Module({ imports: [] })\nexport class AppModule {}`);
+    const detachedResult = analyseRegistration(detached, opts);
+    assertD(
+      "a provider of a module unreachable from AppModule IS flagged",
+      flagged(detachedResult, "WiredService"),
+    );
+    assertD(
+      "and is classified 'unreachable-module', not 'unregistered'",
+      detachedResult.findings.some(
+        (f) => f.className === "WiredService" && f.verdict === "unreachable-module",
+      ),
+    );
+
+    // `imports: BUILD_MODULES` — build, kb, finance, hr and inventory all hoist
+    // their children. Missing this reported seven false orphans for the outbox
+    // agent before it resolved the indirection.
+    const hoisted = new Map(sources);
+    hoisted.set(
+      `${base}/b/feature.module.ts`,
+      `import { WiredService } from "./wired.service";\nconst FEATURE_PROVIDERS = [WiredService];\n@Module({ providers: FEATURE_PROVIDERS })\nexport class FeatureModule {}`,
+    );
+    hoisted.set(
+      `${base}/app.module.ts`,
+      `import { FeatureModule } from "./b/feature.module";\nconst ROOT_MODULES = [FeatureModule];\n@Module({ imports: ROOT_MODULES })\nexport class AppModule {}`,
+    );
+    const hoistedResult = analyseRegistration(hoisted, opts);
+    assertD(
+      "a module list hoisted into `imports: SOME_CONST` is followed",
+      !flagged(hoistedResult, "WiredService"),
+    );
+    assertD("the orphan is still found through a hoisted graph", flagged(hoistedResult, "OrphanService"));
+
+    // A barrel between the importer and the module — src/modules/support/kb-gap
+    // is wired through its index.ts, and not following it reported four false
+    // orphans.
+    const barrel = new Map(sources);
+    barrel.set(`${base}/b/index.ts`, `export { FeatureModule } from "./feature.module";`);
+    barrel.set(`${base}/app.module.ts`, `import { FeatureModule } from "./b";\n@Module({ imports: [FeatureModule] })\nexport class AppModule {}`);
+    assertD(
+      "a module imported through a re-export barrel is still reachable",
+      !flagged(analyseRegistration(barrel, opts), "WiredService"),
+    );
+
+    const starBarrel = new Map(barrel);
+    starBarrel.set(`${base}/b/index.ts`, `export * from "./feature.module";`);
+    assertD(
+      "a module imported through an `export *` barrel is still reachable",
+      !flagged(analyseRegistration(starBarrel, opts), "WiredService"),
+    );
+
+    // GdprExportWorkerImplementation is provided under the re-exported alias
+    // GdprExportWorkerService.
+    const aliased = new Map([
+      [`${base}/b/impl.ts`, `@Injectable()\nexport class ImplementationService {}`],
+      [`${base}/b/facade.ts`, `export { ImplementationService as PublicService } from "./impl";`],
+      [
+        `${base}/b/feature.module.ts`,
+        `import { PublicService } from "./facade";\n@Module({ providers: [PublicService] })\nexport class FeatureModule {}`,
+      ],
+      [`${base}/app.module.ts`, app],
+    ]);
+    assertD(
+      "a class provided under a re-exported alias is not an orphan",
+      analyseRegistration(aliased, opts).exempt.some(
+        (e) => e.className === "ImplementationService" && e.verdict === "aliased",
+      ),
+    );
+
+    // forwardRef, a dynamic module and a useClass token are all real
+    // registrations the walker must resolve rather than exempt.
+    const resolved = new Map([
+      [`${base}/b/wired.service.ts`, wired],
+      [`${base}/b/guard.ts`, `@Injectable()\nexport class TokenGuard {}`],
+      [
+        `${base}/b/feature.module.ts`,
+        `import { WiredService } from "./wired.service";\nimport { TokenGuard } from "./guard";\n@Module({ providers: [WiredService, { provide: APP_GUARD, useClass: TokenGuard }] })\nexport class FeatureModule {}`,
+      ],
+      [
+        `${base}/app.module.ts`,
+        `import { FeatureModule } from "./b/feature.module";\n@Module({ imports: [forwardRef(() => FeatureModule), ConfigModule.forRoot({ isGlobal: true })] })\nexport class AppModule {}`,
+      ],
+    ]);
+    const resolvedResult = analyseRegistration(resolved, opts);
+    assertD("a forwardRef module import is followed", !flagged(resolvedResult, "WiredService"));
+    assertD(
+      "a `{ provide: TOKEN, useClass: X }` provider registers X",
+      !flagged(resolvedResult, "TokenGuard"),
+    );
+
+    // A @Controller is a provider class too — SupportKbGapController was one of
+    // the four the barrel blindspot hid.
+    const controller = new Map(sources);
+    controller.set(`${base}/b/thing.controller.ts`, `@Controller("thing")\nexport class ThingController {}`);
+    assertD(
+      "a @Controller no module registers IS flagged",
+      flagged(analyseRegistration(controller, opts), "ThingController"),
+    );
+    const wiredController = new Map(controller);
+    wiredController.set(
+      `${base}/b/feature.module.ts`,
+      `import { WiredService } from "./wired.service";\nimport { ThingController } from "./thing.controller";\n@Module({ controllers: [ThingController], providers: [WiredService] })\nexport class FeatureModule {}`,
+    );
+    assertD(
+      "a registered @Controller is NOT flagged",
+      !flagged(analyseRegistration(wiredController, opts), "ThingController"),
+    );
+
+    // The four exemptions — each a registration Nest performs that no module
+    // records. They are classified, never failed, and never deleted.
+    const exemptions = new Map(sources);
+    exemptions.set(`${base}/b/api-key.guard.ts`, `@Injectable()\nexport class ApiKeyGuardFixture {}`);
+    exemptions.set(`${base}/b/parse.pipe.ts`, `@Injectable()\nexport class ParsePipeFixture {}`);
+    exemptions.set(`${base}/b/interceptor.ts`, `@Injectable()\nexport class InterceptorFixture {}`);
+    exemptions.set(`${base}/b/base.ts`, `@Injectable()\nabstract class BaseFixture {}\nexport class ConcreteFixture extends BaseFixture {}`);
+    exemptions.set(
+      `${base}/b/use.controller.ts`,
+      `import { ApiKeyGuardFixture } from "./api-key.guard";\n@UseGuards(ApiKeyGuardFixture)\nexport class UseController {\n  read(@Param("projectId", ParsePipeFixture) projectId) {}\n}`,
+    );
+    exemptions.set(`${base}/main.ts`, `app.useGlobalInterceptors(new InterceptorFixture());`);
+    const exemptResult = analyseRegistration(exemptions, opts);
+    assertD(
+      "@UseGuards(X) exempts X — Nest instantiates the enhancer itself",
+      exemptAs(exemptResult, "ApiKeyGuardFixture", "enhancer"),
+    );
+    assertD(
+      "@Param(_, Pipe) exempts the pipe",
+      exemptAs(exemptResult, "ParsePipeFixture", "enhancer"),
+    );
+    assertD(
+      "a class constructed with `new X()` is exempt as a factory instantiation",
+      exemptAs(exemptResult, "InterceptorFixture", "factory"),
+    );
+    assertD(
+      "an abstract @Injectable base class is exempt",
+      exemptAs(exemptResult, "BaseFixture", "base-class"),
+    );
+    assertD(
+      "an exemption is never counted as a finding",
+      !flagged(exemptResult, "ApiKeyGuardFixture") && !flagged(exemptResult, "BaseFixture"),
+    );
+
+    // Two modules may share a class name; the import path disambiguates them.
+    const colliding = new Map([
+      [`${base}/x/x.service.ts`, `@Injectable()\nexport class XService {}`],
+      [
+        `${base}/x/shared.module.ts`,
+        `import { XService } from "./x.service";\n@Module({ providers: [XService] })\nexport class SharedModule {}`,
+      ],
+      [`${base}/y/shared.module.ts`, `@Module({ providers: [] })\nexport class SharedModule {}`],
+      [
+        `${base}/app.module.ts`,
+        `import { SharedModule } from "./y/shared.module";\n@Module({ imports: [SharedModule] })\nexport class AppModule {}`,
+      ],
+    ]);
+    assertD(
+      "importing a same-named module from another folder does not register the other one's providers",
+      flagged(analyseRegistration(colliding, opts), "XService"),
+    );
+
+    // Test files are not runtime sources: a spec-only class must not read as a
+    // provider, and a module can never be wired from a spec.
+    assertD("a .spec.ts file is not a runtime source", !isRuntimeSource("/repo/src/a/f.spec.ts"));
+    assertD("an .e2e-spec.ts file is not a runtime source", !isRuntimeSource("/repo/src/a/f.e2e-spec.ts"));
+    assertD("a file under __tests__/ is not a runtime source", !isRuntimeSource("/repo/src/a/__tests__/f.ts"));
+    assertD("a .d.ts file is not a runtime source", !isRuntimeSource("/repo/src/a/f.d.ts"));
+    assertD("an ordinary service IS a runtime source", isRuntimeSource("/repo/src/a/f.service.ts"));
+
+    // Vacuity: "no orphans" over a scan that resolved nothing proves nothing.
+    const empty = analyseRegistration(new Map(), opts);
+    assertD("an empty corpus yields no findings", empty.findings.length === 0);
+    assertD("an empty corpus trips the vacuity floor", isRegistrationScanVacuous(empty, 0));
+    assertD(
+      "a scan that resolves no module graph trips the floor even with files",
+      isRegistrationScanVacuous(
+        { reachableModules: new Set(), registeredNames: new Set(), decorated: [] },
+        RUNTIME_SOURCE_FLOOR,
+      ),
+    );
+    assertD(
+      "a real-sized scan does not trip the floor",
+      !isRegistrationScanVacuous(
+        {
+          reachableModules: new Set(Array.from({ length: REACHABLE_MODULE_FLOOR }, (_, i) => `m${String(i)}`)),
+          registeredNames: new Set(Array.from({ length: REGISTERED_CLASS_FLOOR }, (_, i) => `c${String(i)}`)),
+          decorated: Array.from({ length: DECORATED_CLASS_FLOOR }, () => ({})),
+        },
+        RUNTIME_SOURCE_FLOOR,
+      ),
+    );
+    assertD("the ratchet is not silently above zero", MAX_UNREGISTERED === 0);
+  }
+
+  const totalCases = exportCases.length + 8 + 8 + checkDAssertions;
   if (failures > 0) {
     console.error(`\n${String(failures)} of ${String(totalCases)} self-test assertions failed`);
     process.exit(1);
@@ -1178,6 +1823,59 @@ const registry = buildModuleGraph(files);
 const classIndex = buildClassIndex(SRC_ROOT);
 const { findings, checkedCount, skipped } = runDiConstructorChecks(registry, classIndex);
 
+// ── Phase 3: Check D — provider classes no reachable module registers ───────
+
+const runtimeFiles = collectRuntimeSources(SRC_ROOT);
+const sourceByFile = new Map(runtimeFiles.map((f) => [f, readFileSync(f, "utf8")]));
+const registration = analyseRegistration(sourceByFile);
+
+if (isRegistrationScanVacuous(registration, runtimeFiles.length)) {
+  console.error(
+    `check:module-di Check-D scan is broken — ${String(runtimeFiles.length)} runtime source(s) (floor ${String(RUNTIME_SOURCE_FLOOR)}), ` +
+      `${String(registration.reachableModules.size)} module(s) reachable from AppModule (floor ${String(REACHABLE_MODULE_FLOOR)}), ` +
+      `${String(registration.registeredNames.size)} registered class name(s) (floor ${String(REGISTERED_CLASS_FLOOR)}), ` +
+      `${String(registration.decorated.length)} decorated class(es) (floor ${String(DECORATED_CLASS_FLOOR)}). ` +
+      `"No orphans" over a graph that failed to resolve proves nothing.`,
+  );
+  process.exit(2);
+}
+
+const registrationFindings = registration.findings;
+const exemptByVerdict = new Map();
+for (const e of registration.exempt)
+  exemptByVerdict.set(e.verdict, (exemptByVerdict.get(e.verdict) ?? 0) + 1);
+
+function printCheckD() {
+  console.error(
+    `\nCheck D — provider class registered in no reachable module (${String(registrationFindings.length)} finding(s), ratchet ${String(MAX_UNREGISTERED)}):`,
+  );
+  for (const f of registrationFindings) {
+    const where =
+      f.verdict === "unreachable-module"
+        ? "is provided only by a module nothing imports from AppModule"
+        : "is listed in no @Module's providers/controllers";
+    console.error(`  [ERROR] @${f.kind}() ${f.className} — ${where}`);
+    console.error(`    ${relative(BACKEND_ROOT, f.file).replace(/\\/g, "/")}`);
+    console.error(
+      `    Nest never constructs it, so its onModuleInit never fires and the feature it implements does not exist at runtime.`,
+    );
+    console.error(
+      `    Fix: add ${f.className} to the providers (or controllers) of a @Module reachable from AppModule.`,
+    );
+  }
+}
+
+function checkDSummary() {
+  const exemptions =
+    [...exemptByVerdict.entries()].map(([k, v]) => `${String(v)} ${k}`).join(" · ") || "none";
+  return (
+    `  Check-D: ${String(registration.decorated.length)} decorated class(es) · ` +
+    `${String(registration.reachableModules.size)} modules reachable from AppModule · ` +
+    `${String(registration.registeredNames.size)} registered · ` +
+    `${String(registrationFindings.length)} unregistered · exempt: ${exemptions}`
+  );
+}
+
 const findingsA = findings.filter((f) => f.kind === "A");
 const findingsB = findings.filter((f) => f.kind === "B");
 const findingsC = findings.filter((f) => f.kind === "C");
@@ -1212,7 +1910,9 @@ function printVerboseSkipped() {
   }
 }
 
-if (findings.length > 0) {
+const registrationFailed = registrationFindings.length > MAX_UNREGISTERED;
+
+if (findings.length > 0 || registrationFailed) {
   if (findingsA.length > 0) {
     console.error(`\nCheck A — undeclared constructor token (${String(findingsA.length)} finding(s)):`);
     for (const f of findingsA) {
@@ -1241,14 +1941,19 @@ if (findings.length > 0) {
     }
   }
 
+  if (registrationFindings.length > 0) printCheckD();
+
   if (VERBOSE) printVerboseSkipped();
 
   console.error(`\ncheck:module-di: ${String(parsed)} modules · ${String(checkedCount)} classes checked`);
   printSkippedSummary();
   console.error(`  ${String(findingsA.length)} Check-A (undeclared token) · ${String(findingsB.length)} Check-B (non-injectable type) · ${String(findingsC.length)} Check-C (import type)`);
+  console.error(checkDSummary());
 
-  if (genuineErrors.length > 0) {
-    console.error(`  ${String(genuineErrors.length)} error(s) + ${String(genuineWarns.length)} warning(s) — failing`);
+  if (genuineErrors.length > 0 || registrationFailed) {
+    console.error(
+      `  ${String(genuineErrors.length)} constructor error(s) + ${String(registrationFindings.length)} unregistered provider(s) + ${String(genuineWarns.length)} warning(s) — failing`,
+    );
     process.exit(1);
   }
   console.error(`  0 errors, ${String(genuineWarns.length)} warning(s) — passing`);
@@ -1261,3 +1966,4 @@ console.log(
   `check:module-di clean — ${String(parsed)} modules · ${String(checkedCount)} classes checked` +
   ` · skipped: ${String(skipped.nonClassToken.length)} non-class tokens · ${String(skipped.notInClassIndex.length)} not-in-class-index · 0 violations`,
 );
+console.log(checkDSummary().trimStart());
