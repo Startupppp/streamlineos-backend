@@ -266,9 +266,9 @@ describe("WhiteboardSharingService", () => {
         .mockReturnValueOnce(makeChain([{ board: BASE_BOARD, shareRole: null }]))
         .mockReturnValueOnce(
           makeChain([
-            { userId: BASE_BOARD.createdBy },
-            { userId: MANAGER_ID },
-            { userId: MEMBER_ID },
+            { id: 11, userId: BASE_BOARD.createdBy },
+            { id: 12, userId: MANAGER_ID },
+            { id: 13, userId: MEMBER_ID },
           ]),
         )
         .mockReturnValueOnce(makeChain([]));
@@ -294,7 +294,7 @@ describe("WhiteboardSharingService", () => {
 
       expect(txInsert).toHaveBeenCalledTimes(1);
       expect(txInsertValues).toHaveBeenCalledWith([
-        expect.objectContaining({ userId: MEMBER_ID }),
+        expect.objectContaining({ membershipId: 13, role: "viewer" }),
       ]);
     });
   });

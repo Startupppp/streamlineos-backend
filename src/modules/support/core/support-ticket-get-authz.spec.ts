@@ -32,7 +32,9 @@ const makeTicket = (assigneeId: string | null = ASSIGNEE_USER) => ({
   updatedAt: new Date(),
   client: null,
   assignee: assigneeId ? { id: assigneeId, name: "User", image: null } : null,
+  assigneeMembership: assigneeId ? { user: { id: assigneeId } } : null,
   creator: { id: ASSIGNEE_USER, name: "Creator" },
+  creatorMembership: { user: { id: ASSIGNEE_USER } },
   messages: [],
 });
 

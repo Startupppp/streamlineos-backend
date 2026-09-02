@@ -142,7 +142,7 @@ describe("SupportTicketsService", () => {
       const result = await service.createTicket("org1", "user1", {
         title: "Login not working",
         description: "desc",
-      } as never);
+      } as never, undefined, 1);
 
       expect(result.possibleDuplicateOf).toEqual({ id: 42, title: "Login not working" });
       expect(mockDb.insert).toHaveBeenCalled();
@@ -154,7 +154,7 @@ describe("SupportTicketsService", () => {
       const result = await service.createTicket("org1", "user1", {
         title: "Login not working",
         description: "desc",
-      } as never);
+      } as never, undefined, 1);
 
       expect(result.possibleDuplicateOf).toBeNull();
     });
@@ -166,7 +166,7 @@ describe("SupportTicketsService", () => {
         service.createTicket("org1", "user1", {
           title: "Login not working",
           description: "desc",
-        } as never),
+        } as never, undefined, 1),
       ).resolves.toBeDefined();
     });
   });
@@ -175,7 +175,7 @@ describe("SupportTicketsService", () => {
     it("records a 'created' activity entry", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
-      await service.createTicket("org1", "user1", { title: "New ticket title", description: "d" } as never);
+      await service.createTicket("org1", "user1", { title: "New ticket title", description: "d" } as never, undefined, 1);
 
       const createdActivityPayload = mockDb.values.mock.calls
         .map((call) => call[0])
@@ -192,7 +192,7 @@ describe("SupportTicketsService", () => {
       });
 
       await expect(
-        service.createTicket("org1", "user1", { title: "Another title", description: "d" } as never),
+        service.createTicket("org1", "user1", { title: "Another title", description: "d" } as never, undefined, 1),
       ).resolves.toBeDefined();
 
       mockDb.values.mockImplementation(() => mockDb);
@@ -205,8 +205,13 @@ describe("SupportTicketsService", () => {
         id: 1,
         status: "OPEN",
         title: "t",
-        createdBy: "creator1",
-        assigneeId: null,
+        createdByMembershipId: null,
+        assigneeMembershipId: null,
+        firstRespondedAt: null,
+        priority: "MEDIUM",
+        category: null,
+        creatorMembership: { user: { id: "creator1" } },
+        assigneeMembership: null,
       });
       mockDb.returning.mockResolvedValue([{ id: 99, ticketId: 1, body: "hi", isInternal: false }]);
     });
@@ -509,7 +514,7 @@ describe("SupportTicketsService", () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
       await expect(
-        service.splitTicket("org1", 1, "user1", { title: "New split ticket issue" } as never),
+        service.splitTicket("org1", 1, "user1", { title: "New split ticket issue" } as never, 1),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -526,7 +531,7 @@ describe("SupportTicketsService", () => {
         .mockResolvedValueOnce(undefined);
       mockDb.returning.mockResolvedValueOnce([{ id: 2, orgId: "org1", title: "New split ticket issue" }]);
 
-      const result = await service.splitTicket("org1", 1, "user1", { title: "New split ticket issue" } as never);
+      const result = await service.splitTicket("org1", 1, "user1", { title: "New split ticket issue" } as never, 1);
 
       expect(result).toMatchObject({ id: 2 });
       const linkPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.relation === "split");

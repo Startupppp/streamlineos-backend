@@ -69,7 +69,9 @@ function buildDbMock(options: {
 
   const dbSelectDistinct = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
-      where: jest.fn().mockResolvedValue(assignees),
+      innerJoin: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(assignees),
+      }),
     }),
   });
 

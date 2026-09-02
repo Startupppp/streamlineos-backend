@@ -327,7 +327,7 @@ export class ProjectsTicketsReadService {
 
     const sortExpr: SQL<unknown>[] =
       orderBy === "rank"
-        ? [asc(tickets.rank), desc(tickets.createdAt), asc(tickets.id)]
+        ? [asc(tickets.rank), asc(tickets.id)]
         : dir === "asc"
           ? [asc(col), desc(tickets.createdAt), asc(tickets.id)]
           : [desc(col), desc(tickets.createdAt), asc(tickets.id)];

@@ -64,6 +64,7 @@ const mockDb = {
     tickets: { findFirst: jest.fn() },
     projectMembers: { findFirst: jest.fn() },
     projects: { findFirst: jest.fn() },
+    organizationMembers: { findFirst: jest.fn() },
   },
   transaction: jest.fn(),
 };
@@ -72,7 +73,7 @@ describe("BuildEntityActions", () => {
   let service: BuildEntityActions;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     mockTx = makeTx();
     mockDb.transaction.mockImplementation(
       async (cb: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => cb(mockTx),
@@ -220,6 +221,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.projectMembers.findFirst
         .mockResolvedValueOnce({ projectId: 7 })
         .mockResolvedValueOnce({ projectId: 7 });
+      mockDb.query.organizationMembers.findFirst.mockResolvedValueOnce({ id: 5 });
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", {
         assigneeId: "user_2",
@@ -233,6 +235,7 @@ describe("BuildEntityActions", () => {
       mockDb.query.projectMembers.findFirst
         .mockResolvedValueOnce({ projectId: 7 })
         .mockResolvedValueOnce(null);
+      mockDb.query.organizationMembers.findFirst.mockResolvedValueOnce({ id: 5 });
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", {
         assigneeId: "someone-outside-the-project",
@@ -282,6 +285,7 @@ describe("BuildEntityActions", () => {
     it("executes the ticket update and activity-log insert inside the same transaction", async () => {
       mockDb.query.tickets.findFirst.mockResolvedValue(STUB_TICKET);
       mockDb.query.projectMembers.findFirst.mockResolvedValue({ projectId: 7 });
+      mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 5 });
 
       const result = await service.run(ACTOR, TICKET_REF, "assign", { assigneeId: "user_2" });
 
