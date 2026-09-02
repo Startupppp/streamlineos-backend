@@ -86,6 +86,18 @@ const HEAP_SAMPLES = Number(process.env.ROUTE_BUDGET_HTTP_HEAP_SAMPLES ?? "5");
 const WARMUP = Number(process.env.ROUTE_BUDGET_HTTP_WARMUP ?? "3");
 const DEADLINE_MS = Number(process.env.ROUTE_BUDGET_HTTP_DEADLINE_MS ?? "30000");
 const ONLY = process.env.ROUTE_BUDGET_HTTP_ONLY ?? "";
+/**
+ * Where to ask git about the code being measured.
+ *
+ * The shared working tree carries every concurrent agent's in-flight edits, and a half-applied
+ * refactor in someone else's module stops this suite booting at all. Running from a clean
+ * `git archive` export of a commit sidesteps that without touching their files — but then the
+ * process cwd has no `.git`, so both stamps below would silently record `null` and the artifact
+ * would claim less provenance than it actually has. Pointing git back at the real repository keeps
+ * the SHA and the dirtiness honest, and `codeProvenance` says which tree actually executed.
+ */
+const REPO_DIR = process.env.ROUTE_BUDGET_HTTP_REPO ?? ".";
+const CODE_PROVENANCE = process.env.ROUTE_BUDGET_HTTP_PROVENANCE ?? "live working tree";
 
 const USABLE =
   OWNER_URL.length > 0 &&
@@ -184,7 +196,7 @@ const HARNESS_WRITES = new Set<string>([
 
 function commit(): string | null {
   try {
-    return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    return execFileSync("git", ["-C", REPO_DIR, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   } catch {
     return null;
   }
@@ -192,7 +204,7 @@ function commit(): string | null {
 
 function workingTreeDirty(): boolean | null {
   try {
-    return execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim().length > 0;
+    return execFileSync("git", ["-C", REPO_DIR, "status", "--porcelain"], { encoding: "utf8" }).trim().length > 0;
   } catch {
     return null;
   }
@@ -200,7 +212,7 @@ function workingTreeDirty(): boolean | null {
 
 function journalEntries(): number | null {
   try {
-    const parsed: unknown = JSON.parse(readFileSync("migrations/meta/_journal.json", "utf8"));
+    const parsed: unknown = JSON.parse(readFileSync(`${REPO_DIR}/migrations/meta/_journal.json`, "utf8"));
     if (parsed !== null && typeof parsed === "object" && "entries" in parsed) {
       const entries = (parsed as { entries: unknown }).entries;
       if (Array.isArray(entries)) return entries.length;
@@ -267,6 +279,7 @@ describeIfSeeded("route budgets over the HTTP stack (seeded)", () => {
             generatedAt: new Date().toISOString(),
             commit: commit(),
             workingTreeDirty: workingTreeDirty(),
+            codeProvenance: CODE_PROVENANCE,
             database: databaseName(APP_URL),
             appliedMigrations,
             journalEntries: journal,
