@@ -4,6 +4,7 @@ jest.mock("../../common/tenant", () => ({
 
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { REDIS } from "../../common/cache/cache.service";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import { CronAttendanceService } from "./cron-attendance.service";
@@ -336,6 +337,7 @@ describe("CronHrEnginesService — cross-tenant isolation", () => {
       providers: [
         CronHrEnginesService,
         { provide: DRIZZLE, useValue: db },
+        { provide: REDIS, useValue: null },
         { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: HrWorkflowEngineService, useValue: { sweepOverdueSteps: jest.fn().mockResolvedValue({ swept: 0 }) } },
         { provide: HrEffectiveChangesService, useValue: { applyDueChanges: jest.fn().mockResolvedValue({ applied: 0 }) } },
