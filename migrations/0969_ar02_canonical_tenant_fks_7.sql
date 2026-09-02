@@ -2,7 +2,7 @@
 
 SET lock_timeout = '5s';
 --> statement-breakpoint
-ALTER TABLE public.survey_sections DROP CONSTRAINT "fk_survey_sections_version_id_org";
+ALTER TABLE public.survey_sections DROP CONSTRAINT IF EXISTS "fk_survey_sections_version_id_org";
 --> statement-breakpoint
 ALTER TABLE public.survey_sections
   ADD CONSTRAINT "fk_survey_sections_version_id_org"
@@ -13,7 +13,7 @@ ALTER TABLE public.survey_sections
 --> statement-breakpoint
 ALTER TABLE public.survey_sections VALIDATE CONSTRAINT "fk_survey_sections_version_id_org";
 --> statement-breakpoint
-ALTER TABLE public.survey_versions DROP CONSTRAINT "fk_survey_versions_survey_id_org";
+ALTER TABLE public.survey_versions DROP CONSTRAINT IF EXISTS "fk_survey_versions_survey_id_org";
 --> statement-breakpoint
 ALTER TABLE public.survey_versions
   ADD CONSTRAINT "fk_survey_versions_survey_id_org"
@@ -24,7 +24,7 @@ ALTER TABLE public.survey_versions
 --> statement-breakpoint
 ALTER TABLE public.survey_versions VALIDATE CONSTRAINT "fk_survey_versions_survey_id_org";
 --> statement-breakpoint
-ALTER TABLE public.task_sequence_steps DROP CONSTRAINT "fk_task_sequence_steps_sequence_id_org";
+ALTER TABLE public.task_sequence_steps DROP CONSTRAINT IF EXISTS "fk_task_sequence_steps_sequence_id_org";
 --> statement-breakpoint
 ALTER TABLE public.task_sequence_steps
   ADD CONSTRAINT "fk_task_sequence_steps_sequence_id_org"
@@ -35,7 +35,7 @@ ALTER TABLE public.task_sequence_steps
 --> statement-breakpoint
 ALTER TABLE public.task_sequence_steps VALIDATE CONSTRAINT "fk_task_sequence_steps_sequence_id_org";
 --> statement-breakpoint
-ALTER TABLE public.tasks DROP CONSTRAINT "fk_tasks_parent_task_id_org";
+ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS "fk_tasks_parent_task_id_org";
 --> statement-breakpoint
 ALTER TABLE public.tasks
   ADD CONSTRAINT "fk_tasks_parent_task_id_org"
@@ -46,6 +46,8 @@ ALTER TABLE public.tasks
 --> statement-breakpoint
 ALTER TABLE public.tasks VALIDATE CONSTRAINT "fk_tasks_parent_task_id_org";
 --> statement-breakpoint
+ALTER TABLE public.tax_codes DROP CONSTRAINT IF EXISTS "fk_tax_codes_book_id_org";
+--> statement-breakpoint
 ALTER TABLE public.tax_codes
   ADD CONSTRAINT "fk_tax_codes_book_id_org"
   FOREIGN KEY (org_id, book_id)
@@ -54,6 +56,8 @@ ALTER TABLE public.tax_codes
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.tax_codes VALIDATE CONSTRAINT "fk_tax_codes_book_id_org";
+--> statement-breakpoint
+ALTER TABLE public.tax_document_lines DROP CONSTRAINT IF EXISTS "fk_tax_document_lines_book_id_org";
 --> statement-breakpoint
 ALTER TABLE public.tax_document_lines
   ADD CONSTRAINT "fk_tax_document_lines_book_id_org"
@@ -64,6 +68,8 @@ ALTER TABLE public.tax_document_lines
 --> statement-breakpoint
 ALTER TABLE public.tax_document_lines VALIDATE CONSTRAINT "fk_tax_document_lines_book_id_org";
 --> statement-breakpoint
+ALTER TABLE public.tax_document_lines DROP CONSTRAINT IF EXISTS "fk_tax_document_lines_gl_account_id_org";
+--> statement-breakpoint
 ALTER TABLE public.tax_document_lines
   ADD CONSTRAINT "fk_tax_document_lines_gl_account_id_org"
   FOREIGN KEY (org_id, gl_account_id)
@@ -72,6 +78,8 @@ ALTER TABLE public.tax_document_lines
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.tax_document_lines VALIDATE CONSTRAINT "fk_tax_document_lines_gl_account_id_org";
+--> statement-breakpoint
+ALTER TABLE public.tax_document_lines DROP CONSTRAINT IF EXISTS "fk_tax_document_lines_tax_code_id_org";
 --> statement-breakpoint
 ALTER TABLE public.tax_document_lines
   ADD CONSTRAINT "fk_tax_document_lines_tax_code_id_org"
@@ -82,6 +90,8 @@ ALTER TABLE public.tax_document_lines
 --> statement-breakpoint
 ALTER TABLE public.tax_document_lines VALIDATE CONSTRAINT "fk_tax_document_lines_tax_code_id_org";
 --> statement-breakpoint
+ALTER TABLE public.tax_gl_map DROP CONSTRAINT IF EXISTS "fk_tax_gl_map_account_id_org";
+--> statement-breakpoint
 ALTER TABLE public.tax_gl_map
   ADD CONSTRAINT "fk_tax_gl_map_account_id_org"
   FOREIGN KEY (org_id, account_id)
@@ -90,6 +100,8 @@ ALTER TABLE public.tax_gl_map
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.tax_gl_map VALIDATE CONSTRAINT "fk_tax_gl_map_account_id_org";
+--> statement-breakpoint
+ALTER TABLE public.tax_gl_map DROP CONSTRAINT IF EXISTS "fk_tax_gl_map_book_id_org";
 --> statement-breakpoint
 ALTER TABLE public.tax_gl_map
   ADD CONSTRAINT "fk_tax_gl_map_book_id_org"
@@ -100,6 +112,8 @@ ALTER TABLE public.tax_gl_map
 --> statement-breakpoint
 ALTER TABLE public.tax_gl_map VALIDATE CONSTRAINT "fk_tax_gl_map_book_id_org";
 --> statement-breakpoint
+ALTER TABLE public.tax_rates DROP CONSTRAINT IF EXISTS "fk_tax_rates_tax_code_id_org";
+--> statement-breakpoint
 ALTER TABLE public.tax_rates
   ADD CONSTRAINT "fk_tax_rates_tax_code_id_org"
   FOREIGN KEY (org_id, tax_code_id)
@@ -108,6 +122,8 @@ ALTER TABLE public.tax_rates
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.tax_rates VALIDATE CONSTRAINT "fk_tax_rates_tax_code_id_org";
+--> statement-breakpoint
+ALTER TABLE public.tax_registrations DROP CONSTRAINT IF EXISTS "fk_tax_registrations_book_id_org";
 --> statement-breakpoint
 ALTER TABLE public.tax_registrations
   ADD CONSTRAINT "fk_tax_registrations_book_id_org"
@@ -118,6 +134,8 @@ ALTER TABLE public.tax_registrations
 --> statement-breakpoint
 ALTER TABLE public.tax_registrations VALIDATE CONSTRAINT "fk_tax_registrations_book_id_org";
 --> statement-breakpoint
+ALTER TABLE public.tax_registrations DROP CONSTRAINT IF EXISTS "fk_tax_registrations_party_id_org";
+--> statement-breakpoint
 ALTER TABLE public.tax_registrations
   ADD CONSTRAINT "fk_tax_registrations_party_id_org"
   FOREIGN KEY (org_id, party_id)
@@ -127,7 +145,7 @@ ALTER TABLE public.tax_registrations
 --> statement-breakpoint
 ALTER TABLE public.tax_registrations VALIDATE CONSTRAINT "fk_tax_registrations_party_id_org";
 --> statement-breakpoint
-ALTER TABLE public.team_event_participants DROP CONSTRAINT "fk_team_event_participants_event_id_org";
+ALTER TABLE public.team_event_participants DROP CONSTRAINT IF EXISTS "fk_team_event_participants_event_id_org";
 --> statement-breakpoint
 ALTER TABLE public.team_event_participants
   ADD CONSTRAINT "fk_team_event_participants_event_id_org"
@@ -138,7 +156,7 @@ ALTER TABLE public.team_event_participants
 --> statement-breakpoint
 ALTER TABLE public.team_event_participants VALIDATE CONSTRAINT "fk_team_event_participants_event_id_org";
 --> statement-breakpoint
-ALTER TABLE public.timer_sessions DROP CONSTRAINT "fk_timer_sessions_project_id_org";
+ALTER TABLE public.timer_sessions DROP CONSTRAINT IF EXISTS "fk_timer_sessions_project_id_org";
 --> statement-breakpoint
 ALTER TABLE public.timer_sessions
   ADD CONSTRAINT "fk_timer_sessions_project_id_org"
@@ -149,7 +167,7 @@ ALTER TABLE public.timer_sessions
 --> statement-breakpoint
 ALTER TABLE public.timer_sessions VALIDATE CONSTRAINT "fk_timer_sessions_project_id_org";
 --> statement-breakpoint
-ALTER TABLE public.timesheets DROP CONSTRAINT "fk_timesheets_payroll_export_id_org";
+ALTER TABLE public.timesheets DROP CONSTRAINT IF EXISTS "fk_timesheets_payroll_export_id_org";
 --> statement-breakpoint
 ALTER TABLE public.timesheets
   ADD CONSTRAINT "fk_timesheets_payroll_export_id_org"
@@ -160,7 +178,7 @@ ALTER TABLE public.timesheets
 --> statement-breakpoint
 ALTER TABLE public.timesheets VALIDATE CONSTRAINT "fk_timesheets_payroll_export_id_org";
 --> statement-breakpoint
-ALTER TABLE public.vendor_payments DROP CONSTRAINT "fk_vendor_payments_bill_id_org";
+ALTER TABLE public.vendor_payments DROP CONSTRAINT IF EXISTS "fk_vendor_payments_bill_id_org";
 --> statement-breakpoint
 ALTER TABLE public.vendor_payments
   ADD CONSTRAINT "fk_vendor_payments_bill_id_org"
@@ -171,7 +189,7 @@ ALTER TABLE public.vendor_payments
 --> statement-breakpoint
 ALTER TABLE public.vendor_payments VALIDATE CONSTRAINT "fk_vendor_payments_bill_id_org";
 --> statement-breakpoint
-ALTER TABLE public.webhook_logs DROP CONSTRAINT "fk_webhook_logs_endpoint_id_org";
+ALTER TABLE public.webhook_logs DROP CONSTRAINT IF EXISTS "fk_webhook_logs_endpoint_id_org";
 --> statement-breakpoint
 ALTER TABLE public.webhook_logs
   ADD CONSTRAINT "fk_webhook_logs_endpoint_id_org"

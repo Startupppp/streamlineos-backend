@@ -2,7 +2,7 @@
 
 SET lock_timeout = '5s';
 --> statement-breakpoint
-ALTER TABLE public.portal_invitations DROP CONSTRAINT "fk_portal_invitations_inviter_membership_id_org";
+ALTER TABLE public.portal_invitations DROP CONSTRAINT IF EXISTS "fk_portal_invitations_inviter_membership_id_org";
 --> statement-breakpoint
 ALTER TABLE public.portal_invitations
   ADD CONSTRAINT "fk_portal_invitations_inviter_membership_id_org"
@@ -13,7 +13,7 @@ ALTER TABLE public.portal_invitations
 --> statement-breakpoint
 ALTER TABLE public.portal_invitations VALIDATE CONSTRAINT "fk_portal_invitations_inviter_membership_id_org";
 --> statement-breakpoint
-ALTER TABLE public.project_client_grants DROP CONSTRAINT "fk_project_client_grants_project_id_org";
+ALTER TABLE public.project_client_grants DROP CONSTRAINT IF EXISTS "fk_project_client_grants_project_id_org";
 --> statement-breakpoint
 ALTER TABLE public.project_client_grants
   ADD CONSTRAINT "fk_project_client_grants_project_id_org"
@@ -24,6 +24,8 @@ ALTER TABLE public.project_client_grants
 --> statement-breakpoint
 ALTER TABLE public.project_client_grants VALIDATE CONSTRAINT "fk_project_client_grants_project_id_org";
 --> statement-breakpoint
+ALTER TABLE public.worker_engagements DROP CONSTRAINT IF EXISTS "fk_worker_engagements_org_job_role";
+--> statement-breakpoint
 ALTER TABLE public.worker_engagements
   ADD CONSTRAINT "fk_worker_engagements_org_job_role"
   FOREIGN KEY (organization_id, job_role_id)
@@ -32,6 +34,8 @@ ALTER TABLE public.worker_engagements
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.worker_engagements VALIDATE CONSTRAINT "fk_worker_engagements_org_job_role";
+--> statement-breakpoint
+ALTER TABLE public.worker_engagements DROP CONSTRAINT IF EXISTS "fk_worker_engagements_org_job_level";
 --> statement-breakpoint
 ALTER TABLE public.worker_engagements
   ADD CONSTRAINT "fk_worker_engagements_org_job_level"
@@ -42,18 +46,18 @@ ALTER TABLE public.worker_engagements
 --> statement-breakpoint
 ALTER TABLE public.worker_engagements VALIDATE CONSTRAINT "fk_worker_engagements_org_job_level";
 --> statement-breakpoint
-ALTER TABLE public.party_contacts DROP CONSTRAINT "fk_party_contacts_party_id_org";
+ALTER TABLE public.party_contacts DROP CONSTRAINT IF EXISTS "fk_party_contacts_party_id_org";
 --> statement-breakpoint
-ALTER TABLE public.portal_invitations DROP CONSTRAINT "fk_portal_invitations_accepted_portal_membership_id_org";
+ALTER TABLE public.portal_invitations DROP CONSTRAINT IF EXISTS "fk_portal_invitations_accepted_portal_membership_id_org";
 --> statement-breakpoint
-ALTER TABLE public.worker_engagements DROP CONSTRAINT "fk_worker_engagements_worker_id_org";
+ALTER TABLE public.worker_engagements DROP CONSTRAINT IF EXISTS "fk_worker_engagements_worker_id_org";
 --> statement-breakpoint
-ALTER TABLE public.workers DROP CONSTRAINT "fk_workers_organization_person_id_org";
+ALTER TABLE public.workers DROP CONSTRAINT IF EXISTS "fk_workers_organization_person_id_org";
 --> statement-breakpoint
-ALTER TABLE public.portal_invitations DROP CONSTRAINT "portal_invitations_inviter_membership_id_fkey";
+ALTER TABLE public.portal_invitations DROP CONSTRAINT IF EXISTS "portal_invitations_inviter_membership_id_fkey";
 --> statement-breakpoint
-ALTER TABLE public.project_client_grants DROP CONSTRAINT "project_client_grants_project_id_fkey";
+ALTER TABLE public.project_client_grants DROP CONSTRAINT IF EXISTS "project_client_grants_project_id_fkey";
 --> statement-breakpoint
-ALTER TABLE public.worker_engagements DROP CONSTRAINT "fk_worker_engagements_job_role";
+ALTER TABLE public.worker_engagements DROP CONSTRAINT IF EXISTS "fk_worker_engagements_job_role";
 --> statement-breakpoint
-ALTER TABLE public.worker_engagements DROP CONSTRAINT "fk_worker_engagements_job_level";
+ALTER TABLE public.worker_engagements DROP CONSTRAINT IF EXISTS "fk_worker_engagements_job_level";

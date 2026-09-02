@@ -2,7 +2,7 @@
 
 SET lock_timeout = '5s';
 --> statement-breakpoint
-ALTER TABLE ai_chat_conversations DROP CONSTRAINT "fk_ai_chat_conv_org_user_mbr";
+ALTER TABLE ai_chat_conversations DROP CONSTRAINT IF EXISTS "fk_ai_chat_conv_org_user_mbr";
 --> statement-breakpoint
 ALTER TABLE ai_chat_conversations
   ADD CONSTRAINT "fk_ai_chat_conv_org_user_mbr"
@@ -13,7 +13,7 @@ ALTER TABLE ai_chat_conversations
 --> statement-breakpoint
 ALTER TABLE ai_chat_conversations VALIDATE CONSTRAINT "fk_ai_chat_conv_org_user_mbr";
 --> statement-breakpoint
-ALTER TABLE ai_chat_messages DROP CONSTRAINT "fk_ai_chat_msg_org_user_mbr";
+ALTER TABLE ai_chat_messages DROP CONSTRAINT IF EXISTS "fk_ai_chat_msg_org_user_mbr";
 --> statement-breakpoint
 ALTER TABLE ai_chat_messages
   ADD CONSTRAINT "fk_ai_chat_msg_org_user_mbr"
@@ -24,7 +24,7 @@ ALTER TABLE ai_chat_messages
 --> statement-breakpoint
 ALTER TABLE ai_chat_messages VALIDATE CONSTRAINT "fk_ai_chat_msg_org_user_mbr";
 --> statement-breakpoint
-ALTER TABLE ai_action_proposals DROP CONSTRAINT "fk_ai_proposals_org_user_mbr";
+ALTER TABLE ai_action_proposals DROP CONSTRAINT IF EXISTS "fk_ai_proposals_org_user_mbr";
 --> statement-breakpoint
 ALTER TABLE ai_action_proposals
   ADD CONSTRAINT "fk_ai_proposals_org_user_mbr"

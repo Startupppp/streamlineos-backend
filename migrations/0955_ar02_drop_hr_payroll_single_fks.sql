@@ -1,4 +1,4 @@
--- AR-02: drop superseded single-column tenant FKs — HR/payroll/timesheet cluster
+-- AR-02: drop superseded single-column tenant FKs — HR/payroll/timesheet cluster payroll_journal_entries and payroll_run_items exist in no database, so their drops use ALTER TABLE IF EXISTS rather than failing 42P01 and rolling back the whole migration.
 -- Superseded by composite (org_id, col) constraints added in 0950-0954.
 -- All DROP statements use IF EXISTS; wrong names are no-ops, not failures.
 -- CRM, Inventory, and global-table FKs (→ users, → organizations) are not touched.
@@ -340,11 +340,11 @@ ALTER TABLE leave_requests DROP CONSTRAINT IF EXISTS "leave_requests_leave_type_
 -- Drizzle truncates at 63: reversal_of_batch_id → payroll_journal_batches (self)
 ALTER TABLE payroll_journal_batches DROP CONSTRAINT IF EXISTS "payroll_journal_batches_reversal_of_batch_id_payroll_journal_ba";
 --> statement-breakpoint
-ALTER TABLE payroll_journal_entries DROP CONSTRAINT IF EXISTS "payroll_journal_entries_batch_id_payroll_journal_batches_id_fk";
+ALTER TABLE IF EXISTS payroll_journal_entries DROP CONSTRAINT IF EXISTS "payroll_journal_entries_batch_id_payroll_journal_batches_id_fk";
 --> statement-breakpoint
 ALTER TABLE payroll_run_employees DROP CONSTRAINT IF EXISTS "payroll_run_employees_run_id_payroll_runs_id_fk";
 --> statement-breakpoint
-ALTER TABLE payroll_run_items DROP CONSTRAINT IF EXISTS "payroll_run_items_run_id_payroll_runs_id_fk";
+ALTER TABLE IF EXISTS payroll_run_items DROP CONSTRAINT IF EXISTS "payroll_run_items_run_id_payroll_runs_id_fk";
 --> statement-breakpoint
 ALTER TABLE payroll_runs DROP CONSTRAINT IF EXISTS "payroll_runs_legal_entity_id_legal_entities_id_fk";
 --> statement-breakpoint

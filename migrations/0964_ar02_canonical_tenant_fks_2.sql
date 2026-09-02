@@ -2,6 +2,8 @@
 
 SET lock_timeout = '5s';
 --> statement-breakpoint
+ALTER TABLE public.bank_matches DROP CONSTRAINT IF EXISTS "fk_bank_matches_payment_id_org";
+--> statement-breakpoint
 ALTER TABLE public.bank_matches
   ADD CONSTRAINT "fk_bank_matches_payment_id_org"
   FOREIGN KEY (org_id, payment_id)
@@ -10,6 +12,8 @@ ALTER TABLE public.bank_matches
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.bank_matches VALIDATE CONSTRAINT "fk_bank_matches_payment_id_org";
+--> statement-breakpoint
+ALTER TABLE public.bank_matches DROP CONSTRAINT IF EXISTS "fk_bank_matches_receipt_id_org";
 --> statement-breakpoint
 ALTER TABLE public.bank_matches
   ADD CONSTRAINT "fk_bank_matches_receipt_id_org"
@@ -20,6 +24,8 @@ ALTER TABLE public.bank_matches
 --> statement-breakpoint
 ALTER TABLE public.bank_matches VALIDATE CONSTRAINT "fk_bank_matches_receipt_id_org";
 --> statement-breakpoint
+ALTER TABLE public.bank_matches DROP CONSTRAINT IF EXISTS "fk_bank_matches_statement_line_id_org";
+--> statement-breakpoint
 ALTER TABLE public.bank_matches
   ADD CONSTRAINT "fk_bank_matches_statement_line_id_org"
   FOREIGN KEY (org_id, statement_line_id)
@@ -28,6 +34,8 @@ ALTER TABLE public.bank_matches
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.bank_matches VALIDATE CONSTRAINT "fk_bank_matches_statement_line_id_org";
+--> statement-breakpoint
+ALTER TABLE public.bank_profiles DROP CONSTRAINT IF EXISTS "fk_bank_profiles_account_id_org";
 --> statement-breakpoint
 ALTER TABLE public.bank_profiles
   ADD CONSTRAINT "fk_bank_profiles_account_id_org"
@@ -38,6 +46,8 @@ ALTER TABLE public.bank_profiles
 --> statement-breakpoint
 ALTER TABLE public.bank_profiles VALIDATE CONSTRAINT "fk_bank_profiles_account_id_org";
 --> statement-breakpoint
+ALTER TABLE public.bank_profiles DROP CONSTRAINT IF EXISTS "fk_bank_profiles_book_id_org";
+--> statement-breakpoint
 ALTER TABLE public.bank_profiles
   ADD CONSTRAINT "fk_bank_profiles_book_id_org"
   FOREIGN KEY (org_id, book_id)
@@ -46,6 +56,8 @@ ALTER TABLE public.bank_profiles
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.bank_profiles VALIDATE CONSTRAINT "fk_bank_profiles_book_id_org";
+--> statement-breakpoint
+ALTER TABLE public.bank_statement_lines DROP CONSTRAINT IF EXISTS "fk_bank_statement_lines_statement_id_org";
 --> statement-breakpoint
 ALTER TABLE public.bank_statement_lines
   ADD CONSTRAINT "fk_bank_statement_lines_statement_id_org"
@@ -56,6 +68,8 @@ ALTER TABLE public.bank_statement_lines
 --> statement-breakpoint
 ALTER TABLE public.bank_statement_lines VALIDATE CONSTRAINT "fk_bank_statement_lines_statement_id_org";
 --> statement-breakpoint
+ALTER TABLE public.bank_statements DROP CONSTRAINT IF EXISTS "fk_bank_statements_bank_profile_id_org";
+--> statement-breakpoint
 ALTER TABLE public.bank_statements
   ADD CONSTRAINT "fk_bank_statements_bank_profile_id_org"
   FOREIGN KEY (org_id, bank_profile_id)
@@ -64,6 +78,8 @@ ALTER TABLE public.bank_statements
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.bank_statements VALIDATE CONSTRAINT "fk_bank_statements_bank_profile_id_org";
+--> statement-breakpoint
+ALTER TABLE public.bank_statements DROP CONSTRAINT IF EXISTS "fk_bank_statements_book_id_org";
 --> statement-breakpoint
 ALTER TABLE public.bank_statements
   ADD CONSTRAINT "fk_bank_statements_book_id_org"
@@ -74,6 +90,8 @@ ALTER TABLE public.bank_statements
 --> statement-breakpoint
 ALTER TABLE public.bank_statements VALIDATE CONSTRAINT "fk_bank_statements_book_id_org";
 --> statement-breakpoint
+ALTER TABLE public.billing_credit_note_lines DROP CONSTRAINT IF EXISTS "fk_billing_credit_note_lines_credit_note_id_org";
+--> statement-breakpoint
 ALTER TABLE public.billing_credit_note_lines
   ADD CONSTRAINT "fk_billing_credit_note_lines_credit_note_id_org"
   FOREIGN KEY (org_id, credit_note_id)
@@ -82,6 +100,8 @@ ALTER TABLE public.billing_credit_note_lines
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.billing_credit_note_lines VALIDATE CONSTRAINT "fk_billing_credit_note_lines_credit_note_id_org";
+--> statement-breakpoint
+ALTER TABLE public.billing_credit_notes DROP CONSTRAINT IF EXISTS "fk_billing_credit_notes_original_snapshot_id_org";
 --> statement-breakpoint
 ALTER TABLE public.billing_credit_notes
   ADD CONSTRAINT "fk_billing_credit_notes_original_snapshot_id_org"
@@ -92,6 +112,8 @@ ALTER TABLE public.billing_credit_notes
 --> statement-breakpoint
 ALTER TABLE public.billing_credit_notes VALIDATE CONSTRAINT "fk_billing_credit_notes_original_snapshot_id_org";
 --> statement-breakpoint
+ALTER TABLE public.billing_invoice_line_snapshots DROP CONSTRAINT IF EXISTS "fk_billing_invoice_line_snapshots_proration_line_id_org";
+--> statement-breakpoint
 ALTER TABLE public.billing_invoice_line_snapshots
   ADD CONSTRAINT "fk_billing_invoice_line_snapshots_proration_line_id_org"
   FOREIGN KEY (org_id, proration_line_id)
@@ -100,6 +122,8 @@ ALTER TABLE public.billing_invoice_line_snapshots
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.billing_invoice_line_snapshots VALIDATE CONSTRAINT "fk_billing_invoice_line_snapshots_proration_line_id_org";
+--> statement-breakpoint
+ALTER TABLE public.billing_invoice_line_snapshots DROP CONSTRAINT IF EXISTS "fk_billing_invoice_line_snapshots_snapshot_id_org";
 --> statement-breakpoint
 ALTER TABLE public.billing_invoice_line_snapshots
   ADD CONSTRAINT "fk_billing_invoice_line_snapshots_snapshot_id_org"
@@ -110,6 +134,8 @@ ALTER TABLE public.billing_invoice_line_snapshots
 --> statement-breakpoint
 ALTER TABLE public.billing_invoice_line_snapshots VALIDATE CONSTRAINT "fk_billing_invoice_line_snapshots_snapshot_id_org";
 --> statement-breakpoint
+ALTER TABLE public.billing_invoice_line_snapshots DROP CONSTRAINT IF EXISTS "fk_billing_invoice_line_snapshots_usage_rollup_id_org";
+--> statement-breakpoint
 ALTER TABLE public.billing_invoice_line_snapshots
   ADD CONSTRAINT "fk_billing_invoice_line_snapshots_usage_rollup_id_org"
   FOREIGN KEY (org_id, usage_rollup_id)
@@ -118,6 +144,8 @@ ALTER TABLE public.billing_invoice_line_snapshots
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.billing_invoice_line_snapshots VALIDATE CONSTRAINT "fk_billing_invoice_line_snapshots_usage_rollup_id_org";
+--> statement-breakpoint
+ALTER TABLE public.broadcast_audience_targets DROP CONSTRAINT IF EXISTS "fk_broadcast_audience_targets_broadcast_id_org";
 --> statement-breakpoint
 ALTER TABLE public.broadcast_audience_targets
   ADD CONSTRAINT "fk_broadcast_audience_targets_broadcast_id_org"
@@ -128,6 +156,8 @@ ALTER TABLE public.broadcast_audience_targets
 --> statement-breakpoint
 ALTER TABLE public.broadcast_audience_targets VALIDATE CONSTRAINT "fk_broadcast_audience_targets_broadcast_id_org";
 --> statement-breakpoint
+ALTER TABLE public.broadcast_read_receipts DROP CONSTRAINT IF EXISTS "fk_broadcast_read_receipts_broadcast_id_org";
+--> statement-breakpoint
 ALTER TABLE public.broadcast_read_receipts
   ADD CONSTRAINT "fk_broadcast_read_receipts_broadcast_id_org"
   FOREIGN KEY (org_id, broadcast_id)
@@ -137,7 +167,7 @@ ALTER TABLE public.broadcast_read_receipts
 --> statement-breakpoint
 ALTER TABLE public.broadcast_read_receipts VALIDATE CONSTRAINT "fk_broadcast_read_receipts_broadcast_id_org";
 --> statement-breakpoint
-ALTER TABLE public.competencies DROP CONSTRAINT "fk_competencies_framework_id_org";
+ALTER TABLE public.competencies DROP CONSTRAINT IF EXISTS "fk_competencies_framework_id_org";
 --> statement-breakpoint
 ALTER TABLE public.competencies
   ADD CONSTRAINT "fk_competencies_framework_id_org"
@@ -148,6 +178,8 @@ ALTER TABLE public.competencies
 --> statement-breakpoint
 ALTER TABLE public.competencies VALIDATE CONSTRAINT "fk_competencies_framework_id_org";
 --> statement-breakpoint
+ALTER TABLE public.coupon_redemptions DROP CONSTRAINT IF EXISTS "fk_coupon_redemptions_coupon_id_org";
+--> statement-breakpoint
 ALTER TABLE public.coupon_redemptions
   ADD CONSTRAINT "fk_coupon_redemptions_coupon_id_org"
   FOREIGN KEY (org_id, coupon_id)
@@ -157,7 +189,7 @@ ALTER TABLE public.coupon_redemptions
 --> statement-breakpoint
 ALTER TABLE public.coupon_redemptions VALIDATE CONSTRAINT "fk_coupon_redemptions_coupon_id_org";
 --> statement-breakpoint
-ALTER TABLE public.document_template_versions DROP CONSTRAINT "fk_document_template_versions_template_id_org";
+ALTER TABLE public.document_template_versions DROP CONSTRAINT IF EXISTS "fk_document_template_versions_template_id_org";
 --> statement-breakpoint
 ALTER TABLE public.document_template_versions
   ADD CONSTRAINT "fk_document_template_versions_template_id_org"
@@ -168,6 +200,8 @@ ALTER TABLE public.document_template_versions
 --> statement-breakpoint
 ALTER TABLE public.document_template_versions VALIDATE CONSTRAINT "fk_document_template_versions_template_id_org";
 --> statement-breakpoint
+ALTER TABLE public.documents DROP CONSTRAINT IF EXISTS "fk_documents_department_id_org";
+--> statement-breakpoint
 ALTER TABLE public.documents
   ADD CONSTRAINT "fk_documents_department_id_org"
   FOREIGN KEY (org_id, department_id)
@@ -176,6 +210,8 @@ ALTER TABLE public.documents
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.documents VALIDATE CONSTRAINT "fk_documents_department_id_org";
+--> statement-breakpoint
+ALTER TABLE public.dunning_attempts DROP CONSTRAINT IF EXISTS "fk_dunning_attempts_subscription_id_org";
 --> statement-breakpoint
 ALTER TABLE public.dunning_attempts
   ADD CONSTRAINT "fk_dunning_attempts_subscription_id_org"
@@ -186,7 +222,7 @@ ALTER TABLE public.dunning_attempts
 --> statement-breakpoint
 ALTER TABLE public.dunning_attempts VALIDATE CONSTRAINT "fk_dunning_attempts_subscription_id_org";
 --> statement-breakpoint
-ALTER TABLE public.email_sequence_steps DROP CONSTRAINT "fk_email_sequence_steps_sequence_id_org";
+ALTER TABLE public.email_sequence_steps DROP CONSTRAINT IF EXISTS "fk_email_sequence_steps_sequence_id_org";
 --> statement-breakpoint
 ALTER TABLE public.email_sequence_steps
   ADD CONSTRAINT "fk_email_sequence_steps_sequence_id_org"
@@ -197,7 +233,7 @@ ALTER TABLE public.email_sequence_steps
 --> statement-breakpoint
 ALTER TABLE public.email_sequence_steps VALIDATE CONSTRAINT "fk_email_sequence_steps_sequence_id_org";
 --> statement-breakpoint
-ALTER TABLE public.feedback_cycle_requests DROP CONSTRAINT "fk_feedback_cycle_requests_cycle_id_org";
+ALTER TABLE public.feedback_cycle_requests DROP CONSTRAINT IF EXISTS "fk_feedback_cycle_requests_cycle_id_org";
 --> statement-breakpoint
 ALTER TABLE public.feedback_cycle_requests
   ADD CONSTRAINT "fk_feedback_cycle_requests_cycle_id_org"
@@ -208,7 +244,7 @@ ALTER TABLE public.feedback_cycle_requests
 --> statement-breakpoint
 ALTER TABLE public.feedback_cycle_requests VALIDATE CONSTRAINT "fk_feedback_cycle_requests_cycle_id_org";
 --> statement-breakpoint
-ALTER TABLE public.feedback_cycle_responses DROP CONSTRAINT "fk_feedback_cycle_responses_request_id_org";
+ALTER TABLE public.feedback_cycle_responses DROP CONSTRAINT IF EXISTS "fk_feedback_cycle_responses_request_id_org";
 --> statement-breakpoint
 ALTER TABLE public.feedback_cycle_responses
   ADD CONSTRAINT "fk_feedback_cycle_responses_request_id_org"
@@ -219,7 +255,7 @@ ALTER TABLE public.feedback_cycle_responses
 --> statement-breakpoint
 ALTER TABLE public.feedback_cycle_responses VALIDATE CONSTRAINT "fk_feedback_cycle_responses_request_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_bank_imports DROP CONSTRAINT "fk_fin_bank_imports_bank_account_id_org";
+ALTER TABLE public.fin_bank_imports DROP CONSTRAINT IF EXISTS "fk_fin_bank_imports_bank_account_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_bank_imports
   ADD CONSTRAINT "fk_fin_bank_imports_bank_account_id_org"
@@ -230,7 +266,7 @@ ALTER TABLE public.fin_bank_imports
 --> statement-breakpoint
 ALTER TABLE public.fin_bank_imports VALIDATE CONSTRAINT "fk_fin_bank_imports_bank_account_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_bank_transactions DROP CONSTRAINT "fk_fin_bank_transactions_bank_account_id_org";
+ALTER TABLE public.fin_bank_transactions DROP CONSTRAINT IF EXISTS "fk_fin_bank_transactions_bank_account_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_bank_transactions
   ADD CONSTRAINT "fk_fin_bank_transactions_bank_account_id_org"
@@ -241,7 +277,7 @@ ALTER TABLE public.fin_bank_transactions
 --> statement-breakpoint
 ALTER TABLE public.fin_bank_transactions VALIDATE CONSTRAINT "fk_fin_bank_transactions_bank_account_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_bank_transactions DROP CONSTRAINT "fk_fin_bank_transactions_import_id_org";
+ALTER TABLE public.fin_bank_transactions DROP CONSTRAINT IF EXISTS "fk_fin_bank_transactions_import_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_bank_transactions
   ADD CONSTRAINT "fk_fin_bank_transactions_import_id_org"
@@ -252,6 +288,8 @@ ALTER TABLE public.fin_bank_transactions
 --> statement-breakpoint
 ALTER TABLE public.fin_bank_transactions VALIDATE CONSTRAINT "fk_fin_bank_transactions_import_id_org";
 --> statement-breakpoint
+ALTER TABLE public.fin_bank_transfers DROP CONSTRAINT IF EXISTS "fk_fin_bank_transfers_to_bank_account_id_org";
+--> statement-breakpoint
 ALTER TABLE public.fin_bank_transfers
   ADD CONSTRAINT "fk_fin_bank_transfers_to_bank_account_id_org"
   FOREIGN KEY (org_id, to_bank_account_id)
@@ -260,7 +298,7 @@ ALTER TABLE public.fin_bank_transfers
 --> statement-breakpoint
 ALTER TABLE public.fin_bank_transfers VALIDATE CONSTRAINT "fk_fin_bank_transfers_to_bank_account_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_budget_lines DROP CONSTRAINT "fk_fin_budget_lines_budget_id_org";
+ALTER TABLE public.fin_budget_lines DROP CONSTRAINT IF EXISTS "fk_fin_budget_lines_budget_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_budget_lines
   ADD CONSTRAINT "fk_fin_budget_lines_budget_id_org"
@@ -271,6 +309,8 @@ ALTER TABLE public.fin_budget_lines
 --> statement-breakpoint
 ALTER TABLE public.fin_budget_lines VALIDATE CONSTRAINT "fk_fin_budget_lines_budget_id_org";
 --> statement-breakpoint
+ALTER TABLE public.fin_budget_lines DROP CONSTRAINT IF EXISTS "fk_fin_budget_lines_department_id_org";
+--> statement-breakpoint
 ALTER TABLE public.fin_budget_lines
   ADD CONSTRAINT "fk_fin_budget_lines_department_id_org"
   FOREIGN KEY (org_id, department_id)
@@ -280,7 +320,7 @@ ALTER TABLE public.fin_budget_lines
 --> statement-breakpoint
 ALTER TABLE public.fin_budget_lines VALIDATE CONSTRAINT "fk_fin_budget_lines_department_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_budget_revisions DROP CONSTRAINT "fk_fin_budget_revisions_budget_id_org";
+ALTER TABLE public.fin_budget_revisions DROP CONSTRAINT IF EXISTS "fk_fin_budget_revisions_budget_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_budget_revisions
   ADD CONSTRAINT "fk_fin_budget_revisions_budget_id_org"
@@ -291,7 +331,7 @@ ALTER TABLE public.fin_budget_revisions
 --> statement-breakpoint
 ALTER TABLE public.fin_budget_revisions VALIDATE CONSTRAINT "fk_fin_budget_revisions_budget_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_collection_activities DROP CONSTRAINT "fk_fin_collection_activities_invoice_id_org";
+ALTER TABLE public.fin_collection_activities DROP CONSTRAINT IF EXISTS "fk_fin_collection_activities_invoice_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_collection_activities
   ADD CONSTRAINT "fk_fin_collection_activities_invoice_id_org"
@@ -302,7 +342,7 @@ ALTER TABLE public.fin_collection_activities
 --> statement-breakpoint
 ALTER TABLE public.fin_collection_activities VALIDATE CONSTRAINT "fk_fin_collection_activities_invoice_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_expense_policies DROP CONSTRAINT "fk_fin_expense_policies_category_id_org";
+ALTER TABLE public.fin_expense_policies DROP CONSTRAINT IF EXISTS "fk_fin_expense_policies_category_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_expense_policies
   ADD CONSTRAINT "fk_fin_expense_policies_category_id_org"
@@ -313,7 +353,7 @@ ALTER TABLE public.fin_expense_policies
 --> statement-breakpoint
 ALTER TABLE public.fin_expense_policies VALIDATE CONSTRAINT "fk_fin_expense_policies_category_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_payment_allocations DROP CONSTRAINT "fk_fin_payment_allocations_invoice_id_org";
+ALTER TABLE public.fin_payment_allocations DROP CONSTRAINT IF EXISTS "fk_fin_payment_allocations_invoice_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_payment_allocations
   ADD CONSTRAINT "fk_fin_payment_allocations_invoice_id_org"
@@ -324,7 +364,7 @@ ALTER TABLE public.fin_payment_allocations
 --> statement-breakpoint
 ALTER TABLE public.fin_payment_allocations VALIDATE CONSTRAINT "fk_fin_payment_allocations_invoice_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_payment_allocations DROP CONSTRAINT "fk_fin_payment_allocations_payment_id_org";
+ALTER TABLE public.fin_payment_allocations DROP CONSTRAINT IF EXISTS "fk_fin_payment_allocations_payment_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_payment_allocations
   ADD CONSTRAINT "fk_fin_payment_allocations_payment_id_org"
@@ -335,7 +375,7 @@ ALTER TABLE public.fin_payment_allocations
 --> statement-breakpoint
 ALTER TABLE public.fin_payment_allocations VALIDATE CONSTRAINT "fk_fin_payment_allocations_payment_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_payment_run_items DROP CONSTRAINT "fk_fin_payment_run_items_run_id_org";
+ALTER TABLE public.fin_payment_run_items DROP CONSTRAINT IF EXISTS "fk_fin_payment_run_items_run_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_payment_run_items
   ADD CONSTRAINT "fk_fin_payment_run_items_run_id_org"
@@ -346,7 +386,7 @@ ALTER TABLE public.fin_payment_run_items
 --> statement-breakpoint
 ALTER TABLE public.fin_payment_run_items VALIDATE CONSTRAINT "fk_fin_payment_run_items_run_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_reconciliation_matches DROP CONSTRAINT "fk_fin_reconciliation_matches_bank_transaction_id_org";
+ALTER TABLE public.fin_reconciliation_matches DROP CONSTRAINT IF EXISTS "fk_fin_reconciliation_matches_bank_transaction_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_reconciliation_matches
   ADD CONSTRAINT "fk_fin_reconciliation_matches_bank_transaction_id_org"
@@ -357,6 +397,8 @@ ALTER TABLE public.fin_reconciliation_matches
 --> statement-breakpoint
 ALTER TABLE public.fin_reconciliation_matches VALIDATE CONSTRAINT "fk_fin_reconciliation_matches_bank_transaction_id_org";
 --> statement-breakpoint
+ALTER TABLE public.fin_reimbursement_batches DROP CONSTRAINT IF EXISTS "fk_fin_reimbursement_batches_cash_account_id_org";
+--> statement-breakpoint
 ALTER TABLE public.fin_reimbursement_batches
   ADD CONSTRAINT "fk_fin_reimbursement_batches_cash_account_id_org"
   FOREIGN KEY (org_id, cash_account_id)
@@ -365,6 +407,8 @@ ALTER TABLE public.fin_reimbursement_batches
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.fin_reimbursement_batches VALIDATE CONSTRAINT "fk_fin_reimbursement_batches_cash_account_id_org";
+--> statement-breakpoint
+ALTER TABLE public.fin_reimbursement_batches DROP CONSTRAINT IF EXISTS "fk_fin_reimbursement_batches_posted_journal_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_reimbursement_batches
   ADD CONSTRAINT "fk_fin_reimbursement_batches_posted_journal_id_org"
@@ -375,7 +419,7 @@ ALTER TABLE public.fin_reimbursement_batches
 --> statement-breakpoint
 ALTER TABLE public.fin_reimbursement_batches VALIDATE CONSTRAINT "fk_fin_reimbursement_batches_posted_journal_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_reminder_log DROP CONSTRAINT "fk_fin_reminder_log_invoice_id_org";
+ALTER TABLE public.fin_reminder_log DROP CONSTRAINT IF EXISTS "fk_fin_reminder_log_invoice_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_reminder_log
   ADD CONSTRAINT "fk_fin_reminder_log_invoice_id_org"
@@ -386,7 +430,7 @@ ALTER TABLE public.fin_reminder_log
 --> statement-breakpoint
 ALTER TABLE public.fin_reminder_log VALIDATE CONSTRAINT "fk_fin_reminder_log_invoice_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_vendor_payment_allocations DROP CONSTRAINT "fk_fin_vendor_payment_allocations_bill_id_org";
+ALTER TABLE public.fin_vendor_payment_allocations DROP CONSTRAINT IF EXISTS "fk_fin_vendor_payment_allocations_bill_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_vendor_payment_allocations
   ADD CONSTRAINT "fk_fin_vendor_payment_allocations_bill_id_org"
@@ -397,7 +441,7 @@ ALTER TABLE public.fin_vendor_payment_allocations
 --> statement-breakpoint
 ALTER TABLE public.fin_vendor_payment_allocations VALIDATE CONSTRAINT "fk_fin_vendor_payment_allocations_bill_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fin_vendor_payment_allocations DROP CONSTRAINT "fk_fin_vendor_payment_allocations_vendor_payment_id_org";
+ALTER TABLE public.fin_vendor_payment_allocations DROP CONSTRAINT IF EXISTS "fk_fin_vendor_payment_allocations_vendor_payment_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fin_vendor_payment_allocations
   ADD CONSTRAINT "fk_fin_vendor_payment_allocations_vendor_payment_id_org"
@@ -408,7 +452,7 @@ ALTER TABLE public.fin_vendor_payment_allocations
 --> statement-breakpoint
 ALTER TABLE public.fin_vendor_payment_allocations VALIDATE CONSTRAINT "fk_fin_vendor_payment_allocations_vendor_payment_id_org";
 --> statement-breakpoint
-ALTER TABLE public.fnf_settlements DROP CONSTRAINT "fk_fnf_settlements_resignation_id_org";
+ALTER TABLE public.fnf_settlements DROP CONSTRAINT IF EXISTS "fk_fnf_settlements_resignation_id_org";
 --> statement-breakpoint
 ALTER TABLE public.fnf_settlements
   ADD CONSTRAINT "fk_fnf_settlements_resignation_id_org"
@@ -418,6 +462,8 @@ ALTER TABLE public.fnf_settlements
   NOT VALID;
 --> statement-breakpoint
 ALTER TABLE public.fnf_settlements VALIDATE CONSTRAINT "fk_fnf_settlements_resignation_id_org";
+--> statement-breakpoint
+ALTER TABLE public.gl_accounts DROP CONSTRAINT IF EXISTS "fk_gl_accounts_book_id_org";
 --> statement-breakpoint
 ALTER TABLE public.gl_accounts
   ADD CONSTRAINT "fk_gl_accounts_book_id_org"

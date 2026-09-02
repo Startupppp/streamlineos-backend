@@ -4098,27 +4098,6 @@
       "breakpoints": true
     },
     {
-      "idx": 714,
-      "version": "7",
-      "when": 1803000010026,
-      "tag": "0933_ar07_payroll_run_posting_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 715,
-      "version": "7",
-      "when": 1803000010027,
-      "tag": "0961_storage_file_quarantine",
-      "breakpoints": true
-    },
-    {
-      "idx": 716,
-      "version": "7",
-      "when": 1803000010028,
-      "tag": "0934_ar05_calendar_provider_sync_queue",
-      "breakpoints": true
-    },
-    {
       "idx": 717,
       "version": "7",
       "when": 1803000010029,
@@ -4144,13 +4123,6 @@
       "version": "7",
       "when": 1803000010032,
       "tag": "0941_ar02_drop_redundant_single_fks",
-      "breakpoints": true
-    },
-    {
-      "idx": 721,
-      "version": "7",
-      "when": 1803000010033,
-      "tag": "0942_storage_multipart_intents",
       "breakpoints": true
     },
     {
@@ -4378,16 +4350,51 @@
       "breakpoints": true
     },
     {
+      "idx": 757,
+      "version": "7",
+      "when": 1803000010070,
+      "tag": "0982_ar02_drop_live_duplicate_composites",
+      "breakpoints": true
+    },
+    {
+      "idx": 714,
+      "version": "7",
+      "when": 1803000010071,
+      "tag": "0933_ar07_payroll_run_posting_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 715,
+      "version": "7",
+      "when": 1803000010072,
+      "tag": "0961_storage_file_quarantine",
+      "breakpoints": true
+    },
+    {
+      "idx": 716,
+      "version": "7",
+      "when": 1803000010073,
+      "tag": "0934_ar05_calendar_provider_sync_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 721,
+      "version": "7",
+      "when": 1803000010074,
+      "tag": "0942_storage_multipart_intents",
+      "breakpoints": true
+    },
+    {
       "idx": 737,
       "version": "7",
-      "when": 1803000010068,
+      "when": 1803000010075,
       "tag": "0980_chat_message_client_idempotency",
       "breakpoints": true
     },
     {
       "idx": 738,
       "version": "7",
-      "when": 1803000010069,
+      "when": 1803000010076,
       "tag": "0981_chat_channel_privacy_invariant",
       "breakpoints": true
     }
