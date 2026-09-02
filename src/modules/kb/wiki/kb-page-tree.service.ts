@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, getTableColumns, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { kbPages, kbPageLinks, kbArticleChunks } from "../../../db/schema";
@@ -19,17 +19,11 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KB_PAGE_COLUMNS, KB_PAGE_LIST_COLUMNS, type KbPageListItem, type KbPageRow } from "./kb-page-columns";
 
-type PageRow = typeof kbPages.$inferSelect;
+type PageRow = KbPageRow;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-const {
-  content: _content,
-  contentText: _contentText,
-  fts: _fts,
-  ...KB_PAGE_LIST_COLUMNS
-} = getTableColumns(kbPages);
-type KbPageListItem = Omit<PageRow, "content" | "contentText" | "fts">;
 
 const MAX_TREE_NODES = 2000;
 const EXPIRED_PURGE_BATCH_SIZE = 500;
@@ -381,7 +375,7 @@ export class KbPageTreeService {
         .update(kbPages)
         .set({ parentPageId: targetParentId, sortOrder: newSortOrder })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
+        .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
       return updated;
     });

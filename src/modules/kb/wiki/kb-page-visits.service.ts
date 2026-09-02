@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   kbPages,
   kbPageFavorites,
@@ -13,16 +13,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KB_PAGE_LIST_COLUMNS, type KbPageListItem, type KbPageRow } from "./kb-page-columns";
 
-type PageRow = typeof kbPages.$inferSelect;
+type PageRow = KbPageRow;
 
-const {
-  content: _content,
-  contentText: _contentText,
-  fts: _fts,
-  ...KB_PAGE_LIST_COLUMNS
-} = getTableColumns(kbPages);
-type KbPageListItem = Omit<PageRow, "content" | "contentText" | "fts">;
 
 @Injectable()
 export class KbPageVisitsService {

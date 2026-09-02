@@ -104,12 +104,13 @@ describeIfSeeded("route database-call budgets (seeded)", () => {
   });
 
   /**
-   * Measured at 5 against a declared ceiling of 3 — a real breach, recorded as measuredDbCalls in
-   * the manifest, where check-route-budgets.mjs fails on it. Two assertions here, deliberately:
-   * the ratchet holds the measured number so the route cannot get worse while the notifications
-   * owner fixes it, and the budget assertion is asserted to STILL fail, so the breach is pinned as
-   * a known state rather than quietly tolerated. Raising maxDbCalls would turn both green and fix
-   * nothing.
+   * Was measured at 5 against a declared ceiling of 3 and pinned here as a known breach. The
+   * fifth and fourth statements were a membership lookup issued twice — once directly and once
+   * inside the watermark read that had already been handed the membership — and folding the
+   * watermark into the membership query took the route to 3 (recipient + list + ticket context)
+   * and unread-count from 4 to 2. Both assertions stay: the ratchet holds the measured number so
+   * the route cannot creep back up, and the budget assertion now has to PASS, so a regression to
+   * 4 fails here rather than being absorbed. Neither ceiling was raised.
    */
   it("GET /notifications does not add a database statement", async () => {
     const { count } = await countDbCalls(() => service.list(orgId, userId, {}));
@@ -118,11 +119,12 @@ describeIfSeeded("route database-call budgets (seeded)", () => {
     expect(() => assertNoDbCallRegression(manifest, "GET /notifications", count.queries)).not.toThrow();
   });
 
-  it("GET /notifications is recorded as over its declared database-call budget", async () => {
+  it("GET /notifications stays within its declared database-call budget", async () => {
     const { count } = await countDbCalls(() => service.list(orgId, userId, {}));
-    expect(() => assertWithinDbCallBudget(manifest, "GET /notifications", count.queries)).toThrow(
-      /over its declared maxDbCalls=3/,
-    );
+    expect(count.queries).toBeLessThanOrEqual(3);
+    expect(() =>
+      assertWithinDbCallBudget(manifest, "GET /notifications", count.queries),
+    ).not.toThrow();
   });
 
   it("the ratchet fails when a route issues one statement more than its budget", async () => {

@@ -272,6 +272,15 @@ async function ensureMembers(ctx, want) {
 
 const MEMBER_POOL = numberedPool("mem", "organization_members", "org_id = $1 AND status = 'ACTIVE'");
 
+/**
+ * The vocabulary DEFAULT_PROJECT_STATUSES provisions and ACTIVE_TICKET_STATUSES filters on.
+ * LEGACY_STATUS_NAMES repairs a database seeded before this was corrected: the composite FK
+ * build.tickets(org_id, project_id, status) -> build.project_statuses(...) is ON UPDATE CASCADE,
+ * so renaming the status row carries every ticket with it.
+ */
+const PROJECT_STATUSES = [["TODO", "unstarted"], ["IN_PROGRESS", "started"], ["IN_REVIEW", "started"], ["DONE", "completed"]];
+const LEGACY_STATUS_NAMES = [["Todo", "TODO"], ["In Progress", "IN_PROGRESS"], ["In Review", "IN_REVIEW"], ["Done", "DONE"]];
+
 // ---------------------------------------------------------------------------
 // CRM
 // ---------------------------------------------------------------------------
@@ -303,19 +312,29 @@ async function seedCrm(ctx) {
   });
 
   const leads = scaled(BASE.leads, ctx.weight, SCALE);
+  // assigned_to_id is the column the application filters on (idx_leads_org_assigned_status leads
+  // with it, and crm-inbox-queries.service.ts reads leads.assignedToId). Writing only the
+  // membership id left every "assigned to me" read matching nothing.
   await topUp(`${ctx.label} leads`, "leads", "org_id = $1", [ctx.org], leads, async (have, need) => {
     await sql.unsafe(
       `WITH ${MEMBER_POOL}
-       INSERT INTO leads (org_id, name, email, status, assigned_to_membership_id, deleted_at, created_at, updated_at)
+       INSERT INTO leads (org_id, name, email, status, assigned_to_membership_id, assigned_to_id, deleted_at, created_at, updated_at)
        SELECT $1, 'Lead ' || g, 'lead' || g || '@' || $1 || '.test',
               (ARRAY['NEW','CONTACTED','QUALIFIED','UNQUALIFIED','CONVERTED'])[1 + (g % 5)],
-              mem.id, null, now() - (g || ' minutes')::interval, now()
+              mem.id, mem.user_id, null, now() - (g || ' minutes')::interval, now()
        FROM generate_series($2::int + 1, $2::int + $3::int) g
        JOIN mem ON mem.rn = g % $4::int
        ON CONFLICT DO NOTHING`,
       [ctx.org, have, need, ctx.memberCount],
     );
   });
+  await sql.unsafe(
+    `UPDATE leads l SET assigned_to_id = om.user_id
+     FROM organization_members om
+     WHERE l.org_id = $1 AND om.org_id = l.org_id AND om.id = l.assigned_to_membership_id
+       AND l.assigned_to_id IS NULL AND om.user_id IS NOT NULL`,
+    [ctx.org],
+  );
 
   const deals = scaled(BASE.deals, ctx.weight, SCALE);
   await topUp(`${ctx.label} deals`, "deals", "org_id = $1", [ctx.org], deals, async (have, need) => {
@@ -478,15 +497,23 @@ async function seedBuildProduct(ctx) {
   if (!projectId) throw new Error("no build project for org");
 
   // build.tickets.status is a composite FK to build.project_statuses(org_id, project_id, name),
-  // so a ticket cannot carry a status its project has not declared. These names are the
-  // vocabulary the application actually writes.
-  const STATUSES = [["Todo", "unstarted"], ["In Progress", "started"], ["In Review", "started"], ["Done", "completed"]];
-  for (let i = 0; i < STATUSES.length; i++) {
+  // so a ticket cannot carry a status its project has not declared. The names must be the ones
+  // the application writes — src/modules/build/core/lib/default-statuses.ts DEFAULT_PROJECT_STATUSES
+  // and src/modules/dashboard/dashboard-personal.service.ts ACTIVE_TICKET_STATUSES both use
+  // UPPER_SNAKE. This seed wrote title-case, so every query filtering on the application's own
+  // status vocabulary matched zero rows and read as a broken query rather than a broken fixture.
+  for (const [legacy, canonical] of LEGACY_STATUS_NAMES) {
+    await sql.unsafe(
+      `UPDATE build.project_statuses SET name = $3 WHERE org_id = $1 AND project_id = $2::int AND name = $4`,
+      [ctx.org, projectId, canonical, legacy],
+    );
+  }
+  for (let i = 0; i < PROJECT_STATUSES.length; i++) {
     await sql.unsafe(
       `INSERT INTO build.project_statuses (org_id, project_id, name, "order", type, created_at, updated_at)
        VALUES ($1, $2::int, $3, $4, $5::state_group, now(), now())
        ON CONFLICT DO NOTHING`,
-      [ctx.org, projectId, STATUSES[i][0], i + 1, STATUSES[i][1]],
+      [ctx.org, projectId, PROJECT_STATUSES[i][0], i + 1, PROJECT_STATUSES[i][1]],
     );
   }
 
@@ -516,7 +543,7 @@ async function seedBuildProduct(ctx) {
       `WITH ${MEMBER_POOL}
        INSERT INTO build.tickets (org_id, project_id, title, status, assignee_membership_id, reporter_membership_id, ticket_number, deleted_at, created_at, updated_at)
        SELECT $1, $2::int, 'Perf ticket ' || g || ' payment refund latency',
-              (ARRAY['Todo','In Progress','In Review','Done'])[1 + (g % 4)],
+              (ARRAY['TODO','IN_PROGRESS','IN_REVIEW','DONE'])[1 + (g % 4)],
               mem.id, $6::int, $5::int + g, null, now() - (g || ' minutes')::interval, now()
        FROM generate_series($3::int + 1, $3::int + $4::int) g
        JOIN mem ON mem.rn = g % $7::int
@@ -592,8 +619,8 @@ async function seedChat(ctx) {
   const channels = Math.max(3, scaled(BASE.chatChannels, ctx.weight, SCALE));
   await topUp(`${ctx.label} chat_channels`, "chat_channels", "org_id = $1", [ctx.org], channels, async (have, need) => {
     await sql.unsafe(
-      `INSERT INTO chat_channels (org_id, name, type, created_at, updated_at)
-       SELECT $1, 'perf-channel-' || g, 'GROUP', now(), now()
+      `INSERT INTO chat_channels (org_id, name, type, is_private, created_at, updated_at)
+       SELECT $1, 'perf-channel-' || g, 'GROUP', true, now(), now()
        FROM generate_series($2::int + 1, $2::int + $3::int) g
        ON CONFLICT DO NOTHING`,
       [ctx.org, have, need],

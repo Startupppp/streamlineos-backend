@@ -113,6 +113,20 @@ const ATTENDANCE_COUNT = 90;
 const TIMESHEET_COUNT = 200;
 const KB_PAGES_PER_SPACE = 60;
 const KB_VISITS_COUNT = 50;
+const KB_VISIT_MEMBERS = 6;
+const KB_PAGE_BODY_WORDS = 160;
+const KB_PAGE_TOPICS = [
+  "Expense Policy",
+  "Onboarding Runbook",
+  "Security Policy",
+  "Release Checklist",
+  "Travel Policy",
+  "Incident Playbook",
+];
+const SAVED_MESSAGE_MEMBERS = 8;
+const SAVED_MESSAGES_PER_MEMBER = 25;
+const ANNOUNCEMENT_COUNT = 400;
+const HR_ROLE_ASSIGNEES = 25;
 const SUPPORT_TICKET_COUNT = 60;
 const INVOICE_COUNT = 25;
 const BILL_COUNT = 25;
@@ -370,6 +384,26 @@ async function seedAttendance() {
   }
 }
 
+/**
+ * Repairs a database seeded before the status vocabulary was corrected. The composite FK
+ * build.tickets(org_id, project_id, status) -> build.project_statuses(org_id, project_id, name)
+ * is ON UPDATE CASCADE, so renaming the status row carries every ticket that references it.
+ */
+async function renameLegacyStatuses() {
+  for (const [legacy, canonical] of [["Todo", "TODO"], ["In Progress", "IN_PROGRESS"], ["In Review", "IN_REVIEW"], ["Done", "DONE"]]) {
+    await sql.unsafe(
+      `UPDATE build.project_statuses SET name = $2
+       WHERE org_id = $1 AND name = $3
+         AND NOT EXISTS (
+           SELECT 1 FROM build.project_statuses x
+           WHERE x.org_id = build.project_statuses.org_id
+             AND x.project_id = build.project_statuses.project_id
+             AND x.name = $2)`,
+      [LARGE_ORG, canonical, legacy],
+    ).catch((e) => warn(`rename status ${legacy}`, e));
+  }
+}
+
 async function seedBuild() {
   log("Seeding Build (projects, tickets, etc.)...");
 
@@ -407,12 +441,17 @@ async function seedBuild() {
 
   if (!projectId) { log("  no project — skipping build data"); return; }
 
+  // DEFAULT_PROJECT_STATUSES (src/modules/build/core/lib/default-statuses.ts) and
+  // ACTIVE_TICKET_STATUSES (src/modules/dashboard/dashboard-personal.service.ts) both write
+  // UPPER_SNAKE. This seed wrote title-case, so every read filtering on the application's own
+  // status vocabulary matched nothing and read as a broken query rather than a broken fixture.
   const statusDefs = [
-    ["Todo", "unstarted"],
-    ["In Progress", "started"],
-    ["In Review", "started"],
-    ["Done", "completed"],
+    ["TODO", "unstarted"],
+    ["IN_PROGRESS", "started"],
+    ["IN_REVIEW", "started"],
+    ["DONE", "completed"],
   ];
+  await renameLegacyStatuses();
   for (let si = 0; si < statusDefs.length; si++) {
     const [sname, stype] = statusDefs[si];
     await sql.unsafe(
@@ -450,7 +489,7 @@ async function seedBuild() {
     await sql.unsafe(
       `INSERT INTO build.tickets (org_id, project_id, title, status, assignee_membership_id, reporter_membership_id, ticket_number, deleted_at, created_at, updated_at)
        SELECT $1, $2::int, 'Ticket ' || s::text,
-         CASE WHEN s % 4 = 0 THEN 'Done' WHEN s % 4 = 1 THEN 'In Progress' WHEN s % 4 = 2 THEN 'In Review' ELSE 'Todo' END,
+         CASE WHEN s % 4 = 0 THEN 'DONE' WHEN s % 4 = 1 THEN 'IN_PROGRESS' WHEN s % 4 = 2 THEN 'IN_REVIEW' ELSE 'TODO' END,
          CASE WHEN s % 5 = 0 THEN $3::int ELSE $4::int END, $3::int,
          s, null, now() - (s || ' minutes')::interval, now()
        FROM generate_series(${from}, ${TICKET_COUNT}) s`,
@@ -519,7 +558,7 @@ async function seedExtraTickets() {
   ).then((r) => r.map((row) => row.id));
   if (!wsId || !memberIds.length) { log("  no workspace or members — skipping extra tickets"); return; }
 
-  const statusDefs = [["Todo", "unstarted"], ["In Progress", "started"], ["Done", "completed"]];
+  const statusDefs = [["TODO", "unstarted"], ["IN_PROGRESS", "started"], ["DONE", "completed"]];
   const TARGET_TOTAL = 18_500;
   const PER_PROJECT = 1_000;
   let projNum = 100;
@@ -563,7 +602,7 @@ async function seedExtraTickets() {
     if (toAdd > 0) {
       await sql.unsafe(
         `INSERT INTO build.tickets (org_id, project_id, title, status, assignee_membership_id, reporter_membership_id, ticket_number, deleted_at, created_at, updated_at)
-         SELECT $1, $2::int, 'Ticket ' || s, 'Todo', $3::int, $3::int,
+         SELECT $1, $2::int, 'Ticket ' || s, 'TODO', $3::int, $3::int,
            90000 + $4::int * 1000 + s, null,
            now() - (s || ' minutes')::interval, now()
          FROM generate_series(${existingInProj + 1}, ${existingInProj + toAdd}) s`,
@@ -667,18 +706,22 @@ async function seedChat() {
     ).catch((e) => warn("chat_messages batch", e));
   }
 
-  const msgRows = await sql.unsafe(
-    `SELECT id FROM chat_messages WHERE org_id = $1 AND channel_id = $2 AND is_deleted = false LIMIT 5`,
-    [LARGE_ORG, channelId],
-  );
-  for (const msg of msgRows) {
-    await sql.unsafe(
-      `INSERT INTO chat_saved_messages (org_id, membership_id, message_id, saved_at)
-       VALUES ($1, $2, $3, now())
-       ON CONFLICT DO NOTHING`,
-      [LARGE_ORG, senderMemberId, msg.id],
-    ).catch((e) => warn("saved_message", e));
-  }
+  // Saved messages used to belong to one membership, so `chat-saved-messages` measured an empty
+  // result set for any other fixture user and passed while guarding nothing. Spread them over the
+  // members the budget runner can pick from.
+  await sql.unsafe(
+    `INSERT INTO chat_saved_messages (org_id, membership_id, message_id, saved_at)
+     SELECT $1, m.id, msg.id, now() - (msg.id || ' minutes')::interval
+     FROM (SELECT id FROM organization_members
+           WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT $3::int) m
+     CROSS JOIN LATERAL (
+       SELECT id FROM chat_messages
+       WHERE org_id = $1 AND channel_id = $2 AND is_deleted = false
+       ORDER BY id LIMIT $4::int
+     ) msg
+     ON CONFLICT DO NOTHING`,
+    [LARGE_ORG, channelId, SAVED_MESSAGE_MEMBERS, SAVED_MESSAGES_PER_MEMBER],
+  ).catch((e) => warn("chat_saved_messages", e));
 }
 
 async function seedNotifications() {
@@ -746,8 +789,16 @@ async function seedKb() {
       const from = existingInSpace + 1;
       log(`  inserting ${KB_PAGES_PER_SPACE - existingInSpace} kb_pages for space ${spaceId}...`);
       await sql.unsafe(
-        `INSERT INTO kb_pages (org_id, space_id, title, content, status, visibility, sort_order, created_by_id, created_by_membership_id, last_edited_by_id, last_edited_by_membership_id, deleted_at, created_at, updated_at)
-         SELECT $1, $2::int, 'Page ' || s, '{}'::jsonb, 'published', 'org', s, $3, $4::int, $3, $4::int, null,
+        `INSERT INTO kb_pages (org_id, space_id, title, content, content_text, status, visibility, sort_order, created_by_id, created_by_membership_id, last_edited_by_id, last_edited_by_membership_id, deleted_at, created_at, updated_at)
+         SELECT $1, $2::int,
+           'Page ' || s || ' — ' || (ARRAY[${KB_PAGE_TOPICS.map((t) => `'${t}'`).join(",")}])[1 + (s % ${KB_PAGE_TOPICS.length})],
+           '{}'::jsonb,
+           'This ' || (ARRAY[${KB_PAGE_TOPICS.map((t) => `'${t}'`).join(",")}])[1 + (s % ${KB_PAGE_TOPICS.length})]
+             || ' explains approval thresholds, escalation paths, reimbursement limits and the audit '
+             || 'evidence the reviewer records. ' ||
+           (SELECT string_agg('kb' || ((s * 37 + i) % 1500), ' ')
+            FROM generate_series(1, ${KB_PAGE_BODY_WORDS}) i),
+           'published', 'org', s, $3, $4::int, $3, $4::int, null,
            now() - (s || ' hours')::interval, now() - (s || ' minutes')::interval
          FROM generate_series(${from}, ${KB_PAGES_PER_SPACE}) s`,
         [LARGE_ORG, spaceId, creatorId, membershipId],
@@ -755,14 +806,24 @@ async function seedKb() {
     }
   }
 
+  // uniq_kb_page_visits_page_user means one visit per (page, user), so every member gets its own
+  // slice of pages. Visits used to belong to one user, which left `kb-page-visits-mine` measuring
+  // an empty result set for every other fixture user.
   await sql.unsafe(
     `INSERT INTO kb_page_visits (org_id, user_id, membership_id, page_id, visited_at)
-     SELECT $1, $2, $3, p.id, now() - (row_number() OVER () || ' hours')::interval
-     FROM kb_pages p
-     WHERE p.org_id = $1 AND p.deleted_at IS NULL
-     LIMIT $4
+     SELECT $1, m.user_id, m.id, p.id, now() - (p.rn || ' hours')::interval
+     FROM (SELECT id, user_id, (row_number() OVER (ORDER BY id)) - 1 AS mrn
+           FROM organization_members
+           WHERE org_id = $1 AND status = 'ACTIVE' AND user_id IS NOT NULL
+           ORDER BY id LIMIT $3::int) m
+     CROSS JOIN LATERAL (
+       SELECT id, row_number() OVER (ORDER BY id) AS rn
+       FROM kb_pages
+       WHERE org_id = $1 AND deleted_at IS NULL
+       ORDER BY id OFFSET m.mrn * $2::int LIMIT $2::int
+     ) p
      ON CONFLICT DO NOTHING`,
-    [LARGE_ORG, creatorId, membershipId, KB_VISITS_COUNT],
+    [LARGE_ORG, KB_VISITS_COUNT, KB_VISIT_MEMBERS],
   ).catch((e) => warn("kb_page_visits", e));
 }
 
@@ -1020,6 +1081,25 @@ async function seedCalendarAndAnnouncements() {
      ON CONFLICT DO NOTHING`,
     [LARGE_ORG, authorId],
   ).catch((e) => warn("announcement", e));
+
+  // Three rows fit on one page, so a Seq Scan was the correct plan and the budget's
+  // forbid-seq-scan assertion could only ever fail on table size. Seed enough rows that
+  // idx_announcements_org_pinned_created is the cheaper plan for the first page.
+  const haveAnnouncements = await sql.unsafe(
+    `SELECT count(*)::int n FROM announcements WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (haveAnnouncements < ANNOUNCEMENT_COUNT) {
+    await sql.unsafe(
+      `INSERT INTO announcements (org_id, title, content, author_id, status, is_pinned, expires_at, created_at, updated_at)
+       SELECT $1, 'Announcement ' || s, 'Operational update ' || s || ' for the scratch tenant.', $2,
+              CASE WHEN s % 20 = 0 THEN 'DRAFT' ELSE 'PUBLISHED' END,
+              s % 50 = 0, null,
+              now() - (s || ' hours')::interval, now()
+       FROM generate_series(${haveAnnouncements + 1}, ${ANNOUNCEMENT_COUNT}) s`,
+      [LARGE_ORG, authorId],
+    ).catch((e) => warn("announcements batch", e));
+  }
 }
 
 async function seedMail() {
@@ -1142,6 +1222,18 @@ async function seedRoles() {
      ON CONFLICT DO NOTHING`,
     [LARGE_ORG],
   ).catch((e) => warn("roles", e));
+
+  // The role existed with no assignment, so `module-access-roster` — the read behind the module
+  // access screen — measured an empty result set and every ceiling it declares passed trivially.
+  await sql.unsafe(
+    `INSERT INTO role_assignments (org_id, organization_membership_id, role_id, created_at)
+     SELECT $1, m.id, r.id, now()
+     FROM (SELECT id FROM organization_members
+           WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT $2::int) m
+     CROSS JOIN (SELECT id FROM roles WHERE org_id = $1 AND module_key = 'hr' ORDER BY id LIMIT 1) r
+     ON CONFLICT DO NOTHING`,
+    [LARGE_ORG, HR_ROLE_ASSIGNEES],
+  ).catch((e) => warn("role_assignments", e));
 }
 
 async function vacuumAnalyze() {

@@ -10,6 +10,7 @@ import {
   lt,
   lte,
   gt,
+  gte,
   ilike,
   or,
 } from "drizzle-orm";
@@ -21,6 +22,7 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { ListInput } from "./dto/notification.schemas";
 import type { NotificationTicketContext } from "./notifications.types";
 import { ASSIGNED_EVENT_KEYS, MENTION_EVENT_KEYS } from "./inbox-section-keys";
+import { notificationWindowEnd, notificationWindowStart } from "./notification-read-window";
 
 type NotificationListRow = {
   id: number;
@@ -108,27 +110,36 @@ export class NotificationsReadService {
     );
   }
 
-  private async fetchLastReadId(orgId: string, userId: string): Promise<number> {
-    const [wm] = await this.db
-      .select({ lastReadId: notificationReadWatermarks.lastReadNotificationId })
-      .from(notificationReadWatermarks)
-      .where(
+  /**
+   * The tenant authority and the read watermark are one row apart, so they are one
+   * statement: resolving them separately cost three round trips per read, because
+   * the watermark lookup re-resolved the membership it was already given.
+   */
+  private async resolveRecipient(
+    orgId: string,
+    userId: string,
+  ): Promise<{ membershipId: number; lastReadId: number }> {
+    const [recipient] = await this.db
+      .select({
+        membershipId: organizationMembers.id,
+        lastReadId: notificationReadWatermarks.lastReadNotificationId,
+      })
+      .from(organizationMembers)
+      .leftJoin(
+        notificationReadWatermarks,
         and(
-          eq(notificationReadWatermarks.orgId, orgId),
-          eq(notificationReadWatermarks.membershipId, await this.resolveMembershipId(orgId, userId)),
+          eq(notificationReadWatermarks.orgId, organizationMembers.orgId),
+          eq(notificationReadWatermarks.membershipId, organizationMembers.id),
         ),
-      );
-    return wm?.lastReadId ?? 0;
+      )
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+    if (!recipient) throw new Error("Organization membership required");
+    return { membershipId: recipient.membershipId, lastReadId: recipient.lastReadId ?? 0 };
   }
 
-  /** Resolve the current tenant authority once; user_id is only an identity lookup. */
-  private async resolveMembershipId(orgId: string, userId: string): Promise<number> {
-    const [member] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
-    if (!member) throw new Error("Organization membership required");
-    return member.id;
+  private retentionWindow(): { start: Date; end: Date } {
+    const now = new Date();
+    return { start: notificationWindowStart(now), end: notificationWindowEnd(now) };
   }
 
   private async queryNotifications(
@@ -136,12 +147,14 @@ export class NotificationsReadService {
     userId: string,
     filters: ListInput & { section: string },
   ) {
-    const membershipId = await this.resolveMembershipId(orgId, userId);
-    const lastReadId = await this.fetchLastReadId(orgId, userId);
+    const { membershipId, lastReadId } = await this.resolveRecipient(orgId, userId);
+    const window = this.retentionWindow();
 
     const conditions = [
       eq(notifications.orgId, orgId),
       eq(notifications.membershipId, membershipId),
+      gte(notifications.createdAt, window.start),
+      lt(notifications.createdAt, window.end),
       isNull(notifications.deletedAt),
     ];
 
@@ -320,11 +333,13 @@ export class NotificationsReadService {
   }
 
   private async queryUnreadCount(orgId: string, userId: string) {
-    const membershipId = await this.resolveMembershipId(orgId, userId);
-    const lastReadId = await this.fetchLastReadId(orgId, userId);
+    const { membershipId, lastReadId } = await this.resolveRecipient(orgId, userId);
+    const window = this.retentionWindow();
     const conditions = [
       eq(notifications.orgId, orgId),
       eq(notifications.membershipId, membershipId),
+      gte(notifications.createdAt, window.start),
+      lt(notifications.createdAt, window.end),
       eq(notifications.isRead, false),
       isNull(notifications.deletedAt),
       isNull(notifications.archivedAt),

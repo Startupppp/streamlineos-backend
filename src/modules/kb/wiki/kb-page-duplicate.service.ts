@@ -11,8 +11,9 @@ import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { extractPageLinkIds } from "./kb-page-content.util";
+import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
-type PageRow = typeof kbPages.$inferSelect;
+type PageRow = KbPageRow;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 @Injectable()
@@ -91,7 +92,7 @@ export class KbPageDuplicateService {
             createdById: user.userId,
             lastEditedById: user.userId,
           })
-          .returning();
+          .returning(KB_PAGE_COLUMNS);
         if (!created) throw new Error("Failed to duplicate page");
         idMapping.set(originalId, created.id);
 

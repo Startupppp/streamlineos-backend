@@ -16,12 +16,13 @@ import type {
   VerifyArticleInput,
   VoteArticleInput,
 } from "../core/dto/kb.schemas";
+import { KB_ARTICLE_COLUMNS, type KbArticleRow } from "./kb-article-columns";
 
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 type SnapshotSource = { id: number; title: string; content: string; excerpt: string | null };
 
-type ArticleRow = typeof kbArticles.$inferSelect;
+type ArticleRow = KbArticleRow;
 
 type ArticleWithTags = ArticleRow & { tags: string[] };
 
@@ -38,6 +39,7 @@ export class KbArticlesService {
   async get(user: CurrentUserContext, articleId: number): Promise<ArticleWithTags> {
     const article = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)),
+      columns: { fts: false },
       with: { category: { columns: { id: true, name: true, slug: true } } },
     });
     if (!article) throw new NotFoundException("Article not found");
@@ -93,7 +95,7 @@ export class KbArticlesService {
               reviewIntervalDays: input.reviewIntervalDays ?? null,
               publishedAt: input.status === "published" ? new Date() : null,
             })
-            .returning();
+            .returning(KB_ARTICLE_COLUMNS);
 
           await this.snapshot(tx, orgId, article, user.userId, undefined, actingMembershipId(user.principal));
           const resolvedTags = await this.syncArticleTags(tx, orgId, article.id, tagNames);
@@ -115,6 +117,7 @@ export class KbArticlesService {
     const orgId = user.orgId;
     const current = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+      columns: { fts: false },
     });
     if (!current) throw new NotFoundException("Article not found");
 
@@ -152,7 +155,7 @@ export class KbArticlesService {
             ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
           })
           .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-          .returning();
+          .returning(KB_ARTICLE_COLUMNS);
         result = row;
       } else {
         result = current;
@@ -206,7 +209,7 @@ export class KbArticlesService {
         .update(kbArticles)
         .set({ status: "archived", archivedAt: new Date() })
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-        .returning();
+        .returning(KB_ARTICLE_COLUMNS);
       if (!updated) throw new NotFoundException("Article not found");
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
@@ -236,7 +239,7 @@ export class KbArticlesService {
         .update(kbArticles)
         .set({ status: "published", publishedAt: current.publishedAt ?? new Date() })
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-        .returning();
+        .returning(KB_ARTICLE_COLUMNS);
 
       await this.snapshot(tx, orgId, result, user.userId, undefined, actingMembershipId(user.principal));
       await OutboxWriter.emit(tx, {
@@ -263,7 +266,7 @@ export class KbArticlesService {
         .update(kbArticles)
         .set({ status: "draft" })
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-        .returning();
+        .returning(KB_ARTICLE_COLUMNS);
       if (!row) throw new NotFoundException("Article not found");
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
@@ -296,7 +299,7 @@ export class KbArticlesService {
         reviewIntervalDays: input.reviewIntervalDays ?? current.reviewIntervalDays,
       })
       .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-      .returning();
+      .returning(KB_ARTICLE_COLUMNS);
     return updated;
   }
 
@@ -349,7 +352,7 @@ export class KbArticlesService {
           contentRevision: sql`content_revision + 1`,
         })
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
-        .returning();
+        .returning(KB_ARTICLE_COLUMNS);
       if (!result) throw new NotFoundException("Article not found");
 
       await this.snapshot(tx, orgId, result, user.userId, `Restored v${versionNumber}`, actingMembershipId(user.principal));

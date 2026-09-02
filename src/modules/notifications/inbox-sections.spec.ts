@@ -29,8 +29,8 @@ function makeFrom(allWhereArgs: unknown[], rows: unknown[] = []): object {
     return makeChain(rows);
   });
   const self: Record<string, jest.Mock> = { where };
-  self["innerJoin"] = jest.fn().mockImplementation(() => makeFrom(allWhereArgs));
-  self["leftJoin"] = jest.fn().mockImplementation(() => makeFrom(allWhereArgs));
+  self["innerJoin"] = jest.fn().mockImplementation(() => makeFrom(allWhereArgs, rows));
+  self["leftJoin"] = jest.fn().mockImplementation(() => makeFrom(allWhereArgs, rows));
   return self;
 }
 
@@ -40,7 +40,7 @@ function makeDb(): { db: Db; allWhereArgs: unknown[] } {
   const db = {
     select: jest.fn().mockImplementation(() => {
       selectCalls += 1;
-      const rows = selectCalls <= 4 ? [{ id: 7, lastReadId: 0 }] : [];
+      const rows = selectCalls <= 1 ? [{ membershipId: 7, lastReadId: null }] : [];
       return { from: jest.fn().mockImplementation(() => makeFrom(allWhereArgs, rows)) };
     }),
   } as unknown as Db;

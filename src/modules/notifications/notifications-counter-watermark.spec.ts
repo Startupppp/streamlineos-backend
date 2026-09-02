@@ -22,21 +22,22 @@ describe("NotificationsReadService — unread counter watermark", () => {
     const db = {
       select: jest.fn().mockImplementation((fields: Record<string, unknown>) => {
         const fieldNames = Object.keys(fields ?? {});
-        const isWatermark = fieldNames.includes("lastReadId");
+        const isRecipient = fieldNames.includes("membershipId");
         const isCount = fieldNames.includes("count");
-        const rows = isWatermark
-          ? (watermarkId > 0 ? [{ lastReadId: watermarkId }] : [])
+        const rows = isRecipient
+          ? [{ membershipId: 7, lastReadId: watermarkId > 0 ? watermarkId : null }]
           : isCount
             ? [{ count: 3 }]
             : [{ id: 7 }];
-        return {
-          from: jest.fn().mockImplementation(() => ({
-          where: jest.fn().mockImplementation((arg: unknown) => {
-            if (isCount) capturedCountWhere.push(arg);
-            return Promise.resolve(rows);
-          }),
-          })),
-        };
+        const where = jest.fn().mockImplementation((arg: unknown) => {
+          if (isCount) capturedCountWhere.push(arg);
+          return Promise.resolve(rows);
+        });
+        const from = jest.fn().mockImplementation(() => ({
+          where,
+          leftJoin: jest.fn().mockImplementation(() => ({ where })),
+        }));
+        return { from };
       }),
     } as unknown as Db;
     return { db, capturedCountWhere };

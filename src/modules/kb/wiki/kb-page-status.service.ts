@@ -11,8 +11,9 @@ import { computeVerificationInterval } from "./kb-page-governance.util";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { actingMembershipId } from "../../../common/auth/principal";
+import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
-type PageRow = typeof kbPages.$inferSelect;
+type PageRow = KbPageRow;
 
 @Injectable()
 export class KbPageStatusService {
@@ -41,7 +42,7 @@ export class KbPageStatusService {
       .update(kbPages)
       .set({ status, lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
       .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-      .returning();
+      .returning(KB_PAGE_COLUMNS);
     if (!updated) throw new NotFoundException("Page not found");
     return updated;
   }
@@ -53,7 +54,7 @@ export class KbPageStatusService {
       .update(kbPages)
       .set({ isLocked, lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
       .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)))
-      .returning();
+      .returning(KB_PAGE_COLUMNS);
     if (!updated) throw new NotFoundException("Page not found");
     return updated;
   }
@@ -71,7 +72,7 @@ export class KbPageStatusService {
         .update(kbPages)
         .set({ status: "published", lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
+        .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
@@ -100,7 +101,7 @@ export class KbPageStatusService {
         .update(kbPages)
         .set({ status: "archived", lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
+        .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
@@ -129,7 +130,7 @@ export class KbPageStatusService {
         .update(kbPages)
         .set({ status: "draft", lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
+        .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
@@ -171,7 +172,7 @@ export class KbPageStatusService {
         lastEditedByMembershipId: this.membershipId(user),
       })
       .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-      .returning();
+      .returning(KB_PAGE_COLUMNS);
     if (!updated) throw new NotFoundException("Page not found");
     return updated;
   }
@@ -189,7 +190,7 @@ export class KbPageStatusService {
       .update(kbPages)
       .set({ trustState: "verification_expired", lastEditedById: user.userId, lastEditedByMembershipId: this.membershipId(user) })
       .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-      .returning();
+      .returning(KB_PAGE_COLUMNS);
     if (!updated) throw new NotFoundException("Page not found");
 
     await this.reviews.create(user, pageId, {

@@ -25,8 +25,9 @@ import { shouldResetTrust } from "./kb-page-governance.util";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { actingMembershipId } from "../../../common/auth/principal";
+import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
-type PageRow = typeof kbPages.$inferSelect;
+type PageRow = KbPageRow;
 
 @Injectable()
 export class KbPagesService {
@@ -108,7 +109,7 @@ export class KbPagesService {
         lastEditedByMembershipId: this.membershipId(user),
         projectId: input.projectId ?? null,
       })
-      .returning();
+      .returning(KB_PAGE_COLUMNS);
     if (!page) throw new Error("Failed to create page");
     return page;
   }
@@ -122,6 +123,7 @@ export class KbPagesService {
     const projectIds = await this.getAccessibleProjectIds(user);
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)),
+      columns: { fts: false },
     });
     if (!page) throw new NotFoundException("Page not found");
 
@@ -222,7 +224,7 @@ export class KbPagesService {
           ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
         })
         .where(updateWhere)
-        .returning();
+        .returning(KB_PAGE_COLUMNS);
       if (!updated) {
         if (revisionGuard !== undefined) {
           throw new HttpException(
@@ -343,7 +345,7 @@ export class KbPagesService {
           aclRevision: sql`acl_revision + 1`,
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
+        .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
 
       await OutboxWriter.emit(tx, {

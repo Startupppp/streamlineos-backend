@@ -17,11 +17,12 @@ import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeValue } from "../../../common/pagination/keyset";
+import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
 const PAGE_SIZE = 50;
 const PAGE_SIZE_CAP = 100;
 
-type PageRow = typeof kbPages.$inferSelect;
+type PageRow = KbPageRow;
 
 const VERSION_COLUMNS = {
   id: kbPageVersions.id,
@@ -97,6 +98,7 @@ export class KbPageVersionsService {
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+      columns: { fts: false },
     });
     if (!current) throw new NotFoundException("Page not found");
 
@@ -130,7 +132,7 @@ export class KbPageVersionsService {
           contentRevision: sql`content_revision + 1`,
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
+        .returning(KB_PAGE_COLUMNS);
       if (!updated) throw new NotFoundException("Page not found");
 
       await snapshotIfNeeded(
