@@ -18,17 +18,29 @@
  *   Fails CLOSED (exit 2) if the parser sees fewer than 50 tenant tables — a broken
  *   parser must not be mistaken for a clean schema.
  *
- * CLASSIFICATION (pg_catalog mode)
- *   Every FK lands in exactly one bucket — none are silently absent:
- *   • ACTIONABLE   — needs (org_id, child_id) → (org_id, id) composite FK
- *   • EXCL:CRM     — child or parent is a CRM table (explicitly excluded by AR-02 scope)
- *   • EXCL:INV     — child or parent is an Inventory table (explicitly excluded)
- *   • EXCL:MIGRATED — covered by pending 0934–0937 migrations, not yet applied here
+ * CLASSIFICATION (both modes)
+ *   Every FK lands in exactly one named bucket — none are silently absent:
+ *   • ACTIONABLE        — needs (org_id, child_id) → (org_id, id) composite FK
+ *   • EXCL: CRM         — child or parent is a CRM table (AR-02 scope exclusion)
+ *   • EXCL: Inventory   — child or parent is Inventory (AR-02 scope exclusion)
+ *   • EXCL: platform-global — child or parent is a registered platform-global table
+ *
+ *   A tenant column is `org_id` OR `organization_id`. Matching only `org_id` hid 81 tables
+ *   and 4 real single-column violations from BOTH modes until this was widened.
  *
  * EXCLUSION POLICY
  *   CRM and Inventory are excluded from AR-02 scope (PRD-IN-SCOPE.md §4) — this is
  *   explicit, named, never a silent global ignore.  A FK between non-CRM/Inv tables
- *   cannot be silently excluded: add it to APPROVED_GLOBALS with a rationale, or fix it.
+ *   cannot be silently excluded: fix it, or register the table as platform-global.
+ *   An earlier "EXCL: In-migration" bucket excused 17 constraints as covered by migrations
+ *   0934–0937; 0935, 0936 and 0937 were never written, so that exclusion protected nothing.
+ *
+ * TARGET CAVEAT
+ *   The default target (scratch_boot_a) is a shared scratch database that other sessions
+ *   reset and cold-replay. A half-applied chain reports a large actionable count that reads
+ *   like a release failure but is only a statement about that database, so the run warns when
+ *   drizzle.__replay holds fewer entries than the journal. Use TENANT_RELATIONSHIP_DB_URL to
+ *   point at a fully bootstrapped database.
  *
  * Usage:  node src/scripts/check-tenant-relationships.mjs [--db-only|--static-only|--self-test]
  * Exit:   0 clean · 1 violations found · 2 parser/connection error
@@ -46,6 +58,14 @@ const STATIC_ONLY = args.includes("--static-only");
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
 const SCHEMA_DIR = join(BACKEND_ROOT, "src", "db", "schema");
+
+const JOURNAL_ENTRY_COUNT = (() => {
+  try {
+    return JSON.parse(readFileSync(join(BACKEND_ROOT, "migrations", "meta", "_journal.json"), "utf8")).entries.length;
+  } catch {
+    return 0;
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // Exclusion sets — all explicit, none silent
@@ -142,6 +162,15 @@ async function runQuery(postgres, url) {
     `;
     if (tenant_tables < MIN_TENANT_TABLES) return { vacuous: true, tenant_tables };
 
+    // The default target is a shared scratch database that other sessions reset and cold-replay.
+    // A half-applied chain reports a large actionable count that looks like a release failure but
+    // is only a statement about that database, so say so rather than let the number stand alone.
+    const [replay] = await sql`
+      SELECT (SELECT count(*)::int FROM drizzle.__replay) AS applied
+      WHERE to_regclass('drizzle.__replay') IS NOT NULL
+    `.catch(() => [undefined]);
+    const midBootstrap = replay ? replay.applied : null;
+
     const rows = await sql`
       WITH tenant AS (
         SELECT c.oid, c.relname, n.nspname
@@ -182,6 +211,7 @@ async function runQuery(postgres, url) {
       }
       result.actionable.push(r);
     }
+    result.midBootstrap = midBootstrap;
     return result;
   } finally {
     await sql.end();
@@ -490,6 +520,18 @@ async function main() {
     console.log(`Actionable             ${actionable.length}`);
     console.log("");
 
+    if (typeof catalogResult.midBootstrap === "number" && catalogResult.midBootstrap < JOURNAL_ENTRY_COUNT) {
+      console.error(
+        `
+TARGET IS MID-BOOTSTRAP — this number is not release evidence.
+` +
+        `  The target has a drizzle.__replay table with ${catalogResult.midBootstrap} of ${JOURNAL_ENTRY_COUNT} journal entries applied,
+` +
+        `  so the chain is only partly present and constraints later in it have not been created yet.
+` +
+        `  Point TENANT_RELATIONSHIP_DB_URL at a fully bootstrapped database, or re-run once the replay finishes.`,
+      );
+    }
     if (actionable.length === 0) {
       console.log("OK — zero actionable single-column tenant FKs.");
       process.exit(0);
