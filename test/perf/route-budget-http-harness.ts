@@ -1,5 +1,6 @@
 import http from "node:http";
 import https from "node:https";
+import { createHash } from "node:crypto";
 import { queryTelemetry } from "src/db/query-telemetry";
 
 /**
@@ -235,7 +236,7 @@ export async function measureOnce(
 }
 
 export interface RouteMeasurement {
-  readonly status: "measured" | "unmeasured";
+  readonly status: "measured" | "unmeasured" | "failed";
   readonly httpStatus: number | null;
   readonly reason?: string;
   readonly samples: number;
@@ -313,5 +314,195 @@ export function summarise(
     downstreamCalls: Math.max(...samples.map((s) => s.downstreamCalls)),
     responseBytes: Math.max(...samples.map((s) => s.bytes)),
     memoryMb: heapValues.length > 0 ? Math.max(...heapValues) : null,
+  };
+}
+
+/**
+ * A deadline on every send.
+ *
+ * A driver without one parked a previous agent in this release for 2 h 31 m at 0% CPU after 10 of
+ * 24 route pairs, and silently halved the sample: the run reported on what it had reached and said
+ * nothing about what it never reached. A wedged route has to become a RECORD, not a hang, so this
+ * races the send against a timer and the loser is written down.
+ *
+ * The timer is unref'd so a settled race never holds the loop open, and it is always cleared — an
+ * un-cleared 60 s timer per route is itself a way to make a suite look wedged at the end.
+ */
+export class DeadlineExceeded extends Error {
+  constructor(
+    readonly label: string,
+    readonly ms: number,
+  ) {
+    super(`[route-budget-http] "${label}" exceeded its ${String(ms)}ms deadline`);
+    this.name = "DeadlineExceeded";
+  }
+}
+
+export async function withDeadline<T>(work: () => Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new DeadlineExceeded(label, ms)), ms);
+    timer.unref();
+  });
+  try {
+    return await Promise.race([work(), deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export interface ProbeOutcome {
+  readonly status: number | null;
+  readonly bytes: number;
+  readonly ms: number;
+  readonly bodyPreview: string;
+  readonly error?: string;
+}
+
+export interface ControlProbe {
+  readonly ok: boolean;
+  readonly failure: string | null;
+  readonly authenticated: ProbeOutcome;
+  readonly anonymous: ProbeOutcome;
+}
+
+/**
+ * The probe that decides whether the run is allowed to produce numbers at all.
+ *
+ * Two harnesses in this release reported clean results while every request was failing — one
+ * journey harness reported zero findings while every step rendered an error page. The shared root
+ * cause is that a harness which only records what it receives cannot tell "the system answered"
+ * from "the system refused", and a uniform refusal looks exactly like a uniform success.
+ *
+ * A 200 alone does not close that hole, because a `@Public()` route returns 200 with no
+ * credential at all: a run whose token was never accepted would still see 200s and would still
+ * publish latencies — of the unauthenticated path. So the control is a PAIR, and both halves must
+ * hold:
+ *
+ *   with the token     -> 200. The token is live, the keyring loaded it, the guard accepted it,
+ *                         the tenant resolved and the handler ran.
+ *   without the token  -> 401 or 403. Authentication is actually being ENFORCED on the probe
+ *                         route, so the 200 above was earned by the credential rather than
+ *                         granted to everyone.
+ *
+ * If either half fails the caller must abort the run. Returning a `ControlProbe` rather than
+ * throwing keeps the failure reportable — the run records WHY it declined to measure instead of
+ * dying with a stack trace and no artefact.
+ */
+export async function controlProbe(
+  authenticatedSend: () => Promise<HttpResponseShape & { body: string }>,
+  anonymousSend: () => Promise<HttpResponseShape & { body: string }>,
+  options: { deadlineMs: number },
+): Promise<ControlProbe> {
+  const once = async (send: () => Promise<HttpResponseShape & { body: string }>, label: string): Promise<ProbeOutcome> => {
+    const startedAt = process.hrtime.bigint();
+    try {
+      const res = await withDeadline(send, options.deadlineMs, label);
+      return {
+        status: res.status,
+        bytes: res.bytes,
+        ms: round(Number(process.hrtime.bigint() - startedAt) / 1_000_000),
+        bodyPreview: res.body.slice(0, 300),
+      };
+    } catch (error) {
+      return {
+        status: null,
+        bytes: 0,
+        ms: round(Number(process.hrtime.bigint() - startedAt) / 1_000_000),
+        bodyPreview: "",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  const authenticated = await once(authenticatedSend, "control probe (authenticated)");
+  const anonymous = await once(anonymousSend, "control probe (anonymous)");
+
+  const failure = controlFailure(authenticated, anonymous);
+  return { ok: failure === null, failure, authenticated, anonymous };
+}
+
+function controlFailure(authenticated: ProbeOutcome, anonymous: ProbeOutcome): string | null {
+  if (authenticated.error !== undefined)
+    return `the authenticated control request did not complete (${authenticated.error}). Nothing measured after this point would be a measurement of a working request.`;
+  if (authenticated.status !== 200)
+    return (
+      `the authenticated control request answered HTTP ${String(authenticated.status)}, not 200. ` +
+      `Every route measured in this run would be measuring a failure path. Body: ${authenticated.bodyPreview.slice(0, 160)}`
+    );
+  if (anonymous.error !== undefined)
+    return `the anonymous control request did not complete (${anonymous.error}), so it could not be shown that authentication is enforced.`;
+  if (anonymous.status === 200)
+    return (
+      "the anonymous control request ALSO answered 200, so the probe route is not enforcing " +
+      "authentication and the authenticated 200 proves nothing about the token. Refusing to score this run."
+    );
+  if (anonymous.status !== 401 && anonymous.status !== 403)
+    return `the anonymous control request answered HTTP ${String(anonymous.status)}; expected 401 or 403 so that the authenticated 200 is attributable to the credential.`;
+  return null;
+}
+
+/**
+ * A stable digest of whatever the run claims to have measured.
+ *
+ * A commit SHA does not pin evidence here: one agent in this release watched its own catalog
+ * change shape mid-capture and recorded `subject: DRIFTED` while the SHA still read "current".
+ * Hashing the SUBJECT — the fixture ids and the row counts the routes read — makes a mid-run
+ * change visible as a changed hash rather than as a number that quietly describes two databases.
+ */
+export function contentHash(value: unknown): string {
+  return createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 16);
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value ?? null) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
+export interface RunTally {
+  readonly total: number;
+  readonly measured: number;
+  readonly refused: number;
+  readonly failed: number;
+  readonly refusalsByReason: Readonly<Record<string, number>>;
+  readonly routeFailures: readonly string[];
+}
+
+/**
+ * The refusal count, reported beside the results.
+ *
+ * An unmeasured route has to be VISIBLY unmeasured. The failure mode this exists to prevent is a
+ * table of 40 good numbers that silently omits the 42 routes the harness never managed to reach,
+ * which reads as "42 routes have no budget" rather than "42 routes were not measured".
+ */
+export function tally(routes: Readonly<Record<string, RouteMeasurement>>): RunTally {
+  const refusalsByReason: Record<string, number> = {};
+  const routeFailures: string[] = [];
+  let measured = 0;
+  let refused = 0;
+  let failed = 0;
+
+  for (const [key, route] of Object.entries(routes)) {
+    if (route.status === "measured") {
+      measured += 1;
+      continue;
+    }
+    const reason = route.reason ?? "unstated";
+    refusalsByReason[reason] = (refusalsByReason[reason] ?? 0) + 1;
+    if (route.status === "failed") {
+      failed += 1;
+      routeFailures.push(`${key}: ${reason}`);
+    } else refused += 1;
+  }
+
+  return {
+    total: Object.keys(routes).length,
+    measured,
+    refused,
+    failed,
+    refusalsByReason,
+    routeFailures,
   };
 }
