@@ -310,9 +310,14 @@ describe("RoleSeedService — cross-tenant isolation", () => {
       const seeded = rolesOf(store, ORG_A);
       expect(seeded).toHaveLength(6);
       expect(rolesOf(store, ORG_B)).toHaveLength(6);
-      for (const grant of store.get("role_permission_grants") ?? [])
-        expect(grant.orgId).toBe(ORG_A);
-      for (const version of store.get("access_versions") ?? []) expect(version.orgId).toBe(ORG_A);
+
+      const grants = store.get("role_permission_grants") ?? [];
+      expect(grants.length).toBeGreaterThan(0);
+      for (const grant of grants) expect(grant.orgId).toBe(ORG_A);
+
+      const versions = store.get("access_versions") ?? [];
+      expect(versions).toHaveLength(1);
+      for (const version of versions) expect(version.orgId).toBe(ORG_A);
     });
 
     it("BITE — neutering the tenant predicate makes org B's roles suppress org A's seed", async () => {
@@ -357,8 +362,10 @@ describe("RoleSeedService — cross-tenant isolation", () => {
       expect(created.slug).toBe("SALES_REP");
       expect(transactionCallbackRuns()).toBeGreaterThan(0);
       expect(rolesOf(store, ORG_B)).toHaveLength(1);
-      for (const grant of store.get("role_permission_grants") ?? [])
-        expect(grant.orgId).toBe(ORG_A);
+
+      const grants = store.get("role_permission_grants") ?? [];
+      expect(grants.length).toBeGreaterThan(0);
+      for (const grant of grants) expect(grant.orgId).toBe(ORG_A);
     });
 
     it("BITE — neutering the tenant predicate hands org B's role to an org A actor", async () => {
