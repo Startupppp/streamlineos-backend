@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import request from "supertest";
 import postgres from "postgres";
@@ -109,13 +109,23 @@ const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * Routes measured to answer another organization's id with something other than 404 while
  * disclosing nothing — an id belonging to no organization gets the identical answer.
  *
- * Pinned rather than allowed: every entry is a defect against the ticket's box, and a new one
- * fails the suite. Fixing one means deleting its line here.
+ * Pinned rather than allowed: every entry is a defect against the ticket's box, and a NEW one
+ * fails the suite. Fixing one means deleting its line from the pin file.
+ *
+ * The list lives in JSON beside the spec rather than inline. It is hundreds of routes long, it is
+ * measurement output rather than authored code, and a reviewer needs to diff it — three reasons a
+ * literal array in the middle of a spec would be the wrong home for it.
  */
-const KNOWN_NO_404: readonly string[] = [];
+interface PinFile {
+  readonly no404: readonly string[];
+  readonly serverErrors: readonly string[];
+}
 
-/** Routes measured to 5xx on another organization's id. Pinned the same way. */
-const KNOWN_SERVER_ERRORS: readonly string[] = [];
+const PINS = JSON.parse(
+  readFileSync(join(__dirname, "live", "known-no-404.json"), "utf8"),
+) as PinFile;
+const KNOWN_NO_404: readonly string[] = [...PINS.no404].sort();
+const KNOWN_SERVER_ERRORS: readonly string[] = [...PINS.serverErrors].sort();
 
 function commit(): string | null {
   try {
@@ -249,8 +259,10 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
    * still in memory has proved nothing it can show. Flushing as it goes costs one file write per
    * fifty routes and means a killed run is still evidence for everything it reached.
    */
+  let lastFlush = 0;
   const writeArtifact = (): void => {
     if (!ARTIFACT || outcomes.length === 0) return;
+    lastFlush = outcomes.length;
     mkdirSync(dirname(ARTIFACT), { recursive: true });
     writeFileSync(
       ARTIFACT,
@@ -466,7 +478,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
         detail: scored.detail,
         probeBody: isFinding(scored.verdict) ? probeResult.body : undefined,
       });
-      if (outcomes.length % 50 === 0) writeArtifact();
+      if (outcomes.length - lastFlush >= 25) writeArtifact();
     }
 
     const tally = new Map<Verdict, number>();
