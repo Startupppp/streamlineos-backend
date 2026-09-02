@@ -11,7 +11,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
+import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import type { AddMemberInput } from "./dto/kb-members.schemas";
+
+const PG_UNIQUE_VIOLATION = "23505";
 
 type MemberRow = typeof kbSpaceMembers.$inferSelect;
 
@@ -87,37 +90,29 @@ export class KbMembersService {
       });
       if (!membership) throw new NotFoundException("Active organization member not found");
       membershipId = membership.id;
-      const existing = await this.db.query.kbSpaceMembers.findFirst({
-        where: and(
-          eq(kbSpaceMembers.orgId, orgId),
-          eq(kbSpaceMembers.spaceId, spaceId),
-          eq(kbSpaceMembers.membershipId, membershipId),
-        ),
-        columns: { id: true },
-      });
-      if (existing) throw new ConflictException("User already has access");
     }
-    if (input.role) {
-      const existing = await this.db.query.kbSpaceMembers.findFirst({
-        where: and(
-          eq(kbSpaceMembers.orgId, orgId),
-          eq(kbSpaceMembers.spaceId, spaceId),
-          eq(kbSpaceMembers.role, input.role),
-        ),
-        columns: { id: true },
-      });
-      if (existing) throw new ConflictException("Role already granted");
+
+    let member: MemberRow;
+    try {
+      const [row] = await this.db
+        .insert(kbSpaceMembers)
+        .values({
+          orgId,
+          spaceId,
+          membershipId,
+          role: input.role ?? null,
+          spaceRole: input.spaceRole,
+        })
+        .returning();
+      member = row;
+    } catch (err) {
+      const { code, constraint } = getPostgresErrorDetails(err);
+      if (code !== PG_UNIQUE_VIOLATION) throw err;
+      if (constraint === "uniq_kb_space_members_org_space_role")
+        throw new ConflictException("Role already granted");
+      throw new ConflictException("User already has access");
     }
-    const [member] = await this.db
-      .insert(kbSpaceMembers)
-      .values({
-        orgId,
-        spaceId,
-        membershipId,
-        role: input.role ?? null,
-        spaceRole: input.spaceRole,
-      })
-      .returning();
+
     await this.indexing.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
     return { ...member, userId: input.userId ?? null };

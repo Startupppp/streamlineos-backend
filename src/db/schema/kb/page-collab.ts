@@ -74,6 +74,7 @@ export const kbPageTemplates = pgTable(
   },
   (table) => [
     unique("uniq_kb_page_templates_org_id").on(table.orgId, table.id),
+    uniqueIndex("uniq_kb_page_templates_org_name").on(table.orgId, table.name),
   ],
 );
 

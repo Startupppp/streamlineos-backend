@@ -64,6 +64,12 @@ export const kbSpaceMembers = pgTable(
     index("idx_kb_space_members_org_role").on(table.orgId, table.role),
     index("idx_kb_space_members_org_space").on(table.orgId, table.spaceId),
     unique("uniq_kb_space_members_org_id").on(table.orgId, table.id),
+    uniqueIndex("uniq_kb_space_members_org_space_membership")
+      .on(table.orgId, table.spaceId, table.membershipId)
+      .where(sql`${table.membershipId} IS NOT NULL`),
+    uniqueIndex("uniq_kb_space_members_org_space_role")
+      .on(table.orgId, table.spaceId, table.role)
+      .where(sql`${table.role} IS NOT NULL`),
     foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_space_members_org_space" }),
     foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_space_members_org_membership" }).onDelete("cascade"),
   ],
