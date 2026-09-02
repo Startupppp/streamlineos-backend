@@ -1,4 +1,4 @@
-import { foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, type AnyPgColumn, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { hrEmployments } from "./core-people";
@@ -98,7 +98,7 @@ export const hrTemplates = pgTable("hr_templates", {
   description: text("description"),
   status: hrTemplateStatusEnum("status").default("draft").notNull(),
   version: integer("version").default(1).notNull(),
-  parentTemplateId: integer("parent_template_id").references((): AnyPgColumn => hrTemplates.id, { onDelete: "set null" }),
+  parentTemplateId: integer("parent_template_id"),
   content: jsonb("content").$type<Record<string, unknown>>().notNull().default({}),
   variablesUsed: text("variables_used").array().default([]).notNull(),
   letterType: hrLetterTypeEnum("letter_type"),
@@ -108,8 +108,14 @@ export const hrTemplates = pgTable("hr_templates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({
+    columns: [table.orgId, table.parentTemplateId],
+    foreignColumns: [table.orgId, table.id],
+    name: "fk_hr_templates_parent_template",
+  }).onDelete("set null"),
   unique("uniq_hr_templates_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_templates_org_kind_name_ver").on(table.orgId, table.kind, table.name, table.version),
+  index("idx_hr_templates_parent_template").on(table.orgId, table.parentTemplateId),
   index("idx_hr_templates_org_status").on(table.orgId, table.status),
 ]);
 

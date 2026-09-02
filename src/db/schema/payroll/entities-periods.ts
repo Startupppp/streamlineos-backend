@@ -18,6 +18,7 @@ import {
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { workers } from "../directory/workers";
+import { payrollRuns } from "./runs";
 
 export const payrollEntityStatusEnum = pgEnum("payroll_entity_status", [
   "ACTIVE",
@@ -266,6 +267,17 @@ export const payrollTdsYtdLedger = pgTable(
       foreignColumns: [workers.organizationId, workers.workerId],
       name: "fk_payroll_tds_ytd_ledger_org_worker",
     }).onDelete("restrict"),
+    // No onDelete, deliberately (migration 1026). 1030's `guard_paid_payroll_tds_ytd_row`
+    // is a BEFORE DELETE OR UPDATE guard that forbids changing `run_id` on a paid run, so
+    // SET NULL (an UPDATE) and CASCADE (a DELETE) would both raise 23514 the moment a paid
+    // run was deleted. NO ACTION never touches the child row, and it states the right rule:
+    // a run whose withheld tax is on the year-to-date ledger is not deletable.
+    foreignKey({
+      columns: [table.orgId, table.runId],
+      foreignColumns: [payrollRuns.orgId, payrollRuns.id],
+      name: "fk_payroll_tds_ytd_ledger_run_id_org",
+    }),
+    index("idx_payroll_tds_ytd_ledger_org_run").on(table.orgId, table.runId),
   ],
 );
 

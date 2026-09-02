@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   payrollRunStatusEnum, payrollWorkerTypeEnum, salaryComponentTypeEnum,
@@ -19,7 +19,7 @@ export const payrollRuns = pgTable("payroll_runs", {
   runType: text("run_type").default("REGULAR").notNull(),
   /** Source period/run for off-cycle, correction, F&F */
   sourcePeriodKey: text("source_period_key"),
-  sourceRunId: integer("source_run_id").references((): AnyPgColumn => payrollRuns.id, { onDelete: "set null" }),
+  sourceRunId: integer("source_run_id"),
   entityId: integer("entity_id"),
   periodId: integer("period_id"),
   calculationVersion: text("calculation_version").default("1.0.0"),
@@ -117,6 +117,15 @@ export const payrollRuns = pgTable("payroll_runs", {
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_payroll_runs_locked_actor",
   }).onDelete("set null"),
+  // An off-cycle / correction / F&F run points at the run it derives from. Composite, so a
+  // run in one organisation cannot name another's; `org_id` is NOT NULL, so the SET NULL
+  // carries an explicit column list (migration 1025).
+  foreignKey({
+    columns: [table.orgId, table.sourceRunId],
+    foreignColumns: [table.orgId, table.id],
+    name: "fk_payroll_runs_source_run",
+  }).onDelete("set null"),
+  index("idx_payroll_runs_org_source_run").on(table.orgId, table.sourceRunId),
 ]);
 
 export const payrollRunEmployees = pgTable("payroll_run_employees", {

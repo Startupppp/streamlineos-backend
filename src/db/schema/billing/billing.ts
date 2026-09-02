@@ -95,6 +95,7 @@ export const appInstallations = pgTable(
   },
   (t) => [
     index("app_installations_org_app_idx").on(t.orgId, t.appId),
+    index("idx_app_installations_installed_by").on(t.installedBy),
     unique("uniq_app_installations_org_id").on(t.orgId, t.id),
   ],
 );
@@ -227,6 +228,7 @@ export const affiliateCommissions = pgTable(
   (t) => [
     index("affiliate_commissions_affiliate_idx").on(t.affiliateId),
     index("affiliate_commissions_status_idx").on(t.status),
+    index("idx_affiliate_commissions_referred_org").on(t.referredOrgId),
   ],
 );
 
@@ -251,6 +253,8 @@ export const referrals = pgTable(
     index("referrals_referrer_idx").on(t.referrerOrgId),
     index("referrals_code_idx").on(t.referralCode),
     index("referrals_email_idx").on(t.referredEmail),
+    index("idx_referrals_referred_org").on(t.referredOrgId),
+    index("idx_referrals_referrer_user").on(t.referrerUserId),
   ],
 );
 

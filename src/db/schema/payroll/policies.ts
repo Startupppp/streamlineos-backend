@@ -3,6 +3,18 @@ import { relations, sql } from "drizzle-orm";
 import { payrollPolicyStatusEnum, payFrequencyEnum, payrollCalendarEventTypeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
+/**
+ * `payroll_policies` and `payroll_policy_versions` reference each other, so naming the
+ * parent columns inline makes each table's type depend on the other's and TypeScript
+ * gives up with TS7022. The explicit `AnyPgColumn` return type is the documented Drizzle
+ * escape hatch for that cycle -- the same one `.references((): AnyPgColumn => ...)` uses
+ * elsewhere in this schema -- lifted to the tuple a composite foreign key needs.
+ */
+const activeVersionParentColumns = (): [AnyPgColumn, AnyPgColumn] => [
+  payrollPolicyVersions.orgId,
+  payrollPolicyVersions.id,
+];
+
 export const payrollPolicies = pgTable("payroll_policies", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -15,13 +27,19 @@ export const payrollPolicies = pgTable("payroll_policies", {
   payDay: integer("pay_day").default(28).notNull(),
   employeeCount: integer("employee_count"),
   startMonth: text("start_month").notNull(),
-  activeVersionId: integer("active_version_id").references((): AnyPgColumn => payrollPolicyVersions.id, { onDelete: "set null" }),
+  activeVersionId: integer("active_version_id"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({
+    columns: [table.orgId, table.activeVersionId],
+    foreignColumns: activeVersionParentColumns(),
+    name: "fk_payroll_policies_active_version",
+  }).onDelete("set null"),
   unique("uniq_payroll_policies_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_policies_org").on(table.orgId),
+  index("idx_payroll_policies_active_version").on(table.orgId, table.activeVersionId),
   index("idx_payroll_policies_org_status").on(table.orgId, table.status),
 ]);
 

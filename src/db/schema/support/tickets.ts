@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, integer, index, unique, foreignKey, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { supportTicketStatusEnum, supportTicketPriorityEnum } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
@@ -25,7 +25,7 @@ export const supportTickets = pgTable("support_tickets", {
   resolvedAt: timestamp("resolved_at"),
   closedAt: timestamp("closed_at"),
   queueId: integer("queue_id"),
-  mergedIntoTicketId: integer("merged_into_ticket_id").references((): AnyPgColumn => supportTickets.id, { onDelete: "set null" }),
+  mergedIntoTicketId: integer("merged_into_ticket_id"),
   snoozedUntil: timestamp("snoozed_until"),
   snoozedBy: text("snoozed_by").references(() => users.id),
   createdByMembershipId: integer("created_by_membership_id").notNull(),
@@ -54,6 +54,15 @@ export const supportTickets = pgTable("support_tickets", {
     foreignColumns: [clients.orgId, clients.id],
     name: "fk_support_tickets_client_id_org",
   }),
+  // A merged ticket points at its survivor. Child and parent are the same tenant table, so
+  // the pointer is composite: a single-column pointer would let one organisation merge a
+  // ticket into another's. `org_id` is NOT NULL, so the SET NULL carries an explicit column
+  // list (migration 1025); a bare SET NULL would raise 23502 on every ticket delete.
+  foreignKey({
+    columns: [table.orgId, table.mergedIntoTicketId],
+    foreignColumns: [table.orgId, table.id],
+    name: "fk_support_tickets_merged_into_ticket",
+  }).onDelete("set null"),
   // Queue view: filter by org + queue + open statuses, order by priority then SLA deadline.
   index("idx_support_tickets_org_queue_status_priority").on(table.orgId, table.queueId, table.status, table.priority, table.createdAt),
   index("idx_support_tickets_client").on(table.clientId),
@@ -61,6 +70,7 @@ export const supportTickets = pgTable("support_tickets", {
   index("idx_support_tickets_sla").on(table.slaDeadline),
   index("idx_support_tickets_source_message").on(table.sourceMessageId),
   index("idx_support_tickets_snoozed_until").on(table.snoozedUntil),
+  index("idx_support_tickets_merged_into").on(table.orgId, table.mergedIntoTicketId),
   unique("uniq_support_tickets_org_id").on(table.orgId, table.id),
 ]);
 
