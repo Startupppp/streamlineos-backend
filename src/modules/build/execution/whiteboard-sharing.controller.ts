@@ -35,16 +35,12 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { resolveClientIpOr } from "../../../common/http/client-ip";
 
 const projectAndWhiteboardIdParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive() }).strict();
 const projectWhiteboardAndTargetUserParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive(), targetUserId: z.string().min(1) }).strict();
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
-function clientIp(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw ?? req.ip ?? "unknown").split(",")[0].trim();
-}
 
 @RequireModule("build")
 @Controller("build/:projectId/whiteboards/:whiteboardId")
@@ -114,7 +110,7 @@ export class PublicWhiteboardLinksController {
   @Get(":token")
   @Validate({ params: tokenParams })
   async getByToken(@Param("token") token: string, @Req() req: Request) {
-    const rl = await this.rateLimit.check("whiteboard:public-view", clientIp(req));
+    const rl = await this.rateLimit.check("whiteboard:public-view", resolveClientIpOr(req, "unknown"));
     if (!rl.allowed) {
       throw new HttpException(
         `Rate limited. Retry after ${rl.retryAfterSecs}s`,
@@ -131,7 +127,7 @@ export class PublicWhiteboardLinksController {
     @Body() body: PublicWhiteboardUpdateInput,
     @Req() req: Request,
   ) {
-    const rl = await this.rateLimit.check("whiteboard:public-edit", clientIp(req));
+    const rl = await this.rateLimit.check("whiteboard:public-edit", resolveClientIpOr(req, "unknown"));
     if (!rl.allowed) {
       throw new HttpException(
         `Rate limited. Retry after ${rl.retryAfterSecs}s`,

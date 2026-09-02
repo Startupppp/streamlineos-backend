@@ -12,12 +12,8 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { SignAuditService } from "./sign-audit.service";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { resolveClientIp } from "../../common/http/client-ip";
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
-}
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 
@@ -48,7 +44,7 @@ export class SignCertificatesController {
   @RequirePermission("sign:certificate:download")
   @Validate({ params: envelopeIdParams })
   getFinalPdf(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.finalization.getFinalPdfUrl(u.orgId, envelopeId, { userId: u.userId, ipAddress: clientIp(req) });
+    return this.finalization.getFinalPdfUrl(u.orgId, envelopeId, { userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
   @Post(":envelopeId/regenerate-certificate")
@@ -56,6 +52,6 @@ export class SignCertificatesController {
   @RequirePermission("sign:admin:manage")
   @Validate({ params: envelopeIdParams })
   regenerateCertificate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    return this.finalization.regenerateCertificate(u.orgId, envelopeId, { userId: u.userId, ipAddress: clientIp(req) });
+    return this.finalization.regenerateCertificate(u.orgId, envelopeId, { userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 }

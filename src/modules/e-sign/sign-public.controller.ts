@@ -20,12 +20,8 @@ import {
   type DeclineInput,
   type PublicFormESignSubmitInput,
 } from "./dto/e-sign.schemas";
+import { resolveClientIpOr } from "../../common/http/client-ip";
 
-function clientIp(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw?.split(",")[0]?.trim() || req.ip || "anon").slice(0, 100);
-}
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 const slugParams = z.object({ slug: z.string().min(1) }).strict();
@@ -41,7 +37,7 @@ export class SignPublicController {
   ) {}
 
   private async guard(tier: string, token: string, req: Request): Promise<void> {
-    const result = await this.rateLimit.check(tier, `${token}:${clientIp(req)}`);
+    const result = await this.rateLimit.check(tier, `${token}:${resolveClientIpOr(req, "anon")}`);
     if (!result.allowed) throw new HttpException({ message: "Too many requests. Please try again shortly." }, 429);
   }
 
@@ -49,7 +45,7 @@ export class SignPublicController {
   @Validate({ params: tokenParams })
   async getSession(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-session", token, req);
-    return this.publicSigning.getSession(token, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+    return this.publicSigning.getSession(token, { ipAddress: resolveClientIpOr(req, "anon"), userAgent: req.headers["user-agent"] });
   }
 
   @Get(":token/documents/:documentId/preview")
@@ -77,7 +73,7 @@ export class SignPublicController {
     @Req() req: Request,
   ) {
     await this.guard("sign:public-auth", token, req);
-    return this.publicSigning.authenticate(token, body, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+    return this.publicSigning.authenticate(token, body, { ipAddress: resolveClientIpOr(req, "anon"), userAgent: req.headers["user-agent"] });
   }
 
   @Post(":token/consent")
@@ -89,7 +85,7 @@ export class SignPublicController {
     @Req() req: Request,
   ) {
     await this.guard("sign:public-session", token, req);
-    return this.publicSigning.acceptConsent(token, body, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+    return this.publicSigning.acceptConsent(token, body, { ipAddress: resolveClientIpOr(req, "anon"), userAgent: req.headers["user-agent"] });
   }
 
   @Post(":token/fields/:fieldId")
@@ -114,7 +110,7 @@ export class SignPublicController {
     @Req() req: Request,
   ) {
     await this.guard("sign:public-session", token, req);
-    return this.publicSigning.adoptSignature(token, body, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+    return this.publicSigning.adoptSignature(token, body, { ipAddress: resolveClientIpOr(req, "anon"), userAgent: req.headers["user-agent"] });
   }
 
   @Post(":token/complete")
@@ -123,7 +119,7 @@ export class SignPublicController {
   @Validate({ params: tokenParams })
   async complete(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-complete", token, req);
-    return this.publicSigning.complete(token, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+    return this.publicSigning.complete(token, { ipAddress: resolveClientIpOr(req, "anon"), userAgent: req.headers["user-agent"] });
   }
 
   @Post(":token/decline")
@@ -135,7 +131,7 @@ export class SignPublicController {
     @Req() req: Request,
   ) {
     await this.guard("sign:public-complete", token, req);
-    return this.publicSigning.decline(token, body, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+    return this.publicSigning.decline(token, body, { ipAddress: resolveClientIpOr(req, "anon"), userAgent: req.headers["user-agent"] });
   }
 
   @Get("forms/:slug")
@@ -154,6 +150,6 @@ export class SignPublicController {
     @Req() req: Request,
   ) {
     await this.guard("sign:public-form-submit", slug, req);
-    return this.publicSigning.submitPublicForm(slug, body, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
+    return this.publicSigning.submitPublicForm(slug, body, { ipAddress: resolveClientIpOr(req, "anon"), userAgent: req.headers["user-agent"] });
   }
 }

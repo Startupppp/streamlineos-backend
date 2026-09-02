@@ -67,18 +67,13 @@ import {
 } from "./dto/public.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { resolveClientIp } from "../../common/http/client-ip";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 const orgSlugjobIdParams = z.object({ orgSlug: z.string().min(1), jobId: z.coerce.number().int().positive() }).strict();
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const slugParams = z.object({ slug: z.string().min(1) }).strict();
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const candidate = raw?.split(",")[0]?.trim() || req.ip;
-  return candidate ? candidate.slice(0, 100) : undefined;
-}
 
 function header(req: Request, name: string): string | undefined {
   const raw = req.headers[name];
@@ -113,7 +108,7 @@ export class PublicController {
     @Body() body: ContactSubmitInput,
     @Req() req: Request,
   ) {
-    return this.contact.submit(body, clientIp(req));
+    return this.contact.submit(body, resolveClientIp(req));
   }
 
   @Post("waitlist")
@@ -126,7 +121,7 @@ export class PublicController {
     @Req() req: Request,
   ) {
     return this.waitlist.join(body, {
-      clientIp: clientIp(req),
+      clientIp: resolveClientIp(req),
       userAgent: header(req, "user-agent"),
       referrer: header(req, "referer"),
     });
@@ -229,7 +224,7 @@ export class PublicController {
     @Body() body: ExternalReferralSubmitInput,
     @Req() req: Request,
   ) {
-    return this.referrers.submitExternalReferral(token, body, clientIp(req));
+    return this.referrers.submitExternalReferral(token, body, resolveClientIp(req));
   }
 
   @Get("vendor-portal/:token")
@@ -334,7 +329,7 @@ export class PublicController {
   ) {
     return runInTenantTransaction(
       this.db,
-      () => this.roadmap.vote(query.org, body, clientIp(req)),
+      () => this.roadmap.vote(query.org, body, resolveClientIp(req)),
       { orgId: query.org },
     );
   }
@@ -396,7 +391,7 @@ export class PublicController {
     @Body() body: KbFeedbackInput,
     @Req() req: Request,
   ) {
-    const visitorId = body.visitorId ?? clientIp(req);
+    const visitorId = body.visitorId ?? resolveClientIp(req);
     return runInTenantTransaction(
       this.db,
       () => this.kb.submitFeedback(slug, query.org, { ...body, visitorId }),

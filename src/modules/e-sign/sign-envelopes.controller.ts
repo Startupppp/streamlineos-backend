@@ -28,15 +28,11 @@ import {
   type CorrectEnvelopeInput,
   type ExtendExpirationInput,
 } from "./dto/e-sign.schemas";
+import { resolveClientIp } from "../../common/http/client-ip";
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
-}
 
 function actorFrom(u: CurrentUserContext, req: Request) {
-  return { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: clientIp(req), userAgent: req.headers["user-agent"] };
+  return { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: resolveClientIp(req), userAgent: req.headers["user-agent"] };
 }
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();

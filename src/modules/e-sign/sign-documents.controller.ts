@@ -28,12 +28,8 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { SignDocumentsService } from "./sign-documents.service";
 import { uploadDocumentMetaSchema, type UploadDocumentMetaInput } from "./dto/e-sign.schemas";
 import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
+import { resolveClientIp } from "../../common/http/client-ip";
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
-}
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
@@ -62,7 +58,7 @@ export class SignDocumentsController {
       envelopeId,
       { buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, size: file.size },
       query.orderIndex,
-      { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: clientIp(req), userAgent: req.headers["user-agent"] },
+      { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: resolveClientIp(req), userAgent: req.headers["user-agent"] },
     );
   }
 

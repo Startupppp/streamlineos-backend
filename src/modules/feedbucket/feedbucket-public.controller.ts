@@ -53,6 +53,7 @@ import { runInTenantTransaction, runInNewTenantTransaction } from "../../common/
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { resolveClientIp } from "../../common/http/client-ip";
 
 const publicKeyParams = z.object({ publicKey: z.string().min(1) }).strict();
 
@@ -81,12 +82,6 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const candidate = raw?.split(",")[0]?.trim() || req.ip;
-  return candidate ? candidate.slice(0, 100) : undefined;
-}
 
 function originHostname(req: Request): string | undefined {
   const originHeader = req.headers["origin"];
@@ -142,7 +137,7 @@ export class FeedbucketPublicController {
     const widget = await this.publicService.resolveWidget(publicKey);
     if (!widget) throw new NotFoundException("Widget not found");
 
-    const ip = clientIp(req);
+    const ip = resolveClientIp(req);
     const rlResult = await this.rateLimitService.check(
       "feedbucket:widget-config",
       `${widget.id}:${ip ?? "anon"}`,
@@ -202,7 +197,7 @@ export class FeedbucketPublicController {
       throw new ForbiddenException("Origin not allowed");
     }
 
-    const ip = clientIp(req);
+    const ip = resolveClientIp(req);
     const rlResult = await this.rateLimitService.check(
       "feedbucket:widget-submit",
       `${widget.id}:${ip ?? "anon"}`,
@@ -357,7 +352,7 @@ export class FeedbucketPublicController {
     )
       throw new ForbiddenException("Origin not allowed");
 
-    const ip = clientIp(req);
+    const ip = resolveClientIp(req);
     const perIpResult = await this.rateLimitService.check(
       "feedbucket:ai-assist",
       `${widget.id}:${ip ?? "anon"}`,

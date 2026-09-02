@@ -107,6 +107,18 @@ const CONFIRMABLE_ACTIONS = [
 
 type ConfirmableAction = (typeof CONFIRMABLE_ACTIONS)[number];
 
+const CONFIRM_ACTION_PERMISSION: Record<ConfirmableAction, string> = {
+  "ticket.create": "build:tickets:create",
+  "ticket.updateStatus": "build:tickets:update",
+  "ticket.addComment": "build:tickets:update",
+  "calendar.createReminder": "calendar:write",
+  "email.send": "chat:messages:write",
+  "chat.postChannel": "chat:messages:write",
+  "hr.grantRecognition": "hr:engagement:manage",
+  "hr.grantBonus": "hr:bonuses:manage",
+  "mail.send": "mail:messages:send",
+};
+
 function isConfirmableAction(s: string): s is ConfirmableAction {
   return (CONFIRMABLE_ACTIONS as readonly string[]).includes(s);
 }
@@ -265,13 +277,18 @@ export class ChatAssistantController {
     }
 
     const confirmedAction = action;
+    const denyReason = await this.toolAccess.denyReason(
+      u.orgId,
+      u.userId,
+      CONFIRM_ACTION_PERMISSION[confirmedAction],
+    );
+    if (denyReason) throw new ForbiddenException(denyReason);
+
     let result: Record<string, unknown>;
     let summary: string;
 
     switch (confirmedAction) {
       case "ticket.create": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "build:tickets:create");
-        if (deny) throw new ForbiddenException(deny);
         const svc = this.moduleRef.get(ProjectsTicketsService, { strict: false });
         const createInput = {
           title: String(payload["title"]),
@@ -287,8 +304,6 @@ export class ChatAssistantController {
       }
 
       case "ticket.updateStatus": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "build:tickets:update");
-        if (deny) throw new ForbiddenException(deny);
         const ticketId = Number(payload["ticketId"]);
         const status = String(payload["status"]);
         await this.db
@@ -301,8 +316,6 @@ export class ChatAssistantController {
       }
 
       case "ticket.addComment": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "build:tickets:update");
-        if (deny) throw new ForbiddenException(deny);
         const commentSvc = this.moduleRef.get(ProjectsTicketCommentsService, { strict: false });
         const comment = await commentSvc.addComment(u, Number(payload["ticketId"]), { content: String(payload["comment"]) });
         result = { commentId: comment.id };
@@ -311,8 +324,6 @@ export class ChatAssistantController {
       }
 
       case "calendar.createReminder": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "calendar:write");
-        if (deny) throw new ForbiddenException(deny);
         const calSvc = this.moduleRef.get(CalendarService, { strict: false });
         const { event } = await calSvc.createEvent(u.orgId, u.userId, {
           title: String(payload["title"]),
@@ -329,8 +340,6 @@ export class ChatAssistantController {
       }
 
       case "email.send": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "chat:messages:write");
-        if (deny) throw new ForbiddenException(deny);
         const emailSvc = this.moduleRef.get(EmailOutboxService, { strict: false });
         const bodyText = String(payload["body"]);
         await emailSvc.enqueueAndTry({
@@ -345,8 +354,6 @@ export class ChatAssistantController {
       }
 
       case "chat.postChannel": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "chat:messages:write");
-        if (deny) throw new ForbiddenException(deny);
         const msgSvc = this.moduleRef.get(ChatMessagesService, { strict: false });
         await msgSvc.send(Number(payload["channelId"]), u.userId, u.orgId, { content: String(payload["message"]) });
         result = { sent: true };
@@ -355,8 +362,6 @@ export class ChatAssistantController {
       }
 
       case "hr.grantRecognition": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "hr:engagement:manage");
-        if (deny) throw new ForbiddenException(deny);
         const engSvc = this.moduleRef.get(EngagementService, { strict: false });
         const recognitionInput: CreateRecognitionInput = {
           toUserId: String(payload["toUserId"]),
@@ -370,8 +375,6 @@ export class ChatAssistantController {
       }
 
       case "hr.grantBonus": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "hr:bonuses:manage");
-        if (deny) throw new ForbiddenException(deny);
         const bonusInput = createBonusSchema.parse({
           userId: payload["employeeId"],
           type: payload["type"],
@@ -388,8 +391,6 @@ export class ChatAssistantController {
       }
 
       case "mail.send": {
-        const deny = await this.toolAccess.denyReason(u.orgId, u.userId, "mail:messages:send");
-        if (deny) throw new ForbiddenException(deny);
         const mailSendPayloadSchema = z.object({
           accountId: z.number().int().positive(),
           toEmail: z.string().email(),

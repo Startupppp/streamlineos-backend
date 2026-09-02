@@ -16,12 +16,8 @@ import {
   type CreateRecipientInput,
   type UpdateRecipientInput,
 } from "./dto/e-sign.schemas";
+import { resolveClientIp } from "../../common/http/client-ip";
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
-}
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 const recipientIdParams = z.object({ recipientId: z.coerce.number().int().positive() }).strict();
@@ -42,7 +38,7 @@ export class SignRecipientsController {
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.recipients.add(u.orgId, envelopeId, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    return this.recipients.add(u.orgId, envelopeId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
   @Get("envelopes/:envelopeId/recipients")
@@ -61,14 +57,14 @@ export class SignRecipientsController {
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.recipients.update(u.orgId, recipientId, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    return this.recipients.update(u.orgId, recipientId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
   @Delete("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
   @Validate({ params: recipientIdParams })
   async remove(@Param("recipientId", ParseIntPipe) recipientId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    await this.recipients.remove(u.orgId, recipientId, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    await this.recipients.remove(u.orgId, recipientId, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
     return { success: true };
   }
 }

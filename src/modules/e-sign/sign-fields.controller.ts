@@ -11,12 +11,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignFieldsService } from "./sign-fields.service";
 import { createFieldSchema, updateFieldSchema, type CreateFieldInput, type UpdateFieldInput } from "./dto/e-sign.schemas";
+import { resolveClientIp } from "../../common/http/client-ip";
 
-function clientIp(req: Request): string | undefined {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
-}
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
@@ -37,7 +33,7 @@ export class SignFieldsController {
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.fields.add(u.orgId, envelopeId, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    return this.fields.add(u.orgId, envelopeId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
   @Get("envelopes/:envelopeId/fields")
@@ -56,14 +52,14 @@ export class SignFieldsController {
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
-    return this.fields.update(u.orgId, fieldId, body, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    return this.fields.update(u.orgId, fieldId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
   @Delete("fields/:fieldId")
   @RequirePermission("sign:envelope:create")
   @Validate({ params: fieldIdParams })
   async remove(@Param("fieldId", ParseIntPipe) fieldId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
-    await this.fields.remove(u.orgId, fieldId, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
+    await this.fields.remove(u.orgId, fieldId, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
     return { success: true };
   }
 }
