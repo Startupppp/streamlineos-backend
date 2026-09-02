@@ -278,7 +278,37 @@ function foreignColOwnerSymbol(colExpr) {
   return i >= 0 ? colExpr.slice(0, i).trim() : colExpr.trim();
 }
 
-function parseStaticViolations(src, filePath, allTenantTables) {
+// SQL table names whose tenant column is filled by a database trigger and is deliberately
+// absent from the Drizzle model. Their composite FKs are verified in pg_catalog mode.
+const TRIGGER_MANAGED_TENANT_TABLES = new Set([
+  "onboarding_template_steps",
+  "support_ticket_messages",
+]);
+
+// Drizzle symbol name -> SQL table name, so a parent can be classified by the same
+// CRM/Inventory/platform-global name sets the pg_catalog mode uses. Comparing a symbol
+// against a set of SQL names silently classifies nothing.
+function buildSymbolToSqlMap(files) {
+  const map = new Map();
+  for (const f of files) {
+    const src = readFileSync(f, "utf8");
+    for (const m of src.matchAll(/export\s+const\s+(\w+)\s*=\s*(?:pgTable|\w+\.table)\s*\(\s*["']([^"']+)["']/g))
+      map.set(m[1], m[2]);
+  }
+  return map;
+}
+
+function parentIsOutOfScope(parentSym, parentSqlName, allTenantTables) {
+  if (GLOBAL_CATALOG_SYMBOLS.has(parentSym)) return true;
+  if (!parentSqlName) return false;
+  if (isCrmTable(parentSqlName) || isInvTable(parentSqlName)) return true;
+  if (isPlatformGlobal(parentSqlName)) return true;
+  if (TRIGGER_MANAGED_TENANT_TABLES.has(parentSqlName)) return true;
+  return !allTenantTables.has(parentSqlName);
+}
+
+function parseStaticViolations(src, filePath, allTenantTables, symbolToSql) {
+
   if (isExcludedFilePath(filePath)) return [];
   const violations = [];
   const tenantTablesHere = parseTenantTableNames(src);
@@ -292,7 +322,8 @@ function parseStaticViolations(src, filePath, allTenantTables) {
     if (!tableName) continue;
     if (!tenantTablesHere.has(tableName) && !allTenantTables.has(tableName)) continue;
     const parentSym = foreignColOwnerSymbol(foreignCols[0] ?? "");
-    if (GLOBAL_CATALOG_SYMBOLS.has(parentSym) || crmImports.has(parentSym)) continue;
+    if (crmImports.has(parentSym)) continue;
+    if (parentIsOutOfScope(parentSym, symbolToSql?.get(parentSym) ?? null, allTenantTables)) continue;
     violations.push({ tableName, constraintName: name ?? "(auto-named)", filePath, kind: "explicit" });
   }
 
@@ -302,9 +333,8 @@ function parseStaticViolations(src, filePath, allTenantTables) {
     const tableName = findEnclosingTableName(src, bodyStart);
     if (!tableName) continue;
     if (!tenantTablesHere.has(tableName) && !allTenantTables.has(tableName)) continue;
-    if (GLOBAL_CATALOG_SYMBOLS.has(targetTable) || crmImports.has(targetTable)) continue;
-    // Only flag if the target table is also tenant-owned
-    if (!allTenantTables.has(targetTable) && targetField !== "id") continue;
+    if (crmImports.has(targetTable)) continue;
+    if (parentIsOutOfScope(targetTable, symbolToSql?.get(targetTable) ?? null, allTenantTables)) continue;
     violations.push({
       tableName,
       constraintName: `(inline .references on ${propName})`,
@@ -466,9 +496,10 @@ async function main() {
     process.exit(2);
   }
 
+  const symbolToSql = buildSymbolToSqlMap(walkTs(SCHEMA_DIR));
   const violations = [];
   for (const f of files)
-    violations.push(...parseStaticViolations(readFileSync(f, "utf8"), f, allTenantTables));
+    violations.push(...parseStaticViolations(readFileSync(f, "utf8"), f, allTenantTables, symbolToSql));
 
   console.log(`Mode                   static (no DB — inline .references() violations MAY be missed)`);
   console.log(`Schema files           ${files.length}`);

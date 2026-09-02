@@ -33,7 +33,7 @@ export const kbEvents = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     eventType: text("event_type").notNull(),
     actorMembershipId: integer("actor_membership_id"),
-    articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "set null" }),
+    articleId: integer("article_id"),
     query: text("query"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     occurredAt: timestamp("occurred_at").defaultNow().notNull(),

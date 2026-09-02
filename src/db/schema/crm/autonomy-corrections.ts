@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { pgTable, text, timestamp, boolean, index } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import type { DecisionKind } from "./autonomous-decisions";
 

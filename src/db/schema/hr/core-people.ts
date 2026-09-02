@@ -114,17 +114,17 @@ export const hrPeople = pgTable("hr_people", {
 export const hrEmployments = pgTable("hr_employments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  personId: integer("person_id").references(() => hrPeople.id, { onDelete: "cascade" }).notNull(),
+  personId: integer("person_id").notNull(),
   workerId: text("worker_id"),
   workerEngagementId: text("worker_engagement_id"),
   employeeNumber: text("employee_number").notNull(),
   lifecycleStatus: hrEmploymentLifecycleStatusEnum("lifecycle_status").default("ACTIVE").notNull(),
   workerType: hrWorkerTypeEnum("worker_type").default("FULL_TIME").notNull(),
-  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
+  departmentId: text("department_id"),
   jobRoleId: integer("job_role_id"),
   jobLevelId: integer("job_level_id"),
   employmentTypeId: integer("employment_type_id"),
-  locationId: text("location_id").references(() => orgUnits.id, { onDelete: "set null" }),
+  locationId: text("location_id"),
   designation: text("designation"),
   joiningDate: date("joining_date"),
   probationEndDate: date("probation_end_date"),
@@ -147,6 +147,8 @@ export const hrEmployments = pgTable("hr_employments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_hr_employments_org_department" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.locationId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_hr_employments_org_location" }).onDelete("set null"),
   unique("uniq_hr_employments_org_id").on(table.orgId, table.id),
   unique("uniq_hr_employments_org_id_person").on(
     table.orgId,
@@ -204,7 +206,7 @@ export const hrEmployments = pgTable("hr_employments", {
 export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  employmentId: integer("employment_id").references(() => hrEmployments.id, { onDelete: "cascade" }).notNull(),
+  employmentId: integer("employment_id").notNull(),
   salaryAmountCents: integer("salary_amount_cents"),
   salaryCurrency: text("salary_currency").default("INR"),
   salaryFrequency: text("salary_frequency").default("MONTHLY"),
@@ -226,6 +228,7 @@ export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields",
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_employee_sensitive_fields_org_employment" }).onDelete("cascade"),
   unique("uniq_hr_employee_sensitive_fields_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_hr_sensitive_employment").on(table.employmentId),
   index("idx_hr_sensitive_org").on(table.orgId),
@@ -234,7 +237,7 @@ export const hrEmployeeSensitiveFields = pgTable("hr_employee_sensitive_fields",
 export const hrEmploymentHistory = pgTable("hr_employment_history", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  employmentId: integer("employment_id").references(() => hrEmployments.id, { onDelete: "cascade" }).notNull(),
+  employmentId: integer("employment_id").notNull(),
   fromStatus: hrEmploymentLifecycleStatusEnum("from_status").notNull(),
   toStatus: hrEmploymentLifecycleStatusEnum("to_status").notNull(),
   reason: text("reason"),
@@ -243,6 +246,7 @@ export const hrEmploymentHistory = pgTable("hr_employment_history", {
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_employment_history_org_employment" }).onDelete("cascade"),
   unique("uniq_hr_employment_history_org_id").on(table.orgId, table.id),
   index("idx_hr_emp_history_org_employment").on(table.orgId, table.employmentId),
   index("idx_hr_emp_history_created_at").on(table.createdAt),
@@ -259,7 +263,7 @@ export const OPEN_ENDED_DATE = "infinity";
 export const hrEffectiveDatedChanges = pgTable("hr_effective_dated_changes", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  employmentId: integer("employment_id").references(() => hrEmployments.id, { onDelete: "cascade" }).notNull(),
+  employmentId: integer("employment_id").notNull(),
   changeType: hrEffectiveDateChangeTypeEnum("change_type").notNull(),
   oldValue: jsonb("old_value"),
   newValue: jsonb("new_value"),
@@ -276,6 +280,7 @@ export const hrEffectiveDatedChanges = pgTable("hr_effective_dated_changes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_effective_dated_changes_org_employment" }).onDelete("cascade"),
   unique("uniq_hr_effective_dated_changes_org_id").on(table.orgId, table.id),
   index("idx_hr_eff_changes_org_employment").on(table.orgId, table.employmentId),
   index("idx_hr_eff_changes_org_status").on(table.orgId, table.status),
@@ -298,8 +303,8 @@ export const hrEffectiveDatedChanges = pgTable("hr_effective_dated_changes", {
 export const hrReportingLines = pgTable("hr_reporting_lines", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  employmentId: integer("employment_id").references(() => hrEmployments.id, { onDelete: "cascade" }).notNull(),
-  managerEmploymentId: integer("manager_employment_id").references(() => hrEmployments.id, { onDelete: "cascade" }).notNull(),
+  employmentId: integer("employment_id").notNull(),
+  managerEmploymentId: integer("manager_employment_id").notNull(),
   lineType: hrReportingLineTypeEnum("line_type").default("primary").notNull(),
   effectiveFrom: date("effective_from").notNull(),
   effectiveTo: date("effective_to")
@@ -308,6 +313,8 @@ export const hrReportingLines = pgTable("hr_reporting_lines", {
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_reporting_lines_org_employment" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.managerEmploymentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_reporting_lines_org_manager_employment" }).onDelete("cascade"),
   unique("uniq_hr_reporting_lines_org_id").on(table.orgId, table.id),
   index("idx_hr_reporting_lines_org_emp").on(table.orgId, table.employmentId),
   index("idx_hr_reporting_lines_manager").on(table.managerEmploymentId),

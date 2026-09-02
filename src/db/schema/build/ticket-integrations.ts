@@ -1,15 +1,4 @@
-import {
-  text,
-  bigserial,
-  timestamp,
-  boolean,
-  integer,
-  index,
-  unique,
-  jsonb,
-  varchar,
-  check,
-} from "drizzle-orm/pg-core";
+import { bigserial, boolean, check, foreignKey, index, integer, jsonb, text, timestamp, unique, varchar } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -24,7 +13,7 @@ export const projectWebhooks = build.table(
       .references(() => organizations.id, { onDelete: "cascade" }),
     projectId: integer("project_id")
       .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+      ,
     url: text("url").notNull(),
     events: text("events").array().notNull().default([]),
     secret: text("secret"),
@@ -37,6 +26,7 @@ export const projectWebhooks = build.table(
       .defaultNow(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_webhooks_org_project" }).onDelete("cascade"),
     index("idx_project_webhooks_project_id").on(t.projectId),
     index("idx_project_webhooks_org_id").on(t.orgId),
     unique("uniq_project_webhooks_org_id").on(t.orgId, t.id),
@@ -52,7 +42,7 @@ export const webhookDeliveries = build.table(
       .notNull(),
     webhookId: integer("webhook_id")
       .notNull()
-      .references(() => projectWebhooks.id, { onDelete: "cascade" }),
+      ,
     event: varchar("event", { length: 100 }).notNull(),
     payload: jsonb("payload"),
     status: varchar("status", { length: 20 }).notNull().default("pending"),
@@ -66,6 +56,7 @@ export const webhookDeliveries = build.table(
       .defaultNow(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.webhookId], foreignColumns: [projectWebhooks.orgId, projectWebhooks.id], name: "fk_webhook_deliveries_org_webhook" }).onDelete("cascade"),
     index("idx_webhook_deliveries_webhook_id").on(t.webhookId),
     index("idx_webhook_deliveries_delivered_at").on(t.deliveredAt),
     check(
@@ -84,7 +75,7 @@ export const projectAutomations = build.table(
       .notNull(),
     projectId: integer("project_id")
       .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+      ,
     name: varchar("name", { length: 200 }).notNull(),
     isActive: boolean("is_active").notNull().default(true),
     triggerEvent: varchar("trigger_event", { length: 100 }).notNull(),
@@ -128,6 +119,7 @@ export const projectAutomations = build.table(
       .defaultNow(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_automations_org_project" }).onDelete("cascade"),
     index("idx_project_automations_project_id").on(t.projectId),
     index("idx_project_automations_org_id").on(t.orgId),
     unique("uniq_project_automations_org_id").on(t.orgId, t.id),

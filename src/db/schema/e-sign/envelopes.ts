@@ -21,17 +21,15 @@ export const signEnvelopes = pgTable(
     sourceModule: text("source_module"),
     sourceEntityType: text("source_entity_type"),
     sourceEntityId: text("source_entity_id"),
-    templateId: integer("template_id").references(() => signTemplates.id, { onDelete: "set null" }),
-    watermarkPolicyId: integer("watermark_policy_id").references(() => signWatermarkPolicies.id, { onDelete: "set null" }),
+    templateId: integer("template_id"),
+    watermarkPolicyId: integer("watermark_policy_id"),
     senderMembershipId: integer("sender_membership_id"),
-
     reminderEnabled: boolean("reminder_enabled").default(true).notNull(),
     reminderFirstAfterDays: integer("reminder_first_after_days").default(3).notNull(),
     reminderRepeatDays: integer("reminder_repeat_days").default(3).notNull(),
     reminderMaxCount: integer("reminder_max_count").default(5).notNull(),
     reminderSentCount: integer("reminder_sent_count").default(0).notNull(),
     lastReminderAt: timestamp("last_reminder_at"),
-
     expiresAt: timestamp("expires_at"),
     sentAt: timestamp("sent_at"),
     completedAt: timestamp("completed_at"),
@@ -41,19 +39,19 @@ export const signEnvelopes = pgTable(
     declinedAt: timestamp("declined_at"),
     correctionRequiredAt: timestamp("correction_required_at"),
     correctionReason: text("correction_reason"),
-
     finalizationKey: text("finalization_key"),
     finalizedAt: timestamp("finalized_at"),
     finalPdfFileKey: text("final_pdf_file_key"),
     finalPdfHash: text("final_pdf_hash"),
-
-    publicFormId: integer("public_form_id").references(() => signPublicForms.id, { onDelete: "set null" }),
-
+    publicFormId: integer("public_form_id"),
     metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>().default({}).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.publicFormId], foreignColumns: [signPublicForms.orgId, signPublicForms.id], name: "fk_sign_envelopes_public_form_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [signTemplates.orgId, signTemplates.id], name: "fk_sign_envelopes_template_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.watermarkPolicyId], foreignColumns: [signWatermarkPolicies.orgId, signWatermarkPolicies.id], name: "fk_sign_envelopes_watermark_policy_id_org" }).onDelete("set null"),
     index("idx_sign_envelopes_org_status").on(table.orgId, table.status),
     index("idx_sign_envelopes_org_sender").on(table.orgId, table.senderMembershipId),
     index("idx_sign_envelopes_source").on(table.sourceModule, table.sourceEntityType, table.sourceEntityId),

@@ -18,7 +18,7 @@ export const changeRequestStatusEnum = pgEnum("change_request_status", [
 export const changeRequests = build.table("change_requests", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  projectId: integer("project_id").notNull(),
   crNumber: integer("cr_number").notNull(),
   title: text("title").notNull(),
   description: text("description"),
@@ -37,6 +37,7 @@ export const changeRequests = build.table("change_requests", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_change_requests_org_project" }).onDelete("cascade"),
   index("idx_change_requests_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_change_requests_project_number").on(t.projectId, t.crNumber),
   index("idx_change_requests_requested_by").on(t.requestedById),

@@ -31,9 +31,9 @@ export const documentTemplates = pgTable("document_templates", {
 
 export const candidateDocuments = pgTable("candidate_documents", {
   id: serial("id").primaryKey(),
-  candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "cascade" }).notNull(),
+  candidateId: integer("candidate_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  templateId: integer("template_id").references(() => documentTemplates.id),
+  templateId: integer("template_id"),
   title: text("title").notNull(),
   htmlContent: text("html_content").notNull().default(""),
   status: text("status").notNull().default("GENERATED"),
@@ -47,6 +47,8 @@ export const candidateDocuments = pgTable("candidate_documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_candidate_documents_org_candidate" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [documentTemplates.orgId, documentTemplates.id], name: "fk_candidate_documents_org_template" }),
   unique("uniq_candidate_documents_org_id").on(table.orgId, table.id),
   index("idx_candidate_docs_candidate").on(table.candidateId),
   index("idx_candidate_docs_external").on(table.externalDocId),
@@ -54,7 +56,7 @@ export const candidateDocuments = pgTable("candidate_documents", {
 
 export const documentTemplateVersions = pgTable("document_template_versions", {
   id: serial("id").primaryKey(),
-  templateId: integer("template_id").notNull().references(() => documentTemplates.id, { onDelete: "cascade" }),
+  templateId: integer("template_id").notNull(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   version: integer("version").notNull(),
   title: text("title").notNull(),
@@ -64,6 +66,7 @@ export const documentTemplateVersions = pgTable("document_template_versions", {
   archivedAt: timestamp("archived_at").defaultNow().notNull(),
   archivedBy: text("archived_by").notNull().references(() => users.id),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [documentTemplates.orgId, documentTemplates.id], name: "fk_document_template_versions_template_id_org" }).onDelete("cascade"),
   unique("uniq_document_template_versions_org_id").on(table.orgId, table.id),
   index("idx_dtv_template_id").on(table.templateId),
 ]);
@@ -72,13 +75,14 @@ export const onboardingTemplates = pgTable("onboarding_templates", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
-  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
+  departmentId: text("department_id"),
   description: text("description"),
   isActive: boolean("is_active").notNull().default(true),
   createdBy: text("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_onboarding_templates_department_id_org" }).onDelete("set null"),
   unique("uniq_onboarding_templates_org_id").on(table.orgId, table.id),
   index("idx_onboarding_templates_org").on(table.orgId),
 ]);
@@ -183,7 +187,7 @@ export const onboardingDocuments = pgTable("onboarding_documents", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
-  documentTypeId: integer("document_type_id").references(() => documentTypes.id).notNull(),
+  documentTypeId: integer("document_type_id").notNull(),
   fileUrl: text("file_url").notNull(),
   fileName: text("file_name").notNull(),
   fileSize: integer("file_size"),
@@ -198,6 +202,7 @@ export const onboardingDocuments = pgTable("onboarding_documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.documentTypeId], foreignColumns: [documentTypes.orgId, documentTypes.id], name: "fk_onboarding_documents_document_type_id_org" }),
   unique("uniq_onboarding_documents_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_onboarding_documents_org_user_type_version").on(
     table.orgId,
@@ -219,13 +224,14 @@ export const onboardingDocuments = pgTable("onboarding_documents", {
 export const documentAuditLogs = pgTable("document_audit_logs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  onboardingDocumentId: integer("onboarding_document_id").references(() => onboardingDocuments.id).notNull(),
+  onboardingDocumentId: integer("onboarding_document_id").notNull(),
   action: docAuditActionEnum("action").notNull(),
   performedBy: text("performed_by").references(() => users.id).notNull(),
   remarks: text("remarks"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.onboardingDocumentId], foreignColumns: [onboardingDocuments.orgId, onboardingDocuments.id], name: "fk_document_audit_logs_onboarding_document_id_org" }),
   unique("uniq_document_audit_logs_org_id").on(table.orgId, table.id),
 ]);
 

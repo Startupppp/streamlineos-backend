@@ -24,7 +24,6 @@ export const chatMessages = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     senderMembershipId: integer("sender_membership_id"),
     content: text("content"),
@@ -88,7 +87,6 @@ export const chatAttachments = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     messageId: bigint("message_id", { mode: "number" })
-      .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     fileName: text("file_name").notNull(),
     fileUrl: text("file_url").notNull(),
@@ -113,10 +111,8 @@ export const chatPinnedMessages = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     messageId: bigint("message_id", { mode: "number" })
-      .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     pinnedByMembershipId: integer("pinned_by_membership_id"),
     pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
@@ -141,7 +137,6 @@ export const chatSavedMessages = pgTable(
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     messageId: bigint("message_id", { mode: "number" })
-      .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     savedAt: timestamp("saved_at").defaultNow().notNull(),
   },
@@ -162,10 +157,8 @@ export const chatReplyReminders = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     messageId: bigint("message_id", { mode: "number" })
-      .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     recipientMembershipId: integer("recipient_membership_id"),
     senderMembershipId: integer("sender_membership_id"),

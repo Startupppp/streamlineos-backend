@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, decimal, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { decimal, foreignKey, index, integer, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { candidates } from "./hiring-candidates";
@@ -34,9 +34,9 @@ export type ExternalReferralStatus =
 export const externalReferrals = pgTable("external_referrals", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  referrerId: integer("referrer_id").references(() => externalReferrers.id, { onDelete: "cascade" }).notNull(),
-  candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "cascade" }).notNull(),
-  jobPostingId: integer("job_posting_id").references(() => jobPostings.id),
+  referrerId: integer("referrer_id").notNull(),
+  candidateId: integer("candidate_id").notNull(),
+  jobPostingId: integer("job_posting_id"),
   status: text("status").$type<ExternalReferralStatus>().notNull().default("SUBMITTED"),
   rewardAmount: decimal("reward_amount", { precision: 12, scale: 2 }),
   rewardPaidAt: timestamp("reward_paid_at"),
@@ -44,6 +44,9 @@ export const externalReferrals = pgTable("external_referrals", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.jobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_external_referrals_job_posting_id_org" }),
+  foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_external_referrals_org_candidate" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.referrerId], foreignColumns: [externalReferrers.orgId, externalReferrers.id], name: "fk_external_referrals_org_referrer" }).onDelete("cascade"),
   unique("uniq_external_referrals_org_id").on(table.orgId, table.id),
   uniqueIndex("idx_external_referrals_referrer_candidate").on(table.referrerId, table.candidateId),
   index("idx_external_referrals_org").on(table.orgId),

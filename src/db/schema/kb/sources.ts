@@ -25,9 +25,7 @@ export const kbSources = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    spaceId: integer("space_id").references(() => kbSpaces.id, {
-      onDelete: "set null",
-    }),
+    spaceId: integer("space_id"),
     kind: text("kind").$type<KbSourceKind>().notNull(),
     title: text("title").notNull(),
     fileKey: text("file_key"),

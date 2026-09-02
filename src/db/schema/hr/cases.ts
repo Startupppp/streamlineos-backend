@@ -92,7 +92,7 @@ export const hrCases = pgTable("hr_cases", {
 
 export const hrCaseNotes = pgTable("hr_case_notes", {
   id: serial("id").primaryKey(),
-  caseId: integer("case_id").references(() => hrCases.id, { onDelete: "cascade" }).notNull(),
+  caseId: integer("case_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
   authorMembershipId: integer("author_membership_id"),
@@ -100,6 +100,7 @@ export const hrCaseNotes = pgTable("hr_case_notes", {
   isConfidential: boolean("is_confidential").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.caseId], foreignColumns: [hrCases.orgId, hrCases.id], name: "fk_hr_case_notes_org_case" }).onDelete("cascade"),
   unique("uniq_hr_case_notes_org_id").on(table.orgId, table.id),
   index("idx_hr_case_notes_case").on(table.caseId),
   index("idx_hr_case_notes_org").on(table.orgId),
@@ -113,7 +114,7 @@ export const hrCaseNotes = pgTable("hr_case_notes", {
 
 export const hrCaseDocuments = pgTable("hr_case_documents", {
   id: serial("id").primaryKey(),
-  caseId: integer("case_id").references(() => hrCases.id, { onDelete: "cascade" }).notNull(),
+  caseId: integer("case_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   url: text("url").notNull(),
@@ -121,6 +122,7 @@ export const hrCaseDocuments = pgTable("hr_case_documents", {
   uploadedBy: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.caseId], foreignColumns: [hrCases.orgId, hrCases.id], name: "fk_hr_case_documents_org_case" }).onDelete("cascade"),
   unique("uniq_hr_case_documents_org_id").on(table.orgId, table.id),
   index("idx_hr_case_documents_case").on(table.caseId),
 ]);
@@ -128,11 +130,11 @@ export const hrCaseDocuments = pgTable("hr_case_documents", {
 export const hrDisciplinaryActions = pgTable("hr_disciplinary_actions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  caseId: integer("case_id").references(() => hrCases.id, { onDelete: "set null" }),
+  caseId: integer("case_id"),
   employeeId: text("employee_id").notNull(),
   employeeMembershipId: integer("employee_membership_id"),
   actionType: hrDisciplinaryActionTypeEnum("action_type").notNull(),
-  letterRenderId: integer("letter_render_id").references(() => hrTemplateRenders.id, { onDelete: "set null" }),
+  letterRenderId: integer("letter_render_id"),
   effectiveDate: timestamp("effective_date").notNull(),
   issuedBy: text("issued_by").references(() => users.id, { onDelete: "set null" }).notNull(),
   note: text("note"),
@@ -141,6 +143,8 @@ export const hrDisciplinaryActions = pgTable("hr_disciplinary_actions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.caseId], foreignColumns: [hrCases.orgId, hrCases.id], name: "fk_hr_disciplinary_actions_org_case" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.letterRenderId], foreignColumns: [hrTemplateRenders.orgId, hrTemplateRenders.id], name: "fk_hr_disciplinary_actions_letter_render_id_org" }).onDelete("set null"),
   unique("uniq_hr_disciplinary_actions_org_id").on(table.orgId, table.id),
   index("idx_hr_disciplinary_org_employee").on(table.orgId, table.employeeId),
   index("idx_hr_disciplinary_org_employee_membership").on(table.orgId, table.employeeMembershipId),

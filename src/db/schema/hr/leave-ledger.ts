@@ -1,15 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  integer,
-  decimal,
-  date,
-  index,
-  unique,
-  pgEnum,
-} from "drizzle-orm/pg-core";
+import { date, decimal, foreignKey, index, integer, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { leaveTypes } from "./leaves";
@@ -53,7 +42,7 @@ export const hrLeaveLedger = pgTable(
     userMembershipId: integer("user_membership_id"),
     leaveTypeId: integer("leave_type_id")
       .notNull()
-      .references(() => leaveTypes.id, { onDelete: "restrict" }),
+      ,
     txnType: hrLeaveTxnTypeEnum("txn_type").notNull(),
     days: decimal("days", { precision: 8, scale: 2 }).notNull(),
     effectiveDate: date("effective_date").notNull(),
@@ -66,6 +55,7 @@ export const hrLeaveLedger = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.leaveTypeId], foreignColumns: [leaveTypes.orgId, leaveTypes.id], name: "fk_hr_leave_ledger_leave_type_id_org" }),
     unique("uniq_hr_leave_ledger_org_id").on(table.orgId, table.id),
     index("idx_hr_leave_ledger_user_type_date").on(
       table.orgId,

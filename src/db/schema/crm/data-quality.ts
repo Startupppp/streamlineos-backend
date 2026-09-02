@@ -1,17 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import {
-  pgTable,
-  text,
-  timestamp,
-  date,
-  jsonb,
-  doublePrecision,
-  integer,
-  index,
-  uniqueIndex,
-  unique,
-} from "drizzle-orm/pg-core";
+import { date, doublePrecision, foreignKey, index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import type { ReversibilityClass } from "./autonomous-decisions";
 
@@ -269,6 +258,7 @@ export const dataQualityFindings = pgTable(
     lastError: text("last_error"),
   },
   (t) => [
+  foreignKey({ columns: [t.organizationId, t.resolutionId], foreignColumns: [dataQualityResolutions.organizationId, dataQualityResolutions.resolutionId], name: "fk_data_quality_findings_resolution" }).onDelete("cascade"),
     /**
      * One open finding per problem. Partial on `open` so a recurrence after a
      * resolution files a new finding rather than resurrecting a closed one —

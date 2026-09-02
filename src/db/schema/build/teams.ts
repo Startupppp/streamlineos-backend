@@ -45,13 +45,13 @@ export const projectTeamMembers = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     teamId: integer("team_id")
-      .references(() => projectTeams.id, { onDelete: "cascade" })
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     role: text("role").notNull().default("member"),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.teamId], foreignColumns: [projectTeams.orgId, projectTeams.id], name: "fk_project_team_members_org_team" }).onDelete("cascade"),
     uniqueIndex("uniq_project_team_members_team_user").on(t.teamId, t.membershipId),
     index("idx_project_team_members_org").on(t.orgId),
     index("idx_project_team_members_org_membership").on(t.orgId, t.membershipId),
@@ -105,14 +105,14 @@ export const projectTeamAssignments = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
     teamId: integer("team_id")
-      .references(() => projectTeams.id, { onDelete: "cascade" })
       .notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.teamId], foreignColumns: [projectTeams.orgId, projectTeams.id], name: "fk_project_team_assignments_org_team" }).onDelete("cascade"),
+  foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_team_assignments_org_project" }).onDelete("cascade"),
     uniqueIndex("uniq_project_team_assignments_project_team").on(
       t.projectId,
       t.teamId,

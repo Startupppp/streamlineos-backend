@@ -7,11 +7,12 @@ export const commentDrafts = build.table("comment_drafts", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   membershipId: integer("membership_id").notNull(),
-  ticketId: integer("ticket_id").notNull().references(() => tickets.id, { onDelete: "cascade" }),
+  ticketId: integer("ticket_id").notNull(),
   body: text("body").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_comment_drafts_org_ticket" }).onDelete("cascade"),
   uniqueIndex("uniq_comment_drafts_owner_ticket").on(table.orgId, table.membershipId, table.ticketId),
   index("idx_comment_drafts_org_member_membership").on(table.orgId, table.membershipId),
   index("idx_comment_drafts_ticket").on(table.ticketId),

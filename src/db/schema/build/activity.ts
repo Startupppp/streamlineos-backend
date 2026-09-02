@@ -35,13 +35,14 @@ export const ticketActivityActionEnum = pgEnum("ticket_activity_action", [
 export const ticketActivityLog = buildEvents.table("ticket_activity_log", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }).notNull(),
+  ticketId: integer("ticket_id").notNull(),
   userMembershipId: integer("user_membership_id"),
   action: ticketActivityActionEnum("action").notNull(),
   fromValue: text("from_value"),
   toValue: text("to_value"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_ticket_activity_log_org_ticket" }).onDelete("cascade"),
   index("idx_ticket_activity_log_ticket_recent").on(table.ticketId, table.id),
   index("idx_ticket_activity_log_org_ticket").on(table.orgId, table.ticketId, table.id),
   unique("uniq_ticket_activity_log_org_id").on(table.orgId, table.id),
@@ -55,11 +56,12 @@ export const ticketActivityLog = buildEvents.table("ticket_activity_log", {
 export const ticketCommentMentions = build.table("ticket_comment_mentions", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  commentId: bigint("comment_id", { mode: "number" }).references(() => ticketComments.id, { onDelete: "cascade" }).notNull(),
+  commentId: bigint("comment_id", { mode: "number" }).notNull(),
   mentionedUserId: text("mentioned_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   mentionedUserMembershipId: integer("mentioned_user_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.commentId], foreignColumns: [ticketComments.orgId, ticketComments.id], name: "fk_ticket_comment_mentions_org_comment" }).onDelete("cascade"),
   index("idx_ticket_comment_mentions_comment").on(table.commentId),
   uniqueIndex("uniq_ticket_comment_mentions_comment_user").on(table.commentId, table.mentionedUserId),
   unique("uniq_ticket_comment_mentions_org_id").on(table.orgId, table.id),

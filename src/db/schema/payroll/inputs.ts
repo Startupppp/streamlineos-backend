@@ -9,7 +9,7 @@ import { payrollRuns } from "./runs";
 export const payrollInputs = pgTable("payroll_inputs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
+  runId: integer("run_id").notNull(),
   userId: text("user_id").notNull(),
   source: payrollInputSourceEnum("source").notNull(),
   scheduledDays: decimal("scheduled_days", { precision: 6, scale: 2 }).notNull().default("0"),
@@ -27,6 +27,7 @@ export const payrollInputs = pgTable("payroll_inputs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [payrollRuns.orgId, payrollRuns.id], name: "fk_payroll_inputs_run_id_org" }).onDelete("cascade"),
   unique("uniq_payroll_inputs_org_id").on(table.orgId, table.id),
   index("idx_payroll_inputs_run").on(table.runId),
   index("idx_payroll_inputs_org_user").on(table.orgId, table.userId),

@@ -125,13 +125,13 @@ export const orgUnitMembers = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     orgUnitId: text("org_unit_id")
-      .references(() => orgUnits.id, { onDelete: "cascade" })
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     role: text("role").default("member").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.orgUnitId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_org_unit_members_org_unit_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_org_unit_members_unit_membership").on(
       table.orgUnitId,
       table.membershipId,

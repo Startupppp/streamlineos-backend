@@ -26,7 +26,7 @@ export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id"),
-  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
+  departmentId: text("department_id"),
   name: text("name").notNull(),
   description: text("description"),
   type: documentTypeEnum("type").notNull(),
@@ -48,6 +48,7 @@ export const documents = pgTable("documents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_documents_department_id_org" }).onDelete("set null"),
   unique("uniq_documents_org_id").on(table.orgId, table.id),
   foreignKey({ columns: [table.orgId, table.parentDocumentId], foreignColumns: [table.orgId, table.id], name: "fk_documents_org_parent" }).onDelete("cascade"),
   index("idx_documents_org_type").on(table.orgId, table.type),
@@ -66,13 +67,14 @@ export const handbookVersions = pgTable("handbook_versions", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   version: text("version").notNull(),
   title: text("title").notNull().default(""),
-  documentId: integer("document_id").references(() => richDocuments.id),
+  documentId: integer("document_id"),
   documentUrl: text("document_url"),
   changelog: text("changelog"),
   publishedAt: timestamp("published_at"),
   publishedBy: text("published_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.documentId], foreignColumns: [richDocuments.orgId, richDocuments.id], name: "fk_handbook_versions_document_id_org" }),
   unique("uniq_handbook_versions_org_id").on(table.orgId, table.id),
   index("idx_handbook_org").on(table.orgId),
 ]);
@@ -80,7 +82,7 @@ export const handbookVersions = pgTable("handbook_versions", {
 export const policyAcknowledgments = pgTable("policy_acknowledgments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  documentId: integer("document_id").references(() => documents.id, { onDelete: "cascade" }).notNull(),
+  documentId: integer("document_id").notNull(),
   userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
   status: ackStatusEnum("status").default("PENDING").notNull(),
@@ -88,6 +90,7 @@ export const policyAcknowledgments = pgTable("policy_acknowledgments", {
   ipAddress: text("ip_address"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.documentId], foreignColumns: [documents.orgId, documents.id], name: "fk_policy_acknowledgments_document_id_org" }).onDelete("cascade"),
   unique("uniq_policy_acknowledgments_org_id").on(table.orgId, table.id),
   index("idx_policy_ack_doc").on(table.documentId),
   index("idx_policy_ack_user").on(table.userId),
@@ -129,12 +132,13 @@ export const teamEvents = pgTable("team_events", {
 export const teamEventParticipants = pgTable("team_event_participants", {
   id: serial("id").primaryKey(),
   orgId: text("org_id"),
-  eventId: integer("event_id").references(() => teamEvents.id, { onDelete: "cascade" }).notNull(),
+  eventId: integer("event_id").notNull(),
   userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
   status: text("status").default("GOING").notNull(),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.eventId], foreignColumns: [teamEvents.orgId, teamEvents.id], name: "fk_team_event_participants_event_id_org" }).onDelete("cascade"),
   index("idx_team_event_participants_org_event_user").on(table.orgId, table.eventId, table.userId),
 ]);
 

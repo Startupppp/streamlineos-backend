@@ -1,16 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  jsonb,
-  integer,
-  index,
-  unique,
-  uniqueIndex,
-  pgEnum,
-} from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
@@ -53,7 +41,6 @@ export const hrWebhookDeliveries = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     subscriptionId: integer("subscription_id")
-      .references(() => hrWebhookSubscriptions.id, { onDelete: "cascade" })
       .notNull(),
     event: text("event").notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
@@ -65,6 +52,7 @@ export const hrWebhookDeliveries = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.subscriptionId], foreignColumns: [hrWebhookSubscriptions.orgId, hrWebhookSubscriptions.id], name: "fk_hr_webhook_deliveries_org_subscription" }).onDelete("cascade"),
     unique("uniq_hr_webhook_deliveries_org_id").on(table.orgId, table.id),
     index("idx_hr_webhook_deliveries_org_sub_created").on(
       table.orgId,

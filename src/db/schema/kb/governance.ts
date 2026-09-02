@@ -21,7 +21,6 @@ export const kbPageReviews = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     pageId: integer("page_id")
-      .references(() => kbPages.id, { onDelete: "cascade" })
       .notNull(),
     type: text("type").$type<"approval" | "freshness">().notNull(),
     status: text("status")

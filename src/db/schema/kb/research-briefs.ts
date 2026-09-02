@@ -12,7 +12,7 @@ export const kbResearchBriefs = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     userMembershipId: integer("user_membership_id").notNull(),
     topic: text("topic").notNull(),
-    spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "set null" }),
+    spaceId: integer("space_id"),
     status: text("status").$type<KbResearchBriefStatus>().notNull().default("queued"),
     jobId: integer("job_id"),
     sourceCount: integer("source_count").notNull().default(0),

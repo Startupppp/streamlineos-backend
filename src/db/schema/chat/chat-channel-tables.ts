@@ -62,7 +62,6 @@ export const chatChannelMembers = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     role: text("role").default("MEMBER").notNull(),
@@ -93,7 +92,6 @@ export const chatChannelInviteLinks = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     token: text("token"),
     tokenHash: text("token_hash"),

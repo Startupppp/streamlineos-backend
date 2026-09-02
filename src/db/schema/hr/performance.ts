@@ -19,7 +19,7 @@ export const reviewCycles = pgTable("review_cycles", {
   deadline: date("deadline"),
   status: reviewCycleStatusEnum("status").default("DRAFT").notNull(),
   description: text("description"),
-  templateId: integer("template_id").references(() => hrTemplates.id, { onDelete: "set null" }),
+  templateId: integer("template_id"),
   templateVersion: integer("template_version"),
   ratingScale: jsonb("rating_scale").$type<{ points: number; labels: Record<string, string> }>(),
   // Immutable display identity; membership owns tenant authority.
@@ -28,6 +28,7 @@ export const reviewCycles = pgTable("review_cycles", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [hrTemplates.orgId, hrTemplates.id], name: "fk_review_cycles_org_template" }).onDelete("set null"),
   unique("uniq_review_cycles_org_id").on(table.orgId, table.id),
   index("idx_review_cycles_org").on(table.orgId),
   index("idx_review_cycles_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
@@ -41,7 +42,7 @@ export const performanceReviews = pgTable("performance_reviews", {
   userMembershipId: integer("user_membership_id"),
   reviewerId: text("reviewer_id"),
   reviewerMembershipId: integer("reviewer_membership_id"),
-  cycleId: integer("cycle_id").references(() => reviewCycles.id),
+  cycleId: integer("cycle_id"),
   periodStart: date("period_start").notNull(),
   periodEnd: date("period_end").notNull(),
   status: reviewStatusEnum("status").default("DRAFT").notNull(),
@@ -54,6 +55,7 @@ export const performanceReviews = pgTable("performance_reviews", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.cycleId], foreignColumns: [reviewCycles.orgId, reviewCycles.id], name: "fk_performance_reviews_cycle_id_org" }),
   unique("uniq_performance_reviews_org_id").on(table.orgId, table.id),
   index("idx_perf_reviews_org_cycle").on(table.orgId, table.cycleId),
   index("idx_perf_reviews_user").on(table.userId),
@@ -174,12 +176,13 @@ export const pulseSurveys = pgTable("pulse_surveys", {
 export const surveyResponses = pgTable("survey_responses", {
   id: serial("id").primaryKey(),
   orgId: text("org_id"),
-  surveyId: integer("survey_id").references(() => pulseSurveys.id, { onDelete: "cascade" }).notNull(),
+  surveyId: integer("survey_id").notNull(),
   userId: text("user_id"),
   userMembershipId: integer("user_membership_id"),
   answers: jsonb("answers").$type<{ questionId: string; value: string | number }[]>(),
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [pulseSurveys.orgId, pulseSurveys.id], name: "fk_survey_responses_survey_id_org" }).onDelete("cascade"),
   index("idx_survey_responses_survey").on(table.surveyId),
   index("idx_survey_responses_org_survey").on(table.orgId, table.surveyId),
 ]);
@@ -192,7 +195,7 @@ export const feedbackRequests = pgTable("feedback_requests", {
   reviewerUserId: text("reviewer_user_id").notNull(),
   reviewerMembershipId: integer("reviewer_membership_id"),
   type: feedbackTypeEnum("type").notNull(),
-  cycleId: integer("cycle_id").references(() => reviewCycles.id),
+  cycleId: integer("cycle_id"),
   ratings: jsonb("ratings").$type<{ category: string; score: number; comment?: string }[]>(),
   strengths: text("strengths"),
   improvements: text("improvements"),
@@ -201,6 +204,7 @@ export const feedbackRequests = pgTable("feedback_requests", {
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.cycleId], foreignColumns: [reviewCycles.orgId, reviewCycles.id], name: "fk_feedback_requests_cycle_id_org" }),
   unique("uniq_feedback_requests_org_id").on(table.orgId, table.id),
   index("idx_feedback_subject").on(table.subjectUserId),
   index("idx_feedback_reviewer").on(table.reviewerUserId),
@@ -283,7 +287,7 @@ export const skillAssessments = pgTable("skill_assessments", {
 export const assessmentAttempts = pgTable("assessment_attempts", {
   id: serial("id").primaryKey(),
   orgId: text("org_id"),
-  assessmentId: integer("assessment_id").references(() => skillAssessments.id, { onDelete: "cascade" }).notNull(),
+  assessmentId: integer("assessment_id").notNull(),
   userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
   answers: jsonb("answers").$type<{ questionId: string; selectedIndex: number }[]>(),
@@ -291,6 +295,7 @@ export const assessmentAttempts = pgTable("assessment_attempts", {
   passed: boolean("passed").default(false).notNull(),
   completedAt: timestamp("completed_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.assessmentId], foreignColumns: [skillAssessments.orgId, skillAssessments.id], name: "fk_assessment_attempts_assessment_id_org" }).onDelete("cascade"),
   index("idx_assessment_attempts_user").on(table.userId),
   index("idx_assessment_attempts_org_assessment_user").on(table.orgId, table.assessmentId, table.userId),
 ]);
@@ -367,7 +372,7 @@ export const assessmentAttemptsRelations = relations(assessmentAttempts, ({ one 
 export const hrCalibrationEntries = pgTable("hr_calibration_entries", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  cycleId: integer("cycle_id").references(() => reviewCycles.id, { onDelete: "cascade" }).notNull(),
+  cycleId: integer("cycle_id").notNull(),
   employeeId: text("employee_id").notNull(),
   employeeMembershipId: integer("employee_membership_id"),
   preRating: numeric("pre_rating", { precision: 3, scale: 1 }),
@@ -377,6 +382,7 @@ export const hrCalibrationEntries = pgTable("hr_calibration_entries", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.cycleId], foreignColumns: [reviewCycles.orgId, reviewCycles.id], name: "fk_hr_calibration_entries_org_cycle" }).onDelete("cascade"),
   unique("uniq_hr_calibration_entries_org_id").on(table.orgId, table.id),
   index("idx_calibration_entries_org").on(table.orgId),
   index("idx_calibration_entries_cycle").on(table.cycleId),

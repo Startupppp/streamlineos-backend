@@ -64,7 +64,7 @@ export const moduleSetupChecklists = pgTable("module_setup_checklists", {
 export const moduleSetupChecklistItems = pgTable("module_setup_checklist_items", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  checklistId: integer("checklist_id").references(() => moduleSetupChecklists.id, { onDelete: "cascade" }).notNull(),
+  checklistId: integer("checklist_id").notNull(),
   itemKey: text("item_key").notNull(),
   title: text("title").notNull(),
   description: text("description"),
@@ -75,6 +75,7 @@ export const moduleSetupChecklistItems = pgTable("module_setup_checklist_items",
   completedAt: timestamp("completed_at"),
   skippedAt: timestamp("skipped_at"),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.checklistId], foreignColumns: [moduleSetupChecklists.orgId, moduleSetupChecklists.id], name: "fk_module_setup_checklist_items_checklist_id_org" }).onDelete("cascade"),
   index("idx_module_checklist_items_checklist").on(table.checklistId),
   unique("uq_module_checklist_items_checklist_key").on(table.checklistId, table.itemKey),
   unique("uniq_module_checklist_items_org_id").on(table.orgId, table.id),

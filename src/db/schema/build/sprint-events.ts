@@ -20,10 +20,8 @@ export const sprintScopeEvents = buildEvents.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     sprintId: integer("sprint_id")
-      .references(() => sprints.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     eventType: sprintScopeEventTypeEnum("event_type").notNull(),
     previousPoints: integer("previous_points"),
@@ -34,6 +32,8 @@ export const sprintScopeEvents = buildEvents.table(
       .defaultNow(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.sprintId], foreignColumns: [sprints.orgId, sprints.id], name: "fk_sprint_scope_events_org_sprint" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_sprint_scope_events_org_ticket" }).onDelete("cascade"),
     index("idx_sprint_scope_events_org_sprint_created").on(
       table.orgId,
       table.sprintId,

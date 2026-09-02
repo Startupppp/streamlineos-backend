@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { clientAccounts } from "./contacts";
@@ -34,6 +34,7 @@ export const npsResponses = pgTable("nps_responses", {
   clientAccountId: integer("client_account_id").references(() => clientAccounts.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [npsSurveys.orgId, npsSurveys.id], name: "fk_nps_responses_survey_id_org" }).onDelete("cascade"),
   index("idx_nps_responses_survey").on(table.surveyId),
   unique("uniq_nps_responses_org_id").on(table.orgId, table.id),
 ]);

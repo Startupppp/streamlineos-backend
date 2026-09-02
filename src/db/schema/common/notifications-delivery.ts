@@ -120,7 +120,7 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
 export const notificationQueue = pgTable("notification_queue", {
   // SCH-001
   id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-  deliveryId: bigint("delivery_id", { mode: "number" }).references(() => notificationDeliveries.id, { onDelete: "cascade" }).notNull(),
+  deliveryId: bigint("delivery_id", { mode: "number" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   channel: notificationChannelEnum("channel").notNull(),
   runAt: timestamp("run_at", { withTimezone: true }).defaultNow().notNull(),
@@ -132,6 +132,7 @@ export const notificationQueue = pgTable("notification_queue", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.deliveryId], foreignColumns: [notificationDeliveries.orgId, notificationDeliveries.id], name: "fk_notification_queue_delivery_id_org" }).onDelete("cascade"),
   index("idx_notification_queue_due").on(table.status, table.runAt),
   index("idx_notification_queue_delivery").on(table.deliveryId),
   // SCH-015: one queue job per delivery. The worker already updates rather than
@@ -444,6 +445,7 @@ export const broadcastAudienceTargets = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.broadcastId], foreignColumns: [broadcasts.orgId, broadcasts.id], name: "fk_broadcast_audience_targets_broadcast_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_broadcast_audience_target").on(t.broadcastId, t.kind, t.targetId),
     index("idx_broadcast_audience_lookup").on(t.orgId, t.kind, t.targetId),
     uniqueIndex("uniq_broadcast_audience_targets_org_id").on(t.orgId, t.id),
@@ -464,11 +466,12 @@ export const broadcastReadReceipts = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    broadcastId: integer("broadcast_id").references(() => broadcasts.id, { onDelete: "cascade" }).notNull(),
+    broadcastId: integer("broadcast_id").notNull(),
     membershipId: integer("membership_id").notNull(),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.broadcastId], foreignColumns: [broadcasts.orgId, broadcasts.id], name: "fk_broadcast_read_receipts_broadcast_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_broadcast_read_receipts_org_membership_broadcast").on(t.orgId, t.broadcastId, t.membershipId),
     index("idx_broadcast_read_receipts_admin").on(t.orgId, t.broadcastId),
     index("idx_broadcast_read_receipts_org_membership").on(t.orgId, t.membershipId),

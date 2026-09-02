@@ -56,8 +56,8 @@ export const offerLetterTemplates = pgTable("offer_letter_templates", {
 export const candidateOffers = pgTable("candidate_offers", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id),
-  candidateId: integer("candidate_id").notNull().references(() => candidates.id, { onDelete: "cascade" }),
-  jobPostingId: integer("job_posting_id").references(() => jobPostings.id),
+  candidateId: integer("candidate_id").notNull(),
+  jobPostingId: integer("job_posting_id"),
   offeredBy: text("offered_by").references(() => users.id),
   offerStatus: text("offer_status").notNull().default("DRAFT"),
   offeredSalary: decimal("offered_salary", { precision: 15, scale: 2 }),
@@ -77,6 +77,8 @@ export const candidateOffers = pgTable("candidate_offers", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.jobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_candidate_offers_job_posting_id_org" }),
+  foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_candidate_offers_org_candidate" }).onDelete("cascade"),
   unique("uniq_candidate_offers_org_id").on(table.orgId, table.id),
   index("idx_candidate_offers_candidate").on(table.candidateId),
   index("idx_candidate_offers_org").on(table.orgId),
@@ -86,7 +88,7 @@ export const candidateOffers = pgTable("candidate_offers", {
 export const offerVersions = pgTable("offer_versions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id),
-  offerId: integer("offer_id").notNull().references(() => candidateOffers.id, { onDelete: "cascade" }),
+  offerId: integer("offer_id").notNull(),
   versionNumber: integer("version_number").notNull(),
   offeredSalary: decimal("offered_salary", { precision: 15, scale: 2 }),
   offeredDesignation: text("offered_designation"),
@@ -97,6 +99,7 @@ export const offerVersions = pgTable("offer_versions", {
   changedBy: text("changed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.offerId], foreignColumns: [candidateOffers.orgId, candidateOffers.id], name: "fk_offer_versions_org_offer" }).onDelete("cascade"),
   unique("uniq_offer_versions_org_id").on(table.orgId, table.id),
   index("idx_offer_versions_offer").on(table.offerId),
 ]);
@@ -106,7 +109,7 @@ export type OfferNegotiationDirection = "CANDIDATE_COUNTER" | "INTERNAL_RESPONSE
 export const offerNegotiations = pgTable("offer_negotiations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id),
-  offerId: integer("offer_id").notNull().references(() => candidateOffers.id, { onDelete: "cascade" }),
+  offerId: integer("offer_id").notNull(),
   direction: text("direction").$type<OfferNegotiationDirection>().notNull(),
   proposedSalary: decimal("proposed_salary", { precision: 15, scale: 2 }),
   proposedJoiningDate: date("proposed_joining_date"),
@@ -114,6 +117,7 @@ export const offerNegotiations = pgTable("offer_negotiations", {
   createdBy: text("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.offerId], foreignColumns: [candidateOffers.orgId, candidateOffers.id], name: "fk_offer_negotiations_org_offer" }).onDelete("cascade"),
   unique("uniq_offer_negotiations_org_id").on(table.orgId, table.id),
   index("idx_offer_negotiations_offer").on(table.offerId),
 ]);
@@ -219,7 +223,7 @@ export type HeadcountRequestStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "REJEC
 export const headcountRequests = pgTable("headcount_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  orgDepartmentId: text("org_department_id").references(() => orgUnits.id, { onDelete: "set null" }),
+  orgDepartmentId: text("org_department_id"),
   requestedBy: text("requested_by").references(() => users.id).notNull(),
   requestedByMembershipId: integer("requested_by_membership_id"),
   requestedRole: text("requested_role").notNull(),
@@ -231,10 +235,12 @@ export const headcountRequests = pgTable("headcount_requests", {
   approvedByMembershipId: integer("approved_by_membership_id"),
   approvedAt: timestamp("approved_at"),
   rejectedReason: text("rejected_reason"),
-  linkedJobPostingId: integer("linked_job_posting_id").references(() => jobPostings.id, { onDelete: "set null" }),
+  linkedJobPostingId: integer("linked_job_posting_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.linkedJobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_headcount_requests_org_job_posting" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.orgDepartmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_headcount_requests_org_department" }).onDelete("set null"),
   unique("uniq_headcount_requests_org_id").on(table.orgId, table.id),
   index("idx_headcount_requests_org").on(table.orgId),
   index("idx_headcount_requests_status").on(table.status),
@@ -258,12 +264,13 @@ export type RecruiterActivityAction = "CALL_MADE" | "EMAIL_SENT" | "CANDIDATE_AD
 export const jobRecruiters = pgTable("job_recruiters", {
   id: serial("id").primaryKey(),
   orgId: text("org_id"),
-  jobPostingId: integer("job_posting_id").references(() => jobPostings.id, { onDelete: "cascade" }).notNull(),
+  jobPostingId: integer("job_posting_id").notNull(),
   userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
   assignedBy: text("assigned_by").references(() => users.id).notNull(),
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.jobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_job_recruiters_org_job_posting" }).onDelete("cascade"),
   uniqueIndex("uq_job_recruiters_job_user").on(table.jobPostingId, table.userId),
   index("idx_job_recruiters_job").on(table.jobPostingId),
   index("idx_job_recruiters_user").on(table.userId),
@@ -275,11 +282,13 @@ export const recruiterActivityLog = pgTable("recruiter_activity_log", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   recruiterId: text("recruiter_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   action: text("action").$type<RecruiterActivityAction>().notNull(),
-  candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "set null" }),
-  jobPostingId: integer("job_posting_id").references(() => jobPostings.id, { onDelete: "set null" }),
+  candidateId: integer("candidate_id"),
+  jobPostingId: integer("job_posting_id"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_recruiter_activity_log_org_candidate" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.jobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_recruiter_activity_log_org_job_posting" }).onDelete("set null"),
   unique("uniq_recruiter_activity_log_org_id").on(table.orgId, table.id),
   index("idx_recruiter_activity_org").on(table.orgId),
   index("idx_recruiter_activity_recruiter").on(table.recruiterId),

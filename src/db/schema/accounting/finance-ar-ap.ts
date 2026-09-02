@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { invoices, payments, purchaseBills, vendorPayments } from "../crm/invoicing";
@@ -60,11 +60,13 @@ export const creditNoteItems = pgTable("credit_note_items", {
 export const finPaymentAllocations = pgTable("fin_payment_allocations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  paymentId: integer("payment_id").references(() => payments.id, { onDelete: "cascade" }).notNull(),
-  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
+  paymentId: integer("payment_id").notNull(),
+  invoiceId: integer("invoice_id").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.invoiceId], foreignColumns: [invoices.orgId, invoices.id], name: "fk_fin_payment_allocations_invoice_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.paymentId], foreignColumns: [payments.orgId, payments.id], name: "fk_fin_payment_allocations_payment_id_org" }).onDelete("cascade"),
   unique("uniq_fin_payment_allocations_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_payment_allocations_pay_inv").on(table.paymentId, table.invoiceId),
   index("idx_fin_payment_allocations_org").on(table.orgId),
@@ -113,11 +115,13 @@ export const vendorCreditItems = pgTable("vendor_credit_items", {
 export const finVendorPaymentAllocations = pgTable("fin_vendor_payment_allocations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  vendorPaymentId: integer("vendor_payment_id").references(() => vendorPayments.id, { onDelete: "cascade" }).notNull(),
-  billId: integer("bill_id").references(() => purchaseBills.id, { onDelete: "cascade" }).notNull(),
+  vendorPaymentId: integer("vendor_payment_id").notNull(),
+  billId: integer("bill_id").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.billId], foreignColumns: [purchaseBills.orgId, purchaseBills.id], name: "fk_fin_vendor_payment_allocations_bill_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.vendorPaymentId], foreignColumns: [vendorPayments.orgId, vendorPayments.id], name: "fk_fin_vendor_payment_allocations_vendor_payment_id_org" }).onDelete("cascade"),
   unique("uniq_fin_vendor_pay_alloc_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_vendor_pay_alloc_pay_bill").on(table.vendorPaymentId, table.billId),
   index("idx_fin_vendor_payment_allocations_org").on(table.orgId),
@@ -182,7 +186,7 @@ export const finReminderPolicies = pgTable("fin_reminder_policies", {
 export const finReminderLog = pgTable("fin_reminder_log", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
+  invoiceId: integer("invoice_id").notNull(),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull().defaultNow(),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   paidAt: timestamp("paid_at", { withTimezone: true }),
@@ -191,6 +195,7 @@ export const finReminderLog = pgTable("fin_reminder_log", {
   status: text("status").notNull(),
   archivedAt: timestamp("archived_at"),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.invoiceId], foreignColumns: [invoices.orgId, invoices.id], name: "fk_fin_reminder_log_invoice_id_org" }).onDelete("cascade"),
   unique("uniq_fin_reminder_log_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_reminder_log_org_inv_offset").on(table.orgId, table.invoiceId, table.offsetDays),
   index("idx_fin_reminder_log_org_invoice").on(table.orgId, table.invoiceId),
@@ -201,13 +206,14 @@ export const finCollectionActivities = pgTable("fin_collection_activities", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id").references(() => clients.id).notNull(),
-  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  invoiceId: integer("invoice_id"),
   type: finCollectionActivityTypeEnum("type").notNull(),
   note: text("note"),
   promisedDate: date("promised_date"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.invoiceId], foreignColumns: [invoices.orgId, invoices.id], name: "fk_fin_collection_activities_invoice_id_org" }).onDelete("set null"),
   unique("uniq_fin_collection_activities_org_id").on(table.orgId, table.id),
   index("idx_fin_collection_activities_org_client").on(table.orgId, table.clientId),
   index("idx_fin_collection_activities_invoice").on(table.invoiceId),
@@ -233,14 +239,17 @@ export const finPaymentRuns = pgTable("fin_payment_runs", {
 export const finPaymentRunItems = pgTable("fin_payment_run_items", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  runId: integer("run_id").references(() => finPaymentRuns.id, { onDelete: "cascade" }).notNull(),
-  billId: integer("bill_id").references(() => purchaseBills.id).notNull(),
+  runId: integer("run_id").notNull(),
+  billId: integer("bill_id").notNull(),
   vendorId: integer("vendor_id").references(() => clients.id),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   status: finPaymentRunItemStatusEnum("status").default("PENDING").notNull(),
-  vendorPaymentId: integer("vendor_payment_id").references(() => vendorPayments.id),
+  vendorPaymentId: integer("vendor_payment_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.billId], foreignColumns: [purchaseBills.orgId, purchaseBills.id], name: "fk_fin_payment_run_items_bill_id_org" }),
+  foreignKey({ columns: [table.orgId, table.vendorPaymentId], foreignColumns: [vendorPayments.orgId, vendorPayments.id], name: "fk_fin_payment_run_items_vendor_payment_id_org" }),
+  foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [finPaymentRuns.orgId, finPaymentRuns.id], name: "fk_fin_payment_run_items_run_id_org" }).onDelete("cascade"),
   index("idx_fin_payment_run_items_org_run").on(table.orgId, table.runId, table.status),
   index("idx_fin_payment_run_items_bill").on(table.billId),
 ]);

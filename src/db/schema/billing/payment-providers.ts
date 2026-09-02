@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, numeric } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, numeric, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   paymentEnvironmentEnum,
@@ -37,7 +37,7 @@ export const paymentProviders = pgTable("payment_providers", {
 export const paymentProviderAccounts = pgTable("payment_provider_accounts", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  providerId: integer("provider_id").references(() => paymentProviders.id, { onDelete: "cascade" }).notNull(),
+  providerId: integer("provider_id").notNull(),
   providerAccountId: text("provider_account_id"),
   businessType: text("business_type"),
   country: text("country"),
@@ -50,6 +50,7 @@ export const paymentProviderAccounts = pgTable("payment_provider_accounts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.providerId], foreignColumns: [paymentProviders.orgId, paymentProviders.id], name: "fk_payment_provider_accounts_provider_id_org" }).onDelete("cascade"),
   unique("uq_payment_provider_accounts_provider").on(table.providerId),
   unique("uniq_payment_provider_accounts_org_id").on(table.orgId, table.id),
 ]);
@@ -60,7 +61,7 @@ export const paymentProviderAccounts = pgTable("payment_provider_accounts", {
 export const paymentProviderCredentials = pgTable("payment_provider_credentials", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  providerId: integer("provider_id").references(() => paymentProviders.id, { onDelete: "cascade" }).notNull(),
+  providerId: integer("provider_id").notNull(),
   environment: paymentEnvironmentEnum("environment").notNull(),
   keyId: text("key_id"),
   secretRef: text("secret_ref"),
@@ -72,6 +73,7 @@ export const paymentProviderCredentials = pgTable("payment_provider_credentials"
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.providerId], foreignColumns: [paymentProviders.orgId, paymentProviders.id], name: "fk_payment_provider_credentials_provider_id_org" }).onDelete("cascade"),
   unique("uq_payment_provider_credentials_provider_env").on(table.providerId, table.environment),
   unique("uniq_payment_provider_creds_org_id").on(table.orgId, table.id),
 ]);
@@ -79,7 +81,7 @@ export const paymentProviderCredentials = pgTable("payment_provider_credentials"
 export const paymentWebhookEndpoints = pgTable("payment_webhook_endpoints", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  providerId: integer("provider_id").references(() => paymentProviders.id, { onDelete: "cascade" }).notNull(),
+  providerId: integer("provider_id").notNull(),
   environment: paymentEnvironmentEnum("environment").notNull(),
   url: text("url").notNull(),
   expectedEvents: jsonb("expected_events").$type<string[]>().notNull().default([]),
@@ -90,6 +92,7 @@ export const paymentWebhookEndpoints = pgTable("payment_webhook_endpoints", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.providerId], foreignColumns: [paymentProviders.orgId, paymentProviders.id], name: "fk_payment_webhook_endpoints_provider_id_org" }).onDelete("cascade"),
   unique("uq_payment_webhook_endpoints_provider_env").on(table.providerId, table.environment),
   unique("uniq_payment_webhook_endpoints_org_id").on(table.orgId, table.id),
 ]);
@@ -97,7 +100,7 @@ export const paymentWebhookEndpoints = pgTable("payment_webhook_endpoints", {
 export const paymentWebhookEvents = pgTable("payment_webhook_events", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  providerId: integer("provider_id").references(() => paymentProviders.id, { onDelete: "cascade" }).notNull(),
+  providerId: integer("provider_id").notNull(),
   environment: paymentEnvironmentEnum("environment").notNull(),
   providerEventId: text("provider_event_id").notNull(),
   eventType: text("event_type").notNull(),
@@ -111,6 +114,7 @@ export const paymentWebhookEvents = pgTable("payment_webhook_events", {
   processedAt: timestamp("processed_at"),
   errorMessage: text("error_message"),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.providerId], foreignColumns: [paymentProviders.orgId, paymentProviders.id], name: "fk_payment_webhook_events_provider_id_org" }).onDelete("cascade"),
   unique("uq_payment_webhook_events_provider_env_event").on(table.providerId, table.environment, table.providerEventId),
   index("idx_payment_webhook_events_org").on(table.orgId, table.receivedAt),
   unique("uniq_payment_webhook_events_org_id").on(table.orgId, table.id),
@@ -119,7 +123,7 @@ export const paymentWebhookEvents = pgTable("payment_webhook_events", {
 export const paymentTestTransactions = pgTable("payment_test_transactions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  providerId: integer("provider_id").references(() => paymentProviders.id, { onDelete: "cascade" }).notNull(),
+  providerId: integer("provider_id").notNull(),
   environment: paymentEnvironmentEnum("environment").notNull(),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   currency: text("currency").notNull(),
@@ -132,6 +136,7 @@ export const paymentTestTransactions = pgTable("payment_test_transactions", {
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.providerId], foreignColumns: [paymentProviders.orgId, paymentProviders.id], name: "fk_payment_test_transactions_provider_id_org" }).onDelete("cascade"),
   index("idx_payment_test_transactions_org").on(table.orgId, table.providerId),
   unique("uniq_payment_test_transactions_org_id").on(table.orgId, table.id),
 ]);
@@ -140,7 +145,7 @@ export const paymentAuditEvents = pgTable("payment_audit_events", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  providerId: integer("provider_id").references(() => paymentProviders.id, { onDelete: "cascade" }),
+  providerId: integer("provider_id"),
   action: text("action").notNull(),
   environment: paymentEnvironmentEnum("environment"),
   beforeRedacted: jsonb("before_redacted").$type<Record<string, unknown>>(),
@@ -149,6 +154,7 @@ export const paymentAuditEvents = pgTable("payment_audit_events", {
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.providerId], foreignColumns: [paymentProviders.orgId, paymentProviders.id], name: "fk_payment_audit_events_provider_id_org" }).onDelete("cascade"),
   index("idx_payment_audit_events_org").on(table.orgId, table.createdAt),
   unique("uniq_payment_audit_events_org_id").on(table.orgId, table.id),
 ]);

@@ -52,7 +52,7 @@ export const kbSpaceMembers = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "cascade" }).notNull(),
+    spaceId: integer("space_id").notNull(),
     membershipId: integer("membership_id"),
     role: text("role"),
     team: text("team"),

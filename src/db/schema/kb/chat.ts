@@ -40,7 +40,7 @@ export const kbChatMessages = pgTable(
     role: text("role").$type<KbChatRole>().notNull(),
     content: text("content").notNull(),
     citations: jsonb("citations").$type<KbChatCitation[]>(),
-    conversationId: integer("conversation_id").references(() => kbChatConversations.id, { onDelete: "cascade" }),
+    conversationId: integer("conversation_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

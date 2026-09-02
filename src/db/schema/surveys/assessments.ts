@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, boolean, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { surveyForms, surveyVersions } from "./forms";
@@ -17,10 +17,10 @@ export const surveyAssessmentAttemptStatusEnum = pgEnum("survey_assessment_attem
 export const surveyAssessmentAttempts = pgTable("survey_assessment_attempts", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  surveyId: integer("survey_id").references(() => surveyForms.id, { onDelete: "cascade" }).notNull(),
-  versionId: integer("version_id").references(() => surveyVersions.id, { onDelete: "cascade" }).notNull(),
-  participantId: integer("participant_id").references(() => surveyParticipants.id, { onDelete: "set null" }),
-  sessionId: integer("session_id").references(() => surveyResponseSessions.id, { onDelete: "set null" }),
+  surveyId: integer("survey_id").notNull(),
+  versionId: integer("version_id").notNull(),
+  participantId: integer("participant_id"),
+  sessionId: integer("session_id"),
   attemptNumber: integer("attempt_number").default(1).notNull(),
   status: surveyAssessmentAttemptStatusEnum("status").default("not_started").notNull(),
   score: integer("score"),
@@ -29,6 +29,10 @@ export const surveyAssessmentAttempts = pgTable("survey_assessment_attempts", {
   submittedAt: timestamp("submitted_at"),
   expiresAt: timestamp("expires_at"),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.participantId], foreignColumns: [surveyParticipants.orgId, surveyParticipants.id], name: "fk_survey_assessment_attempts_participant_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.sessionId], foreignColumns: [surveyResponseSessions.orgId, surveyResponseSessions.id], name: "fk_survey_assessment_attempts_session_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_assessment_attempts_survey_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.versionId], foreignColumns: [surveyVersions.orgId, surveyVersions.id], name: "fk_survey_assessment_attempts_version_id_org" }).onDelete("cascade"),
   index("idx_survey_assessment_attempts_survey_participant").on(table.surveyId, table.participantId),
   unique("uniq_survey_assessment_attempts_org_id").on(table.orgId, table.id),
 ]);
@@ -36,14 +40,17 @@ export const surveyAssessmentAttempts = pgTable("survey_assessment_attempts", {
 export const surveyCertificates = pgTable("survey_certificates", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  surveyId: integer("survey_id").references(() => surveyForms.id, { onDelete: "cascade" }).notNull(),
-  participantId: integer("participant_id").references(() => surveyParticipants.id, { onDelete: "cascade" }).notNull(),
-  attemptId: integer("attempt_id").references(() => surveyAssessmentAttempts.id, { onDelete: "cascade" }).notNull(),
+  surveyId: integer("survey_id").notNull(),
+  participantId: integer("participant_id").notNull(),
+  attemptId: integer("attempt_id").notNull(),
   certificateNumber: text("certificate_number").notNull(),
   issuedAt: timestamp("issued_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at"),
   fileUrl: text("file_url"),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.attemptId], foreignColumns: [surveyAssessmentAttempts.orgId, surveyAssessmentAttempts.id], name: "fk_survey_certificates_attempt_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.participantId], foreignColumns: [surveyParticipants.orgId, surveyParticipants.id], name: "fk_survey_certificates_participant_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_certificates_survey_id_org" }).onDelete("cascade"),
   index("idx_survey_certificates_survey_participant").on(table.surveyId, table.participantId),
   unique("uq_survey_certificates_number").on(table.certificateNumber),
   unique("uniq_survey_certificates_org_id").on(table.orgId, table.id),

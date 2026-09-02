@@ -1,17 +1,4 @@
-import {
-  pgTable,
-  pgEnum,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  jsonb,
-  integer,
-  index,
-  uniqueIndex,
-  unique,
-  date,
-} from "drizzle-orm/pg-core";
+import { boolean, date, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { hrEmployments } from "./core-people";
@@ -73,7 +60,7 @@ export const hrContractStatusEnum = pgEnum("hr_contract_status", [
 export const hrWorkAuthorizations = pgTable("hr_work_authorizations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  employmentId: integer("employment_id").references(() => hrEmployments.id, { onDelete: "cascade" }).notNull(),
+  employmentId: integer("employment_id").notNull(),
   authType: hrWorkAuthTypeEnum("auth_type").notNull(),
   countryCode: text("country_code").notNull(),
   documentNumberMasked: text("document_number_masked"),
@@ -87,6 +74,7 @@ export const hrWorkAuthorizations = pgTable("hr_work_authorizations", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_work_authorizations_org_employment" }).onDelete("cascade"),
   unique("uniq_hr_work_authorizations_org_id").on(table.orgId, table.id),
   index("idx_hr_work_auths_org_emp").on(table.orgId, table.employmentId),
   index("idx_hr_work_auths_org_valid_until").on(table.orgId, table.validUntil),
@@ -117,7 +105,7 @@ export const hrComplianceRequirements = pgTable("hr_compliance_requirements", {
 export const hrComplianceEvents = pgTable("hr_compliance_events", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  requirementId: integer("requirement_id").references(() => hrComplianceRequirements.id, { onDelete: "cascade" }).notNull(),
+  requirementId: integer("requirement_id").notNull(),
   dueDate: date("due_date").notNull(),
   status: hrComplianceEventStatusEnum("status").default("pending").notNull(),
   completedBy: text("completed_by").references(() => users.id, { onDelete: "set null" }),
@@ -126,6 +114,7 @@ export const hrComplianceEvents = pgTable("hr_compliance_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.requirementId], foreignColumns: [hrComplianceRequirements.orgId, hrComplianceRequirements.id], name: "fk_hr_compliance_events_org_requirement" }).onDelete("cascade"),
   unique("uniq_hr_compliance_events_org_id").on(table.orgId, table.id),
   index("idx_hr_compliance_events_org_due").on(table.orgId, table.dueDate),
   index("idx_hr_compliance_events_org_status").on(table.orgId, table.status),
@@ -135,7 +124,7 @@ export const hrComplianceEvents = pgTable("hr_compliance_events", {
 export const hrContracts = pgTable("hr_contracts", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  employmentId: integer("employment_id").references(() => hrEmployments.id, { onDelete: "cascade" }).notNull(),
+  employmentId: integer("employment_id").notNull(),
   contractType: hrContractTypeEnum("contract_type").notNull(),
   agencyVendor: text("agency_vendor"),
   startDate: date("start_date").notNull(),
@@ -150,6 +139,7 @@ export const hrContracts = pgTable("hr_contracts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.employmentId], foreignColumns: [hrEmployments.orgId, hrEmployments.id], name: "fk_hr_contracts_org_employment" }).onDelete("cascade"),
   unique("uniq_hr_contracts_org_id").on(table.orgId, table.id),
   index("idx_hr_contracts_org_end_date").on(table.orgId, table.endDate),
   index("idx_hr_contracts_org_status").on(table.orgId, table.status),

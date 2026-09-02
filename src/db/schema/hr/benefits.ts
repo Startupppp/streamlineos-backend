@@ -110,13 +110,14 @@ export const hrBenefitEnrollmentWindows = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    planId: integer("plan_id").references(() => hrBenefitPlans.id, { onDelete: "cascade" }),
+    planId: integer("plan_id"),
     opensAt: timestamp("opens_at").notNull(),
     closesAt: timestamp("closes_at").notNull(),
     status: hrEnrollmentWindowStatusEnum("status").default("upcoming").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.planId], foreignColumns: [hrBenefitPlans.orgId, hrBenefitPlans.id], name: "fk_hr_benefit_enrollment_windows_org_plan" }).onDelete("cascade"),
     unique("uniq_hr_benefit_enrollment_windows_org_id").on(table.orgId, table.id),
     index("idx_hr_enroll_windows_org_status").on(table.orgId, table.status),
     index("idx_hr_enroll_windows_org_plan").on(table.orgId, table.planId),
@@ -131,10 +132,8 @@ export const hrBenefitEnrollments = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     planId: integer("plan_id")
-      .references(() => hrBenefitPlans.id, { onDelete: "cascade" })
       .notNull(),
     userId: text("user_id")
-      
       .notNull(),
     userMembershipId: integer("user_membership_id"),
     status: hrEnrollmentStatusEnum("status").default("pending").notNull(),
@@ -145,6 +144,7 @@ export const hrBenefitEnrollments = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.planId], foreignColumns: [hrBenefitPlans.orgId, hrBenefitPlans.id], name: "fk_hr_benefit_enrollments_org_plan" }).onDelete("cascade"),
     unique("uniq_hr_benefit_enrollments_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_benefit_enrollments_org_plan_user").on(table.orgId, table.planId, table.userId),
     index("idx_hr_benefit_enrollments_org_user").on(table.orgId, table.userId),
@@ -196,11 +196,9 @@ export const hrInsuranceClaims = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     userId: text("user_id")
-      
       .notNull(),
     userMembershipId: integer("user_membership_id"),
     planId: integer("plan_id")
-      .references(() => hrBenefitPlans.id, { onDelete: "restrict" })
       .notNull(),
     claimNumber: text("claim_number").notNull(),
     amountCents: integer("amount_cents").notNull(),
@@ -216,6 +214,7 @@ export const hrInsuranceClaims = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.planId], foreignColumns: [hrBenefitPlans.orgId, hrBenefitPlans.id], name: "fk_hr_insurance_claims_org_plan" }),
     unique("uniq_hr_insurance_claims_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_insurance_claims_org_number").on(table.orgId, table.claimNumber),
     index("idx_hr_insurance_claims_org_user").on(table.orgId, table.userId),
@@ -243,7 +242,7 @@ export const hrLoanRepayments = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    loanId: integer("loan_id").notNull().references(() => salaryLoans.id, { onDelete: "cascade" }),
+    loanId: integer("loan_id").notNull(),
     installmentNo: integer("installment_no").notNull(),
     dueDate: date("due_date").notNull(),
     amountCents: integer("amount_cents").notNull(),
@@ -253,6 +252,7 @@ export const hrLoanRepayments = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.loanId], foreignColumns: [salaryLoans.orgId, salaryLoans.id], name: "fk_hr_loan_repayments_loan_id_org" }).onDelete("cascade"),
     unique("uniq_hr_loan_repayments_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_hr_loan_repayments_loan_installment").on(table.loanId, table.installmentNo),
     index("idx_hr_loan_repayments_org_status").on(table.orgId, table.status),
@@ -267,9 +267,8 @@ export const hrTravelVisitLogs = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    travelRequestId: integer("travel_request_id").notNull().references(() => travelRequests.id, { onDelete: "cascade" }),
+    travelRequestId: integer("travel_request_id").notNull(),
     userId: text("user_id")
-      
       .notNull(),
     userMembershipId: integer("user_membership_id"),
     visitedAt: timestamp("visited_at").notNull(),
@@ -280,6 +279,7 @@ export const hrTravelVisitLogs = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.travelRequestId], foreignColumns: [travelRequests.orgId, travelRequests.id], name: "fk_hr_travel_visit_logs_travel_request_id_org" }).onDelete("cascade"),
     unique("uniq_hr_travel_visit_logs_org_id").on(table.orgId, table.id),
     index("idx_hr_travel_visit_logs_org_travel").on(table.orgId, table.travelRequestId),
     index("idx_hr_travel_visit_logs_org_user").on(table.orgId, table.userId),

@@ -85,10 +85,8 @@ export const hrBadgeAwards = pgTable("hr_badge_awards", {
     .references(() => organizations.id, { onDelete: "cascade" })
     .notNull(),
   badgeId: integer("badge_id")
-    .references(() => hrBadges.id, { onDelete: "cascade" })
     .notNull(),
   userId: text("user_id")
-    
     .notNull(),
   userMembershipId: integer("user_membership_id"),
   awardedBy: text("awarded_by"),
@@ -96,6 +94,7 @@ export const hrBadgeAwards = pgTable("hr_badge_awards", {
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.badgeId], foreignColumns: [hrBadges.orgId, hrBadges.id], name: "fk_hr_badge_awards_org_badge" }).onDelete("cascade"),
   unique("uniq_hr_badge_awards_org_id").on(t.orgId, t.id),
   index("idx_badge_awards_org_user").on(t.orgId, t.userId),
   index("idx_badge_awards_badge").on(t.badgeId),
@@ -153,16 +152,15 @@ export const hrPollVotes = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id"),
     pollId: integer("poll_id")
-      .references(() => hrPolls.id, { onDelete: "cascade" })
       .notNull(),
     userId: text("user_id")
-      
       .notNull(),
     userMembershipId: integer("user_membership_id"),
     optionIndex: integer("option_index").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.pollId], foreignColumns: [hrPolls.orgId, hrPolls.id], name: "fk_hr_poll_votes_org_poll" }).onDelete("cascade"),
     uniqueIndex("uniq_poll_vote_poll_user").on(t.pollId, t.userId),
     index("idx_poll_votes_poll").on(t.pollId),
     index("idx_poll_votes_org_poll_user").on(t.orgId, t.pollId, t.userId),
@@ -201,16 +199,15 @@ export const hrCommunityMembers = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id"),
     communityId: integer("community_id")
-      .references(() => hrCommunities.id, { onDelete: "cascade" })
       .notNull(),
     userId: text("user_id")
-      
       .notNull(),
     userMembershipId: integer("user_membership_id"),
     role: communityMemberRoleEnum("role").default("member").notNull(),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.communityId], foreignColumns: [hrCommunities.orgId, hrCommunities.id], name: "fk_hr_community_members_org_community" }).onDelete("cascade"),
     uniqueIndex("uniq_community_member").on(t.communityId, t.userId),
     index("idx_community_members_community").on(t.communityId),
     index("idx_community_members_user").on(t.userId),

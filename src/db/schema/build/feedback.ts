@@ -102,8 +102,8 @@ export const feedbucketWidgets = build.table(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
-    managedProductId: integer("managed_product_id").references(() => managedProducts.id, { onDelete: "set null" }),
+    projectId: integer("project_id"),
+    managedProductId: integer("managed_product_id"),
     name: text("name").notNull(),
     publicKey: text("public_key").notNull(),
     allowedDomains: text("allowed_domains")
@@ -121,6 +121,8 @@ export const feedbucketWidgets = build.table(
     deletedAt: timestamp("deleted_at"),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.managedProductId], foreignColumns: [managedProducts.orgId, managedProducts.id], name: "fk_feedbucket_widgets_org_product" }).onDelete("set null"),
+  foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_feedbucket_widgets_org_project" }).onDelete("set null"),
     uniqueIndex("uniq_feedbucket_widgets_public_key").on(t.publicKey),
     index("idx_feedbucket_widgets_org").on(t.orgId, t.createdAt).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_widgets_managed_product").on(t.orgId, t.managedProductId).where(sql`deleted_at IS NULL`),
@@ -136,7 +138,6 @@ export const feedbucketSubmissions = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     widgetId: integer("widget_id")
-      .references(() => feedbucketWidgets.id, { onDelete: "cascade" })
       .notNull(),
     type: feedbucketSubmissionTypeEnum("type").notNull(),
     status: feedbucketSubmissionStatusEnum("status").notNull().default("open"),
@@ -154,7 +155,7 @@ export const feedbucketSubmissions = build.table(
     crmOrganizationId: integer("crm_organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
     accountValueSnapshot: decimal("account_value_snapshot", { precision: 15, scale: 2 }),
     assigneeMembershipId: integer("assignee_membership_id"),
-    linkedTicketId: integer("linked_ticket_id").references(() => tickets.id, { onDelete: "set null" }),
+    linkedTicketId: integer("linked_ticket_id"),
     aiType: text("ai_type"),
     aiConfidence: integer("ai_confidence"),
     aiAnalysis: jsonb("ai_analysis").$type<FeedbucketAiAnalysis>(),
@@ -165,6 +166,8 @@ export const feedbucketSubmissions = build.table(
     deletedAt: timestamp("deleted_at"),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.widgetId], foreignColumns: [feedbucketWidgets.orgId, feedbucketWidgets.id], name: "fk_feedbucket_submissions_org_widget" }).onDelete("cascade"),
+  foreignKey({ columns: [t.orgId, t.linkedTicketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_feedbucket_submissions_org_ticket" }).onDelete("set null"),
     index("idx_feedbucket_submissions_widget").on(t.orgId, t.widgetId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_org_status").on(t.orgId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_assignee").on(t.orgId, t.assigneeMembershipId).where(sql`deleted_at IS NULL`),
@@ -188,7 +191,6 @@ export const feedbucketAttachments = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     submissionId: integer("submission_id")
-      .references(() => feedbucketSubmissions.id, { onDelete: "cascade" })
       .notNull(),
     fileUrl: text("file_url").notNull(),
     fileKey: text("file_key"),
@@ -198,6 +200,7 @@ export const feedbucketAttachments = build.table(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.submissionId], foreignColumns: [feedbucketSubmissions.orgId, feedbucketSubmissions.id], name: "fk_feedbucket_attachments_org_submission" }).onDelete("cascade"),
     index("idx_feedbucket_attachments_submission").on(t.orgId, t.submissionId),
     unique("uniq_feedbucket_attachments_org_id").on(t.orgId, t.id),
   ],

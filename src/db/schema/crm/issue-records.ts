@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { index, integer, pgTable, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, pgTable, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import { FINDING_SEVERITIES, type FindingSeverity } from "./data-quality";
 
@@ -266,6 +266,7 @@ export const issueStageTransitions = pgTable(
     occurredAt: timestamp("occurred_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.organizationId, t.issueRecordId], foreignColumns: [issueRecords.organizationId, issueRecords.issueRecordId], name: "fk_issue_stage_transitions_record" }).onDelete("cascade"),
     // One record's history, newest first.
     index("idx_issue_stage_transitions_record").on(
       t.organizationId,

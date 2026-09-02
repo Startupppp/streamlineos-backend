@@ -32,12 +32,13 @@ export const okrGoals = build.table("okr_goals", {
   startDate: date("start_date"),
   dueDate: date("due_date"),
   parentGoalId: integer("parent_goal_id"),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  projectId: integer("project_id"),
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_okr_goals_org_project" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.parentGoalId], foreignColumns: [table.orgId, table.id], name: "fk_okr_goals_org_parent" }),
   index("idx_okr_goals_org").on(table.orgId).where(sql`deleted_at IS NULL`),
   index("idx_okr_goals_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
@@ -59,7 +60,7 @@ export const okrGoals = build.table("okr_goals", {
 export const okrKeyResults = build.table("okr_key_results", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  goalId: integer("goal_id").references(() => okrGoals.id, { onDelete: "cascade" }).notNull(),
+  goalId: integer("goal_id").notNull(),
   title: text("title").notNull(),
   metricType: keyResultMetricEnum("metric_type").default("number").notNull(),
   startValue: numeric("start_value", { precision: 18, scale: 2 }).default("0").notNull(),
@@ -70,6 +71,7 @@ export const okrKeyResults = build.table("okr_key_results", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.goalId], foreignColumns: [okrGoals.orgId, okrGoals.id], name: "fk_okr_key_results_org_goal" }).onDelete("cascade"),
   index("idx_okr_key_results_goal").on(table.goalId),
   unique("uniq_okr_key_results_org_id").on(table.orgId, table.id),
 ]);
@@ -77,14 +79,16 @@ export const okrKeyResults = build.table("okr_key_results", {
 export const okrUpdates = build.table("okr_updates", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  goalId: integer("goal_id").references(() => okrGoals.id, { onDelete: "cascade" }).notNull(),
-  keyResultId: integer("key_result_id").references(() => okrKeyResults.id, { onDelete: "set null" }),
+  goalId: integer("goal_id").notNull(),
+  keyResultId: integer("key_result_id"),
   note: text("note"),
   previousValue: numeric("previous_value", { precision: 18, scale: 2 }),
   newValue: numeric("new_value", { precision: 18, scale: 2 }),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.goalId], foreignColumns: [okrGoals.orgId, okrGoals.id], name: "fk_okr_updates_org_goal" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.keyResultId], foreignColumns: [okrKeyResults.orgId, okrKeyResults.id], name: "fk_okr_updates_org_kr" }).onDelete("set null"),
   index("idx_okr_updates_goal").on(table.goalId),
   unique("uniq_okr_updates_org_id").on(table.orgId, table.id),
 ]);
@@ -92,11 +96,14 @@ export const okrUpdates = build.table("okr_updates", {
 export const okrLinks = build.table("okr_links", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  goalId: integer("goal_id").references(() => okrGoals.id, { onDelete: "cascade" }).notNull(),
-  ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "cascade" }),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  goalId: integer("goal_id").notNull(),
+  ticketId: integer("ticket_id"),
+  projectId: integer("project_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.goalId], foreignColumns: [okrGoals.orgId, okrGoals.id], name: "fk_okr_links_org_goal" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_okr_links_org_project" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_okr_links_org_ticket" }).onDelete("cascade"),
   uniqueIndex("uniq_okr_links_goal_ticket").on(table.goalId, table.ticketId),
   index("idx_okr_links_goal").on(table.goalId),
   unique("uniq_okr_links_org_id").on(table.orgId, table.id),

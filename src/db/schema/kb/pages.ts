@@ -29,7 +29,7 @@ export const kbPages = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "set null" }),
+    spaceId: integer("space_id"),
     parentPageId: integer("parent_page_id"),
     title: text("title").notNull().default(""),
     icon: text("icon"),
@@ -64,8 +64,8 @@ export const kbPages = pgTable(
     verifiedUntil: timestamp("verified_until", { withTimezone: true }),
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     publicSlug: text("public_slug"),
-    sourceArticleId: integer("source_article_id").references(() => kbArticles.id, { onDelete: "set null" }),
-    projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+    sourceArticleId: integer("source_article_id"),
+    projectId: integer("project_id"),
   },
   (table) => [
     index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder),
@@ -97,7 +97,7 @@ export const kbPageFavorites = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    pageId: integer("page_id").notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     membershipId: integer("membership_id"),
     sortOrder: integer("sort_order").default(0),
@@ -119,7 +119,7 @@ export const kbPageVisits = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    pageId: integer("page_id").notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     membershipId: integer("membership_id"),
     visitedAt: timestamp("visited_at").defaultNow().notNull(),
@@ -140,8 +140,8 @@ export const kbPageLinks = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    sourcePageId: integer("source_page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
-    targetPageId: integer("target_page_id").references(() => kbPages.id, { onDelete: "cascade" }),
+    sourcePageId: integer("source_page_id").notNull(),
+    targetPageId: integer("target_page_id"),
     targetType: text("target_type").notNull().default("page"),
     targetId: text("target_id"),
     label: text("label"),

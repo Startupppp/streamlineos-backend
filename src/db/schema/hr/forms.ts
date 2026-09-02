@@ -1,15 +1,4 @@
-import {
-  pgTable,
-  pgEnum,
-  text,
-  serial,
-  timestamp,
-  jsonb,
-  integer,
-  index,
-  uniqueIndex,
-  unique,
-} from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { hrWorkflowInstances } from "./workflow-engine";
@@ -95,7 +84,6 @@ export const hrFormSubmissions = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     formId: integer("form_id")
-      .references(() => hrForms.id, { onDelete: "cascade" })
       .notNull(),
     formSchemaSnapshot: jsonb("form_schema_snapshot").$type<HrFormField[]>().notNull(),
     submittedBy: text("submitted_by").references(() => users.id, { onDelete: "set null" }),
@@ -103,10 +91,12 @@ export const hrFormSubmissions = pgTable(
     subjectEmployeeId: integer("subject_employee_id"),
     data: jsonb("data").$type<Record<string, unknown>>().notNull(),
     status: hrFormSubmissionStatusEnum("status").notNull().default("submitted"),
-    workflowInstanceId: integer("workflow_instance_id").references(() => hrWorkflowInstances.id, { onDelete: "set null" }),
+    workflowInstanceId: integer("workflow_instance_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.formId], foreignColumns: [hrForms.orgId, hrForms.id], name: "fk_hr_form_submissions_org_form" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.workflowInstanceId], foreignColumns: [hrWorkflowInstances.orgId, hrWorkflowInstances.id], name: "fk_hr_form_submissions_workflow_instance_id_org" }).onDelete("set null"),
     unique("uniq_hr_form_submissions_org_id").on(table.orgId, table.id),
     index("idx_hr_form_subs_org_form_created").on(table.orgId, table.formId, table.createdAt),
     index("idx_hr_form_subs_org_status").on(table.orgId, table.status),

@@ -1,17 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  integer,
-  jsonb,
-  date,
-  index,
-  unique,
-  uniqueIndex,
-  pgEnum,
-  type AnyPgColumn,
-} from "drizzle-orm/pg-core";
+import { date, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, type AnyPgColumn, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
@@ -102,12 +89,12 @@ export const hrPolicyScopes = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     policyId: integer("policy_id")
-      .references(() => hrPolicies.id, { onDelete: "cascade" })
       .notNull(),
     scopeType: hrPolicyScopeTypeEnum("scope_type").notNull(),
     scopeValue: text("scope_value").notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.policyId], foreignColumns: [hrPolicies.orgId, hrPolicies.id], name: "fk_hr_policy_scopes_org_policy" }).onDelete("cascade"),
     unique("uniq_hr_policy_scopes_org_id").on(table.orgId, table.id),
     index("idx_hr_policy_scopes_org_policy").on(table.orgId, table.policyId),
     index("idx_hr_policy_scopes_org_type_value").on(

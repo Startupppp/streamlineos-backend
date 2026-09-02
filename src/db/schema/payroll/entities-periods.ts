@@ -81,9 +81,7 @@ export const payrollPeriods = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    entityId: integer("entity_id").references(() => payrollEntities.id, {
-      onDelete: "set null",
-    }),
+    entityId: integer("entity_id"),
     periodKey: text("period_key").notNull(), // YYYY-MM
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
@@ -101,6 +99,7 @@ export const payrollPeriods = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.entityId], foreignColumns: [payrollEntities.orgId, payrollEntities.id], name: "fk_payroll_periods_entity_id_org" }).onDelete("set null"),
     unique("uniq_payroll_periods_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_periods_org_entity_key").on(
       table.orgId,
@@ -120,12 +119,8 @@ export const payrollFilings = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    entityId: integer("entity_id").references(() => payrollEntities.id, {
-      onDelete: "set null",
-    }),
-    periodId: integer("period_id").references(() => payrollPeriods.id, {
-      onDelete: "set null",
-    }),
+    entityId: integer("entity_id"),
+    periodId: integer("period_id"),
     fiscalYear: text("fiscal_year"),
     filingType: text("filing_type").notNull(), // PF_ECR | ESI | PT | TDS_24Q | FORM16 | LWF
     ruleVersion: text("rule_version"),
@@ -147,6 +142,8 @@ export const payrollFilings = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.entityId], foreignColumns: [payrollEntities.orgId, payrollEntities.id], name: "fk_payroll_filings_entity_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.periodId], foreignColumns: [payrollPeriods.orgId, payrollPeriods.id], name: "fk_payroll_filings_period_id_org" }).onDelete("set null"),
     unique("uniq_payroll_filings_org_id").on(table.orgId, table.id),
     index("idx_payroll_filings_org_type").on(table.orgId, table.filingType),
     index("idx_payroll_filings_org_period").on(table.orgId, table.periodId),
@@ -167,9 +164,7 @@ export const payrollJobs = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    entityId: integer("entity_id").references(() => payrollEntities.id, {
-      onDelete: "set null",
-    }),
+    entityId: integer("entity_id"),
     jobType: text("job_type").notNull(),
     resourceType: text("resource_type"),
     resourceId: text("resource_id"),
@@ -192,6 +187,7 @@ export const payrollJobs = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.entityId], foreignColumns: [payrollEntities.orgId, payrollEntities.id], name: "fk_payroll_jobs_entity_id_org" }).onDelete("set null"),
     unique("uniq_payroll_jobs_org_id").on(table.orgId, table.id),
     index("idx_payroll_jobs_org_status").on(table.orgId, table.status),
     index("idx_payroll_jobs_correlation").on(table.correlationId),

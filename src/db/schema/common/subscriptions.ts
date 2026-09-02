@@ -71,7 +71,7 @@ export const coupons = pgTable("coupons", {
 
 export const couponRedemptions = pgTable("coupon_redemptions", {
   id: serial("id").primaryKey(),
-  couponId: integer("coupon_id").references(() => coupons.id, { onDelete: "cascade" }).notNull(),
+  couponId: integer("coupon_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   // Historical redemption display projection; membershipId is authoritative.
   userId: text("user_id"),
@@ -80,6 +80,7 @@ export const couponRedemptions = pgTable("coupon_redemptions", {
   amountPaise: integer("amount_paise").notNull(),
   redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.couponId], foreignColumns: [coupons.orgId, coupons.id], name: "fk_coupon_redemptions_coupon_id_org" }).onDelete("cascade"),
   unique("uq_coupon_redemptions_coupon_org").on(table.couponId, table.orgId),
   index("idx_coupon_redemptions_coupon").on(table.couponId),
   index("idx_coupon_redemptions_org").on(table.orgId),

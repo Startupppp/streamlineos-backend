@@ -1,15 +1,4 @@
-import {
-  pgTable,
-  pgEnum,
-  serial,
-  text,
-  integer,
-  timestamp,
-  jsonb,
-  index,
-  uniqueIndex,
-  unique,
-} from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 import { payrollRuns } from "./runs";
 
@@ -30,7 +19,7 @@ export const payrollCommandReceipts = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "set null" }),
+    runId: integer("run_id"),
     command: text("command").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     status: payrollCommandStatusEnum("status").default("IN_FLIGHT").notNull(),
@@ -49,6 +38,7 @@ export const payrollCommandReceipts = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [payrollRuns.orgId, payrollRuns.id], name: "fk_payroll_command_receipts_run_id_org" }).onDelete("set null"),
     unique("uniq_payroll_cmd_receipts_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_command_receipts_org_cmd_key").on(
       table.orgId,

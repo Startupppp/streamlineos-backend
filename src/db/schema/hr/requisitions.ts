@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, decimal, integer, index, unique } from "drizzle-orm/pg-core";
+import { decimal, foreignKey, index, integer, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 import { jobPostings } from "./hiring-core";
 
@@ -24,10 +24,11 @@ export const jobRequisitions = pgTable("job_requisitions", {
   rejectionReason: text("rejection_reason"),
   justification: text("justification"),
   targetDate: text("target_date"),
-  linkedJobId: integer("linked_job_id").references(() => jobPostings.id, { onDelete: "set null" }),
+  linkedJobId: integer("linked_job_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.linkedJobId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_job_requisitions_linked_job_id_org" }).onDelete("set null"),
   unique("uniq_job_requisitions_org_id").on(table.orgId, table.id),
   index("idx_requisitions_org_status").on(table.orgId, table.status),
   index("idx_requisitions_hiring_manager").on(table.hiringManagerId),

@@ -39,7 +39,6 @@ export const roleAssignments = pgTable(
       .notNull(),
     organizationMembershipId: integer("organization_membership_id").notNull(),
     roleId: integer("role_id")
-      .references(() => roles.id, { onDelete: "cascade" })
       .notNull(),
     assignedByMembershipId: integer("assigned_by_membership_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
@@ -81,7 +80,6 @@ export const rolePermissionGrants = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     roleId: integer("role_id")
-      .references(() => roles.id, { onDelete: "cascade" })
       .notNull(),
     permissionKey: text("permission_key")
       .references(() => permissions.name, { onDelete: "cascade" })
@@ -112,7 +110,6 @@ export const userPermissionGrants = pgTable(
       .notNull(),
     organizationMembershipId: integer("organization_membership_id").notNull(),
     permissionKey: text("permission_key")
-      .references(() => permissions.name, { onDelete: "cascade" })
       .notNull(),
     scope: dataScopeEnum("scope").default("all").notNull(),
     moduleKey: text("module_key").notNull(),
@@ -285,9 +282,7 @@ export const principalGroups = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     kind: text("kind").$type<PrincipalGroupKind>().notNull(),
-    orgUnitId: text("org_unit_id").references(() => orgUnits.id, {
-      onDelete: "cascade",
-    }),
+    orgUnitId: text("org_unit_id"),
     name: text("name").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -296,6 +291,7 @@ export const principalGroups = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.orgUnitId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_principal_groups_org_unit_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_principal_groups_org_name").on(table.orgId, table.name),
     uniqueIndex("uniq_principal_groups_org_id").on(table.orgId, table.id),
     index("idx_principal_groups_org").on(table.orgId),
@@ -311,7 +307,6 @@ export const principalGroupMembers = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     principalGroupId: uuid("principal_group_id")
-      .references(() => principalGroups.id, { onDelete: "cascade" })
       .notNull(),
     organizationMembershipId: integer("organization_membership_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -345,10 +340,8 @@ export const groupRoleAssignments = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     principalGroupId: uuid("principal_group_id")
-      .references(() => principalGroups.id, { onDelete: "cascade" })
       .notNull(),
     roleId: integer("role_id")
-      .references(() => roles.id, { onDelete: "cascade" })
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
