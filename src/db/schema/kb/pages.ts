@@ -149,6 +149,9 @@ export const kbPageLinks = pgTable(
   },
   (table) => [
     uniqueIndex("uniq_kb_page_links_source_target").on(table.sourcePageId, table.targetPageId),
+    uniqueIndex("uniq_kb_page_links_org_source_record")
+      .on(table.orgId, table.sourcePageId, table.targetType, table.targetId)
+      .where(sql`${table.targetId} IS NOT NULL`),
     index("idx_kb_page_links_org_target").on(table.orgId, table.targetPageId),
     unique("uniq_kb_page_links_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.sourcePageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_links_org_source" }),

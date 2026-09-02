@@ -21,6 +21,7 @@ import {
   permissions,
 } from "./auth";
 import { orgUnits } from "./organization";
+import { kbSpaces } from "../kb/spaces";
 import { modulesCatalog } from "./modules";
 
 export const dataScopeEnum = pgEnum("data_scope", [
@@ -430,6 +431,11 @@ export const kbSpaceGrants = pgTable(
       t.principalType,
       t.principalId,
     ),
+    foreignKey({
+      columns: [t.orgId, t.spaceId],
+      foreignColumns: [kbSpaces.orgId, kbSpaces.id],
+      name: "fk_kb_space_grants_space_id_org",
+    }).onDelete("cascade"),
   ],
 );
 

@@ -43,6 +43,7 @@ function projectionToItem(p: CalendarEventProjection): CalendarEventItem {
     color: p.color,
     category: p.category,
     source: toItemSource(p.meta["source"]),
+    timezone: typeof p.meta["timezone"] === "string" ? p.meta["timezone"] : null,
     location: typeof p.meta["location"] === "string" ? p.meta["location"] : null,
     meetingUrl: typeof p.meta["meetingUrl"] === "string" ? p.meta["meetingUrl"] : null,
     description: typeof p.meta["description"] === "string" ? p.meta["description"] : null,

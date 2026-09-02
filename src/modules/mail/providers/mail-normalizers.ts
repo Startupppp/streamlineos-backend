@@ -1,5 +1,6 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { signCursor } from "./mail-cursor-signing";
 import type {
   MailAddress,
   MailAttachment,
@@ -381,16 +382,6 @@ const CURSOR_VERSION = "m1";
 interface SignedCursorBody {
   readonly u: string;
   readonly c: OpaqueCursor;
-}
-
-function cursorKey(): Buffer {
-  const raw = process.env.ENCRYPTION_KEY;
-  if (!raw) throw new Error("ENCRYPTION_KEY is not configured — cannot sign mail cursors");
-  return createHmac("sha256", raw).update("mail:cursor").digest();
-}
-
-function signCursor(bodyB64: string): string {
-  return createHmac("sha256", cursorKey()).update(bodyB64).digest("base64url");
 }
 
 export function encodeCursor(cursor: OpaqueCursor, userId: string): string {

@@ -76,6 +76,7 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
           category: event.category,
           meta: {
             source: "event",
+            timezone: event.timezone,
             location: event.location,
             meetingUrl: event.meetingUrl,
             description: event.description,
@@ -105,6 +106,7 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
             category: event.category,
             meta: {
               source: "event",
+              timezone: event.timezone,
               location: event.location,
               meetingUrl: event.meetingUrl,
               description: event.description,

@@ -26,6 +26,14 @@ export interface CalendarEventItem {
   color?: string | null;
   category: string;
   source: "event" | "leave" | "interview" | "task" | "holiday" | "attendance";
+  /**
+   * IANA zone the event was authored in. `start`/`end` are absolute instants, so
+   * a client that renders them in the browser's zone is correct about the moment
+   * and wrong about the label — a 09:00 Asia/Kolkata standup reads as 03:30 GMT
+   * with no way to tell it was not scheduled at 03:30. Aggregate sources that
+   * have no authored zone (holidays, leave, attendance) carry `null`.
+   */
+  timezone?: string | null;
   location?: string | null;
   meetingUrl?: string | null;
   description?: string | null;

@@ -12,8 +12,13 @@ import {
   type NormalizerConnectionMeta,
   type OpaqueCursor,
 } from "./providers/mail-normalizers";
+import {
+  decodeMetadataCursor,
+  encodeMetadataCursor,
+  type MailMetadataCursor,
+} from "./providers/mail-metadata-cursor";
 import { MailAccountsService, type MailAccount } from "./mail-accounts.service";
-import { MailMetadataService } from "./mail-metadata.service";
+import { MailMetadataService, type CachedMailPage } from "./mail-metadata.service";
 import { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
 import type {
   MailDownloadResponse,
@@ -61,31 +66,23 @@ export class MailService {
       return { messages: [], nextCursor: null, accountErrors: [] };
     }
 
-    const isFirstPage = !cursor;
-    if (isFirstPage && !query && accountIdParam !== "all" && membershipId !== null) {
-      const singleAcc = targetAccounts[0];
-      if (singleAcc) {
-        const cached = await this.metadata.listCached(membershipId, orgId, singleAcc.id, folder, limit);
-        if (cached.isFresh && cached.hasData) {
-          return {
-            messages: cached.messages.map((m) => ({
-              id: m.messageId,
-              threadId: m.threadId,
-              accountId: m.accountId,
-              provider: singleAcc.provider,
-              from: { email: m.senderEmail, name: m.senderName },
-              to: [],
-              subject: m.subject,
-              snippet: "",
-              date: m.date,
-              isRead: m.isRead,
-              isStarred: m.isStarred,
-              hasAttachments: m.hasAttachment,
-            } satisfies MailMessageSummary)),
-            nextCursor: null,
-            accountErrors: [],
-          };
-        }
+    const singleAcc = accountIdParam === "all" ? undefined : targetAccounts[0];
+
+    // The paging regime is chosen once, at page one, and then carried in the cursor:
+    // a keyset against the local mirror and a provider page token resume differently,
+    // so swapping regimes mid-scroll repeats or skips rows.
+    const metadataCursor = cursor ? decodeMetadataCursor(cursor, userId) : null;
+    if (singleAcc && membershipId !== null) {
+      if (metadataCursor !== null) {
+        return this.pageFromMetadata(
+          orgId, userId, membershipId, singleAcc, folder, limit, query, metadataCursor,
+        );
+      }
+      if (!cursor) {
+        const page = await this.listFromMetadata(
+          orgId, userId, membershipId, singleAcc, folder, limit, query,
+        );
+        if (page) return page;
       }
     }
 
@@ -168,6 +165,83 @@ export class MailService {
     const nextCursor = hasMore ? encodeCursor(nextCursorMap, userId) : null;
 
     return { messages: merged, nextCursor, accountErrors };
+  }
+
+  /**
+   * Serve a page straight from `mail_message_metadata` when the local mirror is
+   * fresh enough to answer it, with a keyset cursor so the scroll continues in
+   * the database instead of dead-ending — this path used to return
+   * `nextCursor: null` unconditionally, so a fresh cache capped the inbox at one
+   * page and "load more" did nothing.
+   *
+   * Returning `null` means "the mirror cannot answer this" and the caller falls
+   * through to the providers: a cold or stale mirror, or a search the mirror
+   * does not match. The mirror only holds what has already been listed, so a
+   * search miss here is inconclusive and the provider stays the authority.
+   */
+  private async listFromMetadata(
+    orgId: string,
+    userId: string,
+    membershipId: number,
+    acc: MailAccount,
+    folder: MailFolder,
+    limit: number,
+    query: string | undefined,
+  ): Promise<MailListResponse | null> {
+    if (query && !(await this.metadata.isFreshForAccount(orgId, acc.id, folder))) return null;
+
+    const cached = await this.metadata.listCached(membershipId, orgId, acc.id, folder, limit, query);
+    if (!cached.hasData) return null;
+    if (!query && !cached.isFresh) return null;
+    return this.metadataPageResponse(cached, acc, userId);
+  }
+
+  /**
+   * Continue a scroll already committed to the metadata regime. Freshness is not
+   * re-checked: abandoning the regime halfway through re-delivers rows the caller
+   * has seen, and the next page-one load re-checks it anyway. An exhausted page
+   * ends the scroll here rather than falling through to the provider, where a
+   * metadata cursor would decode as "no position" and replay page one.
+   */
+  private async pageFromMetadata(
+    orgId: string,
+    userId: string,
+    membershipId: number,
+    acc: MailAccount,
+    folder: MailFolder,
+    limit: number,
+    query: string | undefined,
+    after: MailMetadataCursor,
+  ): Promise<MailListResponse> {
+    const cached = await this.metadata.listCached(
+      membershipId, orgId, acc.id, folder, limit, query, after,
+    );
+    return this.metadataPageResponse(cached, acc, userId);
+  }
+
+  private metadataPageResponse(
+    cached: CachedMailPage,
+    acc: MailAccount,
+    userId: string,
+  ): MailListResponse {
+    return {
+      messages: cached.messages.map((m) => ({
+        id: m.messageId,
+        threadId: m.threadId,
+        accountId: m.accountId,
+        provider: acc.provider,
+        from: { email: m.senderEmail, name: m.senderName },
+        to: [],
+        subject: m.subject,
+        snippet: "",
+        date: m.date,
+        isRead: m.isRead,
+        isStarred: m.isStarred,
+        hasAttachments: m.hasAttachment,
+      } satisfies MailMessageSummary)),
+      nextCursor: cached.nextCursor ? encodeMetadataCursor(cached.nextCursor, userId) : null,
+      accountErrors: [],
+    };
   }
 
   private async fetchMessagesForAccount(
