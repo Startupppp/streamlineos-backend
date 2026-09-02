@@ -26,6 +26,40 @@ const PROBE_TABLE_NULLABLE = "rls_probe_nullable";
 
 const sql = postgres(adminUrl, { prepare: false, max: 1, onnotice: () => {} });
 let failures = 0;
+
+// Scope classification. CRM and Inventory are out of this release's scope
+// (PRD-IN-SCOPE.md). They are excluded BY NAME into their own reported bucket, never
+// folded into a silent ignore, and an unrecognised table classifies as IN-SCOPE so a
+// new table without a policy fails rather than slipping through as excluded.
+// The name sets match check-tenant-relationships.mjs so the two gates cannot disagree.
+const CRM_TABLE_NAMES = new Set([
+  "clients", "leads", "deals", "contacts", "quotes", "pipelines", "pipeline_stages",
+  "activities", "campaigns", "campaign_recipients", "quote_items", "contact_notes",
+  "contact_tags", "deal_activities", "deal_approvals", "deal_meetings",
+  "lead_activities", "lead_emails", "lead_notes", "lead_tasks",
+  "enterprise_quotes", "client_accounts", "client_onboarding_items",
+  "client_opportunities", "commissions", "csat_surveys", "quote_line_items",
+  "vendor_credits", "credit_notes",
+]);
+function bareName(qualified) {
+  return qualified.includes(".") ? qualified.slice(qualified.indexOf(".") + 1) : qualified;
+}
+function isCrmTable(qualified) {
+  const n = bareName(qualified);
+  return n.startsWith("crm_") || CRM_TABLE_NAMES.has(n);
+}
+function isInvTable(qualified) {
+  const n = bareName(qualified);
+  return n.startsWith("inv_") || n === "inv_items";
+}
+const buckets = { inScopeCovered: 0, inScopeMissing: [], platformGlobal: [], crm: [], inventory: [] };
+function classifyTable(tbl) {
+  if (PLATFORM_GLOBAL_TABLES.has(tbl)) return "PLATFORM-GLOBAL";
+  if (isCrmTable(tbl)) return "EXCLUDED: CRM";
+  if (isInvTable(tbl)) return "EXCLUDED: INVENTORY";
+  return "IN-SCOPE";
+}
+
 const check = (label, ok, detail = "") => {
   if (!ok) failures++;
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  — ${detail}` : ""}`);
@@ -267,11 +301,31 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
     ORDER BY tbl`;
 
   for (const { tbl } of unprotected) {
-    if (!PLATFORM_GLOBAL_TABLES.has(tbl))
-      check(`RLS enabled on ${tbl}`, false, "tenant table has no RLS — add a policy or register in PLATFORM_GLOBAL_TABLES");
-    else
-      console.log(`SKIP  ${tbl} — registered as platform-global`);
+    const bucket = classifyTable(tbl);
+    if (bucket === "PLATFORM-GLOBAL") { buckets.platformGlobal.push(tbl); continue; }
+    if (bucket === "EXCLUDED: CRM") { buckets.crm.push(tbl); continue; }
+    if (bucket === "EXCLUDED: INVENTORY") { buckets.inventory.push(tbl); continue; }
+    buckets.inScopeMissing.push(tbl);
+    check(`RLS enabled on ${tbl}`, false, "in-scope tenant table has no RLS — add a policy or register in PLATFORM_GLOBAL_TABLES");
   }
+  buckets.inScopeCovered = coverage.tenant_columns - buckets.inScopeMissing.length -
+    buckets.platformGlobal.length - buckets.crm.length - buckets.inventory.length;
+  console.log(
+    `
+BUCKET SUMMARY  (${coverage.tenant_columns} tenant-scoped tables scanned)` +
+    `
+  IN-SCOPE COVERED:    ${buckets.inScopeCovered}` +
+    `
+  IN-SCOPE MISSING:    ${buckets.inScopeMissing.length}` +
+    `
+  PLATFORM-GLOBAL:     ${buckets.platformGlobal.length}` +
+    `
+  EXCLUDED: CRM:       ${buckets.crm.length}` +
+    `
+  EXCLUDED: INVENTORY: ${buckets.inventory.length}`);
+  for (const t of buckets.inventory) console.log(`  excluded  ${t} — Inventory is out of release scope`);
+  for (const t of buckets.crm) console.log(`  excluded  ${t} — CRM is out of release scope`);
+  for (const t of buckets.platformGlobal) console.log(`  skip      ${t} — registered platform-global`);
 
   // 2. Tables that have RLS enabled and an org_id column but lack any policy that
   //    references the org column.  An empty policy set leaves the table readable by
@@ -337,8 +391,8 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
 
   for (const { tbl, parent } of missingTenantColumn) {
     if (parent === null) continue;
-    if (PLATFORM_GLOBAL_TABLES.has(tbl)) {
-      console.log(`SKIP  ${tbl} — registered as platform-global`);
+    if (classifyTable(tbl) !== "IN-SCOPE") {
+      console.log(`SKIP  ${tbl} — ${classifyTable(tbl)}`);
       continue;
     }
     check(
@@ -362,7 +416,7 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
       AND format_type(a.atttypid, NULL) = 'text'
     ORDER BY tbl`;
 
-  const notForcedTenant = notForced.filter(({ tbl }) => !PLATFORM_GLOBAL_TABLES.has(tbl));
+  const notForcedTenant = notForced.filter(({ tbl }) => classifyTable(tbl) === "IN-SCOPE");
   if (notForcedTenant.length > 0) {
     const SHOW_MAX = 20;
     const shown = notForcedTenant.slice(0, SHOW_MAX).map(({ tbl }) => tbl);
