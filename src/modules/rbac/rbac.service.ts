@@ -24,6 +24,7 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
+  canGrantToRank,
   isDelegablePermission,
   isImmutableSystemRole,
   ORG_ADMIN_PERMISSION_KEY,
@@ -269,8 +270,14 @@ export class RbacService {
         return true;
       });
 
+    const targetModules: (string | null)[] =
+      allowedModules === null ? [null] : Array.from(allowedModules);
     const assignableRanks = ([ROLE_RANK.MODULE_ADMIN, ROLE_RANK.MODULE_CUSTOM, ROLE_RANK.FUNCTIONAL] as number[])
-      .filter((rank) => rank > bestRank);
+      .filter((rank) =>
+        targetModules.some((moduleKey) =>
+          canGrantToRank(bestRank, allowedModules, rank, moduleKey),
+        ),
+      );
 
     return {
       grantableKeys,

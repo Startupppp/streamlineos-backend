@@ -1,6 +1,7 @@
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
+  canGrantToRank,
   ROLE_RANK,
   toGrantableSet,
 } from "../../../common/rbac/grantability";
@@ -91,7 +92,7 @@ describe("getDiscoveryGrantable — Module Admin scoping", () => {
     expect(result.grantableKeys).toContain(CRM_KEYS[0]);
   });
 
-  it("assignableRanks for a Module Admin excludes MODULE_ADMIN rank and above", async () => {
+  it("assignableRanks for a Module Admin excludes org-level ranks but keeps the peer exception the writer honours", async () => {
     const actor = {
       orgId: "org-1",
       userId: "user-hr",
@@ -111,9 +112,48 @@ describe("getDiscoveryGrantable — Module Admin scoping", () => {
 
     expect(result.assignableRanks).not.toContain(ROLE_RANK.ORG_OWNER);
     expect(result.assignableRanks).not.toContain(ROLE_RANK.ORG_ADMIN);
-    expect(result.assignableRanks).not.toContain(ROLE_RANK.MODULE_ADMIN);
+    expect(result.assignableRanks).not.toContain(ROLE_RANK.MODULE_OWNER);
+    expect(result.assignableRanks).toContain(ROLE_RANK.MODULE_ADMIN);
     expect(result.assignableRanks).toContain(ROLE_RANK.MODULE_CUSTOM);
     expect(result.assignableRanks).toContain(ROLE_RANK.FUNCTIONAL);
+  });
+
+  it("advertises exactly what canGrantToRank answers, so the read cannot drift from the writer again", async () => {
+    const allowedModules = new Set(["hr"]);
+    const svc = makeRbacService({
+      resolveUserPermissions: () => Promise.resolve(resolvedMapFor(HR_KEYS)),
+      resolveRankContext: () =>
+        Promise.resolve({ bestRank: ROLE_RANK.MODULE_ADMIN, allowedModules }),
+    });
+
+    const result = await svc.getDiscoveryGrantable({
+      orgId: "org-1",
+      userId: "user-hr",
+      isOrgOwner: false,
+    } as never);
+
+    for (const rank of [ROLE_RANK.MODULE_ADMIN, ROLE_RANK.MODULE_CUSTOM, ROLE_RANK.FUNCTIONAL]) {
+      expect(result.assignableRanks.includes(rank)).toBe(
+        canGrantToRank(ROLE_RANK.MODULE_ADMIN, allowedModules, rank, "hr"),
+      );
+    }
+  });
+
+  it("a module admin with no module carries no peer exception", async () => {
+    const svc = makeRbacService({
+      resolveUserPermissions: () => Promise.resolve(resolvedMapFor(HR_KEYS)),
+      resolveRankContext: () =>
+        Promise.resolve({ bestRank: ROLE_RANK.MODULE_ADMIN, allowedModules: null }),
+    });
+
+    const result = await svc.getDiscoveryGrantable({
+      orgId: "org-1",
+      userId: "user-hr",
+      isOrgOwner: false,
+    } as never);
+
+    expect(result.assignableRanks).not.toContain(ROLE_RANK.MODULE_ADMIN);
+    expect(result.assignableRanks).toContain(ROLE_RANK.MODULE_CUSTOM);
   });
 
   it("does not advertise reserved admin permissions to a non-admin holder", async () => {
