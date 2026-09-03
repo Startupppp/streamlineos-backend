@@ -126,6 +126,9 @@ export class IntakeService {
   }
 
   async createIntake(orgId: string, projectId: number, input: CreateIntakeInput) {
+    // `listIntake` above resolves the project; this did not, so a cross-tenant `:projectId`
+    // reached the INSERT and the composite tenant FK refused it with an uncaught 23503.
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [item] = await this.db
       .insert(intakeItems)
       .values({
@@ -237,6 +240,8 @@ export class ViewsService {
   }
 
   async createView(orgId: string, userId: string, projectId: number, input: CreateViewInput) {
+    // `listViews` above resolves the project; this did not — same uncaught 23503 as `createIntake`.
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [view] = await this.db
       .insert(projectViews)
       .values({

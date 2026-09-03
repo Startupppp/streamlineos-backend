@@ -1,10 +1,11 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, desc, gt, inArray, isNull, lte, or } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
+  hrWorkflowDefinitions,
   hrWorkflowInstances,
   hrWorkflowStepActions,
   hrWorkflowDelegations,
@@ -38,11 +39,34 @@ export class HrWorkflowInstancesService {
     private readonly employment: EmploymentFactsService,
   ) {}
 
+  /**
+   * `GET /hr/workflows/:workflowId/instances` — found by the live cross-tenant sweep.
+   *
+   * The org predicate below answers on its own, so a `:workflowId` belonging to another
+   * organisation returned an empty page with **200**, and so did an id belonging to no
+   * organisation at all: the definition in the path was never resolved. Nothing crossed, but the
+   * contract 404 was absent. `HrWorkflowDefinitionsService.get` already resolves the definition
+   * exactly this way; the refusal is NotFound, never Forbidden, so an id in another tenant and an
+   * id that exists nowhere answer identically.
+   */
   async listForDefinition(
     orgId: string,
     definitionId: number,
     query: WorkflowInstanceQueryDto,
   ) {
+    const [definition] = await this.db
+      .select({ id: hrWorkflowDefinitions.id })
+      .from(hrWorkflowDefinitions)
+      .where(
+        and(
+          eq(hrWorkflowDefinitions.id, definitionId),
+          eq(hrWorkflowDefinitions.orgId, orgId),
+          isNull(hrWorkflowDefinitions.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!definition) throw new NotFoundException("Workflow definition not found");
+
     const pos = decodeCursor(query.cursor);
     const conditions = [
       eq(hrWorkflowInstances.orgId, orgId),

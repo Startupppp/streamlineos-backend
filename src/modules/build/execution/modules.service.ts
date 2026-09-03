@@ -83,6 +83,9 @@ export class ModulesService {
     projectId: number,
     input: CreateModuleInput,
   ) {
+    // `listModules` above resolves the project; this did not, so a cross-tenant `:projectId` fell
+    // through the duplicate-name check and the INSERT then hit the composite tenant FK as a 500.
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [existing] = await this.db
       .select({ id: modules.id, name: modules.name })
       .from(modules)

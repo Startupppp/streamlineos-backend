@@ -59,6 +59,11 @@ export class ProjectsCustomFieldsService {
   }
 
   async createField(orgId: string, projectId: number, data: CreateCustomFieldInput) {
+    // `listFields` above already resolves the project. Without the same assertion here the row
+    // landed under the caller's own organisation carrying ANOTHER organisation's project id —
+    // 201 where the contract requires 404, and a definition addressed to a project that is not
+    // the tenant's.
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [field] = await this.db
       .insert(customFieldDefinitions)
       .values({

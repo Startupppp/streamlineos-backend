@@ -94,18 +94,30 @@ export class ProjectsMembersService {
     );
   }
 
+  /**
+   * The project is resolved under the caller's organisation BEFORE any short-circuit.
+   *
+   * The two rungs above used to return first: an org owner, and anyone holding `build:manage`,
+   * passed this check for a project id that belongs to another organisation and for one that
+   * belongs to nobody. Nothing crossed — every read below still filters on `u.orgId` — but the
+   * handler then answered 200 with the caller's own (empty) rows where the contract requires 404,
+   * so five routes could not tell a project that does not exist from one they may not see:
+   * `GET /build/:projectId/automations`, `/custom-states`, `/labels`, `/members` and `/roster`.
+   * `assertCanManageProject`, twenty lines above, already does the lookup first; this is the same
+   * order, and the standing checks below it are unchanged.
+   */
   async assertProjectAccess(
     u: CurrentUserContext,
     projectId: number,
   ): Promise<void> {
-    if (u.isOrgOwner) return;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
       columns: { managerMembershipId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
+    if (u.isOrgOwner) return;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (perms.has("build:manage")) return;
     const callerMid = actingMembershipId(u.principal);
     if (callerMid !== null && project.managerMembershipId === callerMid) return;
     const membership = await this.db

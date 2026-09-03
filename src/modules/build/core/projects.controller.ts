@@ -251,10 +251,21 @@ export class ProjectsController {
     return this.members.deleteCustomState(u, stateId);
   }
 
+  /**
+   * Labels are an ORG-level entity — `ticket_labels` carries no `project_id` — but this route
+   * advertises `:projectId`, so a caller reasonably reads the answer as that project's labels.
+   * It used not to bind the parameter at all: any project id, another organisation's or none at
+   * all, answered 200 with the caller's own labels. The project is now resolved under the caller's
+   * organisation so the address in the url means what it says, and a foreign id answers 404.
+   */
   @Get(":projectId/labels")
   @RequirePermission("build:view")
   @Validate({ params: projectIdParams_ })
-  listProjectLabels(@CurrentUser() u: CurrentUserContext) {
+  async listProjectLabels(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    await this.members.assertProjectAccess(u, projectId);
     return this.members.listLabels(u.orgId);
   }
 
@@ -262,10 +273,12 @@ export class ProjectsController {
   @RequirePermission("build:manage")
   @HttpCode(201)
   @Validate({ params: projectIdParams_, body: createLabelSchema })
-  createProjectLabel(
+  async createProjectLabel(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Body() body: CreateLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.members.assertCanManageProject(u, projectId);
     return this.members.createLabel(u.orgId, body);
   }
 }
