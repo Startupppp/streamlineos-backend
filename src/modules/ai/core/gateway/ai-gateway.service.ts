@@ -19,7 +19,10 @@ import { AiGatewayRunnerHelper } from "./ai-gateway-runner.helper";
 import { AiGatewayEmbedHelper } from "./ai-gateway-embed.helper";
 import { AiResponseCacheService } from "./ai-response-cache.service";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
-import { getAiRequestAbortSignal } from "../streaming/ai-request-abort";
+import {
+  getAiRequestAbortSignal,
+  getAmbientAiAbortSignal,
+} from "../streaming/ai-request-abort";
 import { REDIS } from "../../../../common/cache/cache.service";
 import {
   AiGatewayStreamHelper,
@@ -93,7 +96,7 @@ export class AiGatewayService {
    * buffered one does — and a cancelled stream releases instead of settling.
    */
   async streamTextWithUsage(opts: AiStreamTextOpts): Promise<AiTextStream> {
-    const signal = opts.signal ?? getAiRequestAbortSignal();
+    const signal = opts.signal ?? getAmbientAiAbortSignal();
     return this.streamer.run({ ...opts, ...(signal !== undefined ? { signal } : {}) });
   }
 
@@ -122,7 +125,7 @@ export class AiGatewayService {
   async embedQueryWithCredit(opts: EmbedQueryOpts): Promise<EmbedQueryResult> {
     const call = this.beginCall({ feature: opts.feature, tier: EMBEDDING_TIER, orgId: opts.orgId });
     const correlationId = call.correlationId;
-    const signal = opts.signal ?? getAiRequestAbortSignal();
+    const signal = opts.signal ?? getAmbientAiAbortSignal();
     if (signal?.aborted === true) {
       call.finish("cancelled");
       return { ok: false, kind: "cancelled", message: CANCELLED_MESSAGE, correlationId };
@@ -143,6 +146,11 @@ export class AiGatewayService {
     }
   }
 
+  /**
+   * Deliberately NOT on the ambient tenant signal: its product is a durable
+   * index, not an answer the caller is waiting for, so a hang-up that cancels it
+   * mid-batch leaves a half-indexed document behind.
+   */
   async embedBatchWithCredit(opts: EmbedBatchOpts): Promise<EmbedBatchResult> {
     const call = this.beginCall({ feature: opts.feature, tier: EMBEDDING_TIER, orgId: opts.orgId });
     const correlationId = call.correlationId;

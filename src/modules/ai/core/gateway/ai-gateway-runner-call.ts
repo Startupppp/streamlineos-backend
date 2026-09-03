@@ -6,7 +6,7 @@ import {
 import { getReserveEstimateMilli as getCatalogEstimateMilli } from "../billing/ai-cost-catalog";
 import { AiCallMetrics, type AiCallOutcome } from "../telemetry/ai-call-metrics";
 import { AI_CANCELLED_MESSAGE, AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
-import { getAiRequestAbortSignal } from "../streaming/ai-request-abort";
+import { getAmbientAiAbortSignal } from "../streaming/ai-request-abort";
 import type {
   AiInvokeBaseOpts,
   AiInvokeFailure,
@@ -43,7 +43,7 @@ function outcomeForError(signal: AbortSignal | undefined): AiCallOutcome | undef
  * routes) keeps its deadline; everything else inherits the request's.
  */
 function resolveSignal(explicit: AbortSignal | undefined): AbortSignal | undefined {
-  return explicit ?? getAiRequestAbortSignal();
+  return explicit ?? getAmbientAiAbortSignal();
 }
 
 export interface RunnerPreflightProceed {
