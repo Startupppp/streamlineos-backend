@@ -7,7 +7,8 @@ import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
-import { SignTemplatesService, parseTemplateSnapshot } from "./sign-templates.service";
+import { SignTemplatesService } from "./sign-templates.service";
+import { parseTemplateSnapshot } from "./sign-template-snapshot";
 import { SignSettingsService } from "./sign-settings.service";
 import type { PublicFormESignSubmitInput } from "./dto/e-sign.schemas";
 

@@ -7,7 +7,8 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
-import { SignTemplatesService, parseTemplateSnapshot } from "./sign-templates.service";
+import { SignTemplatesService } from "./sign-templates.service";
+import { parseTemplateSnapshot } from "./sign-template-snapshot";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import type { CreateBulkSendJobInput } from "./dto/e-sign.schemas";
 
