@@ -394,20 +394,20 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "kb_space_members",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Space membership is an authority read: it decides which spaces the person can open. The composite foreign key clears membership_id on removal, at which point the row can no longer match a live member. It is retained on suspension because the row still names a legitimate grant to restore.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_kb_space_members_org_membership was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "kb_article_restrictions",
     mechanism: "database-cascade",
     table: "kb_article_restrictions",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "An article restriction is the per-article half of the same ACL and clears the same way. Both still carry a user_id arm during the actor transition, so a restriction whose membership is gone falls back to matching nobody rather than matching everybody.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_kb_article_restrictions_org_membership was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "managed_products",
@@ -567,7 +567,7 @@ export const MEMBERSHIP_ARTIFACTS = [
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
-      "The composite foreign key is ON DELETE SET NULL, so reviewer attribution is preserved while membership removal is unblocked.",
+      "Migration 1051 (ticket 03) converted fk_performance_reviews_reviewer_actor from ON DELETE RESTRICT to ON DELETE SET NULL (reviewer_membership_id). Before 1051 this entry claimed SET NULL while the catalog held RESTRICT, so a member who had ever reviewed someone could not be hard-deleted at all — proved by seeding one review and deleting the membership: 23503 naming the constraint. reviewer_membership_id is nullable, so the column-list form is safe here; org_id is not in the list, which is what keeps a removal from raising 23502.",
   },
   {
     id: "chat_user_presence",
@@ -754,10 +754,10 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "org_unit_members",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "The composite foreign key fk_org_unit_members_membership is ON DELETE SET NULL, so removing the membership clears the membership_id slot while keeping the org-unit membership row. A suspension is reversible so the link is retained.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_org_unit_members_membership was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "timesheet_periods",
@@ -917,7 +917,7 @@ export const MEMBERSHIP_ARTIFACTS = [
     onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "The composite foreign key on user_membership_id is ON DELETE CASCADE, so the warehouse access grant row is removed with the membership automatically. A suspension is reversible and the membership gate already denies every request while suspended.",
+      "Migration 1053 (ticket 03) converted fk_inv_user_wh_user_mbr from ON DELETE SET NULL (user_membership_id) to ON DELETE CASCADE, and removed the grant rows the old behaviour had already orphaned. This entry always ruled cascade; the catalog disagreed, so revoking a member left a warehouse-access grant behind pointing at nobody. It is an ACL join row, and backend/CLAUDE.md §3 rules a physical delete correct for one. 1053 also adds the missing declaration in src/db/schema/inventory/warehouses.ts, so declaration, migration and catalog agree for the first time.",
   },
   {
     id: "crm_campaigns",
@@ -1164,10 +1164,10 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "calendar_events",
     keyedBy: "created_by_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "blocks-removal",
     onSuspension: "retain",
     reason:
-      "The composite foreign key fk_calendar_events_org_creator_membership is ON DELETE SET NULL (migration 0831). Creator attribution is cleared automatically on membership removal; the calendar event itself survives.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and cited migration 0831. 0831 did convert fk_calendar_events_org_creator_membership to ON DELETE SET NULL, and 0839 REVERTED it to NO ACTION because created_by_membership_id is NOT NULL — a column list restricts which columns are nulled, it does not make a NOT NULL column nullable, so SET NULL there raises 23502. The catalog is NO ACTION, which blocks a hard membership delete. 0839 says calendar events are 'handled explicitly through MEMBERSHIP_ARTIFACTS instead'; they are not — no runtime code reads this inventory and no departure path clears the pointer. Whether the column should become nullable is a product decision about hard deletion and erasure, pinned today by calendar-departed-actor.spec.ts, and it is recorded here as blocks-removal because that is what the database does.",
   },
   {
     id: "chat_channels_creator",
@@ -1344,20 +1344,20 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "notification_preferences",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_notification_preferences_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "push_subscriptions",
     mechanism: "database-cascade",
     table: "push_subscriptions",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_push_subscriptions_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "coupon_redemptions",
@@ -1374,70 +1374,70 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "onboarding_flow_sessions",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_onboarding_flow_sessions_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "user_tour_progress",
     mechanism: "database-cascade",
     table: "user_tour_progress",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_user_tour_progress_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "notification_deliveries",
     mechanism: "database-cascade",
     table: "notification_deliveries",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_notification_deliveries_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "notification_preference_rules",
     mechanism: "database-cascade",
     table: "notification_preference_rules",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_notification_pref_rules_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "notification_consents",
     mechanism: "database-cascade",
     table: "notification_consents",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_notification_consents_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "notification_digest_items",
     mechanism: "database-cascade",
     table: "notification_digest_items",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_notification_digest_items_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "broadcast_read_receipts",
     mechanism: "database-cascade",
     table: "broadcast_read_receipts",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_broadcast_read_receipts_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "projects",
@@ -1454,10 +1454,10 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "ticket_watchers",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_ticket_watchers_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "ticket_checklist_items",
@@ -1474,10 +1474,10 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "ticket_comment_reactions",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_ticket_comment_reactions_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "okr_goals",
@@ -1494,10 +1494,10 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "project_whiteboard_shares",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_whiteboard_shares_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "test_runs",
@@ -1534,40 +1534,40 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "meeting_attendees",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_meeting_attendees_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "meeting_standup_entries",
     mechanism: "database-cascade",
     table: "meeting_standup_entries",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_meeting_standup_entries_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "project_team_members",
     mechanism: "database-cascade",
     table: "project_team_members",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_project_team_members_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "project_workspace_members",
     mechanism: "database-cascade",
     table: "project_workspace_members",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_project_workspace_members_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "feedbucket_submissions",
@@ -1584,10 +1584,10 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "comment_drafts",
     keyedBy: "membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_comment_drafts_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "hr_attendance_regularizations",
@@ -1674,90 +1674,90 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "support_saved_views",
     keyedBy: "owner_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_support_saved_views_owner_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "support_ticket_watchers",
     mechanism: "database-cascade",
     table: "support_ticket_watchers",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_support_ticket_watchers_user_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "support_agent_skills",
     mechanism: "database-cascade",
     table: "support_agent_skills",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_support_agent_skills_user_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "support_agent_availability",
     mechanism: "database-cascade",
     table: "support_agent_availability",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_support_agent_availability_user_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "support_message_mentions",
     mechanism: "database-cascade",
     table: "support_message_mentions",
     keyedBy: "mentioned_user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_support_message_mentions_mentioned_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "support_ticket_drafts",
     mechanism: "database-cascade",
     table: "support_ticket_drafts",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_support_ticket_drafts_user_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "kb_chat_conversations",
     mechanism: "database-cascade",
     table: "kb_chat_conversations",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_kb_chat_conv_org_user_mbr was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "kb_chat_messages",
     mechanism: "database-cascade",
     table: "kb_chat_messages",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_kb_chat_msg_org_user_mbr was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "kb_research_briefs",
     mechanism: "database-cascade",
     table: "kb_research_briefs",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_kb_research_briefs_org_user_mbr was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
   },
   {
     id: "affiliates",
@@ -1927,7 +1927,7 @@ export const MEMBERSHIP_ARTIFACTS = [
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+      "Migration 1051 (ticket 03) converted fk_hr_mood_checkins_user_actor from ON DELETE RESTRICT to ON DELETE SET NULL (user_membership_id). Before 1051 this entry claimed SET NULL while the catalog held RESTRICT, so one mood check-in blocked the member's removal outright. user_membership_id is nullable, so nulling it leaves the aggregate history intact without touching the NOT NULL org_id.",
   },
   {
     id: "hr_disciplinary_actions",

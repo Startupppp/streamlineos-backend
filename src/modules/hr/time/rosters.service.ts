@@ -39,7 +39,7 @@ export class RostersService {
     if (!roster) throw new NotFoundException("Roster not found");
     const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, data.userId);
     const [entry] = await this.db.insert(rosterEntries).values({ ...data, orgId, userMembershipId })
-      .onConflictDoUpdate({ target: [rosterEntries.rosterId, rosterEntries.userMembershipId, rosterEntries.date], set: { shiftId: data.shiftId, isDayOff: data.isDayOff, notes: data.notes, userMembershipId } })
+      .onConflictDoUpdate({ target: [rosterEntries.orgId, rosterEntries.rosterId, rosterEntries.userMembershipId, rosterEntries.date], set: { shiftId: data.shiftId, isDayOff: data.isDayOff, notes: data.notes, userMembershipId } })
       .returning();
     return entry;
   }

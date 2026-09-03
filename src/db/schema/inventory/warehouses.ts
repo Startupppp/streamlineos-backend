@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { invLocationTypeEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { orgUnits } from "../common/organization";
 
 export const invWarehouses = pgTable("inv_warehouses", {
@@ -67,6 +67,11 @@ export const invUserWarehouses = pgTable("inv_user_warehouses", {
     columns: [table.orgId, table.warehouseId],
     foreignColumns: [invWarehouses.orgId, invWarehouses.id],
     name: "fk_inv_user_warehouses_org_warehouse",
+  }).onDelete("cascade"),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_inv_user_wh_user_mbr",
   }).onDelete("cascade"),
 ]);
 

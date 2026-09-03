@@ -4719,6 +4719,27 @@
       "when": 1803000010125,
       "tag": "1050_t08_payroll_tds_ytd_run_in_natural_key",
       "breakpoints": true
+    },
+    {
+      "idx": 807,
+      "version": "7",
+      "when": 1803000010126,
+      "tag": "1051_t03_membership_removal_restrict_to_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 808,
+      "version": "7",
+      "when": 1803000010127,
+      "tag": "1052_t07_roster_entries_natural_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 809,
+      "version": "7",
+      "when": 1803000010128,
+      "tag": "1053_t03_inv_user_warehouse_grant_cascade",
+      "breakpoints": true
     }
   ]
 }

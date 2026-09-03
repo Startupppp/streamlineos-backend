@@ -64,13 +64,7 @@ const MIN_PARTIAL_INDEX_TARGETS = 5;
  * this gate shipped with. Removing a fix from the list is mandatory: an entry
  * that no longer violates fails the gate, so the list cannot rot.
  */
-const KNOWN_OPEN: ReadonlyArray<{ file: string; signature: string; note: string }> = [
-  {
-    file: "src/modules/hr/time/rosters.service.ts",
-    signature: "roster_entries(roster_id,user_membership_id,date)",
-    note: "No unique index in the declaration OR the catalog. upsertRosterEntry 42P10s on every call. Needs a migration, not just a predicate. Owner: hr.",
-  },
-];
+const KNOWN_OPEN: ReadonlyArray<{ file: string; signature: string; note: string }> = [];
 
 type SourceFile = { path: string; text: string };
 type Site = {

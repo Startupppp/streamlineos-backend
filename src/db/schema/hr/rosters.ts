@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, date, integer, index, unique, jsonb, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, date, integer, index, uniqueIndex, unique, jsonb, foreignKey } from "drizzle-orm/pg-core";
 import { organizationMembers, organizations, users } from "../common/auth";
 import { shiftTemplates } from "./shifts";
 
@@ -35,4 +35,5 @@ export const rosterEntries = pgTable("roster_entries", {
   index("idx_roster_entries_user_date").on(table.userId, table.date),
   index("idx_roster_entries_org_user_membership_date").on(table.orgId, table.userMembershipId, table.date),
   foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_roster_entries_user_actor" }).onDelete("set null"),
+  uniqueIndex("uniq_roster_entries_org_roster_membership_date").on(table.orgId, table.rosterId, table.userMembershipId, table.date),
 ]);

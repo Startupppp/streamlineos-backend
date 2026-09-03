@@ -65,7 +65,7 @@ export const performanceReviews = pgTable("performance_reviews", {
     columns: [table.orgId, table.reviewerMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_performance_reviews_reviewer_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
 ]);
 
 export const oneOnOneMeetings = pgTable("one_on_one_meetings", {

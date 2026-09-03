@@ -54,7 +54,7 @@ export const hrMoodCheckins = pgTable(
     uniqueIndex("uniq_mood_org_user_date").on(t.orgId, t.userId, t.date),
     index("idx_mood_checkins_org_date").on(t.orgId, t.date),
     uniqueIndex("uniq_mood_org_membership_date").on(t.orgId, t.userMembershipId, t.date),
-    foreignKey({ columns: [t.orgId, t.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_mood_checkins_user_actor" }).onDelete("restrict"),
+    foreignKey({ columns: [t.orgId, t.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_mood_checkins_user_actor" }).onDelete("set null"),
   ],
 );
 
