@@ -4670,6 +4670,13 @@
       "when": 1803000010118,
       "tag": "1043_t08_nullable_tenant_composite_fk_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 800,
+      "version": "7",
+      "when": 1803000010119,
+      "tag": "1044_t41_kb_page_attachments_rls",
+      "breakpoints": true
     }
   ]
 }
