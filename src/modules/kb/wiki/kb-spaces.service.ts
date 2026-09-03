@@ -9,6 +9,7 @@ import {
   kbSpaces,
   kbSpaceMembers,
   kbArticles,
+  kbPages,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -18,6 +19,9 @@ import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
 import { kbSlugify } from "../core/kb.util";
+import { randomUUID } from "node:crypto";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type {
   CreateSpaceInput,
   UpdateSpaceInput,
@@ -190,18 +194,50 @@ export class KbSpacesService {
   }
 
   async remove(orgId: string, spaceId: number): Promise<{ success: boolean }> {
-    const [deleted] = await this.db
-      .update(kbSpaces)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(kbSpaces.id, spaceId),
-          eq(kbSpaces.orgId, orgId),
-          isNull(kbSpaces.deletedAt),
-        ),
-      )
-      .returning({ id: kbSpaces.id });
-    if (!deleted) throw new NotFoundException("Space not found");
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [deleted] = await tx
+          .update(kbSpaces)
+          .set({ deletedAt: new Date() })
+          .where(
+            and(
+              eq(kbSpaces.id, spaceId),
+              eq(kbSpaces.orgId, orgId),
+              isNull(kbSpaces.deletedAt),
+            ),
+          )
+          .returning({ id: kbSpaces.id });
+        if (!deleted) throw new NotFoundException("Space not found");
+
+        const [articles, pages] = await Promise.all([
+          tx
+            .select({ id: kbArticles.id })
+            .from(kbArticles)
+            .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
+          tx
+            .select({ id: kbPages.id })
+            .from(kbPages)
+            .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
+        ]);
+
+        for (const { contentType, id } of [
+          ...articles.map((row) => ({ contentType: "article" as const, id: row.id })),
+          ...pages.map((row) => ({ contentType: "page" as const, id: row.id })),
+        ])
+          await OutboxWriter.emit(tx, {
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: contentType === "article" ? "kb_article" : "kb_page",
+            aggregateId: String(id),
+            aggregateVersion: Date.now(),
+            eventType: "kb.content.delete",
+            payload: { contentType, contentId: id },
+            occurredAt: new Date(),
+          });
+      },
+      { orgId },
+    );
     await this.access.invalidateAccessibleSpaceIds(orgId);
     return { success: true };
   }
