@@ -44,31 +44,53 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
+type SelectChain = PromiseLike<unknown[]> & Record<string, unknown>;
+
+/**
+ * A select chain that answers EVERY builder method the service might call and
+ * resolves to `rows` when awaited. The previous double answered only
+ * `from().where()`, while `listSetupMemberships` calls `.leftJoin()`; the
+ * service died on `tx.select(...).from(...).leftJoin is not a function` and the
+ * TypeError was swallowed by a bare `catch {}`, so both tests in this file
+ * passed without ever reaching an authorization decision.
+ */
+function makeSelectChain(rows: unknown[], whereArgs: unknown[]): SelectChain {
+  const chain = new Proxy({} as SelectChain, {
+    get(_target, prop) {
+      if (prop === "then") return (resolve: (v: unknown[]) => unknown) => resolve(rows);
+      return (...args: unknown[]) => {
+        if (prop === "where") whereArgs.push(...args);
+        return chain;
+      };
+    },
+  });
+  return chain;
+}
+
 describe("OrgSetupService — cross-tenant isolation", () => {
-  const OWNER_ORG = "org-owner";
-  const ATTACKER_ORG = "org-attacker";
+  const MEMBER_ORG = "org-the-user-belongs-to";
+  const CLAIMED_ORG = "org-claimed-in-the-request";
   const USER_ID = "user-1";
 
-  function makeService() {
-    const memberWhere = jest.fn();
-    const memberLimit = jest.fn().mockResolvedValue([]);
-    memberWhere.mockReturnValue({ limit: memberLimit, orderBy: jest.fn().mockReturnValue({ limit: memberLimit }) });
-    const memberFrom = jest.fn().mockReturnValue({ where: memberWhere, innerJoin: jest.fn().mockReturnValue({ where: memberWhere }) });
-    const memberSelect = jest.fn().mockReturnValue({ from: memberFrom });
+  function makeService(options: {
+    memberships: unknown[];
+    currentMembership: { status: string; isOwner: boolean } | null;
+    currentOrg: { id: string; name: string } | null;
+  }) {
+    const whereArgs: unknown[] = [];
+    const select = jest.fn(() => makeSelectChain(options.memberships, whereArgs));
 
-    const updateSet = jest.fn();
     const updateWhere = jest.fn().mockResolvedValue([]);
-    updateSet.mockReturnValue({ where: updateWhere });
-
+    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
     const insertValues = jest.fn().mockResolvedValue([{ id: "new-id" }]);
 
     const db = {
-      select: memberSelect,
+      select,
       update: jest.fn().mockReturnValue({ set: updateSet }),
       insert: jest.fn().mockReturnValue({ values: insertValues }),
       query: {
-        organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
-        organizations: { findFirst: jest.fn().mockResolvedValue(null) },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue(options.currentMembership) },
+        organizations: { findFirst: jest.fn().mockResolvedValue(options.currentOrg) },
         subscriptions: { findFirst: jest.fn().mockResolvedValue(null) },
         magicLinkTokens: { findFirst: jest.fn().mockResolvedValue(null) },
         accountOrganizationIndex: { findMany: jest.fn().mockResolvedValue([]) },
@@ -83,33 +105,68 @@ describe("OrgSetupService — cross-tenant isolation", () => {
       cachedForOrg: jest.fn((_o: string, _k: string, fn: () => Promise<unknown>) => fn()),
     };
     const audit = { log: jest.fn() };
+    const sessions = { skipSession: jest.fn().mockResolvedValue(undefined) };
     const resolver = new OrgSetupResolverService(db, cache as never, audit as never);
-    const svc = new OrgSetupService(db, audit as never, cache as never, {} as never, resolver);
-    return { svc, db, memberWhere };
+    const svc = new OrgSetupService(db, audit as never, cache as never, sessions as never, resolver);
+    return { svc, db, sessions, whereArgs };
   }
 
-  it("skipSetup cannot access a different org's data (cross-tenant isolation)", async () => {
-    const { svc, memberWhere } = makeService();
-    const userCtx = { userId: USER_ID, orgId: ATTACKER_ORG, isOwner: false, role: "MEMBER" as const };
-    try {
-      await svc.skipSetup(userCtx as never);
-    } catch {
-      // expected - missing membership
-    }
-    if (memberWhere.mock.calls.length > 0) {
-      const allVals = memberWhere.mock.calls.flatMap((c) => sqlValues(c[0]));
-      expect(allVals).not.toContain(OWNER_ORG);
-    }
+  function membershipRow(orgId: string, isOwner: boolean) {
+    return {
+      id: 1,
+      orgId,
+      existingOrgId: orgId,
+      orgName: orgId,
+      orgStatus: "ACTIVE",
+      orgDeletedAt: null,
+      status: "ACTIVE" as const,
+      isOwner,
+    };
+  }
+
+  it("skipSetup derives the org from the membership table, never from the org id in the request context", async () => {
+    const { svc, sessions } = makeService({
+      memberships: [membershipRow(MEMBER_ORG, false)],
+      currentMembership: null,
+      currentOrg: null,
+    });
+    const userCtx = { userId: USER_ID, orgId: CLAIMED_ORG, isOwner: false, role: "MEMBER" as const };
+
+    const error: unknown = await svc.skipSetup(userCtx as never).then(() => null, (e: unknown) => e);
+
+    expect(error).toBeNull();
+    expect(sessions.skipSession).toHaveBeenCalledTimes(1);
+    expect(sessions.skipSession.mock.calls[0]?.[0]).toBe(MEMBER_ORG);
+    expect(sessions.skipSession.mock.calls[0]?.[0]).not.toBe(CLAIMED_ORG);
   });
 
-  it("skipSetup uses the requesting user's context orgId (control)", async () => {
-    const { svc } = makeService();
-    const userCtx = { userId: USER_ID, orgId: OWNER_ORG, isOwner: true, role: "OWNER" as const };
-    try {
-      await svc.skipSetup(userCtx as never);
-    } catch {
-      // expected
-    }
-    expect(true).toBe(true);
+  it("skipSetup binds the membership lookup to the requesting user and never to the claimed org", async () => {
+    const { svc, whereArgs } = makeService({
+      memberships: [membershipRow(MEMBER_ORG, false)],
+      currentMembership: null,
+      currentOrg: null,
+    });
+    const userCtx = { userId: USER_ID, orgId: CLAIMED_ORG, isOwner: false, role: "MEMBER" as const };
+
+    await svc.skipSetup(userCtx as never);
+
+    expect(whereArgs.length).toBeGreaterThan(0);
+    const values = whereArgs.flatMap((w) => sqlValues(w));
+    expect(values).toContain(USER_ID);
+    expect(values).not.toContain(CLAIMED_ORG);
+  });
+
+  it("skipSetup uses the requesting user's context org when they hold an ACTIVE membership in it (control)", async () => {
+    const { svc, sessions } = makeService({
+      memberships: [],
+      currentMembership: { status: "ACTIVE", isOwner: false },
+      currentOrg: { id: MEMBER_ORG, name: "Member Org" },
+    });
+    const userCtx = { userId: USER_ID, orgId: MEMBER_ORG, isOwner: false, role: "MEMBER" as const };
+
+    const result = await svc.skipSetup(userCtx as never);
+
+    expect(result).toEqual({ success: true, orgId: MEMBER_ORG });
+    expect(sessions.skipSession).toHaveBeenCalledWith(MEMBER_ORG, USER_ID, "org_setup", undefined);
   });
 });
