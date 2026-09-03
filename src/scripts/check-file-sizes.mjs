@@ -22,14 +22,27 @@
  */
 
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, relative, extname } from "node:path";
+import { join, dirname, relative, extname, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { WORKSPACE_ROOT, workspaceAvailable, workspaceUnreachableReason } from "./check-repo-paths.mjs";
 
 const LIMIT = 500;
-const MIN_FILES = 50;
+/**
+ * Vacuity floor. Measured 2026-09-03: 3,606 scannable .ts files under src/.
+ * The previous floor of 50 was 1.4% of that and could not bite. Proved in a
+ * tmpdir: with src/modules unreadable the scan returned ok=true having skipped
+ * 201 of 281 files including a 900-line violation, because 80 files still
+ * cleared 50. In this repo that same shape drops 2,880 files -- 80% of src/,
+ * and 7 of the 9 files then over the limit -- and leaves 726, still 14x the old
+ * floor, so the gate would have printed a clean pass over code it never read.
+ * The count is a backstop against gross loss; REQUIRED_SUBTREES is what catches
+ * a single subtree going missing.
+ */
+const MIN_FILES = 2000;
+const REQUIRED_SUBTREES = ["modules", "common", "db", "scripts"];
 
 function resolvePath(relativeUrl) {
   return new URL(relativeUrl, import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
@@ -115,8 +128,10 @@ function collectFiles(dir, files = []) {
   let entries;
   try {
     entries = readdirSync(dir);
-  } catch {
-    return files;
+  } catch (error) {
+    // Swallowing this returned a SHORT file list that then read as "nothing over
+    // the limit". An unreadable directory is an unmeasured directory: fail loudly.
+    throw new Error(`cannot read ${dir}: ${error.code ?? error.message}`, { cause: error });
   }
   for (const entry of entries) {
     const full = join(dir, entry);
@@ -142,7 +157,12 @@ function countLines(filePath) {
   return content.endsWith("\n") ? parts.length - 1 : parts.length;
 }
 
-export function runCheck(srcDir, rootDir, exceptionsPath, { minFiles = MIN_FILES } = {}) {
+export function runCheck(
+  srcDir,
+  rootDir,
+  exceptionsPath,
+  { minFiles = MIN_FILES, requiredSubtrees = REQUIRED_SUBTREES } = {},
+) {
   let doc;
   try {
     doc = readFileSync(exceptionsPath, "utf8");
@@ -181,7 +201,29 @@ export function runCheck(srcDir, rootDir, exceptionsPath, { minFiles = MIN_FILES
     }
   }
 
-  const files = collectFiles(srcDir);
+  let files;
+  try {
+    files = collectFiles(srcDir);
+  } catch (error) {
+    return {
+      ok: false, reason: "scan-error",
+      message: `${error.message} — the tree was not fully read, so a clean result would be vacuous`,
+      fileCount: 0, violations: [], registryErrors, exceptionCount: entries.size,
+    };
+  }
+
+  const missingSubtrees = requiredSubtrees.filter(
+    (name) => !files.some((f) => f.startsWith(join(srcDir, name) + sep)),
+  );
+  if (missingSubtrees.length > 0) {
+    return {
+      ok: false, reason: "vacuous-scan",
+      message: `vacuity guard — required subtree(s) contributed no files: ${missingSubtrees
+        .map((n) => `src/${n}`)
+        .join(", ")}; scan is broken`,
+      fileCount: files.length, violations: [], registryErrors, exceptionCount: entries.size,
+    };
+  }
 
   if (files.length < minFiles) {
     return {
@@ -305,30 +347,30 @@ function runSelfTests() {
     };
 
     const vacDir = build("vac", { "src/one.ts": 10 }, []);
-    const vacRes = runCheck(join(vacDir, "src"), vacDir, join(vacDir, "exc.md"), { minFiles: 5 });
+    const vacRes = runCheck(join(vacDir, "src"), vacDir, join(vacDir, "exc.md"), { minFiles: 5, requiredSubtrees: [] });
     assert("vacuous scan: ok=false", vacRes.ok === false);
     assert("vacuous scan: reason=vacuous-scan", vacRes.reason === "vacuous-scan");
 
     const noExcDir = build("no-exc", { "src/modules/big.ts": 501 }, []);
-    const noExcRes = runCheck(join(noExcDir, "src"), noExcDir, join(noExcDir, "exc.md"), { minFiles: 1 });
+    const noExcRes = runCheck(join(noExcDir, "src"), noExcDir, join(noExcDir, "exc.md"), { minFiles: 1, requiredSubtrees: [] });
     assert("over-limit with no exception: ok=false", noExcRes.ok === false);
     assert("over-limit with no exception: reason=violations", noExcRes.reason === "violations");
     assert("over-limit with no exception: reports 501 lines", noExcRes.violations.some((v) => v.lines === 501));
 
     const missingDir = build("missing", { "src/modules/big.ts": 510 },
       [{ path: "src/modules/big.ts", lines: 510 }, { path: "src/modules/gone.ts", lines: 900 }]);
-    const missingRes = runCheck(join(missingDir, "src"), missingDir, join(missingDir, "exc.md"), { minFiles: 1 });
+    const missingRes = runCheck(join(missingDir, "src"), missingDir, join(missingDir, "exc.md"), { minFiles: 1, requiredSubtrees: [] });
     assert("a registered path that no longer exists fails the gate", missingRes.ok === false);
     assert("a missing registered path is named", missingRes.registryErrors.some((e) => e.path.endsWith("gone.ts")));
 
     const staleDir = build("stale", { "src/modules/big.ts": 510 }, [{ path: "src/modules/big.ts", lines: 520 }]);
-    const staleRes = runCheck(join(staleDir, "src"), staleDir, join(staleDir, "exc.md"), { minFiles: 1 });
+    const staleRes = runCheck(join(staleDir, "src"), staleDir, join(staleDir, "exc.md"), { minFiles: 1, requiredSubtrees: [] });
     assert("stale line count: ok=false", staleRes.ok === false);
     assert("stale line count: reason=stale-registry", staleRes.reason === "stale-registry");
     assert("stale line count: error names the drift", staleRes.registryErrors.some((e) => e.error.includes("stale line count")));
 
     const shrunkDir = build("shrunk", { "src/modules/small.ts": 490 }, [{ path: "src/modules/small.ts", lines: 490 }]);
-    const shrunkRes = runCheck(join(shrunkDir, "src"), shrunkDir, join(shrunkDir, "exc.md"), { minFiles: 1 });
+    const shrunkRes = runCheck(join(shrunkDir, "src"), shrunkDir, join(shrunkDir, "exc.md"), { minFiles: 1, requiredSubtrees: [] });
     assert("a file that fell to the limit loses its exception", shrunkRes.ok === false);
     assert(
       "a file that fell to the limit says the exception is no longer needed",
@@ -337,14 +379,50 @@ function runSelfTests() {
 
     const okDir = build("ok", { "src/modules/big.ts": 510, "src/modules/fine.ts": 12 },
       [{ path: "src/modules/big.ts", lines: 510 }]);
-    const okRes = runCheck(join(okDir, "src"), okDir, join(okDir, "exc.md"), { minFiles: 1 });
+    const okRes = runCheck(join(okDir, "src"), okDir, join(okDir, "exc.md"), { minFiles: 1, requiredSubtrees: [] });
     assert("a complete, accurate exception passes", okRes.ok === true);
     assert("a complete, accurate exception reports reason=ok", okRes.reason === "ok");
     assert("spec and declaration files are excluded from the scan", (() => {
       const d = build("excl", { "src/modules/x.spec.ts": 900, "src/modules/y.e2e-spec.ts": 900, "src/modules/z.d.ts": 900, "src/modules/a.ts": 12 }, []);
-      const r = runCheck(join(d, "src"), d, join(d, "exc.md"), { minFiles: 1 });
+      const r = runCheck(join(d, "src"), d, join(d, "exc.md"), { minFiles: 1, requiredSubtrees: [] });
       return r.ok === true && r.fileCount === 1;
     })());
+
+    // --- anti-vacuity: the floor and the subtree anchors must actually bite ---
+    const anchorFiles = { "src/modules/a.ts": 10, "src/common/b.ts": 10, "src/db/c.ts": 10, "src/scripts/d.ts": 10 };
+    const anchorDir = build("anchors", anchorFiles, []);
+    assert(
+      "a tree carrying every required subtree passes the anchor rule",
+      runCheck(join(anchorDir, "src"), anchorDir, join(anchorDir, "exc.md"), { minFiles: 1 }).ok === true,
+    );
+
+    const lostSubtree = build("lost-subtree", { "src/common/b.ts": 10, "src/db/c.ts": 10, "src/scripts/d.ts": 10 }, []);
+    const lostRes = runCheck(join(lostSubtree, "src"), lostSubtree, join(lostSubtree, "exc.md"), { minFiles: 1 });
+    assert("a missing required subtree fails the gate", lostRes.ok === false);
+    assert("a missing required subtree reports reason=vacuous-scan", lostRes.reason === "vacuous-scan");
+    assert("a missing required subtree is named in the message", lostRes.message.includes("src/modules"));
+
+    // The exact shape proved in a tmpdir before this guard existed: a subtree that
+    // cannot be read used to be swallowed, and the short list read as "all clear".
+    const unreadable = build("unreadable", { ...anchorFiles, "src/modules/huge.ts": 900 }, []);
+    chmodSync(join(unreadable, "src", "modules"), 0o000);
+    let unreadableRes;
+    try {
+      unreadableRes = runCheck(join(unreadable, "src"), unreadable, join(unreadable, "exc.md"), { minFiles: 1 });
+    } finally {
+      chmodSync(join(unreadable, "src", "modules"), 0o755);
+    }
+    assert("an unreadable subtree fails the gate rather than scanning short", unreadableRes.ok === false);
+    assert("an unreadable subtree reports reason=scan-error", unreadableRes.reason === "scan-error");
+    assert(
+      "an unreadable subtree never reports zero violations as a pass",
+      unreadableRes.violations.length === 0 && unreadableRes.ok === false,
+    );
+
+    const belowFloor = build("below-floor", anchorFiles, []);
+    const floorRes = runCheck(join(belowFloor, "src"), belowFloor, join(belowFloor, "exc.md"), { minFiles: 100 });
+    assert("a file count under the floor fails the gate", floorRes.ok === false);
+    assert("a file count under the floor reports reason=vacuous-scan", floorRes.reason === "vacuous-scan");
   } finally {
     rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -370,6 +448,16 @@ function runSelfTests() {
     "BACKEND_ROOT resolves to the repository root, not somewhere outside it",
     existsSync(join(BACKEND_ROOT, "package.json")),
   );
+  assert(
+    "the real src/ tree clears the vacuity floor and carries every required subtree",
+    (() => {
+      const real = collectFiles(SRC);
+      return (
+        real.length >= MIN_FILES &&
+        REQUIRED_SUBTREES.every((n) => real.some((f) => f.startsWith(join(SRC, n) + sep)))
+      );
+    })(),
+  );
   if (failed > 0) {
     console.error(`check-file-sizes self-tests: ${failed} failed, ${passed} passed`);
     process.exit(1);
@@ -378,47 +466,56 @@ function runSelfTests() {
   process.exit(0);
 }
 
-if (process.argv.includes("--self-test")) runSelfTests();
+// Only when this module is the entry point. It exports parseExceptions/runCheck for
+// reuse, and without this guard merely importing either ran the REAL scan and exited
+// the importing process — which made the gate untestable from any other runner.
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-if (EXCEPTIONS_DOC === null) {
-  console.error(
-    `INCONCLUSIVE — check-file-sizes: the §7 exception registry could not be located, so every exempt file would be reported as a violation.`,
-  );
-  console.error(`  ${workspaceUnreachableReason()}`);
-  process.exit(2);
-}
+if (invokedDirectly) {
 
-const result = runCheck(SRC, BACKEND_ROOT, EXCEPTIONS_DOC);
+  if (process.argv.includes("--self-test")) runSelfTests();
 
-if (result.reason === "cannot-read-exceptions") {
-  console.error(`check-file-sizes: ${result.message}`);
-  process.exit(2);
-}
-
-if (result.reason === "vacuous-scan") {
-  console.error(`check-file-sizes: ${result.message}`);
-  process.exit(1);
-}
-
-if (result.reason === "stale-registry") {
-  console.error(`check-file-sizes: exception registry is stale — ${result.registryErrors.length} error(s):\n`);
-  for (const e of result.registryErrors) console.error(`  ${e.path}: ${e.error}`);
-  if (result.violations.length > 0) {
-    console.error(`\nAlso ${result.violations.length} unregistered file(s) over ${LIMIT} lines:`);
-    for (const v of result.violations) console.error(`  ${v.lines} lines  ${v.path}`);
+  if (EXCEPTIONS_DOC === null) {
+    console.error(
+      `INCONCLUSIVE — check-file-sizes: the §7 exception registry could not be located, so every exempt file would be reported as a violation.`,
+    );
+    console.error(`  ${workspaceUnreachableReason()}`);
+    process.exit(2);
   }
-  console.error(`\nFix: re-measure the affected file(s) and update ${EXCEPTIONS_DOC}. A file at or below ${LIMIT} lines must lose its row.`);
-  process.exit(1);
-}
 
-if (result.violations.length > 0) {
-  console.error(`check-file-sizes: ${result.violations.length} file(s) exceed ${LIMIT} lines:\n`);
-  for (const v of result.violations) console.error(`  ${v.lines} lines  ${v.path}`);
-  console.error(`\nTo exempt a file, add it to ${EXCEPTIONS_DOC} with the full nine-column record.`);
-  process.exit(1);
-}
+  const result = runCheck(SRC, BACKEND_ROOT, EXCEPTIONS_DOC);
 
-console.log(
-  `check-file-sizes: ${result.fileCount} files scanned — all within ${LIMIT} lines (${result.exceptionCount} exceptions registered)`,
-);
-process.exit(0);
+  if (result.reason === "cannot-read-exceptions") {
+    console.error(`check-file-sizes: ${result.message}`);
+    process.exit(2);
+  }
+
+  if (result.reason === "vacuous-scan" || result.reason === "scan-error") {
+    console.error(`check-file-sizes: ${result.message}`);
+    process.exit(1);
+  }
+
+  if (result.reason === "stale-registry") {
+    console.error(`check-file-sizes: exception registry is stale — ${result.registryErrors.length} error(s):\n`);
+    for (const e of result.registryErrors) console.error(`  ${e.path}: ${e.error}`);
+    if (result.violations.length > 0) {
+      console.error(`\nAlso ${result.violations.length} unregistered file(s) over ${LIMIT} lines:`);
+      for (const v of result.violations) console.error(`  ${v.lines} lines  ${v.path}`);
+    }
+    console.error(`\nFix: re-measure the affected file(s) and update ${EXCEPTIONS_DOC}. A file at or below ${LIMIT} lines must lose its row.`);
+    process.exit(1);
+  }
+
+  if (result.violations.length > 0) {
+    console.error(`check-file-sizes: ${result.violations.length} file(s) exceed ${LIMIT} lines:\n`);
+    for (const v of result.violations) console.error(`  ${v.lines} lines  ${v.path}`);
+    console.error(`\nTo exempt a file, add it to ${EXCEPTIONS_DOC} with the full nine-column record.`);
+    process.exit(1);
+  }
+
+  console.log(
+    `check-file-sizes: ${result.fileCount} files scanned — all within ${LIMIT} lines (${result.exceptionCount} exceptions registered)`,
+  );
+  process.exit(0);
+}
