@@ -371,7 +371,31 @@ describe("payroll-insights RBAC — 200 for permitted caller (e2e)", () => {
   });
 });
 
-describe("payroll-insights — export requires payroll:reports:export (e2e)", () => {
+/**
+ * Every /payroll/reports/* handler serves the on-screen report and its CSV from
+ * the SAME route. The class-level decorator can only declare one key, so it
+ * declares the weaker one — `payroll:reports:view` — and each handler raises the
+ * bar to `payroll:reports:export` inside the `format === "csv"` branch. A static
+ * reader of the decorators therefore sees only `:view` and concludes the CSV is
+ * unguarded; it is not, and this table is the proof. Every CSV route is asserted
+ * in BOTH directions, because a one-directional assertion would still pass if
+ * the in-handler check were deleted.
+ */
+const CSV_REPORT_ROUTES: readonly string[] = [
+  "/payroll/reports/summary",
+  "/payroll/reports/register",
+  "/payroll/reports/department-cost",
+  "/payroll/reports/cost-center",
+  "/payroll/reports/earnings",
+  "/payroll/reports/deductions",
+  "/payroll/reports/reimbursements",
+  "/payroll/reports/tax",
+  "/payroll/reports/bank-payout",
+  "/payroll/reports/variance",
+  "/payroll/reports/journal",
+];
+
+describe("payroll-insights — CSV export requires payroll:reports:export (e2e)", () => {
   let app: INestApplication;
 
   const exportBlockedAccess = withAccessResolution({
@@ -385,21 +409,75 @@ describe("payroll-insights — export requires payroll:reports:export (e2e)", ()
   beforeAll(async () => { app = await buildApp(exportBlockedAccess); });
   afterAll(async () => app.close());
 
-  it("GET /payroll/reports/summary?format=csv → 403 without payroll:reports:export", async () => {
-    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
-    const res = await request(app.getHttpServer())
-      .get("/payroll/reports/summary?format=csv&month=2026-07")
-      .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(403);
+  it("covers every CSV-capable report route", () => {
+    expect(CSV_REPORT_ROUTES).toHaveLength(11);
   });
 
-  it("GET /payroll/reports/register → 200 (view access is enough for json format)", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
-    const res = await request(app.getHttpServer())
-      .get("/payroll/reports/register?month=2026-07")
-      .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(200);
+  it.each(CSV_REPORT_ROUTES)(
+    "GET %s?format=csv → 403 for a payroll:reports:view-only holder",
+    async (path) => {
+      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+      const res = await request(app.getHttpServer())
+        .get(`${path}?format=csv&month=2026-07`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN" });
+      expect(res.headers["content-type"]).not.toContain("text/csv");
+    },
+  );
+
+  it.each(CSV_REPORT_ROUTES)(
+    "GET %s → 200 JSON for a payroll:reports:view-only holder",
+    async (path) => {
+      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+      const res = await request(app.getHttpServer())
+        .get(`${path}?month=2026-07`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("application/json");
+    },
+  );
+});
+
+describe("payroll-insights — CSV export succeeds for a payroll:reports:export holder (e2e)", () => {
+  let app: INestApplication;
+
+  const exportAllowedAccess = withAccessResolution({
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Map([
+      ["payroll:reports:view", "all"],
+      ["payroll:reports:export", "all"],
+    ])),
+    isModuleEnabled: jest.fn().mockResolvedValue(true),
+    moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
   });
+
+  beforeAll(async () => { app = await buildApp(exportAllowedAccess); });
+  afterAll(async () => app.close());
+
+  it.each(CSV_REPORT_ROUTES)(
+    "GET %s?format=csv → 200 text/csv with the export key",
+    async (path) => {
+      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+      const res = await request(app.getHttpServer())
+        .get(`${path}?format=csv&month=2026-07`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("text/csv");
+      expect(res.headers["content-disposition"]).toContain("attachment;");
+    },
+  );
+
+  it.each(CSV_REPORT_ROUTES)(
+    "GET %s → 200 JSON with the export key",
+    async (path) => {
+      const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+      const res = await request(app.getHttpServer())
+        .get(`${path}?month=2026-07`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("application/json");
+    },
+  );
 });
 
 describe("payroll-insights — FnF requires payroll:fnf:view (e2e)", () => {
