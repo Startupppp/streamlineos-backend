@@ -442,6 +442,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:test-suppressions:self-test && pnpm check:test-suppressions
 
+      # The opposite shape to the one above, and the more dangerous one: a test
+      # that RUNS, is GREEN, is counted as coverage, and cannot fail. Four of the
+      # seven found when this gate was written named cross-tenant isolation in
+      # their own title, and none of them could be reddened by deleting the org
+      # predicate they claimed to protect.
+      - name: Tests that run can fail
+        if: ${{ !cancelled() }}
+        run: pnpm check:vacuous-assertions:self-test && pnpm check:vacuous-assertions
+
       # Alert detection logic, exercised against fixtures. These do not touch a database or a
       # webhook; they prove each alert fires on a breaching input and stays quiet on a clean one.
       - name: Alert self-tests

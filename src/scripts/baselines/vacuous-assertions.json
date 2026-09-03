@@ -1,0 +1,37 @@
+{
+  "minReasonLength": 40,
+  "note": "Every entry here is a test that RUNS, is GREEN, and cannot fail. Registration is not absolution: it records who owns the gap. Ratchets may only go DOWN. Do not add an entry to make a red gate green — give the test a real assertion instead. Suppressed tests (it.skip/it.todo/xit) are NOT this gate's business; they live in test-suppressions.json.",
+  "ratchets": {
+    "NO_ASSERTION": 1,
+    "TAUTOLOGY": 2,
+    "COND_ASSERT": 1,
+    "FLOATING_ASSERT": 0,
+    "FOCUSED": 0
+  },
+  "allowed": [
+    {
+      "file": "src/modules/inventory/inv-engine-misc-isolation-ai.spec.ts",
+      "title": "processes insight for the owning org when found (isolation — control returns or calls AI)",
+      "class": "NO_ASSERTION",
+      "reason": "Inventory is excluded from the 10/10 release (accepted residual R-9, owner: CRM/inventory release owner, review 2026-12-01). Repairing it means editing a module this release does not cover. The test calls the service and ends; it asserts nothing about the org boundary its title claims."
+    },
+    {
+      "file": "src/modules/payroll/__tests__/prd-e2e-journey.spec.ts",
+      "title": "11. Manager scope is non-all DataScope (contract): self-only not all",
+      "class": "TAUTOLOGY",
+      "reason": "Scenarios 5 and 6 in this file were converted from expect(true).toBe(true) to real schema assertions. This one cannot follow them: it asserts a scope GRANTED TO A ROLE rather than a flag on a permission definition, so it needs the access layer's role fixtures rather than a table config read. Owner: payroll/RBAC. Unlike its siblings it names no index or catalog symbol to read."
+    },
+    {
+      "file": "src/modules/surveys/survey-lead-automation-tenant-isolation.spec.ts",
+      "title": "never creates a lead in a different org than the survey's org (isolation: org boundary)",
+      "class": "COND_ASSERT",
+      "reason": "MEASURED as reached, not assumed: planting a throwing sentinel in the else branch of all 9 conditional sites in this repository failed only org-setup and tax-compliance, both now repaired. This guard is TRUE today, so the isolation assertion does run. It is registered because the escape hatch survives — if the leads double is ever re-shaped the test goes quiet instead of red. Owner: surveys."
+    },
+    {
+      "file": "test/security/operator-access.spec.ts",
+      "title": "PRODUCT-BLOCKED — no operator access mechanism: this spec documents the gap",
+      "class": "TAUTOLOGY",
+      "reason": "Deliberate: there is no operator-access mechanism to test, and the spec exists to keep the absence visible. Already recorded against ticket 35 box 8. It becomes a real test the moment an operator-access mechanism exists, and this registration is what will make that visible."
+    }
+  ]
+}
