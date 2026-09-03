@@ -343,6 +343,8 @@
     "check:lifecycle-predicates:self-test": "node src/scripts/check-lifecycle-predicates.mjs --self-test",
     "check:vacuous-assertions": "node src/scripts/check-vacuous-assertions.mjs",
     "check:vacuous-assertions:self-test": "node src/scripts/check-vacuous-assertions.mjs --self-test",
+    "check:bare-throw": "node src/scripts/check-bare-throw.mjs",
+    "check:bare-throw:self-test": "node src/scripts/check-bare-throw.mjs --self-test",
     "check:test-suppressions": "node src/scripts/check-test-suppressions.mjs",
     "check:test-suppressions:self-test": "node src/scripts/check-test-suppressions.mjs --self-test",
     "check:transaction-callbacks": "node src/scripts/check-transaction-callbacks.mjs",

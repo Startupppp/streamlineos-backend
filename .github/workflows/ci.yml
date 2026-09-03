@@ -473,6 +473,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:vacuous-assertions:self-test && pnpm check:vacuous-assertions
 
+      # A refusal test that accepts ANY throw. `expect(fn).toThrow()` with no
+      # argument is satisfied by a mis-shaped double crashing the subject exactly
+      # as well as by the refusal it claims to prove. Execution triage of all 220
+      # positive sites found four that were green over a crash or over the
+      # opposite of their own title, one of them named "BITE PROOF".
+      - name: Refusal tests name the refusal
+        if: ${{ !cancelled() }}
+        run: pnpm check:bare-throw:self-test && pnpm check:bare-throw
+
       # Alert detection logic, exercised against fixtures. These do not touch a database or a
       # webhook; they prove each alert fires on a breaching input and stays quiet on a clean one.
       - name: Alert self-tests

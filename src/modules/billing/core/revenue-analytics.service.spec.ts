@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { revenueEvents, subscriptions } from "../../../db/schema";
@@ -175,7 +176,7 @@ describe("recording happens through the outbox so it cannot be forgotten on a ne
 
     await expect(
       service.emit(tx, { type: "new_subscription", orgId: "", mrr: 1 }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(ZodError);
     expect(db._store.outbox).toHaveLength(0);
   });
 });
