@@ -153,6 +153,21 @@ jobs:
         env:
           CONSTRAINT_DRIFT_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
 
+      # Wired 2026-09-03 (v2 ticket 30). It landed in package.json during this session and
+      # check:gate-wiring caught it UNWIRED within the hour — the second new gate that rule has
+      # caught the same day. Same prerequisite and same home as the two drift gates above: it
+      # reads pg_constraint against a database at journal head, so the hermetic `gates` job in
+      # ci.yml cannot host it. MEASURED locally: self-test exit 0; the gate exits 2
+      # (INCONCLUSIVE — "Set REFERENTIAL_ACTION_GATE_DATABASE_URL to a database bootstrapped to
+      # journal head") with no database, which is the correct prerequisite-absent code and not a
+      # red. Its live half runs here, where the URL is supplied.
+      - name: Foreign keys use the declared referential action
+        run: >-
+          pnpm check:referential-action-drift:self-test &&
+          pnpm check:referential-action-drift
+        env:
+          REFERENTIAL_ACTION_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
       # UNPROVEN. Unlike every gate above it, this suite has never completed anywhere —
       # not in CI, not in this ticket's measurement pass. Making an unmeasured 45-minute
       # suite a required pull-request check is how a pipeline gets muted, so it runs on

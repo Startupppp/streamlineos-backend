@@ -43,6 +43,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { reportCorpus } from "./gate-corpus.mjs";
 
 const SELF_TEST = process.argv.includes("--self-test");
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
@@ -70,6 +71,32 @@ function isPaginatedEndpoint(operation) {
 
 function has200Response(operation) {
   return Object.keys(operation.responses ?? {}).some((c) => parseInt(c, 10) >= 200 && parseInt(c, 10) < 300);
+}
+
+/**
+ * Unwrap this API's standard `{ success, data }` response envelope.
+ *
+ * 2026-09-03 (v2 ticket 30). Every handler here answers inside that envelope, so the pagination
+ * signal lives on `data`, never at the top level -- where the only properties are `success` and
+ * `data`, neither of which is a signal. The rule below read the OUTER object and therefore
+ * reported "no recognizable pagination signal" for endpoints that carry a perfectly good
+ * `{ data, pagination }` one level in.
+ *
+ * That mattered more than a false positive normally would. This gate spent its whole life green
+ * because there were 336 paginated GETs and NOT ONE of them carried a 2xx schema for it to read
+ * -- it was passing over an empty corpus (see check:openapi-coverage, which reported 100%
+ * response-schema coverage for the same reason). The moment real schemas appeared, the first
+ * thing the gate did was misread them. Unwrapping is what lets the remaining violation be
+ * believed.
+ */
+export function unwrapSuccessEnvelope(schema) {
+  if (typeof schema !== "object" || schema === null) return schema;
+  const props = schema.properties;
+  if (typeof props !== "object" || props === null) return schema;
+  if (!Object.prototype.hasOwnProperty.call(props, "success")) return schema;
+  if (!Object.prototype.hasOwnProperty.call(props, "data")) return schema;
+  const inner = props.data;
+  return typeof inner === "object" && inner !== null ? inner : schema;
 }
 
 function schemaHasPaginationSignal(schema) {
@@ -103,6 +130,30 @@ export function findMissingErrorComponents(document) {
   return REQUIRED_ERROR_COMPONENTS.filter((name) => !Object.prototype.hasOwnProperty.call(components, name));
 }
 
+/**
+ * How many paginated GETs exist, and how many of them declare a 2xx schema this gate can read.
+ * The gap between the two is the reason this gate passed over an empty corpus for so long.
+ */
+export function countPaginatedGets(document) {
+  let total = 0;
+  let readable = 0;
+  for (const pathItem of Object.values(document.paths ?? {})) {
+    if (typeof pathItem !== "object" || pathItem === null) continue;
+    const operation = pathItem["get"];
+    if (typeof operation !== "object" || operation === null) continue;
+    if (!isPaginatedEndpoint(operation)) continue;
+    total++;
+    const twoHundred = Object.entries(operation.responses ?? {}).find(
+      ([c]) => parseInt(c, 10) >= 200 && parseInt(c, 10) < 300,
+    );
+    const content = twoHundred?.[1]?.content;
+    if (typeof content !== "object" || content === null) continue;
+    if (Object.values(content).some((mt) => typeof mt === "object" && mt !== null && typeof mt.schema === "object" && mt.schema !== null))
+      readable++;
+  }
+  return { total, readable };
+}
+
 export function findUnpaginatedCollections(document) {
   const violations = [];
   for (const [pathTemplate, pathItem] of Object.entries(document.paths ?? {})) {
@@ -125,11 +176,13 @@ export function findUnpaginatedCollections(document) {
         if (typeof mediaType !== "object" || mediaType === null) continue;
         const schema = mediaType.schema;
         if (typeof schema !== "object" || schema === null) continue;
-        if (schema.type === "array") {
+        // The pagination signal lives on the payload, inside the { success, data } envelope.
+        const payload = unwrapSuccessEnvelope(schema);
+        if (payload.type === "array") {
           violations.push({ method: "GET", path: pathTemplate, issue: "paginated endpoint returns a bare array — expected a pagination envelope with cursor/total/meta" });
           break;
         }
-        if (!schemaHasPaginationSignal(schema) && typeof schema["$ref"] !== "string") {
+        if (!schemaHasPaginationSignal(payload) && typeof payload["$ref"] !== "string") {
           violations.push({ method: "GET", path: pathTemplate, issue: "paginated endpoint 200 schema has no recognizable pagination signal (nextCursor, total, meta, etc.)" });
           break;
         }
@@ -177,6 +230,44 @@ if (SELF_TEST) {
     fail("paginated-envelope-passes", "expected 0 violations for paginated response with nextCursor");
   else pass("paginated-envelope-passes — paginated response with nextCursor passes");
 
+  // --- v2 ticket 30: the { success, data } envelope must be unwrapped before the signal check ---
+  const envelopedGood = { paths: { "/things": { get: {
+    parameters: [{ name: "page" }],
+    responses: { "200": { content: { "application/json": { schema: { type: "object", properties: {
+      success: { type: "boolean" },
+      data: { type: "object", properties: { data: { type: "array" }, pagination: { type: "object" } } },
+    } } } } } },
+  } } } };
+  if (findUnpaginatedCollections(envelopedGood).length !== 0)
+    fail("envelope-unwrapped", "a { success, data } envelope whose data carries a pagination signal must pass");
+  else pass("envelope-unwrapped — pagination signal inside the { success, data } envelope is found");
+
+  // THE REAL FINDING SHAPE: unwrapping must not hide a bare array one level in.
+  const envelopedBareArray = { paths: { "/things": { get: {
+    parameters: [{ name: "page" }],
+    responses: { "200": { content: { "application/json": { schema: { type: "object", properties: {
+      success: { type: "boolean" },
+      data: { type: "array", items: { type: "object" } },
+    } } } } } },
+  } } } };
+  const ebaResult = findUnpaginatedCollections(envelopedBareArray);
+  if (ebaResult.length !== 1)
+    fail("envelope-bare-array-bites", "a bare array INSIDE the envelope must still be flagged");
+  else if (!ebaResult[0].issue.includes("bare array"))
+    fail("envelope-bare-array-reason", `must name the bare array; got ${JSON.stringify(ebaResult)}`);
+  else pass("envelope-bare-array-bites — a bare array inside the envelope is flagged, and says why");
+
+  // Unwrapping must not fire on a payload that merely happens to have a `data` property.
+  const notAnEnvelope = { paths: { "/things": { get: {
+    parameters: [{ name: "page" }],
+    responses: { "200": { content: { "application/json": { schema: { type: "object", properties: {
+      data: { type: "array" }, total: { type: "integer" },
+    } } } } } },
+  } } } };
+  if (findUnpaginatedCollections(notAnEnvelope).length !== 0)
+    fail("no-envelope-no-unwrap", "a top-level { data, total } payload has its own signal and must pass");
+  else pass("no-envelope-no-unwrap — a payload without `success` is not unwrapped");
+
   const paginatedBad = { paths: { "/things": { get: {
     parameters: [{ name: "cursor", in: "query" }],
     responses: { "200": { content: { "application/json": { schema: { type: "array" } } } } },
@@ -209,6 +300,16 @@ try {
 const missingComponents = findMissingErrorComponents(document);
 const errorRefViolations = findMissingErrorRefs(document);
 const paginationViolations = findUnpaginatedCollections(document);
+// This gate was green for its whole life over 336 paginated GETs of which ZERO carried a 2xx
+// schema it could read. Report the corpus, and how much of it is actually readable, so that
+// state can never again be indistinguishable from a clean one.
+const paginatedGets = countPaginatedGets(document);
+reportCorpus({
+  gate: "  check-envelope-consistency[pagination]",
+  scanned: paginatedGets.readable,
+  total: paginatedGets.total,
+  unit: "paginated GET",
+});
 const total = missingComponents.length + errorRefViolations.length + paginationViolations.length;
 
 process.stdout.write(`check-envelope-consistency: response/error envelope analysis\n`);
