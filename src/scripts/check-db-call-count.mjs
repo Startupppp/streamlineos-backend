@@ -77,11 +77,26 @@ const LOOP_OPENERS = [
 ];
 
 const DB_CALL_PATTERNS = [
-  /\b(?:this\.)?db\s*\.\s*(?:select|insert|update|delete|execute|transaction|query|unsafe)\s*\(/,
+  // `selectDistinct(` did NOT match. The alternation matches `select`, then demands
+  // `\s*\(`, and the next character is `D` — so every `db.selectDistinct(...)` in a
+  // loop was invisible. build/core/build-due-sweep.service.ts:123 was one.
+  /\b(?:this\.)?db\s*\.\s*(?:select(?:Distinct)?|insert|update|delete|execute|transaction|query|unsafe)\s*\(/,
   /\b(?:this\.)?tx\s*\.\s*(?:select|insert|update|delete|execute|unsafe)\s*\(/,
   /\bsql\s*`/,
   /\.query\s*\.\s*\w+\s*\.\s*(?:findFirst|findMany)\s*\(/,
   /\bawait\s+\w*[Cc]ache[Ss]ervice\s*\.\s*(?:get|set|del|hget|hset)\s*\(/,
+  // THE WHOLE CACHE HALF OF THE CLAUSE WAS UNENFORCED. §5.1 says "no database *or
+  // cache* call inside a growing loop", and the pattern above requires the literal
+  // identifier `cacheService`. This repository injects `private readonly cache:
+  // CacheService` and writes `this.cache.…` — 188 call sites — so not one cache
+  // round trip in a loop had ever been detected. Six were real, the widest fanning
+  // out to 10,000 Redis commands from one module toggle.
+  //
+  // Anchored on `cache.` exactly rather than `\w*[Cc]ache`, because the in-process
+  // TTL maps in this repo are named `versionCache` / `permsCache` / `tierCache` /
+  // `moduleMapCache` / `deniedModulesCache`, and `Map.prototype.delete` is not a
+  // round trip. A looser pattern reports those five sweeps as N+1s.
+  /\b(?:this\.)?cache\s*\.\s*(?:get|set|del|delete|wrap|cached|cachedForOrg|cachedVersioned|invalidate|invalidateMany|invalidateNamespace|invalidateNamespaceMany|invalidateForOrg|invalidateNamespaceForOrg)\s*\(/,
   /\bredisClient\s*\.\s*(?:get|set|del|hget|hset|lpush|rpush)\s*\(/,
   /\bredis\s*\.\s*(?:get|set|del|hget|hset|lpush|rpush)\s*\(/,
   /\bawait\s+\w+Repository\s*\.\s*(?:findOne|findBy|save|update|delete)\s*\(/,
@@ -90,6 +105,13 @@ const DB_CALL_PATTERNS = [
   // an argument, so `await pullAttendanceInputs(this.db, ...)` inside a loop —
   // payroll/runs/inputs.service.ts, ~4,000 serial round-trips — read as clean.
   /\bawait\s+(?:this\.)?[\w.]+\s*\(\s*(?:this\.)?(?:db|tx)\s*[,)]/,
+  // The same helper-receives-the-handle shape with NO `await` in front of it, which
+  // is what `ids.map((id) => ensureFromUser(this.db, id))` looks like — the callback
+  // returns the promise and `Promise.all` awaits it later. The pattern above requires
+  // a directly preceding `await`, so the commonest concurrent-N+1 idiom slipped past.
+  // `this.` is mandatory here: dropping it would match a function DECLARATION
+  // `function pull(db, orgId)`, which is not a call at all.
+  /\b[\w.]+\s*\(\s*this\.(?:db|tx)\s*[,)]/,
 ];
 
 function normalizeRelPath(file) {
@@ -296,6 +318,64 @@ function stripLineComment(line) {
  * `const ids = rows.map((r) => r.id);` — the noise this file has twice been
  * broken by — from adopting whatever follows it.
  */
+/**
+ * A ONE-LINE loop whose body is on that same line — the case every scan path here
+ * missed, because all of them start looking at line i+1.
+ *
+ *   await Promise.all(
+ *     assignees.map((a) => this.cache.invalidate(userSession(a.userId))),
+ *   );
+ *
+ * The middle line is a loop opener AND its whole body. `openerIsSelfContained`
+ * returns true for it (every delimiter closes), so it was counted as
+ * `skippedComplete` and never read. So was the braceless single-line form
+ * `for (const x of xs) await this.db.insert(t).values(x);`, whose statement also
+ * ends on the opener line. Both are shapes this repository writes.
+ *
+ * The body has to be isolated from the header before matching, or the line
+ *   `.where(inArray(t.id, ids.map((i) => i.id)))`
+ * reports the `this.db.select(` that opened the statement as a call inside the
+ * `.map` — the `.map` is an ARGUMENT to that query, not a loop around it. So:
+ * for `for`/`while`, the body is whatever follows the header's matching `)`;
+ * for a callback opener, it is whatever follows the callback's first `=>`.
+ * Anything before that belongs to the enclosing statement and is not the body.
+ */
+function openerLineBody(line) {
+  const header = /\b(?:for\s*(?:await\s+)?|while\s*)\(/.exec(line);
+  if (header) {
+    let depth = 0;
+    for (let k = header.index + header[0].length - 1; k < line.length; k++) {
+      if (line[k] === "(") depth++;
+      else if (line[k] === ")") {
+        depth--;
+        if (depth === 0) return line.slice(k + 1);
+      }
+    }
+    return "";
+  }
+  const arrow = line.indexOf("=>");
+  return arrow === -1 ? "" : line.slice(arrow + 2);
+}
+
+/**
+ * A bare `sql\`` is a FRAGMENT, not a round trip, and on a one-line callback it is
+ * essentially always a fragment: `ids.map((id) => sql\`${id}\`)` builds an IN-list
+ * that one statement below executes ONCE. Real one-line execution still matches,
+ * because it is written `db.execute(sql\`…\`)` and the handle pattern catches it.
+ * Kept out of the same-line scan only; multi-line bodies still test it.
+ */
+const SQL_FRAGMENT_PATTERN_SOURCE = /\bsql\s*`/.source;
+
+function scanOpenerLine(lines, i) {
+  const body = openerLineBody(lines[i]);
+  if (body === "") return null;
+  const hit = DB_CALL_PATTERNS.some(
+    (re) => re.source !== SQL_FRAGMENT_PATTERN_SOURCE && re.test(body),
+  );
+  if (!hit) return null;
+  return { loopLine: i + 1, callLine: i + 1, text: lines[i].trim() };
+}
+
 function scanBracelessBody(lines, i) {
   const opener = lines[i];
   let depth = parenBalance(opener) + bracketBalance(opener) + braceDepthChange(opener);
@@ -345,6 +425,8 @@ export function detectLoopDbCalls(src) {
     const parensClosedOnSameLine = loopParensBalanced(line);
 
     if (parensClosedOnSameLine && !opensBodyOnSameLine) {
+      const sameLine = scanOpenerLine(lines, i);
+      if (sameLine) { coverage.inspected++; violations.push(sameLine); continue; }
       const braceless = scanBracelessBody(lines, i);
       if (braceless === null && /[;,]$/.test(stripLineComment(line))) coverage.skippedComplete++;
       else coverage.inspected++;
@@ -352,6 +434,8 @@ export function detectLoopDbCalls(src) {
       continue;
     }
     if (openerIsSelfContained(line)) {
+      const sameLine = scanOpenerLine(lines, i);
+      if (sameLine) { coverage.inspected++; violations.push(sameLine); continue; }
       coverage.skippedComplete++;
       continue;
     }
@@ -934,6 +1018,70 @@ function runSelfTests() {
   }
 
   {
+    // THE THREE DETECTOR GAPS CLOSED THIS PASS, pinned in both directions. Every
+    // HIT case here scored 0 before the patterns were widened; every MISS case is
+    // the noise the widening must not start reporting.
+    const cacheInLoop = [
+      "    for (const userId of userIds)",
+      "      await this.cache.invalidate(CACHE_KEYS.userSession(userId));",
+    ].join("\n");
+    const cachePromiseAllMap = [
+      "    await Promise.all(",
+      "      assignees.map((a) => this.cache.invalidate(CACHE_KEYS.userSession(a.userId))),",
+      "    );",
+    ].join("\n");
+    const selectDistinctInLoop = [
+      "    for (const sprint of ending) {",
+      "      const owners = await this.db.selectDistinct({ id: t.id }).from(t);",
+      "    }",
+    ].join("\n");
+    const helperHandleNoAwait = [
+      "    await Promise.all(",
+      "      members.map((m) => ensureFromUser(this.db, m.userId)),",
+      "    );",
+    ].join("\n");
+    // The noise. An in-process Map named `...Cache` is not a round trip, and a
+    // looser `\\w*[Cc]ache` pattern would report all five of this repo's TTL sweeps.
+    const inMemoryMapSweep = [
+      "    for (const [key, entry] of this.versionCache) {",
+      "      if (entry.expiresAt <= now) this.versionCache.delete(key);",
+      "    }",
+    ].join("\n");
+    const permsMapSweep = [
+      "    for (const [key, entry] of this.permsCache) {",
+      "      if (entry.expiresAt <= sweep) this.permsCache.delete(key);",
+      "    }",
+    ].join("\n");
+    // A function DECLARATION taking a handle is not a call — this is why `this.`
+    // is mandatory in the no-await helper pattern.
+    const handleParamDeclaration = [
+      "    for (const row of rows) {",
+      "      const shape = describe(row);",
+      "    }",
+      "    export async function pullInputs(db: Db, orgId: string) {",
+      "      return db.select().from(t);",
+      "    }",
+    ].join("\n");
+
+    const cases = [
+      ["a this.cache call in a braceless loop is a loop cache call", cacheInLoop, 1],
+      ["a this.cache call inside Promise.all(map) is a loop cache call", cachePromiseAllMap, 1],
+      ["db.selectDistinct( inside a loop is a loop DB call", selectDistinctInLoop, 1],
+      ["a helper receiving this.db with NO await is a loop DB call", helperHandleNoAwait, 1],
+      ["an in-process Map named versionCache is not a cache round trip", inMemoryMapSweep, 0],
+      ["an in-process Map named permsCache is not a cache round trip", permsMapSweep, 0],
+      ["a function declaration taking a db parameter is not a loop DB call", handleParamDeclaration, 0],
+    ];
+    for (const [label, fixture, expected] of cases) {
+      const got = detectLoopDbCalls(fixture).length;
+      if (got !== expected) {
+        console.error(`SELF-TEST FAIL: ${label} — expected ${expected} violation(s), got ${got}`);
+        process.exit(1);
+      }
+    }
+  }
+
+  {
     // The coverage counter itself, which is what ratchets the widening in place.
     // Without this it could return a constant and MIN_INSPECTED_LOOPS would be
     // decorative.
@@ -999,7 +1147,7 @@ function runSelfTests() {
     }
   }
 
-  console.log("SELF-TEST PASS: all 37 detection/classification/coverage checks passed");
+  console.log("SELF-TEST PASS: all 44 detection/classification/coverage checks passed");
   process.exitCode = 0;
 }
 
