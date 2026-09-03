@@ -257,6 +257,7 @@ export function runCheck(
 function runSelfTests() {
   let passed = 0;
   let failed = 0;
+  const notRun = [];
 
   function assert(label, condition) {
     if (condition) {
@@ -427,19 +428,55 @@ function runSelfTests() {
     rmSync(tmpRoot, { recursive: true, force: true });
   }
 
-  assert("the §7 exception registry is reachable in this checkout", EXCEPTIONS_DOC !== null && existsSync(EXCEPTIONS_DOC));
-  assert(
-    "the real registry parses to at least one exception and no row errors",
-    EXCEPTIONS_DOC !== null && existsSync(EXCEPTIONS_DOC) &&
-      (() => {
-        const p = parseExceptions(readFileSync(EXCEPTIONS_DOC, "utf8"));
-        return p.entries.size > 0 && p.errors.length === 0;
-      })(),
-  );
+  // countLines is layout-independent, but this assertion used to run it against the
+  // registry -- which lives in the FRONTEND repository -- so a pure line-counting
+  // test failed in a backend-only checkout. Prove the off-by-one directly instead.
   assert(
     "counts a trailing-newline file without an off-by-one",
-    EXCEPTIONS_DOC !== null && existsSync(EXCEPTIONS_DOC) && countLines(EXCEPTIONS_DOC) > 0,
+    (() => {
+      const probe = join(tmpdir(), `chk-fs-newline-${process.pid}.txt`);
+      try {
+        writeFileSync(probe, "a\nb\nc\n");
+        const trailing = countLines(probe);
+        writeFileSync(probe, "a\nb\nc");
+        const bare = countLines(probe);
+        return trailing === 3 && bare === 3;
+      } finally {
+        rmSync(probe, { force: true });
+      }
+    })(),
   );
+
+  // Whether the sibling repository is CHECKED OUT is an environment fact, not a
+  // defect. Asserting it unconditionally made this self-test exit 1 in every
+  // backend-only checkout -- and because CI runs `self-test && check`, that exit
+  // short-circuited the `&&` so the GATE HALF NEVER RAN AT ALL. Follow the same
+  // contract as check-repo-paths.mjs: assert the absence contract, report the
+  // cross-repository assertions as NOT RUN, and end INCONCLUSIVE (exit 2) rather
+  // than a red that hides the gate or a green that proves nothing.
+  if (workspaceAvailable) {
+    assert(
+      "the §7 exception registry is reachable in this checkout",
+      EXCEPTIONS_DOC !== null && existsSync(EXCEPTIONS_DOC),
+    );
+    assert(
+      "the real registry parses to at least one exception and no row errors",
+      EXCEPTIONS_DOC !== null && existsSync(EXCEPTIONS_DOC) &&
+        (() => {
+          const parsedReal = parseExceptions(readFileSync(EXCEPTIONS_DOC, "utf8"));
+          return parsedReal.entries.size > 0 && parsedReal.errors.length === 0;
+        })(),
+    );
+  } else {
+    notRun.push(
+      "the §7 exception registry is reachable in this checkout",
+      "the real registry parses to at least one exception and no row errors",
+    );
+    assert(
+      "an unreachable registry resolves to null rather than to a wrong path",
+      EXCEPTIONS_DOC === null,
+    );
+  }
   assert(
     "the gate resolves a real source tree — a broken resolvePath must fail loudly, not scan nothing",
     existsSync(SRC) && existsSync(join(SRC, "modules")),
@@ -462,6 +499,23 @@ function runSelfTests() {
     console.error(`check-file-sizes self-tests: ${failed} failed, ${passed} passed`);
     process.exit(1);
   }
+
+  if (notRun.length > 0) {
+    const allowed = process.env.STREAMLINE_ALLOW_PARTIAL_GATES === "1";
+    const stream = allowed ? console.warn : console.error;
+    stream(
+      `${allowed ? "PARTIAL" : "INCONCLUSIVE"} — check-file-sizes: ${passed} passed, ${notRun.length} cross-repository assertion(s) NOT RUN in this checkout.`,
+    );
+    for (const label of notRun) stream(`  NOT RUN: ${label}`);
+    stream(`  ${workspaceUnreachableReason()}`);
+    if (allowed) {
+      console.warn("  STREAMLINE_ALLOW_PARTIAL_GATES=1 — this run proves the parser and the scan, and nothing about the real registry.");
+      process.exit(0);
+    }
+    console.error("  Set STREAMLINE_WORKSPACE_ROOT, or set STREAMLINE_ALLOW_PARTIAL_GATES=1 to accept a PARTIAL run.");
+    process.exit(2);
+  }
+
   console.log(`check-file-sizes self-tests: ${passed} passed`);
   process.exit(0);
 }
