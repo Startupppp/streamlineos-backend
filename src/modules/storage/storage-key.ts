@@ -42,8 +42,10 @@ export interface ParsedStorageKey {
 /**
  * Reads the owning organisation and the folder root off an object key.
  *
- * Two key shapes are live. Everything minted since organisation scoping is
- * `<orgId>/<folder>/…`; legacy rows still hold `<folder>/…` with no organisation
+ * Three key shapes are live. Everything minted since organisation scoping is
+ * `<orgId>/<folder>/…`; a region that sets `R2_KEY_PREFIX` shifts that one
+ * segment right to `<keyPrefix>/<orgId>/<folder>/…` (`StoragePlacement.objectKey`
+ * prepends the prefix); legacy rows still hold `<folder>/…` with no organisation
  * at all. `ownerOrgId` is null only for the legacy shape — a key that names an
  * organisation always reports it, so the caller can refuse a foreign one.
  */
@@ -65,6 +67,25 @@ export function parseStorageKey(
 
   if (UUID_PATTERN.test(first))
     return { ownerOrgId: first, folderRoot: second ?? "" };
+
+  /**
+   * Region-prefixed shapes. `objectKey` writes the region key prefix AHEAD of the
+   * organisation, so under any region that sets `R2_KEY_PREFIX` the organisation
+   * is in segment two and the folder root in segment three. Reading segment one
+   * only — as this function did — reported the prefix itself as the folder root
+   * and the owner as unknown, which silently disables BOTH guards built on this:
+   * `isForeignOrgKey` returns false for a foreign tenant's key, and the folder
+   * root ("eu") is not in SENSITIVE_FOLDER_ROOTS, so `assertKeyReadable`'s
+   * unresolved-sensitive-key denial does not fire either. A caller could then
+   * mint a signed URL for another tenant's `documents/` object.
+   */
+  if (second !== undefined) {
+    if (second === callerOrgId || UUID_PATTERN.test(second))
+      return { ownerOrgId: second, folderRoot: segments[2] ?? "" };
+
+    if (ORG_NAMESPACED_KEY_FOLDERS.has(second))
+      return { ownerOrgId: segments[2] ?? null, folderRoot: second };
+  }
 
   return { ownerOrgId: null, folderRoot: first };
 }
