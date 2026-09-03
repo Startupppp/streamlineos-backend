@@ -1,10 +1,42 @@
-import { getTableName, sql, type SQL } from "drizzle-orm";
+import { getTableColumns, getTableName, sql, type SQL } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import type { Db, TenantTx } from "../../db/drizzle.types";
 
 export const BULK_UPDATE_CHUNK = 500;
 
 const POSTGRES_TYPE_PATTERN = /^[A-Za-z][A-Za-z0-9_ ]*(\([0-9, ]+\))?(\[\])?$/;
+
+/**
+ * The only cast targets admitted on top of the ones the target table declares
+ * for itself. A `serial` key column is cast as `integer` and a `numeric(18, 4)`
+ * amount as `numeric`, so the schema's own spelling is necessary but not
+ * sufficient — this list is the rest, and it is closed.
+ */
+const BASE_CAST_TYPES: ReadonlySet<string> = new Set([
+  "bigint",
+  "boolean",
+  "bytea",
+  "char",
+  "date",
+  "decimal",
+  "double precision",
+  "inet",
+  "integer",
+  "interval",
+  "json",
+  "jsonb",
+  "numeric",
+  "real",
+  "smallint",
+  "text",
+  "time",
+  "timestamp",
+  "timestamp with time zone",
+  "timestamp without time zone",
+  "timestamptz",
+  "uuid",
+  "varchar",
+]);
 
 export interface BulkUpdateColumn {
   readonly column: string;
@@ -28,9 +60,59 @@ export interface BulkUpdateRequest {
   readonly chunkSize?: number;
 }
 
-function assertPostgresType(type: string): void {
+/**
+ * Everything this builder puts into SQL text rather than a bind parameter is
+ * confined here, against the target table's own Drizzle declaration.
+ *
+ * Two shapes reach the statement as text. Column names go through
+ * `sql.identifier`, which quote-doubles, so they cannot break out — but an
+ * unchecked name is still a mass-assignment surface, and `orgColumn` decides
+ * which column the tenant predicate compares, so a wrong one silently produces
+ * a statement that is no longer tenant-correlated. Cast type names go through
+ * `sql.raw`, which is verbatim. Both are therefore reduced to a finite set
+ * derived from the schema at import time, not from anything a request carries.
+ */
+interface IdentifierScope {
+  readonly columnNames: ReadonlySet<string>;
+  readonly castTypes: ReadonlySet<string>;
+}
+
+function scopeFor(table: PgTable): IdentifierScope {
+  const columnNames = new Set<string>();
+  const castTypes = new Set<string>(BASE_CAST_TYPES);
+  for (const column of Object.values(getTableColumns(table))) {
+    columnNames.add(column.name);
+    const declared = column.getSQLType();
+    castTypes.add(declared);
+    castTypes.add(`${declared}[]`);
+  }
+  for (const base of BASE_CAST_TYPES) castTypes.add(`${base}[]`);
+  return { columnNames, castTypes };
+}
+
+function assertPostgresType(type: string, scope: IdentifierScope, table: PgTable): void {
   if (!POSTGRES_TYPE_PATTERN.test(type))
     throw new Error(`bulkUpdateFromValues: "${type}" is not a usable Postgres type name`);
+  if (!scope.castTypes.has(type))
+    throw new Error(
+      `bulkUpdateFromValues: "${type}" is not a cast type ${getTableName(table)} declares, ` +
+        "and is not one of the base Postgres types. This cast is emitted as raw SQL text, " +
+        "so it may only ever be a name the schema itself carries.",
+    );
+}
+
+function assertKnownColumn(
+  name: string,
+  role: string,
+  scope: IdentifierScope,
+  table: PgTable,
+): void {
+  if (!scope.columnNames.has(name))
+    throw new Error(
+      `bulkUpdateFromValues: ${role} "${name}" is not a column of ${getTableName(table)}. ` +
+        "Every identifier this builder emits has to be a column the Drizzle schema declares — " +
+        "a name that came from anywhere else is a write to a column the caller never named.",
+    );
 }
 
 function assertDistinctKeys(request: BulkUpdateRequest): void {
@@ -76,6 +158,11 @@ function buildTuple(row: BulkUpdateRow, request: BulkUpdateRequest): SQL {
  *
  * Returns the keys the database actually updated, which is how a caller detects
  * that a row vanished or belongs to another tenant.
+ *
+ * Every identifier and cast name is checked against `request.table`'s own
+ * Drizzle columns before a single character of SQL is built, so the text half of
+ * this statement is provably a finite, compile-time set. Values are never in
+ * that half — they are bind parameters throughout.
  */
 export async function bulkUpdateFromValues(
   executor: Db | TenantTx,
@@ -85,11 +172,20 @@ export async function bulkUpdateFromValues(
     throw new Error("bulkUpdateFromValues: nothing to set");
   if (request.rows.length === 0) return [];
 
-  assertPostgresType(request.key.type);
-  for (const column of request.columns) assertPostgresType(column.type);
+  const scope = scopeFor(request.table);
+  const orgColumn = request.orgColumn ?? "org_id";
+
+  assertPostgresType(request.key.type, scope, request.table);
+  assertKnownColumn(request.key.column, "key column", scope, request.table);
+  assertKnownColumn(orgColumn, "tenant column", scope, request.table);
+  for (const column of request.columns) {
+    assertPostgresType(column.type, scope, request.table);
+    assertKnownColumn(column.column, "set column", scope, request.table);
+  }
+  for (const column of request.touch ?? [])
+    assertKnownColumn(column, "touch column", scope, request.table);
   assertDistinctKeys(request);
 
-  const orgColumn = request.orgColumn ?? "org_id";
   const chunkSize = request.chunkSize ?? BULK_UPDATE_CHUNK;
 
   const assignments: SQL[] = request.columns.map(

@@ -1,15 +1,25 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { UnauthorizedException } from "@nestjs/common";
 import type { ExecutionContext } from "@nestjs/common";
 import type { Reflector } from "@nestjs/core";
+import { Test } from "@nestjs/testing";
 import type { Redis } from "@upstash/redis";
-import { exportJWK, generateKeyPair, type JWK } from "jose";
+import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
+import { SESSION_PROOF_AUDIENCE, SESSION_PROOF_ISSUER } from "../../../src/common/auth/backend-claims";
 import { JwtAuthGuard } from "../../../src/common/auth/jwt-auth.guard";
 import { JwtKeyringService } from "../../../src/common/auth/jwt-keyring.service";
-import type { MembershipStateService } from "../../../src/common/auth/membership-state.service";
+import { MembershipStateService } from "../../../src/common/auth/membership-state.service";
+import { REDIS } from "../../../src/common/cache/cache.service";
 import { redact } from "../../../src/common/observability/redact";
+import { RateLimitService } from "../../../src/common/ratelimit/rate-limit.service";
 import { validateEnv } from "../../../src/config/env.validation";
+import { PermissionGuard } from "../../../src/modules/access/permission.guard";
+import { AuthController } from "../../../src/modules/auth/auth.controller";
+import { AuthService } from "../../../src/modules/auth/auth.service";
+import { AuthTokensService } from "../../../src/modules/auth/auth-tokens.service";
+import { internalSecretMatches } from "../../../src/modules/auth/internal-secret";
 import type { Db } from "../../../src/db/drizzle.module";
 
 const BACKEND_ROOT = resolve(__dirname, "../../..");
@@ -284,21 +294,189 @@ describe("CSRF — the API carries no ambient credential a cross-site request co
     expect(cookieWriters).toEqual([]);
   });
 
-  it("the two internal-only exchange routes require a shared secret AND a signed proof", () => {
-    const controller = readFileSync(
-      resolve(BACKEND_ROOT, "src/modules/auth/auth.controller.ts"),
-      "utf8",
-    );
-    const exchange = controller.slice(
-      controller.indexOf('@Post("session-exchange")'),
-      controller.indexOf('@Get(".well-known/jwks.json")'),
-    );
-    expect(exchange).toContain('req.headers["x-internal-secret"] !== internalSecret');
-    expect(exchange).toContain('req.headers["x-session-proof"]');
-    expect(exchange).toContain("jwtVerify(");
-    expect(exchange).toContain('algorithms: ["HS256"]');
-    expect(exchange).toContain("issuer: SESSION_PROOF_ISSUER");
-    expect(exchange).toContain("audience: SESSION_PROOF_AUDIENCE");
+  /**
+   * This used to assert the literal `req.headers["x-internal-secret"] !==
+   * internalSecret`. The controller now calls `internalSecretMatches(...)`,
+   * which reduces both sides to a fixed-width sha256 digest and compares them
+   * with `timingSafeEqual` — strictly better code, and the old assertion went
+   * red on it. A string match on the weaker spelling is also backwards as a
+   * security gate: it passes for as long as nobody improves the compare, and it
+   * cannot tell a real bypass from a rename. What follows drives the routes.
+   */
+  describe("the internal-only exchange routes require a shared secret AND a signed proof", () => {
+    const NEXTAUTH_SECRET = "spec-nextauth-secret-at-least-32-chars-long-xx";
+    const INTERNAL_SECRET = "spec-internal-secret-at-least-32-chars-long-xx";
+    const USER_ID = "user-1";
+
+    let controller: AuthController;
+    let keyring: { isReady: jest.Mock; signToken: jest.Mock };
+    let authService: { getSessionData: jest.Mock };
+    let authTokens: { googleOAuth: jest.Mock };
+    let rateLimit: { check: jest.Mock };
+    let moduleRedis: { set: jest.Mock; get: jest.Mock };
+
+    const originalNextAuth = process.env.NEXTAUTH_SECRET;
+    const originalInternal = process.env.INTERNAL_API_SECRET;
+
+    async function proofSignedWith(
+      secret: string,
+      claims: { issuer?: string; audience?: string } = {},
+    ): Promise<string> {
+      return new SignJWT({ sessionId: "session-1" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setSubject(USER_ID)
+        .setIssuer(claims.issuer ?? SESSION_PROOF_ISSUER)
+        .setAudience(claims.audience ?? SESSION_PROOF_AUDIENCE)
+        .setJti(randomUUID())
+        .setIssuedAt()
+        .setExpirationTime("30s")
+        .sign(new TextEncoder().encode(secret));
+    }
+
+    beforeEach(async () => {
+      process.env.NEXTAUTH_SECRET = NEXTAUTH_SECRET;
+      process.env.INTERNAL_API_SECRET = INTERNAL_SECRET;
+
+      keyring = {
+        isReady: jest.fn().mockReturnValue(true),
+        signToken: jest.fn().mockResolvedValue("signed.jwt"),
+      };
+      authService = { getSessionData: jest.fn().mockResolvedValue({ userId: USER_ID }) };
+      authTokens = { googleOAuth: jest.fn().mockResolvedValue({ token: "t" }) };
+      rateLimit = { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) };
+      moduleRedis = { set: jest.fn().mockResolvedValue("OK"), get: jest.fn().mockResolvedValue(null) };
+
+      const moduleRef = await Test.createTestingModule({
+        controllers: [AuthController],
+        providers: [
+          { provide: AuthService, useValue: authService },
+          { provide: AuthTokensService, useValue: authTokens },
+          { provide: RateLimitService, useValue: rateLimit },
+          { provide: JwtKeyringService, useValue: keyring },
+          {
+            provide: MembershipStateService,
+            useValue: {
+              isAccountActive: jest.fn().mockResolvedValue(true),
+              resolve: jest.fn().mockResolvedValue({ active: true, membershipId: 1 }),
+            },
+          },
+          { provide: REDIS, useValue: moduleRedis },
+        ],
+      })
+        .overrideGuard(JwtAuthGuard)
+        .useValue({ canActivate: () => true })
+        .overrideGuard(PermissionGuard)
+        .useValue({ canActivate: () => true })
+        .compile();
+
+      controller = moduleRef.get(AuthController);
+    });
+
+    afterEach(() => {
+      process.env.NEXTAUTH_SECRET = originalNextAuth;
+      process.env.INTERNAL_API_SECRET = originalInternal;
+    });
+
+    it("refuses a wrong shared secret and mints nothing", async () => {
+      const proof = await proofSignedWith(NEXTAUTH_SECRET);
+      for (const presented of [
+        `${INTERNAL_SECRET.slice(0, -1)}z`,
+        INTERNAL_SECRET.slice(0, -1),
+        `${INTERNAL_SECRET}extra`,
+        "",
+      ]) {
+        await expect(
+          controller.sessionExchange(
+            { orgId: null },
+            { headers: { "x-internal-secret": presented, "x-session-proof": proof } },
+          ),
+        ).rejects.toMatchObject({ status: 403 });
+      }
+      await expect(
+        controller.sessionExchange({ orgId: null }, { headers: { "x-session-proof": proof } }),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(
+        controller.getSessionData(USER_ID, { headers: { "x-internal-secret": "wrong" } }),
+      ).rejects.toMatchObject({ status: 403 });
+
+      expect(keyring.signToken).not.toHaveBeenCalled();
+      expect(authService.getSessionData).not.toHaveBeenCalled();
+    });
+
+    it("refuses the right secret without a valid signed proof — the secret alone is not identity", async () => {
+      const headers = { "x-internal-secret": INTERNAL_SECRET };
+      await expect(
+        controller.sessionExchange({ orgId: null }, { headers }),
+      ).rejects.toMatchObject({ status: 403 });
+
+      for (const proof of [
+        await proofSignedWith("a-different-secret-of-sufficient-length-xx"),
+        await proofSignedWith(NEXTAUTH_SECRET, { issuer: "https://evil.example" }),
+        await proofSignedWith(NEXTAUTH_SECRET, { audience: "some-other-audience" }),
+        "not.a.jwt",
+      ]) {
+        await expect(
+          controller.sessionExchange(
+            { orgId: null },
+            { headers: { ...headers, "x-session-proof": proof } },
+          ),
+        ).rejects.toMatchObject({ status: 401 });
+      }
+      expect(keyring.signToken).not.toHaveBeenCalled();
+    });
+
+    it("refuses to replay a proof it has already spent, so a captured header is single-use", async () => {
+      const proof = await proofSignedWith(NEXTAUTH_SECRET);
+      const headers = { "x-internal-secret": INTERNAL_SECRET, "x-session-proof": proof };
+      const redis = moduleRedis;
+      redis.set.mockResolvedValueOnce("OK").mockResolvedValueOnce(null);
+
+      await expect(controller.sessionExchange({ orgId: null }, { headers })).resolves.toEqual({
+        token: "signed.jwt",
+      });
+      await expect(
+        controller.sessionExchange({ orgId: null }, { headers }),
+      ).rejects.toMatchObject({ status: 401 });
+      expect(keyring.signToken).toHaveBeenCalledTimes(1);
+    });
+
+    it("CONTROL: the right secret and a valid proof do mint a token, so this is not a blanket deny", async () => {
+      const proof = await proofSignedWith(NEXTAUTH_SECRET);
+      await expect(
+        controller.sessionExchange(
+          { orgId: null },
+          { headers: { "x-internal-secret": INTERNAL_SECRET, "x-session-proof": proof } },
+        ),
+      ).resolves.toEqual({ token: "signed.jwt" });
+      expect(keyring.signToken).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The comparison itself is timing-safe, which no black-box assertion can
+     * see: a plain `!==` rejects exactly the same inputs. Two things are
+     * checkable and both are asserted — that a length mismatch is answered
+     * `false` rather than thrown (a naive `timingSafeEqual` on raw strings
+     * throws on unequal lengths, so surviving it is evidence of the fixed-width
+     * digest), and that the compare is the only spelling in the tree.
+     */
+    it("compares the shared secret in constant time, and no raw !== compare survives", () => {
+      expect(internalSecretMatches(INTERNAL_SECRET, INTERNAL_SECRET)).toBe(true);
+      expect(internalSecretMatches(INTERNAL_SECRET, `${INTERNAL_SECRET}-much-much-longer`)).toBe(false);
+      expect(internalSecretMatches(INTERNAL_SECRET, "x")).toBe(false);
+      expect(internalSecretMatches(undefined, "")).toBe(false);
+      expect(internalSecretMatches("", "")).toBe(false);
+
+      const compare = readFileSync(
+        resolve(BACKEND_ROOT, "src/modules/auth/internal-secret.ts"),
+        "utf8",
+      );
+      expect(compare).toMatch(/timingSafeEqual/);
+
+      const rawCompares = SOURCE_FILES.filter((file) =>
+        /(?:!==|===)\s*(?:process\.env\.INTERNAL_API_SECRET|internalSecret\b)/.test(file.content),
+      ).map((file) => file.path);
+      expect(rawCompares).toEqual([]);
+    });
   });
 });
 

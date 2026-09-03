@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { eq, sql } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { eq, sql, type SQL } from "drizzle-orm";
+import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
 import {
   assertSafeWebhookUrl,
   checkWebhookUrl,
@@ -10,11 +10,11 @@ import {
 import { sanitizeHtml, escapeHtml } from "../../../src/modules/hr/templates/html-sanitizer";
 import { returnPathSchema } from "../../../src/modules/integrations/core/dto/integrations.schemas";
 import { StorageService } from "../../../src/modules/storage/storage.service";
-import { users, organizationMembers } from "../../../src/db/schema";
+import { bulkUpdateFromValues } from "../../../src/common/db/bulk-update";
+import { users, organizationMembers, tickets } from "../../../src/db/schema";
 
 const BACKEND_ROOT = resolve(__dirname, "../../..");
 const SHARED_GUARD = "src/common/security/ssrf-guard.ts";
-const SANCTIONED_REEXPORT = "src/modules/build/core/webhook-url-guard.ts";
 
 function walkSource(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -57,9 +57,7 @@ describe("SSRF — the shared guard is the only guard", () => {
 
     expect(callers.length).toBeGreaterThanOrEqual(8);
     for (const caller of callers) {
-      const importsShared =
-        /from\s+["'][^"']*\/ssrf-guard["']/.test(caller.content) ||
-        /from\s+["'][^"']*webhook-url-guard["']/.test(caller.content);
+      const importsShared = /from\s+["'][^"']*\/ssrf-guard["']/.test(caller.content);
       expect({ path: caller.path, importsShared }).toEqual({
         path: caller.path,
         importsShared: true,
@@ -67,11 +65,29 @@ describe("SSRF — the shared guard is the only guard", () => {
     }
   });
 
-  it("the build module's webhook-url-guard is a re-export, not a second implementation", () => {
-    const source = readFileSync(resolve(BACKEND_ROOT, SANCTIONED_REEXPORT), "utf8");
-    expect(source.trim()).toBe(
-      'export { checkWebhookUrl } from "../../../common/security/ssrf-guard";',
-    );
+  /**
+   * `src/modules/build/core/webhook-url-guard.ts` used to be a sanctioned
+   * one-line re-export and this spec asserted its exact text. Commit 7c938419
+   * deleted it and re-pointed its callers straight at the shared module, which
+   * is strictly stronger — an indirection through a module the build team owns
+   * is a place a second implementation can grow back. The invariant that
+   * matters is therefore no longer "the shim says the right thing" but "there
+   * is no shim, and nothing exports these names except the shared guard".
+   */
+  it("no module re-exports the guard under its own name — the shared module is the only import site", () => {
+    const reExporters = SOURCE_FILES.filter(
+      (file) =>
+        file.path !== SHARED_GUARD &&
+        /export\s*\{[^}]*\b(?:checkWebhookUrl|assertSafeWebhookUrl|resolveSafeWebhookTarget)\b/.test(
+          file.content,
+        ),
+    ).map((file) => file.path);
+    expect(reExporters).toEqual([]);
+
+    const guardModules = SOURCE_FILES.filter((file) =>
+      /(?:^|\/)webhook-url-guard\.ts$/.test(file.path),
+    ).map((file) => file.path);
+    expect(guardModules).toEqual([]);
   });
 
   it("blocks IPv4-mapped IPv6 loopback in every spelling new URL() can produce", async () => {
@@ -236,6 +252,7 @@ describe("SQL injection — every value reaches Postgres as a bind parameter", (
 
     expect(dynamic.sort()).toEqual(
       [
+        "src/common/db/bulk-update.ts",
         "src/common/tenant/with-tenant.ts",
         "src/modules/billing/core/payment-status-order.ts",
         "src/modules/build/core/build-due-sweep.service.ts",
@@ -248,6 +265,95 @@ describe("SQL injection — every value reaches Postgres as a bind parameter", (
         "src/scripts/backfill-financial-actors.ts",
       ].sort(),
     );
+  });
+
+  /**
+   * `bulk-update.ts` earns its place on the list above by construction, not by
+   * review note. It builds an `UPDATE … SET` whose SET list, join key, tenant
+   * predicate and per-value `::cast` are all identifiers, and the cast is the
+   * one fragment that reaches the statement through `sql.raw` — verbatim text.
+   * Both halves are checked against the target table's own Drizzle columns
+   * before any SQL is built, so the set of strings that can reach the text half
+   * is finite and comes from the schema. These drive the real builder rather
+   * than reading its source, so a future edit that drops a check fails here.
+   */
+  describe("the bulk-update builder confines every identifier to the target table's own schema", () => {
+    const HOSTILE_CASTS = [
+      "integer) FROM users --",
+      "integer; DROP TABLE users; --",
+      "pg_authid",
+      "regclass",
+    ];
+    const HOSTILE_IDENTIFIERS = [
+      `id" = 1, "org_id`,
+      "password_hash",
+      "' OR 1=1 --",
+    ];
+
+    function stubExecutor(captured: unknown[]) {
+      return {
+        execute: (statement: unknown) => {
+          captured.push(statement);
+          return Promise.resolve([]);
+        },
+      } as never;
+    }
+
+    const base = {
+      table: tickets,
+      orgId: "org-1",
+      key: { column: "id", type: "integer" },
+      columns: [{ column: "assignee_membership_id", type: "integer" }],
+      rows: [{ key: 10, values: [7] }],
+    };
+
+    it("refuses a cast name the schema does not carry, before it reaches sql.raw", async () => {
+      const captured: unknown[] = [];
+      const executor = stubExecutor(captured);
+      for (const type of HOSTILE_CASTS) {
+        await expect(
+          bulkUpdateFromValues(executor, {
+            ...base,
+            columns: [{ column: "assignee_membership_id", type }],
+          }),
+        ).rejects.toThrow(/bulkUpdateFromValues/);
+      }
+      expect(captured).toEqual([]);
+    });
+
+    it("refuses a SET, key or tenant identifier that is not a column of the table", async () => {
+      const captured: unknown[] = [];
+      const executor = stubExecutor(captured);
+      for (const column of HOSTILE_IDENTIFIERS) {
+        await expect(
+          bulkUpdateFromValues(executor, { ...base, columns: [{ column, type: "integer" }] }),
+        ).rejects.toThrow(/is not a column of tickets/);
+        await expect(
+          bulkUpdateFromValues(executor, { ...base, key: { column, type: "integer" } }),
+        ).rejects.toThrow(/is not a column of tickets/);
+        await expect(
+          bulkUpdateFromValues(executor, { ...base, orgColumn: column }),
+        ).rejects.toThrow(/is not a column of tickets/);
+        await expect(
+          bulkUpdateFromValues(executor, { ...base, touch: [column] }),
+        ).rejects.toThrow(/is not a column of tickets/);
+      }
+      expect(captured).toEqual([]);
+    });
+
+    it("CONTROL: a legitimate request still builds a bound, tenant-correlated statement", async () => {
+      const captured: SQL[] = [];
+      const executor = stubExecutor(captured);
+      await expect(
+        bulkUpdateFromValues(executor, { ...base, touch: ["updated_at"] }),
+      ).resolves.toEqual([]);
+
+      expect(captured).toHaveLength(1);
+      const { sql: text, params } = new PgDialect().sqlToQuery(captured[0] as SQL);
+      expect(text).toContain('"tickets"."org_id" =');
+      expect(params).toContain("org-1");
+      expect(text).not.toMatch(/DROP|--|;/);
+    });
   });
 
   it("the record-layout query builds its identifiers from the compile-time catalog, not from the request", () => {
