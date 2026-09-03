@@ -15,6 +15,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
+import {
+  SENDER_MEMBERSHIP_WITH_USER,
+  flattenMessageSender,
+} from "./chat-message-sender-shape";
 
 @Injectable()
 export class ChatPinsService {
@@ -58,17 +62,12 @@ export class ChatPinsService {
       with: {
         message: {
           with: {
-            senderMembership: {
-              columns: {},
-              with: {
-                user: { columns: { id: true, name: true, image: true } },
-              },
-            },
+            senderMembership: SENDER_MEMBERSHIP_WITH_USER,
             attachments: true,
           },
         },
         pinnedByMembership: {
-          columns: {},
+          columns: { userId: true },
           with: { user: { columns: { id: true, name: true } } },
         },
       },
@@ -76,16 +75,17 @@ export class ChatPinsService {
 
     const resolved = await this.entities.withResolvedReferences(
       actor,
-      rows.map((row) => row.message),
+      rows.map((row) => flattenMessageSender(row.message)),
     );
-    return rows.map((row, index) => ({
-      ...row,
-      message: {
-        ...resolved[index],
-        sender: resolved[index]?.senderMembership?.user ?? null,
-      },
-      pinnedByUser: row.pinnedByMembership?.user ?? null,
-    }));
+    return rows.map((row, index) => {
+      const { pinnedByMembership, ...pin } = row;
+      return {
+        ...pin,
+        pinnedBy: pinnedByMembership?.userId ?? null,
+        message: resolved[index],
+        pinnedByUser: pinnedByMembership?.user ?? null,
+      };
+    });
   }
 
   async pin(channelId: number, messageId: number, actor: EntityActor) {

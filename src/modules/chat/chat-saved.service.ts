@@ -6,6 +6,10 @@ import type { Db } from "../../db/drizzle.module";
 import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
+import {
+  SENDER_MEMBERSHIP_WITH_USER,
+  flattenMessageSender,
+} from "./chat-message-sender-shape";
 
 @Injectable()
 export class ChatSavedService {
@@ -33,7 +37,7 @@ export class ChatSavedService {
       with: {
         message: {
           with: {
-            senderMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
+            senderMembership: SENDER_MEMBERSHIP_WITH_USER,
             channel: { columns: { id: true, name: true, type: true } },
             attachments: true,
           },
@@ -44,7 +48,7 @@ export class ChatSavedService {
     const page = buildIdCursorPage(rows, safeLimit, (row) => row.id);
     const resolved = await this.entities.withResolvedReferences(
       actor,
-      page.data.map((row) => row.message),
+      page.data.map((row) => flattenMessageSender(row.message)),
     );
     return {
       items: page.data.map((row, index) => ({ ...row, message: resolved[index] })),

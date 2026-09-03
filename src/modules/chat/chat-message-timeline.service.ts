@@ -20,6 +20,7 @@ import {
   subjectKey,
   type PersonIdentity,
 } from "../directory/person-seam";
+import { liftSenderId } from "./chat-message-sender-shape";
 
 type ChatSender = {
   id: string | null;
@@ -93,7 +94,7 @@ export class ChatMessageTimelineService {
     },
   >(msg: M, identities: Map<string, PersonIdentity>) {
     return {
-      ...msg,
+      ...liftSenderId(msg),
       sender: senderFromIdentity(
         msg.senderMembership
           ? identities.get(
@@ -103,7 +104,7 @@ export class ChatMessageTimelineService {
       ),
       replyTo: msg.replyTo
         ? {
-            ...msg.replyTo,
+            ...liftSenderId(msg.replyTo),
             sender: senderFromIdentity(
               msg.replyTo.senderMembership
                 ? identities.get(

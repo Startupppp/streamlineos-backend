@@ -209,7 +209,13 @@ describe("chat huddle — the participant predicates against the real payload", 
   const nameFor = (participants: FlatParticipant[], userId: string) =>
     tileName(participants.find((p) => p.userId === userId));
   const isInHuddle = (participants: FlatParticipant[], me: string) => participants.some((p) => p.userId === me);
-  const isHost = (huddle: { startedBy?: string | null }, me: string) => huddle.startedBy === me;
+  /** Both shapes, so the predicate can be pointed at the served payload AND at the pre-fix one. */
+  interface HuddleHostView {
+    startedBy?: string | null;
+    startedByMembership?: { user: { id: string; name: string | null } } | null;
+  }
+
+  const isHost = (huddle: HuddleHostView, me: string) => huddle.startedBy === me;
 
   const preFixParticipants = [
     nestedParticipantRow(ME, 1),

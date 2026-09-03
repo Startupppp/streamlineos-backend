@@ -6,6 +6,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
+import {
+  SENDER_MEMBERSHIP_WITH_USER,
+  flattenMessageSender,
+} from "./chat-message-sender-shape";
 
 const CHAT_SEARCH_ID_CAP = 1000;
 const TRIGRAM_MIN_TERM_LENGTH = 3;
@@ -62,10 +66,7 @@ export class ChatSearchService {
       orderBy: [desc(chatMessages.id)],
       limit: limit + 1,
       with: {
-        senderMembership: {
-          columns: {},
-          with: { user: { columns: { id: true, name: true, image: true } } },
-        },
+        senderMembership: SENDER_MEMBERSHIP_WITH_USER,
         channel: { columns: { id: true, name: true, type: true } },
       },
     });
@@ -73,10 +74,7 @@ export class ChatSearchService {
     const hasMore = rows.length > limit;
     if (hasMore) rows.pop();
     const resolved = await this.entities.withResolvedReferences(actor, rows);
-    const results = resolved.map((row) => ({
-      ...row,
-      sender: row.senderMembership?.user ?? null,
-    }));
+    const results = resolved.map(flattenMessageSender);
     return { results, nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined };
   }
 
