@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { ConflictException, UnprocessableEntityException, type CallHandler, type ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { defer, lastValueFrom } from "rxjs";
@@ -389,6 +391,37 @@ describe("POST /finance/transfers — the cash cannot move twice", () => {
 
     expect(other.error).toBeInstanceOf(UnprocessableEntityException);
     expect(handlerCalls).toBe(1);
+  });
+});
+
+describe("the fence is inside the tenant transaction, which is what makes the above true", () => {
+  /*
+   * The whole argument rests on registration order. Nest applies global interceptors
+   * outermost-first, so TenantContextInterceptor — which opens the transaction and
+   * establishes the AsyncLocalStorage context the DRIZZLE proxy routes on — must be
+   * registered BEFORE IdempotencyInterceptor. Swap the two lines and the fence writes
+   * land on the pool instead, outside the transaction they are supposed to be atomic
+   * with, and nothing else in the suite notices.
+   */
+  it("registers TenantContextInterceptor before IdempotencyInterceptor", () => {
+    const appModule = readFileSync(
+      resolve(__dirname, "..", "..", "..", "..", "app.module.ts"),
+      "utf8",
+    );
+    const tenant = appModule.indexOf("useClass: TenantContextInterceptor");
+    const fence = appModule.indexOf("useClass: IdempotencyInterceptor");
+    expect(tenant).toBeGreaterThan(-1);
+    expect(fence).toBeGreaterThan(-1);
+    expect(tenant).toBeLessThan(fence);
+  });
+
+  it("routes the DRIZZLE provider to the ambient tenant transaction", () => {
+    const proxy = readFileSync(
+      resolve(__dirname, "..", "..", "..", "..", "common", "tenant", "tenant-db.ts"),
+      "utf8",
+    );
+    expect(proxy).toContain("getTenantContext()");
+    expect(proxy).toContain("context ? (context.tx as object) : target");
   });
 });
 
