@@ -22,12 +22,14 @@ import {
  * foreign org with an empty list, so nothing distinguishes "you have no pending purges"
  * from "that key belongs to someone else" — the 404-never-403 shape at the edge above it.
  *
- * `markConfirmed` and `markFailed` are keyed on the row's primary key alone. Two things
- * hold them: the id can only have come from the tenant-scoped read above, and the RLS
- * policy on this table (`USING (org_id = app.current_org_id())`, migration 0741) bites on
- * the tenant transaction the proxy in `common/tenant/tenant-db.ts` routes them into. The
- * last two tests pin the first of those, so a read that stopped filtering would be caught
- * at the point it hands a foreign id to a destructive update.
+ * `markConfirmed` and `markFailed` now bind the tenant alongside the row's primary key,
+ * so three things hold them: that predicate, the fact that the id can only have come from
+ * the tenant-scoped read above, and the RLS policy on this table
+ * (`USING (org_id = app.current_org_id())`, migration 0741) biting on the tenant
+ * transaction the proxy in `common/tenant/tenant-db.ts` routes them into. Only the first
+ * survives a call made outside a tenant context or by a role with BYPASSRLS. The last two
+ * tests pin the first and the second together, so neither a read that stopped filtering
+ * nor a predicate that stopped binding the org reaches a destructive update unnoticed.
  */
 
 const dialect = new PgDialect();
@@ -167,22 +169,24 @@ describe("StoragePendingPurgeService — cross-tenant isolation", () => {
     const { service, captured } = build([ROW_A, ROW_B]);
 
     for (const row of await service.listForRetry(ORG_A, 100))
-      await service.markConfirmed(row.id);
+      await service.markConfirmed(ORG_A, row.id);
 
     expect(captured.updates).toHaveLength(1);
     expect(boundIds(captured.updates[0] as SQL)).toEqual([ROW_A.id]);
     expect(boundIds(captured.updates[0] as SQL)).not.toContain(ROW_B.id);
+    expect(boundOrgs(captured.updates[0] as SQL)).toEqual([ORG_A]);
   });
 
   it("never hands a foreign tenant's row id to markFailed", async () => {
     const { service, captured } = build([ROW_A, ROW_B]);
 
     for (const row of await service.listForRetry(ORG_A, 100))
-      await service.markFailed(row.id, "R2 unreachable");
+      await service.markFailed(ORG_A, row.id, "R2 unreachable");
 
     expect(captured.updates).toHaveLength(1);
     expect(boundIds(captured.updates[0] as SQL)).toEqual([ROW_A.id]);
     expect(boundIds(captured.updates[0] as SQL)).not.toContain(ROW_B.id);
+    expect(boundOrgs(captured.updates[0] as SQL)).toEqual([ORG_A]);
   });
 
   it("keeps the tenant column NOT NULL, so the (org_id, storage_key) key cannot be evaded with a NULL", () => {

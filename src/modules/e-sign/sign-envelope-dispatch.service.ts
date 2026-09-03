@@ -18,6 +18,7 @@ import { SignTokensService } from "./sign-tokens.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { SYSTEM_ENVELOPE_SCOPE } from "./sign-envelope-scope";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import {
   SignEnvelopeValidationService,
@@ -81,7 +82,7 @@ export class SignEnvelopeDispatchService {
       envelope.expiresAt ?? addDays(new Date(), orgSettings.defaultExpirationDays);
     const finalizationKey = randomUUID();
 
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId, SYSTEM_ENVELOPE_SCOPE);
     const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
     const inviteNowIds = new Set(
       nextEligibleRecipientIds(
@@ -190,7 +191,7 @@ export class SignEnvelopeDispatchService {
     }
 
     const senderNameStr = await this.senderName(orgId, actor.membershipId);
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId, SYSTEM_ENVELOPE_SCOPE);
     let count = 0;
     for (const r of recipientRows) {
       if (!isSigningType(r.recipientType)) continue;
@@ -244,7 +245,7 @@ export class SignEnvelopeDispatchService {
     envelopeId: number,
   ): Promise<{ status: SignEnvelopeStatus; becameCompleted: boolean }> {
     const envelope = await this.findEnvelope(orgId, envelopeId);
-    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId, SYSTEM_ENVELOPE_SCOPE);
     const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
 
     const newStatus = computeEnvelopeStatusFromRecipients(

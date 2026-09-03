@@ -9,7 +9,9 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { AccessService } from "../access/access.service";
 import { SignFieldsService } from "./sign-fields.service";
+import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import { createFieldSchema, updateFieldSchema, type CreateFieldInput, type UpdateFieldInput } from "./dto/e-sign.schemas";
 import { resolveClientIp } from "../../common/http/client-ip";
 
@@ -21,7 +23,10 @@ const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).
 @Controller("sign")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SignFieldsController {
-  constructor(private readonly fields: SignFieldsService) {}
+  constructor(
+    private readonly fields: SignFieldsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Post("envelopes/:envelopeId/fields")
   @HttpCode(201)
@@ -39,8 +44,9 @@ export class SignFieldsController {
   @Get("envelopes/:envelopeId/fields")
   @RequirePermission("sign:envelope:view")
   @Validate({ params: envelopeIdParams })
-  list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.fields.listForEnvelope(u.orgId, envelopeId);
+  async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveEnvelopeViewScope(this.access, u);
+    return this.fields.listForEnvelope(u.orgId, envelopeId, scope);
   }
 
   @Patch("fields/:fieldId")

@@ -9,7 +9,9 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { AccessService } from "../access/access.service";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import {
   createRecipientSchema,
   updateRecipientSchema,
@@ -26,7 +28,10 @@ const recipientIdParams = z.object({ recipientId: z.coerce.number().int().positi
 @Controller("sign")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SignRecipientsController {
-  constructor(private readonly recipients: SignRecipientsService) {}
+  constructor(
+    private readonly recipients: SignRecipientsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Post("envelopes/:envelopeId/recipients")
   @HttpCode(201)
@@ -44,8 +49,9 @@ export class SignRecipientsController {
   @Get("envelopes/:envelopeId/recipients")
   @RequirePermission("sign:envelope:view")
   @Validate({ params: envelopeIdParams })
-  list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.recipients.listForEnvelope(u.orgId, envelopeId);
+  async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveEnvelopeViewScope(this.access, u);
+    return this.recipients.listForEnvelope(u.orgId, envelopeId, scope);
   }
 
   @Patch("recipients/:recipientId")

@@ -22,6 +22,8 @@ import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { KB_PAGE_COLUMNS, KB_PAGE_LIST_COLUMNS, type KbPageListItem, type KbPageRow } from "./kb-page-columns";
 import { StorageService } from "../../storage/storage.service";
 import { attemptPageAttachmentPurge, recordPageAttachmentPurge } from "./kb-page-attachment-purge";
+import { APP_CONFIG } from "../../../config/config.module";
+import type { AppConfig } from "../../../config/env.validation";
 
 type PageRow = KbPageRow;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -55,6 +57,7 @@ export class KbPageTreeService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async getTree(user: CurrentUserContext, projectId?: number): Promise<{
@@ -244,7 +247,13 @@ export class KbPageTreeService {
         );
     });
 
-    await attemptPageAttachmentPurge(this.db, this.storage, orgId, purgeKeys);
+    await attemptPageAttachmentPurge(
+      this.db,
+      this.storage,
+      orgId,
+      purgeKeys,
+      this.config.R2_KB_BUCKET_NAME,
+    );
 
     this.audit.log({
       action: "kb.page.permanently_deleted",
@@ -273,7 +282,13 @@ export class KbPageTreeService {
       .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids)))
       .returning({ id: kbPages.id });
 
-    await attemptPageAttachmentPurge(this.db, this.storage, orgId, purgeKeys);
+    await attemptPageAttachmentPurge(
+      this.db,
+      this.storage,
+      orgId,
+      purgeKeys,
+      this.config.R2_KB_BUCKET_NAME,
+    );
 
     this.audit.log({
       action: "kb.trash.emptied",
@@ -314,7 +329,13 @@ export class KbPageTreeService {
             sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
           ),
         );
-      await attemptPageAttachmentPurge(this.db, this.storage, orgId, purgeKeys);
+      await attemptPageAttachmentPurge(
+        this.db,
+        this.storage,
+        orgId,
+        purgeKeys,
+        this.config.R2_KB_BUCKET_NAME,
+      );
       purgedCount += ids.length;
     }
 

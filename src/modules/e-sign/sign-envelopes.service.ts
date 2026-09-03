@@ -17,6 +17,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { SYSTEM_ENVELOPE_SCOPE } from "./sign-envelope-scope";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -220,7 +221,7 @@ export class SignEnvelopesService {
         ),
         orderBy: (d, { asc }) => [asc(d.orderIndex)],
       }),
-      this.recipients.listForEnvelope(orgId, envelopeId),
+      this.recipients.listForEnvelope(orgId, envelopeId, SYSTEM_ENVELOPE_SCOPE),
       this.db.query.signFields.findMany({
         where: and(
           eq(signFields.orgId, orgId),
@@ -281,6 +282,7 @@ export class SignEnvelopesService {
     const recipientRows = await this.recipients.listForEnvelope(
       orgId,
       envelopeId,
+      SYSTEM_ENVELOPE_SCOPE,
     );
     for (const r of recipientRows) {
       if (r.email && r.status !== "completed") {

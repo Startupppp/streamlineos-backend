@@ -9,7 +9,11 @@ export const KB_PAGE_ATTACHMENT_PURGE_PURPOSE = "kb:page:purge";
 const PURGE_BOOKKEEPING_CHUNK = 500;
 
 export interface PageAttachmentObjectStore {
-  deleteFileIfPresent(orgId: string, key: string): Promise<boolean>;
+  deleteFileIfPresent(
+    orgId: string,
+    key: string,
+    bucketOverride?: string,
+  ): Promise<boolean>;
 }
 
 /**
@@ -66,19 +70,28 @@ export async function recordPageAttachmentPurge(
  * lost object. It must never throw back into the caller, because the pages are
  * already deleted by the time it runs and an exception here would report a
  * completed purge as a failure.
+ *
+ * `kbBucket` is required rather than optional and mirrors the override
+ * `KbMediaService` uploads these objects with. It is not decoration: an
+ * S3-compatible delete of a key that is absent answers success, so a delete
+ * that omitted the override would mark the row confirmed while the object sat
+ * untouched in the KB bucket with nothing left pointing at it. `undefined` is a
+ * legitimate value — it means the deployment runs a single bucket — but it has
+ * to be passed deliberately, not forgotten.
  */
 export async function attemptPageAttachmentPurge(
   db: Db,
   storage: PageAttachmentObjectStore,
   orgId: string,
   keys: string[],
+  kbBucket: string | undefined,
 ): Promise<{ confirmed: number; failed: number }> {
   let confirmed = 0;
   let failed = 0;
 
   for (const storageKey of keys) {
     try {
-      await storage.deleteFileIfPresent(orgId, storageKey);
+      await storage.deleteFileIfPresent(orgId, storageKey, kbBucket);
     } catch (err) {
       failed += 1;
       await markPurge(db, orgId, storageKey, {

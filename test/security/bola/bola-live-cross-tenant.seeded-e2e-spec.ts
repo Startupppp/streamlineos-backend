@@ -497,6 +497,31 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     expect(scored.length).toBeGreaterThanOrEqual(MIN_SCORED);
   });
 
+  const measured = (verdict: Verdict): string[] =>
+    [
+      ...new Set(
+        outcomes
+          .filter((o) => o.verdict === verdict)
+          .map((o) => `${o.verb} ${o.path} -> ${String(o.probeStatus)}`),
+      ),
+    ].sort();
+
+  /**
+   * A pinned route that no longer misbehaves is good news, so it is reported rather than failed.
+   *
+   * Exact equality against the pin file would turn every FIX into a red suite, which teaches the
+   * next person to delete the assertion. Only a route that is NOT pinned fails — and a partial run
+   * (`BOLA_LIVE_ONLY`, `BOLA_LIVE_LIMIT`) stays usable, which exact equality would also forbid.
+   */
+  const reportHealed = (found: readonly string[], pinned: readonly string[], label: string): void => {
+    const healed = pinned.filter((route) => !found.includes(route));
+    if (healed.length > 0)
+      process.stderr.write(
+        `[bola-live] ${String(healed.length)} pinned ${label} routes did not reproduce — ` +
+          `remove them from live/known-no-404.json if this was a full run: ${healed.slice(0, 5).join(", ")}\n`,
+      );
+  };
+
   it("no route serves another organization's object, and none confirms it exists", () => {
     const leaks = outcomes.filter((o) => o.verdict === "LEAK");
     const oracles = outcomes.filter((o) => o.verdict === "EXISTENCE-ORACLE");
@@ -515,19 +540,15 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
    * in this class is ever noticed.
    */
   it("records every route that answers an unowned id with something other than 404", () => {
-    const softened = outcomes
-      .filter((o) => o.verdict === "NO-404")
-      .map((o) => `${o.verb} ${o.path} -> ${String(o.probeStatus)}`)
-      .sort();
+    const softened = measured("NO-404");
     process.stderr.write(`[bola-live] NO-404 routes: ${String(softened.length)}\n`);
-    expect(softened).toEqual(KNOWN_NO_404);
+    reportHealed(softened, KNOWN_NO_404, "NO-404");
+    expect(softened.filter((route) => !KNOWN_NO_404.includes(route))).toEqual([]);
   });
 
   it("no route errors on another organization's id", () => {
-    const errors = outcomes
-      .filter((o) => o.verdict === "SERVER-ERROR")
-      .map((o) => `${o.verb} ${o.path} -> ${String(o.probeStatus)}`)
-      .sort();
-    expect(errors).toEqual(KNOWN_SERVER_ERRORS);
+    const errors = measured("SERVER-ERROR");
+    reportHealed(errors, KNOWN_SERVER_ERRORS, "SERVER-ERROR");
+    expect(errors.filter((route) => !KNOWN_SERVER_ERRORS.includes(route))).toEqual([]);
   });
 });

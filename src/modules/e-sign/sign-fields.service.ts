@@ -4,6 +4,7 @@ import { signDocuments, signEnvelopes, signFields, signRecipients } from "../../
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
+import { mustGetVisibleEnvelope, type EnvelopeViewScope } from "./sign-envelope-scope";
 import { isEnvelopeEditable } from "./sign-state";
 import type { CreateFieldInput, UpdateFieldInput } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
@@ -153,7 +154,13 @@ export class SignFieldsService {
     return field;
   }
 
-  async listForEnvelope(orgId: string, envelopeId: number) {
+  /**
+   * The envelope is resolved before the fields are, so an envelope in another
+   * organization answers 404 rather than an empty 200 — an empty list would
+   * still separate "this envelope has no fields" from "this envelope is not yours".
+   */
+  async listForEnvelope(orgId: string, envelopeId: number, scope: EnvelopeViewScope) {
+    await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Envelope not found");
     return this.db.query.signFields.findMany({
       where: and(eq(signFields.orgId, orgId), eq(signFields.envelopeId, envelopeId)),
       orderBy: (f, { asc }) => [asc(f.pageNumber), asc(f.orderIndex)],

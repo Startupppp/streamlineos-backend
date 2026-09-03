@@ -25,7 +25,9 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
+import { AccessService } from "../access/access.service";
 import { SignDocumentsService } from "./sign-documents.service";
+import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import { uploadDocumentMetaSchema, type UploadDocumentMetaInput } from "./dto/e-sign.schemas";
 import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import { resolveClientIp } from "../../common/http/client-ip";
@@ -38,7 +40,10 @@ const documentIdParams = z.object({ documentId: z.coerce.number().int().positive
 @Controller("sign")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SignDocumentsController {
-  constructor(private readonly documents: SignDocumentsService) {}
+  constructor(
+    private readonly documents: SignDocumentsService,
+    private readonly access: AccessService,
+  ) {}
 
   @Post("documents/upload")
   @MultipartAction({ file: "file" })
@@ -65,8 +70,9 @@ export class SignDocumentsController {
   @Get("envelopes/:envelopeId/documents")
   @RequirePermission("sign:documents:view")
   @Validate({ params: envelopeIdParams })
-  list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.documents.list(u.orgId, envelopeId);
+  async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveEnvelopeViewScope(this.access, u);
+    return this.documents.list(u.orgId, envelopeId, scope);
   }
 
   @Get("documents/:documentId/preview")

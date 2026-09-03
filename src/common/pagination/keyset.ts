@@ -51,6 +51,27 @@ function uuidId(position: KeysetPosition): string {
     : invalidCursor();
 }
 
+function integerSortValue(position: KeysetPosition): number {
+  const value = Number(position.sortValue);
+  return Number.isSafeInteger(value) ? value : invalidCursor();
+}
+
+/**
+ * Ascending keyset over an integer sort column with an integer id tie-breaker.
+ *
+ * A display-order column is an integer, not a timestamp, so `at()` would coerce
+ * it to `Invalid Date` and reject every cursor. Zero and negative orders are
+ * legitimate positions, which is why this validates differently from
+ * `numericId` — an id must be positive, a sort position need not be.
+ */
+export function keysetAfterIntValue(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) > (${sql.param(integerSortValue(position), sortColumn)}, ${sql.param(numericId(position), idColumn)})`;
+}
+
 // For a sort column that is already text and totally ordered with its id — a lexorank, a code — where `at()` must not coerce.
 export function keysetAfterValue(
   sortColumn: PgColumn,

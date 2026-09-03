@@ -179,7 +179,11 @@ export class KbSourcesService {
     const row = rows[0];
     if (row.kind === "file" && row.fileKey) {
       try {
-        await this.storage.deleteFile(orgId, row.fileKey);
+        await this.storage.deleteFile(
+          orgId,
+          row.fileKey,
+          this.config.R2_KB_BUCKET_NAME,
+        );
       } catch (err: unknown) {
         this.logger.warn(
           `KB source ${id} soft-deleted but binary "${row.fileKey}" could not be deleted from storage: ${String(err)}`,

@@ -13,6 +13,7 @@ import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { SYSTEM_ENVELOPE_SCOPE } from "./sign-envelope-scope";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { isSigningType } from "./sign-envelope-validation.service";
 import { isEnvelopeSignable } from "./sign-state";
@@ -55,6 +56,7 @@ export class SignEnvelopeSweepsService {
     const recipientRows = await this.recipients.listForEnvelope(
       envelope.orgId,
       envelope.id,
+      SYSTEM_ENVELOPE_SCOPE,
     );
     const senderNameStr = await this.senderName(envelope.orgId, envelope.senderMembershipId);
     let remindedCount = 0;

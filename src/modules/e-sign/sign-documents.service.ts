@@ -9,6 +9,7 @@ import { validateMagicBytes } from "../storage/file-signatures";
 import { SignPdfService } from "./sign-pdf.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignAuditService } from "./sign-audit.service";
+import { mustGetVisibleEnvelope, SYSTEM_ENVELOPE_SCOPE, type EnvelopeViewScope } from "./sign-envelope-scope";
 import { isEnvelopeEditable } from "./sign-state";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -116,7 +117,13 @@ export class SignDocumentsService {
     return document;
   }
 
-  async list(orgId: string, envelopeId: number) {
+  /**
+   * The envelope is resolved before the documents are, so an envelope in another
+   * organization answers 404 rather than an empty 200 — an empty list would still
+   * separate "this envelope has no documents" from "this envelope is not yours".
+   */
+  async list(orgId: string, envelopeId: number, scope: EnvelopeViewScope) {
+    await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Envelope not found");
     return this.db.query.signDocuments.findMany({
       where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
       orderBy: (doc, { asc }) => [asc(doc.orderIndex), asc(doc.id)],
@@ -204,7 +211,7 @@ export class SignDocumentsService {
 
   /** Fetches the current (pre-signing) PDF bytes for an envelope's documents, in order. */
   async fetchBuffers(orgId: string, envelopeId: number): Promise<{ documentId: number; buffer: Buffer }[]> {
-    const docs = await this.list(orgId, envelopeId);
+    const docs = await this.list(orgId, envelopeId, SYSTEM_ENVELOPE_SCOPE);
     const out: { documentId: number; buffer: Buffer }[] = [];
     for (const doc of docs) {
       const stream = await this.storage.getFileStream(orgId, doc.currentFileKey);

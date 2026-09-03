@@ -19,6 +19,12 @@ export interface PendingPurgeRow {
  * it — the organization purge and e-sign document deletion — and until this
  * service existed nothing ever read one back, so a row parked at `failed` was a
  * permanent orphan rather than a retry.
+ *
+ * Every method takes the tenant explicitly. The two marks update a row that
+ * DELETES an object, so binding `org_id` alongside the primary key is a third
+ * guard beside the tenant-scoped read that produced the id and the RLS policy
+ * on the table — and the only one that still holds outside a tenant transaction
+ * or under a role with BYPASSRLS.
  */
 @Injectable()
 export class StoragePendingPurgeService {
@@ -43,7 +49,7 @@ export class StoragePendingPurgeService {
       .limit(limit);
   }
 
-  async markConfirmed(id: string): Promise<void> {
+  async markConfirmed(orgId: string, id: string): Promise<void> {
     await this.db
       .update(storagePendingPurge)
       .set({
@@ -53,10 +59,10 @@ export class StoragePendingPurgeService {
         failedReason: null,
         attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
       })
-      .where(eq(storagePendingPurge.id, id));
+      .where(and(eq(storagePendingPurge.id, id), eq(storagePendingPurge.orgId, orgId)));
   }
 
-  async markFailed(id: string, reason: string): Promise<void> {
+  async markFailed(orgId: string, id: string, reason: string): Promise<void> {
     await this.db
       .update(storagePendingPurge)
       .set({
@@ -65,6 +71,6 @@ export class StoragePendingPurgeService {
         lastAttemptedAt: new Date(),
         attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
       })
-      .where(eq(storagePendingPurge.id, id));
+      .where(and(eq(storagePendingPurge.id, id), eq(storagePendingPurge.orgId, orgId)));
   }
 }
