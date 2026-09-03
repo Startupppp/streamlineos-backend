@@ -31765,8 +31765,8 @@
         "parameters": [
           {
             "name": "projectId",
-            "in": "path",
             "required": true,
+            "in": "path",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -31808,8 +31808,8 @@
         "parameters": [
           {
             "name": "projectId",
-            "in": "path",
             "required": true,
+            "in": "path",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -215373,9 +215373,9 @@
                       "ticket.created",
                       "ticket.assigned",
                       "ticket.status_changed",
-                      "ticket.escalated",
                       "ticket.priority_changed",
                       "ticket.message_received",
+                      "ticket.escalated",
                       "invoice.overdue",
                       "invoice.paid",
                       "candidate.application_created",
@@ -215409,7 +215409,14 @@
                       "expense.submitted",
                       "expense.approved",
                       "reimbursement.approved",
-                      "reimbursement.rejected"
+                      "reimbursement.rejected",
+                      "sign.envelope.sent",
+                      "sign.envelope.completed",
+                      "sign.envelope.declined",
+                      "sign.envelope.voided",
+                      "sign.envelope.expired",
+                      "sign.recipient.completed",
+                      "sign.bulk_send.completed"
                     ]
                   },
                   "conditions": {
@@ -215902,9 +215909,9 @@
                       "ticket.created",
                       "ticket.assigned",
                       "ticket.status_changed",
-                      "ticket.escalated",
                       "ticket.priority_changed",
                       "ticket.message_received",
+                      "ticket.escalated",
                       "invoice.overdue",
                       "invoice.paid",
                       "candidate.application_created",
@@ -215938,7 +215945,14 @@
                       "expense.submitted",
                       "expense.approved",
                       "reimbursement.approved",
-                      "reimbursement.rejected"
+                      "reimbursement.rejected",
+                      "sign.envelope.sent",
+                      "sign.envelope.completed",
+                      "sign.envelope.declined",
+                      "sign.envelope.voided",
+                      "sign.envelope.expired",
+                      "sign.recipient.completed",
+                      "sign.bulk_send.completed"
                     ]
                   },
                   "conditions": {
