@@ -125,10 +125,14 @@ describe("the surface, enumerated from the committed contract", () => {
   it("counts the operations and the id-shaped body and query fields", () => {
     const { counts } = enumerateIdFieldSites();
     expect(counts.operations).toBe(3642);
-    expect(counts.bodyFields).toBe(815);
+    // 815 -> 813 and 1054 -> 1052 at `25a87768` / `1400ca6c`, which removed four request fields
+    // nothing implements. Two of the four are id-shaped body fields — `attachmentSchema.fileKey`
+    // and `kbAskSchema.articleId` — so two body sites and two id sites went with them, on two
+    // operations. The ratchet moved DOWN, which is the direction it is allowed to move.
+    expect(counts.bodyFields).toBe(813);
     expect(counts.queryFields).toBe(239);
-    expect(counts.idFields).toBe(1054);
-    expect(counts.operationsWithIdFields).toBe(673);
+    expect(counts.idFields).toBe(1052);
+    expect(counts.operationsWithIdFields).toBe(671);
   });
 
   it("splits out the tenant and actor selectors rather than analysing them as object references", () => {

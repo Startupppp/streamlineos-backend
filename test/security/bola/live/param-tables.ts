@@ -17,6 +17,16 @@ export interface TableRef {
   readonly pk: string;
   /** `org_id` on most tables, `organization_id` on 81 of them. */
   readonly orgColumn: string;
+  /**
+   * The primary key's Postgres type name, when the catalog was read from a live database.
+   *
+   * It is what lets a candidate table be ruled out before a request is spent: `openapi.json`
+   * declares 1,685 of the 2,245 path parameters as `integer`/`number` and 44 as `format: uuid`, and
+   * a table whose key is the other kind can only ever answer 400 "Invalid UUID" / "expected number,
+   * received NaN". Optional because the offline specs build a `TableRef` by hand and the filter is
+   * simply not applied when the type is unknown.
+   */
+  readonly pkType?: string;
 }
 
 const SUFFIX_STRIP = /(Id|Key|Slug|Token)$/;
@@ -234,6 +244,46 @@ export const PARAM_ALIASES: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * Aliases that depend on WHERE the parameter appears, not only on its name.
+ *
+ * `:jobId` means `job_postings` under `/hr/recruitment`, `sign_bulk_send_jobs` under
+ * `/sign/bulk-send`, `inv_export_jobs` under `/inventory/export` and `payroll_jobs` under
+ * `/payroll/jobs` — one parameter, seven tables, and neither the parameter name nor the preceding
+ * segment can tell them apart. Without this the module-prefix pass resolves every one of them to
+ * `public.ai_jobs`, which holds an unrelated row, and all 13 routes answer their OWN tenant 404.
+ *
+ * Each entry was read out of the handler's service, not guessed: the `match` is a literal path
+ * fragment, and the first matching entry wins.
+ */
+export const PATH_PARAM_ALIASES: readonly {
+  readonly match: string;
+  readonly param: string;
+  readonly tables: readonly string[];
+}[] = [
+  { match: "/hr/recruitment/jobs", param: "jobId", tables: ["job_postings"] },
+  { match: "/hr/recruitment/internal-jobs", param: "jobId", tables: ["job_postings"] },
+  { match: "/careers/", param: "jobId", tables: ["job_postings"] },
+  { match: "/sign/bulk-send", param: "jobId", tables: ["sign_bulk_send_jobs"] },
+  { match: "/inventory/export", param: "jobId", tables: ["inv_export_jobs"] },
+  { match: "/inventory/import", param: "jobId", tables: ["inv_import_jobs"] },
+  { match: "/hr/import/jobs", param: "jobId", tables: ["hr_import_jobs"] },
+  { match: "/hr/export", param: "jobId", tables: ["hr_export_jobs"] },
+  { match: "/finance/reports", param: "jobId", tables: ["finance_report_export_jobs"] },
+  { match: "/payroll/runs", param: "jobId", tables: ["payroll_run_export_jobs"] },
+  { match: "/payroll/filings", param: "jobId", tables: ["payroll_run_export_jobs"] },
+  { match: "/payroll/jobs", param: "jobId", tables: ["payroll_jobs"] },
+  { match: "/expenses/export", param: "jobId", tables: ["expense_export_jobs"] },
+  { match: "/gdpr/export-async", param: "jobId", tables: ["gdpr_export_jobs"] },
+  { match: "/accounting/recurring-bills", param: "templateId", tables: ["fin_recurring_bill_templates"] },
+  { match: "/accounting/recurring-invoices", param: "templateId", tables: ["fin_recurring_invoice_templates"] },
+  { match: "/payroll/templates", param: "templateId", tables: ["payroll_templates"] },
+  { match: "/hr/recruitment/offer-templates", param: "templateId", tables: ["offer_letter_templates"] },
+  { match: "/hr/webhooks", param: "subscriptionId", tables: ["hr_webhook_subscriptions"] },
+  { match: "/crm/automations", param: "ruleId", tables: ["crm_automation_rules"] },
+  { match: "/tasks", param: "taskId", tables: ["tasks"] },
+];
+
+/**
  * A table name worth trying, and whether it came from the curated alias table.
  *
  * The distinction is load-bearing: an alias is measured knowledge about one parameter, while the
@@ -251,6 +301,8 @@ export function candidateTableNames(route: HandlerRoute, param: string): Candida
   const push = (name: string, alias: boolean): void => {
     if (name.length > 0 && !out.some((entry) => entry.name === name)) out.push({ name, alias });
   };
+  const scoped = PATH_PARAM_ALIASES.find((entry) => entry.param === param && route.path.includes(entry.match));
+  if (scoped) for (const alias of scoped.tables) push(alias, true);
   for (const alias of PARAM_ALIASES[param] ?? []) push(alias, true);
   const segment = precedingSegment(route.path, param);
   if (segment !== null) for (const candidate of pluralCandidates(segment)) push(candidate, false);

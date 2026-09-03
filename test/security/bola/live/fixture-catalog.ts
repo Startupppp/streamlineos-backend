@@ -30,13 +30,14 @@ export interface Catalog {
  * discovered per table and carried on the reference.
  */
 const ORG_SCOPED_TABLES = `
-SELECT n.nspname AS schema, c.relname AS name, pk.attname AS pk, o.attname AS org_column
+SELECT n.nspname AS schema, c.relname AS name, pk.attname AS pk, pk.pk_type AS pk_type, o.attname AS org_column
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN LATERAL (
-  SELECT a.attname
+  SELECT a.attname, t.typname AS pk_type
   FROM pg_index i
   JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = i.indkey[0]
+  JOIN pg_type t ON t.oid = a.atttypid
   WHERE i.indrelid = c.oid AND i.indisprimary AND array_length(i.indkey, 1) = 1
   LIMIT 1
 ) pk ON true
@@ -80,15 +81,16 @@ export async function loadCatalog(
   perTable = DEFAULT_IDS_PER_TABLE,
   batchSize = 60,
 ): Promise<Catalog> {
-  const rows = await sql.unsafe<{ schema: string; name: string; pk: string; org_column: string }[]>(
-    ORG_SCOPED_TABLES,
-  );
+  const rows = await sql.unsafe<
+    { schema: string; name: string; pk: string; pk_type: string; org_column: string }[]
+  >(ORG_SCOPED_TABLES);
   const tables = new Map<string, TableRef>();
   for (const row of rows)
     tables.set(`${row.schema}.${row.name}`, {
       schema: row.schema,
       name: row.name,
       pk: row.pk,
+      pkType: row.pk_type,
       orgColumn: row.org_column,
     });
 

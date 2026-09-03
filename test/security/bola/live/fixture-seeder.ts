@@ -32,6 +32,8 @@ interface ColumnMeta {
   readonly hasDefault: boolean;
   readonly generated: boolean;
   readonly attnum: number;
+  /** Declared length for `varchar(n)`, so a placeholder cannot overflow it. */
+  readonly maxLength: number | null;
 }
 
 interface ForeignKey {
@@ -45,7 +47,8 @@ const COLUMNS_SQL = `
 SELECT n.nspname AS schema, c.relname AS "table", a.attname AS column, t.typname AS udt,
        t.typtype AS typtype, a.attnotnull AS notnull,
        (a.atthasdef OR a.attidentity <> '' OR a.attgenerated <> '') AS has_default,
-       (a.attidentity <> '' OR a.attgenerated <> '') AS generated, a.attnum AS attnum
+       (a.attidentity <> '' OR a.attgenerated <> '') AS generated, a.attnum AS attnum,
+       CASE WHEN t.typname IN ('varchar', 'bpchar') AND a.atttypmod > 4 THEN a.atttypmod - 4 END AS max_length
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
@@ -72,6 +75,22 @@ SELECT t.typname AS udt, e.enumlabel AS label
 FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
 ORDER BY t.typname, e.enumsortorder`;
 
+/**
+ * The values a CHECK constraint actually allows, where it says so in a form a machine can read.
+ *
+ * MEASURED: 10 of the 49 tables the seeder was asked to fill refused a placeholder on a CHECK, and
+ * every one of them is the same shape — `provider = ANY (ARRAY['gmail', 'outlook'])`,
+ * `severity = ANY (...)`, `action = ANY (...)`. Reading the allowed set turns those refusals into
+ * rows. Constraints that are not a simple equality or membership (an exclusive arc, `a <> b`,
+ * `amount > 0`) are left alone and the table stays reported as refused.
+ */
+const CHECK_SQL = `
+SELECT n.nspname AS schema, c.relname AS "table", pg_get_constraintdef(con.oid) AS def
+FROM pg_constraint con
+JOIN pg_class c ON c.oid = con.conrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE con.contype = 'c' AND n.nspname IN ('public', 'build')`;
+
 const PK_SQL = `
 SELECT n.nspname AS schema, c.relname AS "table", a.attname AS pk
 FROM pg_class c
@@ -95,6 +114,7 @@ export class FixtureSeeder {
   private readonly foreignKeys = new Map<string, ForeignKey[]>();
   private readonly enums = new Map<string, string>();
   private readonly primaryKeys = new Map<string, string>();
+  private readonly allowed = new Map<string, string>();
   private readonly created = new Map<string, string>();
   private readonly refused = new Map<string, string>();
   private readonly inFlight = new Set<string>();
@@ -117,6 +137,7 @@ export class FixtureSeeder {
         has_default: boolean;
         generated: boolean;
         attnum: number;
+        max_length: number | null;
       }[]
     >(COLUMNS_SQL);
     for (const row of cols) {
@@ -130,6 +151,7 @@ export class FixtureSeeder {
         hasDefault: row.has_default,
         generated: row.generated,
         attnum: row.attnum,
+        maxLength: row.max_length === null ? null : Number(row.max_length),
       });
       this.columns.set(key, list);
     }
@@ -149,6 +171,18 @@ export class FixtureSeeder {
     }
     const labels = await this.sql.unsafe<{ udt: string; label: string }[]>(ENUM_SQL);
     for (const row of labels) if (!this.enums.has(row.udt)) this.enums.set(row.udt, row.label);
+    const checks = await this.sql.unsafe<{ schema: string; table: string; def: string }[]>(CHECK_SQL);
+    for (const row of checks) {
+      const membership = /\(?"?([a-z_0-9]+)"?\)?(?:::[a-z ]+)? = ANY \(\(?ARRAY\[([^\]]+)\]/.exec(row.def);
+      if (membership) {
+        const first = /'([^']*)'/.exec(membership[2] ?? "");
+        if (first?.[1] !== undefined) this.allowed.set(`${row.schema}.${row.table}.${membership[1] ?? ""}`, first[1]);
+        continue;
+      }
+      const equality = /\(?"?([a-z_0-9]+)"?\)?(?:::[a-z ]+)? = '([^']*)'/.exec(row.def);
+      if (equality?.[1] !== undefined && equality[2] !== undefined)
+        this.allowed.set(`${row.schema}.${row.table}.${equality[1]}`, equality[2]);
+    }
     const keys = await this.sql.unsafe<{ schema: string; table: string; pk: string }[]>(PK_SQL);
     for (const row of keys) this.primaryKeys.set(`${row.schema}.${row.table}`, row.pk);
     for (const list of this.columns.values()) list.sort((a, b) => a.attnum - b.attnum);
@@ -158,7 +192,9 @@ export class FixtureSeeder {
    * A value the column's own type accepts, sent as a text parameter so Postgres casts it in the
    * INSERT's known column context rather than the harness guessing at a literal.
    */
-  private value(column: ColumnMeta): string {
+  private value(column: ColumnMeta, table: string): string {
+    const allowed = this.allowed.get(`${table}.${column.name}`);
+    if (allowed !== undefined) return allowed;
     if (column.typtype === "e") return this.enums.get(column.udt) ?? "UNKNOWN";
     if (column.udt.startsWith("_")) return "{}";
     switch (column.udt) {
@@ -194,14 +230,23 @@ export class FixtureSeeder {
         return "127.0.0.1";
       case "vector":
         return "[0]";
-      default:
-        return `bola-fixture-${randomUUID().slice(0, 8)}`;
+      default: {
+        const text = `bola-fixture-${randomUUID().slice(0, 8)}`;
+        return column.maxLength !== null && column.maxLength < text.length ? text.slice(0, column.maxLength) : text;
+      }
     }
   }
 
   /** An existing row of the referenced table this tenant may point at, or null. */
   private async referenced(fk: ForeignKey, depth: number): Promise<readonly string[] | null> {
     const key = `${fk.refSchema}.${fk.refTable}`;
+    /**
+     * `users` is global identity with no `org_id`, so "any row" is usually someone else's — and
+     * several tables carry a trigger that refuses a user who is not a member of the row's
+     * organisation ("HR actor … does not belong to organization"). The caller is the one user this
+     * fixture is guaranteed to be allowed to name.
+     */
+    if (fk.refTable === "users" && fk.refColumns.length === 1) return [this.userId];
     const refCols = this.columns.get(key) ?? [];
     const orgCol = refCols.find((c) => c.name === "org_id" || c.name === "organization_id");
     const select = fk.refColumns.map((c) => `"${c}"::text`).join(", ");
@@ -267,7 +312,7 @@ export class FixtureSeeder {
       for (const column of columns) {
         if (column.generated || values.has(column.name)) continue;
         if (!column.notNull || column.hasDefault) continue;
-        values.set(column.name, ownedByActor.has(column.name) ? this.userId : this.value(column));
+        values.set(column.name, ownedByActor.has(column.name) ? this.userId : this.value(column, key));
       }
 
       const names = [...values.keys()];

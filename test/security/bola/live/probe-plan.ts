@@ -1,4 +1,5 @@
 import type { HandlerRoute } from "../route-surface";
+import { pathParamShape, type PathParamShape } from "./body-synthesis";
 import { candidateTableNames, objectAddressableRoutes, pathHints, resolveTables, type TableRef } from "./param-tables";
 
 /**
@@ -100,6 +101,21 @@ export function routeKey(route: HandlerRoute): string {
   return `${route.verb} ${route.path} [${route.controllerClass}.${route.handler}]`;
 }
 
+const INTEGER_KEYS: readonly string[] = ["int2", "int4", "int8", "numeric"];
+
+/**
+ * Whether a table's primary key can even be spelled the way this route's parameter is declared.
+ *
+ * A table is dropped only when the contract is explicit AND the key type contradicts it. An unknown
+ * key type (the offline specs build `TableRef`s by hand) and an unconstrained parameter both keep
+ * every candidate, so the filter can lose coverage in no case it does not already lose.
+ */
+export function keyFitsParam(table: TableRef, shape: PathParamShape): boolean {
+  if (shape === "unconstrained" || table.pkType === undefined) return true;
+  if (shape === "integer") return INTEGER_KEYS.includes(table.pkType);
+  return table.pkType === "uuid" || table.pkType === "text" || table.pkType === "varchar";
+}
+
 export function bindParam(
   route: HandlerRoute,
   param: string,
@@ -111,7 +127,10 @@ export function bindParam(
   if (isNonObjectParam(param))
     return { kind: "unbindable", param, reason: `":${param}" does not address an object` };
   const candidates = candidateTableNames(route, param);
-  const tables = resolveTables(candidates, known, populated, pathHints(route.path));
+  const shape = pathParamShape(route.verb, route.path, param);
+  const tables = resolveTables(candidates, known, populated, pathHints(route.path)).filter((table) =>
+    keyFitsParam(table, shape),
+  );
   const head = tables[0];
   if (!head)
     return {
@@ -119,8 +138,7 @@ export function bindParam(
       param,
       reason: `no table resolves ":${param}" (tried ${candidates.slice(0, 4).map((c) => c.name).join(", ")})`,
     };
-  const usable = tables.filter((table) => populated.has(`${table.schema}.${table.name}`));
-  const best = usable[0];
+  const best = tables.find((table) => populated.has(`${table.schema}.${table.name}`));
   if (!best)
     return {
       kind: "unbindable",
@@ -129,7 +147,16 @@ export function bindParam(
         `${head.schema}.${head.name} holds no row for the source tenant` +
         (tables.length > 1 ? ` (nor do ${tables.slice(1).map((t) => `${t.schema}.${t.name}`).join(", ")})` : ""),
     };
-  return { kind: "table", param, table: best, tables: usable };
+  /**
+   * The whole ranked list is carried, empty tables included, and `table` is the best POPULATED one.
+   *
+   * An empty table costs nothing to keep: the borrow pool answers null for it and the sweep moves to
+   * the next candidate without spending a request. It has to be kept, because the highest-ranked
+   * table is often the right one AND empty — `/tasks/:taskId` really does mean `public.tasks`, which
+   * holds no row, while `public.lead_tasks` holds one and is wrong — and `unpopulatedTargets` asks
+   * the fixture seeder to fill exactly that case.
+   */
+  return { kind: "table", param, table: best, tables };
 }
 
 export function planRoutes(
@@ -156,9 +183,14 @@ export function planRoutes(
 /**
  * The tables a route needs and the tenant does not hold — the seeder's work list, best guess first.
  *
- * Returned as `schema.table` -> how many object-addressable routes are blocked on it, so a run can
- * spend its fixture budget where it buys the most coverage. In the previous full run 242 routes were
- * blocked on 64 such tables and the top five accounted for 106 of them.
+ * Returned as `schema.table` -> how many object-addressable routes want it, so a run can spend its
+ * fixture budget where it buys the most coverage. In the previous full run 242 routes were blocked
+ * on 64 such tables and the top five accounted for 106 of them.
+ *
+ * It reports the BEST-RANKED table whenever that table is empty, not only when every candidate is.
+ * A route whose right table is empty while a wrong one holds a row is the harder case, not the
+ * easier one: `/tasks/:taskId` means `public.tasks` (empty) and would otherwise silently bind
+ * `public.lead_tasks` (one row, wrong entity) and answer its own tenant 404 forever.
  */
 export function unpopulatedTargets(
   known: ReadonlyMap<string, TableRef>,
@@ -168,10 +200,14 @@ export function unpopulatedTargets(
   const out = new Map<string, { table: TableRef; routes: number }>();
   for (const route of routes)
     for (const param of route.pathParams) {
-      const binding = bindParam(route, param, known, populated);
-      if (binding.kind !== "unbindable" || !binding.reason.includes("holds no row")) continue;
-      const table = resolveTables(candidateTableNames(route, param), known, populated, pathHints(route.path))[0];
+      if (isNonObjectParam(param) || param === "orgId" || param === "organizationId") continue;
+      if (param === "userId" || param === "actorId") continue;
+      const shape = pathParamShape(route.verb, route.path, param);
+      const table = resolveTables(candidateTableNames(route, param), known, populated, pathHints(route.path)).filter(
+        (candidate) => keyFitsParam(candidate, shape),
+      )[0];
       if (!table) continue;
+      if (populated.has(`${table.schema}.${table.name}`)) continue;
       const key = `${table.schema}.${table.name}`;
       const seen = out.get(key);
       if (seen) seen.routes += 1;

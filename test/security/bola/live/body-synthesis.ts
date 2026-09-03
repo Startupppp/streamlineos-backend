@@ -102,6 +102,28 @@ export function findOperation(verb: string, routePath: string): Operation | null
   return doc.paths[toContractPath(routePath)]?.[verb.toLowerCase()] ?? null;
 }
 
+/**
+ * What the contract says a path parameter IS — the cheapest way to rule a candidate table out.
+ *
+ * Measured over `openapi.json`: 1,685 of the 2,245 declared path parameters are `integer`/`number`
+ * and 44 are `format: uuid`. A table whose primary key is the other kind cannot serve them: the
+ * request never reaches the handler, it dies in the validation interceptor with "Invalid UUID" or
+ * "expected number, received NaN", and the route is filed unprobeable for a reason that is entirely
+ * the harness's. The remaining `string` parameters are left unfiltered because `z.string().min(1)`
+ * accepts a numeric key as readily as a uuid.
+ */
+export type PathParamShape = "integer" | "uuid" | "unconstrained";
+
+export function pathParamShape(verb: string, routePath: string, param: string): PathParamShape {
+  const operation = findOperation(verb, routePath);
+  const declared = (operation?.parameters ?? []).find((entry) => entry.in === "path" && entry.name === param);
+  const schema = declared?.schema;
+  if (!schema) return "unconstrained";
+  if (schema.type === "integer" || schema.type === "number") return "integer";
+  if (schema.format === "uuid") return "uuid";
+  return "unconstrained";
+}
+
 type Attempt = { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly why: string };
 
 const ok = (value: unknown): Attempt => ({ ok: true, value });
