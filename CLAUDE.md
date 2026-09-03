@@ -29,7 +29,12 @@
 - **HTTP:** no writes in a GET; API versioning; cursor pagination for live data; consistent filter/sort conventions.
 - **Route params are descriptive, never bare `id`.** `@Post("reimbursements/:reimbursementId/approve")` + `@Param("reimbursementId")` + the variable all match — a bare `:id` says nothing about what it identifies and stops matching the frontend's `[reimbursementId]` folder (frontend §1). Never expose or accept a bare `id` name in a route, param, DTO field or query key; say what it identifies.
 - **Idempotency:** mutating endpoints accept a client `Idempotency-Key`, store the first result keyed by (key + tenant), replay on retry, 409 while in-flight, error on param mismatch, expire after a TTL.
-- **`@UseRateLimit("key")` needs a matching `TIERS` entry** — an unknown key silently disables the limit.
+- **`@UseRateLimit("key")` needs a matching `TIERS` entry.** ⚠ **CORRECTED 2026-09-03:** the old
+  wording here ("an unknown key silently disables the limit") described pre-SEC-004 behaviour and is
+  now FALSE. `rate-limit.service.ts:171` denies by default on an unregistered tier and logs it — the
+  comment there records that it used to `return { allowed: true }`, which is how `hr-form:public-view`,
+  `hr-form:public-submit` and `platform-visit` ran unlimited. Still register your tier; but a typo now
+  fails closed and loudly, it does not open the route.
 
 ## 3. Database (Drizzle + Neon)
 
