@@ -23,6 +23,14 @@ export class SurveyCollectorService {
   }
 
   async create(orgId: string, surveyId: number, input: CreateCollectorInput) {
+    /**
+     * The survey is resolved under the caller's organisation before a collector is inserted, which
+     * `list` on the same service already did and `create` did not. `survey_collectors` carries
+     * `fk_survey_collectors_survey_id_org (org_id, survey_id) -> survey_forms(org_id, id)`, so
+     * another organisation's survey id could not land — the database refused it with a 23503 that
+     * nothing caught and the route answered **500**. Measured live by the cross-tenant sweep.
+     */
+    await assertSurveyInOrg(this.db, orgId, surveyId);
     const [collector] = await this.db
       .insert(surveyCollectors)
       .values({
