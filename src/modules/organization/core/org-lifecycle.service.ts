@@ -26,6 +26,7 @@ import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
+import { repairLastActiveOrgIds } from "./lifecycle/last-active-org-repair";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 
 @Injectable()
@@ -113,32 +114,6 @@ export class OrgLifecycleService {
     return replacements;
   }
 
-  private async repairLastActiveOrgIds(
-    db: DbOrTx,
-    orgId: string,
-    replacements: Map<string, string | null>,
-  ): Promise<void> {
-    for (const [memberUserId, nextOrgId] of replacements) {
-      await db
-        .update(users)
-        .set({ lastActiveOrgId: nextOrgId })
-        .where(
-          and(
-            eq(users.id, memberUserId),
-            eq(users.lastActiveOrgId, orgId),
-          ),
-        );
-      await db
-        .update(accountOrganizationIndex)
-        .set({ organizationStatus: "ARCHIVED" })
-        .where(
-          and(
-            eq(accountOrganizationIndex.userId, memberUserId),
-            eq(accountOrganizationIndex.orgId, orgId),
-          ),
-        );
-    }
-  }
 
   async listArchivedOwnedOrganizations(userId: string) {
     const rows = await withIdentity(this.db, userId, (tx) =>
@@ -226,7 +201,7 @@ export class OrgLifecycleService {
           runInTenantTransaction(
             this.db,
             async (tx) => {
-              await this.repairLastActiveOrgIds(tx, orgId, replacements);
+              await repairLastActiveOrgIds(tx, orgId, replacements);
               await tx
                 .update(organizations)
                 .set({ status: "ARCHIVED", deletedAt: new Date() })

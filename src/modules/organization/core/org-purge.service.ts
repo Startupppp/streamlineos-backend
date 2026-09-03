@@ -7,14 +7,12 @@ import {
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import {
-  accountOrganizationIndex,
   candidateOffers,
   leaveBlackoutDates,
   onboardingTasks,
   organizationLegalHolds,
   organizationMembers,
   organizations,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -27,6 +25,7 @@ import { OrgMembershipService } from "./org-membership.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
+import { repairLastActiveOrgIds } from "./lifecycle/last-active-org-repair";
 import { unplaceOrganization } from "../../../common/region/placement-lookup";
 import {
   getRegionRegistry,
@@ -138,32 +137,6 @@ export class OrgPurgeService {
     return replacements;
   }
 
-  private async repairLastActiveOrgIds(
-    db: DbOrTx,
-    orgId: string,
-    replacements: Map<string, string | null>,
-  ): Promise<void> {
-    for (const [memberUserId, nextOrgId] of replacements) {
-      await db
-        .update(users)
-        .set({ lastActiveOrgId: nextOrgId })
-        .where(
-          and(
-            eq(users.id, memberUserId),
-            eq(users.lastActiveOrgId, orgId),
-          ),
-        );
-      await db
-        .update(accountOrganizationIndex)
-        .set({ organizationStatus: "ARCHIVED" })
-        .where(
-          and(
-            eq(accountOrganizationIndex.userId, memberUserId),
-            eq(accountOrganizationIndex.orgId, orgId),
-          ),
-        );
-    }
-  }
 
   async deleteOrg(orgId: string, userId: string, confirmation: string) {
     const [org] = await runInTenantTransaction(
@@ -243,7 +216,7 @@ export class OrgPurgeService {
             await runInTenantTransaction(
               this.db,
               async (tx) => {
-                await this.repairLastActiveOrgIds(tx, orgId, replacements);
+                await repairLastActiveOrgIds(tx, orgId, replacements);
                 await tx.delete(candidateOffers).where(eq(candidateOffers.orgId, orgId));
                 await tx
                   .delete(leaveBlackoutDates)
