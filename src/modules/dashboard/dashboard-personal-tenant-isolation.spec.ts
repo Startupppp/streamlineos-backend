@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { DashboardPersonalService } from "./dashboard-personal.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -14,15 +15,21 @@ function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
+const aliasedSubquery = (alias: string) =>
+  new Proxy({} as Record<string, unknown>, {
+    get: (_target, prop) => (typeof prop === "string" ? sql.raw(`"${alias}"."${prop}"`) : undefined),
+  });
+
 function makeFrom(wheres: unknown[]): object {
   const chain = Object.assign(Promise.resolve([]), {
     orderBy: jest.fn().mockImplementation(() => Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([]) })),
-    limit: jest.fn().mockResolvedValue([]),
+    limit: jest.fn().mockImplementation(() => Object.assign(Promise.resolve([]), { as: (alias: string) => aliasedSubquery(alias) })),
   });
   const where = jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return chain; });
   const self: Record<string, jest.Mock> = { where };
   self["innerJoin"] = jest.fn().mockImplementation(() => makeFrom(wheres));
   self["leftJoin"] = jest.fn().mockImplementation(() => makeFrom(wheres));
+  self["leftJoinLateral"] = jest.fn().mockImplementation(() => makeFrom(wheres));
   return self;
 }
 
@@ -77,12 +84,9 @@ describe("DashboardPersonalService — cross-tenant isolation", () => {
     await svc.getPersonalDashboard(makeU(ATTACKER));
 
     const vals = wheres.flatMap(w => sqlValues(w));
-    if (vals.length > 0) {
-      expect(vals).toContain(ATTACKER);
-      expect(vals).not.toContain(OWNER);
-    } else {
-      expect(true).toBe(true);
-    }
+    expect(vals.length).toBeGreaterThan(0);
+    expect(vals).toContain(ATTACKER);
+    expect(vals).not.toContain(OWNER);
     expect(notifSvc.unreadCount).toHaveBeenCalledWith(ATTACKER, "user-1");
     expect(notifSvc.unreadCount).not.toHaveBeenCalledWith(OWNER, expect.anything());
   });
@@ -97,6 +101,7 @@ describe("DashboardPersonalService — cross-tenant isolation", () => {
     expect(result).toBeDefined();
     expect(result).toHaveProperty("myTasks");
     expect(result).toHaveProperty("upcomingEvents");
+    expect(result.degraded ?? []).not.toContain("upcomingEvents");
     expect(notifSvc.unreadCount).toHaveBeenCalledWith(OWNER, "user-1");
   });
 });

@@ -9,13 +9,14 @@
  *
  * DB call order in getPersonalDashboard with ALL modules disabled:
  *   findFirst  → organizationMembers lookup (db.query.organizationMembers.findFirst)
- *   select 1   → outer calendarEvents query (select({id,title,…}).from(calendarEvents).where(…).orderBy(…).limit(3))
- *   select 2   → creator EXISTS inner       (select({one:sql`1`}).from(organizationMembers).where(…))
- *   select 3   → attendee EXISTS inner      (select({one:sql`1`}).from(eventAttendees).innerJoin(…).where(…))
+ *   select 1   → attendee LATERAL subquery  (select({hit}).from(eventAttendees).where(…).limit(1).as("attended_event"))
+ *   select 2   → outer calendarEvents query (select({id,title,…}).from(calendarEvents).leftJoinLateral(…).where(…).orderBy(…).limit(3))
+ *   select 3   → creator EXISTS inner       (select({one:sql`1`}).from(organizationMembers).where(…))
  *   unreadNotifications → delegated to NotificationsService.unreadCount (no direct db.select)
  *
- * select 2 and 3 are builder calls inside the argument to the outer .where(); they
- * return a SQL condition object (not a Promise), so they are never directly awaited.
+ * select 3 is a builder call inside the argument to the outer .where(); it returns a
+ * SQL condition object (not a Promise), so it is never directly awaited. Select 1 is
+ * built before the outer query so the LATERAL alias exists when .leftJoinLateral runs.
  *
  * Maximum DB calls with all modules enabled: 1 findFirst + 4 selects
  * (timesheets-sum, outer calendarEvents, 2 EXISTS subqueries).
@@ -24,6 +25,7 @@
  * unreadNotifications → NotificationsService.unreadCount (delegated).
  */
 
+import { sql } from "drizzle-orm";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -37,6 +39,21 @@ import type { NotificationsService } from "../notifications/notifications.servic
 
 const ORG = "org-iso-test-1";
 const USER = "user-iso-test-1";
+
+const aliasedSubquery = (alias: string) =>
+  new Proxy({} as Record<string, unknown>, {
+    get: (_target, prop) => (typeof prop === "string" ? sql.raw(`"${alias}"."${prop}"`) : undefined),
+  });
+
+function makeLateralChain(): Record<string, unknown> {
+  const lateralChain: Record<string, unknown> = {
+    from: function () { return lateralChain; },
+    where: function () {
+      return { limit: () => ({ as: (alias: string) => aliasedSubquery(alias) }) };
+    },
+  };
+  return lateralChain;
+}
 
 function makeUser(): CurrentUserContext {
   return { userId: USER, orgId: ORG } as CurrentUserContext;
@@ -78,6 +95,7 @@ function makeNeutralPersonalDb(): { db: Db } {
 
   const outerEventChain: Record<string, unknown> = {
     from: function () { return outerEventChain; },
+    leftJoinLateral: function () { return outerEventChain; },
     where: function () {
       return { orderBy: () => ({ limit: () => Promise.resolve([]) }) };
     },
@@ -87,11 +105,12 @@ function makeNeutralPersonalDb(): { db: Db } {
   const db = {
     query: {
       tickets: { findMany: jest.fn().mockResolvedValue([]) },
-      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-iso-1" }) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-iso-1", status: "ACTIVE" }) },
     },
     select: jest.fn().mockImplementation(() => {
       callIdx++;
-      if (callIdx === 1) return outerEventChain;
+      if (callIdx === 1) return makeLateralChain();
+      if (callIdx === 2) return outerEventChain;
       return innerChain;
     }),
   } as unknown as Db;
@@ -101,8 +120,9 @@ function makeNeutralPersonalDb(): { db: Db } {
 
 /**
  * Db mock for the isolation (GUARANTEE II) test.
- * Call 1 (outer calendarEvents) → .limit() rejects with "DB timeout".
- * Calls 2+ (EXISTS subqueries)  → innerChain returns condition objects.
+ * Call 1 (attendee LATERAL)     → returns the aliased subquery.
+ * Call 2 (outer calendarEvents) → .limit() rejects with "DB timeout".
+ * Calls 3+ (EXISTS subqueries)  → innerChain returns condition objects.
  * unreadNotifications is now delegated; pass makeNotificationsService(7) for count=7.
  * Removal proof: removing `settle("upcomingEvents", …)` causes the reject to
  * propagate out of Promise.all → getPersonalDashboard rejects entirely →
@@ -117,6 +137,7 @@ function makeIsolationPersonalDb(): Db {
 
   const failingOuterChain: Record<string, unknown> = {
     from: function () { return failingOuterChain; },
+    leftJoinLateral: function () { return failingOuterChain; },
     where: function () {
       return { orderBy: () => ({ limit: () => Promise.reject(new Error("DB timeout")) }) };
     },
@@ -126,11 +147,12 @@ function makeIsolationPersonalDb(): Db {
   return {
     query: {
       tickets: { findMany: jest.fn().mockResolvedValue([]) },
-      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-iso-1" }) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-iso-1", status: "ACTIVE" }) },
     },
     select: jest.fn().mockImplementation(() => {
       callIdx++;
-      if (callIdx === 1) return failingOuterChain;
+      if (callIdx === 1) return makeLateralChain();
+      if (callIdx === 2) return failingOuterChain;
       return innerChain;
     }),
   } as unknown as Db;
@@ -394,6 +416,7 @@ describe("DashboardPersonalService — membership once + section bypass preventi
     };
     const outerEventChain: Record<string, unknown> = {
       from: function () { return outerEventChain; },
+      leftJoinLateral: function () { return outerEventChain; },
       where: function () { return { orderBy: () => ({ limit: () => Promise.resolve([]) }) }; },
     };
     const timesheetChain: Record<string, unknown> = {
@@ -402,7 +425,7 @@ describe("DashboardPersonalService — membership once + section bypass preventi
     };
 
     let selectCallCount = 0;
-    const findFirstMock = jest.fn().mockResolvedValue({ id: "member-iso-1" });
+    const findFirstMock = jest.fn().mockResolvedValue({ id: "member-iso-1", status: "ACTIVE" });
 
     const db = {
       query: {
@@ -412,7 +435,8 @@ describe("DashboardPersonalService — membership once + section bypass preventi
       select: jest.fn().mockImplementation(() => {
         selectCallCount++;
         if (selectCallCount === 1) return timesheetChain;
-        if (selectCallCount === 2) return outerEventChain;
+        if (selectCallCount === 2) return makeLateralChain();
+        if (selectCallCount === 3) return outerEventChain;
         return innerChain;
       }),
     } as unknown as Db;
