@@ -80,6 +80,7 @@ const mockAccess = {
 };
 
 const mockDb = {
+  transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(mockDb)),
   execute: jest.fn().mockResolvedValue([{ one: 1 }]),
   select: jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
@@ -196,7 +197,16 @@ describe("KbAskService", () => {
   });
 
   it("does not call retrieval or gateway when org has no indexed chunks", async () => {
-    mockDb.execute.mockResolvedValueOnce([]);
+    /**
+     * `mockResolvedValue`, not `...Once`: KB Ask now carries
+     * `@NoTenantTransaction()`, so `runInTenantTransaction` opens a real
+     * `withTenant` whose own `SELECT set_config(...)` is the FIRST execute on
+     * this double. A `...Once` would be consumed by that and the content check
+     * would see the default non-empty row, quietly inverting this test. An
+     * empty result for the settings statement is harmless — withTenant only
+     * inspects those rows when a write fence is active.
+     */
+    mockDb.execute.mockResolvedValue([]);
 
     const result = await service.ask(user, input);
 

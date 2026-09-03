@@ -40,7 +40,6 @@ import {
 import type { ModuleKey } from "../../../../common/rbac/module-vocabulary";
 import { OnboardingSessionService } from "../flow/onboarding-session.service";
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
-import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import {
   checklistItemSkipSchema,
   sessionPatchSchema,

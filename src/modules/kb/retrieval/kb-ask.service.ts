@@ -137,7 +137,10 @@ export class KbAskService {
     );
   }
 
-  private noContextAnswer(user: CurrentUserContext, question: string) {
+  private noContextAnswer(
+    user: CurrentUserContext,
+    question: string,
+  ): { answer: string; citations: AskCitation[]; hasContext: boolean } {
     this.events
       .record(user.orgId, "ai_answer_no_context", {
         actorMembershipId: actingMembershipId(user.principal) ?? null,
@@ -149,8 +152,8 @@ export class KbAskService {
     return {
       answer:
         "I couldn't find anything about that in the knowledge base. You may want to open a support ticket.",
-      citations: [] as AskCitation[],
-      hasContext: false as const,
+      citations: [],
+      hasContext: false,
     };
   }
 
