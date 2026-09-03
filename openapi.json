@@ -352,7 +352,8 @@
                 },
                 "required": [
                   "enabled"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -23686,6 +23687,36 @@
       }
     },
     "/blog/admin/categories": {
+      "get": {
+        "operationId": "BlogAdminController_listCategories",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:categories:manage",
+        "description": "Exposure: permission — blog:categories:manage"
+      },
       "post": {
         "operationId": "BlogAdminController_createCategory",
         "parameters": [],
@@ -55869,7 +55900,29 @@
     "/chat/saved": {
       "get": {
         "operationId": "ChatSavedController_list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -73232,9 +73285,307 @@
         "x-bodyless": true
       }
     },
+    "/cron/calendar-provider-sync-sweep": {
+      "get": {
+        "operationId": "CronCalendarController_getCalendarProviderSyncSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "success": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "skipped": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "success",
+                            "skipped",
+                            "message"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "success": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "organizations": {
+                              "type": "object",
+                              "properties": {
+                                "organizations": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "succeeded": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "failed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "organizations",
+                                "succeeded",
+                                "failed"
+                              ]
+                            },
+                            "claimed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "processed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "retried": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "failed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "success",
+                            "message",
+                            "organizations",
+                            "claimed",
+                            "processed",
+                            "retried",
+                            "failed"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronCalendar"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronCalendarController_postCalendarProviderSyncSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "success": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "skipped": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "success",
+                            "skipped",
+                            "message"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "success": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "organizations": {
+                              "type": "object",
+                              "properties": {
+                                "organizations": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "succeeded": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "failed": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "organizations",
+                                "succeeded",
+                                "failed"
+                              ]
+                            },
+                            "claimed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "processed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "retried": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "failed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "success",
+                            "message",
+                            "organizations",
+                            "claimed",
+                            "processed",
+                            "retried",
+                            "failed"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronCalendar"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
+      }
+    },
     "/cron/calendar-reminder-sweep": {
       "get": {
-        "operationId": "CronPlatformController_getCalendarReminderSweep",
+        "operationId": "CronCalendarController_getCalendarReminderSweep",
         "parameters": [
           {
             "name": "authorization",
@@ -73260,13 +73611,13 @@
           }
         },
         "tags": [
-          "CronPlatform"
+          "CronCalendar"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated"
       },
       "post": {
-        "operationId": "CronPlatformController_postCalendarReminderSweep",
+        "operationId": "CronCalendarController_postCalendarReminderSweep",
         "parameters": [
           {
             "name": "authorization",
@@ -73298,7 +73649,7 @@
           }
         },
         "tags": [
-          "CronPlatform"
+          "CronCalendar"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated",
@@ -84354,6 +84705,50 @@
             }
           }
         }
+      },
+      "get": {
+        "operationId": "BankAccountsController_findOne",
+        "parameters": [
+          {
+            "name": "bankAccountId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BankAccounts"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "accounting:banking:read",
+        "description": "Exposure: permission — accounting:banking:read"
       }
     },
     "/finance/bank-accounts/{bankAccountId}/transactions": {
@@ -165584,6 +165979,12 @@
                           "type": "number",
                           "minimum": 0,
                           "maximum": 999999999.99
+                        },
+                        "gstRate": {
+                          "type": "number"
+                        },
+                        "hsnSacCode": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -173244,7 +173645,11 @@
       },
       "post": {
         "operationId": "KbSourcesController_upload",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -173298,7 +173703,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "kb.source.create",
+        "x-idempotent": true
       }
     },
     "/kb/sources/{sourceId}": {
@@ -173356,7 +173763,11 @@
     "/kb/sources/note": {
       "post": {
         "operationId": "KbSourcesController_createNote",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -173427,7 +173838,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "kb.source.note",
+        "x-idempotent": true
       }
     },
     "/kb/spaces": {
@@ -178748,7 +179161,42 @@
     "/me/login-history": {
       "get": {
         "operationId": "MeController_getLoginHistory",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "success",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -189210,7 +189658,8 @@
                 "required": [
                   "title",
                   "content"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -189491,18 +189940,21 @@
         "parameters": [
           {
             "name": "search",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200
             }
           },
           {
             "name": "limit",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -191480,7 +191932,8 @@
                         "open",
                         "close",
                         "enabled"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "companySize": {
@@ -204836,6 +205289,9 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -204895,7 +205351,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "payroll.payout.batch.create",
+        "x-idempotent": true
       }
     },
     "/payroll/runs/{runId}/payout/validation": {
@@ -209889,50 +210347,82 @@
                       ]
                     },
                     "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "integer",
-                            "minimum": -9007199254740991,
-                            "maximum": 9007199254740991
-                          },
-                          "fileName": {
-                            "type": "string"
-                          },
-                          "fileSize": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 9007199254740991
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "createdAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "downloadUrl": {
-                            "anyOf": [
-                              {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "fileName": {
                                 "type": "string"
                               },
-                              {
-                                "type": "null"
+                              "fileSize": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "mimeType": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "downloadUrl": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
+                            },
+                            "required": [
+                              "id",
+                              "fileName",
+                              "fileSize",
+                              "mimeType",
+                              "createdAt",
+                              "downloadUrl"
                             ]
                           }
                         },
-                        "required": [
-                          "id",
-                          "fileName",
-                          "fileSize",
-                          "mimeType",
-                          "createdAt",
-                          "downloadUrl"
-                        ]
-                      }
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "page": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "pageSize": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "totalPages": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total",
+                        "page",
+                        "pageSize",
+                        "totalPages"
+                      ]
                     }
                   },
                   "required": [
@@ -218847,9 +219337,12 @@
                     "maximum": 20
                   },
                   "allowedFileTypes": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 50
                     }
                   },
                   "maxFileSizeMb": {
@@ -218858,6 +219351,7 @@
                     "maximum": 200
                   },
                   "allowedAuthMethods": {
+                    "maxItems": 20,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -219037,9 +219531,12 @@
                   },
                   "appliesStates": {
                     "default": [],
+                    "maxItems": 20,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 50
                     }
                   },
                   "text": {
@@ -219089,6 +219586,7 @@
                         ]
                       },
                       "pageNumbers": {
+                        "maxItems": 500,
                         "type": "array",
                         "items": {
                           "type": "integer",
@@ -219240,9 +219738,12 @@
                   },
                   "appliesStates": {
                     "default": [],
+                    "maxItems": 20,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 50
                     }
                   },
                   "text": {
@@ -219292,6 +219793,7 @@
                         ]
                       },
                       "pageNumbers": {
+                        "maxItems": 500,
                         "type": "array",
                         "items": {
                           "type": "integer",
@@ -222060,24 +222562,6 @@
                       "type": "string"
                     },
                     "additionalProperties": {}
-                  },
-                  "restrictedToRoles": {
-                    "default": [],
-                    "maxItems": 50,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "maxLength": 100
-                    }
-                  },
-                  "restrictedToTeams": {
-                    "default": [],
-                    "maxItems": 50,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "maxLength": 100
-                    }
                   }
                 },
                 "required": [
@@ -222241,24 +222725,6 @@
                       "type": "string"
                     },
                     "additionalProperties": {}
-                  },
-                  "restrictedToRoles": {
-                    "default": [],
-                    "maxItems": 50,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "maxLength": 100
-                    }
-                  },
-                  "restrictedToTeams": {
-                    "default": [],
-                    "maxItems": 50,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "maxLength": 100
-                    }
                   },
                   "status": {
                     "type": "string",
@@ -232539,6 +233005,7 @@
                   },
                   "conditions": {
                     "minItems": 1,
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -232698,6 +233165,7 @@
                   },
                   "conditions": {
                     "minItems": 1,
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -232937,7 +233405,38 @@
     "/support/settings/audit-log": {
       "get": {
         "operationId": "SupportSlaController_listSettingsAuditLog",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "entityType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sla_policy",
+                "business_hours",
+                "automation",
+                "channel",
+                "custom_field",
+                "routing_rule",
+                "agent_skill",
+                "agent_availability",
+                "vip_client"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -233076,6 +233575,7 @@
                     "default": [
                       "WAITING"
                     ],
+                    "maxItems": 5,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -233223,6 +233723,7 @@
                     "maximum": 9007199254740991
                   },
                   "pauseStatuses": {
+                    "maxItems": 5,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -238253,6 +238754,7 @@
                   },
                   "steps": {
                     "minItems": 1,
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -242171,9 +242673,12 @@
                     "maximum": 6
                   },
                   "requiredFields": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
                     }
                   },
                   "roundingRule": {
@@ -242765,7 +243270,7 @@
     },
     "/users": {
       "get": {
-        "operationId": "UsersController_listUsersV2",
+        "operationId": "UsersController_listUsers",
         "parameters": [
           {
             "name": "limit",
@@ -243208,7 +243713,8 @@
                       "name",
                       "relation",
                       "phone"
-                    ]
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
@@ -245098,6 +245604,191 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Users"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "settings:view",
+        "description": "Exposure: permission — settings:view"
+      }
+    },
+    "/v2/users": {
+      "get": {
+        "operationId": "UsersController_listUsersV2_v2",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "suspended",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "departmentId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "teamId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "managerUserId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "joinedAt",
+              "type": "string",
+              "enum": [
+                "name",
+                "joinedAt",
+                "status"
+              ]
+            }
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Users"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "settings:view",
+        "description": "Exposure: permission — settings:view"
+      }
+    },
+    "/v2/users/{userId}": {
+      "get": {
+        "operationId": "UsersController_getUserV2_v2",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"

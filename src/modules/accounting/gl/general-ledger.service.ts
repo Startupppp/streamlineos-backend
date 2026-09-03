@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
 import type { GlQuery, GlAccountsQuery } from "./dto/general-ledger.schemas";
+import { baseCreditAmount, baseDebitAmount } from "../core/journal-base-amount";
 import {
   addDecimals,
   roundDecimal,
@@ -43,8 +44,8 @@ export class GeneralLedgerService {
 
     const openingRows = await this.db
       .select({
-        totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-        totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+        totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+        totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
       })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
@@ -77,8 +78,8 @@ export class GeneralLedgerService {
       ];
       const balanceRows = await this.db
         .select({
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
@@ -104,8 +105,8 @@ export class GeneralLedgerService {
           accountId: journalLines.accountId,
           accountCode: ledgerAccounts.code,
           accountName: ledgerAccounts.name,
-          debit: journalLines.debit,
-          credit: journalLines.credit,
+          debit: baseDebitAmount,
+          credit: baseCreditAmount,
           sourceType: journalEntries.sourceType,
           sourceId: journalEntries.sourceId,
           clientId: journalLines.clientId,
@@ -121,8 +122,8 @@ export class GeneralLedgerService {
         .limit(limit + 1),
       this.db
         .select({
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
@@ -181,8 +182,8 @@ export class GeneralLedgerService {
         description: journalLines.description,
         accountCode: ledgerAccounts.code,
         accountName: ledgerAccounts.name,
-        debit: journalLines.debit,
-        credit: journalLines.credit,
+        debit: baseDebitAmount,
+        credit: baseCreditAmount,
       })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
@@ -223,8 +224,8 @@ export class GeneralLedgerService {
         code: ledgerAccounts.code,
         name: ledgerAccounts.name,
         accountType: ledgerAccounts.accountType,
-        periodDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-        periodCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+        periodDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+        periodCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
       })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))

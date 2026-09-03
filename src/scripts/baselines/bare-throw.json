@@ -1,19 +1,12 @@
 {
   "minReasonLength": 40,
-  "note": "Every entry here is a refusal test on a risk path that accepts ANY throw, so a crash in a mis-shaped double satisfies it as well as the refusal does. Registration is not absolution: it records who owns the gap. The ratchet may only go DOWN. Do not add an entry to make a red gate green \u2014 name the exception the test actually means. Sites off a risk path are counted as INFO and never registered: banking them would record noise as debt. `.not.toThrow()` and a `.parse()` subject are excluded by a stated rule, not by this file.",
-  "ratchet": 2,
+  "note": "Every entry here is a refusal test on a risk path that accepts ANY throw, so a crash in a mis-shaped double satisfies it as well as the refusal does. Registration is not absolution: it records who owns the gap. The ratchet may only go DOWN. Do not add an entry to make a red gate green — name the exception the test actually means. Sites off a risk path are counted as INFO and never registered: banking them would record noise as debt. `.not.toThrow()` and a `.parse()` subject are excluded by a stated rule, not by this file.",
+  "ratchet": 1,
   "allowed": [
-    {
-      "file": "src/degradation/search-index.spec.ts",
-      "line": 231,
-      "title": "fails closed when the tenant GUC is absent",
-      "owner": "degradation / platform DB",
-      "reason": "This assertion lives inside the APP_DATABASE_URL-gated integration describe and does not execute in the normal suite, so the execution triage that produced every other verdict in this gate could not reach it \u2014 it is the one site of 220 that recorded no error. Naming a class here would be a guess about what postgres raises when current_org_id() has no GUC, and a guessed class is the defect this gate exists to remove. It becomes tightenable the moment the seeded integration lane runs in CI."
-    },
     {
       "file": "src/modules/inventory/inv-engine-misc-isolation-stock.spec.ts",
       "line": 194,
-      "title": "never retrieves settings for a different org when creating a reservation (isolation \u2014 deny via tx mock)",
+      "title": "never retrieves settings for a different org when creating a reservation (isolation — deny via tx mock)",
       "owner": "CRM/inventory release owner",
       "reason": "MEASURED, not assumed: this is one of the two sites of 44 that stayed GREEN when every bare .toThrow() in the isolation suite was rewritten to .toThrow(TypeError), i.e. it is satisfied by a crash rather than by the refusal its title claims. The sibling site (invoices payment) was repaired; this one is inventory, which the 10/10 release excludes (accepted residual R-9, review 2026-12-01), so repairing it means editing a module this release does not cover."
     }

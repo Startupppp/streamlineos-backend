@@ -124,7 +124,18 @@ describe("the detector bites", () => {
 describe("the surface, enumerated from the committed contract", () => {
   it("counts the operations and the id-shaped body and query fields", () => {
     const { counts } = enumerateIdFieldSites();
-    expect(counts.operations).toBe(3642);
+    // 3642 -> 3648, and the six are individually accounted for:
+    //   +2  GET|POST /cron/calendar-provider-sync-sweep — the drain the provider-sync
+    //       queue had never had. Cron-secret-authenticated and bodyless.
+    //   +1  GET /blog/admin/categories
+    //   +1  GET /finance/bank-accounts/{bankAccountId}
+    //   +2  GET /v2/users, GET /v2/users/{userId}
+    // What this file actually guards is unmoved: `bodyFields`, `queryFields`, `idFields`
+    // and `operationsWithIdFields` below all hold at their existing numbers, so six
+    // operations arrived and brought no id-shaped request field with them. This census
+    // tracks `openapi.json`, so it has to be re-read after the release's final
+    // `pnpm openapi:generate` rather than assumed.
+    expect(counts.operations).toBe(3648);
     // 815 -> 813 and 1054 -> 1052 at `25a87768` / `1400ca6c`, which removed four request fields
     // nothing implements. Two of the four are id-shaped body fields — `attachmentSchema.fileKey`
     // and `kbAskSchema.articleId` — so two body sites and two id sites went with them, on two

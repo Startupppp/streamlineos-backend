@@ -19,6 +19,33 @@ jest.mock("../../common/auth/membership-state.service", () => ({
   bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
 }));
 
+/**
+ * The surviving-membership guard moved off the erasing org's tenant transaction and onto
+ * its own identity-scoped one: `organization_members` admits a row only when its org is
+ * the tenant GUC's or its user is `app.user_id`, and a tenant transaction never sets the
+ * second, so from inside one the read is blind. Nothing in this file turns on its answer —
+ * it is doubled here so it no longer occupies a slot in the `tx` sequence below.
+ * `gdpr-subject-erasure-global-identity.db.spec.ts` proves the real one against Postgres.
+ */
+jest.mock("../../common/tenant/with-identity", () => ({
+  withIdentity: jest.fn((_db: unknown, _userId: string, fn: (tx: unknown) => unknown) =>
+    fn({
+      select: () => ({
+        from: () => {
+          // The surviving-membership guard joins organizations to exclude deleted ones;
+          // this double models a builder, so it walks the same links the query does.
+          const chain: Record<string, unknown> = {
+            innerJoin: () => chain,
+            where: () => chain,
+            limit: () => Promise.resolve([]),
+          };
+          return chain;
+        },
+      }),
+    }),
+  ),
+}));
+
 const ORG = "org-support";
 const SUBJECT = "user-support-subject";
 const ACTOR = "user-support-actor";
@@ -87,8 +114,8 @@ function makeTx(store: Store) {
         lastTicketPageIds = matching.map((t) => t.id);
         return matching.map((t) => ({ id: t.id }));
       }
-      // organizationMembers here is the "other membership" probe: none, so the global
-      // users identity row is tombstoned in this run.
+      // Every other table read on `tx` is empty here. The other-org membership probe is
+      // no longer one of them — it runs under `withIdentity`, doubled above.
       return [];
     };
     const chain = {
@@ -96,9 +123,11 @@ function makeTx(store: Store) {
         table = t;
         return chain;
       },
+      // The surviving-membership guard joins organizations to exclude deleted orgs;
+      // the double models a builder, so it needs the link the query now walks.
+      innerJoin: () => chain,
       where: () => chain,
       orderBy: () => chain,
-      innerJoin: () => chain,
       limit: () => Promise.resolve(resolve()),
       then: (onOk: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>
         Promise.resolve(resolve()).then(onOk, onErr),
@@ -136,6 +165,9 @@ function makeTx(store: Store) {
         values = v;
         return chain;
       },
+      // The surviving-membership guard joins organizations to exclude deleted orgs;
+      // the double models a builder, so it needs the link the query now walks.
+      innerJoin: () => chain,
       where: () => chain,
       returning: () => Promise.resolve(apply()),
       then: (onOk: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>
@@ -159,6 +191,9 @@ function makeTx(store: Store) {
       return [];
     };
     const chain = {
+      // The surviving-membership guard joins organizations to exclude deleted orgs;
+      // the double models a builder, so it needs the link the query now walks.
+      innerJoin: () => chain,
       where: () => chain,
       returning: () => Promise.resolve(apply()),
       then: (onOk: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>
@@ -190,6 +225,9 @@ function makeDb(store: Store) {
         table = t;
         return chain;
       },
+      // The surviving-membership guard joins organizations to exclude deleted orgs;
+      // the double models a builder, so it needs the link the query now walks.
+      innerJoin: () => chain,
       where: () => chain,
       orderBy: () => chain,
       limit: () => Promise.resolve(resolve()),

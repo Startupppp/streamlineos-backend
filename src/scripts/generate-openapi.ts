@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "../app.module";
 import { buildOpenApiDocument } from "../common/openapi/build-openapi-document";
+import { configureApiVersioning } from "../common/openapi/configure-api-versioning";
 import { applyOpenApiEnv } from "./openapi-env";
 
 export const OPENAPI_ARTIFACT_PATH = resolve(__dirname, "..", "..", "openapi.json");
@@ -23,6 +24,12 @@ export async function generateOpenApiJson(): Promise<{
     abortOnError: false,
     bodyParser: false,
   });
+
+  // Without this the explorer sees no versioning configuration and every
+  // `@Version` handler collapses onto its unversioned path: `/v2/users` and
+  // `/v2/users/{userId}` are served in production and reached no document, so
+  // the contract gates were green over a surface that did not contain them.
+  configureApiVersioning(app);
 
   try {
     const built = buildOpenApiDocument(app);

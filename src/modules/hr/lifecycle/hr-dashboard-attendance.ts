@@ -59,6 +59,20 @@ export async function resolveLateThresholdMinutes(db: Db, orgId: string, referen
   return FALLBACK_LATE_CHECKIN_HOUR * 60 + FALLBACK_LATE_CHECKIN_MINUTE;
 }
 
+/**
+ * `attendance` is a SESSION table, not a day table: the only unique indexes on
+ * it are on the generated serial (`attendance_pkey`, `uniq_attendance_org_id`),
+ * and AttendanceClockService.clockIn blocks only an *open* session before
+ * inserting, so clocking out for lunch and back in writes a second row for the
+ * same person and day. Every ratio below is measured against a per-day
+ * expectation (`workingDaysSoFar`), so counting rows would let attendance
+ * exceed 100% and drive absenteeism negative — which `Math.max(0, …)` then
+ * reports as 0% absenteeism. Count distinct person-days instead.
+ *
+ * Written inline as raw SQL at each call site rather than hoisted into a shared
+ * constant: check:unbounded-reads reads the projection TEXT to recognise an
+ * aggregate-only select, and a hoisted identifier hides that from it.
+ */
 export async function buildAttendanceAnalytics(db: Db, orgId: string) {
   const now = new Date();
   const year = now.getFullYear();
@@ -79,7 +93,11 @@ export async function buildAttendanceAnalytics(db: Db, orgId: string) {
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
 
       db
-        .select({ count: count() })
+        .select({
+          count: sql<number>`count(DISTINCT (${attendance.userId}, ${attendance.date}))`.mapWith(
+            Number,
+          ),
+        })
         .from(attendance)
         .where(
           and(
@@ -91,7 +109,13 @@ export async function buildAttendanceAnalytics(db: Db, orgId: string) {
         ),
 
       db
-        .select({ count: count() })
+        // A person who clocks in late, breaks, and clocks back in after the
+        // threshold arrived late once, not twice.
+        .select({
+          count: sql<number>`count(DISTINCT (${attendance.userId}, ${attendance.date}))`.mapWith(
+            Number,
+          ),
+        })
         .from(attendance)
         .where(
           and(
@@ -127,7 +151,15 @@ export async function buildAttendanceAnalytics(db: Db, orgId: string) {
         ),
 
       db
-        .select({ departmentName: orgUnits.name, presentCount: count(attendance.id) })
+        .select({
+          departmentName: orgUnits.name,
+          // FILTER is load-bearing: this is a LEFT JOIN, and a department with
+          // no attendance yields a row constructor of all NULLs, which
+          // count(DISTINCT …) treats as one distinct value — so an empty
+          // department would report presentCount 1 without it.
+          presentCount: sql<number>`count(DISTINCT (${attendance.userId}, ${attendance.date}))
+            FILTER (WHERE ${attendance.id} IS NOT NULL)`.mapWith(Number),
+        })
         .from(orgUnits)
         .leftJoin(orgUnitMembers, eq(orgUnitMembers.orgUnitId, orgUnits.id))
         .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnitMembers.membershipId))
@@ -143,7 +175,10 @@ export async function buildAttendanceAnalytics(db: Db, orgId: string) {
         )
         .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")))
         .groupBy(orgUnits.id, orgUnits.name)
-        .orderBy(sql`count(${attendance.id}) desc`),
+        .orderBy(
+          sql`count(DISTINCT (${attendance.userId}, ${attendance.date}))
+            FILTER (WHERE ${attendance.id} IS NOT NULL) DESC`,
+        ),
     ]);
 
   const totalEmployees = Number(activeMembers[0]?.count ?? 0);

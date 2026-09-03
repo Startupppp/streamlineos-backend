@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { createHmac, randomBytes } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { hrWebhookSubscriptions, hrWebhookDeliveries } from "../../../db/schema/hr/webhooks";
@@ -20,6 +20,7 @@ import type {
 } from "./dto/hr-webhook.schemas";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
 import { boundHrReadLimit } from "../hr-read-limits";
+import { buildListResponse } from "../../../common/pagination/pagination";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
@@ -40,17 +41,21 @@ export class HrWebhooksService {
   async listSubscriptions(orgId: string, page: number, limit: number) {
     limit = boundHrReadLimit(limit);
     const offset = (page - 1) * limit;
-    const rows = await this.db.query.hrWebhookSubscriptions.findMany({
-      where: and(
-        eq(hrWebhookSubscriptions.orgId, orgId),
-        isNull(hrWebhookSubscriptions.deletedAt),
-      ),
-      orderBy: [desc(hrWebhookSubscriptions.createdAt)],
-      limit,
-      offset,
-      columns: { secret: false },
-    });
-    return rows;
+    const where = and(
+      eq(hrWebhookSubscriptions.orgId, orgId),
+      isNull(hrWebhookSubscriptions.deletedAt),
+    );
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.hrWebhookSubscriptions.findMany({
+        where,
+        orderBy: [desc(hrWebhookSubscriptions.createdAt)],
+        limit,
+        offset,
+        columns: { secret: false },
+      }),
+      this.db.select({ total: count() }).from(hrWebhookSubscriptions).where(where),
+    ]);
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
   }
 
   async getSubscription(orgId: string, id: number) {
@@ -146,15 +151,20 @@ export class HrWebhooksService {
     const limit = boundHrReadLimit(params.limit);
     await this.getSubscription(orgId, subscriptionId);
     const offset = (params.page - 1) * limit;
-    return this.db.query.hrWebhookDeliveries.findMany({
-      where: and(
-        eq(hrWebhookDeliveries.orgId, orgId),
-        eq(hrWebhookDeliveries.subscriptionId, subscriptionId),
-      ),
-      orderBy: [desc(hrWebhookDeliveries.createdAt)],
-      limit,
-      offset,
-    });
+    const where = and(
+      eq(hrWebhookDeliveries.orgId, orgId),
+      eq(hrWebhookDeliveries.subscriptionId, subscriptionId),
+    );
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.hrWebhookDeliveries.findMany({
+        where,
+        orderBy: [desc(hrWebhookDeliveries.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(hrWebhookDeliveries).where(where),
+    ]);
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page: params.page, pageSize: limit });
   }
 
   getEvents() {

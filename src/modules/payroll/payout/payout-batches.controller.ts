@@ -66,9 +66,23 @@ export class PayoutRunController {
     return this.validation.validatePayout(u.orgId, runId);
   }
 
+  /**
+   * The one route that mints payment instructions.
+   *
+   * It read `idempotency-key` as an optional header and did nothing to require
+   * it, so replay safety was whatever the caller volunteered — and
+   * `check:idempotent-commands` never covered it, because that gate matches the
+   * route string on the decorator (`"batches"`), not the controller prefix that
+   * makes it a payout. `@Idempotent` moves the guarantee to the server: the
+   * global interceptor rejects a missing key with 400 and fences a concurrent
+   * duplicate with 409, in front of the unique-index backstop migration 1049
+   * added. The header parameter stays on the signature because the service
+   * still derives its per-currency sub-key from it.
+   */
   @Post("batches")
   @HttpCode(201)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.batch.create")
   @Validate({ params: runIdParams, body: createBatchSchema })
   createBatch(
     @Param("runId", ParseIntPipe) runId: number,

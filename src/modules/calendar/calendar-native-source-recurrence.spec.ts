@@ -365,8 +365,14 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
     const result = await makeSource(db).load(ctx);
     const atNominal = result.find((p) => p.start.toISOString() === FIRST_SEP_MONDAY.toISOString());
     expect(atNominal).toBeUndefined();
-    const secondPassEntry = result.find((p) => p.id === `event-1-${FIRST_SEP_MONDAY.toISOString()}`);
-    expect(secondPassEntry).toBeUndefined();
+    // Both projection paths now name an occurrence by its NOMINAL instant, so "did the
+    // second pass also emit this one?" can no longer be asked by id shape — which is the
+    // point: the same occurrence must have the same id whichever path emits it. What this
+    // test guards is that it is emitted ONCE, and never at its nominal date. (The moved
+    // occurrence itself sits outside the requested window; that the expansion emits it
+    // there at all is a separate, pre-existing question and is not what this pins.)
+    const byNominalId = result.filter((p) => p.id === `event-1-${FIRST_SEP_MONDAY.toISOString()}`);
+    expect(byNominalId).toHaveLength(1);
   });
 
   it("exception fetch predicate includes the orgId (bounded and org-scoped after update)", async () => {

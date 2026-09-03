@@ -88,8 +88,43 @@ const QUARANTINE_BASELINE = 6;
  * Suppressions selected at runtime, plus helper wrappers. Honest, but ratcheted
  * so a hand-written skip cannot be laundered into this class by hiding behind a
  * variable.
+ *
+ * 28 -> 29 on 2026-09-03 for `chat/__tests__/chat-send-conflict-target.db.spec.ts`, the regression
+ * spec for the ON CONFLICT arbiter defect that had every chat message send returning 500 at journal
+ * head. Its DB half is gated on `CHAT_DB_TESTS=1` in the established `.db.spec.ts` house style,
+ * because a 42P10 comes from Postgres index inference at PLAN time and only a real catalog can
+ * observe it. This is not a laundered skip: the spec's HERMETIC half always runs with no database —
+ * it compiles the production conflict spec to SQL and asserts the arbiter predicate is emitted, and
+ * reverting the fix fails 3 tests, 2 of them in that always-on half.
+ *
+ * ── 2026-09-04: HELD AT 29, DELIBERATELY, WITH THE GATE RED ──────────────────
+ *
+ * The 10-10 release closed with this gate FAILING at 66. The raise was considered
+ * and REFUSED. Recording why, because a red gate with no note reads as an oversight
+ * and the next person will be tempted to type 66:
+ *
+ *   * +37 arrived with the release's own regression specs. 40 changed spec files
+ *     carry a runtime gate; 27 of those have NO unconditional `describe` at all.
+ *   * Those 27 therefore asserted NOTHING, anywhere. `grep -rl "DB_TESTS"
+ *     .github/workflows` returned nothing across all seven workflow files: not one
+ *     `.db.spec.ts` ran on any machine, in any job, on any trigger.
+ *   * That is precisely the condition this ratchet prices. A number raised to fit
+ *     a net that runs nowhere would have converted a measurable debt into a green
+ *     tick, which is the single failure mode the cap exists to prevent.
+ *   * The entry above commits in writing that "the next request to raise it should
+ *     retire an existing conditional site instead of adding to the count". Raising
+ *     by 37 the day after writing that would make the note worthless.
+ *
+ * What was done instead: db-gates.yml now has a `Database-gated spec suites`
+ * step that runs all 46 with the 23 env gates set against the bootstrapped
+ * Postgres, on the nightly and on demand, UNPROVEN and labelled as such.
+ *
+ * The condition for moving this number is therefore explicit, and it is not a
+ * judgement call: that step must be green on a run somebody has read, and
+ * promoted off its `if:` to every event. Until then 29 stands and the gate is
+ * honestly red. Do not raise it to make a release green.
  */
-const CONDITIONAL_BASELINE = 28;
+const CONDITIONAL_BASELINE = 29;
 
 const SITE_RE =
   /(^|[^A-Za-z0-9_$.])(?:(it|test|describe)\s*\.\s*(skip|todo|failing)|(xit|xdescribe))\s*\(/g;

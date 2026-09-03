@@ -56,7 +56,7 @@ export class EssSelfServiceService {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowLoanRequests) throw new ForbiddenException("Loan requests are disabled");
     const loans = await this.loansService.listLoans(orgId, userId, membershipId, false);
-    return loans.map((l) => ({
+    return loans.items.map((l) => ({
       ...l,
       balance: roundDecimal(
         multiplyDecimals(String((l.totalEmis ?? 0) - l.paidEmis), toDecimal(l.emiAmount)),

@@ -131,6 +131,7 @@ describe("Chat reconnect — poll (a): replay without duplicating", () => {
             updatedAt: after,
             replyToId: null,
             attachments: [],
+            reactions: [],
             replyTo: null,
           },
         ]);
@@ -186,6 +187,7 @@ describe("Chat reconnect — poll (a): replay without duplicating", () => {
       updatedAt: new Date(),
       replyToId: null,
       attachments: [],
+      reactions: [],
       replyTo: null,
     };
     const db = makeTimelineDb({ messages: [msg] });

@@ -19,7 +19,12 @@ export class ChatSavedService {
   ) {}
 
   async list(actor: EntityActor, cursor?: number, limit = 30) {
-    const safeLimit = Math.min(Math.max(1, limit), 100);
+    // `Math.min(Math.max(1, x), 100)` is NaN-transparent, and a NaN limit does not throw:
+    // drizzle emits the `limit` clause only for a finite non-negative number, so the clause
+    // silently disappears and the read becomes unbounded. The controller now rejects a
+    // non-numeric `?limit`; this second clamp is what makes the service safe for any
+    // caller, since it is a public method and the guarantee belongs with the query.
+    const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(1, Math.trunc(limit)), 100) : 30;
     const membershipId = actor.membershipId;
     if (!membershipId) return { items: [], nextCursor: undefined };
     const conditions = [

@@ -26,7 +26,16 @@ function makeMarkTx() {
   return {
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
+        // Drizzle's update builder is a thenable, so this stands in for both `await
+        // …where(…)` (the queue-row mark) and `await …where(…).returning(…)` (the
+        // external-id write-back, which now checks how many rows it matched so a
+        // create-then-delete race can enqueue a compensating delete). One matched row
+        // is the ordinary case these tests are about.
+        where: jest.fn().mockImplementation(() =>
+          Object.assign(Promise.resolve([]), {
+            returning: jest.fn().mockResolvedValue([{ id: 10 }]),
+          }),
+        ),
       }),
     }),
   };
@@ -89,9 +98,18 @@ function makeResolveConnectionDb(connOverride: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   jest.resetAllMocks();
-  mockedRunInTx.mockImplementation(async (_db, _orgId, cb) => {
-    await cb(makeMarkTx() as never);
-  });
+  // The sweep's post-claim reads (connection resolve, event lookup, newer-update probe)
+  // now run inside their own tenant transaction, because outside one they hit the pool
+  // with no `app.organization_id` and every RLS-protected table raises 42501 — measured,
+  // see calendar-provider-sync-tenant-context.spec.ts. Nothing about what these tests
+  // assert changes; the read surface each of them builds simply has to be reachable
+  // through the tenant tx as well. `makeMarkTx()` still owns `update`, which is what the
+  // mark and the create write-back go through.
+  // `return`, not `await`: the reads that moved inside the tenant transaction consume
+  // its result, so a mock that swallows it makes every one of them undefined.
+  mockedRunInTx.mockImplementation(async (db, _orgId, cb) =>
+    cb({ ...(db as object), ...makeMarkTx() } as never),
+  );
 });
 
 describe("(a) PENDING intent persists after provider failure", () => {
@@ -132,7 +150,11 @@ describe("(a) PENDING intent persists after provider failure", () => {
     expect(result.processed).toBe(0);
     expect(result.failed).toBe(0);
 
-    expect(mockedRunInTx).toHaveBeenCalledTimes(1);
+    // Three tenant transactions, and exactly three: the connection resolve, the event
+    // read, and the terminal mark. The first two used to run on the pool with no
+    // `app.organization_id`, where they raise 42501 — this count is what pins them
+    // inside a tenant, and a fourth would mean a read had escaped again.
+    expect(mockedRunInTx).toHaveBeenCalledTimes(3);
   });
 
   it("a row that has already exhausted MAX_ATTEMPTS is marked FAILED, not silently dropped", async () => {
@@ -168,7 +190,8 @@ describe("(a) PENDING intent persists after provider failure", () => {
 
     expect(result.failed).toBe(1);
     expect(result.retried).toBe(0);
-    expect(mockedRunInTx).toHaveBeenCalledTimes(1);
+    // Same three as above: connection resolve, event read, terminal mark.
+    expect(mockedRunInTx).toHaveBeenCalledTimes(3);
   });
 });
 

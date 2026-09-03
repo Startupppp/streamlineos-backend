@@ -16,9 +16,56 @@ import { currentRelease } from "../observability/release";
 import { PROCESS_CELL_ID } from "../cell-resources/cell-id";
 
 export interface ForEachOrgResult {
+  /** Organizations actually visited — `succeeded + failed`, not the tenant count. */
   organizations: number;
   succeeded: number;
   failed: number;
+}
+
+/**
+ * Bounds on the fanout, for the sweeps that have a budget to respect.
+ *
+ * Both default to off, so a sweep that says nothing keeps the exhaustive
+ * ascending pass it has always had.
+ */
+export interface ForEachOrgOptions {
+  /**
+   * Begin at the organization immediately after this id and wrap around to the
+   * ones below it, instead of always starting from the lowest id.
+   *
+   * A sweep with a per-tick budget and a fixed starting point is a starvation
+   * machine: the lowest id gets first refusal every tick, so a tenant whose
+   * backlog exceeds the budget consumes it forever and the tenants after it are
+   * never reached. Rotating the entry point turns "eventually, maybe" into
+   * "within one pass over the tenant list". The caller owns the cursor, because
+   * only the caller knows where its budget ran out — and `common/tenant` has no
+   * durable store to keep one in.
+   */
+  startAfterOrgId?: string | null;
+  /**
+   * Consulted BEFORE each organization's transaction is opened, so a sweep that
+   * has spent its budget stops paying for connections it will not use. The
+   * outbox claim used to return immediately from the callback once its batch was
+   * full, having already opened a transaction for every remaining tenant.
+   */
+  stopWhen?: () => boolean;
+}
+
+/**
+ * Rotates an ascending id list so it begins just after `startAfterOrgId`.
+ *
+ * Falls back to the plain ascending order when the cursor is absent, sorts below
+ * every id, or names an org that no longer exists past the end of the list —
+ * all three mean "start from the beginning", which is also the wrap.
+ */
+function rotateAfterOrgId<T extends { id: string }>(
+  orgs: readonly T[],
+  startAfterOrgId: string | null | undefined,
+): readonly T[] {
+  if (!startAfterOrgId) return orgs;
+  const pivot = orgs.findIndex((org) => org.id > startAfterOrgId);
+  if (pivot <= 0) return orgs;
+  return [...orgs.slice(pivot), ...orgs.slice(0, pivot)];
 }
 
 /**
@@ -151,21 +198,29 @@ export async function forEachOrg(
   sweep: string,
   fn: (tx: TenantTx, orgId: string) => Promise<void>,
   intent: PlacementIntent = "write",
+  options: ForEachOrgOptions = {},
 ): Promise<ForEachOrgResult> {
   const enumerationDb = resolveEnumerationDb(db);
   // status, not just deletedAt: the purge worker parks an org in PURGE_SCHEDULED/PURGED without soft-deleting it
-  const orgs = await enumerationDb
+  const enumerated = await enumerationDb
     .select({ id: organizations.id })
     .from(organizations)
     .where(and(isNull(organizations.deletedAt), eq(organizations.status, "ACTIVE")))
     .orderBy(asc(organizations.id));
 
+  // Rotation is applied here rather than in the ORDER BY so the enumeration stays
+  // one plain indexed ascending scan, identical for every sweep and every cursor.
+  const orgs = rotateAfterOrgId(enumerated, options.startAfterOrgId);
+
   let succeeded = 0;
+  let visited = 0;
   const failedOrgIds: string[] = [];
   const ambient = getObservabilityContext();
   const runId = randomUUID();
 
   for (const org of orgs) {
+    if (options.stopWhen?.()) break;
+    visited += 1;
     // The whole iteration, failure included: the catch's log line is the only
     // signal a sweep produces, and it is worth nothing without naming the tenant
     // at the top level where an aggregator indexes it.
@@ -206,7 +261,7 @@ export async function forEachOrg(
   }
 
   const result: ForEachOrgResult = {
-    organizations: orgs.length,
+    organizations: visited,
     succeeded,
     failed: failedOrgIds.length,
   };

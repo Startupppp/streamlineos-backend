@@ -7,6 +7,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../db/drizzle.types";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { sha256, chunkText } from "./kb-chunk-utils";
@@ -319,17 +320,35 @@ export class KbIndexingService {
     ]);
   }
 
+  /**
+   * `POST /kb/pages/reindex-all` is `@NoTenantTransaction()`, so there is no ambient context to
+   * borrow and this listing must open its own. `this.db.select(...)` on the bare pool has no
+   * tenant GUC, and `kb_pages`' policy resolves the org through `app.current_org_id_or_null()`,
+   * which returns NULL rather than raising — so the unwrapped listing matched nothing and the
+   * route reported `reindexed: 0` for a tenant full of pages. Measured, not assumed:
+   * `kb-page-reindex-placement.db.spec.ts` pins both halves.
+   * `runInTenantTransaction` with an explicit `orgId` reuses an ambient transaction when there
+   * is one (the outbox-driven callers) and opens a short one when there is not, so both entry
+   * paths hold a connection for the listing only, never across the embedding round trips below.
+   */
   async reindexAllPages(orgId?: string, afterPageId = 0): Promise<ReindexAllPagesResult> {
     const where = orgId
       ? and(eq(kbPages.orgId, orgId), gt(kbPages.id, afterPageId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt))
       : and(gt(kbPages.id, afterPageId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt));
 
-    const pages = await this.db
-      .select({ id: kbPages.id, orgId: kbPages.orgId })
-      .from(kbPages)
-      .where(where)
-      .orderBy(asc(kbPages.id))
-      .limit(REINDEX_ALL_BATCH_SIZE + 1);
+    const listPages = async (tx: TenantTx) =>
+      tx
+        .select({ id: kbPages.id, orgId: kbPages.orgId })
+        .from(kbPages)
+        .where(where)
+        .orderBy(asc(kbPages.id))
+        .limit(REINDEX_ALL_BATCH_SIZE + 1);
+
+    // No `orgId` means the platform-wide sweep, which has no single tenant to open for and
+    // runs under a caller that already established one.
+    const pages = orgId
+      ? await runInTenantTransaction(this.db, listPages, { orgId })
+      : await runInTenantTransaction(this.db, listPages);
 
     const batch = pages.slice(0, REINDEX_ALL_BATCH_SIZE);
 

@@ -127,7 +127,15 @@ describe("OutboxPublisherService.flush — claimBatch uses forEachOrg", () => {
 
     await service.flush();
 
-    expect(mockForEachOrg).toHaveBeenCalledWith(db, "outbox-events-flush", expect.any(Function));
+    expect(mockForEachOrg).toHaveBeenCalledWith(
+      db,
+      "outbox-events-flush",
+      expect.any(Function),
+      "write",
+      // The fairness options are part of the claim's contract, not decoration:
+      // without both, one tenant's backlog owns every tick's budget forever.
+      { startAfterOrgId: null, stopWhen: expect.any(Function) },
+    );
   });
 
   it("accumulates claimed rows from multiple orgs", async () => {

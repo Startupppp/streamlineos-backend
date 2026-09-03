@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import { VERSION_NEUTRAL, VersioningType, type LogLevel } from "@nestjs/common";
+import { type LogLevel } from "@nestjs/common";
 import { setDefaultResultOrder } from "node:dns";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { Request, Response, NextFunction } from "express";
@@ -10,6 +10,7 @@ import compression from "compression";
 import { httpCompressionOptions } from "./common/http/compression.config";
 import { SwaggerModule } from "@nestjs/swagger";
 import { buildOpenApiDocument } from "./common/openapi/build-openapi-document";
+import { configureApiVersioning } from "./common/openapi/configure-api-versioning";
 
 import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
@@ -27,7 +28,6 @@ import {
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
 import { resolveAdmissionConfig } from "./common/admission/admission.config";
 import { logger } from "./common/logger/logger.service";
-import { API_VERSION_CURRENT } from "./common/http/api-version";
 import { shutdownGate } from "./health/shutdown-gate";
 
 setDefaultResultOrder("ipv4first");
@@ -82,10 +82,9 @@ async function bootstrap(): Promise<void> {
   setSpanExporter(new LogSpanExporter());
   eventLoopDelayMonitor.start();
 
-  app.enableVersioning({
-    type: VersioningType.URI,
-    defaultVersion: [API_VERSION_CURRENT, VERSION_NEUTRAL],
-  });
+  // Shared with `src/scripts/generate-openapi.ts`, which had no versioning at
+  // all — so `/v2/users` was served here and documented nowhere.
+  configureApiVersioning(app, { runtimeAliases: true });
 
   app.use(helmet());
   app.use((_req: Request, res: Response, next: NextFunction) => {

@@ -24,6 +24,25 @@ const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
 const SCHEMA_DIR = join(BACKEND_ROOT, "src", "db", "schema");
 const MODULES_DIR = join(BACKEND_ROOT, "src", "modules");
 
+/**
+ * The corpus is three trees, not one.
+ *
+ * `src/modules` alone until 2026-09-03, so a clean result was a statement about
+ * src/modules that read as a statement about the system. src/common (the whole
+ * asynchronous substrate) and src/db were structurally invisible.
+ *
+ * Measured on the day of the change: src/common holds 2 findFirst reads and src/db
+ * holds 0, so this union does NOT surface a backlog — that is the honest report, and
+ * the value is that a record read moved or added there is now inside the corpus
+ * instead of outside it. Every path is reported relative to the backend root, so the
+ * three trees cannot collide on a name.
+ */
+const SCAN_DIRS = [
+  MODULES_DIR,
+  join(BACKEND_ROOT, "src", "common"),
+  join(BACKEND_ROOT, "src", "db"),
+];
+
 const SPEC_RE = /\.(spec|e2e-spec)\.ts$/;
 
 // /** Global identity and catalog tables, exempt by backend/CLAUDE.md section 4
@@ -212,7 +231,7 @@ function walkTs(dir) {
 const schema = parseSchema(walkTs(SCHEMA_DIR).map((f) => readFileSync(f, "utf8")));
 
 const reads = [];
-for (const file of walkTs(MODULES_DIR)) {
+for (const file of SCAN_DIRS.filter(existsSync).flatMap(walkTs)) {
   const rel = relative(BACKEND_ROOT, file).replace(/\\/g, "/");
   for (const f of parseFindFirst(readFileSync(file, "utf8"), schema))
     reads.push({ ...f, file: rel });

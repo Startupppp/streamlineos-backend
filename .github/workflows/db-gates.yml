@@ -179,6 +179,73 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
 
+      # ── The `.db.spec.ts` class, added 2026-09-04 ────────────────────────────
+      #
+      # 46 spec files carry a runtime env gate in the house style
+      # (`const describeDb = ENABLED && DB_URL ? describe : describe.skip`), and
+      # until this step existed NOT ONE of them ran anywhere: `grep -rl "DB_TESTS"
+      # .github/workflows` returned nothing across all seven workflow files. 27 of
+      # them have no unconditional `describe` at all, so in CI they asserted
+      # nothing whatsoever while still counting as tests in the suite total.
+      #
+      # That is the debt `check:test-suppressions` exists to price, and it is why
+      # that gate is RED at 66 conditional sites against a ratchet of 29 rather
+      # than raised to fit. The ratchet is not the problem; a regression net that
+      # runs on no machine is. This step is the half that can be fixed by wiring.
+      #
+      # UNPROVEN, exactly like the two e2e steps around it. It has never completed
+      # here or anywhere, and some of these suites read seeded rows (an org with an
+      # active member) that `db:bootstrap` alone does not create — those will fail
+      # until a seed step lands or the spec builds its own fixture. Promote it to
+      # every event by deleting this `if:` once a green has been read, not by
+      # deleting the step. Do NOT lower `check:test-suppressions` on the strength
+      # of this step existing: the ratchet may move when the suites are green here,
+      # measured, and not before.
+      - name: Database-gated spec suites (.db.spec.ts)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: pnpm test:db-specs
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          ACCESS_DB_TESTS: "1"
+          ACCT_DB_TESTS: "1"
+          AI_DB_TESTS: "1"
+          API_KEY_DB_TESTS: "1"
+          BILLING_DB_TESTS: "1"
+          BLOG_DB_TESTS: "1"
+          BUILD_DB_TESTS: "1"
+          CALENDAR_DB_TESTS: "1"
+          CHAT_DB_TESTS: "1"
+          CRM_DB_TESTS: "1"
+          CRON_DB_TESTS: "1"
+          EMAIL_DB_TESTS: "1"
+          FIN_DB_TESTS: "1"
+          FK_DB_TESTS: "1"
+          GDPR_DB_TESTS: "1"
+          HR_DB_TESTS: "1"
+          INV_DB_TESTS: "1"
+          KB_DB_TESTS: "1"
+          PAYROLL_DB_TESTS: "1"
+          PUBLIC_DB_TESTS: "1"
+          PUSH_DB_TESTS: "1"
+          SESSIONS_DB_TESTS: "1"
+          WORKFLOW_DB_TESTS: "1"
+          # The NON-OWNER role, deliberately. `db:bootstrap-role` creates
+          # streamline_app NOBYPASSRLS with APP_DB_PASSWORD, and an RLS-sensitive
+          # spec pointed at the `ci` owner would pass by bypassing the policy it
+          # means to prove. DATABASE_URL above stays the owner for the schema work.
+          APP_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
+          ACCESS_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          API_KEY_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          BILLING_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          BLOG_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          CALENDAR_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          CHAT_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          EMAIL_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          FK_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          HR_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          PUSH_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          SESSIONS_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
   # Run the complete migration chain twice from disposable databases: once from
   # zero and once split at the supported upgrade watermark. The proof compares the
   # full catalog and drops both probes in a finally block.

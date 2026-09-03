@@ -22,6 +22,7 @@ import type {
 } from "../payroll.types";
 import { payrollSubjectKey } from "../lib/payroll-subject";
 import { requirePayrollUserIds } from "../lib/payroll-user-id";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 import { getLockedInputPeriodId } from "./lib/input-puller";
 import type { ProfileData } from "./run-types";
 
@@ -111,26 +112,37 @@ export class RunDataLoaderService {
     const lastDay = new Date(year!, mon!, 0).getDate();
     const monthEndDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
-    const rows = await this.db
-      .select({
-        id: employeeSalaryProfiles.id,
-        userId: employeeSalaryProfiles.userId,
-        workerId: employeeSalaryProfiles.workerId,
-        workerType: employeeSalaryProfiles.workerType,
-        currency: employeeSalaryProfiles.currency,
-        payoutCurrency: employeeSalaryProfiles.payoutCurrency,
-        annualCtc: employeeSalaryProfiles.annualCtc,
-        taxRegime: employeeSalaryProfiles.taxRegime,
-      })
-      .from(employeeSalaryProfiles)
-      .where(
-        and(
-          eq(employeeSalaryProfiles.orgId, orgId),
-          inArray(employeeSalaryProfiles.status, ["ACTIVE", "UPCOMING"]),
-          lte(employeeSalaryProfiles.effectiveFrom, monthEndDate),
-        ),
-      )
-      .limit(1000);
+    // This set IS the payroll. A truncated read produced no exception, no
+    // warning and no payroll_run_employees row for the payees it dropped, and
+    // run-result-persister then wrote the short count into
+    // payrollRuns.employeeCount, so the run looked internally consistent and
+    // nobody found out until payday. The probe row turns an org above the bound
+    // into a visible 409 instead; the ORDER BY makes the set the run covers
+    // reproducible across a recalculation.
+    const rows = requirePayrollReadWithinCap(
+      await this.db
+        .select({
+          id: employeeSalaryProfiles.id,
+          userId: employeeSalaryProfiles.userId,
+          workerId: employeeSalaryProfiles.workerId,
+          workerType: employeeSalaryProfiles.workerType,
+          currency: employeeSalaryProfiles.currency,
+          payoutCurrency: employeeSalaryProfiles.payoutCurrency,
+          annualCtc: employeeSalaryProfiles.annualCtc,
+          taxRegime: employeeSalaryProfiles.taxRegime,
+        })
+        .from(employeeSalaryProfiles)
+        .where(
+          and(
+            eq(employeeSalaryProfiles.orgId, orgId),
+            inArray(employeeSalaryProfiles.status, ["ACTIVE", "UPCOMING"]),
+            lte(employeeSalaryProfiles.effectiveFrom, monthEndDate),
+          ),
+        )
+        .orderBy(employeeSalaryProfiles.id)
+        .limit(PAYROLL_READ_CAP + 1),
+      "load eligible salary profiles",
+    );
 
     const filtered = rows.filter((r) => r.id > 0);
     if (!toggles.contractorPayments)
@@ -144,20 +156,26 @@ export class RunDataLoaderService {
     userIds: string[],
   ): Promise<Set<string>> {
     if (userIds.length === 0) return new Set();
-    const rows = await this.db
-      .select({ userId: payrollRunEmployees.userId })
-      .from(payrollRunEmployees)
-      .where(
-        and(
-          eq(payrollRunEmployees.orgId, orgId),
-          eq(payrollRunEmployees.runId, runId),
-          or(
-            eq(payrollRunEmployees.status, "HELD"),
-            isNotNull(payrollRunEmployees.holdReason),
+    // Same bound, same reason: a truncated hold list silently pays somebody the
+    // operator deliberately held back.
+    const rows = requirePayrollReadWithinCap(
+      await this.db
+        .select({ userId: payrollRunEmployees.userId })
+        .from(payrollRunEmployees)
+        .where(
+          and(
+            eq(payrollRunEmployees.orgId, orgId),
+            eq(payrollRunEmployees.runId, runId),
+            or(
+              eq(payrollRunEmployees.status, "HELD"),
+              isNotNull(payrollRunEmployees.holdReason),
+            ),
           ),
-        ),
-      )
-      .limit(1000);
+        )
+        .orderBy(payrollRunEmployees.id)
+        .limit(PAYROLL_READ_CAP + 1),
+      "load held payroll payees",
+    );
     return new Set(requirePayrollUserIds(rows.map((r) => r.userId)));
   }
 

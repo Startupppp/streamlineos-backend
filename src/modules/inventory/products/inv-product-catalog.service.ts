@@ -4,7 +4,7 @@ import {
   ConflictException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, asc, ne } from "drizzle-orm";
+import { and, asc, count, eq, ne } from "drizzle-orm";
 import { assertNoBarcodeConflict } from "./lib/barcode-conflict";
 import {
   invProducts,
@@ -16,6 +16,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { buildListResponse } from "../../../common/pagination/pagination";
 import type {
   CreateVariantInput,
   UpdateVariantInput,
@@ -97,7 +98,7 @@ export class InvProductCatalogService {
     return updated;
   }
 
-  listVariants(
+  async listVariants(
     orgId: string,
     filters: { activeOnly: boolean; page: number; limit: number },
   ) {
@@ -105,22 +106,29 @@ export class InvProductCatalogService {
     const offset = (page - 1) * limit;
     const conditions = [eq(invProductVariants.orgId, orgId)];
     if (activeOnly) conditions.push(eq(invProductVariants.isActive, true));
-    return this.db
-      .select({
-        id: invProductVariants.id,
-        productId: invProductVariants.productId,
-        productName: invProducts.name,
-        name: invProductVariants.name,
-        sku: invProductVariants.sku,
-        costPrice: invProductVariants.costPrice,
-        isActive: invProductVariants.isActive,
-      })
-      .from(invProductVariants)
-      .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-      .where(and(...conditions))
-      .orderBy(asc(invProducts.name), asc(invProductVariants.name))
-      .limit(limit)
-      .offset(offset);
+    const where = and(...conditions);
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db
+        .select({
+          id: invProductVariants.id,
+          productId: invProductVariants.productId,
+          productName: invProducts.name,
+          name: invProductVariants.name,
+          sku: invProductVariants.sku,
+          costPrice: invProductVariants.costPrice,
+          isActive: invProductVariants.isActive,
+        })
+        .from(invProductVariants)
+        .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
+        .where(where)
+        .orderBy(asc(invProducts.name), asc(invProductVariants.name))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ total: count() }).from(invProductVariants).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
   }
 
   listCategories(orgId: string) {

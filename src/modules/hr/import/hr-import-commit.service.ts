@@ -209,6 +209,36 @@ export class HrImportCommitService {
     const checkIn = row.checkIn ? new Date(row.checkIn) : null;
     const checkOut = row.checkOut ? new Date(row.checkOut) : null;
 
+    // The `onConflictDoNothing()` that used to sit on this insert could never
+    // fire: `attendance`'s only unique indexes are attendance_pkey (id) and
+    // uniq_attendance_org_id (org_id, id), both on a generated serial the
+    // insert never supplies. So no conflict was possible, `rec` was always
+    // defined, the duplicate guard below was unreachable, and re-running the
+    // same CSV — the ordinary correction workflow, which is why the rollback
+    // endpoint exists — silently doubled every row. That inflates the
+    // count()-based attendance rate and the payable days payroll reads.
+    //
+    // A unique index cannot replace this check: the clock path legitimately
+    // writes several sessions per person per day, and `attendance` carries no
+    // column recording which rows arrived by import, so there is nothing to
+    // scope a partial index to. The check is therefore explicit. The whole job
+    // runs inside one transaction behind a previewed -> committing status
+    // transition, so no second commit of the same job races this read.
+    const [duplicate] = await tx
+      .select({ id: attendance.id })
+      .from(attendance)
+      .where(
+        and(
+          eq(attendance.orgId, orgId),
+          eq(attendance.userId, userId),
+          eq(attendance.date, row.date),
+        ),
+      )
+      .limit(1);
+    if (duplicate) {
+      throw new Error(`Attendance for ${row.employeeEmail} on ${row.date} already exists`);
+    }
+
     const [rec] = await tx
       .insert(attendance)
       .values({
@@ -219,10 +249,11 @@ export class HrImportCommitService {
         checkOut,
         status: row.status ?? "PRESENT",
       })
-      .onConflictDoNothing()
       .returning({ id: attendance.id });
 
-    if (!rec) throw new Error(`Attendance for ${row.employeeEmail} on ${row.date} already exists`);
+    if (!rec) {
+      throw new Error(`Failed to import attendance for ${row.employeeEmail} on ${row.date}`);
+    }
     return { table: "attendance", id: rec.id };
   }
 

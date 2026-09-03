@@ -25,6 +25,11 @@ const REVOCATION_PRUNE_BATCH = 200;
  * payload; a failed chunk then loses only its own tombstones.
  */
 const REVOCATION_WRITE_CHUNK = 256;
+/**
+ * The device list is a page, not a dump. Matches the admin twin
+ * `UserProfileService.getUserSessions`, which has always read `.limit(50)`.
+ */
+export const SESSION_LIST_CAP = 50;
 
 @Injectable()
 export class SessionsService {
@@ -73,13 +78,42 @@ export class SessionsService {
       }
     }
 
+    /**
+     * The same "still active" predicate `enforceMaxSessions` uses below. The
+     * asymmetry was the defect: that method has always excluded expired rows,
+     * this one never did, so a session the user signed out of a month ago
+     * rendered in Settings → Security as a live device with a working Revoke
+     * button. Nothing prunes `user_sessions` and
+     * `organizations.max_concurrent_sessions` is nullable with no default, so
+     * without this the list grew one row per sign-in forever.
+     *
+     * `id` breaks the `lastActive` tie so the capped page is a stable
+     * prefix — the cap must not return an arbitrary subset that changes
+     * between two reads of the same state.
+     */
+    const listedAt = new Date();
     const rows = await this.db.query.userSessions.findMany({
-      where: and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
-      orderBy: [desc(userSessions.lastActive)],
+      where: and(
+        eq(userSessions.userId, userId),
+        eq(userSessions.isRevoked, false),
+        or(isNull(userSessions.expiresAt), gt(userSessions.expiresAt, listedAt)),
+      ),
+      orderBy: [desc(userSessions.lastActive), asc(userSessions.id)],
+      limit: SESSION_LIST_CAP + 1,
       columns: { id: true, userAgent: true, ipAddress: true, lastActive: true, createdAt: true },
     });
 
-    return rows.map((s) => ({
+    if (rows.length > SESSION_LIST_CAP) {
+      // Never a silent truncation. One person holding more than a page of live
+      // sessions is either an integration signing in on a loop or an attack,
+      // and both need to be visible rather than quietly clipped.
+      logger.warn("session list truncated at the page cap", {
+        userId,
+        cap: SESSION_LIST_CAP,
+      });
+    }
+
+    return rows.slice(0, SESSION_LIST_CAP).map((s) => ({
       ...withClientInfo(s),
       isCurrent: s.id === currentSessionId,
     }));

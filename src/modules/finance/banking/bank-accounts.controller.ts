@@ -70,6 +70,16 @@ export class BankAccountsController {
     return this.service.update(u, bankAccountId, body);
   }
 
+  @Get(":bankAccountId")
+  @RequirePermission("accounting:banking:read")
+  @Validate({ params: bankAccountIdParams })
+  findOne(
+    @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.findOne(u.orgId, bankAccountId);
+  }
+
   @Get(":bankAccountId/transactions")
   @RequirePermission("accounting:banking:read")
   @Validate({ params: bankAccountIdParams, query: bankTransactionsQuerySchema })

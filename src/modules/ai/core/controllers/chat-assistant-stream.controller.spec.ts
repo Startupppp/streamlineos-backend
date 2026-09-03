@@ -44,11 +44,17 @@ function makeRequest(): Request & { emitClose: () => void } {
   return { ...closeEmitter(), complete: true } as unknown as Request & { emitClose: () => void };
 }
 
-function makeResponse(): Response & { end: jest.Mock; emitClose: () => void } {
-  return { ...closeEmitter(), writableEnded: false, end: jest.fn() } as unknown as Response & {
-    end: jest.Mock;
-    emitClose: () => void;
-  };
+function makeResponse(): Response & {
+  end: jest.Mock;
+  destroy: jest.Mock;
+  emitClose: () => void;
+} {
+  return {
+    ...closeEmitter(),
+    writableEnded: false,
+    end: jest.fn(),
+    destroy: jest.fn(),
+  } as unknown as Response & { end: jest.Mock; destroy: jest.Mock; emitClose: () => void };
 }
 
 function makeController(processChat: jest.Mock, aiChat = true) {
@@ -56,7 +62,6 @@ function makeController(processChat: jest.Mock, aiChat = true) {
     { processChat } as never,
     {} as never,
     { getFlags: jest.fn().mockResolvedValue({ aiChat }) } as never,
-    {} as never,
     {} as never,
     {} as never,
     {} as never,
@@ -121,6 +126,14 @@ describe("ChatAssistantController — a stream failure keeps its status", () => 
 });
 
 describe("ChatAssistantController — the pipe promise is awaited", () => {
+  /**
+   * The handler must still resolve — a rejected pipe promise here would be an
+   * unhandled rejection, which is what this test was written for. What it must
+   * NOT do is end the response cleanly: `res.end()` sends the terminating chunk
+   * and the client reads the truncated answer as a completed one. The fault is
+   * signalled by destroying the response instead
+   * (`ai-stream-fault-is-visible.spec.ts` proves what that means over a socket).
+   */
   it("does not reject the handler when the provider faults after headers were sent", async () => {
     const controller = makeController(
       jest.fn().mockResolvedValue({
@@ -132,7 +145,8 @@ describe("ChatAssistantController — the pipe promise is awaited", () => {
     await expect(
       controller.chatAssistant(makeRequest(), BODY, ACTOR, res),
     ).resolves.toBeUndefined();
-    expect(res.end).toHaveBeenCalledTimes(1);
+    expect(res.destroy).toHaveBeenCalledTimes(1);
+    expect(res.end).not.toHaveBeenCalled();
   });
 });
 

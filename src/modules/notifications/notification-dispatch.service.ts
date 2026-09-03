@@ -1,4 +1,4 @@
-import { Inject, Injectable, BadRequestException } from "@nestjs/common";
+import { Inject, Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { inArray, eq, and } from "drizzle-orm";
 import { notificationOutbox, notificationPreferences, userPreferences, users, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -38,10 +38,17 @@ export interface DispatchResult {
   suppressed: number;
   deduped: number;
   deferred: boolean;
+  /**
+   * Recipients whose own materialisation threw. Counted rather than thrown so one
+   * bad recipient cannot cost the other 499 theirs — see `perRecipient`.
+   */
+  failedRecipients: number;
 }
 
 @Injectable()
 export class NotificationDispatchService {
+  private readonly logger = new Logger(NotificationDispatchService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationEventRegistryService,
@@ -109,7 +116,9 @@ export class NotificationDispatchService {
 
     for (const { chunkInput, dedupeKey } of chunkData) {
       registerAfterCommit(async () => {
-        await this.emitNow({ ...chunkInput, dedupeKey });
+        // `replayKey`, not `dedupeKey`: this is the outbox row's identity, and passing
+        // it as a caller dedupe key is what overrode the event's declared window.
+        await this.emitNow({ ...chunkInput, replayKey: dedupeKey });
         await this.markIntentProcessed(input.orgId, dedupeKey);
       });
     }
@@ -121,6 +130,10 @@ export class NotificationDispatchService {
       suppressed: 0,
       deduped: 0,
       deferred: true,
+      // Zero because nothing has been materialised yet, not because nothing failed:
+      // every recipient on this path is dispatched from the after-commit hook above,
+      // so failures are counted by that run's own result, never by this one.
+      failedRecipients: 0,
     };
   }
 
@@ -160,7 +173,7 @@ export class NotificationDispatchService {
     if (!resolved) throw new BadRequestException(`Unknown notification event: ${input.eventKey}`);
     const { definition, enabled } = resolved;
 
-    const result: DispatchResult = { eventKey: input.eventKey, notified: 0, deliveriesQueued: 0, suppressed: 0, deduped: 0, deferred: false };
+    const result: DispatchResult = { eventKey: input.eventKey, notified: 0, deliveriesQueued: 0, suppressed: 0, deduped: 0, deferred: false, failedRecipients: 0 };
     if (!enabled && !definition.mandatory) return result;
 
     // PIPE-011: never notify someone about their own action. This was a per-caller
@@ -277,8 +290,39 @@ export class NotificationDispatchService {
       if (perUser.announce) announcements.push({ input: perUser.announce, pushToDevices: !perUser.pushHandledByEngine });
     };
 
+    /**
+     * The comment above says recipients are independent; before this they were not
+     * ISOLATED. `perRecipient` had no try/catch, so one recipient's failure rejected
+     * the whole `Promise.all`, threw out of `dispatch`, rolled the tenant transaction
+     * back and let the relay increment `attempt_count`. A deterministically bad
+     * recipient — a missing membership row, a template that throws on their locale —
+     * therefore burned all five attempts and DEADed the chunk, and 499 people never
+     * got the notification because of the 500th.
+     *
+     * Counted, never swallowed: a deferred failure that logs nothing is how the last
+     * notification outage stayed invisible for the life of the product.
+     *
+     * What this does NOT fix, stated so nobody reads more into it: the ten waves run
+     * as concurrent nested savepoints on ONE connection (`createTenantAwareDb`
+     * resolves `this.db` to the ambient transaction), so a `rollback to s<n>` still
+     * discards the savepoints opened after it and can take its wave-mates with it.
+     * The blast radius drops from the whole chunk to at most one wave of
+     * FANOUT_CONCURRENCY; closing it entirely means a top-level transaction per
+     * recipient, which trades this for pool exhaustion and needs its own measurement.
+     */
+    const perRecipientIsolated = async (userId: string): Promise<void> => {
+      try {
+        await perRecipient(userId);
+      } catch (error: unknown) {
+        result.failedRecipients += 1;
+        this.logger.error(
+          `notification fanout failed for recipient ${userId} (${input.eventKey}, org ${input.orgId}): ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+        );
+      }
+    };
+
     for (let i = 0; i < targets.length; i += FANOUT_CONCURRENCY) {
-      await Promise.all(targets.slice(i, i + FANOUT_CONCURRENCY).map(perRecipient));
+      await Promise.all(targets.slice(i, i + FANOUT_CONCURRENCY).map(perRecipientIsolated));
     }
 
     await Promise.all(

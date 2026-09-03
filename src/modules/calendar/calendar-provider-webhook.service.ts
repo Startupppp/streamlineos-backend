@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   calendarEvents,
   calendarProviderSyncQueue,
@@ -40,19 +40,44 @@ export class CalendarProviderWebhookService {
    * The only tenant selector a provider delivery carries is the connection it was
    * registered against; the org is resolved from that row and never read from the
    * request, so a caller cannot name someone else's tenant.
+   *
+   * The route is `@Public()`, so there is no session, `TenantContextInterceptor` opens
+   * no tenant transaction, and `createTenantAwareDb` hands back the raw pool with
+   * `app.organization_id` unset. `user_integration_connections` is behind
+   * `org_id = app.current_org_id()`, and that function RAISES 42501 rather than
+   * returning NULL when the GUC is absent — so reading the row directly off `this.db`
+   * (as this method used to) answered HTTP 500 to every valid delivery.
+   *
+   * The tenant is therefore resolved through the SECURITY DEFINER function migration
+   * 1057 adds, the same shape 0385/0386/0387 already use for the intake, survey and
+   * git webhooks. It returns org_id and nothing else. The connection row itself is
+   * re-read below INSIDE the tenant transaction, under live RLS, which is where the
+   * `status = 'active'` and calendar-toolkit predicate is enforced — the resolver
+   * decides only which tenant to open, never whether the delivery is admissible.
    */
   async handleDelivery(delivery: ProviderWebhookDelivery): Promise<WebhookHandleResult> {
-    const [connection] = await this.db
-      .select({ id: userIntegrationConnections.id, orgId: userIntegrationConnections.orgId })
-      .from(userIntegrationConnections)
-      .where(
-        and(
-          eq(userIntegrationConnections.id, delivery.connectionId),
-          eq(userIntegrationConnections.status, "active"),
-          inArray(userIntegrationConnections.toolkit, [...CALENDAR_TOOLKITS]),
-        ),
-      )
-      .limit(1);
+    const orgRows = await this.db.execute(
+      sql`SELECT app.resolve_calendar_connection_org_id(${delivery.connectionId}) AS org_id`,
+    );
+    const orgId = orgRows[0]?.org_id ? String(orgRows[0].org_id) : null;
+
+    const connection = orgId
+      ? await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+          const rows = await tx
+            .select({ id: userIntegrationConnections.id, orgId: userIntegrationConnections.orgId })
+            .from(userIntegrationConnections)
+            .where(
+              and(
+                eq(userIntegrationConnections.id, delivery.connectionId),
+                eq(userIntegrationConnections.orgId, orgId),
+                eq(userIntegrationConnections.status, "active"),
+                inArray(userIntegrationConnections.toolkit, [...CALENDAR_TOOLKITS]),
+              ),
+            )
+            .limit(1);
+          return rows[0] ?? null;
+        })
+      : null;
 
     if (!connection) {
       this.logger.warn(

@@ -31,6 +31,7 @@ import { CronInvitationExpiryController } from "./cron-invitation-expiry.control
 import { CronHrController } from "./cron-hr.controller";
 import { CronHrNotificationsController } from "./cron-hr-notifications.controller";
 import { CronPlatformController } from "./cron-platform.controller";
+import { CronCalendarController } from "./cron-calendar.controller";
 import { CronGdprController } from "./cron-gdpr.controller";
 import { CronNotificationsController } from "./cron-notifications.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
@@ -128,6 +129,7 @@ import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.ser
     CronHrController,
     CronHrNotificationsController,
     CronPlatformController,
+    CronCalendarController,
     CronGdprController,
     CronNotificationsController,
     CronOutboxController,

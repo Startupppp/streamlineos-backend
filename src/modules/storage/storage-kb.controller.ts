@@ -1,5 +1,5 @@
 import { Controller, Get, Inject, NotFoundException, Param, Query } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { Public } from "../../common/auth/public.decorator";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -9,6 +9,11 @@ import { kbAttachmentsQuerySchema, type KbAttachmentsQueryInput } from "./dto/st
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { kbAttachmentListResponseSchema } from "./dto/storage-response.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import {
+  buildListResponse,
+  paginateOffset,
+  type ListResponse,
+} from "../../common/pagination/pagination";
 import { z } from "zod";
 
 const slugParams = z.object({ slug: z.string().min(1) }).strict();
@@ -34,9 +39,9 @@ export class StorageKbController {
   async listAttachments(
     @Param("slug") slug: string,
     @Query() query: KbAttachmentsQueryInput,
-  ): Promise<AttachmentResponse[]> {
-    const { org, page, limit } = query;
-    const offset = (page - 1) * limit;
+  ): Promise<ListResponse<AttachmentResponse>> {
+    const { org, page, limit: pageSize } = query;
+    const { limit, offset } = paginateOffset({ page, pageSize });
 
     const [article] = await this.db
       .select({ id: kbArticles.id })
@@ -52,24 +57,34 @@ export class StorageKbController {
 
     if (!article) throw new NotFoundException("Article not found");
 
-    const rows = await this.db
-      .select({
-        id: kbArticleAttachments.id,
-        fileName: kbArticleAttachments.fileName,
-        fileKey: kbArticleAttachments.fileKey,
-        fileSize: kbArticleAttachments.fileSize,
-        mimeType: kbArticleAttachments.mimeType,
-        createdAt: kbArticleAttachments.createdAt,
-      })
-      .from(kbArticleAttachments)
-      .where(and(eq(kbArticleAttachments.articleId, article.id), eq(kbArticleAttachments.orgId, org)))
-      .orderBy(desc(kbArticleAttachments.createdAt))
-      .limit(limit)
-      .offset(offset);
+    const where = and(
+      eq(kbArticleAttachments.articleId, article.id),
+      eq(kbArticleAttachments.orgId, org),
+    );
+
+    // The count is what makes the envelope worth having: a `page` query param with no total
+    // leaves the caller guessing whether a short page is the last one.
+    const [rows, [countRow]] = await Promise.all([
+      this.db
+        .select({
+          id: kbArticleAttachments.id,
+          fileName: kbArticleAttachments.fileName,
+          fileKey: kbArticleAttachments.fileKey,
+          fileSize: kbArticleAttachments.fileSize,
+          mimeType: kbArticleAttachments.mimeType,
+          createdAt: kbArticleAttachments.createdAt,
+        })
+        .from(kbArticleAttachments)
+        .where(where)
+        .orderBy(desc(kbArticleAttachments.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ total: count() }).from(kbArticleAttachments).where(where),
+    ]);
 
     const storageReady = this.storage.isConfigured();
 
-    return Promise.all(
+    const items = await Promise.all(
       rows.map(async (row): Promise<AttachmentResponse> => ({
         id: row.id,
         fileName: row.fileName,
@@ -81,5 +96,7 @@ export class StorageKbController {
           : null,
       })),
     );
+
+    return buildListResponse(items, Number(countRow?.total ?? 0), { page, pageSize });
   }
 }

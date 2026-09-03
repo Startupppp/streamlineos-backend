@@ -211,3 +211,94 @@ describe("callProvider — terminal failure is NOT retried", () => {
     expect(result.attempts).toBe(1);
   });
 });
+
+/**
+ * The breaker key is a property of the PROVIDER, not of the caller: every tenant
+ * that creates a Razorpay order shares `razorpay-orders` on one module-level
+ * breaker. A 4xx is the caller's own classification of "the provider answered and
+ * the request was wrong", so it is evidence the provider is UP — counting it
+ * turned one tenant's mis-saved credential into a platform-wide payment outage
+ * for the full 120s cooldown.
+ */
+describe("callProvider — a terminal failure is not evidence against the provider", () => {
+  it("does not count a terminal failure toward the circuit, however many times it repeats", async () => {
+    const breaker = new ProviderCircuitBreaker(3, 60_000);
+    const descriptor = makeDescriptor({ classify: TERMINAL, maxAttempts: 1 });
+    const rejecting = async (): Promise<string> => { throw new Error("HTTP 400 bad request"); };
+
+    for (let i = 0; i < 6; i++) await callProvider(descriptor, rejecting, breaker, FIXED_RANDOM);
+
+    expect(breaker.openProviders(Date.now())).toEqual([]);
+
+    let fnCalled = false;
+    const next = await callProvider(
+      descriptor,
+      async () => { fnCalled = true; return "ok"; },
+      breaker,
+      FIXED_RANDOM,
+    );
+    expect(fnCalled).toBe(true);
+    expect(next.ok).toBe(true);
+  });
+
+  it("one caller's terminal 4xx does not open the shared key against every other caller", async () => {
+    const breaker = new ProviderCircuitBreaker(5, 120_000);
+    const shared = "razorpay-orders";
+
+    // Tenant A: five checkout attempts, each a 4xx from a mis-saved credential.
+    for (let i = 0; i < 5; i++) {
+      await callProvider(
+        makeDescriptor({ provider: shared, classify: TERMINAL, maxAttempts: 3 }),
+        async (): Promise<string> => { throw new Error("key_id provided does not exist"); },
+        breaker,
+        FIXED_RANDOM,
+      );
+    }
+
+    // Tenant B, same process, same provider key, its own valid credential.
+    let reachedRazorpay = false;
+    const tenantB = await callProvider(
+      makeDescriptor({ provider: shared, classify: TERMINAL, maxAttempts: 3 }),
+      async () => { reachedRazorpay = true; return "order_123"; },
+      breaker,
+      FIXED_RANDOM,
+    );
+
+    expect(reachedRazorpay).toBe(true);
+    expect(tenantB.ok).toBe(true);
+  });
+
+  it("still opens the circuit on retryable failures — provider health is unchanged", async () => {
+    const breaker = new ProviderCircuitBreaker(3, 60_000);
+    const descriptor = makeDescriptor({ classify: RETRYABLE, maxAttempts: 1 });
+    const rejecting = async (): Promise<string> => { throw new Error("ECONNRESET"); };
+
+    for (let i = 0; i < 3; i++) await callProvider(descriptor, rejecting, breaker, FIXED_RANDOM);
+
+    let fnCalled = false;
+    const result = await callProvider(
+      descriptor,
+      async () => { fnCalled = true; return "ok"; },
+      breaker,
+      FIXED_RANDOM,
+    );
+    expect(fnCalled).toBe(false);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe("circuit-open");
+  });
+
+  it("a retryable failure after a terminal one still counts from a clean slate", async () => {
+    const breaker = new ProviderCircuitBreaker(2, 60_000);
+    const terminal = makeDescriptor({ classify: TERMINAL, maxAttempts: 1 });
+    const retryable = makeDescriptor({ classify: RETRYABLE, maxAttempts: 1 });
+    const rejecting = async (): Promise<string> => { throw new Error("fail"); };
+
+    await callProvider(terminal, rejecting, breaker, FIXED_RANDOM);
+    await callProvider(retryable, rejecting, breaker, FIXED_RANDOM);
+    expect(breaker.openProviders(Date.now())).toEqual([]);
+
+    await callProvider(retryable, rejecting, breaker, FIXED_RANDOM);
+    expect(breaker.openProviders(Date.now())).toEqual(["test-provider"]);
+  });
+});

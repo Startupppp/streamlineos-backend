@@ -88,11 +88,23 @@ export class CronStorageSweepService {
     };
 
     // forEachOrg, not a hand-rolled enumeration: it opens the tenant transaction that sets
-    // the org GUC, without which every quarantine and multipart read here dies 42501.
+    // the org GUC, without which every quarantine and pending-purge read here dies 42501.
+    const sweptOrgIds: string[] = [];
     const swept = await forEachOrg(this.db, "storage-sweep", async (_tx, orgId) => {
+      sweptOrgIds.push(orgId);
       await this.sweepOrg(orgId, result);
     });
     result.organizations = swept.organizations;
+
+    // The multipart sweep is the one part of this that leaves the process on every run,
+    // and it needs no tenant GUC — it reads the object store, not the database. Running it
+    // once over the organisations collected above rather than once inside each tenant
+    // transaction makes its outbound cost O(buckets) instead of O(organisations swept).
+    try {
+      result.multipartAborted = await this.multipart.sweepAbandonedUploadsForOrgs(sweptOrgIds);
+    } catch (err) {
+      this.logger.warn(`Multipart sweep failed: ${String(err)}`);
+    }
 
     this.logger.log(
       `[storage-sweep] ${result.organizations} orgs, ` +
@@ -193,14 +205,8 @@ export class CronStorageSweepService {
     }
   }
 
+  /** The tenant-scoped half: everything here needs the org GUC `forEachOrg` opened. */
   private async sweepOrg(orgId: string, result: StorageSweepResult): Promise<void> {
-    try {
-      const aborted = await this.multipart.sweepAbandonedUploads(orgId);
-      result.multipartAborted += aborted;
-    } catch (err) {
-      this.logger.warn(`Multipart sweep failed: ${String(err)}`, { orgId });
-    }
-
     await this.drainPendingPurge(orgId, result);
 
     const now = Date.now();

@@ -65,6 +65,14 @@ export class EmailSuppressionService {
     orgId?: string | null;
     reason: EmailSuppressionReason;
     source: EmailSuppressionSource;
+    /**
+     * When the suppression stops applying. Null (the default) is permanent, which
+     * is right for a fact about the ADDRESS — a hard bounce, an invalid mailbox.
+     * A caller recording a fact about a RELATIONSHIP should bound it: nothing in
+     * this product can delete a row from this table, so a permanent write here is
+     * permanent in the strongest sense.
+     */
+    expiresAt?: Date | null;
     evidence?: Record<string, unknown>;
   }): Promise<void> {
     const email = canonicalEmail(input.email);
@@ -79,6 +87,7 @@ export class EmailSuppressionService {
         channel: "EMAIL",
         reason: input.reason,
         source: input.source,
+        expiresAt: input.expiresAt ?? null,
         evidence: input.evidence ?? null,
       })
       // `where` is the index predicate on the conflict target, so this resolves to

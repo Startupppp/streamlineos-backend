@@ -7,6 +7,7 @@ import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
 import { AiCallMetrics } from "../telemetry/ai-call-metrics";
 import { AiStreamBreaker, type AiStreamBreakerRedis } from "../streaming/ai-stream-breaker";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
+import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
 import { AiUsageService } from "../services/ai-usage.service";
 import { settleStream } from "./ai-gateway-credit.helper";
 import { type AiCreditLedger } from "./credit-ledger.interface";
@@ -113,11 +114,13 @@ export class AiGatewayStreamHelper {
     let reservationId = 0;
     if (charge) {
       try {
+        const idempotencyKey = aiReservationIdempotencyKey(feature, actor);
         const reserved = await this.ledger.reserve({
           orgId: actor.orgId,
           userId: actor.userId,
           feature,
           credits: getReserveEstimateMilli(feature),
+          ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
         });
         reservationId = reserved.reservationId;
       } catch (error) {
@@ -146,6 +149,22 @@ export class AiGatewayStreamHelper {
         maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
         ...(signal !== undefined ? { abortSignal: signal } : {}),
         onChunk: () => call.firstToken(),
+        /**
+         * These streams pass no tools, so ai@7.0.51 has no recorded step when a
+         * client aborts and `finishReason` REJECTS into the `.catch` below —
+         * which is why this surface was never mis-settled. `onAbort` is wired
+         * anyway so the two branches of the SDK's `flush`
+         * (dist/index.js:9209-9221) have the same handler here as they do in
+         * `ChatAssistantService`: the day a tool set is added to a gateway
+         * stream, cancellation keeps working instead of silently starting to
+         * settle at zero. Both paths are idempotent, so a double notify is a
+         * no-op.
+         */
+        onAbort: () => {
+          releaseConcurrency();
+          releaseReservation("stream_aborted_no_settle");
+          call.finish("cancelled");
+        },
         onError: ({ error }) => {
           if (signal?.aborted === true || isAbortError(error)) return;
           breaker.recordFailure();

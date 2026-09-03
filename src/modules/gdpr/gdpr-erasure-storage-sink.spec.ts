@@ -18,6 +18,33 @@ jest.mock("../../common/auth/membership-state.service", () => ({
   bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
 }));
 
+/**
+ * The surviving-membership guard moved off the erasing org's tenant transaction and onto
+ * its own identity-scoped one: `organization_members` admits a row only when its org is
+ * the tenant GUC's or its user is `app.user_id`, and a tenant transaction never sets the
+ * second, so from inside one the read is blind. Nothing in this file turns on its answer —
+ * it is doubled here so it no longer occupies a slot in the `tx` sequence below.
+ * `gdpr-subject-erasure-global-identity.db.spec.ts` proves the real one against Postgres.
+ */
+jest.mock("../../common/tenant/with-identity", () => ({
+  withIdentity: jest.fn((_db: unknown, _userId: string, fn: (tx: unknown) => unknown) =>
+    fn({
+      select: () => ({
+        from: () => {
+          // `innerJoin` because the surviving-membership guard joins organizations to
+          // exclude deleted ones; the double models a builder, so it walks the same links.
+          const chain: Record<string, unknown> = {
+            innerJoin: () => chain,
+            where: () => chain,
+            limit: () => Promise.resolve([]),
+          };
+          return chain;
+        },
+      }),
+    }),
+  ),
+}));
+
 const ORG = "org-sink";
 const SUBJECT = "user-sink-subject";
 const ACTOR = "user-sink-actor";
@@ -213,7 +240,6 @@ describe("GdprSubjectErasureService — KB drains page past the page size", () =
     const { db, chunkDeleteChains } = makeHarness({
       selectPages: [
         [], // hr_people — empty, so no employment page follows
-        [], // other-org membership
         FULL_PAGE, // authored articles, page 1
         TAIL_PAGE, // authored articles, page 2
         [], // owned sources
@@ -234,7 +260,6 @@ describe("GdprSubjectErasureService — KB drains page past the page size", () =
     const { db, chunkDeleteChains } = makeHarness({
       selectPages: [
         [], // hr_people
-        [], // other-org membership
         [], // authored articles
         [], // owned sources
         FULL_PAGE, // uploaded attachments, page 1
@@ -251,7 +276,7 @@ describe("GdprSubjectErasureService — KB drains page past the page size", () =
 
   it("(bite proof) a single short page stops after one delete — the multi-page count is not an artefact", async () => {
     const { db, chunkDeleteChains } = makeHarness({
-      selectPages: [[], [], [{ id: 1 }], [], [], []],
+      selectPages: [[], [{ id: 1 }], [], [], []],
     });
     const service = buildService(db, makePurgeDouble());
 
@@ -272,7 +297,6 @@ describe("GdprSubjectErasureService — kb_ingestion_checkpoints", () => {
     const { db, checkpointDeleteChains } = makeHarness({
       selectPages: [
         [], // hr_people
-        [], // other-org membership
         [{ id: 5 }], // authored articles
         [], // owned sources
         [], // uploaded attachments
@@ -289,7 +313,7 @@ describe("GdprSubjectErasureService — kb_ingestion_checkpoints", () => {
 
   it("(bite proof) no authored content means no checkpoint delete and no table claim", async () => {
     const { db, checkpointDeleteChains } = makeHarness({
-      selectPages: [[], [], [], [], [], []],
+      selectPages: [[], [], [], [], []],
     });
     const service = buildService(db, makePurgeDouble());
 

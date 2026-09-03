@@ -1,6 +1,11 @@
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
-import { rolePermissionGrants, userPermissionGrants } from "../../db/schema";
+import {
+  rolePermissionGrants,
+  userDelegationPermissions,
+  userDelegations,
+  userPermissionGrants,
+} from "../../db/schema";
 import type { DataScope } from "./access.types";
 
 /**
@@ -18,6 +23,13 @@ const GRANT_PAGE_SIZE = 500;
 /** Sorts below every generated uuid, so the first page needs no special case. */
 const UUID_ZERO = "00000000-0000-0000-0000-000000000000";
 
+/**
+ * The empty string is the minimum of `text` under every collation, so it is the
+ * one sentinel that is safe for a keyset over ids this module does not generate
+ * itself. `user_delegations.id` is plain `text`, not `uuid`.
+ */
+const TEXT_MIN = "";
+
 export interface DrainedRoleGrant {
   roleId: number;
   permissionKey: string;
@@ -27,6 +39,12 @@ export interface DrainedRoleGrant {
 export interface DrainedUserGrant {
   permissionKey: string;
   scope: DataScope;
+}
+
+export interface DrainedDelegatedGrant {
+  permissionKey: string;
+  startsAt: Date;
+  endsAt: Date;
 }
 
 /**
@@ -122,5 +140,87 @@ export async function drainUserPermissionGrants(
     const last = page[page.length - 1];
     if (page.length < GRANT_PAGE_SIZE || last === undefined) return drained;
     afterId = last.id;
+  }
+}
+
+/**
+ * Every permission the membership holds by delegation, drained by keyset.
+ *
+ * The same defect a third time, and here the cap sat on the wrong side of a
+ * fan-out. `createDelegationSchema` caps ONE delegation at 200 permissions, but
+ * nothing caps how many delegations are concurrently ACTIVE against the same
+ * delegatee, and the read filtered on `delegatee_membership_id` + status +
+ * expiry only — never on a delegation id. An ops lead covering four colleagues
+ * on leave holds 4 x 200 rows; 500 came back, and with no `ORDER BY` a
+ * *different* 500 on each request. The answer is then cached under
+ * `accessPerms(orgId, userId, version)` for that version's lifetime.
+ *
+ * `user_delegation_permissions` has NO `id` column — its primary key IS
+ * `(delegation_id, permission_key)` — so the keyset is that composite pair,
+ * written in expanded form rather than as a row-value comparison so the
+ * predicate is ordinary Drizzle and type-checks like the two drains above.
+ */
+export async function drainDelegatedPermissionGrants(
+  db: Db,
+  readAccessTable: ReadAccessTable,
+  orgId: string,
+  membershipId: number,
+  now: Date,
+): Promise<DrainedDelegatedGrant[]> {
+  const drained: DrainedDelegatedGrant[] = [];
+  let afterDelegationId = TEXT_MIN;
+  let afterPermissionKey = TEXT_MIN;
+  for (;;) {
+    const page = await readAccessTable(
+      () =>
+        db
+          .select({
+            delegationId: userDelegationPermissions.delegationId,
+            permissionKey: userDelegationPermissions.permissionKey,
+            startsAt: userDelegations.startsAt,
+            endsAt: userDelegations.endsAt,
+          })
+          .from(userDelegationPermissions)
+          .innerJoin(
+            userDelegations,
+            and(
+              eq(userDelegations.orgId, userDelegationPermissions.orgId),
+              eq(userDelegations.id, userDelegationPermissions.delegationId),
+            ),
+          )
+          .where(
+            and(
+              eq(userDelegations.orgId, orgId),
+              eq(userDelegations.delegateeMembershipId, membershipId),
+              eq(userDelegations.status, "ACTIVE"),
+              gt(userDelegations.endsAt, now),
+              or(
+                gt(userDelegationPermissions.delegationId, afterDelegationId),
+                and(
+                  eq(userDelegationPermissions.delegationId, afterDelegationId),
+                  gt(
+                    userDelegationPermissions.permissionKey,
+                    afterPermissionKey,
+                  ),
+                ),
+              ),
+            ),
+          )
+          .orderBy(
+            asc(userDelegationPermissions.delegationId),
+            asc(userDelegationPermissions.permissionKey),
+          )
+          .limit(GRANT_PAGE_SIZE),
+    );
+    for (const row of page)
+      drained.push({
+        permissionKey: row.permissionKey,
+        startsAt: row.startsAt,
+        endsAt: row.endsAt,
+      });
+    const last = page[page.length - 1];
+    if (page.length < GRANT_PAGE_SIZE || last === undefined) return drained;
+    afterDelegationId = last.delegationId;
+    afterPermissionKey = last.permissionKey;
   }
 }

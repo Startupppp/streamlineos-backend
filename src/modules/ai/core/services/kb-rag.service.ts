@@ -13,6 +13,7 @@ import { KbRagRetrievalService, type KbAnswerSource } from "./kb-rag-retrieval.s
 import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
 import { REDIS } from "../../../../common/cache/cache.service";
 import { AiStreamBreaker } from "../streaming/ai-stream-breaker";
+import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
 import { resolveLlmRetryPolicy } from "../providers/llm-retry";
 import { AiCallMetrics } from "../telemetry/ai-call-metrics";
 import { AiConcurrencyLimitException, AiProviderUnavailableException } from "./ai-service-exceptions";
@@ -161,11 +162,16 @@ export class KbRagService {
     let reservationId = 0;
     try {
       const reserveMilli = getReserveEstimateMilli(KB_RAG_STREAM_FEATURE);
+      const idempotencyKey = aiReservationIdempotencyKey(KB_RAG_STREAM_FEATURE, {
+        orgId: opts.orgId,
+        userId: null,
+      });
       const reserved = await this.ledger.reserve({
         orgId: opts.orgId,
         userId: null,
         feature: KB_RAG_STREAM_FEATURE,
         credits: reserveMilli,
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
       reservationId = reserved.reservationId;
     } catch (error) {

@@ -109,17 +109,29 @@ export const vaultDownloadResponseSchema = z.object({
   signedUrl: z.string().nullable(),
 });
 
-/** `AttachmentResponse[]` — `storage-kb.controller.ts:46`. A PUBLIC route. */
-export const kbAttachmentListResponseSchema = z.array(
-  z.object({
-    id: z.number().int(),
-    fileName: z.string(),
-    fileSize: z.number().int().nonnegative(),
-    mimeType: z.string(),
-    createdAt: wireDate(),
-    downloadUrl: z.string().nullable(),
-  }),
-);
+/**
+ * `ListResponse<AttachmentResponse>` — `common/pagination/pagination.ts`. A PUBLIC route.
+ *
+ * Was a bare `z.array(...)` while the handler already took `page` and `limit`, so a caller
+ * paging a long attachment list had no way to learn there was a next page. The envelope is the
+ * shared offset one (`buildListResponse`), not a shape invented here.
+ */
+export const kbAttachmentListResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.number().int(),
+      fileName: z.string(),
+      fileSize: z.number().int().nonnegative(),
+      mimeType: z.string(),
+      createdAt: wireDate(),
+      downloadUrl: z.string().nullable(),
+    }),
+  ),
+  total: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  totalPages: z.number().int().nonnegative(),
+});
 
 /**
  * `CronStorageSweepService.StorageSweepResult`, under the controller's own

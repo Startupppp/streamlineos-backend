@@ -20,7 +20,7 @@ import {
 import type { ResolvedPoolConfig } from "../db/pool.config";
 import { Public } from "../common/auth/public.decorator";
 import { CacheService, REDIS } from "../common/cache/cache.service";
-import { sharedProviderBreaker } from "../common/outbound/provider-circuit-breaker";
+import { openProvidersAcrossBreakers } from "../common/outbound/provider-circuit-breaker";
 import { logger } from "../common/logger/logger.service";
 import { cacheCheck, databaseCheck, providerCheck, queueCheck } from "./dependency-checks";
 import { resolveReadinessConfig, type ReadinessConfig } from "./readiness.config";
@@ -75,9 +75,20 @@ export class HealthController implements BeforeApplicationShutdown {
         queueCheck(redis, this.config.queueHeartbeatJobs, this.config.queueStallSeconds, () =>
           Date.now(),
         ),
+        /**
+         * The PROCESS-level view, not `sharedProviderBreaker`.
+         *
+         * `sharedProviderBreaker` is only `callProvider`'s default argument and
+         * every production call site overrides it with a private instance, so
+         * this check read a permanently empty map: it could not report a
+         * provider down, and an operator who set
+         * `READINESS_REQUIRED_PROVIDERS` got a check that renders and never
+         * denies. `openProvidersAcrossBreakers` aggregates every breaker in the
+         * process, so a breaker added later is covered with no wiring here.
+         */
         providerCheck(
           this.config.requiredProviders,
-          (now) => sharedProviderBreaker.openProviders(now),
+          (now) => openProvidersAcrossBreakers(now),
           () => Date.now(),
         ),
       ],

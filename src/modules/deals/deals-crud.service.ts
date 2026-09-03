@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
-import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { applyScope } from "../access/apply-scope";
 import type { DataScope } from "../access/access.types";
 import { deals, dealStageTransitions, organizationMembers } from "../../db/schema";
@@ -13,6 +13,7 @@ import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { toMinorUnits, toTransitionRow } from "./deal-stage-ledger";
+import { buildListResponse } from "../../common/pagination/pagination";
 import type {
   CreateDealInput,
   DealBulkDeleteInput,
@@ -36,7 +37,7 @@ export class DealsCrudService {
     return this.cache.cachedVersioned(
       `deals:list:${orgId}`,
       hash,
-      () => {
+      async () => {
         const conditions: SQL[] = [
           eq(deals.orgId, orgId), isNull(deals.deletedAt),
           applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
@@ -44,16 +45,29 @@ export class DealsCrudService {
         if (query.stage) conditions.push(eq(deals.stage, query.stage));
         if (query.assignedToId) conditions.push(eq(deals.assignedToId, query.assignedToId));
 
-        return this.db.query.deals.findMany({
-          where: and(...conditions),
-          with: {
-            assignedTo: { columns: { id: true, name: true, image: true } },
-            lead: { columns: { id: true, name: true } },
-            client: { columns: { id: true, name: true } },
-          },
-          orderBy: [desc(deals.updatedAt)],
-          limit: query.limit ?? 50,
-          offset: query.offset ?? 0,
+        const where = and(...conditions);
+        const pageSize = query.limit ?? 50;
+        const offset = query.offset ?? 0;
+
+        const [rows, [totalRow]] = await Promise.all([
+          this.db.query.deals.findMany({
+            where,
+            with: {
+              assignedTo: { columns: { id: true, name: true, image: true } },
+              lead: { columns: { id: true, name: true } },
+              client: { columns: { id: true, name: true } },
+            },
+            orderBy: [desc(deals.updatedAt)],
+            limit: pageSize,
+            offset,
+          }),
+          this.db.select({ total: count() }).from(deals).where(where),
+        ]);
+
+        // This list pages by `offset`, so the envelope's page number is derived from it.
+        return buildListResponse(rows, Number(totalRow?.total ?? 0), {
+          page: pageSize > 0 ? Math.floor(offset / pageSize) + 1 : 1,
+          pageSize,
         });
       },
       CACHE_TTL.SHORT,

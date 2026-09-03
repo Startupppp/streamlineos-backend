@@ -4740,6 +4740,62 @@
       "when": 1803000010128,
       "tag": "1053_t03_inv_user_warehouse_grant_cascade",
       "breakpoints": true
+    },
+    {
+      "idx": 810,
+      "version": "7",
+      "when": 1803000010129,
+      "tag": "1054_chat_presence_membership_unique_total",
+      "breakpoints": true
+    },
+    {
+      "idx": 811,
+      "version": "7",
+      "when": 1803000010130,
+      "tag": "1055_t02_affiliates_org_scoped_user_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 812,
+      "version": "7",
+      "when": 1803000010131,
+      "tag": "1056_drop_duplicate_single_column_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 813,
+      "version": "7",
+      "when": 1803000010132,
+      "tag": "1057_calendar_connection_org_resolver",
+      "breakpoints": true
+    },
+    {
+      "idx": 814,
+      "version": "7",
+      "when": 1803000010133,
+      "tag": "1058_chat_read_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 815,
+      "version": "7",
+      "when": 1803000010134,
+      "tag": "1059_build_board_rank_sort_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 816,
+      "version": "7",
+      "when": 1803000010135,
+      "tag": "1060_chat_reply_reminder_pending_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 817,
+      "version": "7",
+      "when": 1803000010136,
+      "tag": "1061_push_endpoint_cross_tenant_claim",
+      "breakpoints": true
     }
   ]
 }

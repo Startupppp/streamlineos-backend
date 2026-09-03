@@ -19,7 +19,6 @@ import { CronWorkflowService } from "./cron-workflow.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CronLeaseService } from "./cron-lease.service";
-import { CalendarReminderSweepService } from "../calendar/calendar-reminder-sweep.service";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { CronOperatorAccessService } from "./cron-operator-access.service";
 import { CronAiUsageRetentionService } from "./cron-ai-usage-retention.service";
@@ -38,7 +37,6 @@ export class CronPlatformController {
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly idempotency: CronIdempotencyService,
     private readonly buildDueSweep: BuildDueSweepService,
-    private readonly calendarReminderSweep: CalendarReminderSweepService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
     private readonly cronLease: CronLeaseService,
     private readonly operatorAccess: CronOperatorAccessService,
@@ -69,18 +67,6 @@ export class CronPlatformController {
   @HttpCode(200)
   postBuildDueSweep(@Headers("authorization") authorization?: string) {
     return this.runBuildDueSweep(authorization);
-  }
-
-  @Get("calendar-reminder-sweep")
-  getCalendarReminderSweep(@Headers("authorization") authorization?: string) {
-    return this.runCalendarReminderSweep(authorization);
-  }
-
-  @Post("calendar-reminder-sweep")
-  @BodylessAction()
-  @HttpCode(200)
-  postCalendarReminderSweep(@Headers("authorization") authorization?: string) {
-    return this.runCalendarReminderSweep(authorization);
   }
 
   @Get("email-outbox-flush")
@@ -228,20 +214,6 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Build due sweep cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runCalendarReminderSweep(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("calendar-reminder-sweep", 120, () =>
-        this.calendarReminderSweep.run(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "calendar-reminder-sweep already running" };
-      return { success: true, ...outcome.result };
-    } catch (error) {
-      logger.error("Calendar reminder sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

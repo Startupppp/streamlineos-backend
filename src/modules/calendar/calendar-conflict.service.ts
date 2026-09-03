@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
+import { and, asc, eq, exists, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { calendarEvents, calendarEventExceptions, eventAttendees, leaveRequests, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../db/drizzle.types";
@@ -9,6 +9,7 @@ import {
   type CalendarEventException,
   type CalendarOccurrence,
 } from "./calendar-occurrence.service";
+import { exceptionsInWindow } from "./calendar-exception-loader";
 
 const CONFLICT_SCAN_BATCH_SIZE = 100;
 
@@ -43,6 +44,45 @@ export class CalendarConflictService {
       ),
     });
     const callerMembershipId = callerMember?.id ?? 0;
+
+    /**
+     * Only events the caller is actually on can conflict with the caller.
+     *
+     * This predicate used to live in memory, at the `createdByMembershipId !==
+     * callerMembershipId && rsvpStatus === null` filter below, so the keyset loop first
+     * drained every open-ended recurring series the ORGANISATION had ever created and
+     * threw almost all of them away — inside the create-event write transaction, against
+     * a 30 s statement_timeout, with the cost growing with tenant size rather than with
+     * the meeting being booked.
+     *
+     * Measured on scratch_head_1010 as `streamline_app` with the tenant GUC set, 5,000
+     * open weekly series of which the caller owns 50:
+     *
+     *   candidate drain   5,000 rows over ~50 keyset round trips  →  50 rows, one page
+     *                     (156 buffers per page)                     (152 buffers, once)
+     *   exception load    65,058 buffers / 50,000 rows loaded    →  775 buffers / 0 loaded
+     *
+     * Root CLAUDE.md §7 warns that `indexed = me OR EXISTS(participation)` can defeat both
+     * halves. It does not here, and the plan says why: `org_id` already drives the bitmap
+     * scan on `idx_calendar_events_org_start_cover`, so both arms are filters either way —
+     * the planner hashes the semi-join into that same filter ("hashed SubPlan"), removes
+     * 4,950 rows, and costs 4 buffers less than the unfiltered form.
+     */
+    const mineOrAttending = or(
+      eq(calendarEvents.createdByMembershipId, callerMembershipId),
+      exists(
+        tx
+          .select({ one: sql`1` })
+          .from(eventAttendees)
+          .where(
+            and(
+              eq(eventAttendees.orgId, calendarEvents.orgId),
+              eq(eventAttendees.eventId, calendarEvents.id),
+              eq(eventAttendees.membershipId, callerMembershipId),
+            ),
+          ),
+      ),
+    );
 
     const rows: Array<{
       id: number;
@@ -91,6 +131,7 @@ export class CalendarConflictService {
               ),
             ),
           ),
+          mineOrAttending,
           after === null
             ? undefined
             : or(
@@ -128,6 +169,11 @@ export class CalendarConflictService {
           and(
             eq(calendarEventExceptions.orgId, orgId),
             inArray(calendarEventExceptions.eventId, recurringIds),
+            // Bounded by the same rule the read path uses. This load had no window
+            // predicate and no limit at all: every exception the tenant had ever written
+            // for any of these series, RRULE-expanded, to answer a question only the ones
+            // inside the window can affect.
+            exceptionsInWindow(startDate, endDate),
           ),
         );
       for (const ex of excRows) {

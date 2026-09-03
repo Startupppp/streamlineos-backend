@@ -309,9 +309,7 @@ export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> 
          * under whatever correlation id the cron tick happened to carry.
          */
         correlationId:
-          record.correlation_id === null || record.correlation_id === undefined
-            ? null
-            : String(record.correlation_id),
+          typeof record.correlation_id === "string" ? record.correlation_id : null,
         attempt: Number(record.attempt ?? 0),
         maxAttempts: Number(record.max_attempts ?? 5),
       });

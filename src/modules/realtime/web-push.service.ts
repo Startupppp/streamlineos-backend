@@ -9,8 +9,26 @@ import type { PushPayload } from "./dto/realtime.schemas";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
+import { boundedMap } from "../../common/async/bounded-map";
 
 const EXPIRED_STATUS = new Set([404, 410]);
+
+/**
+ * Per-channel-message preferences that mean "no general push". Mirrors
+ * `SUPPRESSED_GENERAL_PREFERENCES` in `chat-notifications.service.ts`, which is
+ * the same product decision applied to the Ably path.
+ */
+const PUSH_SUPPRESSING_PREFERENCES = new Set(["NOTHING", "MENTIONS"]);
+
+/**
+ * How many device pushes one message may have open at once. Matches
+ * `PUBLISH_CONCURRENCY` on the Ably fan-out, and is chosen against the pool
+ * rather than the audience: each `sendToUser` takes a connection for its
+ * subscription read and another for the effect-ledger write, so the ceiling has
+ * to sit comfortably under `DB_POOL_MAX` (10-20) for the rest of the request
+ * path to keep making progress while a large channel drains.
+ */
+export const PUSH_FANOUT_CONCURRENCY = 16;
 
 @Injectable()
 export class WebPushService {
@@ -133,7 +151,11 @@ export class WebPushService {
     }
 
     const members = await this.db
-      .select({ userId: organizationMembers.userId })
+      .select({
+        userId: organizationMembers.userId,
+        mutedUntil: chatChannelMembers.mutedUntil,
+        notificationPreference: chatChannelMembers.notificationPreference,
+      })
       .from(chatChannelMembers)
       .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
       .where(
@@ -144,15 +166,45 @@ export class WebPushService {
         ),
       );
 
-    if (members.length === 0) return;
+    /**
+     * `muted_until` and `notification_preference` are columns of the table this
+     * query already joins, and neither was read: a member who muted the channel
+     * until tomorrow, or set it to mentions-only, still got a device push for
+     * every message. The sibling Ably path filters on both
+     * (`chat-notifications.service.ts:74-81`).
+     *
+     * `DEFAULT` is deliberately left through. It means "use
+     * `chat_org_settings.defaultNotificationPreference`", which lives behind
+     * `ChatOrgSettingsService`; `ChatModule` imports `RealtimeModule`, so
+     * realtime cannot read it back without a module cycle. Resolving it means
+     * chat resolving the recipient set and passing it in. Until then a `DEFAULT`
+     * member behaves exactly as before — the explicit opt-outs are what change.
+     */
+    const now = new Date();
+    const recipients = members.filter(
+      ({ mutedUntil, notificationPreference }) =>
+        !(mutedUntil && mutedUntil > now) &&
+        !PUSH_SUPPRESSING_PREFERENCES.has(notificationPreference),
+    );
 
-    const results = await Promise.allSettled(
-      members.map((m) => this.sendToUser(
+    if (recipients.length === 0) return;
+
+    /**
+     * Bounded, not truncated. The previous form was
+     * `Promise.allSettled(members.map(...))`, so one message in a 5,000-member
+     * channel opened 5,000 `sendToUser` calls at once — each its own
+     * subscription SELECT, ledger write and HTTPS push — against a pool whose
+     * `max` is 10-20. Capping the recipient SELECT instead would have silently
+     * dropped members, turning a resource problem into a correctness one; the
+     * window is what needs bounding, not the audience.
+     */
+    const results = await boundedMap(recipients, PUSH_FANOUT_CONCURRENCY, (m) =>
+      this.sendToUser(
         orgId,
         m.userId,
         idempotencyKey ? { ...payload, idempotencyKey: `${idempotencyKey}:${m.userId}` } : payload,
         idempotencyKey ? { orgId, producerEventId: idempotencyKey, effectKey: `${idempotencyKey}:${m.userId}` } : undefined,
-      )),
+      ),
     );
     const failures = results
       .filter((result): result is PromiseRejectedResult => result.status === "rejected")

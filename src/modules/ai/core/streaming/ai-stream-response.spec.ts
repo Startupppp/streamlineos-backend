@@ -12,13 +12,24 @@ import {
   type PipeableAiTextStream,
 } from "./ai-stream-response";
 
-function makeResponse(): ServerResponse & { writableEnded: boolean; end: jest.Mock } {
+function makeResponse(): ServerResponse & {
+  writableEnded: boolean;
+  end: jest.Mock;
+  destroy: jest.Mock;
+} {
   return {
     writableEnded: false,
     end: jest.fn(function (this: { writableEnded: boolean }) {
       this.writableEnded = true;
     }),
-  } as unknown as ServerResponse & { writableEnded: boolean; end: jest.Mock };
+    destroy: jest.fn(function (this: { writableEnded: boolean }) {
+      this.writableEnded = true;
+    }),
+  } as unknown as ServerResponse & {
+    writableEnded: boolean;
+    end: jest.Mock;
+    destroy: jest.Mock;
+  };
 }
 
 describe("pipeAiTextStream — the pipe promise is never dropped", () => {
@@ -47,7 +58,14 @@ describe("pipeAiTextStream — the pipe promise is never dropped", () => {
     expect(onFault).toHaveBeenCalledWith(expect.any(Error));
   });
 
-  it("closes a response the failed pipe left open", async () => {
+  /**
+   * `res.end()` here was the defect: it sends the terminating chunk, so the
+   * client's read loop sees a normal `done` and the frontend returns
+   * `{ status: "completed", text: <partial> }` for a stream that failed. The
+   * truncation has to be visible on the wire, and destroying the response is
+   * how HTTP says it.
+   */
+  it("truncates the response the failed pipe left open rather than ending it cleanly", async () => {
     const res = makeResponse();
     const stream: PipeableAiTextStream = {
       pipeTextStreamToResponse: jest.fn().mockRejectedValue(new Error("upstream 503")),
@@ -55,7 +73,8 @@ describe("pipeAiTextStream — the pipe promise is never dropped", () => {
 
     await pipeAiTextStream(res, stream, { feature: "f", orgId: "org_1" });
 
-    expect(res.end).toHaveBeenCalledTimes(1);
+    expect(res.destroy).toHaveBeenCalledTimes(1);
+    expect(res.end).not.toHaveBeenCalled();
   });
 
   it("does not re-end a response the pipe already ended", async () => {
@@ -70,6 +89,7 @@ describe("pipeAiTextStream — the pipe promise is never dropped", () => {
     await pipeAiTextStream(res, stream, { feature: "f", orgId: "org_1" });
 
     expect(res.end).not.toHaveBeenCalled();
+    expect(res.destroy).not.toHaveBeenCalled();
   });
 
   it("forwards headers so metadata lands before the body", async () => {

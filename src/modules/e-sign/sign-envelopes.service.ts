@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import {
   signDocuments,
   signEnvelopes,
@@ -18,6 +18,7 @@ import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
 import { SignRecipientsService } from "./sign-recipients.service";
 import { SYSTEM_ENVELOPE_SCOPE } from "./sign-envelope-scope";
+import { buildListResponse } from "../../common/pagination/pagination";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -162,7 +163,8 @@ export class SignEnvelopesService {
     query: ListEnvelopesInput,
     scope: { membershipId: number | null; viewAll: boolean },
   ) {
-    if (!scope.viewAll && scope.membershipId == null) return [];
+    const pageParams = { page: query.page, pageSize: query.limit };
+    if (!scope.viewAll && scope.membershipId == null) return buildListResponse([], 0, pageParams);
     const conditions = [eq(signEnvelopes.orgId, orgId)];
     if (!scope.viewAll && scope.membershipId != null)
       conditions.push(eq(signEnvelopes.senderMembershipId, scope.membershipId));
@@ -189,12 +191,18 @@ export class SignEnvelopesService {
     if (query.sourceEntityId)
       conditions.push(eq(signEnvelopes.sourceEntityId, query.sourceEntityId));
 
-    return this.db.query.signEnvelopes.findMany({
-      where: and(...conditions),
-      orderBy: (e, { desc }) => [desc(e.createdAt)],
-      limit: query.limit,
-      offset: (query.page - 1) * query.limit,
-    });
+    const where = and(...conditions);
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.signEnvelopes.findMany({
+        where,
+        orderBy: (e, { desc }) => [desc(e.createdAt)],
+        limit: query.limit,
+        offset: (query.page - 1) * query.limit,
+      }),
+      this.db.select({ total: count() }).from(signEnvelopes).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), pageParams);
   }
 
   async mustGet(orgId: string, envelopeId: number) {

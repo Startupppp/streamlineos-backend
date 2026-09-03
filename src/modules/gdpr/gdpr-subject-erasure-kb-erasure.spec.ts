@@ -12,6 +12,33 @@ jest.mock("../../common/auth/membership-state.service", () => ({
   bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
 }));
 
+/**
+ * The surviving-membership guard moved off the erasing org's tenant transaction and onto
+ * its own identity-scoped one: `organization_members` admits a row only when its org is
+ * the tenant GUC's or its user is `app.user_id`, and a tenant transaction never sets the
+ * second, so from inside one the read is blind. Nothing in this file turns on its answer —
+ * it is doubled here so it no longer occupies a slot in the `tx` sequence below.
+ * `gdpr-subject-erasure-global-identity.db.spec.ts` proves the real one against Postgres.
+ */
+jest.mock("../../common/tenant/with-identity", () => ({
+  withIdentity: jest.fn((_db: unknown, _userId: string, fn: (tx: unknown) => unknown) =>
+    fn({
+      select: () => ({
+        from: () => {
+          // `innerJoin` because the surviving-membership guard joins organizations to
+          // exclude deleted ones; the double models a builder, so it walks the same links.
+          const chain: Record<string, unknown> = {
+            innerJoin: () => chain,
+            where: () => chain,
+            limit: () => Promise.resolve([]),
+          };
+          return chain;
+        },
+      }),
+    }),
+  ),
+}));
+
 const ORG = "org-kb";
 const SUBJECT = "user-kb-subject";
 const ACTOR = "user-kb-actor";
@@ -89,10 +116,10 @@ function makeKbDb(opts: KbDbOpts = {}) {
         txSelectCount++;
         if (txSelectCount === 1) return chain([{ id: 10 }]);
         if (txSelectCount === 2) return chain([{ id: 20 }]);
-        if (txSelectCount === 3) return chain([]);
-        if (txSelectCount === 4) return chain(authoredArticleIds);
-        if (txSelectCount === 5) return chain(ownedSourceIds);
-        if (txSelectCount === 6) return chain(uploadedAttachmentIds);
+        // Slot 3 used to be the other-org membership guard. It is no longer read on `tx`.
+        if (txSelectCount === 3) return chain(authoredArticleIds);
+        if (txSelectCount === 4) return chain(ownedSourceIds);
+        if (txSelectCount === 5) return chain(uploadedAttachmentIds);
         return chain([]);
       }),
     })),

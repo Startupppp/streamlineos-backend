@@ -93,14 +93,7 @@ export class BillingWebhookHandler {
       return { status: 409, body: { ok: false, error: "event already recorded" } };
     }
 
-    const org = await this.state.findOrgFromNotes(payment.notes);
-    if (org && org.id !== orgId) {
-      logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
-      return { status: 400, body: { ok: false, error: "organization mismatch" } };
-    }
-    const resolvedOrgId = org?.id ?? orgId;
-
-    return this.settle(event, payment, resolvedOrgId, providerKey, key);
+    return this.settle(event, payment, orgId, providerKey, key);
   }
 
   /**
@@ -159,6 +152,25 @@ export class BillingWebhookHandler {
     providerKey: string,
     key: ProviderEventKey,
   ): Promise<WebhookResult> {
+    /*
+     * Both entrances converge here, which is why the guard lives here and not in `handle`.
+     *
+     * It used to sit in `handle` alone, and `handle` returns the 400 AFTER `ledger.claim`
+     * has written the row and BEFORE anything stamps `processed_at`. `listRedrivable`
+     * selects on exactly `processed_at IS NULL` plus an age window, so the refused row was
+     * a redrive candidate `minAgeMs` later — and `redriveUnprocessed` settled it with no
+     * notes check, persisting another tenant's payment under this org and granting this org
+     * the credits from `notes.packId`.
+     *
+     * On the live path this is behaviour-preserving: `handle` already refused any mismatch,
+     * so the `resolvedOrgId = org?.id ?? orgId` it used to compute was always `orgId`.
+     */
+    const org = await this.state.findOrgFromNotes(payment.notes);
+    if (org && org.id !== orgId) {
+      logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
+      return { status: 400, body: { ok: false, error: "organization mismatch" } };
+    }
+
     try {
       await this.state.persistPayment(payment, orgId);
     } catch (error) {

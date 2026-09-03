@@ -24,6 +24,11 @@ import {
   type JournalReconStatus,
 } from "./journal-batch-read-model";
 import { decimalFromNumber, roundDecimal } from "../../accounting/core/money.util";
+import { reversalTotalsFor } from "./lib/journal-reversal-totals";
+import {
+  PAYROLL_JOURNAL_BATCH_LINE_CAP,
+  requirePayrollReadWithinCap,
+} from "../lib/query-bounds";
 import { buildCursorPage, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import {
@@ -119,12 +124,19 @@ export class JournalOutboxService {
 
   async get(orgId: string, batchId: number): Promise<JournalBatchDetail> {
     const batch = await this.requireBatch(orgId, batchId);
-    const lines = await this.db
-      .select(journalBatchLineSelection)
-      .from(payrollJournalBatchLines)
-      .where(eq(payrollJournalBatchLines.batchId, batchId))
-      .orderBy(payrollJournalBatchLines.lineNo)
-      .limit(1000);
+    // A batch the journal builder can legally produce holds at most
+    // PAYROLL_JOURNAL_BATCH_LINE_CAP lines; anything beyond that is a batch
+    // this reader must not silently show a truncated version of.
+    const lines = requirePayrollReadWithinCap(
+      await this.db
+        .select(journalBatchLineSelection)
+        .from(payrollJournalBatchLines)
+        .where(eq(payrollJournalBatchLines.batchId, batchId))
+        .orderBy(payrollJournalBatchLines.lineNo)
+        .limit(PAYROLL_JOURNAL_BATCH_LINE_CAP + 1),
+      "read journal batch lines",
+      PAYROLL_JOURNAL_BATCH_LINE_CAP,
+    );
 
     return { ...toJournalBatchSummary(batch), lines };
   }
@@ -326,12 +338,21 @@ export class JournalOutboxService {
       throw new BadRequestException("A reversal batch cannot itself be reversed.");
     }
 
-      const originalLines = await this.db
+    const originalLines = requirePayrollReadWithinCap(
+      await this.db
         .select()
         .from(payrollJournalBatchLines)
         .where(eq(payrollJournalBatchLines.batchId, batchId))
         .orderBy(payrollJournalBatchLines.lineNo)
-        .limit(1000);
+        .limit(PAYROLL_JOURNAL_BATCH_LINE_CAP + 1),
+      "read journal batch lines to reverse",
+      PAYROLL_JOURNAL_BATCH_LINE_CAP,
+    );
+
+    // Derived from the contra lines this reversal will really carry, and
+    // refused unless it reproduces the original — the check markPosted would
+    // have made, had a reversal not been inserted POSTED in the first place.
+    const reversalTotals = reversalTotalsFor(batch.id, batch, originalLines);
 
     const reversalActorMembershipId = await this.resolveMembershipId(orgId, userId);
 
@@ -360,8 +381,10 @@ export class JournalOutboxService {
           reversalOfBatchId: batch.id,
           reversalReason: reason,
           sourceHash: `reversal:${batch.sourceHash}:v${nextVersion}`,
-          totalDebits: batch.totalCredits,
-          totalCredits: batch.totalDebits,
+          // Rupees, from the contra lines actually written below — not copied
+          // from the original header.
+          totalDebits: reversalTotals.totalDebits,
+          totalCredits: reversalTotals.totalCredits,
           lineCount: originalLines.length,
           unmappedCodes: batch.unmappedCodes,
           note: `Reversal of batch #${batch.id} (v${batch.version})`,

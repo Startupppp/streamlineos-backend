@@ -67,7 +67,10 @@ function buildMocks() {
   const makeSelectChain = () => {
     const resultIdx = selectCallIdx++;
     const chain: Record<string, unknown> = {};
-    for (const method of ["from", "where", "innerJoin", "leftJoin", "groupBy", "having", "orderBy", "limit", "as"])
+    // `innerJoinLateral` joined the list here when the last-message preview stopped being a
+    // DISTINCT ON over every message in every listed channel and became one index probe per
+    // channel; `selectDistinctOn` is no longer called at all by this path.
+    for (const method of ["from", "where", "innerJoin", "innerJoinLateral", "leftJoin", "groupBy", "having", "orderBy", "limit", "as"])
       chain[method] = jest.fn(() => chain);
     chain.then = (resolve: (v: unknown[]) => unknown) => resolve(selectResults[resultIdx] ?? []);
     return chain;

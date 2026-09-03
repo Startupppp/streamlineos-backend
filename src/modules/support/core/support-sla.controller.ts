@@ -18,7 +18,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SupportSlaService } from "./support-sla.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
-import { SETTINGS_AUDIT_ENTITY_TYPES, type SettingsAuditEntityType } from "../../../db/schema";
+import { SETTINGS_AUDIT_ENTITY_TYPES } from "../../../db/schema";
 import {
   createBusinessHoursSchema,
   createSlaPolicySchema,
@@ -34,10 +34,30 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const businessHoursIdParams = z.object({ businessHoursId: z.coerce.number().int().positive() }).strict();
 const slaPolicyIdParams = z.object({ slaPolicyId: z.coerce.number().int().positive() }).strict();
 const supportTicketIdParams = z.object({ supportTicketId: z.coerce.number().int().positive() }).strict();
+
+/**
+ * `Math.min(Number(limit) || 50, 100)` guarded NaN through the `|| 50` fallback
+ * but not sign: `Number("-5")` is -5, which is truthy, so `Math.min(-5, 100)` is
+ * -5 and Postgres answers `LIMIT must not be negative` (2201W) — a 500 on a
+ * malformed query string. `pageSizeField` floors at 1 and clamps at the platform
+ * cap, and being declared here it also reaches openapi.json.
+ *
+ * `entityType` was narrowed with an `includes` guard whose miss silently became
+ * `undefined`; declaring the enum turns an unknown entity type into a 400 that
+ * names the field instead of quietly listing everything.
+ */
+const settingsAuditLogQuery = z
+  .object({
+    entityType: z.enum(SETTINGS_AUDIT_ENTITY_TYPES).optional(),
+    limit: pageSizeField(50, 100),
+  })
+  .strict();
+type SettingsAuditLogQuery = z.infer<typeof settingsAuditLogQuery>;
 
 @RequireModule("support")
 @Controller("support")
@@ -140,16 +160,12 @@ export class SupportSlaController {
 
   @Get("settings/audit-log")
   @RequirePermission("support:settings:manage")
+  @Validate({ query: settingsAuditLogQuery })
   listSettingsAuditLog(
-    @Query("entityType") entityType: string | undefined,
-    @Query("limit") limit: string | undefined,
+    @Query() query: SettingsAuditLogQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsedLimit = Math.min(Number(limit) || 50, 100);
-    const typedEntityType = SETTINGS_AUDIT_ENTITY_TYPES.includes(entityType as SettingsAuditEntityType)
-      ? (entityType as SettingsAuditEntityType)
-      : undefined;
-    return this.audit.list(u.orgId, typedEntityType, parsedLimit);
+    return this.audit.list(u.orgId, query.entityType, query.limit);
   }
 
   @Get(":supportTicketId/risk")

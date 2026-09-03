@@ -15,7 +15,7 @@ import type { JournalOutboxService } from "../../insights/journal-outbox.service
 import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import { runInNewTenantTransaction } from "../../../../common/tenant";
-import { PAYROLL_READ_CAP } from "../../lib/query-bounds";
+import { resolveRunCoverage } from "./payout-run-coverage";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import { PAYROLL_RUN_PAYOUT_POSTING_INTENT_EVENT } from "../payroll-payout-posting-intent.consumer";
 
@@ -111,45 +111,9 @@ export async function checkRunCompletion(
 
   const runId = batch.runId;
 
-  const allBatches = await deps.db
-    .select({ id: payrollBankBatches.id })
-    .from(payrollBankBatches)
-    .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)))
-    .limit(PAYROLL_READ_CAP + 1);
-
-  const batchIds = allBatches.map(b => b.id);
-  if (batchIds.length === 0) return;
-
-  const [coverage] = await deps.db
-    .select({
-      subjects: sql<number>`count(distinct ${payrollBankBatchItems.runEmployeeId})::int`,
-      paidSubjects: sql<number>`count(distinct ${payrollBankBatchItems.runEmployeeId}) filter (where ${payrollBankBatchItems.status} = 'PAID')::int`,
-    })
-    .from(payrollBankBatchItems)
-    .where(
-      and(
-        eq(payrollBankBatchItems.orgId, orgId),
-        inArray(payrollBankBatchItems.batchId, batchIds),
-      ),
-    );
-
-  const subjects = coverage?.subjects ?? 0;
-  const paidSubjects = coverage?.paidSubjects ?? 0;
-  if (subjects === 0 || paidSubjects !== subjects) return;
-
-  const paidRunEmployees = await deps.db
-    .select({ runEmployeeId: payrollBankBatchItems.runEmployeeId })
-    .from(payrollBankBatchItems)
-    .where(
-      and(
-        eq(payrollBankBatchItems.orgId, orgId),
-        inArray(payrollBankBatchItems.batchId, batchIds),
-        eq(payrollBankBatchItems.status, "PAID"),
-      ),
-    )
-    .limit(PAYROLL_READ_CAP + 1);
-
-  const paidRunEmployeeIds = paidRunEmployees.map((r) => r.runEmployeeId);
+  const coverage = await resolveRunCoverage(deps.db, orgId, runId);
+  if (coverage === null) return;
+  const { paidRunEmployeeIds, payableSubjects, disbursedNet } = coverage;
 
   const paidByMember = await deps.db.query.organizationMembers.findFirst({
     where: and(eq(organizationMembers.userId, actorId), eq(organizationMembers.orgId, orgId)),
@@ -194,12 +158,20 @@ export async function checkRunCompletion(
         );
     }
 
+    // netDisbursed is recorded beside paidCount so the gap between a run's
+    // netTotal and what accounting was told to discharge is legible on the run
+    // itself, not something a reader has to re-derive from bank batch items.
     await tx.insert(payrollRunEvents).values({
       orgId,
       runId,
       type: "MARKED_PAID",
       actorId,
-      metadata: { paidCount: paidRunEmployeeIds.length },
+      metadata: {
+        paidCount: paidRunEmployeeIds.length,
+        payableCount: payableSubjects,
+        netDisbursed: disbursedNet,
+        netTotal: currentRun.netTotal ?? "0",
+      },
     });
 
     await OutboxWriter.emit(tx, {
@@ -212,7 +184,7 @@ export async function checkRunCompletion(
       payload: {
         runId,
         month: currentRun.month,
-        net: currentRun.netTotal ?? "0",
+        net: disbursedNet,
         actorUserId: actorId,
         orgId,
       },

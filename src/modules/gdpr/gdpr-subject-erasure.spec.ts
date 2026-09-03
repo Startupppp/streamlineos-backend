@@ -5,7 +5,8 @@ import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 import { GdprController } from "./gdpr.controller";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { SubjectFileKey } from "../storage/storage-key-catalog";
-import { gdprExportJobs, users } from "../../db/schema";
+import type { TenantTx } from "../../db/drizzle.types";
+import { gdprExportJobs, organizationMembers, users } from "../../db/schema";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -15,8 +16,27 @@ jest.mock("../../common/auth/membership-state.service", () => ({
   bustMembershipStatusCache: jest.fn().mockResolvedValue(undefined),
 }));
 
+/**
+ * The surviving-membership question is the one read in this service that CANNOT be
+ * answered on the erasing org's tenant transaction — `organization_members` admits a row
+ * only when its org is the tenant GUC's or its user is `app.user_id`, and a tenant
+ * transaction never sets the second. `withIdentity` is where it is asked instead; here it
+ * is doubled so this fake can decide the answer, and
+ * `gdpr-subject-erasure-global-identity.db.spec.ts` proves against a real Postgres, as the
+ * non-owner role, that the real one answers correctly.
+ *
+ * `runOutsideTenantContext` is deliberately NOT doubled: with no ambient context it is
+ * already a pass-through, and doubling it would hide the thing it exists to do.
+ */
+jest.mock("../../common/tenant/with-identity", () => ({
+  withIdentity: jest.fn(),
+}));
+
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { withIdentity } from "../../common/tenant/with-identity";
+
+const mockWithIdentity = withIdentity as jest.MockedFunction<typeof withIdentity>;
 
 const ORG = "org-main";
 const SUBJECT = "user-subject";
@@ -52,6 +72,8 @@ interface TxMocks {
   };
   updateChains: FluentChain[];
   insertChains: FluentChain[];
+  /** Every table read INSIDE the erasure transaction, in order. */
+  selectedTables: unknown[];
 }
 
 interface DbMocks {
@@ -91,7 +113,14 @@ function makeDb(opts: {
 
   const hrPeopleChain = fluentChain(hrPeopleRows);
   const hrEmpChain = fluentChain(hrEmpRows);
-  const otherMemberChain = fluentChain(otherMemberRows);
+
+  // The surviving-membership guard is answered through `withIdentity`, on its own
+  // identity-scoped transaction, never on the tenant `tx` below.
+  mockWithIdentity.mockImplementation((_db, _userId, fn) =>
+    fn({
+      select: jest.fn().mockReturnValue(fluentChain(otherMemberRows)),
+    } as unknown as TenantTx),
+  );
 
   const opUpdateChain = fluentChain([], opUpdated);
   const sfUpdateChain = fluentChain([], sfUpdated);
@@ -107,17 +136,18 @@ function makeDb(opts: {
   let txSelectCount = 0;
   let txUpdateCount = 0;
   let txInsertCount = 0;
+  const selectedTables: unknown[] = [];
 
   const tx = {
     select: jest.fn().mockImplementation(() => ({
       // The support-ticket erasure probes `users.email` inside the transaction; it is
       // not one of the positional id pages, so it must not consume the counter.
       from: jest.fn().mockImplementation((table: unknown) => {
+        selectedTables.push(table);
         if (table === users) return fluentChain([]);
         txSelectCount++;
         if (txSelectCount === 1) return hrPeopleChain;
         if (txSelectCount === 2) return hrEmpChain;
-        if (txSelectCount === 3) return otherMemberChain;
         return fluentChain([]);
       }),
     })),
@@ -164,6 +194,7 @@ function makeDb(opts: {
       tx,
       updateChains: [opUpdateChain, sfUpdateChain, depUpdateChain, aiConvUpdateChain, aiMsgUpdateChain, chatMsgUpdateChain, usersUpdateChain],
       insertChains: [dataReqInsertChain, auditInsertChain],
+      selectedTables,
     },
   };
 }
@@ -465,6 +496,39 @@ describe("GdprSubjectErasureService — global identity", () => {
     // 6 identity updates: org_people, sensitive_fields, dependents, ai_chat_conversations,
     // ai_chat_messages, chat_messages (no users).
     expect(identityUpdates(txMocks)).toHaveLength(6);
+  });
+
+  it("asks the surviving-membership question through withIdentity, never on the tenant transaction", async () => {
+    // The P0. HEAD issued this read on the erasing org's tenant transaction, where
+    // `organization_members`' policy — (org_id = tenant GUC) OR (user_id = app.user_id) —
+    // matches nothing for another org's row, because a tenant transaction sets only the
+    // first. The guard therefore reported "no surviving membership" for EVERY subject and
+    // the unprotected global `users` row was redacted out from under whatever other
+    // organisation the subject still belonged to.
+    //
+    // Two properties, both checkable here: the question is asked under the SUBJECT's
+    // identity, and it is not asked on `tx` at all.
+    const { db, txMocks } = makeDb({ otherMemberRows: [{ id: 99 }] });
+    const svc = buildService(db);
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(mockWithIdentity).toHaveBeenCalledTimes(1);
+    expect(mockWithIdentity).toHaveBeenCalledWith(
+      expect.anything(),
+      SUBJECT,
+      expect.any(Function),
+    );
+    expect(txMocks.selectedTables).not.toContain(organizationMembers);
+  });
+
+  it("does not ask at all on a dry run, which writes nothing", async () => {
+    const { db } = makeDb({});
+    const svc = buildService(db);
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: true });
+
+    expect(mockWithIdentity).not.toHaveBeenCalled();
   });
 });
 

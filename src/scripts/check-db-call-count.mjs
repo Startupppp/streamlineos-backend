@@ -33,6 +33,8 @@ import { join, extname } from "node:path";
 const LOOP_BODY_LOOKFORWARD = 30;
 const MIN_FILES = 200;
 const MIN_MODULES = 40;
+const MIN_COMMON_FILES = 150;
+const MIN_DB_FILES = 300;
 
 /**
  * Floor on the number of loop openers whose body this run actually read.
@@ -114,11 +116,44 @@ const DB_CALL_PATTERNS = [
   /\b[\w.]+\s*\(\s*this\.(?:db|tx)\s*[,)]/,
 ];
 
-function normalizeRelPath(file) {
+/**
+ * The gate reads THREE trees, not one.
+ *
+ * `src/modules` alone until 2026-09-03. `src/common` — the asynchronous substrate
+ * where every sweep, relay and workflow lives — and `src/db` were outside the
+ * corpus, so "All N+1 patterns are classified" was a statement about src/modules
+ * that read as a statement about the system. Six files in src/common and three in
+ * src/db carry loop-internal DB calls and none of them had ever been classified.
+ *
+ * The new roots carry an `@`-prefixed classification key: both `src/modules` and
+ * `src/common` contain an `hr` folder, so an unprefixed union would have merged two
+ * different files onto one entry. `src/modules` keeps its bare `/<module>/<path>`
+ * form, so no existing entry moves.
+ */
+const COMMON_ROOT = new URL("../common", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+const DB_ROOT = new URL("../db", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+
+const SCAN_ROOTS = [
+  { key: "", dir: ROOT, minFiles: MIN_FILES, label: "src/modules" },
+  { key: "@common", dir: COMMON_ROOT, minFiles: MIN_COMMON_FILES, label: "src/common" },
+  { key: "@db", dir: DB_ROOT, minFiles: MIN_DB_FILES, label: "src/db" },
+];
+
+/** Resolve a classification key back to the file it names, across every root. */
+export function resolveClassifiedPath(relPath, roots = SCAN_ROOTS) {
+  for (const root of roots) {
+    if (root.key === "") continue;
+    if (relPath.startsWith(`${root.key}/`))
+      return root.dir.replace(/\\/g, "/") + relPath.slice(root.key.length);
+  }
+  return ROOT.replace(/\\/g, "/") + relPath;
+}
+
+function normalizeRelPath(file, root = SCAN_ROOTS[0]) {
   const normalizedFile = file.replace(/\\/g, "/");
-  const normalizedRoot = ROOT.replace(/\\/g, "/");
+  const normalizedRoot = root.dir.replace(/\\/g, "/");
   return normalizedFile.startsWith(normalizedRoot)
-    ? normalizedFile.slice(normalizedRoot.length)
+    ? root.key + normalizedFile.slice(normalizedRoot.length)
     : normalizedFile;
 }
 
@@ -476,11 +511,10 @@ export function checkForUnclassified(counts, classification) {
   return unclassified;
 }
 
-export function checkForStaleEntries(classification, root) {
+export function checkForStaleEntries(classification, resolve = resolveClassifiedPath) {
   const stale = [];
-  const rootFwd = root.replace(/\\/g, "/");
   for (const relPath of Object.keys(classification)) {
-    try { statSync(rootFwd + relPath); } catch { stale.push(relPath); }
+    try { statSync(resolve(relPath)); } catch { stale.push(relPath); }
   }
   return stale;
 }
@@ -728,12 +762,45 @@ function runSelfTests() {
   }
 
   {
-    const stale = checkForStaleEntries(
-      { "/definitely/does-not-exist/fake.service.ts": { verdict: "ACTIONABLE" } },
-      ROOT,
-    );
+    const stale = checkForStaleEntries({
+      "/definitely/does-not-exist/fake.service.ts": { verdict: "ACTIONABLE" },
+    });
     if (stale.length === 0) {
       console.error("SELF-TEST FAIL: stale classification entry was not detected");
+      process.exit(1);
+    }
+  }
+
+  // Three roots, and the prefixes that keep them apart. src/modules and src/common
+  // both hold an `hr` folder, so an unprefixed union would silently merge two files
+  // onto one classification entry.
+  {
+    for (const root of SCAN_ROOTS) {
+      const found = collectServiceFiles(root.dir).length;
+      if (found < root.minFiles) {
+        console.error(
+          `SELF-TEST FAIL: scan root ${root.label} yielded ${found} files (expected >= ${root.minFiles}) — it resolves to ${root.dir}`,
+        );
+        process.exit(1);
+      }
+    }
+    const commonRoot = SCAN_ROOTS.find((r) => r.key === "@common");
+    const key = normalizeRelPath(join(commonRoot.dir, "tenant/for-each-org.ts"), commonRoot);
+    if (key !== "@common/tenant/for-each-org.ts") {
+      console.error(`SELF-TEST FAIL: a src/common path normalised to "${key}", not an @common key`);
+      process.exit(1);
+    }
+    if (resolveClassifiedPath(key) !== `${commonRoot.dir}/tenant/for-each-org.ts`) {
+      console.error("SELF-TEST FAIL: an @common classification key does not resolve back to its file");
+      process.exit(1);
+    }
+    const moduleKey = normalizeRelPath(join(ROOT, "hr/x.service.ts"), SCAN_ROOTS[0]);
+    if (moduleKey !== "/hr/x.service.ts" || resolveClassifiedPath(moduleKey) !== `${ROOT}/hr/x.service.ts`) {
+      console.error("SELF-TEST FAIL: a src/modules key no longer round-trips unprefixed");
+      process.exit(1);
+    }
+    if (checkForStaleEntries({ "@common/tenant/for-each-org.ts": { verdict: "ACTIONABLE" } }).length > 0) {
+      console.error("SELF-TEST FAIL: a live @common entry was reported stale — the key does not resolve");
       process.exit(1);
     }
   }
@@ -1168,25 +1235,28 @@ async function main() {
     return;
   }
 
-  const allFiles = collectServiceFiles(ROOT);
-  if (allFiles.length < MIN_FILES) {
-    console.error(
-      `ERROR: Only ${allFiles.length} service files found (expected >= ${MIN_FILES}) — ROOT path is wrong: ${ROOT}`,
-    );
-    process.exitCode = 1;
-    return;
-  }
-
+  const perRoot = [];
   const counts = {};
-  for (const file of allFiles) {
-    let src;
-    try { src = readFileSync(file, "utf8"); } catch { continue; }
-    const violations = detectLoopDbCalls(src);
-    if (violations.length > 0) {
-      const relPath = normalizeRelPath(file);
-      counts[relPath] = violations.length;
+  let allFilesCount = 0;
+  for (const root of SCAN_ROOTS) {
+    const files = collectServiceFiles(root.dir);
+    if (files.length < root.minFiles) {
+      console.error(
+        `ERROR: ${root.label} yielded only ${files.length} service files (expected >= ${root.minFiles}) — that root resolved to nothing or to the wrong tree: ${root.dir}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    perRoot.push({ ...root, scanned: files.length });
+    allFilesCount += files.length;
+    for (const file of files) {
+      let src;
+      try { src = readFileSync(file, "utf8"); } catch { continue; }
+      const violations = detectLoopDbCalls(src);
+      if (violations.length > 0) counts[normalizeRelPath(file, root)] = violations.length;
     }
   }
+  const allFiles = { length: allFilesCount };
 
   if (EMIT) {
     const classification = loadClassification();
@@ -1206,7 +1276,7 @@ async function main() {
   const classification = loadClassification();
 
   const unclassified = checkForUnclassified(counts, classification);
-  const stale = checkForStaleEntries(classification, ROOT);
+  const stale = checkForStaleEntries(classification);
   const regressions = checkForRegressions(counts, classification);
   const undetectedClaims = checkForUndetectedClaims(counts, classification);
   const actionable = countActionable(counts, classification);
@@ -1216,7 +1286,11 @@ async function main() {
   const actionableFiles = Object.entries(classification)
     .filter(([, v]) => v.verdict === "ACTIONABLE").length;
 
-  console.log(`Scanned ${allFiles.length} service files across ${discoverTerritory().length} modules.`);
+  console.log(`Scanned ${allFiles.length} service files across ${SCAN_ROOTS.length} roots:`);
+  for (const root of perRoot)
+    console.log(
+      `  ${root.label.padEnd(12)}: ${root.scanned} file(s)${root.key === "" ? ` across ${discoverTerritory().length} modules` : ""}`,
+    );
   console.log(
     `Loop coverage: ${coverage.openers} loop opener(s) — ${coverage.inspected} inspected, ${coverage.skippedComplete} skipped (statement ended on the opener line).`,
   );

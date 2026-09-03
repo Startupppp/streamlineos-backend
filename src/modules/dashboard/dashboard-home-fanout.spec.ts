@@ -17,9 +17,7 @@ import type { CacheService } from "../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import type { Db } from "../../db/drizzle.module";
-import type { DashboardLeaveService } from "./dashboard-leave.service";
 import type { DashboardProjectService } from "./dashboard-project.service";
-import type { NotificationsService } from "../notifications/notifications.service";
 import { DashboardPersonalService } from "./dashboard-personal.service";
 import { DashboardStatsService } from "./dashboard-stats.service";
 import {
@@ -137,27 +135,51 @@ function makePersonalHarness(hook: (name: string) => Promise<unknown>) {
     }),
   } as unknown as Db;
 
-  const leave = {
-    getMyLeaveBalance: jest.fn().mockImplementation(() => hook("leaveBalance")),
-  } as unknown as DashboardLeaveService;
   const project = {
     getMyIssues: jest.fn().mockImplementation(() => hook("myTasks")),
   } as unknown as DashboardProjectService;
-  const notifications = {
-    unreadCount: jest.fn().mockImplementation(() => hook("unreadNotifications")),
-  } as unknown as NotificationsService;
 
-  return { db, leave, project, notifications };
+  return { db, project };
+}
+
+function statsAccess(): AccessService {
+  const perms = new Map<string, DataScope>([
+    ["hr:employees:view", "all"],
+    ["hr:attendance:manage", "all"],
+    ["build:tickets:view", "all"],
+  ]);
+  return {
+    getPermissionsVersion: jest.fn().mockResolvedValue(1),
+    scopeFor: jest
+      .fn()
+      .mockImplementation((_u: CurrentUserContext, key: string) =>
+        Promise.resolve(perms.get(key) ?? ("all" as DataScope)),
+      ),
+    resolveUserPermissions: jest.fn().mockResolvedValue(perms),
+  } as unknown as AccessService;
+}
+
+function passThroughCache(): CacheService {
+  return {
+    cachedForOrg: jest
+      .fn()
+      .mockImplementation(
+        async (_orgId: string, _key: string, fetcher: () => Promise<unknown>) => fetcher(),
+      ),
+  } as unknown as CacheService;
 }
 
 const ALL_PERSONAL_MODULES = ["build", "timesheets", "hr"] as const;
-const PERSONAL_SECTION_NAMES = [
-  "myTasks",
-  "timesheet",
-  "leaveBalance",
-  "upcomingEvents",
-  "unreadNotifications",
-] as const;
+/**
+ * THREE, not five. `leaveBalance` and `unreadNotifications` were fanned out on
+ * every uncached Home load and read by no client — the aggregate's `leaveBalance`
+ * and `unreadNotifications` each appeared exactly once in the whole frontend, as
+ * type fields — and the unread count was the most expensive query on the surface
+ * (14,053 planning buffers against ~1 ms of execution). Both branches are gone.
+ * This list is the pin: a re-added dead branch changes the width and the barrier
+ * below stops opening.
+ */
+const PERSONAL_SECTION_NAMES = ["myTasks", "timesheet", "upcomingEvents"] as const;
 
 describe("PRD-C144 — Home sections fan out CONCURRENTLY", () => {
   it("MEASURED: every personal-dashboard section is in flight at the same moment", async () => {
@@ -170,9 +192,7 @@ describe("PRD-C144 — Home sections fan out CONCURRENTLY", () => {
     const svc = new DashboardPersonalService(
       harness.db,
       personalAccess(ALL_PERSONAL_MODULES),
-      harness.leave,
       harness.project,
-      harness.notifications,
     );
 
     const result = await svc.getPersonalDashboard(makeUser());
@@ -200,26 +220,20 @@ describe("PRD-C144 — the Home fanout is BOUNDED", () => {
       const started = new Set<string>();
       const harness = makePersonalHarness(async (name) => {
         started.add(name);
-        return name === "unreadNotifications" ? { count: 0 } : [];
+        return [];
       });
       const enabled = [
         ...ALL_PERSONAL_MODULES,
         ...Array.from({ length: extra }, (_v, i) => `tenant-module-${i}`),
       ];
-      const svc = new DashboardPersonalService(
-        harness.db,
-        personalAccess(enabled),
-        harness.leave,
-        harness.project,
-        harness.notifications,
-      );
+      const svc = new DashboardPersonalService(harness.db, personalAccess(enabled), harness.project);
       await svc.getPersonalDashboard(makeUser());
       widths.push(started.size);
       moduleCounts.push(enabled.length);
     }
 
     expect(moduleCounts).toEqual([3, 23, 63]);
-    expect(widths).toEqual([5, 5, 5]);
+    expect(widths).toEqual([3, 3, 3]);
   });
 
   it("MEASURED: module-availability probes are capped by the static registry, not by the tenant", async () => {
@@ -227,17 +241,9 @@ describe("PRD-C144 — the Home fanout is BOUNDED", () => {
       DASHBOARD_HOME_SECTIONS.filter(isModuleSection).map((s) => s.module),
     );
     const access = personalAccess([...ALL_PERSONAL_MODULES, "inventory", "support", "payroll"]);
-    const harness = makePersonalHarness(async (name) =>
-      name === "unreadNotifications" ? { count: 0 } : [],
-    );
+    const harness = makePersonalHarness(async () => []);
 
-    const svc = new DashboardPersonalService(
-      harness.db,
-      access,
-      harness.leave,
-      harness.project,
-      harness.notifications,
-    );
+    const svc = new DashboardPersonalService(harness.db, access, harness.project);
     await svc.getPersonalDashboard(makeUser());
 
     const probed = (access.moduleAvailability as jest.Mock).mock.calls.map(
@@ -307,23 +313,19 @@ describe("PRD-C087 — one SLOW source must not delay or fail every section", ()
     expect(unhandled).toEqual([]);
   });
 
-  it("MEASURED: getPersonalDashboard answers with four sections while the fifth hangs forever", async () => {
+  it("MEASURED: getPersonalDashboard answers with two sections while the third hangs forever", async () => {
     const harness = makePersonalHarness(async (name) => {
-      if (name === "unreadNotifications") return NEVER;
+      if (name === "upcomingEvents") return NEVER;
       if (name === "myTasks")
         return [{ id: 1, title: "Live task", status: "TODO", priority: "HIGH", projectName: "P" }];
       if (name === "timesheet") return [{ hours: "8" }];
-      if (name === "leaveBalance")
-        return [{ leaveTypeName: "Annual", balance: "5", daysPerYear: 20 }];
       return [];
     });
 
     const svc = new DashboardPersonalService(
       harness.db,
       personalAccess(ALL_PERSONAL_MODULES),
-      harness.leave,
       harness.project,
-      harness.notifications,
     );
 
     const started = Date.now();
@@ -332,42 +334,14 @@ describe("PRD-C087 — one SLOW source must not delay or fail every section", ()
 
     expect(result.myTasks).toHaveLength(1);
     expect(result.timesheetStatus.hoursLogged).toBe(8);
-    expect(result.leaveBalance).toHaveLength(1);
-    expect(result.unreadNotifications).toBe(0);
-    expect(result.degraded).toEqual(["unreadNotifications"]);
+    expect(result.upcomingEvents).toEqual([]);
+    expect(result.degraded).toEqual(["upcomingEvents"]);
     expect(elapsed).toBeGreaterThanOrEqual(HOME_SECTION_DEADLINE_MS - 100);
     expect(elapsed).toBeLessThan(HOME_SECTION_DEADLINE_MS + 2_000);
   }, 20_000);
 });
 
 describe("PRD-C087 — DashboardStatsService section independence and parallelism", () => {
-  function statsAccess(): AccessService {
-    const perms = new Map<string, DataScope>([
-      ["hr:employees:view", "all"],
-      ["hr:attendance:manage", "all"],
-      ["build:tickets:view", "all"],
-    ]);
-    return {
-      getPermissionsVersion: jest.fn().mockResolvedValue(1),
-      scopeFor: jest
-        .fn()
-        .mockImplementation((_u: CurrentUserContext, key: string) =>
-          Promise.resolve(perms.get(key) ?? ("all" as DataScope)),
-        ),
-      resolveUserPermissions: jest.fn().mockResolvedValue(perms),
-    } as unknown as AccessService;
-  }
-
-  function passThroughCache(): CacheService {
-    return {
-      cachedForOrg: jest
-        .fn()
-        .mockImplementation(
-          async (_orgId: string, _key: string, fetcher: () => Promise<unknown>) => fetcher(),
-        ),
-    } as unknown as CacheService;
-  }
-
   it("MEASURED: employees and projects do not wait behind the organization lookup", async () => {
     const order: string[] = [];
     let releaseOrg: () => void = () => undefined;
@@ -426,4 +400,117 @@ describe("PRD-C087 — DashboardStatsService section independence and parallelis
     expect(result.activeProjects).toBe(7);
     expect(result.orgName).toBe("Organization");
   }, 20_000);
+});
+
+/**
+ * PRD-C144 one layer up: the PROLOGUE that gates the whole fanout was outside
+ * the deadline.
+ *
+ * `dashboard-stats.service.ts` awaited `resolveDashboardStatsFlags` bare, and
+ * `dashboard-personal.service.ts` awaited `resolvePersonalDashboardModules` and
+ * the membership lookup bare. All three do real database I/O
+ * (`moduleAvailability` -> `entitlements.getModuleMap` -> `cache.cachedForOrg`
+ * -> `runInTenantTransaction`; `scopeFor` -> `resolveUserPermissions` ->
+ * `getPermissionsVersion` -> cache -> Postgres), and every section waits behind
+ * them — so a stalled entitlements or permissions read hung the endpoint with
+ * the deadline already in place one level below.
+ *
+ * The existing tests above hang the organization lookup and individual sources,
+ * never the gate, which is why none of them saw it.
+ */
+describe("PRD-C144 — the fanout PROLOGUE is deadline-protected and fails closed", () => {
+  function hangingModuleAccess(): AccessService {
+    return {
+      moduleAvailability: jest.fn().mockImplementation(() => NEVER),
+    } as unknown as AccessService;
+  }
+
+  function hangingScopeAccess(): AccessService {
+    return {
+      getPermissionsVersion: jest.fn().mockResolvedValue(1),
+      scopeFor: jest.fn().mockImplementation(() => NEVER),
+      resolveUserPermissions: jest.fn().mockResolvedValue(new Map<string, DataScope>()),
+    } as unknown as AccessService;
+  }
+
+  it("MEASURED: /dashboard/personal answers when the module gate never resolves", async () => {
+    const harness = makePersonalHarness(async () => []);
+
+    const svc = new DashboardPersonalService(
+      harness.db,
+      hangingModuleAccess(),
+      harness.project,
+    );
+
+    const result = await svc.getPersonalDashboard(makeUser());
+
+    // Fails CLOSED: an unresolvable gate is not "allowed".
+    expect(result.myTasks).toEqual([]);
+    expect(result.timesheetStatus.hoursLogged).toBe(0);
+    // And the sections the gate governs are reported degraded, so the widgets
+    // render "couldn't load" instead of an authoritative empty list.
+    expect(result.degraded).toEqual(
+      expect.arrayContaining(["modules", "myTasks", "timesheet"]),
+    );
+  }, 20_000);
+
+  it("MEASURED: /dashboard/personal answers when the membership lookup never resolves", async () => {
+    const harness = makePersonalHarness(async () => []);
+    const db = {
+      ...(harness.db as unknown as Record<string, unknown>),
+      query: { organizationMembers: { findFirst: jest.fn().mockImplementation(() => NEVER) } },
+    } as unknown as Db;
+
+    const svc = new DashboardPersonalService(
+      db,
+      personalAccess(ALL_PERSONAL_MODULES),
+      harness.project,
+    );
+
+    const result = await svc.getPersonalDashboard(makeUser());
+
+    expect(result.degraded).toEqual(expect.arrayContaining(["membership", "timesheet"]));
+  }, 20_000);
+
+  it("MEASURED: /dashboard/stats answers when the permission gate never resolves", async () => {
+    const db = {
+      query: {
+        organizations: {
+          findFirst: jest.fn().mockResolvedValue({ name: "Acme", slug: "acme", timezone: "UTC" }),
+        },
+      },
+      select: jest.fn().mockImplementation(() => ({
+        from: () => ({ where: async () => [{ cnt: 5 }] }),
+      })),
+    } as unknown as Db;
+
+    const svc = new DashboardStatsService(db, passThroughCache(), hangingScopeAccess());
+    const result = await svc.getDashboardStats(ORG, makeUser());
+
+    // The org section, which never depended on the gate, still answers.
+    expect(result.orgName).toBe("Acme");
+    // The gated counts fail closed — null, not another tenant's numbers.
+    expect(result.totalEmployees).toBeNull();
+    expect(result.activeProjects).toBeNull();
+    expect(result.presentToday).toBeNull();
+  }, 20_000);
+
+  it("BITE: the same harness with a resolving gate produces the counts, so the assertions above are not vacuous", async () => {
+    const db = {
+      query: {
+        organizations: {
+          findFirst: jest.fn().mockResolvedValue({ name: "Acme", slug: "acme", timezone: "UTC" }),
+        },
+      },
+      select: jest.fn().mockImplementation(() => ({
+        from: () => ({ where: async () => [{ cnt: 5 }] }),
+      })),
+    } as unknown as Db;
+
+    const svc = new DashboardStatsService(db, passThroughCache(), statsAccess());
+    const result = await svc.getDashboardStats(ORG, makeUser());
+
+    expect(result.totalEmployees).toBe(5);
+    expect(result.activeProjects).toBe(5);
+  });
 });

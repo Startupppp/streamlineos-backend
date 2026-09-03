@@ -12,7 +12,6 @@
  *   select 1   → attendee LATERAL subquery  (select({hit}).from(eventAttendees).where(…).limit(1).as("attended_event"))
  *   select 2   → outer calendarEvents query (select({id,title,…}).from(calendarEvents).leftJoinLateral(…).where(…).orderBy(…).limit(3))
  *   select 3   → creator EXISTS inner       (select({one:sql`1`}).from(organizationMembers).where(…))
- *   unreadNotifications → delegated to NotificationsService.unreadCount (no direct db.select)
  *
  * select 3 is a builder call inside the argument to the outer .where(); it returns a
  * SQL condition object (not a Promise), so it is never directly awaited. Select 1 is
@@ -21,8 +20,6 @@
  * Maximum DB calls with all modules enabled: 1 findFirst + 4 selects
  * (timesheets-sum, outer calendarEvents, 2 EXISTS subqueries).
  * myTasks → DashboardProjectService.getMyIssues (delegated).
- * leaveBalance → DashboardLeaveService.getMyLeaveBalance (delegated).
- * unreadNotifications → NotificationsService.unreadCount (delegated).
  */
 
 import { sql } from "drizzle-orm";
@@ -33,9 +30,7 @@ import type { DataScope } from "../access/access.types";
 import type { Db } from "../../db/drizzle.module";
 import { DashboardPersonalService } from "./dashboard-personal.service";
 import { DashboardStatsService } from "./dashboard-stats.service";
-import type { DashboardLeaveService } from "./dashboard-leave.service";
 import type { DashboardProjectService } from "./dashboard-project.service";
-import type { NotificationsService } from "../notifications/notifications.service";
 
 const ORG = "org-iso-test-1";
 const USER = "user-iso-test-1";
@@ -74,16 +69,8 @@ function makeAccessWithModules(build: boolean, timesheets: boolean, hr: boolean)
   } as unknown as AccessService;
 }
 
-function makeLeaveService(result: unknown[] = []): DashboardLeaveService {
-  return { getMyLeaveBalance: jest.fn().mockResolvedValue(result) } as unknown as DashboardLeaveService;
-}
-
 function makeProjectService(result: unknown[] = []): DashboardProjectService {
   return { getMyIssues: jest.fn().mockResolvedValue(result) } as unknown as DashboardProjectService;
-}
-
-function makeNotificationsService(count = 0): NotificationsService {
-  return { unreadCount: jest.fn().mockResolvedValue({ count }) } as unknown as NotificationsService;
 }
 
 function makeNeutralPersonalDb(): { db: Db } {
@@ -123,7 +110,6 @@ function makeNeutralPersonalDb(): { db: Db } {
  * Call 1 (attendee LATERAL)     → returns the aliased subquery.
  * Call 2 (outer calendarEvents) → .limit() rejects with "DB timeout".
  * Calls 3+ (EXISTS subqueries)  → innerChain returns condition objects.
- * unreadNotifications is now delegated; pass makeNotificationsService(7) for count=7.
  * Removal proof: removing `settle("upcomingEvents", …)` causes the reject to
  * propagate out of Promise.all → getPersonalDashboard rejects entirely →
  * `expect(result.unreadNotifications).toBe(7)` never runs → TEST FAILS.
@@ -171,7 +157,7 @@ describe("DashboardPersonalService — GUARANTEE I: denied section omitted and q
     const access = makeAccessWithModules(false, false, false);
     const projectSvc = makeProjectService([{ id: 99, title: "Leaked task", status: "TODO", priority: "MEDIUM", projectName: "" }]);
 
-    const svc = new DashboardPersonalService(db, access, makeLeaveService(), projectSvc, makeNotificationsService());
+    const svc = new DashboardPersonalService(db, access, projectSvc);
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(result.myTasks).toEqual([]);
@@ -189,7 +175,7 @@ describe("DashboardPersonalService — GUARANTEE I: denied section omitted and q
     const { db } = makeNeutralPersonalDb();
     const access = makeAccessWithModules(false, false, false);
 
-    const svc = new DashboardPersonalService(db, access, makeLeaveService(), makeProjectService(), makeNotificationsService());
+    const svc = new DashboardPersonalService(db, access, makeProjectService());
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(result.timesheetStatus.hoursLogged).toBe(0);
@@ -197,33 +183,27 @@ describe("DashboardPersonalService — GUARANTEE I: denied section omitted and q
   });
 
   /**
-   * BITE: removing `modules.hr ?` so the leave-balance delegation always runs would
-   * make leaveSvc.getMyLeaveBalance be called → `expect(leaveSvc.getMyLeaveBalance).not.toHaveBeenCalled()` FAILS.
+   * `leaveBalance` and `unreadNotifications` are no longer sections of this
+   * aggregate. Both were computed on every uncached Home load and read by no
+   * client — each appeared exactly once in the whole frontend, as a type field —
+   * and the unread count was the most expensive query on the surface: 14,053
+   * planning buffers against ~1 ms of execution, across 49 `notifications`
+   * partitions, which is what forced HOME_SECTION_DEADLINE_MS into existence.
+   * The leave balance Home actually renders comes from
+   * GET /dashboard/my-leave-balance, a different route.
+   *
+   * What survives from those two tests is the property they were really pinning:
+   * `upcomingEvents` is universal — returned with every module disabled.
    */
-  it("BITE: hr module disabled → leaveBalance is [] and leaveService.getMyLeaveBalance is NEVER called", async () => {
-    const { db } = makeNeutralPersonalDb();
-    const access = makeAccessWithModules(false, false, false);
-    const leaveSvc = makeLeaveService([{ id: 1, leaveTypeName: "Annual", balance: "10", daysPerYear: 20, year: 2026 }]);
-
-    const svc = new DashboardPersonalService(db, access, leaveSvc, makeProjectService(), makeNotificationsService());
-    const result = await svc.getPersonalDashboard(makeUser());
-
-    expect(result.leaveBalance).toEqual([]);
-    expect(leaveSvc.getMyLeaveBalance).not.toHaveBeenCalled();
-    expect(result.degraded).not.toContain("leaveBalance");
-  });
-
-  it("upcomingEvents and unreadNotifications are always returned (universal sections)", async () => {
+  it("upcomingEvents is always returned (the one universal section)", async () => {
     const { db } = makeNeutralPersonalDb();
     const access = makeAccessAllModulesDisabled();
-    const notifSvc = makeNotificationsService(3);
 
-    const svc = new DashboardPersonalService(db, access, makeLeaveService(), makeProjectService(), notifSvc);
+    const svc = new DashboardPersonalService(db, access, makeProjectService());
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(Array.isArray(result.upcomingEvents)).toBe(true);
-    expect(typeof result.unreadNotifications).toBe("number");
-    expect(notifSvc.unreadCount).toHaveBeenCalledWith(ORG, USER);
+    expect(result.degraded).not.toContain("upcomingEvents");
   });
 });
 
@@ -236,7 +216,7 @@ describe("DashboardPersonalService — GUARANTEE II: one section failure leaves 
   beforeEach(async () => {
     const db = makeIsolationPersonalDb();
     const access = makeAccessAllModulesDisabled();
-    const svc = new DashboardPersonalService(db, access, makeLeaveService(), makeProjectService(), makeNotificationsService(7));
+    const svc = new DashboardPersonalService(db, access, makeProjectService());
     result = await svc.getPersonalDashboard(makeUser());
   });
 
@@ -248,8 +228,9 @@ describe("DashboardPersonalService — GUARANTEE II: one section failure leaves 
     expect(result.upcomingEvents).toEqual([]);
   });
 
-  it("BITE: unreadNotifications is still 7 despite upcomingEvents failure", () => {
-    expect(result.unreadNotifications).toBe(7);
+  it("BITE: the module-gated sections still answer despite the upcomingEvents failure", () => {
+    expect(result.myTasks).toEqual([]);
+    expect(result.timesheetStatus.hoursLogged).toBe(0);
   });
 
   it("BITE: degraded list records the failing section name", () => {
@@ -443,7 +424,7 @@ describe("DashboardPersonalService — membership once + section bypass preventi
 
     const access = makeAccessWithModules(true, true, true);
     const projectSvc = makeProjectService([]);
-    const svc = new DashboardPersonalService(db, access, makeLeaveService(), projectSvc, makeNotificationsService());
+    const svc = new DashboardPersonalService(db, access, projectSvc);
     await svc.getPersonalDashboard(makeUser());
 
     expect(findFirstMock).toHaveBeenCalledTimes(1);
@@ -457,7 +438,7 @@ describe("DashboardPersonalService — membership once + section bypass preventi
     const access = makeAccessWithModules(false, false, false);
     const projectSvc = makeProjectService([{ id: 99, title: "Leaked", status: "TODO", priority: "MEDIUM", projectName: "" }]);
 
-    const svc = new DashboardPersonalService(db, access, makeLeaveService(), projectSvc, makeNotificationsService());
+    const svc = new DashboardPersonalService(db, access, projectSvc);
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(result.myTasks).toEqual([]);
@@ -468,12 +449,12 @@ describe("DashboardPersonalService — membership once + section bypass preventi
   it("REGRESSION (8b): a section settle() failure leaves all universal sections intact", async () => {
     const db = makeIsolationPersonalDb();
     const access = makeAccessAllModulesDisabled();
-    const svc = new DashboardPersonalService(db, access, makeLeaveService(), makeProjectService(), makeNotificationsService(7));
+    const svc = new DashboardPersonalService(db, access, makeProjectService());
     const result = await svc.getPersonalDashboard(makeUser());
 
     expect(result).toBeDefined();
-    expect(result.unreadNotifications).toBe(7);
     expect(result.upcomingEvents).toEqual([]);
+    expect(result.timesheetStatus.hoursLogged).toBe(0);
     expect(result.degraded).toContain("upcomingEvents");
   });
 });

@@ -38,7 +38,14 @@ function resolverForMemberWithNoRoles(): AccessPermissionResolver {
     },
     select: () => ({
       from: () => ({
-        innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+        // The delegated-permission read is a keyset drain now, so the joined
+        // branch carries `.orderBy` too.
+        innerJoin: () => ({
+          where: () => ({
+            orderBy: () => ({ limit: () => Promise.resolve([]) }),
+            limit: () => Promise.resolve([]),
+          }),
+        }),
         where: () => ({
           orderBy: () => ({ limit: () => Promise.resolve([]) }),
           limit: () => Promise.resolve([]),
@@ -142,7 +149,16 @@ describe("owning the Home module does not confer org-wide chat settings", () => 
         from: (table: unknown) => {
           const rows = table === moduleOwnerships ? [{ moduleKey: "home" }] : [];
           return {
-            innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+            // The delegated-permission read is a keyset drain now, so the
+            // joined branch carries `.orderBy` too. A mock chain that stops
+            // short of the production shape throws here rather than answering
+            // a query the code never issues.
+            innerJoin: () => ({
+              where: () => ({
+                orderBy: () => ({ limit: () => Promise.resolve([]) }),
+                limit: () => Promise.resolve([]),
+              }),
+            }),
             where: () => ({
               orderBy: () => ({ limit: () => Promise.resolve(rows) }),
               limit: () => Promise.resolve(rows),

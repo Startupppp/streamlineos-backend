@@ -6130,7 +6130,7 @@
       "tiny": 9
     },
     "notMeasured": [
-      "Request-level figures cover 136 of 164 route×tenant slots on scratch_t23_http; 28 were declined and 0 failed. See requestLevel.tally.refusalsByReason for why each was not measured.",
+      "Request-level figures cover 137 of 164 route×tenant slots on scratch_t23_bm; 27 were declined and 0 failed. See requestLevel.tally.refusalsByReason for why each was not measured.",
       "Cache-hit latency. No Redis is running against this seed, so every number here is the cache-MISS path."
     ]
   },
@@ -15791,13 +15791,13 @@
     "method": "http-harness",
     "instrument": "test/perf/route-budget-http.seeded-e2e-spec.ts",
     "command": "DATABASE_URL=<owner@scratch> APP_DATABASE_URL=<streamline_app@scratch> AUTH_SIGNING_KEYS=<local placeholder> node --expose-gc ./node_modules/jest/bin/jest.js --config ./jest-e2e-seeded.json --runInBand --testPathPattern=route-budget-http",
-    "generatedAt": "2026-09-03T02:00:40.579Z",
-    "commit": "295e55cb0c8f006a3e4abe7981c8ed603e0afd3a",
+    "generatedAt": "2026-09-03T16:10:03.836Z",
+    "commit": "2f37e1bb035006e5c03680497298ad62031e79d6",
     "workingTreeDirty": true,
     "codeProvenance": "live working tree",
-    "database": "scratch_t23_http",
-    "appliedMigrations": 667,
-    "journalEntries": 667,
+    "database": "scratch_t23_bm",
+    "appliedMigrations": 677,
+    "journalEntries": 677,
     "atHead": true,
     "role": "streamline_app (rolbypassrls = false, RLS live)",
     "cache": "Redis disabled — every count is the cache-MISS ceiling",
@@ -15810,7 +15810,7 @@
     "deadlineMs": 30000,
     "gcAvailable": true,
     "memoryNote": "heapUsed above a post-GC baseline",
-    "routeBudgetsDigest": "dc1da72f88d9450b",
+    "routeBudgetsDigest": "01f095a7081e504a",
     "prdCeilingsMs": {
       "ordinary": 300,
       "complex": 800
@@ -15818,12 +15818,12 @@
     "excludedClassReason": "an all-organisation background sweep, not an authenticated user request — the PRD §12.1 request ceilings describe reads and mutations, so this is recorded and not scored",
     "tally": {
       "total": 164,
-      "measured": 136,
-      "refused": 28,
+      "measured": 137,
+      "refused": 27,
       "failed": 0,
       "excludedFromCeiling": 22,
       "refusalsByReason": {
-        "route answered HTTP 500 — a non-2xx response measures the failure path, not the route": 7,
+        "route answered HTTP 500 — a non-2xx response measures the failure path, not the route": 6,
         "route answered HTTP 402 — a non-2xx response measures the failure path, not the route": 7,
         "provider-backed: no connected mail account in the seed, so no real message/thread/attachment id exists to request": 12,
         "no client in this tenant to bill": 1,
@@ -15841,10 +15841,10 @@
         "anonymousControlStatus": 401,
         "subjectStable": true,
         "subjectHashBefore": "2a72fc012267aef0",
-        "subjectHashAfter": "2a72fc012267aef0",
+        "subjectHashAfter": "27f7351484631464",
         "fixtureHash": "29fbe9634aa0e658",
-        "measured": 68,
-        "refused": 14,
+        "measured": 69,
+        "refused": 13,
         "failed": 0
       },
       {
@@ -15856,8 +15856,8 @@
         "controlAfterOk": true,
         "anonymousControlStatus": 401,
         "subjectStable": true,
-        "subjectHashBefore": "b7f4f43cf0fa9181",
-        "subjectHashAfter": "7a7e826b6772d995",
+        "subjectHashBefore": "7a7e826b6772d995",
+        "subjectHashAfter": "9c2a06a727d9992e",
         "fixtureHash": "5a7d5ab9bede0486",
         "measured": 68,
         "refused": 14,
@@ -15880,18 +15880,18 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 4.186,
-          "p95": 5.98,
-          "p99": 6.28,
-          "min": 3.609,
-          "max": 6.28
+          "p50": 4.093,
+          "p95": 4.617,
+          "p99": 6.344,
+          "min": 3.339,
+          "max": 6.344
         },
         "requestDbCalls": 6,
         "requestDbCallsVaried": null,
         "gucCalls": 2,
         "downstreamCalls": 0,
         "responseBytes": 21596,
-        "memoryMb": 2.431,
+        "memoryMb": 2.472,
         "overPrdCeiling": false
       },
       "GET /notifications@reference": {
@@ -15909,18 +15909,18 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.771,
-          "p95": 17.546,
-          "p99": 20.564,
-          "min": 8.669,
-          "max": 20.564
+          "p50": 6.389,
+          "p95": 8.46,
+          "p99": 14.445,
+          "min": 5.431,
+          "max": 14.445
         },
-        "requestDbCalls": 12,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 15353,
-        "memoryMb": 3.043,
+        "memoryMb": 2.404,
         "overPrdCeiling": false
       },
       "GET /notifications/unread-count@reference": {
@@ -15938,22 +15938,26 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 8.665,
-          "p95": 10.149,
-          "p99": 11.94,
-          "min": 8.035,
-          "max": 11.94
+          "p50": 7.383,
+          "p95": 8.803,
+          "p99": 9.409,
+          "min": 6.017,
+          "max": 9.409
         },
-        "requestDbCalls": 21,
+        "requestDbCalls": 19,
         "requestDbCallsVaried": [
+          9,
           11,
+          12,
+          13,
+          15,
           18,
-          21
+          19
         ],
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 35,
-        "memoryMb": 2.493,
+        "memoryMb": 2.358,
         "overPrdCeiling": false
       },
       "GET /chat/unread@reference": {
@@ -15971,18 +15975,18 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.3,
-          "p95": 8.398,
-          "p99": 10.46,
-          "min": 6.045,
-          "max": 10.46
+          "p50": 8.258,
+          "p95": 10.236,
+          "p99": 11.305,
+          "min": 6.771,
+          "max": 11.305
         },
         "requestDbCalls": 11,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 35,
-        "memoryMb": 2.488,
+        "memoryMb": 2.519,
         "overPrdCeiling": false
       },
       "GET /dashboard/personal@reference": {
@@ -16000,18 +16004,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 18.259,
-          "p95": 21.864,
-          "p99": 22.736,
-          "min": 16.238,
-          "max": 22.736
+          "p50": 12.617,
+          "p95": 16.166,
+          "p99": 17.301,
+          "min": 10.409,
+          "max": 17.301
         },
-        "requestDbCalls": 17,
+        "requestDbCalls": 13,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
-        "responseBytes": 1832,
-        "memoryMb": 6.604,
+        "responseBytes": 1571,
+        "memoryMb": 3.464,
         "overPrdCeiling": false
       },
       "GET /calendar/events@reference": {
@@ -16029,28 +16033,25 @@
         "declaredMemoryMb": 128,
         "samples": 40,
         "latencyMs": {
-          "p50": 844.08,
-          "p95": 915.944,
-          "p99": 1006.265,
-          "min": 824.74,
-          "max": 1006.265
+          "p50": 244.92,
+          "p95": 269.042,
+          "p99": 319.005,
+          "min": 234.775,
+          "max": 319.005
         },
-        "requestDbCalls": 196,
+        "requestDbCalls": 65,
         "requestDbCallsVaried": [
-          102,
-          104,
-          105,
-          107,
-          109,
-          119,
-          124,
-          196
+          48,
+          49,
+          50,
+          53,
+          65
         ],
-        "gucCalls": 51,
+        "gucCalls": 11,
         "downstreamCalls": 0,
-        "responseBytes": 197493,
-        "memoryMb": 75.766,
-        "overPrdCeiling": true
+        "responseBytes": 220339,
+        "memoryMb": 59.514,
+        "overPrdCeiling": false
       },
       "GET /organization/members@reference": {
         "route": "GET /organization/members",
@@ -16067,18 +16068,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.942,
-          "p95": 6.714,
-          "p99": 7.018,
-          "min": 5.686,
-          "max": 7.018
+          "p50": 5.689,
+          "p95": 6.455,
+          "p99": 6.995,
+          "min": 5.041,
+          "max": 6.995
         },
-        "requestDbCalls": 10,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 4497,
-        "memoryMb": 2.473,
+        "memoryMb": 2.307,
         "overPrdCeiling": false
       },
       "GET /directory/people@reference": {
@@ -16096,18 +16097,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.12,
-          "p95": 8.2,
-          "p99": 8.366,
-          "min": 5.802,
-          "max": 8.366
+          "p50": 7.986,
+          "p95": 11.054,
+          "p99": 13.605,
+          "min": 7.092,
+          "max": 13.605
         },
         "requestDbCalls": 11,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 11810,
-        "memoryMb": 2.785,
+        "memoryMb": 2.805,
         "overPrdCeiling": false
       },
       "GET /build/{projectId}/tickets@reference": {
@@ -16125,18 +16126,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 9.726,
-          "p95": 12.514,
-          "p99": 14.412,
-          "min": 9.085,
-          "max": 14.412
+          "p50": 11.78,
+          "p95": 13.416,
+          "p99": 14.391,
+          "min": 10.4,
+          "max": 14.391
         },
-        "requestDbCalls": 12,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 14,
+        "requestDbCallsVaried": [
+          12,
+          14
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 36562,
-        "memoryMb": 4.514,
+        "memoryMb": 4.046,
         "overPrdCeiling": false
       },
       "GET /build/{projectId}/sprints@reference": {
@@ -16154,21 +16158,18 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.699,
-          "p95": 6.591,
-          "p99": 6.749,
-          "min": 5.36,
-          "max": 6.749
+          "p50": 8.642,
+          "p95": 10.33,
+          "p99": 11.24,
+          "min": 7.91,
+          "max": 11.24
         },
-        "requestDbCalls": 14,
-        "requestDbCallsVaried": [
-          12,
-          14
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 12,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 232,
-        "memoryMb": 5.618,
+        "memoryMb": 5.897,
         "overPrdCeiling": false
       },
       "POST /build/{projectId}/tickets@reference": {
@@ -16195,18 +16196,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.805,
-          "p95": 7.117,
-          "p99": 8.465,
-          "min": 5.145,
-          "max": 8.465
+          "p50": 8.165,
+          "p95": 9.43,
+          "p99": 11.415,
+          "min": 7.047,
+          "max": 11.415
         },
-        "requestDbCalls": 10,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 12,
+        "requestDbCallsVaried": [
+          10,
+          12
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 20435,
-        "memoryMb": 2.671,
+        "memoryMb": 2.249,
         "overPrdCeiling": false
       },
       "GET /build/feedback@reference": {
@@ -16224,18 +16228,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.848,
-          "p95": 6.817,
-          "p99": 7.187,
-          "min": 5.453,
-          "max": 7.187
+          "p50": 8.197,
+          "p95": 9.613,
+          "p99": 9.928,
+          "min": 7.381,
+          "max": 9.928
         },
-        "requestDbCalls": 10,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 12,
+        "requestDbCallsVaried": [
+          10,
+          12
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 21918,
-        "memoryMb": 2.204,
+        "memoryMb": 2.219,
         "overPrdCeiling": false
       },
       "GET /build/changelog@reference": {
@@ -16253,21 +16260,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.192,
-          "p95": 6.096,
-          "p99": 6.286,
-          "min": 4.877,
-          "max": 6.286
+          "p50": 7.379,
+          "p95": 8.501,
+          "p99": 8.82,
+          "min": 6.501,
+          "max": 8.82
         },
-        "requestDbCalls": 12,
-        "requestDbCallsVaried": [
-          10,
-          12
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 10,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 14452,
-        "memoryMb": 2.148,
+        "memoryMb": 2.566,
         "overPrdCeiling": false
       },
       "GET /dashboard/my-issues@reference": {
@@ -16285,18 +16289,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.232,
-          "p95": 10.623,
-          "p99": 13.299,
-          "min": 6.803,
-          "max": 13.299
+          "p50": 9.96,
+          "p95": 11.646,
+          "p99": 14.178,
+          "min": 9.132,
+          "max": 14.178
         },
         "requestDbCalls": 11,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 2927,
-        "memoryMb": 2.95,
+        "memoryMb": 2.959,
         "overPrdCeiling": false
       },
       "GET /dashboard/announcements@reference": {
@@ -16314,18 +16318,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.155,
-          "p95": 6.272,
-          "p99": 7.044,
-          "min": 4.923,
-          "max": 7.044
+          "p50": 6.699,
+          "p95": 7.381,
+          "p99": 7.599,
+          "min": 5.45,
+          "max": 7.599
         },
-        "requestDbCalls": 10,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 5382,
-        "memoryMb": 2.004,
+        "memoryMb": 1.849,
         "overPrdCeiling": false
       },
       "GET /dashboard/stats@reference": {
@@ -16343,18 +16347,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.819,
-          "p95": 6.458,
-          "p99": 7.896,
-          "min": 5.61,
-          "max": 7.896
+          "p50": 6.974,
+          "p95": 7.892,
+          "p99": 8.57,
+          "min": 6.168,
+          "max": 8.57
         },
         "requestDbCalls": 13,
-        "requestDbCallsVaried": null,
+        "requestDbCallsVaried": [
+          9,
+          13
+        ],
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 141,
-        "memoryMb": 2.277,
+        "memoryMb": 4.086,
         "overPrdCeiling": false
       },
       "GET /dashboard/leaves-today@reference": {
@@ -16372,18 +16379,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.519,
-          "p95": 8.198,
-          "p99": 8.68,
-          "min": 6.018,
-          "max": 8.68
+          "p50": 9.709,
+          "p95": 10.122,
+          "p99": 10.79,
+          "min": 9.069,
+          "max": 10.79
         },
-        "requestDbCalls": 11,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 13,
+        "requestDbCallsVaried": [
+          11,
+          13
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 516,
-        "memoryMb": 2.193,
+        "memoryMb": 2.196,
         "overPrdCeiling": false
       },
       "GET /dashboard/team-attendance@reference": {
@@ -16401,23 +16411,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.622,
-          "p95": 7.817,
-          "p99": 8.632,
-          "min": 6.281,
-          "max": 8.632
+          "p50": 6.708,
+          "p95": 7.409,
+          "p99": 8.091,
+          "min": 5.581,
+          "max": 8.091
         },
-        "requestDbCalls": 24,
-        "requestDbCallsVaried": [
-          12,
-          13,
-          16,
-          24
-        ],
-        "gucCalls": 9,
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 105,
-        "memoryMb": 2.216,
+        "memoryMb": 2.415,
         "overPrdCeiling": false
       },
       "GET /dashboard/active-sprint@reference": {
@@ -16435,18 +16440,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.295,
-          "p95": 6.983,
-          "p99": 8.005,
-          "min": 6.018,
-          "max": 8.005
+          "p50": 9.466,
+          "p95": 10.029,
+          "p99": 10.16,
+          "min": 9.003,
+          "max": 10.16
         },
         "requestDbCalls": 12,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 238,
-        "memoryMb": 2.667,
+        "memoryMb": 2.676,
         "overPrdCeiling": false
       },
       "GET /dashboard/recent-projects@reference": {
@@ -16464,18 +16469,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.32,
-          "p95": 7.129,
-          "p99": 7.27,
-          "min": 5.731,
-          "max": 7.27
+          "p50": 9.048,
+          "p95": 10.052,
+          "p99": 10.599,
+          "min": 7.102,
+          "max": 10.599
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 4498,
-        "memoryMb": 2.667,
+        "memoryMb": 2.248,
         "overPrdCeiling": false
       },
       "GET /chat/channels@reference": {
@@ -16493,18 +16498,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 16.209,
-          "p95": 18.491,
-          "p99": 20.311,
-          "min": 13.576,
-          "max": 20.311
+          "p50": 19.527,
+          "p95": 24.205,
+          "p99": 25.135,
+          "min": 17.208,
+          "max": 25.135
         },
         "requestDbCalls": 15,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
-        "responseBytes": 6876,
-        "memoryMb": 2.732,
+        "responseBytes": 6524,
+        "memoryMb": 13.187,
         "overPrdCeiling": false
       },
       "GET /chat/channels/{channelId}/messages@reference": {
@@ -16522,18 +16527,24 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 9.529,
-          "p95": 10.698,
-          "p99": 12.222,
-          "min": 8.803,
-          "max": 12.222
+          "p50": 14.122,
+          "p95": 17.42,
+          "p99": 19.243,
+          "min": 11.932,
+          "max": 19.243
         },
-        "requestDbCalls": 13,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 26,
+        "requestDbCallsVaried": [
+          13,
+          17,
+          18,
+          25,
+          26
+        ],
+        "gucCalls": 10,
         "downstreamCalls": 0,
-        "responseBytes": 24437,
-        "memoryMb": 2.85,
+        "responseBytes": 23487,
+        "memoryMb": 2.897,
         "overPrdCeiling": false
       },
       "GET /chat/channels/{channelId}/members@reference": {
@@ -16551,18 +16562,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.02,
-          "p95": 8.074,
-          "p99": 9.816,
-          "min": 6.79,
-          "max": 9.816
+          "p50": 10.76,
+          "p95": 12.351,
+          "p99": 14.705,
+          "min": 9.726,
+          "max": 14.705
         },
         "requestDbCalls": 13,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
-        "responseBytes": 23410,
-        "memoryMb": 2.579,
+        "responseBytes": 19026,
+        "memoryMb": 2.578,
         "overPrdCeiling": false
       },
       "POST /chat/channels/{channelId}/messages@reference": {
@@ -16570,9 +16581,35 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
         "profile": "reference",
         "routeClass": "write",
-        "status": "unmeasured",
-        "reason": "route answered HTTP 500 — a non-2xx response measures the failure path, not the route",
-        "httpStatus": 500
+        "status": "measured",
+        "scored": true,
+        "ceilingReason": "an ordinary authenticated read or mutation — PRD §12.1 ordinary request ceiling",
+        "prdCeilingMs": 300,
+        "declaredLatencyP95Ms": 1000,
+        "declaredDownstreamCalls": 0,
+        "declaredResponseBytes": 8192,
+        "declaredMemoryMb": 32,
+        "samples": 12,
+        "latencyMs": {
+          "p50": 65.767,
+          "p95": 5043.126,
+          "p99": 5043.126,
+          "min": 62.026,
+          "max": 5043.126
+        },
+        "requestDbCalls": 53,
+        "requestDbCallsVaried": [
+          26,
+          27,
+          28,
+          30,
+          53
+        ],
+        "gucCalls": 21,
+        "downstreamCalls": 1,
+        "responseBytes": 395,
+        "memoryMb": 17.457,
+        "overPrdCeiling": true
       },
       "GET /chat/saved@reference": {
         "route": "GET /chat/saved",
@@ -16589,24 +16626,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.19,
-          "p95": 8.757,
-          "p99": 14.121,
-          "min": 6.823,
-          "max": 14.121
+          "p50": 10.711,
+          "p95": 12.463,
+          "p99": 15.156,
+          "min": 8.607,
+          "max": 15.156
         },
-        "requestDbCalls": 37,
+        "requestDbCalls": 12,
         "requestDbCallsVaried": [
           10,
-          14,
-          17,
-          31,
-          37
+          12
         ],
-        "gucCalls": 17,
+        "gucCalls": 4,
         "downstreamCalls": 0,
-        "responseBytes": 16542,
-        "memoryMb": 6.195,
+        "responseBytes": 17142,
+        "memoryMb": 2.59,
         "overPrdCeiling": false
       },
       "GET /kb/spaces@reference": {
@@ -16624,18 +16658,22 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.782,
-          "p95": 7.695,
-          "p99": 11.085,
-          "min": 5.299,
-          "max": 11.085
+          "p50": 8.343,
+          "p95": 11.557,
+          "p99": 12.232,
+          "min": 7.053,
+          "max": 12.232
         },
-        "requestDbCalls": 12,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 21,
+        "requestDbCallsVaried": [
+          11,
+          18,
+          21
+        ],
+        "gucCalls": 7,
         "downstreamCalls": 0,
         "responseBytes": 1393,
-        "memoryMb": 2.06,
+        "memoryMb": 2.019,
         "overPrdCeiling": false
       },
       "GET /kb/spaces/{spaceId}@reference": {
@@ -16653,18 +16691,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.319,
-          "p95": 6.308,
-          "p99": 6.988,
-          "min": 5.021,
-          "max": 6.988
+          "p50": 6.239,
+          "p95": 7.743,
+          "p99": 8.744,
+          "min": 5.629,
+          "max": 8.744
         },
         "requestDbCalls": 11,
-        "requestDbCallsVaried": null,
+        "requestDbCallsVaried": [
+          10,
+          11
+        ],
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 433,
-        "memoryMb": 2.062,
+        "memoryMb": 1.966,
         "overPrdCeiling": false
       },
       "GET /kb/pages/recent@reference": {
@@ -16682,18 +16723,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.742,
-          "p95": 9.106,
-          "p99": 10.236,
-          "min": 6.245,
-          "max": 10.236
+          "p50": 7.588,
+          "p95": 10.049,
+          "p99": 11.973,
+          "min": 6.914,
+          "max": 11.973
         },
         "requestDbCalls": 12,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 16633,
-        "memoryMb": 2.537,
+        "memoryMb": 2.554,
         "overPrdCeiling": false
       },
       "GET /kb/pages/search@reference": {
@@ -16711,18 +16752,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.613,
-          "p95": 9.049,
-          "p99": 9.716,
-          "min": 6.013,
-          "max": 9.716
+          "p50": 7.97,
+          "p95": 11.264,
+          "p99": 15.481,
+          "min": 6.774,
+          "max": 15.481
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 26,
-        "memoryMb": 1.917,
+        "memoryMb": 1.944,
         "overPrdCeiling": false
       },
       "GET /hr/employees@reference": {
@@ -16740,18 +16781,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 15.884,
-          "p95": 18.39,
-          "p99": 21.033,
-          "min": 13.291,
-          "max": 21.033
+          "p50": 7.621,
+          "p95": 8.112,
+          "p99": 8.302,
+          "min": 6.594,
+          "max": 8.302
         },
-        "requestDbCalls": 11,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 5891,
-        "memoryMb": 2.914,
+        "memoryMb": 1.899,
         "overPrdCeiling": false
       },
       "GET /hr/people@reference": {
@@ -16769,18 +16810,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 9.156,
-          "p95": 10.581,
-          "p99": 11.331,
-          "min": 6.942,
-          "max": 11.331
+          "p50": 10.995,
+          "p95": 13.111,
+          "p99": 14.073,
+          "min": 8.123,
+          "max": 14.073
         },
-        "requestDbCalls": 10,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 12,
+        "requestDbCallsVaried": [
+          10,
+          12
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 93,
-        "memoryMb": 2.393,
+        "memoryMb": 1.954,
         "overPrdCeiling": false
       },
       "GET /hr/leaves@reference": {
@@ -16798,24 +16842,22 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 14.33,
-          "p95": 17.781,
-          "p99": 21.744,
-          "min": 13.587,
-          "max": 21.744
+          "p50": 21.299,
+          "p95": 27.222,
+          "p99": 30.346,
+          "min": 16.768,
+          "max": 30.346
         },
-        "requestDbCalls": 47,
+        "requestDbCalls": 39,
         "requestDbCallsVaried": [
           24,
-          25,
-          29,
-          30,
-          47
+          26,
+          39
         ],
-        "gucCalls": 14,
+        "gucCalls": 10,
         "downstreamCalls": 0,
         "responseBytes": 198,
-        "memoryMb": 3.32,
+        "memoryMb": 3.791,
         "overPrdCeiling": false
       },
       "GET /hr/leaves/my@reference": {
@@ -16833,18 +16875,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.182,
-          "p95": 8.202,
-          "p99": 8.479,
-          "min": 6.76,
-          "max": 8.479
+          "p50": 11.246,
+          "p95": 14.546,
+          "p99": 17.975,
+          "min": 8.031,
+          "max": 17.975
         },
         "requestDbCalls": 12,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 1576,
-        "memoryMb": 2.303,
+        "memoryMb": 2.771,
         "overPrdCeiling": false
       },
       "GET /me/attendance/history@reference": {
@@ -16862,18 +16904,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.354,
-          "p95": 7.541,
-          "p99": 8.065,
-          "min": 5.694,
-          "max": 8.065
+          "p50": 7.376,
+          "p95": 11.884,
+          "p99": 64.851,
+          "min": 6.256,
+          "max": 64.851
         },
         "requestDbCalls": 13,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 7538,
-        "memoryMb": 2.192,
+        "memoryMb": 2.211,
         "overPrdCeiling": false
       },
       "GET /hr/leaves/balance@reference": {
@@ -16891,18 +16933,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.902,
-          "p95": 11.679,
-          "p99": 12.425,
-          "min": 5.37,
-          "max": 12.425
+          "p50": 7.025,
+          "p95": 8.053,
+          "p99": 9.721,
+          "min": 6.346,
+          "max": 9.721
         },
-        "requestDbCalls": 12,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 14,
+        "requestDbCallsVaried": [
+          12,
+          14
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 26,
-        "memoryMb": 2.03,
+        "memoryMb": 2.033,
         "overPrdCeiling": false
       },
       "GET /timesheets/entries@reference": {
@@ -16920,11 +16965,11 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.141,
-          "p95": 12.592,
-          "p99": 13.37,
-          "min": 8.549,
-          "max": 13.37
+          "p50": 9.745,
+          "p95": 14.928,
+          "p99": 25.704,
+          "min": 8.046,
+          "max": 25.704
         },
         "requestDbCalls": 12,
         "requestDbCallsVaried": [
@@ -16934,7 +16979,7 @@
         "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 29860,
-        "memoryMb": 2.918,
+        "memoryMb": 2.921,
         "overPrdCeiling": false
       },
       "GET /timesheets/approvals@reference": {
@@ -16952,18 +16997,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 8.012,
-          "p95": 9.212,
-          "p99": 10.972,
-          "min": 7.364,
-          "max": 10.972
+          "p50": 7.74,
+          "p95": 9.056,
+          "p99": 9.712,
+          "min": 6.549,
+          "max": 9.712
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 95,
-        "memoryMb": 2.458,
+        "memoryMb": 4.102,
         "overPrdCeiling": false
       },
       "POST /timesheets/entries@reference": {
@@ -16990,21 +17035,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 99.438,
-          "p95": 111.197,
-          "p99": 113.495,
-          "min": 96.367,
-          "max": 113.495
+          "p50": 4.794,
+          "p95": 5.408,
+          "p99": 6.073,
+          "min": 4.426,
+          "max": 6.073
         },
-        "requestDbCalls": 13,
-        "requestDbCallsVaried": [
-          11,
-          13
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 24285,
-        "memoryMb": 3.486,
+        "memoryMb": 2.373,
         "overPrdCeiling": false
       },
       "GET /leads@reference": {
@@ -17022,18 +17064,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 11.268,
-          "p95": 13.114,
-          "p99": 15.375,
-          "min": 10.553,
-          "max": 15.375
+          "p50": 14.652,
+          "p95": 18.175,
+          "p99": 20.544,
+          "min": 11.757,
+          "max": 20.544
         },
         "requestDbCalls": 11,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 46400,
-        "memoryMb": 4.083,
+        "memoryMb": 4.094,
         "overPrdCeiling": false
       },
       "GET /deals@reference": {
@@ -17051,18 +17093,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 15.348,
-          "p95": 19.269,
-          "p99": 20.33,
-          "min": 14.374,
-          "max": 20.33
+          "p50": 5.079,
+          "p95": 5.56,
+          "p99": 5.862,
+          "min": 4.651,
+          "max": 5.862
         },
-        "requestDbCalls": 10,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 37812,
-        "memoryMb": 3.268,
+        "memoryMb": 2.441,
         "overPrdCeiling": false
       },
       "GET /clients@reference": {
@@ -17080,26 +17122,23 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 107.685,
-          "p95": 115.805,
-          "p99": 521.224,
-          "min": 7.603,
-          "max": 521.224
+          "p50": 15.972,
+          "p95": 17.232,
+          "p99": 19.542,
+          "min": 15.023,
+          "max": 19.542
         },
-        "requestDbCalls": 96,
+        "requestDbCalls": 36,
         "requestDbCallsVaried": [
           12,
           21,
           23,
-          24,
-          27,
-          38,
-          96
+          36
         ],
-        "gucCalls": 12,
+        "gucCalls": 5,
         "downstreamCalls": 0,
         "responseBytes": 23547,
-        "memoryMb": 3.388,
+        "memoryMb": 3.376,
         "overPrdCeiling": false
       },
       "POST /leads@reference": {
@@ -17135,18 +17174,24 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.127,
-          "p95": 8.678,
-          "p99": 10.935,
-          "min": 6.617,
-          "max": 10.935
+          "p50": 4.795,
+          "p95": 5.869,
+          "p99": 6.047,
+          "min": 4.466,
+          "max": 6.047
         },
-        "requestDbCalls": 11,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 18,
+        "requestDbCallsVaried": [
+          9,
+          10,
+          11,
+          16,
+          18
+        ],
+        "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 26165,
-        "memoryMb": 2.7,
+        "memoryMb": 1.967,
         "overPrdCeiling": false
       },
       "GET /accounting/purchase-bills@reference": {
@@ -17164,18 +17209,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.412,
-          "p95": 6.425,
-          "p99": 7.212,
-          "min": 5.066,
-          "max": 7.212
+          "p50": 6.04,
+          "p95": 8.408,
+          "p99": 9.081,
+          "min": 5.387,
+          "max": 9.081
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 12920,
-        "memoryMb": 2.749,
+        "memoryMb": 2.758,
         "overPrdCeiling": false
       },
       "GET /accounting/journal@reference": {
@@ -17193,18 +17238,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.052,
-          "p95": 5.696,
-          "p99": 6.282,
-          "min": 4.639,
-          "max": 6.282
+          "p50": 5.835,
+          "p95": 8.287,
+          "p99": 8.617,
+          "min": 5.031,
+          "max": 8.617
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 95,
-        "memoryMb": 1.943,
+        "memoryMb": 2.408,
         "overPrdCeiling": false
       },
       "GET /accounting/reports/aged-receivables@reference": {
@@ -17222,21 +17267,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.249,
-          "p95": 7.674,
-          "p99": 8.971,
-          "min": 4.85,
-          "max": 8.971
+          "p50": 8.05,
+          "p95": 9.936,
+          "p99": 10.227,
+          "min": 6.73,
+          "max": 10.227
         },
-        "requestDbCalls": 12,
-        "requestDbCallsVaried": [
-          10,
-          12
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 10,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 163,
-        "memoryMb": 1.933,
+        "memoryMb": 2.831,
         "overPrdCeiling": false
       },
       "GET /accounting/taxes/payments@reference": {
@@ -17254,23 +17296,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.173,
-          "p95": 6.27,
-          "p99": 7.33,
-          "min": 4.749,
-          "max": 7.33
+          "p50": 6.686,
+          "p95": 9.227,
+          "p99": 16.701,
+          "min": 5.509,
+          "max": 16.701
         },
-        "requestDbCalls": 20,
-        "requestDbCallsVaried": [
-          10,
-          13,
-          14,
-          20
-        ],
-        "gucCalls": 8,
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 13063,
-        "memoryMb": 2.658,
+        "memoryMb": 1.881,
         "overPrdCeiling": false
       },
       "GET /accounting/reminders/policies@reference": {
@@ -17288,18 +17325,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.287,
-          "p95": 8.173,
-          "p99": 13.704,
-          "min": 4.769,
-          "max": 13.704
+          "p50": 6.647,
+          "p95": 10.216,
+          "p99": 11.306,
+          "min": 5.369,
+          "max": 11.306
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 2902,
-        "memoryMb": 1.972,
+        "memoryMb": 9.969,
         "overPrdCeiling": false
       },
       "POST /invoices@reference": {
@@ -17326,21 +17363,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 8.116,
-          "p95": 10.476,
-          "p99": 11.404,
-          "min": 7.03,
-          "max": 11.404
+          "p50": 9.993,
+          "p95": 13.751,
+          "p99": 14.5,
+          "min": 7.761,
+          "max": 14.5
         },
-        "requestDbCalls": 12,
-        "requestDbCallsVaried": [
-          10,
-          12
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 10,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 1426,
-        "memoryMb": 1.946,
+        "memoryMb": 2.397,
         "overPrdCeiling": false
       },
       "GET /payroll/runs/{runId}/employees@reference": {
@@ -17358,21 +17392,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 8.804,
-          "p95": 10.555,
-          "p99": 11.13,
-          "min": 8.099,
-          "max": 11.13
+          "p50": 10.538,
+          "p95": 14.627,
+          "p99": 15.87,
+          "min": 7.867,
+          "max": 15.87
         },
-        "requestDbCalls": 13,
-        "requestDbCallsVaried": [
-          11,
-          13
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 11,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 1414,
-        "memoryMb": 2.017,
+        "memoryMb": 2.475,
         "overPrdCeiling": false
       },
       "GET /inventory/products@reference": {
@@ -17390,21 +17421,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 25.799,
-          "p95": 28.452,
-          "p99": 30.449,
-          "min": 23.68,
-          "max": 30.449
+          "p50": 8.966,
+          "p95": 14.849,
+          "p99": 22.262,
+          "min": 6.045,
+          "max": 22.262
         },
-        "requestDbCalls": 13,
-        "requestDbCallsVaried": [
-          11,
-          13
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 55422,
-        "memoryMb": 3.585,
+        "memoryMb": 2.153,
         "overPrdCeiling": false
       },
       "GET /inventory/stock@reference": {
@@ -17422,25 +17450,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 11.672,
-          "p95": 16.329,
-          "p99": 17.949,
-          "min": 10.13,
-          "max": 17.949
+          "p50": 8.633,
+          "p95": 11.047,
+          "p99": 11.469,
+          "min": 7.033,
+          "max": 11.469
         },
-        "requestDbCalls": 45,
-        "requestDbCallsVaried": [
-          11,
-          14,
-          18,
-          26,
-          29,
-          45
-        ],
-        "gucCalls": 22,
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 17549,
-        "memoryMb": 5.942,
+        "memoryMb": 2.132,
         "overPrdCeiling": false
       },
       "GET /inventory/stock/transactions@reference": {
@@ -17458,18 +17479,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 17.586,
-          "p95": 22.336,
-          "p99": 26.746,
-          "min": 13.702,
-          "max": 26.746
+          "p50": 16.906,
+          "p95": 19.993,
+          "p99": 22.344,
+          "min": 12.975,
+          "max": 22.344
         },
         "requestDbCalls": 11,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 56940,
-        "memoryMb": 3.859,
+        "memoryMb": 3.881,
         "overPrdCeiling": false
       },
       "GET /inventory/purchase-orders@reference": {
@@ -17487,18 +17508,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 11.4,
-          "p95": 14.114,
-          "p99": 14.993,
-          "min": 10.639,
-          "max": 14.993
+          "p50": 7.86,
+          "p95": 10.2,
+          "p99": 17.656,
+          "min": 6.316,
+          "max": 17.656
         },
-        "requestDbCalls": 11,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 36423,
-        "memoryMb": 3.118,
+        "memoryMb": 2.442,
         "overPrdCeiling": false
       },
       "GET /inventory/vendors@reference": {
@@ -17516,21 +17537,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.365,
-          "p95": 13.461,
-          "p99": 15.078,
-          "min": 6.394,
-          "max": 15.078
+          "p50": 7.81,
+          "p95": 9.58,
+          "p99": 11.914,
+          "min": 6.301,
+          "max": 11.914
         },
-        "requestDbCalls": 13,
-        "requestDbCallsVaried": [
-          11,
-          13
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 22059,
-        "memoryMb": 2.684,
+        "memoryMb": 4.368,
         "overPrdCeiling": false
       },
       "GET /support@reference": {
@@ -17548,18 +17566,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 12.822,
-          "p95": 15.224,
-          "p99": 17.502,
-          "min": 10.484,
-          "max": 17.502
+          "p50": 7.241,
+          "p95": 9.616,
+          "p99": 10.001,
+          "min": 6.213,
+          "max": 10.001
         },
-        "requestDbCalls": 11,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
-        "responseBytes": 68489,
-        "memoryMb": 3.953,
+        "responseBytes": 43489,
+        "memoryMb": 2.461,
         "overPrdCeiling": false
       },
       "POST /support@reference": {
@@ -17586,22 +17604,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 9.049,
-          "p95": 14.356,
-          "p99": 17.281,
-          "min": 8.263,
-          "max": 17.281
+          "p50": 8.492,
+          "p95": 11.194,
+          "p99": 14.896,
+          "min": 7.079,
+          "max": 14.896
         },
-        "requestDbCalls": 31,
-        "requestDbCallsVaried": [
-          19,
-          24,
-          31
-        ],
-        "gucCalls": 9,
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 48,
-        "memoryMb": 2.426,
+        "memoryMb": 2.42,
         "overPrdCeiling": false
       },
       "GET /mail/accounts@reference": {
@@ -17619,18 +17633,18 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.005,
-          "p95": 6.018,
-          "p99": 6.66,
-          "min": 4.556,
-          "max": 6.66
+          "p50": 6.855,
+          "p95": 8.135,
+          "p99": 8.497,
+          "min": 5.552,
+          "max": 8.497
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 26,
-        "memoryMb": 1.903,
+        "memoryMb": 1.905,
         "overPrdCeiling": false
       },
       "GET /mail/messages@reference": {
@@ -17648,11 +17662,11 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 4.636,
-          "p95": 5.759,
-          "p99": 6.549,
-          "min": 4.265,
-          "max": 6.549
+          "p50": 8.26,
+          "p95": 11.781,
+          "p99": 16.128,
+          "min": 6.784,
+          "max": 16.128
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
@@ -17731,18 +17745,22 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.329,
-          "p95": 11.262,
-          "p99": 12.885,
-          "min": 9.508,
-          "max": 12.885
+          "p50": 15.086,
+          "p95": 24.462,
+          "p99": 24.625,
+          "min": 12.15,
+          "max": 24.625
         },
-        "requestDbCalls": 17,
-        "requestDbCallsVaried": null,
-        "gucCalls": 8,
+        "requestDbCalls": 27,
+        "requestDbCallsVaried": [
+          17,
+          24,
+          27
+        ],
+        "gucCalls": 13,
         "downstreamCalls": 0,
         "responseBytes": 118,
-        "memoryMb": 3.998,
+        "memoryMb": 4.158,
         "overPrdCeiling": false
       },
       "GET /cron/notification-delivery-flush@reference": {
@@ -17760,11 +17778,11 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 63.471,
-          "p95": 73.288,
-          "p99": 74.668,
-          "min": 60.053,
-          "max": 74.668
+          "p50": 106.897,
+          "p95": 145.398,
+          "p99": 159.4,
+          "min": 65.05,
+          "max": 159.4
         },
         "requestDbCalls": 98,
         "requestDbCallsVaried": [
@@ -17774,7 +17792,7 @@
         "gucCalls": 80,
         "downstreamCalls": 0,
         "responseBytes": 122,
-        "memoryMb": 29.662,
+        "memoryMb": 29.732,
         "overPrdCeiling": false
       },
       "GET /cron/notification-digest-flush@reference": {
@@ -17792,18 +17810,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 11.701,
-          "p95": 13.189,
-          "p99": 14.524,
-          "min": 10.752,
-          "max": 14.524
+          "p50": 17.606,
+          "p95": 23.322,
+          "p99": 27.29,
+          "min": 14.352,
+          "max": 27.29
         },
         "requestDbCalls": 17,
         "requestDbCallsVaried": null,
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 139,
-        "memoryMb": 4.198,
+        "memoryMb": 4.441,
         "overPrdCeiling": false
       },
       "GET /cron/outbox-events-worker@reference": {
@@ -17821,18 +17839,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.149,
-          "p95": 11.656,
-          "p99": 12.29,
-          "min": 9.766,
-          "max": 12.29
+          "p50": 15.432,
+          "p95": 40.745,
+          "p99": 61.445,
+          "min": 11.312,
+          "max": 61.445
         },
         "requestDbCalls": 17,
         "requestDbCallsVaried": null,
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 89,
-        "memoryMb": 4.169,
+        "memoryMb": 4.409,
         "overPrdCeiling": false
       },
       "GET /cron/email-outbox-flush@reference": {
@@ -17850,18 +17868,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 9.26,
-          "p95": 10.942,
-          "p99": 11.639,
-          "min": 8.803,
-          "max": 11.639
+          "p50": 16.051,
+          "p95": 19.286,
+          "p99": 22.792,
+          "min": 13.629,
+          "max": 22.792
         },
         "requestDbCalls": 18,
         "requestDbCallsVaried": null,
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 102,
-        "memoryMb": 3.981,
+        "memoryMb": 3.996,
         "overPrdCeiling": false
       },
       "GET /cron/notifications-retention-sweep@reference": {
@@ -17888,18 +17906,23 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.512,
-          "p95": 14.919,
-          "p99": 24.585,
-          "min": 9.967,
-          "max": 24.585
+          "p50": 23.495,
+          "p95": 33.201,
+          "p99": 48.553,
+          "min": 16.908,
+          "max": 48.553
         },
-        "requestDbCalls": 118,
-        "requestDbCallsVaried": null,
-        "gucCalls": 0,
+        "requestDbCalls": 144,
+        "requestDbCallsVaried": [
+          118,
+          130,
+          135,
+          144
+        ],
+        "gucCalls": 16,
         "downstreamCalls": 0,
         "responseBytes": 206,
-        "memoryMb": 4.006,
+        "memoryMb": 4.056,
         "overPrdCeiling": false
       },
       "GET /cron/monthly-leave-reset@reference": {
@@ -17917,11 +17940,11 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 146.369,
-          "p95": 154.757,
-          "p99": 219.1,
-          "min": 140.095,
-          "max": 219.1
+          "p50": 164.027,
+          "p95": 179.087,
+          "p99": 205.391,
+          "min": 137.249,
+          "max": 205.391
         },
         "requestDbCalls": 58,
         "requestDbCallsVaried": [
@@ -17931,7 +17954,7 @@
         "gucCalls": 16,
         "downstreamCalls": 0,
         "responseBytes": 70,
-        "memoryMb": 30.375,
+        "memoryMb": 33.571,
         "overPrdCeiling": false
       },
       "GET /cron/build-due-sweep@reference": {
@@ -17949,18 +17972,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 19.533,
-          "p95": 21.487,
-          "p99": 22.056,
-          "min": 18.354,
-          "max": 22.056
+          "p50": 33.575,
+          "p95": 45.849,
+          "p99": 53.19,
+          "min": 22.885,
+          "max": 53.19
         },
         "requestDbCalls": 33,
         "requestDbCallsVaried": null,
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 109,
-        "memoryMb": 5.181,
+        "memoryMb": 5.178,
         "overPrdCeiling": false
       },
       "GET /cron/ai-reservations-sweep@reference": {
@@ -17978,21 +18001,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 55.306,
-          "p95": 58.671,
-          "p99": 122.623,
-          "min": 52.902,
-          "max": 122.623
+          "p50": 11.846,
+          "p95": 14.596,
+          "p99": 16.089,
+          "min": 10.702,
+          "max": 16.089
         },
-        "requestDbCalls": 98,
-        "requestDbCallsVaried": [
-          81,
-          98
-        ],
-        "gucCalls": 80,
+        "requestDbCalls": 17,
+        "requestDbCallsVaried": null,
+        "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 83,
-        "memoryMb": 28.642,
+        "memoryMb": 3.627,
         "overPrdCeiling": false
       },
       "GET /cron/idempotency-fence-sweep@reference": {
@@ -18010,18 +18030,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 12.422,
-          "p95": 13.829,
-          "p99": 15.661,
-          "min": 11.63,
-          "max": 15.661
+          "p50": 17.325,
+          "p95": 19.889,
+          "p99": 21.439,
+          "min": 15.338,
+          "max": 21.439
         },
         "requestDbCalls": 33,
         "requestDbCallsVaried": null,
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 164,
-        "memoryMb": 4.38,
+        "memoryMb": 4.456,
         "overPrdCeiling": false
       },
       "GET /cron/storage-sweep@reference": {
@@ -18039,23 +18059,24 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 1332.74,
-          "p95": 1494.833,
-          "p99": 1572.667,
-          "min": 1255.308,
-          "max": 1572.667
+          "p50": 345.564,
+          "p95": 875.774,
+          "p99": 1625.366,
+          "min": 276.036,
+          "max": 1625.366
         },
-        "requestDbCalls": 127,
+        "requestDbCalls": 91,
         "requestDbCallsVaried": [
           33,
           50,
           67,
-          127
+          69,
+          91
         ],
-        "gucCalls": 56,
-        "downstreamCalls": 8,
-        "responseBytes": 166,
-        "memoryMb": 28.993,
+        "gucCalls": 37,
+        "downstreamCalls": 1,
+        "responseBytes": 190,
+        "memoryMb": 5.302,
         "overPrdCeiling": false
       },
       "GET /me/access@minority": {
@@ -18073,11 +18094,11 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 3.392,
-          "p95": 4.091,
-          "p99": 4.94,
-          "min": 2.956,
-          "max": 4.94
+          "p50": 5.329,
+          "p95": 8.323,
+          "p99": 10.5,
+          "min": 4.29,
+          "max": 10.5
         },
         "requestDbCalls": 6,
         "requestDbCallsVaried": null,
@@ -18102,18 +18123,18 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.678,
-          "p95": 18.115,
-          "p99": 23.787,
-          "min": 8.982,
-          "max": 23.787
+          "p50": 5.399,
+          "p95": 6.772,
+          "p99": 6.97,
+          "min": 4.331,
+          "max": 6.97
         },
-        "requestDbCalls": 12,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 11262,
-        "memoryMb": 2.382,
+        "memoryMb": 1.864,
         "overPrdCeiling": false
       },
       "GET /notifications/unread-count@minority": {
@@ -18131,23 +18152,23 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.843,
-          "p95": 8.399,
-          "p99": 8.977,
-          "min": 5.661,
-          "max": 8.977
+          "p50": 4.668,
+          "p95": 6.209,
+          "p99": 17.14,
+          "min": 4.016,
+          "max": 17.14
         },
-        "requestDbCalls": 24,
+        "requestDbCalls": 18,
         "requestDbCallsVaried": [
+          9,
           11,
-          12,
-          21,
-          24
+          15,
+          18
         ],
-        "gucCalls": 9,
+        "gucCalls": 7,
         "downstreamCalls": 0,
         "responseBytes": 35,
-        "memoryMb": 1.941,
+        "memoryMb": 1.806,
         "overPrdCeiling": false
       },
       "GET /chat/unread@minority": {
@@ -18165,18 +18186,18 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.18,
-          "p95": 6.05,
-          "p99": 6.977,
-          "min": 4.915,
-          "max": 6.977
+          "p50": 5.492,
+          "p95": 7.056,
+          "p99": 7.724,
+          "min": 5.029,
+          "max": 7.724
         },
         "requestDbCalls": 11,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 35,
-        "memoryMb": 1.955,
+        "memoryMb": 1.961,
         "overPrdCeiling": false
       },
       "GET /dashboard/personal@minority": {
@@ -18194,18 +18215,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 11.909,
-          "p95": 14.805,
-          "p99": 23.735,
-          "min": 10.635,
-          "max": 23.735
+          "p50": 11.036,
+          "p95": 15.503,
+          "p99": 35.157,
+          "min": 8.866,
+          "max": 35.157
         },
-        "requestDbCalls": 17,
+        "requestDbCalls": 13,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 1650,
-        "memoryMb": 3.035,
+        "memoryMb": 2.778,
         "overPrdCeiling": false
       },
       "GET /calendar/events@minority": {
@@ -18223,21 +18244,22 @@
         "declaredMemoryMb": 128,
         "samples": 40,
         "latencyMs": {
-          "p50": 49.304,
-          "p95": 59.178,
-          "p99": 65.369,
-          "min": 46.415,
-          "max": 65.369
+          "p50": 51.102,
+          "p95": 66.257,
+          "p99": 520.082,
+          "min": 43.894,
+          "max": 520.082
         },
-        "requestDbCalls": 40,
+        "requestDbCalls": 53,
         "requestDbCallsVaried": [
-          35,
-          40
+          36,
+          41,
+          53
         ],
-        "gucCalls": 3,
+        "gucCalls": 11,
         "downstreamCalls": 0,
-        "responseBytes": 177513,
-        "memoryMb": 12.408,
+        "responseBytes": 198577,
+        "memoryMb": 13.216,
         "overPrdCeiling": false
       },
       "GET /organization/members@minority": {
@@ -18255,22 +18277,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.029,
-          "p95": 5.9,
-          "p99": 6.699,
-          "min": 4.718,
-          "max": 6.699
+          "p50": 5.497,
+          "p95": 7.502,
+          "p99": 8.36,
+          "min": 4.838,
+          "max": 8.36
         },
-        "requestDbCalls": 19,
-        "requestDbCallsVaried": [
-          10,
-          14,
-          19
-        ],
-        "gucCalls": 7,
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 1850,
-        "memoryMb": 1.974,
+        "memoryMb": 1.858,
         "overPrdCeiling": false
       },
       "GET /directory/people@minority": {
@@ -18288,18 +18306,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.113,
-          "p95": 7.661,
-          "p99": 7.833,
-          "min": 5.615,
-          "max": 7.833
+          "p50": 7.411,
+          "p95": 10.075,
+          "p99": 53.304,
+          "min": 6.396,
+          "max": 53.304
         },
         "requestDbCalls": 12,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 677,
-        "memoryMb": 2.098,
+        "memoryMb": 2.121,
         "overPrdCeiling": false
       },
       "GET /build/{projectId}/tickets@minority": {
@@ -18317,18 +18335,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 9.685,
-          "p95": 12.308,
-          "p99": 12.585,
-          "min": 9.084,
-          "max": 12.585
+          "p50": 10.022,
+          "p95": 17.241,
+          "p99": 22.633,
+          "min": 9.286,
+          "max": 22.633
         },
         "requestDbCalls": 12,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 38707,
-        "memoryMb": 3.515,
+        "memoryMb": 3.525,
         "overPrdCeiling": false
       },
       "GET /build/{projectId}/sprints@minority": {
@@ -18346,11 +18364,11 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.917,
-          "p95": 6.684,
-          "p99": 9.724,
-          "min": 5.484,
-          "max": 9.724
+          "p50": 6.2,
+          "p95": 7.685,
+          "p99": 8.171,
+          "min": 5.555,
+          "max": 8.171
         },
         "requestDbCalls": 14,
         "requestDbCallsVaried": [
@@ -18360,7 +18378,7 @@
         "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 236,
-        "memoryMb": 2.05,
+        "memoryMb": 2.056,
         "overPrdCeiling": false
       },
       "POST /build/{projectId}/tickets@minority": {
@@ -18387,18 +18405,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.017,
-          "p95": 5.858,
-          "p99": 5.999,
-          "min": 4.646,
-          "max": 5.999
+          "p50": 5.693,
+          "p95": 6.621,
+          "p99": 7.817,
+          "min": 5.219,
+          "max": 7.817
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 1722,
-        "memoryMb": 2.434,
+        "memoryMb": 4.045,
         "overPrdCeiling": false
       },
       "GET /build/feedback@minority": {
@@ -18416,18 +18434,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.362,
-          "p95": 6.583,
-          "p99": 7.949,
-          "min": 4.815,
-          "max": 7.949
+          "p50": 5.933,
+          "p95": 7.19,
+          "p99": 8.091,
+          "min": 5.155,
+          "max": 8.091
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 6655,
-        "memoryMb": 2.039,
+        "memoryMb": 2.49,
         "overPrdCeiling": false
       },
       "GET /build/changelog@minority": {
@@ -18445,18 +18463,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.101,
-          "p95": 5.967,
-          "p99": 6.99,
-          "min": 4.693,
-          "max": 6.99
+          "p50": 7.046,
+          "p95": 9.283,
+          "p99": 10.482,
+          "min": 5.538,
+          "max": 10.482
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 1238,
-        "memoryMb": 2.391,
+        "memoryMb": 2.011,
         "overPrdCeiling": false
       },
       "GET /dashboard/my-issues@minority": {
@@ -18474,18 +18492,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.909,
-          "p95": 7.994,
-          "p99": 8.164,
-          "min": 6.6,
-          "max": 8.164
+          "p50": 10.141,
+          "p95": 11.859,
+          "p99": 13.161,
+          "min": 8.994,
+          "max": 13.161
         },
         "requestDbCalls": 11,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 3153,
-        "memoryMb": 5.24,
+        "memoryMb": 2.513,
         "overPrdCeiling": false
       },
       "GET /dashboard/announcements@minority": {
@@ -18503,18 +18521,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 4.856,
-          "p95": 6.161,
-          "p99": 6.673,
-          "min": 4.664,
-          "max": 6.673
+          "p50": 5.418,
+          "p95": 6.275,
+          "p99": 6.546,
+          "min": 4.766,
+          "max": 6.546
         },
-        "requestDbCalls": 10,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 26,
-        "memoryMb": 1.899,
+        "memoryMb": 1.809,
         "overPrdCeiling": false
       },
       "GET /dashboard/stats@minority": {
@@ -18532,18 +18550,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.542,
-          "p95": 6.314,
-          "p99": 6.447,
-          "min": 5.33,
-          "max": 6.447
+          "p50": 5.442,
+          "p95": 6.231,
+          "p99": 6.637,
+          "min": 4.94,
+          "max": 6.637
         },
-        "requestDbCalls": 13,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 146,
-        "memoryMb": 2.205,
+        "memoryMb": 1.997,
         "overPrdCeiling": false
       },
       "GET /dashboard/leaves-today@minority": {
@@ -18561,18 +18579,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.15,
-          "p95": 6.857,
-          "p99": 7.524,
-          "min": 5.736,
-          "max": 7.524
+          "p50": 6.857,
+          "p95": 7.658,
+          "p99": 8.456,
+          "min": 6.251,
+          "max": 8.456
         },
-        "requestDbCalls": 11,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 13,
+        "requestDbCallsVaried": [
+          11,
+          13
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 61,
-        "memoryMb": 2.594,
+        "memoryMb": 2.158,
         "overPrdCeiling": false
       },
       "GET /dashboard/team-attendance@minority": {
@@ -18590,18 +18611,23 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.255,
-          "p95": 6.918,
-          "p99": 7.172,
-          "min": 5.945,
-          "max": 7.172
+          "p50": 6.656,
+          "p95": 9.07,
+          "p99": 9.711,
+          "min": 5.596,
+          "max": 9.711
         },
-        "requestDbCalls": 12,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 18,
+        "requestDbCallsVaried": [
+          9,
+          11,
+          15,
+          18
+        ],
+        "gucCalls": 7,
         "downstreamCalls": 0,
         "responseBytes": 101,
-        "memoryMb": 2.213,
+        "memoryMb": 2.408,
         "overPrdCeiling": false
       },
       "GET /dashboard/active-sprint@minority": {
@@ -18619,21 +18645,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.088,
-          "p95": 7.302,
-          "p99": 7.74,
-          "min": 5.735,
-          "max": 7.74
+          "p50": 8.818,
+          "p95": 10.3,
+          "p99": 14.975,
+          "min": 7.362,
+          "max": 14.975
         },
-        "requestDbCalls": 14,
-        "requestDbCallsVaried": [
-          12,
-          14
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 12,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 235,
-        "memoryMb": 2.631,
+        "memoryMb": 2.638,
         "overPrdCeiling": false
       },
       "GET /dashboard/recent-projects@minority": {
@@ -18651,18 +18674,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.877,
-          "p95": 7.627,
-          "p99": 7.742,
-          "min": 5.508,
-          "max": 7.742
+          "p50": 8.488,
+          "p95": 12.625,
+          "p99": 13.464,
+          "min": 7.223,
+          "max": 13.464
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 920,
-        "memoryMb": 2.653,
+        "memoryMb": 2.182,
         "overPrdCeiling": false
       },
       "GET /chat/channels@minority": {
@@ -18680,18 +18703,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.88,
-          "p95": 13.938,
-          "p99": 16.92,
-          "min": 10.077,
-          "max": 16.92
+          "p50": 17.968,
+          "p95": 21.004,
+          "p99": 39.738,
+          "min": 15.592,
+          "max": 39.738
         },
         "requestDbCalls": 15,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
-        "responseBytes": 10448,
-        "memoryMb": 2.811,
+        "responseBytes": 9878,
+        "memoryMb": 2.807,
         "overPrdCeiling": false
       },
       "GET /chat/channels/{channelId}/messages@minority": {
@@ -18709,18 +18732,23 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 8.005,
-          "p95": 8.957,
-          "p99": 11.865,
-          "min": 7.616,
-          "max": 11.865
+          "p50": 12.428,
+          "p95": 16.387,
+          "p99": 24.169,
+          "min": 9.751,
+          "max": 24.169
         },
-        "requestDbCalls": 13,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 39,
+        "requestDbCallsVaried": [
+          13,
+          20,
+          32,
+          39
+        ],
+        "gucCalls": 16,
         "downstreamCalls": 0,
-        "responseBytes": 20010,
-        "memoryMb": 2.787,
+        "responseBytes": 19250,
+        "memoryMb": 8.717,
         "overPrdCeiling": false
       },
       "GET /chat/channels/{channelId}/members@minority": {
@@ -18738,18 +18766,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.386,
-          "p95": 7.319,
-          "p99": 7.522,
-          "min": 6.064,
-          "max": 7.522
+          "p50": 9.015,
+          "p95": 12.01,
+          "p99": 18.595,
+          "min": 6.947,
+          "max": 18.595
         },
         "requestDbCalls": 13,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
-        "responseBytes": 3864,
-        "memoryMb": 2.324,
+        "responseBytes": 3148,
+        "memoryMb": 2.347,
         "overPrdCeiling": false
       },
       "POST /chat/channels/{channelId}/messages@minority": {
@@ -18757,9 +18785,35 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "profile": "minority",
         "routeClass": "write",
-        "status": "unmeasured",
-        "reason": "route answered HTTP 500 — a non-2xx response measures the failure path, not the route",
-        "httpStatus": 500
+        "status": "measured",
+        "scored": true,
+        "ceilingReason": "an ordinary authenticated read or mutation — PRD §12.1 ordinary request ceiling",
+        "prdCeilingMs": 300,
+        "declaredLatencyP95Ms": 1000,
+        "declaredDownstreamCalls": 0,
+        "declaredResponseBytes": 8192,
+        "declaredMemoryMb": 32,
+        "samples": 12,
+        "latencyMs": {
+          "p50": 30.906,
+          "p95": 670.647,
+          "p99": 670.647,
+          "min": 12.741,
+          "max": 670.647
+        },
+        "requestDbCalls": 44,
+        "requestDbCallsVaried": [
+          26,
+          27,
+          28,
+          43,
+          44
+        ],
+        "gucCalls": 15,
+        "downstreamCalls": 3,
+        "responseBytes": 396,
+        "memoryMb": 5.824,
+        "overPrdCeiling": true
       },
       "GET /chat/saved@minority": {
         "route": "GET /chat/saved",
@@ -18776,18 +18830,23 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.299,
-          "p95": 7.103,
-          "p99": 7.837,
-          "min": 5.94,
-          "max": 7.837
+          "p50": 6.763,
+          "p95": 8.497,
+          "p99": 8.665,
+          "min": 6.168,
+          "max": 8.665
         },
-        "requestDbCalls": 10,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 14,
+        "requestDbCallsVaried": [
+          10,
+          11,
+          12,
+          14
+        ],
+        "gucCalls": 5,
         "downstreamCalls": 0,
         "responseBytes": 54,
-        "memoryMb": 2.288,
+        "memoryMb": 2.34,
         "overPrdCeiling": false
       },
       "GET /kb/spaces@minority": {
@@ -18805,18 +18864,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.256,
-          "p95": 6.11,
-          "p99": 8.144,
-          "min": 5.059,
-          "max": 8.144
+          "p50": 6.852,
+          "p95": 8.833,
+          "p99": 16.544,
+          "min": 5.868,
+          "max": 16.544
         },
-        "requestDbCalls": 12,
+        "requestDbCalls": 11,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 258,
-        "memoryMb": 2.014,
+        "memoryMb": 4.016,
         "overPrdCeiling": false
       },
       "GET /kb/spaces/{spaceId}@minority": {
@@ -18834,18 +18893,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.521,
-          "p95": 6.262,
-          "p99": 8.243,
-          "min": 4.98,
-          "max": 8.243
+          "p50": 6.307,
+          "p95": 8.075,
+          "p99": 8.248,
+          "min": 4.971,
+          "max": 8.248
         },
-        "requestDbCalls": 11,
-        "requestDbCallsVaried": null,
+        "requestDbCalls": 12,
+        "requestDbCallsVaried": [
+          10,
+          12
+        ],
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 439,
-        "memoryMb": 2.053,
+        "memoryMb": 1.959,
         "overPrdCeiling": false
       },
       "GET /kb/pages/recent@minority": {
@@ -18863,18 +18925,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.219,
-          "p95": 5.975,
-          "p99": 7.204,
-          "min": 4.859,
-          "max": 7.204
+          "p50": 5.76,
+          "p95": 7.173,
+          "p99": 7.801,
+          "min": 5.094,
+          "max": 7.801
         },
         "requestDbCalls": 11,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 26,
-        "memoryMb": 1.953,
+        "memoryMb": 1.951,
         "overPrdCeiling": false
       },
       "GET /kb/pages/search@minority": {
@@ -18892,18 +18954,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.754,
-          "p95": 8.853,
-          "p99": 10.664,
-          "min": 4.853,
-          "max": 10.664
+          "p50": 6.602,
+          "p95": 11.253,
+          "p99": 17.858,
+          "min": 5.127,
+          "max": 17.858
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 26,
-        "memoryMb": 1.907,
+        "memoryMb": 1.913,
         "overPrdCeiling": false
       },
       "GET /hr/employees@minority": {
@@ -18921,18 +18983,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 8.823,
-          "p95": 11.134,
-          "p99": 11.758,
-          "min": 8.119,
-          "max": 11.758
+          "p50": 5.505,
+          "p95": 7.033,
+          "p99": 7.637,
+          "min": 4.832,
+          "max": 7.637
         },
-        "requestDbCalls": 11,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 2393,
-        "memoryMb": 5.091,
+        "memoryMb": 1.847,
         "overPrdCeiling": false
       },
       "GET /hr/people@minority": {
@@ -18950,21 +19012,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.419,
-          "p95": 7.045,
-          "p99": 8.304,
-          "min": 4.986,
-          "max": 8.304
+          "p50": 5.651,
+          "p95": 7.399,
+          "p99": 7.973,
+          "min": 5.13,
+          "max": 7.973
         },
-        "requestDbCalls": 12,
-        "requestDbCallsVaried": [
-          10,
-          12
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 10,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 93,
-        "memoryMb": 1.941,
+        "memoryMb": 2.391,
         "overPrdCeiling": false
       },
       "GET /hr/leaves@minority": {
@@ -18982,15 +19041,16 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 14.24,
-          "p95": 16.226,
-          "p99": 17.579,
-          "min": 13.458,
-          "max": 17.579
+          "p50": 18.54,
+          "p95": 23.191,
+          "p99": 25.782,
+          "min": 15.492,
+          "max": 25.782
         },
         "requestDbCalls": 26,
         "requestDbCallsVaried": [
           24,
+          25,
           26
         ],
         "gucCalls": 4,
@@ -19014,18 +19074,22 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.792,
-          "p95": 9.551,
-          "p99": 11.022,
-          "min": 6.347,
-          "max": 11.022
+          "p50": 7.259,
+          "p95": 9.518,
+          "p99": 9.75,
+          "min": 6.743,
+          "max": 9.75
         },
-        "requestDbCalls": 12,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 23,
+        "requestDbCallsVaried": [
+          12,
+          18,
+          23
+        ],
+        "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 830,
-        "memoryMb": 2.744,
+        "memoryMb": 2.753,
         "overPrdCeiling": false
       },
       "GET /me/attendance/history@minority": {
@@ -19043,18 +19107,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.202,
-          "p95": 7.469,
-          "p99": 8.051,
-          "min": 5.756,
-          "max": 8.051
+          "p50": 7.747,
+          "p95": 10.043,
+          "p99": 10.421,
+          "min": 6.104,
+          "max": 10.421
         },
         "requestDbCalls": 13,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 4660,
-        "memoryMb": 2.139,
+        "memoryMb": 2.177,
         "overPrdCeiling": false
       },
       "GET /hr/leaves/balance@minority": {
@@ -19072,21 +19136,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.789,
-          "p95": 6.52,
-          "p99": 7.17,
-          "min": 5.411,
-          "max": 7.17
+          "p50": 6.202,
+          "p95": 7.962,
+          "p99": 8.232,
+          "min": 5.593,
+          "max": 8.232
         },
-        "requestDbCalls": 14,
-        "requestDbCallsVaried": [
-          12,
-          14
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 12,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 198,
-        "memoryMb": 2.019,
+        "memoryMb": 2.037,
         "overPrdCeiling": false
       },
       "GET /timesheets/entries@minority": {
@@ -19104,18 +19165,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.063,
-          "p95": 9.22,
-          "p99": 9.532,
-          "min": 6.548,
-          "max": 9.532
+          "p50": 8.988,
+          "p95": 11.647,
+          "p99": 12.505,
+          "min": 7.951,
+          "max": 12.505
         },
-        "requestDbCalls": 10,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 12,
+        "requestDbCallsVaried": [
+          10,
+          12
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
-        "responseBytes": 29808,
-        "memoryMb": 9.577,
+        "responseBytes": 29818,
+        "memoryMb": 2.919,
         "overPrdCeiling": false
       },
       "GET /timesheets/approvals@minority": {
@@ -19133,25 +19197,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.663,
-          "p95": 7.331,
-          "p99": 7.372,
-          "min": 5.229,
-          "max": 7.372
+          "p50": 6.986,
+          "p95": 9.932,
+          "p99": 10.593,
+          "min": 6.207,
+          "max": 10.593
         },
-        "requestDbCalls": 21,
-        "requestDbCallsVaried": [
-          10,
-          11,
-          16,
-          17,
-          20,
-          21
-        ],
-        "gucCalls": 8,
+        "requestDbCalls": 10,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 95,
-        "memoryMb": 2.008,
+        "memoryMb": 2.463,
         "overPrdCeiling": false
       },
       "POST /timesheets/entries@minority": {
@@ -19159,33 +19216,9 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "profile": "minority",
         "routeClass": "write",
-        "status": "measured",
-        "scored": true,
-        "ceilingReason": "an ordinary authenticated read or mutation — PRD §12.1 ordinary request ceiling",
-        "prdCeilingMs": 300,
-        "declaredLatencyP95Ms": 1000,
-        "declaredDownstreamCalls": 0,
-        "declaredResponseBytes": 8192,
-        "declaredMemoryMb": 32,
-        "samples": 12,
-        "latencyMs": {
-          "p50": 11.143,
-          "p95": 13.419,
-          "p99": 13.419,
-          "min": 10.352,
-          "max": 13.419
-        },
-        "requestDbCalls": 20,
-        "requestDbCallsVaried": [
-          18,
-          19,
-          20
-        ],
-        "gucCalls": 4,
-        "downstreamCalls": 0,
-        "responseBytes": 636,
-        "memoryMb": 3.068,
-        "overPrdCeiling": false
+        "status": "unmeasured",
+        "reason": "route answered HTTP 500 — a non-2xx response measures the failure path, not the route",
+        "httpStatus": 500
       },
       "GET /contacts@minority": {
         "route": "GET /contacts",
@@ -19202,18 +19235,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.69,
-          "p95": 12.892,
-          "p99": 13.507,
-          "min": 8.366,
-          "max": 13.507
+          "p50": 4.873,
+          "p95": 5.94,
+          "p99": 6.299,
+          "min": 4.434,
+          "max": 6.299
         },
-        "requestDbCalls": 11,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 24085,
-        "memoryMb": 3.436,
+        "memoryMb": 1.921,
         "overPrdCeiling": false
       },
       "GET /leads@minority": {
@@ -19231,18 +19264,22 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.525,
-          "p95": 8.89,
-          "p99": 9.2,
-          "min": 7.117,
-          "max": 9.2
+          "p50": 10.542,
+          "p95": 12.632,
+          "p99": 14.456,
+          "min": 8.251,
+          "max": 14.456
         },
-        "requestDbCalls": 11,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 22,
+        "requestDbCallsVaried": [
+          11,
+          17,
+          22
+        ],
+        "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 43236,
-        "memoryMb": 3.574,
+        "memoryMb": 3.614,
         "overPrdCeiling": false
       },
       "GET /deals@minority": {
@@ -19260,21 +19297,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.517,
-          "p95": 8.526,
-          "p99": 9.759,
-          "min": 7.062,
-          "max": 9.759
+          "p50": 6.265,
+          "p95": 7.364,
+          "p99": 7.837,
+          "min": 5.696,
+          "max": 7.837
         },
-        "requestDbCalls": 12,
+        "requestDbCalls": 11,
         "requestDbCallsVaried": [
-          10,
-          12
+          9,
+          11
         ],
         "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 37921,
-        "memoryMb": 2.805,
+        "memoryMb": 1.995,
         "overPrdCeiling": false
       },
       "GET /clients@minority": {
@@ -19292,21 +19329,23 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 7.687,
-          "p95": 8.979,
-          "p99": 10.635,
-          "min": 7.152,
-          "max": 10.635
+          "p50": 10.219,
+          "p95": 12.236,
+          "p99": 13.892,
+          "min": 8.914,
+          "max": 13.892
         },
-        "requestDbCalls": 23,
+        "requestDbCalls": 30,
         "requestDbCallsVaried": [
+          12,
           21,
-          23
+          22,
+          30
         ],
-        "gucCalls": 5,
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 15206,
-        "memoryMb": 3.313,
+        "memoryMb": 3.252,
         "overPrdCeiling": false
       },
       "POST /leads@minority": {
@@ -19342,18 +19381,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.432,
-          "p95": 7.397,
-          "p99": 8.017,
-          "min": 6.204,
-          "max": 8.017
+          "p50": 6.023,
+          "p95": 7.053,
+          "p99": 7.575,
+          "min": 5.244,
+          "max": 7.575
         },
-        "requestDbCalls": 11,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 70,
-        "memoryMb": 2.345,
+        "memoryMb": 2.294,
         "overPrdCeiling": false
       },
       "GET /accounting/purchase-bills@minority": {
@@ -19371,18 +19410,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.03,
-          "p95": 5.763,
-          "p99": 6.03,
-          "min": 4.885,
-          "max": 6.03
+          "p50": 6.921,
+          "p95": 8.159,
+          "p99": 8.53,
+          "min": 6.183,
+          "max": 8.53
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 95,
-        "memoryMb": 3.821,
+        "memoryMb": 2.429,
         "overPrdCeiling": false
       },
       "GET /accounting/journal@minority": {
@@ -19400,18 +19439,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 4.839,
-          "p95": 5.805,
-          "p99": 6.131,
-          "min": 4.577,
-          "max": 6.131
+          "p50": 5.897,
+          "p95": 7.334,
+          "p99": 7.73,
+          "min": 4.934,
+          "max": 7.73
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 95,
-        "memoryMb": 2.383,
+        "memoryMb": 1.944,
         "overPrdCeiling": false
       },
       "GET /accounting/reports/aged-receivables@minority": {
@@ -19429,18 +19468,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.01,
-          "p95": 5.571,
-          "p99": 6.015,
-          "min": 4.686,
-          "max": 6.015
+          "p50": 5.472,
+          "p95": 6.674,
+          "p99": 8.223,
+          "min": 4.86,
+          "max": 8.223
         },
-        "requestDbCalls": 10,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCalls": 12,
+        "requestDbCallsVaried": [
+          10,
+          12
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 163,
-        "memoryMb": 1.924,
+        "memoryMb": 3.978,
         "overPrdCeiling": false
       },
       "GET /accounting/taxes/payments@minority": {
@@ -19458,18 +19500,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 4.814,
-          "p95": 5.523,
-          "p99": 5.695,
-          "min": 4.544,
-          "max": 5.695
+          "p50": 5.804,
+          "p95": 6.892,
+          "p99": 7.077,
+          "min": 5.122,
+          "max": 7.077
         },
-        "requestDbCalls": 10,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 876,
-        "memoryMb": 2.379,
+        "memoryMb": 2.291,
         "overPrdCeiling": false
       },
       "GET /accounting/reminders/policies@minority": {
@@ -19487,18 +19529,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 4.777,
-          "p95": 5.548,
-          "p99": 5.829,
-          "min": 4.556,
-          "max": 5.829
+          "p50": 6.187,
+          "p95": 7.143,
+          "p99": 7.791,
+          "min": 5.334,
+          "max": 7.791
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 329,
-        "memoryMb": 1.911,
+        "memoryMb": 1.916,
         "overPrdCeiling": false
       },
       "POST /invoices@minority": {
@@ -19525,11 +19567,11 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.332,
-          "p95": 6.656,
-          "p99": 6.999,
-          "min": 4.991,
-          "max": 6.999
+          "p50": 7.803,
+          "p95": 10.168,
+          "p99": 11.612,
+          "min": 6.966,
+          "max": 11.612
         },
         "requestDbCalls": 12,
         "requestDbCallsVaried": [
@@ -19539,7 +19581,7 @@
         "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 95,
-        "memoryMb": 1.911,
+        "memoryMb": 1.916,
         "overPrdCeiling": false
       },
       "GET /payroll/runs/{runId}/employees@minority": {
@@ -19566,18 +19608,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 8.395,
-          "p95": 10.139,
-          "p99": 10.836,
-          "min": 7.706,
-          "max": 10.836
+          "p50": 6.917,
+          "p95": 10.538,
+          "p99": 10.855,
+          "min": 6.259,
+          "max": 10.855
         },
         "requestDbCalls": 11,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCallsVaried": [
+          9,
+          11
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 52346,
-        "memoryMb": 3.505,
+        "memoryMb": 2.149,
         "overPrdCeiling": false
       },
       "GET /inventory/stock@minority": {
@@ -19595,18 +19640,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.869,
-          "p95": 7.059,
-          "p99": 7.396,
-          "min": 5.562,
-          "max": 7.396
+          "p50": 6.658,
+          "p95": 7.791,
+          "p99": 8.258,
+          "min": 5.414,
+          "max": 8.258
         },
-        "requestDbCalls": 11,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 18021,
-        "memoryMb": 2.665,
+        "memoryMb": 2.552,
         "overPrdCeiling": false
       },
       "GET /inventory/stock/transactions@minority": {
@@ -19624,23 +19669,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 9.176,
-          "p95": 10.689,
-          "p99": 11.777,
-          "min": 8.535,
-          "max": 11.777
+          "p50": 16.25,
+          "p95": 19.77,
+          "p99": 20.13,
+          "min": 13.032,
+          "max": 20.13
         },
-        "requestDbCalls": 21,
+        "requestDbCalls": 13,
         "requestDbCallsVaried": [
           11,
-          13,
-          18,
-          21
+          13
         ],
-        "gucCalls": 7,
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 58053,
-        "memoryMb": 3.426,
+        "memoryMb": 6.23,
         "overPrdCeiling": false
       },
       "GET /inventory/purchase-orders@minority": {
@@ -19658,21 +19701,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 6.869,
-          "p95": 8.091,
-          "p99": 8.756,
-          "min": 6.451,
-          "max": 8.756
+          "p50": 7.364,
+          "p95": 10.56,
+          "p99": 11.447,
+          "min": 6.827,
+          "max": 11.447
         },
-        "requestDbCalls": 13,
-        "requestDbCallsVaried": [
-          11,
-          13
-        ],
-        "gucCalls": 4,
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
+        "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 14801,
-        "memoryMb": 2.378,
+        "memoryMb": 2.34,
         "overPrdCeiling": false
       },
       "GET /inventory/vendors@minority": {
@@ -19690,18 +19730,21 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 5.565,
-          "p95": 6.456,
-          "p99": 7.105,
-          "min": 5.295,
-          "max": 7.105
+          "p50": 7.376,
+          "p95": 8.807,
+          "p99": 10.962,
+          "min": 6.594,
+          "max": 10.962
         },
         "requestDbCalls": 11,
-        "requestDbCallsVaried": null,
-        "gucCalls": 3,
+        "requestDbCallsVaried": [
+          9,
+          11
+        ],
+        "gucCalls": 4,
         "downstreamCalls": 0,
         "responseBytes": 1825,
-        "memoryMb": 2.457,
+        "memoryMb": 2.229,
         "overPrdCeiling": false
       },
       "GET /support@minority": {
@@ -19719,18 +19762,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 8.165,
-          "p95": 9.504,
-          "p99": 10.395,
-          "min": 7.575,
-          "max": 10.395
+          "p50": 6.547,
+          "p95": 7.348,
+          "p99": 8.589,
+          "min": 5.574,
+          "max": 8.589
         },
-        "requestDbCalls": 11,
+        "requestDbCalls": 9,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
-        "responseBytes": 4221,
-        "memoryMb": 2.58,
+        "responseBytes": 2721,
+        "memoryMb": 1.848,
         "overPrdCeiling": false
       },
       "POST /support@minority": {
@@ -19757,21 +19800,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 8.568,
-          "p95": 10.945,
-          "p99": 11.683,
-          "min": 7.841,
-          "max": 11.683
+          "p50": 6.882,
+          "p95": 9.108,
+          "p99": 9.476,
+          "min": 6.051,
+          "max": 9.476
         },
-        "requestDbCalls": 25,
-        "requestDbCallsVaried": [
-          19,
-          25
-        ],
+        "requestDbCalls": 9,
+        "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 48,
-        "memoryMb": 2.406,
+        "memoryMb": 1.88,
         "overPrdCeiling": false
       },
       "GET /mail/accounts@minority": {
@@ -19789,18 +19829,18 @@
         "declaredMemoryMb": 32,
         "samples": 40,
         "latencyMs": {
-          "p50": 4.577,
-          "p95": 5.386,
-          "p99": 5.762,
-          "min": 4.327,
-          "max": 5.762
+          "p50": 4.707,
+          "p95": 5.615,
+          "p99": 6.159,
+          "min": 4.405,
+          "max": 6.159
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 26,
-        "memoryMb": 1.871,
+        "memoryMb": 1.897,
         "overPrdCeiling": false
       },
       "GET /mail/messages@minority": {
@@ -19818,18 +19858,18 @@
         "declaredMemoryMb": 64,
         "samples": 40,
         "latencyMs": {
-          "p50": 4.601,
-          "p95": 7.446,
-          "p99": 8.016,
-          "min": 4.295,
-          "max": 8.016
+          "p50": 5.769,
+          "p95": 7.07,
+          "p99": 7.289,
+          "min": 5.233,
+          "max": 7.289
         },
         "requestDbCalls": 10,
         "requestDbCallsVaried": null,
         "gucCalls": 3,
         "downstreamCalls": 0,
         "responseBytes": 76,
-        "memoryMb": 1.895,
+        "memoryMb": 9.596,
         "overPrdCeiling": false
       },
       "GET /mail/messages/{messageId}@minority": {
@@ -19901,18 +19941,22 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 9.874,
-          "p95": 11.068,
-          "p99": 11.806,
-          "min": 9.433,
-          "max": 11.806
+          "p50": 11.522,
+          "p95": 15.543,
+          "p99": 16.167,
+          "min": 9.877,
+          "max": 16.167
         },
-        "requestDbCalls": 17,
-        "requestDbCallsVaried": null,
-        "gucCalls": 8,
+        "requestDbCalls": 30,
+        "requestDbCallsVaried": [
+          17,
+          21,
+          30
+        ],
+        "gucCalls": 14,
         "downstreamCalls": 0,
         "responseBytes": 118,
-        "memoryMb": 7.683,
+        "memoryMb": 3.976,
         "overPrdCeiling": false
       },
       "GET /cron/notification-delivery-flush@minority": {
@@ -19930,18 +19974,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 61.775,
-          "p95": 64.533,
-          "p99": 118.584,
-          "min": 44.017,
-          "max": 118.584
+          "p50": 62.153,
+          "p95": 72.843,
+          "p99": 94.188,
+          "min": 58.873,
+          "max": 94.188
         },
         "requestDbCalls": 81,
         "requestDbCallsVaried": null,
         "gucCalls": 72,
         "downstreamCalls": 0,
         "responseBytes": 122,
-        "memoryMb": 29.651,
+        "memoryMb": 29.649,
         "overPrdCeiling": false
       },
       "GET /cron/notification-digest-flush@minority": {
@@ -19959,18 +20003,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 11.742,
-          "p95": 14.46,
-          "p99": 14.858,
-          "min": 10.72,
-          "max": 14.858
+          "p50": 11.831,
+          "p95": 13.784,
+          "p99": 14.38,
+          "min": 11.377,
+          "max": 14.38
         },
         "requestDbCalls": 17,
         "requestDbCallsVaried": null,
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 139,
-        "memoryMb": 4.175,
+        "memoryMb": 8.09,
         "overPrdCeiling": false
       },
       "GET /cron/outbox-events-worker@minority": {
@@ -19988,18 +20032,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.23,
-          "p95": 11.334,
-          "p99": 12.562,
-          "min": 9.766,
-          "max": 12.562
+          "p50": 11.548,
+          "p95": 15.613,
+          "p99": 17.538,
+          "min": 10.102,
+          "max": 17.538
         },
         "requestDbCalls": 17,
         "requestDbCallsVaried": null,
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 89,
-        "memoryMb": 7.714,
+        "memoryMb": 4.157,
         "overPrdCeiling": false
       },
       "GET /cron/email-outbox-flush@minority": {
@@ -20017,18 +20061,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 9.883,
-          "p95": 14.925,
-          "p99": 21.859,
-          "min": 8.891,
-          "max": 21.859
+          "p50": 9.767,
+          "p95": 11.06,
+          "p99": 12.516,
+          "min": 9.185,
+          "max": 12.516
         },
         "requestDbCalls": 18,
         "requestDbCallsVaried": null,
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 102,
-        "memoryMb": 3.97,
+        "memoryMb": 3.979,
         "overPrdCeiling": false
       },
       "GET /cron/notifications-retention-sweep@minority": {
@@ -20055,18 +20099,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 10.997,
-          "p95": 12.905,
-          "p99": 15.077,
-          "min": 10.559,
-          "max": 15.077
+          "p50": 10.446,
+          "p95": 13.73,
+          "p99": 15.386,
+          "min": 10.08,
+          "max": 15.386
         },
         "requestDbCalls": 118,
         "requestDbCallsVaried": null,
         "gucCalls": 0,
         "downstreamCalls": 0,
         "responseBytes": 206,
-        "memoryMb": 4.028,
+        "memoryMb": 4.011,
         "overPrdCeiling": false
       },
       "GET /cron/monthly-leave-reset@minority": {
@@ -20084,11 +20128,11 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 144.897,
-          "p95": 149.859,
-          "p99": 152.793,
-          "min": 117.241,
-          "max": 152.793
+          "p50": 145.264,
+          "p95": 152.918,
+          "p99": 157.977,
+          "min": 119.583,
+          "max": 157.977
         },
         "requestDbCalls": 58,
         "requestDbCallsVaried": [
@@ -20098,7 +20142,7 @@
         "gucCalls": 16,
         "downstreamCalls": 0,
         "responseBytes": 70,
-        "memoryMb": 30.83,
+        "memoryMb": 33.669,
         "overPrdCeiling": false
       },
       "GET /cron/build-due-sweep@minority": {
@@ -20116,24 +20160,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 18.949,
-          "p95": 21.947,
-          "p99": 33.095,
-          "min": 18.113,
-          "max": 33.095
+          "p50": 21.712,
+          "p95": 26.912,
+          "p99": 36.148,
+          "min": 18.988,
+          "max": 36.148
         },
-        "requestDbCalls": 92,
-        "requestDbCallsVaried": [
-          33,
-          38,
-          46,
-          50,
-          92
-        ],
-        "gucCalls": 40,
+        "requestDbCalls": 33,
+        "requestDbCallsVaried": null,
+        "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 109,
-        "memoryMb": 5.166,
+        "memoryMb": 5.17,
         "overPrdCeiling": false
       },
       "GET /cron/ai-reservations-sweep@minority": {
@@ -20151,18 +20189,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 54.302,
-          "p95": 65.692,
-          "p99": 73.542,
-          "min": 52.594,
-          "max": 73.542
+          "p50": 11.625,
+          "p95": 13.494,
+          "p99": 15.763,
+          "min": 10.175,
+          "max": 15.763
         },
-        "requestDbCalls": 81,
+        "requestDbCalls": 17,
         "requestDbCallsVaried": null,
-        "gucCalls": 72,
+        "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 83,
-        "memoryMb": 28.681,
+        "memoryMb": 3.576,
         "overPrdCeiling": false
       },
       "GET /cron/idempotency-fence-sweep@minority": {
@@ -20180,18 +20218,18 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 12.371,
-          "p95": 13.492,
-          "p99": 14.611,
-          "min": 11.87,
-          "max": 14.611
+          "p50": 15.731,
+          "p95": 19.402,
+          "p99": 20.356,
+          "min": 12.785,
+          "max": 20.356
         },
         "requestDbCalls": 33,
         "requestDbCallsVaried": null,
         "gucCalls": 8,
         "downstreamCalls": 0,
         "responseBytes": 164,
-        "memoryMb": 4.4,
+        "memoryMb": 4.385,
         "overPrdCeiling": false
       },
       "GET /cron/storage-sweep@minority": {
@@ -20209,22 +20247,22 @@
         "declaredMemoryMb": 256,
         "samples": 40,
         "latencyMs": {
-          "p50": 1348.419,
-          "p95": 1679.353,
-          "p99": 2085.36,
-          "min": 1293.273,
-          "max": 2085.36
+          "p50": 349.713,
+          "p95": 754.742,
+          "p99": 993.853,
+          "min": 234.523,
+          "max": 993.853
         },
-        "requestDbCalls": 127,
+        "requestDbCalls": 110,
         "requestDbCallsVaried": [
           33,
           50,
-          127
+          110
         ],
-        "gucCalls": 56,
-        "downstreamCalls": 8,
-        "responseBytes": 166,
-        "memoryMb": 14.311,
+        "gucCalls": 48,
+        "downstreamCalls": 1,
+        "responseBytes": 190,
+        "memoryMb": 5.181,
         "overPrdCeiling": false
       }
     }

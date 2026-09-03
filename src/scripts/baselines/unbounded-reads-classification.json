@@ -982,9 +982,9 @@
       "justification": "client email reads bounded by clientId or emailId (per-client email context) 2026-09-01"
     },
     "/clients/clients.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "ACTIONABLE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "client reads bounded by clientId+orgId (single-record lookups) or by explicit filter conditions 2026-09-01"
+      "justification": "RE-VERDICTED 2026-09-03: was FALSE-POSITIVE on 'client reads bounded by clientId+orgId (single-record lookups) or by explicit filter conditions', which is true of L154 (getTimeline, one client by id) and L188 (that client's deals) and FALSE of L267. exportCsv (L265-300, served as GET /clients/export, clients.controller.ts:97-104) selects every client row the caller may see for the whole org with no .limit(), then buffers the entire CSV into one string; clientPartyViewScope is a permission scope, not a size bound. The verdict is keyed per FILE, so that one sentence was suppressing all three reads. ACTIONABLE is the conservative key here: it over-counts L154/L188 by 2 rather than let the export stay hidden, and both would take a sane cap anyway. The fix is to stream the export the way contacts.controller.ts:98-110 already does (keyset page + res.write + drain backpressure). NOT done in this lane: /clients is a CRM product surface and CRM is out of scope for release/code-10-10-v2, and converting a buffered string response to a stream is a behavioural change to a shipped endpoint."
     },
     "/contacts/contact-roles.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2095,6 +2095,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "payment reads bounded by invoiceId+paymentId (single-record lookups) 2026-09-01"
     },
+    "/invoices/invoices-update.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "reads the edited invoice's own invoice_items, bounded by invoiceId (one invoice's lines) to carry each line's gst_rate/hsn_sac_code across the replacement 2026-09-03"
+    },
     "/invoices/invoices-write.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -2777,9 +2782,9 @@
       "justification": "public roadmap reads bounded by orgId + published filter; roadmap items for display bounded by published set 2026-09-01"
     },
     "/quotes/quotes-lifecycle.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "ACTIONABLE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "quote lifecycle reads bounded by quoteId+orgId (single-record state machine) 2026-09-01"
+      "justification": "RE-VERDICTED 2026-09-03: was FALSE-POSITIVE on 'quote lifecycle reads bounded by quoteId+orgId (single-record state machine)'. The one read this file has left is not that read. buildExportCsv (L238-289, served as GET /quotes/export, quotes.controller.ts:74-89) selects every quote for the org — three LEFT JOINs, fourteen columns, filtered only by orgId, deletedAt and an OPTIONAL status — with no .limit(), then joins the whole result into a single CSV string. Same defect and same fix as /clients/clients.service.ts: stream it. NOT done in this lane — /quotes is a CRM product surface (the route carries crm:quotes:read) and CRM is out of scope for release/code-10-10-v2."
     },
     "/rbac/assert-role-assignment.ts": {
       "verdict": "BOUNDED",
@@ -3077,6 +3082,71 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "documentAuditLogs lookup is bounded by IN (onboardingRows ids), and onboardingRows is one drainPages page of at most batchSize (200) rows selected with .limit(batchSize) immediately above. Extracted from cron-hr-retention.service.ts 2026-09-02 (ticket 37); the same read carried the same verdict there."
+    },
+    "@common/tenant/for-each-org.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03: src/common entered this gate's corpus for the first time. forEachOrg selects every ACTIVE, non-deleted organization with no .limit() and holds the whole list in memory before the sweep loop starts; it is called from 84 sites, so it is the widest unbounded read in the repository and it was outside the scan. Bounded today only by the tenant count (3 ACTIVE orgs measured on a database at journal head), which is exactly the kind of bound that stops holding. Fix is a keyset drain over organizations.id — the loop already processes one org at a time and needs no full list."
+    },
+    "@common/relocation/relocation-traffic-tracker.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. loadActiveRelocationTargets selects every organization_relocations row with is_active AND current_state = 'ACTIVE_TARGET' across ALL tenants, no .limit(). 0 rows measured at journal head, so the bound today is 'nobody is relocating', which is an operational fact and not a size bound."
+    },
+    "@common/tenant/org-admin-recipients.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. getOrgAdminUserIds selects every ACTIVE OWNER/ORG_ADMIN membership for an org with no .limit(). Bounded by orgId alone — 'an org has few admins' is a convention, not a cap, and it is exactly the shape of justification this file was found suppressing real unbounded exports with. Banked rather than blessed."
+    },
+    "@common/hr/sync-canonical-employment-fields.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Subquery bounded by (orgId, userId, deletedAt IS NULL) — one person's hr_people rows, used as the IN list of the UPDATE right below it."
+    },
+    "@common/hr/sync-canonical-sensitive-fields.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Subquery bounded by (orgId, userId, isPrimary = true) — one person's primary employment, at most one row by construction."
+    },
+    "@common/org/sync-org-unit-placement.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Bounded by (membershipId, orgId, orgUnits.kind) — one person's placement in one unit kind."
+    },
+    "@common/org/provision-org-modules.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Reads modules_catalog whole, with no WHERE — but that is the fixed platform module catalog, not tenant data: 20 rows measured on a database at journal head, and it grows only when the product ships a new module. Provisioning needs every row to decide core vs selected."
+    },
+    "@common/organization/organization-actor.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Both reads are batch hydration bounded by an inArray over a caller-supplied id list: L286 by inArray(userId, unique) and L298 by inArray(membershipId, memberships.map(id)) — the second list is a subset of the first, so neither can exceed what the caller already holds in memory."
+    },
+    "@common/tenant/org-membership.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. filterOrgMemberIds is bounded by inArray(userId, unique) — it filters a caller-supplied list and cannot return more than it was given."
+    },
+    "@common/tenant/tenant-db.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common, and it is a detector artefact: line 11 is a DOC COMMENT (\"this proxy makes `this.db.select()` resolve to the ambient tx\"), not a query. This file issues no reads at all — it is the Proxy that routes them."
+    },
+    "@common/workflow/workflow-inspector.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Bounded by (organizationId, workflowRunId) — the steps of ONE workflow run, whose cardinality is the workflow definition's step count, not tenant data."
+    },
+    "@common/workflow/workflow-store.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Same bound as workflow-inspector: (organizationId, workflowRunId), the steps of one run, replayed to rebuild that run's state."
+    },
+    "@db/seeds/demo-coupons.seed.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03: src/db entered this gate's corpus for the first time. Bounded by eq(coupons.code, coupon.code) — an existence check on one code, inside a seed script that is never on a request path."
     }
   }
 }

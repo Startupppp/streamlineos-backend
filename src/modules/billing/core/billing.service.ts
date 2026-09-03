@@ -73,11 +73,7 @@ export class BillingService {
       paymentWebhooks: this.paymentWebhooks,
       paymentNotices: this.paymentNotices,
     });
-    this.marketplace = new BillingMarketplace(
-      this.aiCredits,
-      this.providers,
-      this.paymentActivation.currencyForOrg.bind(this.paymentActivation),
-    );
+    this.marketplace = new BillingMarketplace(this.aiCredits, this.providers);
     this.accountOverview = new BillingAccountOverview(
       this.db,
       this.planLimits,

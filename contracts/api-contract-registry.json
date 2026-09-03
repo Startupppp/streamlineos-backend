@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-03T07:23:34.694Z",
+  "generatedAt": "2026-09-03T22:40:58.263Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -4341,6 +4341,19 @@
       "owner": null,
       "version": "1",
       "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /blog/admin/categories": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BlogAdminController_listCategories",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "the public marketing site and any feed reader"
+      ],
       "sunsetAt": null,
       "sunsetEvidence": null
     },
@@ -11900,11 +11913,33 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /cron/calendar-provider-sync-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronCalendarController_getCalendarProviderSyncSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/calendar-provider-sync-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronCalendarController_postCalendarProviderSyncSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /cron/calendar-reminder-sweep": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronPlatformController_getCalendarReminderSweep",
+      "operationId": "CronCalendarController_getCalendarReminderSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -11915,7 +11950,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronPlatformController_postCalendarReminderSweep",
+      "operationId": "CronCalendarController_postCalendarReminderSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -14328,6 +14363,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "BankAccountsController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /finance/bank-accounts/{bankAccountId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "BankAccountsController_findOne",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -37340,17 +37386,6 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
-    "GET /settings/permissions": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "SettingsController_getPermissions",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
     "GET /settings/provenance": {
       "classification": "internal",
       "classificationOverride": null,
@@ -41131,7 +41166,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "UsersController_listUsersV2",
+      "operationId": "UsersController_listUsers",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -41475,6 +41510,28 @@
       "operationId": "UsersController_getStats",
       "owner": null,
       "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /v2/users": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "UsersController_listUsersV2_v2",
+      "owner": null,
+      "version": "2",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /v2/users/{userId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "UsersController_getUserV2_v2",
+      "owner": null,
+      "version": "2",
       "consumers": [],
       "sunsetAt": null,
       "sunsetEvidence": null
@@ -42052,6 +42109,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "WorkspaceOnboardingController_generateWorkspace",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /settings/permissions": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "SettingsController_getPermissions",
       "owner": null,
       "version": "1",
       "consumers": [],

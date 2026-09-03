@@ -4,6 +4,7 @@ import { EmbeddingsService, EMBEDDING_MODEL } from "../providers/embeddings.serv
 import { AiUsageService } from "../services/ai-usage.service";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
+import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
 import { AiCallMetrics } from "../telemetry/ai-call-metrics";
 import { type AiCreditLedger } from "./credit-ledger.interface";
 import type {
@@ -107,11 +108,13 @@ export class AiGatewayEmbedHelper {
   ): Promise<Reservation> {
     if (!charge) return { ok: true, reservationId: 0 };
     try {
+      const idempotencyKey = aiReservationIdempotencyKey(feature, { orgId, userId: null });
       const reserved = await this.ledger.reserve({
         orgId,
         userId: null,
         feature,
         credits: getReserveEstimateMilli(feature),
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
       return { ok: true, reservationId: reserved.reservationId };
     } catch (error: unknown) {

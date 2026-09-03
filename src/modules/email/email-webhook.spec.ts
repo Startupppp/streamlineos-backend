@@ -40,6 +40,51 @@ describe("EmailWebhookService", () => {
     expect(suppress).toHaveBeenCalledWith(
       expect.objectContaining({ email: "gone@example.com", reason: "HARD_BOUNCE", orgId: null }),
     );
+    // A bounce is a fact about the address: permanent, and there is nothing to heal.
+    expect(suppress.mock.calls[0]?.[0]).toMatchObject({ expiresAt: null });
+  });
+
+  /**
+   * A spam complaint is a fact about ONE relationship, written with the same
+   * platform-wide `orgId: null` as a bounce and, before this, with no expiry. Since
+   * nothing in the product can delete a row from `email_suppressions` — there is no
+   * DELETE, no UPDATE, no admin route, and `suppress` is `onConflictDoNothing` — one
+   * click in one tenant permanently stopped every OTHER tenant's password resets,
+   * invoices and e-signature requests to that address, recoverable only by a DBA.
+   */
+  it("bounds a spam complaint in time, unlike a bounce", async () => {
+    const complaint = JSON.stringify({
+      type: "email.complained",
+      data: { to: ["alice@corp.com"] },
+    });
+
+    const result = await service.handle({
+      provider: "resend",
+      rawBody: complaint,
+      headers: svixHeaders(complaint),
+    });
+
+    expect(result.status).toBe(200);
+    const written = suppress.mock.calls[0]?.[0] as { reason: string; expiresAt: Date | null };
+    expect(written.reason).toBe("COMPLAINT");
+    expect(written.expiresAt).toBeInstanceOf(Date);
+    expect(written.expiresAt?.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("an invalid address stays permanent — it is an address defect, not a relationship", async () => {
+    const invalid = JSON.stringify({ event_name: "invalid", data: { email: "nope@corp.com" } });
+    process.env.ZEPTOMAIL_WEBHOOK_SECRET = "zepto-secret";
+
+    await service.handle({
+      provider: "zeptomail",
+      rawBody: invalid,
+      headers: { "x-zeptomail-webhook-secret": "zepto-secret" },
+    });
+
+    expect(suppress.mock.calls[0]?.[0]).toMatchObject({
+      reason: "INVALID_ADDRESS",
+      expiresAt: null,
+    });
   });
 
   // An unauthenticated bounce webhook lets anyone suppress any address, which is a

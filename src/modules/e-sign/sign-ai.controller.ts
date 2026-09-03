@@ -1,6 +1,7 @@
-import { Controller, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Controller, Param, ParseIntPipe, Post, UseGuards, UseInterceptors } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AiRequestAbortInterceptor } from "../ai/core/streaming";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../access/permission.guard";
@@ -21,6 +22,7 @@ const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive
 @RequireModule("sign")
 @Controller("sign/envelopes/:envelopeId/ai")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard, RateLimitGuard)
+@UseInterceptors(AiRequestAbortInterceptor)
 @RequirePermission("sign:envelope:view")
 @UseRateLimit("ai:invoke")
 export class SignAiController {
@@ -39,6 +41,13 @@ export class SignAiController {
    * the envelope and document reads and commits it before any of that begins,
    * and `AccessService`, the AI gateway's credit ledger and its usage log each
    * pass an explicit `orgId`, so nothing here reaches the pool without a GUC.
+   *
+   * The opt-out also removes the tenant context's disconnect signal, which is
+   * the only thing `getAmbientAiAbortSignal` had to read on this route — hence
+   * `@UseInterceptors(AiRequestAbortInterceptor)` on the class. Without it the
+   * released connection would have been paid for with an uncancellable provider
+   * call: a client that hangs up mid-summary still gets billed for tokens
+   * nobody reads (PRD-C091). Same pairing as `KbAuthoringController`.
    */
   @Post("summarize")
   @BodylessAction()

@@ -106,6 +106,27 @@ export class KbSearchService {
     const where = and(...conditions);
 
     const offset = (input.page - 1) * input.pageSize;
+
+    /**
+     * Two statements, not one `count(*) OVER ()`, and the reason is measured rather than
+     * argued. Backend CLAUDE.md §7 prefers the window function so page and count are one
+     * pass, and also says to measure both in buffers before choosing. On a 60,000-match
+     * tenant in the scratch database, page 1:
+     *
+     *   window fn : Limit → Sort → WindowAgg (actual rows=60,000, Storage: Disk 9,415 kB)
+     *               2,374 shared hits + 3,084 temp blocks, 35.7 ms, NO parallelism
+     *   two passes: page 2,419 shared + count 2,371 shared, 0 temp, 9.8 + 9.7 ms, both
+     *               Parallel Seq Scan
+     *
+     * `count(*) OVER ()` buffers its entire input into a tuplestore before it can emit the
+     * first row, so a broad term on a large tenant spills ~9 MB to temp files on EVERY
+     * request including page 1 — and the window function also disqualifies the parallel plan.
+     * A plain aggregate streams. The trade is 2× shared buffer hits (RAM, already warm) for
+     * zero temp I/O, which is the resource that saturates under concurrency.
+     *
+     * `total` stays exact, so the response contract is unchanged — this is a plan change, not
+     * a semantics change.
+     */
     const rows = await this.db
       .select({
         id: kbArticles.id,
@@ -117,7 +138,6 @@ export class KbSearchService {
         status: kbArticles.status,
         updatedAt: kbArticles.updatedAt,
         contentText: kbArticles.contentText,
-        totalCount: sql<string>`count(*) OVER ()`,
       })
       .from(kbArticles)
       .where(where)
@@ -125,18 +145,15 @@ export class KbSearchService {
       .limit(input.pageSize)
       .offset(offset);
 
-    const first = rows[0];
-    let total: number;
-    if (first) {
-      total = Number(first.totalCount);
-    } else if (offset === 0) {
-      total = 0;
-    } else {
-      const [countRow] = await this.db.select({ count: sql<number>`count(*)::int` }).from(kbArticles).where(where);
-      total = countRow?.count ?? 0;
-    }
+    // Sequential, not `Promise.all`: both statements run on the request's single tenant
+    // connection, so concurrency here would only queue them behind each other anyway.
+    const [countRow] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(kbArticles)
+      .where(where);
+    const total = countRow?.count ?? 0;
 
-    const items = rows.map(({ totalCount: _, contentText, ...card }) => ({
+    const items = rows.map(({ contentText, ...card }) => ({
       ...card,
       snippet: this.candidates.buildSnippet(contentText, input.q),
     }));
@@ -345,7 +362,7 @@ export class KbSearchService {
       const vector = embedResult.vectorLiteral;
 
       const cap = limit * 4;
-      const chunkIds = await this.candidates.vectorChunkIds(vector, cap);
+      const chunkIds = await this.candidates.vectorChunkIds(user.orgId, vector, cap);
       if (chunkIds.length === 0) return [];
 
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;

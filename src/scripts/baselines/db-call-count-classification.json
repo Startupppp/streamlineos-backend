@@ -766,6 +766,42 @@
     "/workflows/engine/workflow-schedule-tick.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "each due schedule triggers a different workflow; the call in the loop is that schedule's own trigger, not a repeated lookup"
+    },
+    "@common/tenant/for-each-org.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03: src/common entered this gate's corpus for the first time, and this is the file the whole asynchronous substrate runs through. The detector is right that the sweep loop issues one round trip per row — and the row is a TENANT, so the round trip is required, not accidental: each org gets its own withTenant transaction because the GUC that RLS reads is per-transaction, and a cross-org batch has no tenant context and is denied 42501. The file's own docblock records that this is why discovery moved inside the loop. What IS actionable here is the unbounded enumeration on the line above it, which is banked separately in unbounded-reads-classification.json."
+    },
+    "@common/cache/cache.service.ts": {
+      "verdict": "BATCHED",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. Both sites stride by INVALIDATE_KEY_CHUNK (`i += CHUNK`) and issue ONE call per chunk — invalidateMany sends one variadic DEL, invalidateNamespaceMany one pipeline. This is the chunked bulk form the clause asks for; the file's own comments record that it replaced the per-key round trip it is now mistaken for."
+    },
+    "@common/db/bulk-update.ts": {
+      "verdict": "BATCHED",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. `for (let offset = 0; offset < rows.length; offset += chunkSize)` issues one UPDATE ... FROM (VALUES ...) per chunk of BULK_UPDATE_CHUNK (500) rows. This helper IS the batching primitive the rest of the gate's ACTIONABLE entries are told to use."
+    },
+    "@common/outbox/outbox-writer.ts": {
+      "verdict": "BATCHED",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. `for (let offset = 0; offset < inputs.length; offset += OUTBOX_EMIT_CHUNK)` issues one multi-row INSERT per chunk, not one per event."
+    },
+    "@common/db/expand-contract-compat.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. The `.map()` builds SQL expressions and the `for` walks a value list; neither issues a round trip. No database call is made in this file at all — it composes fragments for a caller."
+    },
+    "@common/org/sync-org-unit-placement.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/common. The outer loop iterates Object.entries(placement) — the fixed set of org-unit kinds, a product constant, not tenant data. The inner `for (const row of existing)` deletes rows selected by (membershipId, orgId, orgUnits.kind), which is one person's placement in one kind: at most a handful, and normally one."
+    },
+    "@db/seeds/ai-credit-packs.seed.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03: src/db entered this gate's corpus for the first time. Iterates the imported const array DEFAULT_AI_CREDIT_PACKS — literal-bounded, and a one-shot seed script that is never on a request path."
+    },
+    "@db/seeds/demo-coupons.seed.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/db. Iterates the imported const array DEMO_COUPONS — literal-bounded, one-shot seed script."
+    },
+    "@db/seeds/marketplace-apps.seed.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "NEWLY VISIBLE 2026-09-03 with src/db. Iterates the imported const array APPS — literal-bounded, one-shot seed script."
     }
   }
 }

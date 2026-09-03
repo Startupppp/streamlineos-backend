@@ -42,7 +42,16 @@ function makeMarkTx() {
   return {
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
+        // Drizzle's update builder is a thenable, so this stands in for both `await
+        // …where(…)` (the queue-row mark) and `await …where(…).returning(…)` (the
+        // external-id write-back, which now checks how many rows it matched so a
+        // create-then-delete race can enqueue a compensating delete). One matched row
+        // is the ordinary case these tests are about.
+        where: jest.fn().mockImplementation(() =>
+          Object.assign(Promise.resolve([]), {
+            returning: jest.fn().mockResolvedValue([{ id: 10 }]),
+          }),
+        ),
       }),
     }),
   };
@@ -108,9 +117,15 @@ function makeResolveConnectionDb() {
 
 beforeEach(() => {
   jest.resetAllMocks();
-  mockedRunInTx.mockImplementation(async (_db, _orgId, cb) => {
-    await cb(makeMarkTx() as never);
-  });
+  // See calendar-provider-sync-tenant-context.spec.ts: the sweep's post-claim reads now
+  // open their own tenant transaction, because on the pool `app.organization_id` is unset
+  // and every RLS-protected table raises 42501. The read surface each test builds is
+  // therefore reachable through the tenant tx too; `makeMarkTx()` keeps `update`.
+  // `return`, not `await`: the reads that moved inside the tenant transaction consume
+  // its result, so a mock that swallows it makes every one of them undefined.
+  mockedRunInTx.mockImplementation(async (db, _orgId, cb) =>
+    cb({ ...(db as object), ...makeMarkTx() } as never),
+  );
 });
 
 describe("a delete leaves a tombstone that still names the event it removed", () => {

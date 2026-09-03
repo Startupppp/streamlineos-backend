@@ -67,7 +67,14 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
       for (const occ of occurrences) {
         if (projections.length >= CALENDAR_EVENTS_CAP) break;
         projections.push({
-          id: isRecurring ? `event-${event.id}-${occ.startDate.toISOString()}` : `event-${event.id}`,
+          // The NOMINAL instant, which is also the exception key — never `occ.startDate`.
+          // The rescheduled path below already names occurrences that way (:102), so
+          // building this one from the moved start gave the same occurrence two different
+          // ids depending only on whether its nominal instant fell in the window, and
+          // changed an occurrence's id every time it was moved.
+          id: isRecurring
+            ? `event-${event.id}-${occ.nominalStart.toISOString()}`
+            : `event-${event.id}`,
           title: occ.title,
           start: occ.startDate,
           end: occ.endDate,

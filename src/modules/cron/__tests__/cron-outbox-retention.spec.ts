@@ -4,7 +4,7 @@ jest.mock("../../../common/tenant/for-each-org", () => ({
 
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { CronOutboxRetentionService } from "../cron-outbox-retention.service";
+import { CronOutboxRetentionService, runBatchedDelete } from "../cron-outbox-retention.service";
 import type { Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant/for-each-org";
 import type { ForEachOrgResult } from "../../../common/tenant/for-each-org";
@@ -13,6 +13,9 @@ const mockedForEachOrg = forEachOrg as jest.MockedFunction<typeof forEachOrg>;
 const ORG_TEST = "org-test-0000-0000-spec";
 
 const dialect = new PgDialect();
+
+/** What `PgTimestamp.mapToDriverValue` produces: "YYYY-MM-DD HH:MM:SS.mmm". */
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/;
 
 function makeTx(rowsPerDelete: unknown[] = []): { tx: unknown; capturedWheres: SQL[] } {
   const capturedWheres: SQL[] = [];
@@ -50,7 +53,9 @@ describe("CronOutboxRetentionService — SQL predicates and batching", () => {
       await svc.sweep();
 
       const rendered = dialect.sqlToQuery(capturedWheres[0]!);
-      expect(rendered.sql).toContain("delivery_state IN ('DELIVERED', 'DEAD', 'SUPPRESSED')");
+      expect(rendered.sql).toContain(
+        `"outbox_events"."delivery_state" IN ('DELIVERED', 'DEAD', 'SUPPRESSED')`,
+      );
     });
 
     it("does NOT include PENDING rows in the delete predicate", async () => {
@@ -77,16 +82,29 @@ describe("CronOutboxRetentionService — SQL predicates and batching", () => {
       await svc.sweep();
 
       const rendered = dialect.sqlToQuery(capturedWheres[0]!);
-      expect(rendered.sql).toContain("occurred_at <");
+      expect(rendered.sql).toContain(`"outbox_events"."occurred_at" <`);
     });
 
-    it("binds the cutoff as a Date parameter (not inlined as a literal)", async () => {
+    /**
+     * This assertion used to read `params.some((p) => p instanceof Date)`, and a
+     * raw `Date` in the parameter list was precisely the second half of the
+     * defect: interpolated into a bare `sql` template the cutoff carried no
+     * column encoder, postgres.js resolved the parameter type from the server
+     * (OID 1114) and handed the `Date` to the text serializer, which throws at
+     * BIND time. So the old assertion certified the bug. What is required is the
+     * opposite — the cutoff reaches the driver already encoded by the column's
+     * own `timestamp` mapper, and no bare `Date` survives to the wire.
+     */
+    it("binds the cutoff through the column encoder, never as a raw Date", async () => {
       const { capturedWheres } = setupSingleOrg([]);
       const svc = new CronOutboxRetentionService({} as unknown as Db);
       await svc.sweep();
 
       const rendered = dialect.sqlToQuery(capturedWheres[0]!);
-      expect(rendered.params.some((p) => p instanceof Date)).toBe(true);
+      expect(rendered.params.some((p) => p instanceof Date)).toBe(false);
+      expect(
+        rendered.params.some((p) => typeof p === "string" && ISO_TIMESTAMP.test(p)),
+      ).toBe(true);
     });
 
     it("binds org_id in the outbox predicate to scope the delete to the org", async () => {
@@ -96,7 +114,10 @@ describe("CronOutboxRetentionService — SQL predicates and batching", () => {
 
       const rendered = dialect.sqlToQuery(capturedWheres[0]!);
       expect(rendered.params).toContain(ORG_TEST);
-      expect(rendered.sql).toContain("org_id =");
+      // `outbox_events` has no `org_id`; its tenant column is `organization_id`.
+      // Asserting the wrong name here certified a statement that raised 42703
+      // for every tenant, and `forEachOrg` swallowed the throw.
+      expect(rendered.sql).toContain(`"outbox_events"."organization_id" =`);
     });
   });
 
@@ -107,7 +128,7 @@ describe("CronOutboxRetentionService — SQL predicates and batching", () => {
       await svc.sweep();
 
       const rendered = dialect.sqlToQuery(capturedWheres[1]!);
-      expect(rendered.sql).toContain("processed_at IS NOT NULL");
+      expect(rendered.sql.toLowerCase()).toContain(`"processed_at" is not null`);
     });
 
     it("binds processed_at time filter — only rows older than the cutoff are deleted", async () => {
@@ -116,16 +137,19 @@ describe("CronOutboxRetentionService — SQL predicates and batching", () => {
       await svc.sweep();
 
       const rendered = dialect.sqlToQuery(capturedWheres[1]!);
-      expect(rendered.sql).toContain("processed_at <");
+      expect(rendered.sql).toContain(`"inbox_records"."processed_at" <`);
     });
 
-    it("binds the cutoff as a Date parameter for inbox_records too", async () => {
+    it("binds the cutoff through the column encoder for inbox_records too", async () => {
       const { capturedWheres } = setupSingleOrg([]);
       const svc = new CronOutboxRetentionService({} as unknown as Db);
       await svc.sweep();
 
       const rendered = dialect.sqlToQuery(capturedWheres[1]!);
-      expect(rendered.params.some((p) => p instanceof Date)).toBe(true);
+      expect(rendered.params.some((p) => p instanceof Date)).toBe(false);
+      expect(
+        rendered.params.some((p) => typeof p === "string" && ISO_TIMESTAMP.test(p)),
+      ).toBe(true);
     });
 
     it("binds org_id in the inbox predicate to scope the delete to the org", async () => {
@@ -135,7 +159,8 @@ describe("CronOutboxRetentionService — SQL predicates and batching", () => {
 
       const rendered = dialect.sqlToQuery(capturedWheres[1]!);
       expect(rendered.params).toContain(ORG_TEST);
-      expect(rendered.sql).toContain("org_id =");
+      // Same defect, same table-specific truth: `inbox_records.organization_id`.
+      expect(rendered.sql).toContain(`"inbox_records"."organization_id" =`);
     });
   });
 
@@ -182,24 +207,14 @@ describe("CronOutboxRetentionService — SQL predicates and batching", () => {
   });
 });
 
-type BatchFn = (run: (limit: number) => Promise<number>) => Promise<{ count: number; truncated: boolean }>;
-type BatchTestService = { batchedOrgDelete: BatchFn; logger: { warn: jest.Mock } };
-
-describe("CronOutboxRetentionService — batching and resumability (private method via prototype)", () => {
-  function makeBatchService(): BatchTestService {
-    return Object.assign(Object.create(CronOutboxRetentionService.prototype), {
-      logger: { warn: jest.fn() },
-    }) as BatchTestService;
-  }
-
+describe("CronOutboxRetentionService — batching and resumability", () => {
   it("runs a second batch when the first returns exactly BATCH_SIZE (1000) rows — resumable", async () => {
     let calls = 0;
-    const svc = makeBatchService();
 
-    const result = await svc.batchedOrgDelete(async () => {
+    const result = await runBatchedDelete(async () => {
       calls += 1;
       return calls === 1 ? 1000 : 0;
-    });
+    }, jest.fn());
 
     expect(calls).toBe(2);
     expect(result.count).toBe(1000);
@@ -208,37 +223,35 @@ describe("CronOutboxRetentionService — batching and resumability (private meth
 
   it("stops immediately after a partial batch returns fewer than BATCH_SIZE rows", async () => {
     let calls = 0;
-    const svc = makeBatchService();
 
-    const result = await svc.batchedOrgDelete(async () => {
+    const result = await runBatchedDelete(async () => {
       calls += 1;
       return calls < 3 ? 1000 : 7;
-    });
+    }, jest.fn());
 
     expect(calls).toBe(3);
     expect(result.count).toBe(2007);
     expect(result.truncated).toBe(false);
   });
 
-  it("sets truncated=true and accumulates count when MAX_BATCHES (50) all return full", async () => {
-    const svc = makeBatchService();
+  it("sets truncated=true, accumulates count and warns when MAX_BATCHES (50) all return full", async () => {
+    const onCapped = jest.fn();
 
-    const result = await svc.batchedOrgDelete(async () => 1000);
+    const result = await runBatchedDelete(async () => 1000, onCapped);
 
     expect(result.truncated).toBe(true);
     expect(result.count).toBe(50_000);
+    expect(onCapped).toHaveBeenCalledTimes(1);
   });
 
   it("(bite proof) partial final batch → truncated=false; all-full run → truncated=true", async () => {
     let calls1 = 0;
-    const s1 = makeBatchService();
-    const partial = await s1.batchedOrgDelete(async () => {
+    const partial = await runBatchedDelete(async () => {
       calls1 += 1;
       return calls1 <= 1 ? 1000 : 5;
-    });
+    }, jest.fn());
 
-    const s2 = makeBatchService();
-    const full = await s2.batchedOrgDelete(async () => 1000);
+    const full = await runBatchedDelete(async () => 1000, jest.fn());
 
     expect(partial.truncated).toBe(false);
     expect(full.truncated).toBe(true);

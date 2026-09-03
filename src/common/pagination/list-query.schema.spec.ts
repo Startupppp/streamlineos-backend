@@ -216,7 +216,16 @@ describe("withSortField", () => {
 });
 
 type SizeKey = "limit" | "pageSize";
-type ParseableSchema = { parse: (v: unknown) => Record<string, unknown> };
+/**
+ * The structural surface these cases exercise. `safeParse` carries Zod's own
+ * discriminated result type (`{ success: true; data } | { success: false; error }`),
+ * so a probe below narrows through `parsed.success` the way Zod intends rather
+ * than reaching into an untyped result.
+ */
+type ParseableSchema = {
+  parse: (v: unknown) => Record<string, unknown>;
+  safeParse: (v: unknown) => z.ZodSafeParseResult<Record<string, unknown>>;
+};
 
 interface SchemaCaseConfig {
   name: string;
@@ -281,8 +290,20 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
         const exposesOffset = Object.prototype.hasOwnProperty.call(result, "page");
         if (exposesOffset) expect(result["page"]).toBe(1);
 
-        const exposesCursor = "cursor" in (schema.parse({ cursor: "1" }) as object);
-        const exposesIdCursor = "afterId" in (schema.parse({ afterId: 1 }) as object);
+        // `safeParse`, not `parse`: most of these schemas are strict, so probing
+        // one with a key it does not declare throws `unrecognized_keys` rather
+        // than returning an object without it. Parsing eagerly therefore made
+        // every strict OFFSET schema fail here — 20 of them — for having no
+        // `cursor`, which is exactly what an offset schema is supposed to lack.
+        // A rejected probe IS the answer "does not expose this style"; it is not
+        // an error. The assertion below is unchanged and still bites: a schema
+        // exposing none of the three styles fails.
+        const exposes = (probe: Record<string, unknown>, key: string): boolean => {
+          const parsed = schema.safeParse(probe);
+          return parsed.success && key in parsed.data;
+        };
+        const exposesCursor = exposes({ cursor: "1" }, "cursor");
+        const exposesIdCursor = exposes({ afterId: 1 }, "afterId");
         expect(exposesOffset || exposesCursor || exposesIdCursor).toBe(true);
       });
     });

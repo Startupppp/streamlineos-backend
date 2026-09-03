@@ -46,15 +46,31 @@ function makeQueryDb(rows: unknown[]) {
   const selectWhere = rootChain.where as jest.Mock;
   const selectFrom = jest.fn().mockReturnValue(rootChain);
 
+  // The envelope's COUNT half projects a bare `total`; it must answer with a count row
+  // rather than the page rows, or `total` reads as 0 whatever the table holds.
+  const countChain: Record<string, unknown> = {
+    then: (
+      onFulfilled: ((value: unknown) => unknown) | null | undefined,
+      onRejected?: ((reason: unknown) => unknown) | null | undefined,
+    ) => Promise.resolve([{ total: rows.length }]).then(onFulfilled ?? undefined, onRejected ?? undefined),
+  };
+  countChain["from"] = jest.fn().mockReturnValue(countChain);
+  const countWhere = jest.fn().mockReturnValue(countChain);
+  countChain["where"] = countWhere;
+
   const db = {
-    select: jest.fn().mockReturnValue({ from: selectFrom }),
+    select: jest.fn().mockImplementation((projection?: Record<string, unknown>) =>
+      projection !== undefined && Object.keys(projection).length === 1 && "total" in projection
+        ? countChain
+        : { from: selectFrom },
+    ),
     query: new Proxy({} as Record<string, typeof handler>, { get: () => handler }),
     execute: jest.fn().mockResolvedValue([]),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
   } as unknown as Db;
-  return { db, findMany, findFirst, selectWhere };
+  return { db, findMany, findFirst, selectWhere, countWhere };
 }
 
 const mockCache = {
@@ -182,7 +198,7 @@ describe("InvWarehousesService — cross-tenant isolation", () => {
   const WH = { id: 1, orgId: OWNER, name: "Main Warehouse", isActive: true };
 
   it("returns empty warehouses for a foreign org (isolation — deny)", async () => {
-    const { db, selectWhere } = makeQueryDb([]);
+    const { db, selectWhere, countWhere } = makeQueryDb([]);
     const scope = { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }) };
     const svc = await Test.createTestingModule({
       providers: [
@@ -194,10 +210,13 @@ describe("InvWarehousesService — cross-tenant isolation", () => {
     }).compile().then((m) => m.get(InvWarehousesService));
 
     const result = await svc.listWarehouses(ATTACKER, "user-1");
-    expect(result).toHaveLength(0);
+    expect(result.items).toHaveLength(0);
+    expect(result.total).toBe(0);
     expect(selectWhere).toHaveBeenCalled();
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
+    // The count is a second read of the same table — it carries the org predicate too.
+    expect(sqlValues(countWhere.mock.calls[0]?.[0] as unknown)).toContain(ATTACKER);
   });
 
   it("returns warehouses for the owning org (isolation — control)", async () => {
@@ -213,6 +232,7 @@ describe("InvWarehousesService — cross-tenant isolation", () => {
     }).compile().then((m) => m.get(InvWarehousesService));
 
     const result = await svc.listWarehouses(OWNER, "user-1");
-    expect(result).toHaveLength(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.total).toBe(1);
   });
 });

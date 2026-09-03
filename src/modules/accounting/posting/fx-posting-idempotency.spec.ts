@@ -25,6 +25,7 @@ describe("FxService.postRealizedGainLoss — retry safety", () => {
     const input = {
       sourceType: "purchase_bill" as const,
       sourceId: "42",
+      settlementId: "900",
       baseAmountBooked: "100.0000",
       baseAmountSettled: "100.0000",
       counterPurpose: "AP" as const,
@@ -54,6 +55,7 @@ describe("FxService.postRealizedGainLoss — retry safety", () => {
     const input = {
       sourceType: "purchase_bill" as const,
       sourceId: "7",
+      settlementId: "901",
       baseAmountBooked: "100.0000",
       baseAmountSettled: "105.0000",
       counterPurpose: "AP" as const,
@@ -66,13 +68,111 @@ describe("FxService.postRealizedGainLoss — retry safety", () => {
     const firstArg = postJournalMock.mock.calls[0]?.[1] as PostJournalInput;
     const secondArg = postJournalMock.mock.calls[1]?.[1] as PostJournalInput;
 
-    expect(firstArg.sourceType).toBe("fx_settlement");
+    // The caller's own source type reaches the ledger key. It used to be
+    // overwritten with the literal "fx_settlement", which put every kind of
+    // settled document into one namespace.
+    expect(firstArg.sourceType).toBe("purchase_bill");
     expect(firstArg.sourceId).toBe("7");
-    expect(firstArg.sourceEvent).toBe("realized_gain_loss");
+    expect(firstArg.sourceEvent).toBe("realized_gain_loss:901");
 
     expect(secondArg.sourceType).toBe(firstArg.sourceType);
     expect(secondArg.sourceId).toBe(firstArg.sourceId);
     expect(secondArg.sourceEvent).toBe(firstArg.sourceEvent);
+  });
+
+  it("two instalments of one document post two entries — the key names the settlement, not the document", async () => {
+    const { FxService } = await import("../../finance/controls/fx.service");
+    const postJournalMock = jest
+      .fn()
+      .mockResolvedValue({ entryId: 1, entryNumber: "JE-001", replayed: false });
+    const fxSvc = new FxService({ postJournal: postJournalMock } as never);
+
+    const base = {
+      sourceType: "invoice" as const,
+      sourceId: "42",
+      counterPurpose: "AR" as const,
+    };
+
+    // Same invoice, two instalments settled at two different rates.
+    await fxSvc.postRealizedGainLoss(USER, {
+      ...base,
+      settlementId: "5001",
+      baseAmountBooked: "5000.0000",
+      baseAmountSettled: "5050.0000",
+    });
+    await fxSvc.postRealizedGainLoss(USER, {
+      ...base,
+      settlementId: "5002",
+      baseAmountBooked: "5000.0000",
+      baseAmountSettled: "4900.0000",
+    });
+
+    const keys = postJournalMock.mock.calls.map((call) => {
+      const arg = call[1] as PostJournalInput;
+      return `${arg.sourceType}|${arg.sourceId}|${arg.sourceEvent}`;
+    });
+    expect(keys).toEqual([
+      "invoice|42|realized_gain_loss:5001",
+      "invoice|42|realized_gain_loss:5002",
+    ]);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it("invoice 42 and purchase bill 42 do not share a ledger key", async () => {
+    const { FxService } = await import("../../finance/controls/fx.service");
+    const postJournalMock = jest
+      .fn()
+      .mockResolvedValue({ entryId: 1, entryNumber: "JE-001", replayed: false });
+    const fxSvc = new FxService({ postJournal: postJournalMock } as never);
+
+    await fxSvc.postRealizedGainLoss(USER, {
+      sourceType: "invoice",
+      sourceId: "42",
+      settlementId: "7001",
+      baseAmountBooked: "1000.0000",
+      baseAmountSettled: "1010.0000",
+      counterPurpose: "AR",
+    });
+    await fxSvc.postRealizedGainLoss(USER, {
+      sourceType: "purchase_bill",
+      sourceId: "42",
+      settlementId: "7002",
+      baseAmountBooked: "1000.0000",
+      baseAmountSettled: "1010.0000",
+      counterPurpose: "AP",
+    });
+
+    const keys = postJournalMock.mock.calls.map((call) => {
+      const arg = call[1] as PostJournalInput;
+      return `${arg.sourceType}|${arg.sourceId}|${arg.sourceEvent}`;
+    });
+    expect(keys[0]).toBe("invoice|42|realized_gain_loss:7001");
+    expect(keys[1]).toBe("purchase_bill|42|realized_gain_loss:7002");
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it("a gain of exactly one ledger tick is posted, not swallowed by a double subtraction", async () => {
+    const { FxService } = await import("../../finance/controls/fx.service");
+    const postJournalMock = jest
+      .fn()
+      .mockResolvedValue({ entryId: 1, entryNumber: "JE-001", replayed: false });
+    const fxSvc = new FxService({ postJournal: postJournalMock } as never);
+
+    // 8350.0001 - 8350.0000 is 9.99999...e-5 in IEEE-754, which fell under the
+    // old `Math.abs(diff) < 0.0001` guard and dropped a real gain.
+    await fxSvc.postRealizedGainLoss(USER, {
+      sourceType: "invoice",
+      sourceId: "9",
+      settlementId: "8001",
+      baseAmountBooked: "8350.0000",
+      baseAmountSettled: "8350.0001",
+      counterPurpose: "AR",
+    });
+
+    expect(postJournalMock).toHaveBeenCalledTimes(1);
+    const arg = postJournalMock.mock.calls[0]?.[1] as PostJournalInput;
+    expect(arg.lines[0]?.debit).toBe("0.0001");
+    expect(arg.lines[1]?.credit).toBe("0.0001");
   });
 
   it("run-twice: FinancePostingService.postJournal returns replayed=true on second call for same source", async () => {

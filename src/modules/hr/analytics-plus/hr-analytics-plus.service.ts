@@ -51,7 +51,7 @@ export class HrAnalyticsPlusService {
   getLeaveTrends(orgId: string, departmentId?: string) {
     return this.cache.cached(
       `hr:analytics-plus:leave:${orgId}:${departmentId ?? "all"}`,
-      () => fetchLeaveTrends(this.db, orgId),
+      () => fetchLeaveTrends(this.db, orgId, departmentId),
       CACHE_TTL.MEDIUM,
     );
   }
@@ -83,7 +83,7 @@ export class HrAnalyticsPlusService {
   getComplianceGaps(orgId: string, departmentId?: string) {
     return this.cache.cached(
       `hr:analytics-plus:compliance:${orgId}:${departmentId ?? "all"}`,
-      () => fetchComplianceGaps(this.db, orgId),
+      () => fetchComplianceGaps(this.db, orgId, departmentId),
       CACHE_TTL.SHORT,
     );
   }
@@ -92,8 +92,8 @@ export class HrAnalyticsPlusService {
     return getMetricDefinitions();
   }
 
-  getDrilldown(orgId: string, metric: string, page: number, limit: number, _?: string) {
-    return fetchDrilldownPage(this.db, orgId, metric, page, limit);
+  getDrilldown(orgId: string, metric: string, page: number, limit: number, departmentId?: string) {
+    return fetchDrilldownPage(this.db, orgId, metric, page, limit, departmentId);
   }
 
   getWorkforcePlans(orgId: string) {

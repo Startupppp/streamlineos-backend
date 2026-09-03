@@ -35,6 +35,8 @@ interface StoredMessage {
   metadata: Record<string, unknown> | null;
   senderMembership: null;
   replyTo: null;
+  /** `with: { reactions }` is part of the read now; a `many` relation is always an array. */
+  reactions: [];
   attachments: [];
 }
 
@@ -55,6 +57,7 @@ class PollMessageStore {
       metadata: null,
       senderMembership: null,
       replyTo: null,
+      reactions: [],
       attachments: [],
     };
     this.rows.push(row);

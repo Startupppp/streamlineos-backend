@@ -8,7 +8,12 @@ import { AccessService } from "../modules/access/access.service";
 import type { AccessSnapshot } from "../modules/access/access.types";
 import { MeService } from "./me.service";
 import type { OrgDisplay } from "./org-display";
-import { updateProfileSchema, type UpdateProfileInput } from "./dto/me.schemas";
+import {
+  loginHistoryQuerySchema,
+  updateProfileSchema,
+  type LoginHistoryQuery,
+  type UpdateProfileInput,
+} from "./dto/me.schemas";
 
 @Controller("me")
 export class MeController {
@@ -60,15 +65,12 @@ export class MeController {
 
   @Get("login-history")
   @Universal()
+  @Validate({ query: loginHistoryQuerySchema })
   getLoginHistory(
-    @Query("page") page = 1,
-    @Query("limit") limit = 20,
-    @Query("success") success: string | undefined,
+    @Query() query: LoginHistoryQuery,
     @CurrentUser() u: CurrentUserContext,
   ): ReturnType<MeService["getLoginHistory"]> {
-    const successFilter =
-      success === "true" ? true : success === "false" ? false : undefined;
-    return this.meService.getLoginHistory(u.userId, Number(page), Math.min(Number(limit), 100), successFilter);
+    return this.meService.getLoginHistory(u.userId, query.page, query.limit, query.success);
   }
 
   @Get("auth-analytics")

@@ -66,6 +66,31 @@ const CHECKS = [
       limit 50 offset 0`,
   },
   {
+    /**
+     * The board's own page, character for character from the `orderBy === "rank"`
+     * branch of projects-tickets-read.service.ts.
+     *
+     * `scoped-board-page` above orders by (rank, created_at DESC, id) — the
+     * generic sort template every OTHER orderBy uses — which is not what the
+     * board emits. That divergence is why this gate reported the board healthy
+     * while every page Incremental-Sorted the entire project: 1,850 index rows
+     * read to return 101, on every page, for every user, five times per board
+     * open. Buffers alone never caught it because sorting 1,850 index tuples is
+     * cheap in blocks; `forbidSort` is the assertion that does.
+     */
+    id: "board-page-rank",
+    ceiling: 2000,
+    requireIndexOnlyOn: "tickets",
+    forbidSort: true,
+    params: (f) => [ORG, f.projectId],
+    text: `
+      select t.id, t.rank, t.rank as cursor_primary, t.created_at
+      from build.tickets t
+      where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
+      order by t.rank asc, t.id asc
+      limit 101`,
+  },
+  {
     id: "my-work",
     ceiling: 30000,
     requireIndexOnlyOn: "ticket_assignees",
@@ -159,7 +184,11 @@ async function main() {
 
     const root = plan.Plan;
     const blocks = (root["Shared Hit Blocks"] ?? 0) + (root["Shared Read Blocks"] ?? 0);
-    const node = walk(root, []).find((n) => n.relation === check.requireIndexOnlyOn);
+    const nodes = walk(root, []);
+    const node = nodes.find((n) => n.relation === check.requireIndexOnlyOn);
+    const sortNode = check.forbidSort
+      ? nodes.find((n) => n.executed && n.type.endsWith("Sort"))
+      : undefined;
 
     const state = !node ? "ABSENT" : node.executed ? `${node.type} using ${node.index}` : `${node.type} (never executed)`;
     console.log(
@@ -169,6 +198,12 @@ async function main() {
 
     if (blocks > check.ceiling)
       failures.push(`${check.id}: ${blocks} > ${check.ceiling}`);
+    if (sortNode)
+      failures.push(
+        `${check.id}: the plan contains ${sortNode.type} — no index carries this ORDER BY, so the page ` +
+          `reads and sorts the whole filtered set before the LIMIT can discard it. Blocks stay small ` +
+          `while rows do not, which is why a ceiling alone cannot see this.`,
+      );
     if (!node)
       failures.push(`${check.id}: no ${check.requireIndexOnlyOn} node — the query shape changed`);
     else if (!node.executed)

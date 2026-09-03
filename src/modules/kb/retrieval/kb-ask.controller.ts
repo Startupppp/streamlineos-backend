@@ -76,34 +76,44 @@ export class KbAskController {
   @Validate({ body: askSchema })
   async askQuestion(@Body() body: AskInput, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
     const membershipId = actingMembershipId(u.principal) ?? 0;
-    let conversationId = body.conversationId;
-    if (conversationId === undefined) {
-      const conv = await runInTenantTransaction(
-        this.db,
-        () =>
-          this.history.createConversation(
-            u.orgId,
-            u.userId,
-            membershipId,
-            body.question.substring(0, 60).trim(),
-          ),
-        { orgId: u.orgId },
-      );
-      conversationId = conv.id;
-    }
+    /**
+     * One `const` settled in a single expression, rather than a reassigned
+     * `let` copied into a differently-named alias so the narrowing survives the
+     * closure below. A caller-supplied conversation id is a cross-tenant object
+     * reference: the only thing that binds it to this caller is
+     * KbChatHistoryService.appendToConversation, which resolves the row against
+     * kbChatConversations.orgId, and the table's composite tenant foreign key
+     * on org_id, conversation_id, which refuses anything else outright.
+     * Handing that call an alias hid the binding from every reader that follows
+     * the field from the request body to its resolution.
+     */
+    const conversationId =
+      body.conversationId ??
+      (
+        await runInTenantTransaction(
+          this.db,
+          () =>
+            this.history.createConversation(
+              u.orgId,
+              u.userId,
+              membershipId,
+              body.question.substring(0, 60).trim(),
+            ),
+          { orgId: u.orgId },
+        )
+      ).id;
 
     const result = await this.ask.ask(u, body);
-    const persistedConversationId = conversationId;
     try {
       await runInTenantTransaction(
         this.db,
         async () => {
-          await this.history.appendToConversation(u.orgId, u.userId, membershipId, persistedConversationId, "user", body.question);
+          await this.history.appendToConversation(u.orgId, u.userId, membershipId, conversationId, "user", body.question);
           await this.history.appendToConversation(
             u.orgId,
             u.userId,
             membershipId,
-            persistedConversationId,
+            conversationId,
             "assistant",
             result.answer,
             result.citations,

@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { WorkflowsCrudService } from "./workflows-crud.service";
 
@@ -171,41 +171,62 @@ describe("WorkflowsCrudService — cross-tenant isolation", () => {
     });
   });
 
-  describe("publishWorkflow — write includes orgId (TOCTOU guard)", () => {
-    it("throws NotFoundException when workflow belongs to a different org (cross-tenant deny)", async () => {
-      const findFirst = jest.fn().mockResolvedValue(null);
-      const db = {
-        query: { workflows: { findFirst } },
-      } as unknown as Db;
-
-      const svc = new WorkflowsCrudService(db);
-      await expect(
-        svc.publishWorkflow(ATTACKER_ORG, USER_ID, WORKFLOW_ID, { definitionJson: {} }),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it("includes orgId in the update where clause for the owning org (control)", async () => {
-      const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID, version: 1 });
-      const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ ...WORKFLOW_ROW, status: "published" }]) });
-      const insertReturning = jest.fn().mockResolvedValue([{ id: 99, version: 2 }]);
-      const auditInsertValues = jest.fn().mockResolvedValue(undefined);
+  describe("publishWorkflow — orgId and version both guard the write", () => {
+    /**
+     * The read moved INSIDE the transaction, so `findFirst` is now reached
+     * through `tx.query`, not `db.query`. That is the fix, not an incidental
+     * refactor: read-then-compare outside the transaction was the TOCTOU that
+     * let two concurrent publishes both succeed (see
+     * `__tests__/workflow-publish-lost-update.db.spec.ts`).
+     */
+    function makePublishDb(options: {
+      workflow: { id: string; version: number } | null;
+      updateReturns: unknown[];
+    }): { db: Db; updateWhere: jest.Mock; inserts: jest.Mock } {
+      const findFirst = jest.fn().mockResolvedValue(options.workflow);
+      const updateWhere = jest
+        .fn()
+        .mockReturnValue({ returning: jest.fn().mockResolvedValue(options.updateReturns) });
+      const inserts = jest.fn();
 
       let insertCallCount = 0;
       const db = {
-        query: { workflows: { findFirst } },
         transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
           const tx = {
+            query: { workflows: { findFirst } },
             insert: jest.fn().mockImplementation(() => {
               insertCallCount++;
+              inserts(insertCallCount);
               if (insertCallCount === 1)
-                return { values: jest.fn().mockReturnValue({ returning: insertReturning }) };
-              return { values: auditInsertValues };
+                return {
+                  values: jest
+                    .fn()
+                    .mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 99, version: 2 }]) }),
+                };
+              return { values: jest.fn().mockResolvedValue(undefined) };
             }),
             update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
           };
           return cb(tx);
         }),
       } as unknown as Db;
+
+      return { db, updateWhere, inserts };
+    }
+
+    it("throws NotFoundException when workflow belongs to a different org (cross-tenant deny)", async () => {
+      const { db } = makePublishDb({ workflow: null, updateReturns: [] });
+      const svc = new WorkflowsCrudService(db);
+      await expect(
+        svc.publishWorkflow(ATTACKER_ORG, USER_ID, WORKFLOW_ID, { definitionJson: {} }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("includes orgId AND the read version in the update where clause (control)", async () => {
+      const { db, updateWhere } = makePublishDb({
+        workflow: { id: WORKFLOW_ID, version: 1 },
+        updateReturns: [{ ...WORKFLOW_ROW, status: "published" }],
+      });
 
       const svc = new WorkflowsCrudService(db);
       await svc.publishWorkflow(OWNER_ORG, USER_ID, WORKFLOW_ID, { definitionJson: {} });
@@ -214,6 +235,42 @@ describe("WorkflowsCrudService — cross-tenant isolation", () => {
       const whereArg = updateWhere.mock.calls[0]?.[0];
       expect(sqlValues(whereArg)).toContain(OWNER_ORG);
       expect(sqlValues(whereArg)).toContain(WORKFLOW_ID);
+      // The compare-and-set. Without it two publishes that both read version 1
+      // both write version 2 and one is lost with a 200.
+      expect(sqlValues(whereArg)).toContain(1);
+    });
+
+    it("compares against the caller's expectedVersion when one is supplied", async () => {
+      const { db, updateWhere } = makePublishDb({
+        workflow: { id: WORKFLOW_ID, version: 7 },
+        updateReturns: [{ ...WORKFLOW_ROW, status: "published" }],
+      });
+
+      const svc = new WorkflowsCrudService(db);
+      await svc.publishWorkflow(OWNER_ORG, USER_ID, WORKFLOW_ID, {
+        definitionJson: {},
+        expectedVersion: 5,
+      });
+
+      // A stale editor that loaded at version 5 must not publish over version 7,
+      // so the predicate carries 5 and matches nothing.
+      expect(sqlValues(updateWhere.mock.calls[0]?.[0])).toContain(5);
+    });
+
+    it("throws ConflictException when the compare-and-set matches no row, and writes no version", async () => {
+      const { db, inserts } = makePublishDb({
+        workflow: { id: WORKFLOW_ID, version: 3 },
+        updateReturns: [],
+      });
+
+      const svc = new WorkflowsCrudService(db);
+      await expect(
+        svc.publishWorkflow(OWNER_ORG, USER_ID, WORKFLOW_ID, { definitionJson: {} }),
+      ).rejects.toThrow(ConflictException);
+
+      // The version row must not exist for a publish that lost the race — that
+      // orphan is what made two live definitions possible in the first place.
+      expect(inserts).not.toHaveBeenCalled();
     });
   });
 });

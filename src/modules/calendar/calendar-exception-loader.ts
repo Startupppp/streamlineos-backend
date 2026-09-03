@@ -39,6 +39,32 @@ export function collectRescheduledOccurrences(
   return results;
 }
 
+/**
+ * The exceptions a window can possibly need.
+ *
+ * An occurrence is expanded from its NOMINAL instant, so an exception is only ever
+ * consulted when that instant falls inside the window; the second arm additionally keeps
+ * an exception that MOVED an occurrence into the window, which `collectRescheduledOccurrences`
+ * needs. Everything outside both arms is loaded for nothing.
+ *
+ * Exported so `CalendarConflictService` bounds its own load by exactly the same rule
+ * rather than restating it — it was loading every exception the tenant had ever written,
+ * with no window predicate and no limit, inside the create-event write transaction.
+ */
+export function exceptionsInWindow(windowStart: Date, windowEnd: Date) {
+  return or(
+    and(
+      gte(calendarEventExceptions.occurrenceStart, windowStart),
+      lt(calendarEventExceptions.occurrenceStart, windowEnd),
+    ),
+    and(
+      isNotNull(calendarEventExceptions.modifiedStart),
+      gte(calendarEventExceptions.modifiedStart, windowStart),
+      lt(calendarEventExceptions.modifiedStart, windowEnd),
+    ),
+  );
+}
+
 export async function loadExceptionsByEvent(
   db: Db,
   orgId: string,
@@ -66,17 +92,7 @@ export async function loadExceptionsByEvent(
         and(
           eq(calendarEventExceptions.orgId, orgId),
           inArray(calendarEventExceptions.eventId, recurringEventIds),
-          or(
-            and(
-              gte(calendarEventExceptions.occurrenceStart, windowStart),
-              lt(calendarEventExceptions.occurrenceStart, windowEnd),
-            ),
-            and(
-              isNotNull(calendarEventExceptions.modifiedStart),
-              gte(calendarEventExceptions.modifiedStart, windowStart),
-              lt(calendarEventExceptions.modifiedStart, windowEnd),
-            ),
-          ),
+          exceptionsInWindow(windowStart, windowEnd),
           gt(calendarEventExceptions.id, afterId),
         ),
       )

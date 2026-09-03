@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, gt, ilike, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, sql } from "drizzle-orm";
 import {
   chatChannelMembers,
   chatMessages,
@@ -11,8 +11,16 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import type { StatusInput } from "./dto/chat.schemas";
+import { chatMessageContentMatch } from "./chat-message-content-match";
 
 const PRESENCE_WINDOW_MS = 90 * 1000;
+
+/**
+ * The ceiling on `GET /chat/unread`. 100, not 99: the one consumer renders "99+" above 99,
+ * so a saturated answer must be strictly greater than 99 to be indistinguishable from the
+ * true total there.
+ */
+const UNREAD_TOTAL_CAP = 100;
 
 @Injectable()
 export class ChatPresenceService {
@@ -76,23 +84,55 @@ export class ChatPresenceService {
     return { ok: true };
   }
 
+  /**
+   * The badge total, bounded.
+   *
+   * Two things were wrong with the uncapped join this replaces. It carried NO `org_id`
+   * predicate on either side — not a cross-tenant leak (`organization_members.id` and
+   * `chat_channels.id` are globally unique identity columns and RLS supplies the tenant
+   * qual for the `bypassrls = false` app role) but it cost the planner the LEADING column
+   * of `idx_chat_messages_unread`, so the index could only be entered on `channel_id`. And
+   * it counted every unread message in every channel with no ceiling, which is unbounded
+   * in the user's absence: one week away makes the badge slower without limit.
+   *
+   * Measured on 400,000 messages / 80 channels (scratch_bechat_perf, `EXPLAIN (ANALYZE,
+   * BUFFERS)`):
+   *   shipped            502.5 ms, 3,116 shared buffers, 398,000 rows counted, 8 MB memoize
+   *   + org predicates   ~1,756 shared buffers
+   *   + total cap (this)   1.4 ms,   235 shared buffers, Index Only Scan, Heap Fetches 0
+   *
+   * The cap is on the WHOLE count, not per channel, so the number is EXACT below it and
+   * saturates at the cap above it — a per-channel cap would under-report a real total. The
+   * only consumer is the sidebar (`components/layout/app-sidebar.tsx:188-197`), which
+   * renders `total > 99 ? "99+" : total`, so every value this can now return renders
+   * identically to the uncapped one.
+   */
   async getUnreadTotal(userId: string, orgId: string): Promise<number> {
     try {
       const membershipId = await this.resolveMembershipId(orgId, userId);
       if (!membershipId) return 0;
-      const memberWhere = eq(chatChannelMembers.membershipId, membershipId);
-      const [row] = await this.db
-        .select({ total: count() })
+      const capped = this.db
+        .select({ one: sql<number>`1` })
         .from(chatChannelMembers)
         .innerJoin(
           chatMessages,
           and(
+            eq(chatMessages.orgId, chatChannelMembers.orgId),
             eq(chatMessages.channelId, chatChannelMembers.channelId),
             gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
             eq(chatMessages.isDeleted, false),
           ),
         )
-        .where(memberWhere);
+        .where(
+          and(
+            eq(chatChannelMembers.orgId, orgId),
+            eq(chatChannelMembers.membershipId, membershipId),
+          ),
+        )
+        .limit(UNREAD_TOTAL_CAP)
+        .as("capped_unread");
+
+      const [row] = await this.db.select({ total: count() }).from(capped);
 
       return row?.total ?? 0;
     } catch (error) {
@@ -110,10 +150,15 @@ export class ChatPresenceService {
                     WHERE m.channel_id = ${chatMessages.channelId}
                       AND m.org_id = ${orgId}
                       AND m.membership_id = ${membershipId})`;
-    const safeQuery = query.replace(/[%_\\]/g, "\\$&");
+    // The SAME content predicate `/chat/search/messages` uses, not a second one.
+    // This route shipped a bare `content ILIKE '%q%'` with no trigram helper and no id
+    // cap, so a member could loop it and drive a full scan of the tenant's message table;
+    // `chatMessageContentMatch` routes any term of 3+ characters through
+    // `app.search_chat_message_ids` and caps the id set at 1,000. The route, its query
+    // schema and its response shape are unchanged — only the predicate's cost ceiling is.
     const conditions = [
       eq(chatMessages.orgId, orgId),
-      ilike(chatMessages.content, `%${safeQuery}%`),
+      await chatMessageContentMatch(this.db, query.trim()),
       eq(chatMessages.isDeleted, false),
       memberExistsCondition,
     ];

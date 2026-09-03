@@ -260,13 +260,23 @@ export function declaredFksOf(
     for (const foreignKey of config.foreignKeys) {
       const reference = foreignKey.reference();
       const target = getTableConfig(reference.foreignTable);
-      const raw: unknown = (foreignKey as unknown as { onDelete?: unknown }).onDelete;
+      /**
+       * Drizzle DECLARES the action: `ForeignKey.onDelete` is
+       * `UpdateDeleteAction | undefined` and the constructor assigns it from the
+       * builder. The `as unknown as { onDelete?: unknown }` this replaces re-derived
+       * a shape the library already publishes, and paid for it twice: the cast made
+       * the property invisible to the compiler, so a Drizzle rename would have
+       * arrived as every foreign key reading "no action" — a silent all-clear from
+       * the gate whose whole job is to notice a changed action — where a plain
+       * property read fails the build. Control A is unchanged: `undefined` is the
+       * bare `.references()` and normalises to "no action".
+       */
       out.push({
         table: config.name,
         name: foreignKey.getName(),
         columns: reference.columns.map((column) => column.name),
         foreignTable: target.name,
-        onDelete: normalizeDeclared(typeof raw === "string" ? raw : undefined),
+        onDelete: normalizeDeclared(foreignKey.onDelete),
         stated: statedOf(foreignKey.getName(), sets),
       });
     }

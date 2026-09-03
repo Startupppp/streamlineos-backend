@@ -6,7 +6,6 @@ import {
   ForbiddenException,
   Get,
   HttpCode,
-  Inject,
   Param,
   Patch,
   Post,
@@ -42,10 +41,6 @@ import { BonusesService } from "../../../payroll/hr-payroll/bonuses.service";
 import { createBonusSchema } from "../../../payroll/hr-payroll/dto/payroll.schemas";
 import { MailService } from "../../../mail/mail.service";
 import { MailAccountsService } from "../../../mail/mail-accounts.service";
-import { tickets } from "../../../../db/schema";
-import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { type Db } from "../../../../db/drizzle.module";
-import { and, eq } from "drizzle-orm";
 import type { CreateRecognitionInput } from "../../../hr/performance/dto/engagement.schemas";
 import {
   chatHistoryQuerySchema,
@@ -127,6 +122,19 @@ const CONFIRM_ACTION_PERMISSION: Record<ConfirmableAction, string> = {
   "mail.send": "mail:messages:send",
 };
 
+/**
+ * The stored proposal payload, re-read at confirm time. `propose` validated it
+ * when the tool ran, but the token is redeemed on a separate request, so the
+ * branch parses rather than coerces with `Number(...)`/`String(...)` — a
+ * `ticketId` of `NaN` used to reach the database as a comparison against NULL.
+ * Not `.strict()`: the payload also carries the ticket title and an optional
+ * reason for the confirmation card.
+ */
+const ticketStatusUpdatePayload = z.object({
+  ticketId: z.coerce.number().int().positive(),
+  status: z.string().trim().min(1),
+});
+
 function isConfirmableAction(s: string): s is ConfirmableAction {
   return (CONFIRMABLE_ACTIONS as readonly string[]).includes(s);
 }
@@ -144,7 +152,6 @@ export class ChatAssistantController {
     private readonly confirmation: AiConfirmationService,
     private readonly toolAccess: ToolAccessService,
     private readonly moduleRef: ModuleRef,
-    @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
   @Get("history")
@@ -311,13 +318,31 @@ export class ChatAssistantController {
         break;
       }
 
+      /**
+       * Goes through the same service the other eight branches use.
+       *
+       * The branch used to be a raw `db.update(tickets).set({ status })`, which
+       * is not a shortcut to `updateTicket` — it is a different operation.
+       * It matched on `(id, org_id)` with no `deleted_at` predicate, so a
+       * soft-deleted ticket was updated; it skipped `checkProjectAccess`, so a
+       * caller holding `build:tickets:update` but no access to the ticket's
+       * project succeeded; it skipped `validateTicketStatus`,
+       * `enforceWipLimitForStatus` and `assertTransitionAllowed`, so an unknown
+       * status reached the composite FK `fk_tickets_status` as an opaque 500
+       * instead of `ProjectsInvalidTicketStatusException`; it left `updated_at`
+       * and `version` untouched, so the next optimistic check compared a stale
+       * timestamp; and it emitted no `build.ticket.status_changed` outbox row,
+       * no activity-log entry, no review notification, no automation run and no
+       * `projects:analytics:<org>:<project>` cache eviction — so the analytics
+       * panel served the pre-change status until the key expired.
+       */
       case "ticket.updateStatus": {
-        const ticketId = Number(payload["ticketId"]);
-        const status = String(payload["status"]);
-        await this.db
-          .update(tickets)
-          .set({ status })
-          .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId)));
+        const parsedStatusUpdate = ticketStatusUpdatePayload.safeParse(payload);
+        if (!parsedStatusUpdate.success)
+          throw new BadRequestException("Invalid ticket status update payload");
+        const { ticketId, status } = parsedStatusUpdate.data;
+        const svc = this.moduleRef.get(ProjectsTicketsService, { strict: false });
+        await svc.updateTicket(u, ticketId, { status });
         result = { ticketId, status };
         summary = `Ticket #${ticketId} status updated to ${status}`;
         break;

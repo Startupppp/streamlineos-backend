@@ -1,11 +1,28 @@
 import { eq } from "drizzle-orm";
 import { indianStates, organizations } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
+import { decimalFromNumber, roundDecimal } from "../../accounting/core/money.util";
 
 export const GST_RATES = [0, 5, 12, 18, 28] as const;
 export type GstRate = (typeof GST_RATES)[number];
 
-export const round2 = (n: number): number => Math.round(n * 100) / 100;
+/**
+ * Half-up at two decimals — rupees in, rupees out.
+ *
+ * This used to be `Math.round(n * 100) / 100`, which is not half-up: `n * 100`
+ * is a double and for ordinary invoice inputs it lands a hair BELOW the .5
+ * boundary, so `Math.round` goes down. Rs 10.75 at 18% stored 1.93 where the
+ * rule says 1.94; Rs 0.70 at 5% stored 0.03 where the rule says 0.04. The error
+ * only ever went one way, so it was a systematic understatement of output GST
+ * that trg_invoice_immutability froze into the invoice at issue.
+ *
+ * `decimalFromNumber` pins the double to the ledger's scale of 4 — the same
+ * scale the `invoices` and `invoice_items` numeric(18,4) columns store, so no
+ * precision the system can hold is lost on the way in — and `roundDecimal`
+ * then rounds half-up on exact BigInt arithmetic.
+ */
+export const round2 = (n: number): number =>
+  Number(roundDecimal(decimalFromNumber(n), 2));
 
 export function normalizeGstRate(value: string): GstRate {
   const parsed = Number(value);

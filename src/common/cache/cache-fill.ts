@@ -111,6 +111,29 @@ export class CacheFiller {
     this.degradedFills.delete(key);
   }
 
+  /**
+   * The one place a coalesced promise's element type is asserted, and the only
+   * assertion in this file.
+   *
+   * `inFlight` is heterogeneous by construction: it coalesces every cache key in
+   * the process and each key's element type is fixed by whichever caller filled
+   * it first. TypeScript cannot carry that key-to-type relation — it is
+   * dependent typing — and there is nothing to validate against at runtime
+   * either, because the value is whatever the domain fetcher returned. So the
+   * assertion is irreducible. What is not irreducible is having several of them:
+   * both coalescing returns below used to force the type independently, which
+   * is three places to keep a shared invariant instead of one.
+   *
+   * The invariant, stated once here: `run<T>` is the only writer and the only
+   * reader of `inFlight`, and it stores exactly the promise returned by the
+   * `fetcher: () => Promise<T>` it was handed. A key therefore carries one
+   * element type for the life of its entry, and a caller that finds an entry
+   * under its own key is looking at its own T.
+   */
+  private coalesced<T>(inFlight: Promise<unknown>): Promise<T> {
+    return inFlight as Promise<T>;
+  }
+
   async run<T>(
     redis: Redis | null,
     key: string,
@@ -120,10 +143,10 @@ export class CacheFiller {
     const existing = this.inFlight.get(key);
     if (existing) {
       const memoisedUntil = this.memoUntil.get(key);
-      if (memoisedUntil === undefined) return existing as Promise<T>;
+      if (memoisedUntil === undefined) return this.coalesced<T>(existing);
       if (memoisedUntil > Date.now()) {
         this.outageMemoServed += 1;
-        return existing as Promise<T>;
+        return this.coalesced<T>(existing);
       }
       this.drop(key);
     }

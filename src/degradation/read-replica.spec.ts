@@ -1,5 +1,6 @@
-import postgres from "postgres";
+import type postgres from "postgres";
 import { poolEnvShape, resolvePoolConfig } from "../db/pool.config";
+import { connectForProbe, requiredDatabase } from "./degraded-db";
 import { shedRank, isReserved } from "../common/admission/work-class";
 import {
   ReplicaRouter,
@@ -170,8 +171,13 @@ describe("Read replica degraded — correctness-sensitive reads go to primary", 
   });
 });
 
-const ownerDatabaseUrl = process.env.DATABASE_URL;
-const describeAgainstOwner = ownerDatabaseUrl ? describe : describe.skip;
+const owner = requiredDatabase(
+  "DATABASE_URL",
+  "The staleness below is measured by holding a REPEATABLE READ snapshot open against a real " +
+    "database while a second connection commits into it, and the probe table has to be created " +
+    "and dropped, so the proof needs an owner connection string named by the caller.",
+);
+const describeAgainstOwner = owner.url ? describe : describe.skip;
 
 /**
  * A REPEATABLE READ transaction takes its snapshot at first read and cannot see
@@ -180,24 +186,18 @@ const describeAgainstOwner = ownerDatabaseUrl ? describe : describe.skip;
  * replica: what it does NOT reproduce is replication delay itself, which is why
  * the skip above is still open.
  */
-describeAgainstOwner("replica staleness — a lagging snapshot is real, and routing respects it", () => {
+const STALENESS_SUITE = owner.title(
+  "replica staleness — a lagging snapshot is real, and routing respects it",
+);
+
+describeAgainstOwner(STALENESS_SUITE, () => {
   const PROBE = "s7_replica_lag_probe";
   let primary: ReturnType<typeof postgres>;
   let lagging: ReturnType<typeof postgres>;
 
   beforeAll(async () => {
-    primary = postgres(ownerDatabaseUrl ?? "", {
-      prepare: false,
-      max: 1,
-      ssl: "require",
-      onnotice: () => {},
-    });
-    lagging = postgres(ownerDatabaseUrl ?? "", {
-      prepare: false,
-      max: 1,
-      ssl: "require",
-      onnotice: () => {},
-    });
+    primary = connectForProbe(owner.url ?? "");
+    lagging = connectForProbe(owner.url ?? "");
     await primary.unsafe(`CREATE TABLE IF NOT EXISTS ${PROBE} (id bigint primary key)`);
     await primary.unsafe(`TRUNCATE ${PROBE}`);
   }, 60_000);

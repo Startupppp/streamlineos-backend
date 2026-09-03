@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import { surveyForms, surveySections, surveyQuestions, surveyQuestionChoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -7,6 +7,7 @@ import { SurveyVersionService } from "./survey-version.service";
 import { SurveyTemplateService } from "./survey-template.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { CreateSurveyInput, ListSurveysInput, PatchSurveyInput } from "./dto/survey-forms.schemas";
+import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 
 @Injectable()
 export class SurveyFormsService {
@@ -25,13 +26,20 @@ export class SurveyFormsService {
       conditions.push(or(ilike(surveyForms.title, `%${filters.search}%`), ilike(surveyForms.description, `%${filters.search}%`))!);
     }
 
-    const rows = await this.db.query.surveyForms.findMany({
-      where: and(...conditions),
-      orderBy: [desc(surveyForms.createdAt)],
-      limit: filters.pageSize,
-      offset: (filters.page - 1) * filters.pageSize,
-    });
-    return rows;
+    const where = and(...conditions);
+    const { limit, offset } = paginateOffset(filters);
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.surveyForms.findMany({
+        where,
+        orderBy: [desc(surveyForms.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(surveyForms).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), filters);
   }
 
   async get(orgId: string, surveyId: number) {

@@ -21,6 +21,11 @@ import {
   type PersonIdentity,
 } from "../directory/person-seam";
 import { liftSenderId } from "./chat-message-sender-shape";
+import {
+  MESSAGE_REACTIONS_WITH,
+  foldReactions,
+  type ReactionRow,
+} from "./chat-message-reaction-shape";
 
 type ChatSender = {
   id: string | null;
@@ -85,6 +90,7 @@ export class ChatMessageTimelineService {
   private enrich<
     M extends {
       senderMembership: { userId: string } | null;
+      reactions: ReactionRow[];
       replyTo:
         | ({ senderMembership: { userId: string } | null } & Record<
             string,
@@ -95,6 +101,10 @@ export class ChatMessageTimelineService {
   >(msg: M, identities: Map<string, PersonIdentity>) {
     return {
       ...liftSenderId(msg),
+      // Folded here rather than left as join rows: the wire shape is the same
+      // `emoji -> userId[]` map the reaction mutation and the realtime event carry, so a
+      // refetch and a live event agree about what the bubble should render.
+      reactions: foldReactions(msg.reactions),
       sender: senderFromIdentity(
         msg.senderMembership
           ? identities.get(
@@ -155,6 +165,7 @@ export class ChatMessageTimelineService {
       with: {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
+        reactions: MESSAGE_REACTIONS_WITH,
         replyTo: {
           with: { senderMembership: { columns: { userId: true } } },
         },
@@ -204,6 +215,27 @@ export class ChatMessageTimelineService {
     }
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
+    // `is_deleted = false` STAYS, against the audit's recommendation to drop it so a
+    // deletion arrives as a tombstone the way `list()` returns one. Two reasons, and the
+    // first is decisive:
+    //
+    // 1. It would not achieve what it was proposed for. `poll()` is a FORWARD-ONLY cursor
+    //    on `channel_position` (`> cursor`, or `created_at > since`). A message the client
+    //    has already received and rendered sits BEHIND its cursor, so deleting it can
+    //    never re-deliver it through this route whatever this predicate says. The stated
+    //    failure — "the polling client renders the pre-delete content forever" — is
+    //    unchanged by dropping the filter. Propagating a deletion the client already holds
+    //    needs the realtime `message:deleted` event or a deletions-since feed, which is a
+    //    different route, not a different predicate here.
+    //
+    // 2. It is a deliberate, documented contract: `chat-poll-pagination.spec.ts` asserts
+    //    "excludes deleted messages from every page" and its tenant-scope test fails the
+    //    query outright if `is_deleted` is absent.
+    //
+    // The residual is real and worth naming: a message deleted AHEAD of the client's
+    // cursor is skipped by `poll()` and returned as a tombstone by `list()`, so the two
+    // reads of one channel disagree by that row. That is a benign extra row appearing on
+    // a manual refetch, not stale content, and closing it properly means a deletion feed.
     const conditions = [
       eq(chatMessages.orgId, actor.orgId),
       eq(chatMessages.channelId, channelId),
@@ -223,6 +255,7 @@ export class ChatMessageTimelineService {
       with: {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
+        reactions: MESSAGE_REACTIONS_WITH,
         replyTo: {
           with: { senderMembership: { columns: { userId: true } } },
         },
@@ -260,6 +293,7 @@ export class ChatMessageTimelineService {
       with: {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
+        reactions: MESSAGE_REACTIONS_WITH,
         replyTo: {
           with: { senderMembership: { columns: { userId: true } } },
         },
@@ -301,6 +335,7 @@ export class ChatMessageTimelineService {
       with: {
         attachments: { columns: { id: true, fileName: true, fileUrl: true, fileKey: true, fileSize: true, mimeType: true } },
         senderMembership: { columns: { userId: true } },
+        reactions: MESSAGE_REACTIONS_WITH,
         replyTo: {
           with: { senderMembership: { columns: { userId: true } } },
         },

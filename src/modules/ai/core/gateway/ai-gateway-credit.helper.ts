@@ -6,6 +6,7 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import { logger } from "../../../../common/logger/logger.service";
 import { type AiCreditLedger } from "./credit-ledger.interface";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
+import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
 
 export const AI_CANCELLED_MESSAGE = "AI request was cancelled before it completed";
 import type { AiCallOutcome, AiCallTimings } from "../telemetry/ai-call-metrics";
@@ -115,11 +116,13 @@ export class AiGatewayCreditHelper {
     correlationId: string,
   ): Promise<ReserveResult> {
     try {
+      const idempotencyKey = aiReservationIdempotencyKey(feature, actor);
       const { reservationId } = await this.ledger.reserve({
         orgId: actor.orgId,
         userId: actor.userId,
         feature,
         credits: milliAmount,
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
       return { reserved: true, reservationId };
     } catch (error) {

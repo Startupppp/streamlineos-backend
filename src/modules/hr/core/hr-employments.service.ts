@@ -217,11 +217,33 @@ export class HrEmploymentsService {
       .limit(1);
     if (existing) throw new ConflictException("Employee number already in use in this organization");
 
+    // `is_primary` defaults to true and nothing here used to override it, so a
+    // person who already had a primary employment ended up with two. The
+    // standard directory join (organization_members -> users -> live hr_people
+    // -> primary hr_employments) has no DISTINCT, so a second live primary
+    // returns that employee twice from GET /hr/employees, shortens the keyset
+    // page by one real employee, and adds one to every count()-based headcount.
+    // hr_employments is plural per person by design, so the second employment
+    // is created as non-primary rather than refused — first primary wins.
+    const [existingPrimary] = await this.db
+      .select({ id: hrEmployments.id })
+      .from(hrEmployments)
+      .where(
+        and(
+          eq(hrEmployments.orgId, orgId),
+          eq(hrEmployments.personId, input.personId),
+          eq(hrEmployments.isPrimary, true),
+          isNull(hrEmployments.deletedAt),
+        ),
+      )
+      .limit(1);
+
     const [created] = await this.db
       .insert(hrEmployments)
       .values({
         orgId,
         personId: input.personId,
+        isPrimary: !existingPrimary,
         employeeNumber: input.employeeNumber,
         lifecycleStatus: input.lifecycleStatus,
         workerType: input.workerType,

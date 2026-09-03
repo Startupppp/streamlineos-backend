@@ -27,9 +27,7 @@ import { calendarEvents, eventAttendees, organizationMembers } from "../../db/sc
 import { DashboardPersonalService } from "./dashboard-personal.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { Db } from "../../db/drizzle.module";
-import type { DashboardLeaveService } from "./dashboard-leave.service";
 import type { DashboardProjectService } from "./dashboard-project.service";
-import type { NotificationsService } from "../notifications/notifications.service";
 
 const dialect = new PgDialect();
 const ORG = "org-p0a-vis-1";
@@ -49,9 +47,7 @@ function makeAccess() {
 
 function makeCollaborators() {
   return {
-    leaveService: { getMyLeaveBalance: jest.fn().mockResolvedValue([]) } as unknown as DashboardLeaveService,
     projectService: { getMyIssues: jest.fn().mockResolvedValue([]) } as unknown as DashboardProjectService,
-    notifService: { unreadCount: jest.fn().mockResolvedValue({ count: 0 }) } as unknown as NotificationsService,
   };
 }
 
@@ -126,16 +122,10 @@ async function run(
   calls: MockCalls,
   selfMember?: { id: number; status: string } | null,
 ) {
-  const { leaveService, projectService, notifService } = makeCollaborators();
-  const svc = new DashboardPersonalService(
-    makeDb(captured, calls, selfMember),
-    makeAccess(),
-    leaveService,
-    projectService,
-    notifService,
-  );
+  const { projectService } = makeCollaborators();
+  const svc = new DashboardPersonalService(makeDb(captured, calls, selfMember), makeAccess(), projectService);
   await svc.getPersonalDashboard(makeUser(ORG));
-  return notifService;
+  return projectService;
 }
 
 describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", () => {
@@ -284,11 +274,11 @@ describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", (
  */
 describe("DashboardPersonalService — P0-A: BITING outer-condition serializable tests", () => {
   let captured: unknown[];
-  let notifSvcBiting: ReturnType<typeof makeCollaborators>["notifService"];
+  let projectSvcBiting: ReturnType<typeof makeCollaborators>["projectService"];
 
   beforeEach(async () => {
     captured = [];
-    notifSvcBiting = await run(captured, { lateralJoins: 0, innerJoins: 0 });
+    projectSvcBiting = await run(captured, { lateralJoins: 0, innerJoins: 0 });
   });
 
   it("BITING: outer WHERE is captured and serializable via dialect.sqlToQuery", () => {
@@ -311,7 +301,15 @@ describe("DashboardPersonalService — P0-A: BITING outer-condition serializable
     expect(params).toContain(USER);
   });
 
-  it("BITING: delegated unreadNotifications — unreadCount called with caller orgId and userId", () => {
-    expect(notifSvcBiting.unreadCount).toHaveBeenCalledWith(ORG, USER);
+  /**
+   * Was `unreadCount(ORG, USER)` until that branch was deleted as dead — the
+   * count reached no client and cost 14,053 planning buffers per uncached load.
+   * It was also the only delegated read on this path that was not module-gated.
+   * `makeAccess()` here reports every module unavailable, on purpose, so the
+   * surviving delegated read must not be issued at all; that is the property
+   * this seam can still assert.
+   */
+  it("BITING: no delegated read is issued while every module is unavailable", () => {
+    expect(projectSvcBiting.getMyIssues).not.toHaveBeenCalled();
   });
 });

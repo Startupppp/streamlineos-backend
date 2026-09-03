@@ -94,6 +94,29 @@ export function queueCheck(
 }
 
 /**
+ * Separators between a provider and the operation it names. Descriptor keys are
+ * hierarchical — `razorpay-orders`, `webhook:412` — while
+ * `READINESS_REQUIRED_PROVIDERS` is set by an operator who writes the product
+ * name. Requiring `razorpay` therefore never matched the only key the adapter
+ * registers, so even a correctly-fed breaker would have reported `up` through a
+ * total outage.
+ */
+const PROVIDER_KEY_SEPARATORS = ["-", ":", "."];
+
+/**
+ * Does `key` name an operation of `required`?
+ *
+ * Exact match, or `required` followed by a separator — so `razorpay` covers
+ * `razorpay-orders` and `webhook` covers `webhook:412`, while `razorpayment`
+ * (a different provider that merely shares a prefix) is not covered.
+ */
+function coversProvider(required: string, key: string): boolean {
+  if (key === required) return true;
+  if (!key.startsWith(required)) return false;
+  return PROVIDER_KEY_SEPARATORS.includes(key.charAt(required.length));
+}
+
+/**
  * Providers are read from the in-process circuit breaker rather than called.
  *
  * Calling a provider from a readiness probe is exactly the amplification this
@@ -112,8 +135,8 @@ export function providerCheck(
       if (required.length === 0)
         return Promise.resolve({ state: "skipped", detail: "no required providers declared" });
 
-      const open = new Set(openProviders(now()));
-      const failing = required.filter((provider) => open.has(provider));
+      const open = openProviders(now());
+      const failing = required.filter((provider) => open.some((key) => coversProvider(provider, key)));
       if (failing.length === 0) return Promise.resolve({ state: "up" });
       return Promise.resolve({
         state: "down",

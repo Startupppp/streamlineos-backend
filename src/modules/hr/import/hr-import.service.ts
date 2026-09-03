@@ -194,11 +194,25 @@ export class HrImportService {
         if (rows.length === 0) break;
         for (const row of rows) {
           try {
-            const ref = await this.commitService.commitRow(tx, orgId, job.entity as HrImportEntity, row.payload);
-            if (ref) {
-              await this.commitService.markRowCommitted(tx, row.id, ref);
-              committed++;
-            }
+            // Each row commits inside its own savepoint (Drizzle emits
+            // SAVEPOINT / ROLLBACK TO SAVEPOINT for a nested transaction).
+            // Without it, a row that fails at the SQL level leaves the whole
+            // job transaction aborted (SQLSTATE 25P02) and the catch below —
+            // which runs on that same transaction — throws instead of
+            // recording the error, taking the entire import down with it.
+            // The savepoint also keeps a row atomic: if markRowCommitted
+            // fails, the work commitRow just did is rolled back with it.
+            const ref = await tx.transaction(async (rowTx) => {
+              const rowRef = await this.commitService.commitRow(
+                rowTx,
+                orgId,
+                job.entity as HrImportEntity,
+                row.payload,
+              );
+              if (rowRef) await this.commitService.markRowCommitted(rowTx, row.id, rowRef);
+              return rowRef;
+            });
+            if (ref) committed++;
           } catch (err) {
             const message = err instanceof Error ? err.message : "Commit failed";
             await tx

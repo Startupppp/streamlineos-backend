@@ -200,6 +200,9 @@
     "check:drop-column-safety:self-test": "node src/scripts/check-drop-column-safety.mjs --self-test",
     "check:migration-discipline": "node src/scripts/check-migration-discipline.mjs",
     "check:migration-discipline:self-test": "node src/scripts/check-migration-discipline.mjs --self-test",
+    "check:migration-immutability": "node src/scripts/check-migration-immutability.mjs",
+    "check:migration-immutability:self-test": "node src/scripts/check-migration-immutability.mjs --self-test",
+    "check:migration-immutability:emit": "node src/scripts/check-migration-immutability.mjs --emit",
     "check:outbox-consumers": "node src/scripts/check-outbox-consumers.mjs",
     "check:outbox-consumers:self-test": "node src/scripts/check-outbox-consumers.mjs --self-test",
     "check:mock-surface": "node src/scripts/check-mock-surface.mjs",
@@ -374,7 +377,8 @@
     "check:baseline-integrity:self-test": "node src/scripts/check-baseline-integrity.mjs --self-test",
     "check:baseline-integrity:emit": "node src/scripts/check-baseline-integrity.mjs --emit",
     "check:gate-wiring": "node src/scripts/check-gate-wiring.mjs",
-    "check:gate-wiring:self-test": "node src/scripts/check-gate-wiring.mjs --self-test"
+    "check:gate-wiring:self-test": "node src/scripts/check-gate-wiring.mjs --self-test",
+    "test:db-specs": "node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --runInBand --forceExit --testPathPattern='\\\\.db\\\\.spec\\\\.ts$'"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

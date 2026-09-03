@@ -133,6 +133,95 @@ describe("forEachOrg", () => {
   });
 });
 
+/**
+ * Ascending-id enumeration with a per-tick budget is a starvation machine: the
+ * lowest org id gets first refusal on every tick forever. Rotation is what makes
+ * "every tenant is reached within N ticks" true instead of "eventually, maybe".
+ */
+describe("forEachOrg — rotation makes the sweep resumable", () => {
+  it("starts at the organization after the cursor and wraps around to the ones before it", async () => {
+    const { db } = makeMockDb(["org-a", "org-b", "org-c", "org-d"]);
+    const seen: string[] = [];
+
+    const result = await forEachOrg(
+      db,
+      "test-sweep",
+      async (_tx, orgId) => { seen.push(orgId); },
+      "write",
+      { startAfterOrgId: "org-b" },
+    );
+
+    expect(seen).toEqual(["org-c", "org-d", "org-a", "org-b"]);
+    expect(result).toEqual({ organizations: 4, succeeded: 4, failed: 0 });
+  });
+
+  it("wraps to the lowest id when the cursor is at or past the highest", async () => {
+    const { db } = makeMockDb(["org-a", "org-b", "org-c"]);
+    const seen: string[] = [];
+
+    await forEachOrg(
+      db,
+      "test-sweep",
+      async (_tx, orgId) => { seen.push(orgId); },
+      "write",
+      { startAfterOrgId: "org-z" },
+    );
+
+    expect(seen).toEqual(["org-a", "org-b", "org-c"]);
+  });
+
+  it("enumerates in plain ascending order when no cursor is given", async () => {
+    const { db } = makeMockDb(["org-a", "org-b", "org-c"]);
+    const seen: string[] = [];
+
+    await forEachOrg(
+      db,
+      "test-sweep",
+      async (_tx, orgId) => { seen.push(orgId); },
+      "write",
+      { startAfterOrgId: null },
+    );
+
+    expect(seen).toEqual(["org-a", "org-b", "org-c"]);
+  });
+});
+
+describe("forEachOrg — stopWhen bounds the fanout", () => {
+  it("stops before opening the next organization's transaction, not merely before its work", async () => {
+    const { db, execute } = makeMockDb(["org-a", "org-b", "org-c", "org-d"]);
+    const seen: string[] = [];
+
+    const result = await forEachOrg(
+      db,
+      "test-sweep",
+      async (_tx, orgId) => { seen.push(orgId); },
+      "write",
+      { stopWhen: () => seen.length >= 2 },
+    );
+
+    expect(seen).toEqual(["org-a", "org-b"]);
+    // The GUC statement is the first thing inside withTenant's transaction, so
+    // its call count is the number of transactions actually opened.
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ organizations: 2, succeeded: 2, failed: 0 });
+  });
+
+  it("visits every organization when stopWhen never fires", async () => {
+    const { db, execute } = makeMockDb(["org-a", "org-b", "org-c"]);
+
+    const result = await forEachOrg(
+      db,
+      "test-sweep",
+      jest.fn(),
+      "write",
+      { stopWhen: () => false },
+    );
+
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({ organizations: 3, succeeded: 3, failed: 0 });
+  });
+});
+
 describe("forEachOrg — cell-aware enumeration", () => {
   const savedCellId = process.env.CELL_ID;
 

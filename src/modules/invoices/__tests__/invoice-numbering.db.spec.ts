@@ -29,7 +29,15 @@ function connect() {
   if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), { prepare: false, max: 10, ssl: "require", connect_timeout: 30 });
+  // TLS is hardcoded nowhere else in this repo's DB tooling; honouring PGSSLMODE
+  // is what lets this spec run against a local verification database as well as
+  // against Neon. Without it the handshake fails before the first statement.
+  return postgres(url.toString(), {
+    prepare: false,
+    max: 10,
+    ssl: process.env.PGSSLMODE === "disable" ? false : "require",
+    connect_timeout: 30,
+  });
 }
 
 describeDb("invoice numbering — real database", () => {

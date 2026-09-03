@@ -18,15 +18,24 @@ describe("PushService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
 
   const insertedValues: unknown[] = [];
+  const conflictSets: unknown[] = [];
 
   function makeDb() {
     insertedValues.length = 0;
+    conflictSets.length = 0;
     return {
+      // `subscribe` releases the endpoint from any other tenant before inserting
+      // (app.claim_push_endpoint, migration 1061). A fake without `execute` fails
+      // the call rather than the assertion, so it is modelled here.
+      execute: jest.fn().mockResolvedValue([]),
       insert: jest.fn().mockImplementation(() => ({
         values: jest.fn().mockImplementation((vals: unknown) => {
           insertedValues.push(vals);
           return {
-            onConflictDoUpdate: jest.fn().mockResolvedValue([]),
+            onConflictDoUpdate: jest.fn().mockImplementation((spec: { set: unknown }) => {
+              conflictSets.push(spec.set);
+              return Promise.resolve([]);
+            }),
           };
         }),
       })),
@@ -48,6 +57,13 @@ describe("PushService — cross-tenant isolation", () => {
     const row = insertedValues[0] as Record<string, unknown>;
     expect(row["orgId"]).toBe(ATTACKER);
     expect(row["orgId"]).not.toBe(OWNER);
+
+    // And the conflict branch must bind it too: a `set` that omits org_id leaves a
+    // colliding row owned by whichever tenant registered the endpoint first.
+    const set = conflictSets[0] as Record<string, unknown>;
+    expect(set["orgId"]).toBe(ATTACKER);
+    expect(set["userId"]).toBe("user-1");
+    expect(set["membershipId"]).toBeNull();
   });
 
   it("binds the owning org to the push subscription insert (same-tenant control)", async () => {

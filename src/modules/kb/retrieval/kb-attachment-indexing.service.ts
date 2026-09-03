@@ -1,9 +1,8 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { kbArticleChunks, kbArticleAttachments, kbPages } from "../../../db/schema";
+import { kbArticleChunks, kbArticles, kbArticleAttachments, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { StorageService } from "../../storage/storage.service";
@@ -11,8 +10,34 @@ import {
   extractAttachmentText,
   isExtractableMime,
 } from "./kb-attachment-extract.util";
-import { chunkText, streamToBuffer } from "./kb-chunk-utils";
+import { chunkText, sha256, streamToBuffer } from "./kb-chunk-utils";
+import {
+  attachmentChunks,
+  loadDerivedChunkState,
+  pageDocumentChunks,
+  replaceAttachmentChunks,
+  replacePageDocumentChunks,
+  replaceSourceChunks,
+  sourceChunks,
+  updateDerivedChunkAcl,
+} from "./kb-derived-chunk-state";
 
+/**
+ * The three derived chunk families: attachment text, wiki-source text, page-document text.
+ *
+ * Each one had neither of the two things `KbIndexingService` gives a body. (1) No
+ * skip-if-unchanged: every call re-embedded byte-identical input and re-charged for it at
+ * full price, so `POST /kb/articles/reindex-all` run twice while debugging a retrieval
+ * complaint billed the tenant twice for every attachment it owns. (2) No `acl_revision` on
+ * the insert, so the rows took the column default of 1 while `articleVectorCandidates` joins
+ * `kb_article_chunks.acl_revision = kb_articles.acl_revision` with `=`. An attachment indexed
+ * after its article's revision had moved past 1 — any space membership change calls
+ * `bumpSpaceAclRevision` — was written at 1, matched nothing, and stayed out of vector
+ * retrieval until an unrelated space-wide bump happened to resync it.
+ *
+ * Both are fixed the same way the body families do it: hash the extracted text, compare it to
+ * what is stored, and carry the parent's current revision on every row written.
+ */
 @Injectable()
 export class KbAttachmentIndexingService {
   private readonly logger = new Logger(KbAttachmentIndexingService.name);
@@ -51,35 +76,22 @@ export class KbAttachmentIndexingService {
       return 0;
     }
 
+    // The hash is over the SOURCE text, not the rejoined chunks (backend CLAUDE.md §7).
+    const contentHash = sha256(text);
+    const family = sourceChunks(orgId, sourceId);
+    const stored = await loadDerivedChunkState(this.db, family);
+    if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
+      this.logger.log("KB source text unchanged — reusing stored chunks", {
+        orgId,
+        sourceId,
+        chunks: stored.chunkCount,
+      });
+      return stored.chunkCount;
+    }
+
     const embeddings = await this.embedInBatches(orgId, chunks);
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.sourceId, sourceId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "source"),
-          ),
-        );
-
-      const valuesToInsert = chunks.map((chunk, index) => ({
-        orgId,
-        articleId: null,
-        pageId: null,
-        attachmentId: null,
-        sourceId,
-        source: "source" as const,
-        chunkIndex: index,
-        content: chunk,
-        tokens: Math.ceil(chunk.length / 4),
-        embedding: embeddings[index],
-        embeddingModel: EMBEDDING_MODEL,
-      }));
-
-      await tx.insert(kbArticleChunks).values(valuesToInsert);
-    });
+    await replaceSourceChunks(this.db, orgId, sourceId, chunks, embeddings, contentHash);
 
     return chunks.length;
   }
@@ -99,19 +111,27 @@ export class KbAttachmentIndexingService {
     orgId: string,
     attachmentId: number,
   ): Promise<{ chunks: number; warning: string | null }> {
-    const attachment = await this.db.query.kbArticleAttachments.findFirst({
-      where: and(
+    // One statement rather than two: the parent's `acl_revision` is what the candidate join
+    // equates against, so it has to be read here and written onto every chunk below. The join
+    // is LEFT because an attachment whose article row is gone still has chunks to clear.
+    const [attachment] = await this.db
+      .select({
+        articleId: kbArticleAttachments.articleId,
+        fileKey: kbArticleAttachments.fileKey,
+        mimeType: kbArticleAttachments.mimeType,
+        fileName: kbArticleAttachments.fileName,
+        articleAclRevision: kbArticles.aclRevision,
+      })
+      .from(kbArticleAttachments)
+      .leftJoin(kbArticles, and(
+        eq(kbArticles.id, kbArticleAttachments.articleId),
+        eq(kbArticles.orgId, kbArticleAttachments.orgId),
+      ))
+      .where(and(
         eq(kbArticleAttachments.id, attachmentId),
         eq(kbArticleAttachments.orgId, orgId),
-      ),
-      columns: {
-        id: true,
-        articleId: true,
-        fileKey: true,
-        mimeType: true,
-        fileName: true,
-      },
-    });
+      ))
+      .limit(1);
 
     if (!attachment || !this.aiGateway.isEmbeddingConfigured()) {
       await this.removeAttachmentChunks(orgId, attachmentId);
@@ -149,33 +169,25 @@ export class KbAttachmentIndexingService {
       return { chunks: 0, warning: `${attachment.fileName}: no extractable text` };
     }
 
+    // A chunk with no article is never reached by `articleVectorCandidates` (it filters
+    // `article_id IS NOT NULL`), so the column default is only ever the fallback for one.
+    const aclRevision = attachment.articleAclRevision ?? 1;
+    const contentHash = sha256(text);
+    const family = attachmentChunks(orgId, attachmentId);
+    const stored = await loadDerivedChunkState(this.db, family);
+    if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
+      if (stored.aclRevision !== aclRevision) {
+        this.logger.log("KB attachment ACL updated (text unchanged)", { orgId, attachmentId, aclRevision });
+        await updateDerivedChunkAcl(this.db, family, aclRevision);
+      }
+      return { chunks: stored.chunkCount, warning: null };
+    }
+
     const embeddings = await this.embedInBatches(orgId, chunks);
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.attachmentId, attachmentId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "attachment"),
-          ),
-        );
-
-      const valuesToInsert = chunks.map((chunk, index) => ({
-        orgId,
-        articleId: attachment.articleId,
-        pageId: null,
-        attachmentId,
-        source: "attachment" as const,
-        chunkIndex: index,
-        content: chunk,
-        tokens: Math.ceil(chunk.length / 4),
-        embedding: embeddings[index],
-        embeddingModel: EMBEDDING_MODEL,
-      }));
-
-      await tx.insert(kbArticleChunks).values(valuesToInsert);
+    await replaceAttachmentChunks(this.db, orgId, attachmentId, attachment.articleId, chunks, embeddings, {
+      contentHash,
+      aclRevision,
     });
 
     return { chunks: chunks.length, warning: null };
@@ -232,38 +244,26 @@ export class KbAttachmentIndexingService {
     if (chunks.length === 0)
       return { chunks: 0, warning: `${fileName}: no extractable text` };
 
+    const contentHash = sha256(text);
+    const family = pageDocumentChunks(orgId, pageId);
+    const stored = await loadDerivedChunkState(this.db, family);
+    if (stored.chunkCount > 0 && stored.contentHash === contentHash) {
+      if (stored.aclRevision !== page.aclRevision) {
+        this.logger.log("KB page document ACL updated (text unchanged)", { orgId, pageId });
+        await updateDerivedChunkAcl(this.db, family, page.aclRevision);
+      }
+      return { chunks: stored.chunkCount, warning: null };
+    }
+
     const embeddings = await this.embedInBatches(orgId, chunks);
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.pageId, pageId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "attachment"),
-          ),
-        );
-
-      await tx.insert(kbArticleChunks).values(
-        chunks.map((chunk, index) => ({
-          orgId,
-          articleId: null,
-          pageId,
-          attachmentId: null,
-          source: "attachment" as const,
-          chunkIndex: index,
-          content: chunk,
-          tokens: Math.ceil(chunk.length / 4),
-          embedding: embeddings[index],
-          embeddingModel: EMBEDDING_MODEL,
-          pageVisibility: page.visibility,
-          pageProjectId: page.projectId,
-          pageCreatedById: page.createdById,
-          pageCreatedByMembershipId: page.createdByMembershipId,
-          aclRevision: page.aclRevision,
-        })),
-      );
+    await replacePageDocumentChunks(this.db, orgId, pageId, chunks, embeddings, {
+      contentHash,
+      pageVisibility: page.visibility,
+      pageProjectId: page.projectId,
+      pageCreatedById: page.createdById,
+      pageCreatedByMembershipId: page.createdByMembershipId,
+      aclRevision: page.aclRevision,
     });
 
     return { chunks: chunks.length, warning: null };

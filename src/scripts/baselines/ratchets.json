@@ -157,6 +157,18 @@
         "value": 40,
         "direction": "floor"
       },
+      "MIN_COMMON_FILES": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/common, which joined this gate's corpus on 2026-09-03 (190 measured). Six files there carry loop-internal DB calls and had never been classified, because the gate read src/modules only."
+      },
+      "MIN_DB_FILES": {
+        "value": 300,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/db, which joined this gate's corpus on 2026-09-03 (362 measured)."
+      },
       "MIN_INSPECTED_LOOPS": {
         "value": 2600,
         "direction": "floor"
@@ -184,6 +196,14 @@
       "MIN_LIVE_COLUMNS": {
         "value": 5000,
         "direction": "floor"
+      }
+    },
+    "check-envelope-consistency.mjs": {
+      "MAX_HOPS": {
+        "value": 8,
+        "direction": "ratchet",
+        "owner": "api/platform owner",
+        "reason": "New constant, not a rename — registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe — it only turns resolved handlers back into honestly-unresolved ones."
       }
     },
     "check-drop-column-safety.mjs": {
@@ -336,6 +356,14 @@
         "direction": "floor"
       }
     },
+    "check-migration-immutability.mjs": {
+      "MIN_SEALED_ENTRIES": {
+        "value": 600,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Entries the migration seal must cover before a clean result means anything. Set at 600 against a journal of 684; the journal is append-only, so this may only rise."
+      }
+    },
     "check-migration-rollback.mjs": {
       "MIN_SQL_FILES": {
         "value": 380,
@@ -406,6 +434,18 @@
       "MIN_FILES": {
         "value": 1800,
         "direction": "floor"
+      },
+      "MIN_COMMON_FILES": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/common, which joined this gate's corpus on 2026-09-03 (190 measured). It carries 3 of the 100 growing sites, all previously outside the scan."
+      },
+      "MIN_DB_FILES": {
+        "value": 300,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/db, which joined this gate's corpus on 2026-09-03 (362 measured)."
       }
     },
     "check-namespace-coverage.mjs": {
@@ -646,10 +686,10 @@
         "reason": "6 describe.skip blocks in src/modules/ai/core/crm-copilot.service.phase2.spec.ts, all targeting CrmScoringService/CrmBriefService. Accepted residual R-9, blocker SCOPE, review 2026-12-01."
       },
       "CONDITIONAL_BASELINE": {
-        "value": 28,
+        "value": 29,
         "direction": "ratchet",
         "owner": "backend platform owner",
-        "reason": "Runtime-selected describes gated on DATABASE_URL / APP_DATABASE_URL / a provider key. Honest skips, each with a registered blocker."
+        "reason": "Runtime-selected describes gated on DATABASE_URL / APP_DATABASE_URL / a provider key. Honest skips, each with a registered blocker. RE-REGISTERED 28 -> 29 on 2026-09-03 for src/modules/chat/__tests__/chat-send-conflict-target.db.spec.ts, the regression net for the 42P10 that made every POST /chat/channels/:id/messages return 500 at journal head. Its CATALOG half is gated on CHAT_DB_TESTS=1 because index inference happens inside Postgres at PLAN time and only a real catalog can observe it; its HERMETIC half is unconditional and would alone have caught the defect. Verified before signing off, not asserted: run against a local partial index (scratch_gates_head) the full spec is 7/7 green, 3 of those in the always-on half. A raise here is a debt increase and must stay exceptional -- the next request to raise it should retire an existing conditional site instead."
       }
     },
     "check-transaction-callbacks.mjs": {
@@ -684,12 +724,32 @@
     },
     "check-unbounded-reads.mjs": {
       "MIN_FILES": {
-        "value": 500,
-        "direction": "floor"
+        "value": 2700,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "RAISED from 500 to 2700 on 2026-09-03 when src/common and src/db joined the corpus (2,871 files measured across the three roots). At 500 the floor could not have detected either new root resolving to nothing."
       },
       "MIN_MODULES": {
         "value": 40,
         "direction": "floor"
+      },
+      "MIN_COMMON_FILES": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Per-root floor for src/common (191 measured). An aggregate floor cannot tell one root resolving to nothing from the repository shrinking, which is how this gate stayed blind to the asynchronous substrate."
+      },
+      "MIN_DB_FILES": {
+        "value": 300,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Per-root floor for src/db (364 measured)."
+      },
+      "MAX_SUPPRESSED_UNBOUNDED": {
+        "value": 651,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Unbounded reads hidden behind a FALSE-POSITIVE verdict, counted as instances. A verdict is keyed per FILE and carries one sentence, so a read added to an already-blessed file inherits a justification never written about it — /clients/clients.service.ts' unbounded CSV export of every client in the org sat under 'client reads bounded by clientId+orgId (single-record lookups)' and no other check in the gate moved. Measured at 651 with no headroom; lower it when you bound a read, and raising it means naming the newly hidden read here."
       },
       "ORDER_BY_LOOKBACK": {
         "value": 25,

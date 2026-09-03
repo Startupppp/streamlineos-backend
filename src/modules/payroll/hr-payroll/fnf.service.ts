@@ -1,9 +1,10 @@
 import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { fnfSettlements, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateFnfInput } from "./dto/payroll.schemas";
+import { buildListResponse } from "../../../common/pagination/pagination";
 
 type FnfRow = typeof fnfSettlements.$inferSelect;
 type FnfStatus =
@@ -42,18 +43,25 @@ const VALID_FNF_TRANSITIONS: Record<FnfStatus, FnfStatus[]> = {
 export class FnfService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listFnf(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
+  async listFnf(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
     if (!isAdmin && membershipId === null) throw new ForbiddenException("Organization membership required");
     const ownPredicate = eq(fnfSettlements.userMembershipId, membershipId ?? 0);
-    return this.db.query.fnfSettlements.findMany({
-      where: isAdmin
-        ? eq(fnfSettlements.orgId, orgId)
-        : and(eq(fnfSettlements.orgId, orgId), ownPredicate),
-      orderBy: [desc(fnfSettlements.createdAt)],
-      with: { user: { columns: { name: true, email: true } } },
-      limit,
-      offset: (page - 1) * limit,
-    });
+    const where = isAdmin
+      ? eq(fnfSettlements.orgId, orgId)
+      : and(eq(fnfSettlements.orgId, orgId), ownPredicate);
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.fnfSettlements.findMany({
+        where,
+        orderBy: [desc(fnfSettlements.createdAt)],
+        with: { user: { columns: { name: true, email: true } } },
+        limit,
+        offset: (page - 1) * limit,
+      }),
+      this.db.select({ total: count() }).from(fnfSettlements).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
   }
 
   async createFnf(
