@@ -37,8 +37,7 @@ const PROMPT_TOKENS = 120;
 function usage(inputTotal: number, outputTotal: number) {
   return {
     inputTokens: { total: inputTotal, noCache: inputTotal, cacheRead: 0, cacheWrite: 0 },
-    outputTokens: { total: outputTotal, reasoning: 0 },
-    totalTokens: inputTotal + outputTotal,
+    outputTokens: { total: outputTotal, text: outputTotal, reasoning: 0 },
   };
 }
 
@@ -70,7 +69,7 @@ function makeProviderModel(): MockLanguageModelV4 {
             controller.enqueue({ type: "text-end", id: "t" });
             controller.enqueue({
               type: "finish",
-              finishReason: "stop",
+              finishReason: { unified: "stop", raw: "stop" },
               usage: usage(PROMPT_TOKENS, CHUNKS),
             });
             controller.close();
