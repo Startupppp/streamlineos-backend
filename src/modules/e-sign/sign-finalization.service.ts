@@ -19,6 +19,7 @@ import { SignPdfService, type StampField, type CertificateData } from "./sign-pd
 import { SignAuditService } from "./sign-audit.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
+import { envelopeIsVisible, type EnvelopeViewScope } from "./sign-envelope-scope";
 
 const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
 const SIGNED_URL_EXPIRY_SECONDS = 900;
@@ -282,9 +283,27 @@ export class SignFinalizationService {
     return cert;
   }
 
-  async getFinalPdfUrl(orgId: string, envelopeId: number, actor: { userId?: string; ipAddress?: string }) {
-    const envelope = await this.db.query.signEnvelopes.findFirst({ where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)) });
-    if (!envelope?.finalPdfFileKey) throw new NotFoundException("Final PDF is not available yet");
+  /**
+   * Out of scope and out of tenant answer the same 404 a missing envelope answers:
+   * a 403 here would confirm that the envelope exists and that it is finalized.
+   */
+  private async mustGetVisibleEnvelope(
+    orgId: string,
+    envelopeId: number,
+    scope: EnvelopeViewScope,
+    notFoundMessage: string,
+  ) {
+    const envelope = await this.db.query.signEnvelopes.findFirst({
+      where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)),
+    });
+    if (!envelope || !envelopeIsVisible(envelope.senderMembershipId, scope))
+      throw new NotFoundException(notFoundMessage);
+    return envelope;
+  }
+
+  async getFinalPdfUrl(orgId: string, envelopeId: number, actor: { userId?: string; ipAddress?: string }, scope: EnvelopeViewScope) {
+    const envelope = await this.mustGetVisibleEnvelope(orgId, envelopeId, scope, "Final PDF is not available yet");
+    if (!envelope.finalPdfFileKey) throw new NotFoundException("Final PDF is not available yet");
 
     const url = await this.storage.getFileUrl(orgId, envelope.finalPdfFileKey, SIGNED_URL_EXPIRY_SECONDS);
     await this.audit.record({
@@ -299,7 +318,8 @@ export class SignFinalizationService {
     return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS, hash: envelope.finalPdfHash };
   }
 
-  async getCertificateUrl(orgId: string, envelopeId: number) {
+  async getCertificateUrl(orgId: string, envelopeId: number, scope: EnvelopeViewScope) {
+    await this.mustGetVisibleEnvelope(orgId, envelopeId, scope, "This envelope has not been completed yet");
     const cert = await this.getCertificate(orgId, envelopeId);
     const url = await this.storage.getFileUrl(orgId, cert.certificateFileKey, SIGNED_URL_EXPIRY_SECONDS);
     return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS, certificate: cert };
