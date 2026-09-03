@@ -11,6 +11,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import {
   evaluateNormalizedCondition,
   type ConditionOp,
@@ -225,19 +226,31 @@ export class BuildAutomationRunnerService {
     }
   }
 
+  /**
+   * Automation actions write tickets, labels and comments, so they must not be
+   * fired into the request's own transaction and left to race its COMMIT. The
+   * DRIZZLE handle is the tenant-aware proxy: a promise started here and resumed
+   * after the handler returns still resolves `this.db` to the ambient `tx`, which
+   * by then is committed and has lost its GUC, so the write dies 42501 and the
+   * rule silently never applies. Deferring also means a rolled-back ticket write
+   * cannot leave its automations applied. CLAUDE.md §4, mechanism 3.
+   */
   runForTicketEvent(
     orgId: string,
     projectId: number,
     triggerEvent: string,
     ticket: TicketEventPayload,
   ): void {
-    void this.execute(orgId, projectId, triggerEvent, ticket).catch((error: unknown) => {
-      logger.error("BuildAutomationRunner: unexpected failure", {
-        orgId,
-        projectId,
-        triggerEvent,
-        error,
+    const run = (): Promise<void> =>
+      this.execute(orgId, projectId, triggerEvent, ticket).catch((error: unknown) => {
+        logger.error("BuildAutomationRunner: unexpected failure", {
+          orgId,
+          projectId,
+          triggerEvent,
+          error,
+        });
       });
-    });
+
+    if (!registerAfterCommit(run)) void run();
   }
 }
