@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import request from "supertest";
 import { createSeededE2eApp, signSeededToken, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 
@@ -14,9 +14,9 @@ import { createSeededE2eApp, signSeededToken, type SeededE2eApp } from "test/hel
  * cause instead of a status code.
  */
 
-const PLAN = process.env.T15_PLAN ?? "";
+const PLAN = process.env.T15_PLAN ?? join(__dirname, "live", "own-tenant-500-routes.json");
 const ARTIFACT = process.env.T15_ARTIFACT ?? "";
-const enabled = PLAN.length > 0 && (process.env.DATABASE_URL ?? "").length > 0;
+const enabled = (process.env.DATABASE_URL ?? "").length > 0 && (process.env.AUTH_SIGNING_KEYS ?? "").length > 0;
 const describeIf = enabled ? describe : describe.skip;
 
 interface PlannedRoute {
@@ -61,7 +61,7 @@ describeIf("T15 — own-tenant 500 triage", () => {
 
   it("captures the logged exception for every recorded own-tenant 500", async () => {
     for (const route of plan.routes) {
-      if (Date.now() - mintedAt > 4 * 60 * 1000) {
+      if (Date.now() - mintedAt > 60 * 1000) {
         token = await signSeededToken(seeded, plan.sourceUser, plan.sourceOrg);
         mintedAt = Date.now();
       }

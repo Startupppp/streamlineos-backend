@@ -1,0 +1,711 @@
+{
+ "sourceOrg": "aaaaaaaa-1111-0000-0000-000000000001",
+ "proberOrg": "aaaaaaaa-1111-0000-0000-000000000003",
+ "sourceUser": "bbbbbbbb-0001-0000-0000-000000000001",
+ "routes": [
+  {
+   "key": "GET /accounting/reports/export/jobs/:jobId [FinanceReportExportController.getJob]",
+   "verb": "GET",
+   "path": "/accounting/reports/export/jobs/:jobId",
+   "requestPath": "/accounting/reports/export/jobs/1",
+   "handler": "FinanceReportExportController.getJob",
+   "file": "src/modules/finance/reports/finance-report-export.controller.ts"
+  },
+  {
+   "key": "GET /accounting/reports/export/jobs/:jobId/download [FinanceReportExportController.downloadJob]",
+   "verb": "GET",
+   "path": "/accounting/reports/export/jobs/:jobId/download",
+   "requestPath": "/accounting/reports/export/jobs/1/download",
+   "handler": "FinanceReportExportController.downloadJob",
+   "file": "src/modules/finance/reports/finance-report-export.controller.ts"
+  },
+  {
+   "key": "GET /gdpr/export-async/:jobId/download [GdprController.downloadExportJob]",
+   "verb": "GET",
+   "path": "/gdpr/export-async/:jobId/download",
+   "requestPath": "/gdpr/export-async/1/download",
+   "handler": "GdprController.downloadExportJob",
+   "file": "src/modules/gdpr/gdpr.controller.ts"
+  },
+  {
+   "key": "GET /gdpr/export-async/:jobId/status [GdprController.getExportJobStatus]",
+   "verb": "GET",
+   "path": "/gdpr/export-async/:jobId/status",
+   "requestPath": "/gdpr/export-async/1/status",
+   "handler": "GdprController.getExportJobStatus",
+   "file": "src/modules/gdpr/gdpr.controller.ts"
+  },
+  {
+   "key": "GET /hr/engagement/polls/:pollId/results [EngagementExtrasController.pollResults]",
+   "verb": "GET",
+   "path": "/hr/engagement/polls/:pollId/results",
+   "requestPath": "/hr/engagement/polls/1/results",
+   "handler": "EngagementExtrasController.pollResults",
+   "file": "src/modules/hr/performance/engagement-extras.controller.ts"
+  },
+  {
+   "key": "GET /hr/enterprise/ops/emergency/events/:eventId [EmergencyController.getEvent]",
+   "verb": "GET",
+   "path": "/hr/enterprise/ops/emergency/events/:eventId",
+   "requestPath": "/hr/enterprise/ops/emergency/events/1",
+   "handler": "EmergencyController.getEvent",
+   "file": "src/modules/hr/enterprise-ops/emergency/emergency.controller.ts"
+  },
+  {
+   "key": "GET /hr/enterprise/ops/emergency/events/:eventId/status [EmergencyController.getEventStatus]",
+   "verb": "GET",
+   "path": "/hr/enterprise/ops/emergency/events/:eventId/status",
+   "requestPath": "/hr/enterprise/ops/emergency/events/1/status",
+   "handler": "EmergencyController.getEventStatus",
+   "file": "src/modules/hr/enterprise-ops/emergency/emergency.controller.ts"
+  },
+  {
+   "key": "GET /hr/expenses/export/jobs/:jobId [ExpensesController.getExportJob]",
+   "verb": "GET",
+   "path": "/hr/expenses/export/jobs/:jobId",
+   "requestPath": "/hr/expenses/export/jobs/1",
+   "handler": "ExpensesController.getExportJob",
+   "file": "src/modules/expenses/expenses.controller.ts"
+  },
+  {
+   "key": "GET /hr/expenses/export/jobs/:jobId/download [ExpensesController.downloadExportJob]",
+   "verb": "GET",
+   "path": "/hr/expenses/export/jobs/:jobId/download",
+   "requestPath": "/hr/expenses/export/jobs/1/download",
+   "handler": "ExpensesController.downloadExportJob",
+   "file": "src/modules/expenses/expenses.controller.ts"
+  },
+  {
+   "key": "GET /hr/export/jobs/:exportJobId [HrExportController.get]",
+   "verb": "GET",
+   "path": "/hr/export/jobs/:exportJobId",
+   "requestPath": "/hr/export/jobs/1",
+   "handler": "HrExportController.get",
+   "file": "src/modules/hr/import/hr-export.controller.ts"
+  },
+  {
+   "key": "GET /hr/export/jobs/:exportJobId/download [HrExportController.download]",
+   "verb": "GET",
+   "path": "/hr/export/jobs/:exportJobId/download",
+   "requestPath": "/hr/export/jobs/1/download",
+   "handler": "HrExportController.download",
+   "file": "src/modules/hr/import/hr-export.controller.ts"
+  },
+  {
+   "key": "GET /hr/forms/:formId/submissions [HrFormsController.listSubmissions]",
+   "verb": "GET",
+   "path": "/hr/forms/:formId/submissions",
+   "requestPath": "/hr/forms/1/submissions",
+   "handler": "HrFormsController.listSubmissions",
+   "file": "src/modules/hr/forms/hr-forms.controller.ts"
+  },
+  {
+   "key": "GET /hr/import/jobs/:jobId [HrImportController.getJob]",
+   "verb": "GET",
+   "path": "/hr/import/jobs/:jobId",
+   "requestPath": "/hr/import/jobs/1",
+   "handler": "HrImportController.getJob",
+   "file": "src/modules/hr/import/hr-import.controller.ts"
+  },
+  {
+   "key": "PATCH /accounting/budgets/:budgetId [FinanceBudgetsController.updateBudget]",
+   "verb": "PATCH",
+   "path": "/accounting/budgets/:budgetId",
+   "requestPath": "/accounting/budgets/1",
+   "handler": "FinanceBudgetsController.updateBudget",
+   "file": "src/modules/finance/planning/budgets.controller.ts"
+  },
+  {
+   "key": "PATCH /accounting/dimensions/:dimensionId [DimensionsController.update]",
+   "verb": "PATCH",
+   "path": "/accounting/dimensions/:dimensionId",
+   "requestPath": "/accounting/dimensions/1",
+   "handler": "DimensionsController.update",
+   "file": "src/modules/accounting/settings/dimensions.controller.ts"
+  },
+  {
+   "key": "PATCH /accounting/dimensions/:dimensionId/values/:valueId [DimensionsController.updateValue]",
+   "verb": "PATCH",
+   "path": "/accounting/dimensions/:dimensionId/values/:valueId",
+   "requestPath": "/accounting/dimensions/1/values/2",
+   "handler": "DimensionsController.updateValue",
+   "file": "src/modules/accounting/settings/dimensions.controller.ts"
+  },
+  {
+   "key": "PATCH /accounting/recurring-journals/:templateId [RecurringJournalsController.updateTemplate]",
+   "verb": "PATCH",
+   "path": "/accounting/recurring-journals/:templateId",
+   "requestPath": "/accounting/recurring-journals/1",
+   "handler": "RecurringJournalsController.updateTemplate",
+   "file": "src/modules/accounting/gl/recurring-journals.controller.ts"
+  },
+  {
+   "key": "PATCH /accounting/scenarios/:scenarioId [ScenariosController.updateScenario]",
+   "verb": "PATCH",
+   "path": "/accounting/scenarios/:scenarioId",
+   "requestPath": "/accounting/scenarios/1",
+   "handler": "ScenariosController.updateScenario",
+   "file": "src/modules/finance/planning/scenarios.controller.ts"
+  },
+  {
+   "key": "PATCH /build/:projectId/approvals/:approvalId [BuildApprovalsController.updateApproval]",
+   "verb": "PATCH",
+   "path": "/build/:projectId/approvals/:approvalId",
+   "requestPath": "/build/1/approvals/1",
+   "handler": "BuildApprovalsController.updateApproval",
+   "file": "src/modules/build/approvals/approvals.controller.ts"
+  },
+  {
+   "key": "PATCH /build/:projectId/custom-states/:stateId [ProjectsController.updateCustomState]",
+   "verb": "PATCH",
+   "path": "/build/:projectId/custom-states/:stateId",
+   "requestPath": "/build/1/custom-states/2",
+   "handler": "ProjectsController.updateCustomState",
+   "file": "src/modules/build/core/projects.controller.ts"
+  },
+  {
+   "key": "PATCH /build/:projectId/meetings/:meetingId [MeetingsController.updateMeeting]",
+   "verb": "PATCH",
+   "path": "/build/:projectId/meetings/:meetingId",
+   "requestPath": "/build/1/meetings/1",
+   "handler": "MeetingsController.updateMeeting",
+   "file": "src/modules/build/meetings/meetings.controller.ts"
+  },
+  {
+   "key": "PATCH /build/:projectId/releases/:releaseId [ProjectsReleasesController.updateRelease]",
+   "verb": "PATCH",
+   "path": "/build/:projectId/releases/:releaseId",
+   "requestPath": "/build/1/releases/1",
+   "handler": "ProjectsReleasesController.updateRelease",
+   "file": "src/modules/build/core/projects-releases.controller.ts"
+  },
+  {
+   "key": "PATCH /build/:projectId/sprints/:sprintId [SprintsController.updateSprint]",
+   "verb": "PATCH",
+   "path": "/build/:projectId/sprints/:sprintId",
+   "requestPath": "/build/1/sprints/1",
+   "handler": "SprintsController.updateSprint",
+   "file": "src/modules/build/execution/iterations.controller.ts"
+  },
+  {
+   "key": "PATCH /build/:projectId/tickets/:ticketId/related-links/:linkId [ProjectsTicketAssociationsController.updateRelatedLink]",
+   "verb": "PATCH",
+   "path": "/build/:projectId/tickets/:ticketId/related-links/:linkId",
+   "requestPath": "/build/1/tickets/1/related-links/1",
+   "handler": "ProjectsTicketAssociationsController.updateRelatedLink",
+   "file": "src/modules/build/core/projects-ticket-associations.controller.ts"
+  },
+  {
+   "key": "PATCH /build/labels/:labelId [ProjectsController.updateLabel]",
+   "verb": "PATCH",
+   "path": "/build/labels/:labelId",
+   "requestPath": "/build/labels/1",
+   "handler": "ProjectsController.updateLabel",
+   "file": "src/modules/build/core/projects.controller.ts"
+  },
+  {
+   "key": "PATCH /build/portfolios/:portfolioId [PortfoliosController.updatePortfolio]",
+   "verb": "PATCH",
+   "path": "/build/portfolios/:portfolioId",
+   "requestPath": "/build/portfolios/1",
+   "handler": "PortfoliosController.updatePortfolio",
+   "file": "src/modules/build/portfolios/portfolios.controller.ts"
+  },
+  {
+   "key": "PATCH /build/programs/:programId [ProgramsController.updateProgram]",
+   "verb": "PATCH",
+   "path": "/build/programs/:programId",
+   "requestPath": "/build/programs/1",
+   "handler": "ProgramsController.updateProgram",
+   "file": "src/modules/build/portfolios/programs.controller.ts"
+  },
+  {
+   "key": "PATCH /build/workspaces/:pmWorkspaceId [PmWorkspacesController.updateWorkspace]",
+   "verb": "PATCH",
+   "path": "/build/workspaces/:pmWorkspaceId",
+   "requestPath": "/build/workspaces/7bc51230-d220-4dc5-a3a3-f5b742a0c5a7",
+   "handler": "PmWorkspacesController.updateWorkspace",
+   "file": "src/modules/build/pm-workspaces/pm-workspaces.controller.ts"
+  },
+  {
+   "key": "PATCH /crm/assignment-rules/:ruleId [CrmRulesController.updateAssignmentRule]",
+   "verb": "PATCH",
+   "path": "/crm/assignment-rules/:ruleId",
+   "requestPath": "/crm/assignment-rules/1",
+   "handler": "CrmRulesController.updateAssignmentRule",
+   "file": "src/modules/crm/core/crm-rules.controller.ts"
+  },
+  {
+   "key": "PATCH /crm/campaigns/:campaignId [CrmCampaignsController.update]",
+   "verb": "PATCH",
+   "path": "/crm/campaigns/:campaignId",
+   "requestPath": "/crm/campaigns/1",
+   "handler": "CrmCampaignsController.update",
+   "file": "src/modules/crm/core/crm-campaigns.controller.ts"
+  },
+  {
+   "key": "PATCH /crm/scoring-rules/:ruleId [CrmRulesController.updateScoringRule]",
+   "verb": "PATCH",
+   "path": "/crm/scoring-rules/:ruleId",
+   "requestPath": "/crm/scoring-rules/1",
+   "handler": "CrmRulesController.updateScoringRule",
+   "file": "src/modules/crm/core/crm-rules.controller.ts"
+  },
+  {
+   "key": "PATCH /crm/sla/policies/:policyId [CrmSlaController.updatePolicy]",
+   "verb": "PATCH",
+   "path": "/crm/sla/policies/:policyId",
+   "requestPath": "/crm/sla/policies/1",
+   "handler": "CrmSlaController.updatePolicy",
+   "file": "src/modules/crm/core/crm-sla.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/analytics-plus/workforce/plans/:planId [HrAnalyticsPlusController.updatePlan]",
+   "verb": "PATCH",
+   "path": "/hr/analytics-plus/workforce/plans/:planId",
+   "requestPath": "/hr/analytics-plus/workforce/plans/1",
+   "handler": "HrAnalyticsPlusController.updatePlan",
+   "file": "src/modules/hr/analytics-plus/hr-analytics-plus.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/attendance/holidays/:holidayId [AttendanceController.updateHoliday]",
+   "verb": "PATCH",
+   "path": "/hr/attendance/holidays/:holidayId",
+   "requestPath": "/hr/attendance/holidays/1",
+   "handler": "AttendanceController.updateHoliday",
+   "file": "src/modules/hr/time/attendance.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/benefits/windows/:windowId [HrBenefitsController.updateWindow]",
+   "verb": "PATCH",
+   "path": "/hr/benefits/windows/:windowId",
+   "requestPath": "/hr/benefits/windows/1",
+   "handler": "HrBenefitsController.updateWindow",
+   "file": "src/modules/hr/benefits/hr-benefits.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/biometric/devices/:deviceId [BiometricController.updateDevice]",
+   "verb": "PATCH",
+   "path": "/hr/biometric/devices/:deviceId",
+   "requestPath": "/hr/biometric/devices/1",
+   "handler": "BiometricController.updateDevice",
+   "file": "src/modules/hr/time/biometric.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/custom-fields/definitions/:fieldId [HrCustomFieldsController.updateDefinition]",
+   "verb": "PATCH",
+   "path": "/hr/custom-fields/definitions/:fieldId",
+   "requestPath": "/hr/custom-fields/definitions/1",
+   "handler": "HrCustomFieldsController.updateDefinition",
+   "file": "src/modules/hr/core/hr-custom-fields.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/devices/:deviceId [HrAssetsController.updateDevice]",
+   "verb": "PATCH",
+   "path": "/hr/devices/:deviceId",
+   "requestPath": "/hr/devices/1",
+   "handler": "HrAssetsController.updateDevice",
+   "file": "src/modules/hr/directory/assets.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/employees/:employeeId/sensitive [HrSensitiveController.update]",
+   "verb": "PATCH",
+   "path": "/hr/employees/:employeeId/sensitive",
+   "requestPath": "/hr/employees/1/sensitive",
+   "handler": "HrSensitiveController.update",
+   "file": "src/modules/hr/core/hr-sensitive.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/engagement/campaigns/:campaignId [EngagementExtrasController.updateCampaign]",
+   "verb": "PATCH",
+   "path": "/hr/engagement/campaigns/:campaignId",
+   "requestPath": "/hr/engagement/campaigns/1",
+   "handler": "EngagementExtrasController.updateCampaign",
+   "file": "src/modules/hr/performance/engagement-extras.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/engagement/polls/:pollId [EngagementExtrasController.updatePoll]",
+   "verb": "PATCH",
+   "path": "/hr/engagement/polls/:pollId",
+   "requestPath": "/hr/engagement/polls/1",
+   "handler": "EngagementExtrasController.updatePoll",
+   "file": "src/modules/hr/performance/engagement-extras.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/enterprise/comp/payroll-compliance/tasks/:taskId [PayrollComplianceController.updateTask]",
+   "verb": "PATCH",
+   "path": "/hr/enterprise/comp/payroll-compliance/tasks/:taskId",
+   "requestPath": "/hr/enterprise/comp/payroll-compliance/tasks/1",
+   "handler": "PayrollComplianceController.updateTask",
+   "file": "src/modules/hr/enterprise-comp/payroll-compliance.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/enterprise/ops/accommodations/:accommodationId/tasks/:taskId [AccommodationsController.updateTask]",
+   "verb": "PATCH",
+   "path": "/hr/enterprise/ops/accommodations/:accommodationId/tasks/:taskId",
+   "requestPath": "/hr/enterprise/ops/accommodations/e0b83346-723f-43a2-8861-dbc32cd539fa/tasks/1",
+   "handler": "AccommodationsController.updateTask",
+   "file": "src/modules/hr/enterprise-ops/accommodations/accommodations.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/enterprise/ops/emergency/events/:eventId [EmergencyController.updateEvent]",
+   "verb": "PATCH",
+   "path": "/hr/enterprise/ops/emergency/events/:eventId",
+   "requestPath": "/hr/enterprise/ops/emergency/events/1",
+   "handler": "EmergencyController.updateEvent",
+   "file": "src/modules/hr/enterprise-ops/emergency/emergency.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/enterprise/ops/identity/templates/:templateId [IdentityController.updateTemplate]",
+   "verb": "PATCH",
+   "path": "/hr/enterprise/ops/identity/templates/:templateId",
+   "requestPath": "/hr/enterprise/ops/identity/templates/1",
+   "handler": "IdentityController.updateTemplate",
+   "file": "src/modules/hr/enterprise-ops/identity/identity.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/forms/:formId [HrFormsController.update]",
+   "verb": "PATCH",
+   "path": "/hr/forms/:formId",
+   "requestPath": "/hr/forms/1",
+   "handler": "HrFormsController.update",
+   "file": "src/modules/hr/forms/hr-forms.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/handbook/:handbookId [HrHandbookController.update]",
+   "verb": "PATCH",
+   "path": "/hr/handbook/:handbookId",
+   "requestPath": "/hr/handbook/1",
+   "handler": "HrHandbookController.update",
+   "file": "src/modules/hr/config/hr-handbook.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/helpdesk/:ticketId [HrHelpdeskController.update]",
+   "verb": "PATCH",
+   "path": "/hr/helpdesk/:ticketId",
+   "requestPath": "/hr/helpdesk/1",
+   "handler": "HrHelpdeskController.update",
+   "file": "src/modules/hr/helpdesk/hr-helpdesk.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/kpis/:kpiId [KpisController.updateKpi]",
+   "verb": "PATCH",
+   "path": "/hr/kpis/:kpiId",
+   "requestPath": "/hr/kpis/1",
+   "handler": "KpisController.updateKpi",
+   "file": "src/modules/hr/performance/kpis.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/kpis/frameworks/:frameworkId [KpisController.updateFramework]",
+   "verb": "PATCH",
+   "path": "/hr/kpis/frameworks/:frameworkId",
+   "requestPath": "/hr/kpis/frameworks/1",
+   "handler": "KpisController.updateFramework",
+   "file": "src/modules/hr/performance/kpis.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/leave-policies/:policyId [LeavePoliciesController.update]",
+   "verb": "PATCH",
+   "path": "/hr/leave-policies/:policyId",
+   "requestPath": "/hr/leave-policies/1",
+   "handler": "LeavePoliciesController.update",
+   "file": "src/modules/hr/time/leave-policies.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/org/levels/:levelId [HrOrgCatalogController.updateJobLevel]",
+   "verb": "PATCH",
+   "path": "/hr/org/levels/:levelId",
+   "requestPath": "/hr/org/levels/1",
+   "handler": "HrOrgCatalogController.updateJobLevel",
+   "file": "src/modules/hr/core/hr-org-catalog.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/org/roles/:roleId [HrOrgCatalogController.updateJobRole]",
+   "verb": "PATCH",
+   "path": "/hr/org/roles/:roleId",
+   "requestPath": "/hr/org/roles/1",
+   "handler": "HrOrgCatalogController.updateJobRole",
+   "file": "src/modules/hr/core/hr-org-catalog.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/policies/:policyId [HrPoliciesController.update]",
+   "verb": "PATCH",
+   "path": "/hr/policies/:policyId",
+   "requestPath": "/hr/policies/1",
+   "handler": "HrPoliciesController.update",
+   "file": "src/modules/hr/policies/hr-policies.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/shifts/:shiftId [ShiftsController.update]",
+   "verb": "PATCH",
+   "path": "/hr/shifts/:shiftId",
+   "requestPath": "/hr/shifts/1",
+   "handler": "ShiftsController.update",
+   "file": "src/modules/hr/time/shifts.controller.ts"
+  },
+  {
+   "key": "PATCH /hr/surveys/:surveyId [EngagementController.updateSurvey]",
+   "verb": "PATCH",
+   "path": "/hr/surveys/:surveyId",
+   "requestPath": "/hr/surveys/1",
+   "handler": "EngagementController.updateSurvey",
+   "file": "src/modules/hr/performance/engagement.controller.ts"
+  },
+  {
+   "key": "PATCH /inventory/products/categories/:categoryId [InvProductsController.updateCategory]",
+   "verb": "PATCH",
+   "path": "/inventory/products/categories/:categoryId",
+   "requestPath": "/inventory/products/categories/1",
+   "handler": "InvProductsController.updateCategory",
+   "file": "src/modules/inventory/products/inv-products.controller.ts"
+  },
+  {
+   "key": "PATCH /inventory/products/uom/:uomId [InvProductsController.updateUom]",
+   "verb": "PATCH",
+   "path": "/inventory/products/uom/:uomId",
+   "requestPath": "/inventory/products/uom/1",
+   "handler": "InvProductsController.updateUom",
+   "file": "src/modules/inventory/products/inv-products.controller.ts"
+  },
+  {
+   "key": "PATCH /inventory/quality/recalls/:recallId [RecallsController.update]",
+   "verb": "PATCH",
+   "path": "/inventory/quality/recalls/:recallId",
+   "requestPath": "/inventory/quality/recalls/1",
+   "handler": "RecallsController.update",
+   "file": "src/modules/inventory/quality/recalls.controller.ts"
+  },
+  {
+   "key": "PATCH /inventory/settings/number-sequences/:sequenceId [InvSettingsController.updateNumberSequence]",
+   "verb": "PATCH",
+   "path": "/inventory/settings/number-sequences/:sequenceId",
+   "requestPath": "/inventory/settings/number-sequences/1",
+   "handler": "InvSettingsController.updateNumberSequence",
+   "file": "src/modules/inventory/settings/settings.controller.ts"
+  },
+  {
+   "key": "PATCH /inventory/webhooks/:webhookId [InvWebhooksController.update]",
+   "verb": "PATCH",
+   "path": "/inventory/webhooks/:webhookId",
+   "requestPath": "/inventory/webhooks/1",
+   "handler": "InvWebhooksController.update",
+   "file": "src/modules/inventory/webhooks/webhooks.controller.ts"
+  },
+  {
+   "key": "PATCH /party/subject-types/:subjectTypeId [SubjectController.updateType]",
+   "verb": "PATCH",
+   "path": "/party/subject-types/:subjectTypeId",
+   "requestPath": "/party/subject-types/bola-fixture",
+   "handler": "SubjectController.updateType",
+   "file": "src/modules/party/subject.controller.ts"
+  },
+  {
+   "key": "PATCH /party/subjects/:subjectId [SubjectController.update]",
+   "verb": "PATCH",
+   "path": "/party/subjects/:subjectId",
+   "requestPath": "/party/subjects/bola-fixture",
+   "handler": "SubjectController.update",
+   "file": "src/modules/party/subject.controller.ts"
+  },
+  {
+   "key": "PATCH /payroll/accounting-mappings/:mappingId [AccountingMappingsController.update]",
+   "verb": "PATCH",
+   "path": "/payroll/accounting-mappings/:mappingId",
+   "requestPath": "/payroll/accounting-mappings/1",
+   "handler": "AccountingMappingsController.update",
+   "file": "src/modules/payroll/insights/accounting-mappings.controller.ts"
+  },
+  {
+   "key": "PATCH /payroll/payslip-templates/:templateId [PayslipTemplatesController.update]",
+   "verb": "PATCH",
+   "path": "/payroll/payslip-templates/:templateId",
+   "requestPath": "/payroll/payslip-templates/1",
+   "handler": "PayslipTemplatesController.update",
+   "file": "src/modules/payroll/payout/payslip-templates.controller.ts"
+  },
+  {
+   "key": "PATCH /sales/playbook/:entryId [SalesController.updatePlaybookEntry]",
+   "verb": "PATCH",
+   "path": "/sales/playbook/:entryId",
+   "requestPath": "/sales/playbook/1",
+   "handler": "SalesController.updatePlaybookEntry",
+   "file": "src/modules/sales/sales.controller.ts"
+  },
+  {
+   "key": "PATCH /support/kb/articles/:articleId [SupportKbController.updateArticle]",
+   "verb": "PATCH",
+   "path": "/support/kb/articles/:articleId",
+   "requestPath": "/support/kb/articles/1",
+   "handler": "SupportKbController.updateArticle",
+   "file": "src/modules/support/core/support-kb.controller.ts"
+  },
+  {
+   "key": "PATCH /support/kb/categories/:categoryId [SupportKbController.updateCategory]",
+   "verb": "PATCH",
+   "path": "/support/kb/categories/:categoryId",
+   "requestPath": "/support/kb/categories/1",
+   "handler": "SupportKbController.updateCategory",
+   "file": "src/modules/support/core/support-kb.controller.ts"
+  },
+  {
+   "key": "PATCH /surveys/:surveyId/logic/:ruleId [SurveyBuilderController.patchLogic]",
+   "verb": "PATCH",
+   "path": "/surveys/:surveyId/logic/:ruleId",
+   "requestPath": "/surveys/1/logic/1",
+   "handler": "SurveyBuilderController.patchLogic",
+   "file": "src/modules/surveys/survey-builder.controller.ts"
+  },
+  {
+   "key": "POST /accounting/credit-notes/:creditNoteId/post [CreditNotesController.postNote]",
+   "verb": "POST",
+   "path": "/accounting/credit-notes/:creditNoteId/post",
+   "requestPath": "/accounting/credit-notes/1/post",
+   "handler": "CreditNotesController.postNote",
+   "file": "src/modules/finance/ar/credit-notes.controller.ts"
+  },
+  {
+   "key": "POST /accounting/journal/:entryId/reverse [AccountingLedgerController.reverseJournalEntry]",
+   "verb": "POST",
+   "path": "/accounting/journal/:entryId/reverse",
+   "requestPath": "/accounting/journal/1/reverse",
+   "handler": "AccountingLedgerController.reverseJournalEntry",
+   "file": "src/modules/accounting/core/accounting-ledger.controller.ts"
+  },
+  {
+   "key": "POST /accounting/purchase-bills/:billId/approve [BillsWorkflowController.approveBill]",
+   "verb": "POST",
+   "path": "/accounting/purchase-bills/:billId/approve",
+   "requestPath": "/accounting/purchase-bills/1/approve",
+   "handler": "BillsWorkflowController.approveBill",
+   "file": "src/modules/finance/ap/bills-workflow.controller.ts"
+  },
+  {
+   "key": "POST /accounting/recurring-bills/:templateId/run-now [RecurringBillsController.runNow]",
+   "verb": "POST",
+   "path": "/accounting/recurring-bills/:templateId/run-now",
+   "requestPath": "/accounting/recurring-bills/1/run-now",
+   "handler": "RecurringBillsController.runNow",
+   "file": "src/modules/finance/ap/recurring-bills.controller.ts"
+  },
+  {
+   "key": "POST /accounting/recurring-invoices/:templateId/run-now [RecurringInvoicesController.runNow]",
+   "verb": "POST",
+   "path": "/accounting/recurring-invoices/:templateId/run-now",
+   "requestPath": "/accounting/recurring-invoices/1/run-now",
+   "handler": "RecurringInvoicesController.runNow",
+   "file": "src/modules/finance/ar/recurring-invoices.controller.ts"
+  },
+  {
+   "key": "POST /accounting/reports/export/jobs/:jobId/cancel [FinanceReportExportController.cancelJob]",
+   "verb": "POST",
+   "path": "/accounting/reports/export/jobs/:jobId/cancel",
+   "requestPath": "/accounting/reports/export/jobs/1/cancel",
+   "handler": "FinanceReportExportController.cancelJob",
+   "file": "src/modules/finance/reports/finance-report-export.controller.ts"
+  },
+  {
+   "key": "POST /crm/imports/:crmImportId/commit [CrmImportController.commit]",
+   "verb": "POST",
+   "path": "/crm/imports/:crmImportId/commit",
+   "requestPath": "/crm/imports/bola-fixture/commit",
+   "handler": "CrmImportController.commit",
+   "file": "src/modules/crm/import/crm-import.controller.ts"
+  },
+  {
+   "key": "POST /hr/enterprise/ops/emergency/events/:eventId/broadcast [EmergencyController.broadcast]",
+   "verb": "POST",
+   "path": "/hr/enterprise/ops/emergency/events/:eventId/broadcast",
+   "requestPath": "/hr/enterprise/ops/emergency/events/1/broadcast",
+   "handler": "EmergencyController.broadcast",
+   "file": "src/modules/hr/enterprise-ops/emergency/emergency.controller.ts"
+  },
+  {
+   "key": "POST /hr/import/jobs/:jobId/commit [HrImportController.commitJob]",
+   "verb": "POST",
+   "path": "/hr/import/jobs/:jobId/commit",
+   "requestPath": "/hr/import/jobs/1/commit",
+   "handler": "HrImportController.commitJob",
+   "file": "src/modules/hr/import/hr-import.controller.ts"
+  },
+  {
+   "key": "POST /hr/import/jobs/:jobId/rollback [HrImportController.rollbackJob]",
+   "verb": "POST",
+   "path": "/hr/import/jobs/:jobId/rollback",
+   "requestPath": "/hr/import/jobs/1/rollback",
+   "handler": "HrImportController.rollbackJob",
+   "file": "src/modules/hr/import/hr-import.controller.ts"
+  },
+  {
+   "key": "POST /hr/payroll-inputs/periods/:periodId/build [PayrollInputsController.buildPeriod]",
+   "verb": "POST",
+   "path": "/hr/payroll-inputs/periods/:periodId/build",
+   "requestPath": "/hr/payroll-inputs/periods/1/build",
+   "handler": "PayrollInputsController.buildPeriod",
+   "file": "src/modules/hr/payroll-inputs/payroll-inputs.controller.ts"
+  },
+  {
+   "key": "POST /inventory/quality/holds/:holdId/release [HoldsController.release]",
+   "verb": "POST",
+   "path": "/inventory/quality/holds/:holdId/release",
+   "requestPath": "/inventory/quality/holds/1/release",
+   "handler": "HoldsController.release",
+   "file": "src/modules/inventory/quality/holds.controller.ts"
+  },
+  {
+   "key": "POST /party/merges/:partyMergeId/revert [PartyMergeController.revert]",
+   "verb": "POST",
+   "path": "/party/merges/:partyMergeId/revert",
+   "requestPath": "/party/merges/bola-fixture/revert",
+   "handler": "PartyMergeController.revert",
+   "file": "src/modules/party/party-merge.controller.ts"
+  },
+  {
+   "key": "POST /payroll/policies/:policyId/activate [PayrollPoliciesController.activate]",
+   "verb": "POST",
+   "path": "/payroll/policies/:policyId/activate",
+   "requestPath": "/payroll/policies/1/activate",
+   "handler": "PayrollPoliciesController.activate",
+   "file": "src/modules/payroll/setup/policies.controller.ts"
+  },
+  {
+   "key": "POST /sign/envelopes/:envelopeId/ai/summarize [SignAiController.summarize]",
+   "verb": "POST",
+   "path": "/sign/envelopes/:envelopeId/ai/summarize",
+   "requestPath": "/sign/envelopes/1/ai/summarize",
+   "handler": "SignAiController.summarize",
+   "file": "src/modules/e-sign/sign-ai.controller.ts"
+  },
+  {
+   "key": "POST /support/:supportTicketId/follow [SupportWorkspaceController.follow]",
+   "verb": "POST",
+   "path": "/support/:supportTicketId/follow",
+   "requestPath": "/support/1/follow",
+   "handler": "SupportWorkspaceController.follow",
+   "file": "src/modules/support/core/support-workspace.controller.ts"
+  },
+  {
+   "key": "POST /users/:userId/send-signin-link [UsersController.sendSigninLink]",
+   "verb": "POST",
+   "path": "/users/:userId/send-signin-link",
+   "requestPath": "/users/bbbbbbbb-0001-0000-0000-000000000001/send-signin-link",
+   "handler": "UsersController.sendSigninLink",
+   "file": "src/modules/users/users.controller.ts"
+  },
+  {
+   "key": "DELETE /hr/benefits/plans/:planId [HrBenefitsController.deletePlan]",
+   "verb": "DELETE",
+   "path": "/hr/benefits/plans/:planId",
+   "requestPath": "/hr/benefits/plans/1",
+   "handler": "HrBenefitsController.deletePlan",
+   "file": "src/modules/hr/benefits/hr-benefits.controller.ts"
+  },
+  {
+   "key": "DELETE /hr/enterprise/ops/emergency/events/:eventId [EmergencyController.deleteEvent]",
+   "verb": "DELETE",
+   "path": "/hr/enterprise/ops/emergency/events/:eventId",
+   "requestPath": "/hr/enterprise/ops/emergency/events/23",
+   "handler": "EmergencyController.deleteEvent",
+   "file": "src/modules/hr/enterprise-ops/emergency/emergency.controller.ts"
+  }
+ ]
+}
