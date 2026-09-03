@@ -71,6 +71,15 @@ jobs:
       - name: Migration ledger agrees with the journal
         run: pnpm check:migration-ledger:self-test && pnpm check:migration-ledger
 
+      # Nine RBAC foreign keys, each bitten by a probe that names the SQLSTATE *and* the
+      # constraint it asserts, inside BEGIN/ROLLBACK. Every probe builds its own two tenants,
+      # memberships and role in the transaction it rolls back, so nothing pre-exists to
+      # collide on a unique index -- the failure that used to score a REJECT pass on 23505
+      # and fail both ACCEPT controls. It never skips: a database that cannot support the
+      # probes fails loudly naming what is missing, because a skip reads as a pass.
+      - name: RBAC referential integrity (live probes)
+        run: pnpm verify:rbac-integrity:self-test && pnpm verify:rbac-integrity
+
       - name: ON DELETE SET NULL column lists (catalog half)
         run: pnpm check:set-null-column-lists
         env:

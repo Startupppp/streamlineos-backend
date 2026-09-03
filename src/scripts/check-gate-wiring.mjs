@@ -89,13 +89,6 @@ const UNWIRED_BY_DESIGN = Object.freeze({
     "alert channel — proof a person received the page, which no CI job can fabricate " +
     "(check-alert-ack.mjs:178-188). ci.yml names the self-test only, and says so. " +
     "Owner: gate-wiring.",
-  "verify:rbac-integrity":
-    "needs a live database AND one whose probe rows do not already exist. Measured 2026-09-03 " +
-    "against scratch_perf_seed: both ACCEPT controls failed on 23505 (unique violation, not " +
-    "the FK under test) and the first REJECT probe PASSED on 23505 rather than the " +
-    "cross-tenant FK it claims to assert. On a freshly bootstrapped database the probe block " +
-    "prints SKIP instead, because db:bootstrap creates no organization holding a role. " +
-    "Wiring it as-is buys a green step that asserts nothing. Owner: gate-wiring.",
 });
 
 /**
