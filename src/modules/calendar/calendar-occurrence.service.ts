@@ -66,12 +66,18 @@ function expandRecurring(
   const localWindowStart = toZonedTime(windowStart, event.timezone);
   const localWindowEnd = toZonedTime(windowEnd, event.timezone);
 
+  const localUntil = rule.origOptions.until
+    ? toZonedTime(rule.origOptions.until, event.timezone)
+    : rule.origOptions.until;
+
   const expandedRule = new RRule({
     ...rule.origOptions,
     dtstart: localDtstart,
+    until: localUntil,
   });
 
   const localDates = expandedRule.between(localWindowStart, localWindowEnd, true);
+  const seriesEnd = event.recurrenceEnd ? event.recurrenceEnd.getTime() : null;
 
   const exceptionMap = new Map<number, CalendarEventException>();
   for (const ex of exceptions) {
@@ -83,6 +89,7 @@ function expandRecurring(
     if (results.length >= MAX_OCCURRENCES_PER_WINDOW) break;
 
     const utcStart = fromZonedTime(localDate, event.timezone);
+    if (seriesEnd !== null && utcStart.getTime() > seriesEnd) break;
     const ex = exceptionMap.get(utcStart.getTime());
 
     if (ex?.isCancelled) continue;
