@@ -921,6 +921,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listMemberChannels has .limit(PAGE_SIZE+1); listPublicChannels uses keyset pagination with limit(PAGE_SIZE+1); unread/lastMessage aggregates bounded by channelIds inArray; listMemberChannelIds bounded by single membership 2026-09-02"
     },
+    "/chat/chat-channel-member-preview.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Detector fires on the outer select because the cap is a predicate, not a .limit(): loadChannelMemberPreview filters lte(memberRank, CHANNEL_LIST_MEMBER_PREVIEW = 8) over a row_number() partitioned by channel_id, and its only caller chat-channel-list.service.ts derives channelIds from a page sliced to PAGE_SIZE = min(limit, PAGE_SIZE_CAP = 100), so the read returns at most 800 rows. The ranked subquery is tenant-scoped by eq(chatChannelMembers.orgId, orgId). FALSE-POSITIVE not BOUNDED: BOUNDED is a fixed-verdict the regression check requires the detector to stop firing on, and the rank predicate is invisible to the regex by construction 2026-09-03"
+    },
     "/chat/chat-channels.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -960,6 +965,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "searchMessages uses id-keyset cursor (lt(chatMessages.id, cursor)) with limit+1 sentinel and hasMore check; already properly paginated; resolveContentMatch caps SECURITY_DEFINER call at CHAT_SEARCH_ID_CAP=1000 2026-09-01"
+    },
+    "/clients/client-accounts-crm-assignment.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Two detections, split verdict, worst one governs. L18 is bounded - inArray(users.id, csMemberIds) on the primary key where csMemberIds comes from membersWithPermission(..., { limit: CS_MEMBER_LIMIT = 500 }). L74 is GENUINELY UNBOUNDED: backfillCrmAssignments reads every unassigned client account in the org, and(eq(orgId), isNull(assignedCrmId)) ordered by createdAt with no cap, to build its round-robin work list. A plain .limit() is the wrong fix - the backfill must be exhaustive or it silently leaves accounts unassigned - so this wants a batched keyset drain over (org_id, id) feeding bulkUpdateFromValues per batch. NOTE: this file arrived UNTRACKED mid-run from another agent's in-flight work; if it is renamed or abandoned before being committed this entry goes stale. Clients territory; not fixed in the gate lane 2026-09-03"
     },
     "/clients/client-accounts.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1054,6 +1064,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/crm/custom-fields/crm-custom-fields.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Renamed destination of the removed stale entry /settings/settings-custom-fields.service.ts (moved by 6c92ec3f). Excluded by module prefix, but inspected rather than assumed: the sole detection is line 37, the characters .select() inside a doc comment, not code. Every executable read is already bounded - listCustomFields is keyset-paged .limit(limit + 1) and the three existence probes are .limit(1). Nothing to fix here if CRM re-enters scope 2026-09-03"
+    },
     "/crm/import/crm-import-commit.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
@@ -1130,6 +1145,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "L106 reads organizationMembers filtered by orgId (passed as parameter); bounded by specific org membership; purge reads all members for the specific org being purged 2026-09-01"
+    },
+    "/cron/cron-organization.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "expireStaleInvitations hydrates inviters with inArray(organizationMembers.id, inviterMembershipIds) - a lookup on the serial primary key, so it returns at most one row per id and cannot exceed the deduped id array the process has already materialized in memory. Tenant-scoped by eq(organizationMembers.orgId, orgId) inside a per-org forEachOrg transaction. A .limit() here would silently drop inviters and lose their expiry notifications 2026-09-03"
     },
     "/cron/cron-recruitment.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2175,6 +2195,11 @@
       "note": "3 aggregate references including count; wiki space membership is a bounded set",
       "justification": "all flagged selects project count() aggregates; space membership count is bounded by org size 2026-09-01"
     },
+    "/kb/wiki/kb-page-attachment-purge.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "GENUINELY UNBOUNDED, not a false positive. recordPageAttachmentPurge reads inArray(kbPageAttachments.pageId, pageIds) where page_id is a one-to-many FK, not a key, so cardinality is (pages in the deleted subtree) x (attachments per page) and neither factor is capped; kb-page-tree.service.ts:239 passes a whole subtree. A .limit() is the WRONG fix and would corrupt data: this is the write-ahead record of R2 keys, written before the ON DELETE CASCADE destroys the only rows pointing at those objects, so a truncated read orphans every attachment past the cap permanently. Correct fix is the STREAM shape already used in payroll - a resumable keyset drain over (org_id, id) accumulating file keys in bounded batches. KB territory; not fixed in the gate lane 2026-09-03"
+    },
     "/kb/wiki/kb-page-comments.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Reads comments per page \u2014 bounded by the comment thread length, which is small in practice",
@@ -2811,11 +2836,6 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "L181 reads user sessions by userId+isRevoked=false; bounded by user active session count (typically 1-5); not a list endpoint 2026-09-01"
-    },
-    "/settings/settings-custom-fields.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "custom field reads bounded by orgId+entityType (small config set per entity type) 2026-09-01"
     },
     "/settings/settings.service.ts": {
       "verdict": "FALSE-POSITIVE",
