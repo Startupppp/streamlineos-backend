@@ -53,6 +53,7 @@ import { postSafeWebhook, UnsafeWebhookTargetError } from "../../common/outbound
 import { logger } from "../../common/logger/logger.service";
 import type { Db } from "../../db/drizzle.module";
 import {
+  WEBHOOK_DISPATCH_CHUNK,
   WebhooksDispatchService,
   WebhookTerminalStatusError,
   classifyWebhookError,
@@ -79,21 +80,28 @@ const ENDPOINT = {
 };
 
 const insertedLogs: Record<string, unknown>[] = [];
+const insertBatchSizes: number[] = [];
 
-function makeDb(): Db {
+function makeDb(endpoints: unknown[] = [ENDPOINT]): Db {
   return {
     query: {
       webhookEndpoints: {
-        findMany: jest.fn().mockResolvedValue([ENDPOINT]),
         findFirst: jest.fn().mockResolvedValue(ENDPOINT),
       },
       webhookLogs: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
     },
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(endpoints),
+      }),
+    }),
     insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockImplementation((row: Record<string, unknown>) => {
-        insertedLogs.push(row);
+      values: jest.fn().mockImplementation((row: Record<string, unknown> | Record<string, unknown>[]) => {
+        const rows = Array.isArray(row) ? row : [row];
+        insertBatchSizes.push(rows.length);
+        insertedLogs.push(...rows);
         return Promise.resolve([]);
       }),
     }),
@@ -106,6 +114,7 @@ describe("WebhooksDispatchService — callProvider seam", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     insertedLogs.length = 0;
+    insertBatchSizes.length = 0;
     callProviderSpy.mockImplementation(
       (...args: Parameters<typeof import("../../common/outbound/call-provider").callProvider>) => {
         const actual = jest.requireActual<typeof import("../../common/outbound/call-provider")>(
@@ -250,6 +259,72 @@ describe("WebhooksDispatchService — callProvider seam", () => {
       expect.stringContaining("dispatch run failed"),
       expect.objectContaining({ orgId: ORG, eventName: EVENT }),
     );
+  });
+});
+
+describe("WebhooksDispatchService — bounded fan-out and batched delivery logs", () => {
+  function endpointsOf(n: number) {
+    return Array.from({ length: n }, (_, i) => ({ ...ENDPOINT, id: 100 + i }));
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    insertedLogs.length = 0;
+    insertBatchSizes.length = 0;
+    callProviderSpy.mockImplementation(
+      (...args: Parameters<typeof import("../../common/outbound/call-provider").callProvider>) => {
+        const actual = jest.requireActual<typeof import("../../common/outbound/call-provider")>(
+          "../../common/outbound/call-provider",
+        );
+        return actual.callProvider(...args);
+      },
+    );
+  });
+
+  it("writes ONE insert per chunk, not one per endpoint — 20 endpoints, 3 inserts, 20 rows", async () => {
+    mockPostSafeWebhook.mockResolvedValue({ statusCode: 200, responseBody: "OK" });
+    const svc = new WebhooksDispatchService(makeDb(endpointsOf(20)));
+
+    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
+      ORG, EVENT, PAYLOAD,
+    );
+
+    expect(insertedLogs).toHaveLength(20);
+    expect(insertBatchSizes).toEqual([WEBHOOK_DISPATCH_CHUNK, WEBHOOK_DISPATCH_CHUNK, 4]);
+    expect(insertedLogs.map((r) => r["endpointId"])).toEqual(endpointsOf(20).map((e) => e.id));
+  });
+
+  it("never holds more than WEBHOOK_DISPATCH_CHUNK outbound calls open at once", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    mockPostSafeWebhook.mockImplementation(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setImmediate(resolve));
+      inFlight -= 1;
+      return { statusCode: 200, responseBody: "OK" };
+    });
+    const svc = new WebhooksDispatchService(makeDb(endpointsOf(20)));
+
+    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
+      ORG, EVENT, PAYLOAD,
+    );
+
+    expect(peak).toBeLessThanOrEqual(WEBHOOK_DISPATCH_CHUNK);
+    expect(peak).toBeGreaterThan(1);
+  });
+
+  it("reads only the four columns delivery needs, never the whole endpoint row", async () => {
+    mockPostSafeWebhook.mockResolvedValue({ statusCode: 200, responseBody: "OK" });
+    const db = makeDb(endpointsOf(1));
+    const svc = new WebhooksDispatchService(db);
+
+    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
+      ORG, EVENT, PAYLOAD,
+    );
+
+    const projection = (db.select as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(Object.keys(projection).sort()).toEqual(["events", "id", "secret", "url"]);
   });
 });
 

@@ -27,6 +27,16 @@ const WEBHOOK_MAX_ATTEMPTS = 5;
 const WEBHOOK_BASE_DELAY_MS = 1_000;
 const WEBHOOK_MAX_DELAY_MS = 30_000;
 
+/**
+ * One chunk is one wave of concurrent outbound calls AND one multi-row
+ * webhook_logs insert. 8 caps the sockets an org's fan-out may hold open — each
+ * one lives for up to WEBHOOK_MAX_ATTEMPTS x WEBHOOK_TIMEOUT_MS — and caps the
+ * insert payload at 8 rows, each carrying a full event payload and a response
+ * body already truncated to WEBHOOK_RESPONSE_BODY_LIMIT. Flushing per chunk
+ * rather than once at the end keeps the crash window at one chunk.
+ */
+export const WEBHOOK_DISPATCH_CHUNK = 8;
+
 export class WebhookTerminalStatusError extends Error {
   readonly statusCode: number;
   constructor(status: number, body: string) {
@@ -56,6 +66,8 @@ interface DeliveryTarget {
   url: string;
   secret: string;
 }
+
+type DeliveryLogRow = typeof webhookLogs.$inferInsert;
 
 interface FetchedResponse {
   status: number;
@@ -111,9 +123,15 @@ export class WebhooksDispatchService {
   }
 
   private async run(orgId: string, eventName: string, payload: Record<string, unknown>): Promise<void> {
-    const endpoints = await this.db.query.webhookEndpoints.findMany({
-      where: and(eq(webhookEndpoints.orgId, orgId), eq(webhookEndpoints.isActive, true)),
-    });
+    const endpoints = await this.db
+      .select({
+        id: webhookEndpoints.id,
+        url: webhookEndpoints.url,
+        secret: webhookEndpoints.secret,
+        events: webhookEndpoints.events,
+      })
+      .from(webhookEndpoints)
+      .where(and(eq(webhookEndpoints.orgId, orgId), eq(webhookEndpoints.isActive, true)));
 
     const active = endpoints.filter((endpoint) => {
       const events = endpoint.events;
@@ -121,9 +139,19 @@ export class WebhooksDispatchService {
     });
     if (active.length === 0) return;
 
-    await Promise.allSettled(
-      active.map((endpoint) => this.deliver(endpoint, orgId, eventName, payload)),
-    );
+    for (let i = 0; i < active.length; i += WEBHOOK_DISPATCH_CHUNK) {
+      const chunk = active.slice(i, i + WEBHOOK_DISPATCH_CHUNK);
+      const settled = await Promise.allSettled(
+        chunk.map((endpoint) => this.deliver(endpoint, orgId, eventName, payload)),
+      );
+      const rows = settled
+        .filter((r): r is PromiseFulfilledResult<DeliveryLogRow> => r.status === "fulfilled")
+        .map((r) => r.value);
+      for (const rejected of settled)
+        if (rejected.status === "rejected")
+          logger.error("[webhooks] delivery failed before it could be logged", { orgId, eventName, error: rejected.reason });
+      if (rows.length > 0) await this.db.insert(webhookLogs).values(rows);
+    }
   }
 
   private async deliver(
@@ -131,7 +159,7 @@ export class WebhooksDispatchService {
     orgId: string,
     eventName: string,
     payload: Record<string, unknown>,
-  ): Promise<void> {
+  ): Promise<DeliveryLogRow> {
     const body = JSON.stringify({ event: eventName, data: payload, timestamp: new Date().toISOString() });
     const signature = createHmac("sha256", readSigningSecret(endpoint.secret))
       .update(body)
@@ -171,7 +199,7 @@ export class WebhooksDispatchService {
 
     const { statusCode, responseBody, success } = logFromResult(result);
 
-    await this.db.insert(webhookLogs).values({
+    return {
       endpointId: endpoint.id,
       orgId,
       event: eventName,
@@ -180,7 +208,7 @@ export class WebhooksDispatchService {
       responseBody,
       attempt: result.attempts,
       success,
-    });
+    };
   }
 
   async retryLog(orgId: string, endpointId: number, logId: number): Promise<{ success: boolean }> {
@@ -207,7 +235,8 @@ export class WebhooksDispatchService {
         `Endpoint URL is no longer safe to call: ${retryUrlCheck.reason}`,
       );
 
-    await this.deliver(endpoint, orgId, log.event, log.payload ?? {});
+    const row = await this.deliver(endpoint, orgId, log.event, log.payload ?? {});
+    await this.db.insert(webhookLogs).values(row);
     return { success: true };
   }
 }
