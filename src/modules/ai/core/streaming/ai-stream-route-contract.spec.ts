@@ -77,7 +77,7 @@ describe("streaming routes must not run inside the request-scoped tenant transac
     }
 
     expect(offenders).toEqual([]);
-    expect(streamRoutes).toBeGreaterThanOrEqual(10);
+    expect(streamRoutes).toBeGreaterThanOrEqual(11);
   });
 
   it("no AI controller pipes the provider stream itself, bypassing the awaited pipe", () => {

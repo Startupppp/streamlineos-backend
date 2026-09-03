@@ -27,6 +27,8 @@ import {
   agendaStreamPrompt,
   agendaStructuredPrompt,
   followUpPrompt,
+  followUpSources,
+  followUpStreamPrompt,
   type MeetingAttendeeContext,
   type MeetingContextOptions,
   type MeetingSource,
@@ -202,6 +204,16 @@ export class MeetingsPrepService {
     return { ...stream, sources: agendaSources(event, opts) };
   }
 
+  /**
+   * Both representations of a follow-up start here, so they always describe the
+   * same meeting. `loadEvent` filters on `orgId`, so another tenant's event is a
+   * 404 rather than a 403 — a cross-tenant miss must not confirm the row exists.
+   */
+  private loadFollowUpEvent(orgId: string, rawEventId: string): Promise<MeetingEventContext> {
+    const eventId = this.parseEventId(rawEventId);
+    return runInTenantTransaction(this.db, (tx) => this.loadEvent(orgId, eventId, tx), { orgId });
+  }
+
   async draftFollowUp(
     orgId: string,
     userId: string,
@@ -209,12 +221,7 @@ export class MeetingsPrepService {
     meetingNotes: string | undefined,
     actionItems: string[] | undefined,
   ): Promise<{ followUp: FollowUpOutput; eventTitle: string }> {
-    const eventId = this.parseEventId(rawEventId);
-    const event = await runInTenantTransaction(
-      this.db,
-      (tx) => this.loadEvent(orgId, eventId, tx),
-      { orgId },
-    );
+    const event = await this.loadFollowUpEvent(orgId, rawEventId);
 
     const result = await this.gateway.invokeStructured({
       actor: { orgId, userId },
@@ -228,6 +235,35 @@ export class MeetingsPrepService {
 
     const followUp = unwrapAiResult(result);
     return { followUp, eventTitle: event.title };
+  }
+
+  /**
+   * The streamed follow-up. Same context, same feature key, same gateway, so it
+   * is metered, breaker-guarded and concurrency-capped exactly as the buffered
+   * sibling is — an unmetered streaming route would be a money leak. The signal
+   * is the route's, so a client hang-up releases the reservation instead of
+   * paying for tokens nobody will read.
+   */
+  async streamFollowUp(
+    orgId: string,
+    userId: string,
+    rawEventId: string,
+    meetingNotes: string | undefined,
+    actionItems: string[] | undefined,
+    signal?: AbortSignal,
+  ): Promise<AiTextStream & { sources: MeetingSource[] }> {
+    const event = await this.loadFollowUpEvent(orgId, rawEventId);
+
+    const stream = await this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "meetings.follow-up",
+      prompt: followUpStreamPrompt(event, meetingNotes, actionItems),
+      maxTokens: 1024,
+      charge: true,
+      ...(signal !== undefined ? { signal } : {}),
+    });
+
+    return { ...stream, sources: followUpSources(event, meetingNotes, actionItems) };
   }
 
   async proposeSendFollowUp(

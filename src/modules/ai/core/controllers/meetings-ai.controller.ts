@@ -130,6 +130,44 @@ export class MeetingsAiController {
     );
   }
 
+  /**
+   * The streamed representation of the same follow-up, and the one the calendar
+   * panel opens. The buffered sibling above stays: its product is a
+   * Zod-validated record, and other callers may still want one. Same feature
+   * key, same gateway, so this route is credit-metered exactly as the buffered
+   * one is; the real sources ride the headers so a stopped stream keeps them.
+   */
+  @Post("follow-up/stream")
+  @Validate({ body: meetingFollowUpBodySchema })
+  async followUpStream(
+    @Req() req: Request,
+    @Body() body: MeetingFollowUpBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.requireAiFlag(u.orgId);
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "meetings.follow-up",
+        orgId: u.orgId,
+        route: "POST /ai/meetings/follow-up/stream",
+        sourcesHeader: MEETING_SOURCES_HEADER,
+      },
+      async (signal) =>
+        this.meetingsPrep.streamFollowUp(
+          u.orgId,
+          u.userId,
+          body.eventId,
+          body.meetingNotes,
+          body.actionItems,
+          signal,
+        ),
+    );
+  }
+
   @Post("follow-up/propose-send")
   @Validate({ body: proposeSendBodySchema })
   async proposeSend(

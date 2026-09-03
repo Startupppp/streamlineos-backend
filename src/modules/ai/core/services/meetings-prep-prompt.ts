@@ -133,14 +133,10 @@ Use only the meeting details above. Do not invent attendees, decisions or histor
 }
 
 /**
- * The sources a streamed agenda actually rests on, built from the context this
- * service assembled rather than asked of the model. A truncated stream still
- * carries them because they go out with the headers.
+ * The event and its attendees — the two things every streamed meeting answer
+ * rests on, whichever representation asked for it.
  */
-export function agendaSources(
-  event: MeetingPromptEvent,
-  opts: MeetingContextOptions,
-): MeetingSource[] {
+function baseSources(event: MeetingPromptEvent): MeetingSource[] {
   const sources: MeetingSource[] = [
     { id: `event-${event.id}`, title: event.title, snippet: "Calendar event details" },
   ];
@@ -153,17 +149,37 @@ export function agendaSources(
     });
   }
 
+  return sources;
+}
+
+/**
+ * The sources a streamed agenda actually rests on, built from the context this
+ * service assembled rather than asked of the model. A truncated stream still
+ * carries them because they go out with the headers.
+ */
+export function agendaSources(
+  event: MeetingPromptEvent,
+  opts: MeetingContextOptions,
+): MeetingSource[] {
+  const sources = baseSources(event);
+
   const crm = crmLink(event, opts);
   if (crm) sources.push({ id: `crm-${event.id}`, title: crm.replace("CRM Link: ", ""), snippet: "Linked CRM record" });
 
   return sources;
 }
 
-export function followUpPrompt(
+/**
+ * The buffered follow-up and its streamed sibling must brief the model on the
+ * same meeting and the same organizer input. A second copy of this block would
+ * drift the moment either prompt is tuned, and the two drafts would stop
+ * describing the same conversation.
+ */
+function followUpContextBlock(
   event: MeetingPromptEvent,
   meetingNotes: string | undefined,
   actionItems: string[] | undefined,
-): MeetingPrompt {
+): string {
   const attendees =
     event.attendees.length > 0
       ? event.attendees.map((a) => a.name ?? a.userId).join(", ")
@@ -178,16 +194,24 @@ export function followUpPrompt(
       ? `\nIDENTIFIED ACTION ITEMS:\n${actionItems.map((i) => `- ${i}`).join("\n")}`
       : "";
 
-  return {
-    system: FOLLOW_UP_SYSTEM_PROMPT,
-    user: `Generate a professional post-meeting follow-up email for the following meeting.
-
-MEETING DETAILS:
+  return `MEETING DETAILS:
 - Title: ${event.title}
 - Date: ${event.startDate.toLocaleDateString("en-IN", { dateStyle: "full" })}
 - Attendees: ${attendees}
 ${notesSection}
-${itemsSection}
+${itemsSection}`;
+}
+
+export function followUpPrompt(
+  event: MeetingPromptEvent,
+  meetingNotes: string | undefined,
+  actionItems: string[] | undefined,
+): MeetingPrompt {
+  return {
+    system: FOLLOW_UP_SYSTEM_PROMPT,
+    user: `Generate a professional post-meeting follow-up email for the following meeting.
+
+${followUpContextBlock(event, meetingNotes, actionItems)}
 
 Generate:
 1. A clear email subject line
@@ -195,4 +219,79 @@ Generate:
 3. A structured list of action items with assignees and due dates where identifiable
 4. A suggested next meeting date if a follow-up is needed`,
   };
+}
+
+/**
+ * The streamed sibling asks for prose because the wire carries raw text deltas.
+ * It asks for the same four things the structured schema holds, written as
+ * markdown sections in a fixed order, so the panel can fold the arriving text
+ * back into a draft it can still send. The action-item line is delimited rather
+ * than free-form for exactly that reason: `owner:` and `due:` survive being read
+ * from a half-arrived line, where a prose sentence does not.
+ */
+export function followUpStreamPrompt(
+  event: MeetingPromptEvent,
+  meetingNotes: string | undefined,
+  actionItems: string[] | undefined,
+): MeetingPrompt {
+  return {
+    system: FOLLOW_UP_SYSTEM_PROMPT,
+    user: `Write a post-meeting follow-up email for the following meeting.
+
+${followUpContextBlock(event, meetingNotes, actionItems)}
+
+Write plain markdown with these sections, in this order, and nothing else:
+## Subject
+The email subject, on one line.
+## Email
+The follow-up email body.
+## Action items
+One bullet per item, each written exactly as:
+- <what needs doing> | owner: <name or unassigned> | due: <date or none>
+## Next meeting
+A suggested date on one line, or the single word none.
+
+Use only the meeting details above. Do not invent attendees, decisions, owners or dates that are not stated.`,
+  };
+}
+
+const SNIPPET_MAX = 160;
+
+function snippet(text: string): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length > SNIPPET_MAX ? `${collapsed.slice(0, SNIPPET_MAX)}…` : collapsed;
+}
+
+/**
+ * What a streamed follow-up actually rests on, built from the context this
+ * service assembled rather than asked of the model. The organizer's own notes
+ * and supplied action items are inputs the draft is derived from, so they are
+ * cited as such; a truncated stream keeps them because they go out with the
+ * headers.
+ */
+export function followUpSources(
+  event: MeetingPromptEvent,
+  meetingNotes: string | undefined,
+  actionItems: string[] | undefined,
+): MeetingSource[] {
+  const sources = baseSources(event);
+
+  if (meetingNotes && meetingNotes.trim().length > 0) {
+    sources.push({
+      id: `notes-${event.id}`,
+      title: "Organizer meeting notes",
+      snippet: snippet(meetingNotes),
+    });
+  }
+
+  const supplied = actionItems?.filter((item) => item.trim().length > 0) ?? [];
+  if (supplied.length > 0) {
+    sources.push({
+      id: `action-items-${event.id}`,
+      title: `${supplied.length} supplied action item${supplied.length === 1 ? "" : "s"}`,
+      snippet: snippet(supplied.join("; ")),
+    });
+  }
+
+  return sources;
 }
