@@ -13,7 +13,7 @@ import {
   assertPayrollPayeeEligible,
   assertPayrollWorkerPayeeEligible,
 } from "../lib/payroll-payee-eligibility";
-import { resolvePerson } from "../../directory/person-seam";
+import { workerBelongsToOrg } from "../../directory/person-seam";
 import type { DataScope } from "../../access/access.types";
 import type { ListProfilesQuery, CreateProfileInput, PatchProfileInput } from "./dto/runs.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -41,8 +41,7 @@ export class ProfilesService {
    * unresolved subject is surfaced as 404, never 403.
    */
   private async assertWorkerInOrg(orgId: string, workerId: string): Promise<void> {
-    const resolution = await resolvePerson(this.db, orgId, { kind: "worker", workerId });
-    if (resolution.status !== "resolved")
+    if (!(await workerBelongsToOrg(this.db, orgId, workerId)))
       throw new NotFoundException("Worker not found in this organization");
   }
 

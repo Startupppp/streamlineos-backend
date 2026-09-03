@@ -25,9 +25,10 @@ function serviceSeeing(workerRow: Record<string, unknown> | undefined): {
 } {
   const state = { historyReads: 0 };
   /**
-   * `resolvePerson({ kind: "worker" })` reads `workers` under the org. An empty first answer is the
-   * cross-tenant case; the seam re-asserts `orgId` itself, so an unowned worker looks identical to
-   * one that does not exist anywhere.
+   * `workerBelongsToOrg` reads `workers` under the org. An empty answer is the cross-tenant case;
+   * the seam re-asserts `orgId` itself, so an unowned worker looks identical to one that does not
+   * exist anywhere. It deliberately does NOT ask whether the worker is a payee — that is the
+   * payroll bar, and borrowing it here would 404 a tenant's OWN non-payee worker.
    */
   const db = {
     select: jest.fn().mockImplementation(() => ({
