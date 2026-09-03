@@ -209,6 +209,119 @@ export function evaluateDbCalls(manifest) {
 }
 
 /**
+ * The request-level half — the four ceilings a statement can never answer.
+ *
+ * `evaluateCeilings` above scores STATEMENTS: 50 ms ordinary, 200 ms complex, measured with
+ * `EXPLAIN (ANALYZE, BUFFERS)` on a loopback connection. The PRD's other pair of ceilings —
+ * 300 ms ordinary, 800 ms complex — are REQUEST-level, and a request additionally pays for
+ * authentication, permission resolution, module entitlement, serialisation and the Nest pipeline.
+ * Two earlier passes on this ticket refused to write a 5 ms statement into a 300 ms end-to-end
+ * ceiling, and they were right to; this scores the thing the ceiling is about instead.
+ *
+ * It fails on three classes, and keeps them distinct because conflating them is how a gate becomes
+ * an alarm:
+ *
+ *   violation      the capture cannot be trusted at all — a tenant whose control probe did not
+ *                  hold, a route recorded as measured with no latency, a heap figure taken with
+ *                  no forced collection, or a run recorded against a BYPASSRLS role.
+ *   over ceiling   a scored route's p95 above its PRD class ceiling.
+ *   breach         a measured figure above the ceiling `contracts/route-budgets.json` DECLARES for
+ *                  it — latency, downstream calls, response bytes or resident heap. These are the
+ *                  four dimensions box 2 names, and they are the reason this instrument exists.
+ */
+export function evaluateRequestLevel(manifest) {
+  const rl = manifest.requestLevel;
+  if (!rl)
+    return {
+      present: false,
+      violations: [],
+      over: [],
+      breaches: [],
+      measured: 0,
+      refused: 0,
+      failed: 0,
+      excluded: 0,
+      total: 0,
+      warnings: [],
+    };
+
+  const violations = [];
+  const warnings = [];
+  const over = [];
+  const breaches = [];
+
+  for (const t of rl.tenants ?? [])
+    if (t.scorable !== true)
+      violations.push(
+        `request-level capture on tenant ${t.tenant} (${t.profile}) is not scorable: ${t.notScorableBecause ?? "unstated"}` +
+          " — refusing to score a run whose control requests did not succeed",
+      );
+  if ((rl.tenants ?? []).length === 0) violations.push("requestLevel records no tenant at all");
+  if (typeof rl.role !== "string" || rl.role.length === 0)
+    violations.push("requestLevel records no database role — a request measured as the owner hides the RLS predicate");
+  else if (/bypassrls\s*=\s*true/i.test(rl.role))
+    violations.push(`requestLevel was captured as a BYPASSRLS role (${rl.role}) — its plans omit the RLS predicate`);
+  if (typeof rl.command !== "string" || rl.command.length === 0)
+    violations.push("requestLevel records no command — a percentile with no reproduction is not evidence");
+
+  const rows = Object.entries(rl.routes ?? {});
+  let measured = 0;
+  let refused = 0;
+  let failed = 0;
+  let excluded = 0;
+
+  for (const [key, r] of rows) {
+    if (r.status !== "measured") {
+      if (r.status === "failed") failed += 1;
+      else refused += 1;
+      continue;
+    }
+    measured += 1;
+    if (r.scored !== true) excluded += 1;
+    const p95 = r.latencyMs?.p95;
+    if (typeof p95 !== "number") {
+      violations.push(`${key}: recorded as measured with no p95 — an absent number is not a measurement`);
+      continue;
+    }
+    if (r.memoryMb !== null && r.memoryMb !== undefined && rl.gcAvailable !== true)
+      violations.push(
+        `${key}: carries a heap figure while the capture ran without --expose-gc — a heap read with no ` +
+          "forced collection is the previous request's residue, not this route's cost",
+      );
+    if (r.scored === true && p95 > r.prdCeilingMs)
+      over.push(`${key}: request p95 ${p95} ms > ${r.prdCeilingMs} ms PRD §12.1 ceiling (${r.routeClass})`);
+
+    const dims = [
+      ["request p95", p95, r.declaredLatencyP95Ms, "ms"],
+      ["downstream calls", r.downstreamCalls, r.declaredDownstreamCalls, ""],
+      ["response bytes", r.responseBytes, r.declaredResponseBytes, " bytes"],
+      ["resident heap", r.memoryMb, r.declaredMemoryMb, " MB"],
+    ];
+    for (const [label, actual, ceiling, unit] of dims) {
+      if (typeof actual !== "number" || typeof ceiling !== "number") continue;
+      if (actual > ceiling)
+        breaches.push(`${key}: ${label} ${actual}${unit} > declared ${ceiling}${unit} in contracts/route-budgets.json`);
+    }
+  }
+
+  if (rl.atHead !== true)
+    warnings.push(
+      `the request-level capture ran on ${String(rl.database)} at ${String(rl.appliedMigrations)} of ` +
+        `${String(rl.journalEntries)} journal entries — NOT at head, so these numbers describe the plans ` +
+        "available without the missing migration(s)",
+    );
+  if (rl.readOnly === true)
+    warnings.push(
+      "the request-level capture was READ-ONLY: the plan's write entries were declined rather than " +
+        "measured, so no mutation has a request-level number",
+    );
+  if (rl.workingTreeDirty === true)
+    warnings.push(`the request-level capture ran on a DIRTY working tree at ${String(rl.commit).slice(0, 8)}`);
+
+  return { present: true, violations, warnings, over, breaches, measured, refused, failed, excluded, total: rows.length };
+}
+
+/**
  * The set of (benchmark, tenant) pairs the replicate study actually covered.
  *
  * A gate may only ratchet what its noise study measured. This is not pedantry — it is the rule that
@@ -373,6 +486,9 @@ function report(manifest, fresh) {
   const violations = validateManifest(manifest, knownReadCostIds, warnings);
   const ceilings = evaluateCeilings(manifest);
   const dbCalls = evaluateDbCalls(manifest);
+  const requestLevel = evaluateRequestLevel(manifest);
+  violations.push(...requestLevel.violations);
+  warnings.push(...requestLevel.warnings);
   const regressions = fresh ? evaluateRegressions(manifest, fresh) : null;
 
   const modules = manifest.modules.length;
@@ -527,6 +643,47 @@ function report(manifest, fresh) {
     console.log("\nRegression pass: NOT RUN — pass --against=<fresh measurement json> to ratchet.");
   }
 
+  if (!requestLevel.present)
+    console.log(
+      "\nRequest level: NOT MEASURED — no `requestLevel` block. The 300 ms / 800 ms PRD ceilings are " +
+        "request-level and nothing here has timed a route over HTTP.",
+    );
+  else {
+    console.log(
+      `\nRequest level (${manifest.requestLevel.method}, ${String(manifest.requestLevel.database)}` +
+        `${manifest.requestLevel.atHead === true ? ", at head" : ", NOT at head"}): ` +
+        `${fraction(requestLevel.measured, requestLevel.total)} of route×tenant slots measured · ` +
+        `${requestLevel.refused} refused · ${requestLevel.failed} failed · ` +
+        `${requestLevel.excluded} recorded but excluded from the request ceiling.`,
+    );
+    console.log(`  ${manifest.requestLevel.cache}`);
+    console.log(`  ${manifest.requestLevel.memoryNote}`);
+    for (const t of manifest.requestLevel.tenants ?? [])
+      console.log(
+        `  tenant ${t.profile}: control probe ${t.controlBeforeOk && t.controlAfterOk ? "HELD" : "FAILED"}` +
+          ` (anonymous ${String(t.anonymousControlStatus)}) · subject ${t.subjectStable ? "STABLE" : "DRIFTED"}` +
+          ` ${String(t.subjectHashBefore)} -> ${String(t.subjectHashAfter)}`,
+      );
+    const reasons = Object.entries(manifest.requestLevel.tally?.refusalsByReason ?? {}).sort((a, b) => b[1] - a[1]);
+    if (reasons.length > 0) {
+      console.log(`  refusals, by reason:`);
+      for (const [reason, n] of reasons.slice(0, 8)) console.log(`    ${String(n).padStart(3)}  ${reason}`);
+      if (reasons.length > 8) console.log(`    … and ${reasons.length - 8} more reasons`);
+    }
+    if (requestLevel.over.length > 0) {
+      console.error(`  ${requestLevel.over.length} route(s) OVER the PRD request ceiling:`);
+      for (const x of requestLevel.over) console.error(`    ${x}`);
+    } else console.log("  no scored route is over its PRD request ceiling.");
+    if (requestLevel.breaches.length > 0) {
+      console.error(`  ${requestLevel.breaches.length} DECLARED BUDGET BREACH(ES):`);
+      for (const x of requestLevel.breaches) console.error(`    ${x}`);
+      console.error(
+        "    These are measured figures above a ceiling the contract already declares. Raising the " +
+          "ceiling to turn one green is itself a defect.",
+      );
+    } else console.log("  no measured figure is above its declared route budget.");
+  }
+
   const notMeasured = manifest.coverage?.notMeasured ?? [];
   if (notMeasured.length > 0) {
     console.log("\nNOT MEASURED (declared as such, never inferred from a proxy):");
@@ -535,13 +692,16 @@ function report(manifest, fresh) {
 
   const status = verdict({
     violations: violations.length,
-    over: ceilings.over.length + dbCalls.breaches.length,
+    over: ceilings.over.length + dbCalls.breaches.length + requestLevel.over.length + requestLevel.breaches.length,
     regressions: regressions?.findings.length ?? 0,
     measured: ceilings.measured.length,
     declared: slots,
   });
-  console.log(`\nSTATUS: ${status} — ${fraction(ceilings.measured.length, slots)} of statement ceilings measured.`);
-  return { status, violations, ceilings, dbCalls, regressions };
+  console.log(
+    `\nSTATUS: ${status} — ${fraction(ceilings.measured.length, slots)} of statement ceilings measured, ` +
+      `${fraction(requestLevel.measured, requestLevel.total)} of request-level slots measured.`,
+  );
+  return { status, violations, ceilings, dbCalls, requestLevel, regressions };
 }
 
 function selfTest() {
@@ -809,6 +969,108 @@ function selfTest() {
   check("verdict is INCONCLUSIVE when nothing was measured", verdict({ violations: 0, over: 0, regressions: 0, measured: 0, declared: 5 }) === "INCONCLUSIVE");
   check("verdict is OK only when everything is measured and clean", verdict({ violations: 0, over: 0, regressions: 0, measured: 5, declared: 5 }) === "OK");
 
+  // --- the request-level half -------------------------------------------------------------
+  const rlBase = () => ({
+    requestLevel: {
+      method: "http-harness",
+      command: "node … jest --testPathPattern=route-budget-http",
+      role: "streamline_app (rolbypassrls = false, RLS live)",
+      database: "scratch_x",
+      atHead: true,
+      readOnly: false,
+      workingTreeDirty: false,
+      gcAvailable: true,
+      tenants: [{ tenant: "org", profile: "reference", scorable: true, controlBeforeOk: true, controlAfterOk: true, subjectStable: true }],
+      routes: {
+        "GET /a@reference": {
+          route: "GET /a", profile: "reference", routeClass: "list", status: "measured", scored: true,
+          prdCeilingMs: 300, declaredLatencyP95Ms: 400, declaredDownstreamCalls: 0,
+          declaredResponseBytes: 1000, declaredMemoryMb: 8,
+          latencyMs: { p50: 1, p95: 10, p99: 12, min: 1, max: 20 },
+          requestDbCalls: 6, downstreamCalls: 0, responseBytes: 100, memoryMb: 1, overPrdCeiling: false,
+        },
+      },
+    },
+  });
+
+  check("a manifest with no requestLevel reports it as not measured, not as a pass", evaluateRequestLevel({}).present === false);
+  check("a clean request-level capture raises nothing", (() => {
+    const r = evaluateRequestLevel(rlBase());
+    return r.violations.length === 0 && r.over.length === 0 && r.breaches.length === 0 && r.measured === 1;
+  })());
+
+  const unscorable = rlBase();
+  unscorable.requestLevel.tenants[0].scorable = false;
+  unscorable.requestLevel.tenants[0].notScorableBecause = "the opening control probe did not hold";
+  check(
+    "a tenant whose control probe did not hold is a VIOLATION — refusing to score the run",
+    evaluateRequestLevel(unscorable).violations.length === 1,
+  );
+
+  const bypass = rlBase();
+  bypass.requestLevel.role = "postgres (rolbypassrls = true)";
+  check("a request-level capture as a BYPASSRLS role is rejected", evaluateRequestLevel(bypass).violations.length === 1);
+
+  const rlNoCommand = rlBase();
+  delete rlNoCommand.requestLevel.command;
+  check("a request-level capture with no command is rejected", evaluateRequestLevel(rlNoCommand).violations.length === 1);
+
+  const noP95 = rlBase();
+  noP95.requestLevel.routes["GET /a@reference"].latencyMs = null;
+  check("a route recorded as measured with no p95 is a violation", evaluateRequestLevel(noP95).violations.length === 1);
+
+  const noGc = rlBase();
+  noGc.requestLevel.gcAvailable = false;
+  check(
+    "a heap figure taken without a forced collection is a violation, not a measurement",
+    evaluateRequestLevel(noGc).violations.some((v) => v.includes("forced collection")),
+  );
+
+  const slow = rlBase();
+  slow.requestLevel.routes["GET /a@reference"].latencyMs.p95 = 301;
+  check("an ordinary route over 300 ms fails the PRD request ceiling", evaluateRequestLevel(slow).over.length === 1);
+
+  const complex = rlBase();
+  complex.requestLevel.routes["GET /a@reference"].scored = true;
+  complex.requestLevel.routes["GET /a@reference"].prdCeilingMs = 800;
+  complex.requestLevel.routes["GET /a@reference"].latencyMs.p95 = 301;
+  check("an approved complex aggregate at 301 ms does NOT fail — it has the looser ceiling", evaluateRequestLevel(complex).over.length === 0);
+
+  const sweep = rlBase();
+  sweep.requestLevel.routes["GET /a@reference"].scored = false;
+  sweep.requestLevel.routes["GET /a@reference"].latencyMs.p95 = 5000;
+  const sweepResult = evaluateRequestLevel(sweep);
+  check(
+    "an excluded sweep at 5 s is recorded and NOT scored, and counted as excluded",
+    sweepResult.over.length === 0 && sweepResult.excluded === 1,
+  );
+
+  for (const [field, value, label] of [
+    ["responseBytes", 2000, "response bytes"],
+    ["downstreamCalls", 1, "downstream calls"],
+    ["memoryMb", 99, "resident heap"],
+  ]) {
+    const breached = rlBase();
+    breached.requestLevel.routes["GET /a@reference"][field] = value;
+    check(`a ${label} figure above its declared route budget is a breach`, evaluateRequestLevel(breached).breaches.length === 1);
+  }
+
+  const notHead = rlBase();
+  notHead.requestLevel.atHead = false;
+  check("a capture that is not at journal head warns rather than passing silently", evaluateRequestLevel(notHead).warnings.length === 1);
+
+  const readOnly = rlBase();
+  readOnly.requestLevel.readOnly = true;
+  check(
+    "a read-only capture says out loud that no mutation has a request-level number",
+    evaluateRequestLevel(readOnly).warnings.some((w) => w.includes("READ-ONLY")),
+  );
+
+  const refusedRoute = rlBase();
+  refusedRoute.requestLevel.routes["GET /b@reference"] = { route: "GET /b", profile: "reference", status: "unmeasured", reason: "declined" };
+  const refusedResult = evaluateRequestLevel(refusedRoute);
+  check("a refused route is counted as refused, never as measured", refusedResult.refused === 1 && refusedResult.measured === 1);
+
   const ok = results.every(Boolean);
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`);
   return ok;
@@ -840,12 +1102,14 @@ function main() {
     fresh = JSON.parse(readFileSync(AGAINST, "utf8"));
   }
 
-  const { status, violations, ceilings, dbCalls, regressions } = report(manifest, fresh);
+  const { status, violations, ceilings, dbCalls, requestLevel, regressions } = report(manifest, fresh);
   if (STRICT && status !== "OK") process.exit(2);
   const failed =
     violations.length > 0 ||
     ceilings.over.length > 0 ||
     dbCalls.breaches.length > 0 ||
+    requestLevel.over.length > 0 ||
+    requestLevel.breaches.length > 0 ||
     (regressions?.findings.length ?? 0) > 0;
   process.exit(failed ? 1 : 0);
 }
