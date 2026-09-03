@@ -33,6 +33,7 @@ import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
 import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
 import { isChannelMember, resolveMembershipId } from "./chat-membership-lookup";
+import { CHAT_MESSAGE_CLIENT_KEY_CONFLICT } from "./chat-message-conflict-target";
 import { StorageService } from "../storage/storage.service";
 
 function strippedReferenceMetadata(
@@ -163,9 +164,7 @@ export class ChatMessagesService {
             clientKey: body.clientKey ?? null,
             channelPosition,
           })
-          .onConflictDoNothing({
-            target: [chatMessages.orgId, chatMessages.channelId, chatMessages.clientKey],
-          })
+          .onConflictDoNothing(CHAT_MESSAGE_CLIENT_KEY_CONFLICT)
           .returning();
 
         // Two retries racing past the pre-check both reach here; the partial unique lets

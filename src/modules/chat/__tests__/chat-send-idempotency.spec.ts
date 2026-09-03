@@ -9,11 +9,17 @@ import { ChatOrgSettingsService } from "../chat-org-settings.service";
 import { MESSAGE_FANOUT_PROVIDER } from "../message-fanout.interface";
 import { StorageService } from "../../storage/storage.service";
 import { chatMessages } from "../../../db/schema";
+import { CHAT_MESSAGE_CLIENT_KEY_CONFLICT } from "../chat-message-conflict-target";
 
 /**
  * A send whose response is lost is retried by the client. Without a durable key the
  * retry inserts a second message; the partial unique index on
  * (org_id, channel_id, client_key) makes it collide, and the loser replays the winner.
+ *
+ * The database here is a fake, so it cannot see whether Postgres can arbitrate that
+ * partial index — this suite passed for the whole time every send 500'd on 42P10.
+ * `chat-send-conflict-target.db.spec.ts` is the half that executes real SQL; all this
+ * one can honestly claim is that the send path hands over the shared conflict spec.
  */
 const ORG = "org-a";
 const USER = "user-1";
@@ -109,6 +115,7 @@ describe("chat send is idempotent under a client key", () => {
     const values = (db.values as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
     expect(values["clientKey"]).toBe(CLIENT_KEY);
     const conflict = (db.onConflictDoNothing as jest.Mock).mock.calls[0]?.[0] as { target: unknown[] };
+    expect(conflict).toBe(CHAT_MESSAGE_CLIENT_KEY_CONFLICT);
     expect(conflict.target).toEqual([chatMessages.orgId, chatMessages.channelId, chatMessages.clientKey]);
   });
 
