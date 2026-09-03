@@ -662,7 +662,8 @@ function report(manifest, fresh) {
       console.log(
         `  tenant ${t.profile}: control probe ${t.controlBeforeOk && t.controlAfterOk ? "HELD" : "FAILED"}` +
           ` (anonymous ${String(t.anonymousControlStatus)}) · subject ${t.subjectStable ? "STABLE" : "DRIFTED"}` +
-          ` ${String(t.subjectHashBefore)} -> ${String(t.subjectHashAfter)}`,
+          ` ${String(t.subjectHashBefore)} -> ${String(t.subjectHashAfter)}` +
+          `${t.subjectStable && t.subjectHashBefore !== t.subjectHashAfter ? " (the hash moved only on tables the harness itself declares it writes)" : ""}`,
       );
     const reasons = Object.entries(manifest.requestLevel.tally?.refusalsByReason ?? {}).sort((a, b) => b[1] - a[1]);
     if (reasons.length > 0) {

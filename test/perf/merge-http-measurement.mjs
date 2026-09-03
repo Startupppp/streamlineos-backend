@@ -312,8 +312,14 @@ function main() {
   manifest.prd.requestCeilingsMs.note =
     `Request-level ceilings ARE measured, by ${requestLevel.instrument}, and recorded under ` +
     `\`requestLevel\`. The cache-hit ceiling remains unmeasured — no Redis runs against this seed.`;
+  // Drop the lines this script itself wrote last time, as well as the original "no HTTP harness
+  // exists" line. Without this a second capture stacks a stale coverage claim on top of a fresh
+  // one, and the reader cannot tell which database either sentence is about.
   manifest.coverage.notMeasured = (manifest.coverage.notMeasured ?? []).filter(
-    (line) => !line.startsWith("End-to-end request latency"),
+    (line) =>
+      !line.startsWith("End-to-end request latency") &&
+      !line.startsWith("Request-level figures cover") &&
+      !line.startsWith("Request-level MUTATION latency"),
   );
   manifest.coverage.notMeasured.unshift(
     `Request-level figures cover ${String(requestLevel.tally.measured)} of ` +
