@@ -238,7 +238,7 @@ export const payrollTdsYtdLedger = pgTable(
     workerId: text("worker_id"),
     fiscalYear: text("fiscal_year").notNull(),
     periodKey: text("period_key").notNull(),
-    runId: integer("run_id"),
+    runId: integer("run_id").notNull(),
     taxableIncomePaise: integer("taxable_income_paise").default(0).notNull(),
     tdsPaise: integer("tds_paise").default(0).notNull(),
     previousEmployerIncomePaise: integer("previous_employer_income_paise").default(0).notNull(),
@@ -251,10 +251,10 @@ export const payrollTdsYtdLedger = pgTable(
   (table) => [
     unique("uniq_payroll_tds_ytd_ledger_org_id").on(table.orgId, table.id),
     uniqueIndex("uniq_payroll_tds_ytd_user_period")
-      .on(table.orgId, table.userId, table.fiscalYear, table.periodKey)
+      .on(table.orgId, table.userId, table.fiscalYear, table.periodKey, table.runId)
       .where(sql`user_id IS NOT NULL`),
     uniqueIndex("uniq_payroll_tds_ytd_worker_period")
-      .on(table.orgId, table.workerId, table.fiscalYear, table.periodKey)
+      .on(table.orgId, table.workerId, table.fiscalYear, table.periodKey, table.runId)
       .where(sql`worker_id IS NOT NULL`),
     index("idx_payroll_tds_ytd_user_fy").on(table.orgId, table.userId, table.fiscalYear),
     index("idx_payroll_tds_ytd_worker_fy").on(table.orgId, table.workerId, table.fiscalYear),

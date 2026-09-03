@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
 } from "@nestjs/common";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import {
@@ -25,7 +26,10 @@ import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { defaultFormatFromCurrency, csvHeader, csvRow } from "./lib/payout-csv";
 import { toPaise, fromPaise } from "../runs/lib/money";
 import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
-import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { isUniqueViolation, isUniqueViolationOn } from "../../../common/db/postgres-error";
+
+const BATCH_ITEM_SUBJECT_CONSTRAINT = "uniq_payroll_bank_batch_items_batch_subject";
+const BATCH_ITEM_LIVE_SUBJECT_CONSTRAINT = "uniq_payroll_bank_batch_items_live_subject";
 
 type ItemData = {
   runEmployeeId: number;
@@ -92,7 +96,7 @@ export class BatchCreatorService {
     const payees = await loadRunEmployeePayees(this.db, orgId, runId, this.efService);
     const payeeByRunEmployee = new Map(payees.map((payee) => [payee.runEmployeeId, payee]));
 
-    const alreadyPaidRows = requirePayrollReadWithinCap(await this.db
+    const liveInstructionRows = requirePayrollReadWithinCap(await this.db
       .select({ runEmployeeId: payrollBankBatchItems.runEmployeeId })
       .from(payrollBankBatchItems)
       .innerJoin(payrollBankBatches, eq(payrollBankBatchItems.batchId, payrollBankBatches.id))
@@ -100,14 +104,14 @@ export class BatchCreatorService {
         and(
           eq(payrollBankBatches.runId, runId),
           eq(payrollBankBatches.orgId, orgId),
-          eq(payrollBankBatchItems.status, "PAID"),
+          ne(payrollBankBatchItems.status, "FAILED"),
         ),
       )
-      .limit(PAYROLL_READ_CAP + 1), "create payout batch paid employees");
-    const alreadyPaidRunEmployeeIds = new Set(alreadyPaidRows.map((r) => r.runEmployeeId));
+      .limit(PAYROLL_READ_CAP + 1), "create payout batch live instructions");
+    const alreadyInstructedRunEmployeeIds = new Set(liveInstructionRows.map((r) => r.runEmployeeId));
 
     const eligible = employees.filter((e) => {
-      if (alreadyPaidRunEmployeeIds.has(e.id)) return false;
+      if (alreadyInstructedRunEmployeeIds.has(e.id)) return false;
       if (e.status === "HELD" || e.holdReason) return false;
       const payee = payeeByRunEmployee.get(e.id);
       const bank = payee?.bankDetails ?? null;
@@ -273,6 +277,16 @@ export class BatchCreatorService {
         newBatch = txResult.batch;
         newBatchItems = txResult.items;
       } catch (err: unknown) {
+        if (
+          isUniqueViolationOn(
+            err,
+            BATCH_ITEM_SUBJECT_CONSTRAINT,
+            BATCH_ITEM_LIVE_SUBJECT_CONSTRAINT,
+          )
+        )
+          throw new ConflictException(
+            "A payout instruction already exists for one of these payees on this run — refresh the batch list before generating another",
+          );
         if (subKey && isUniqueViolation(err)) {
           const racedBatch = await this.db.query.payrollBankBatches.findFirst({
             where: and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.idempotencyKey, subKey)),

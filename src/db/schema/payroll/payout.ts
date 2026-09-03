@@ -65,6 +65,10 @@ export const payrollBankBatchItems = pgTable("payroll_bank_batch_items", {
   foreignKey({ columns: [table.orgId, table.batchId], foreignColumns: [payrollBankBatches.orgId, payrollBankBatches.id], name: "fk_payroll_bank_batch_items_batch_id_org" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.runEmployeeId], foreignColumns: [payrollRunEmployees.orgId, payrollRunEmployees.id], name: "fk_payroll_bank_batch_items_run_employee_id_org" }).onDelete("cascade"),
   unique("uniq_payroll_bank_batch_items_org_id").on(table.orgId, table.id),
+  uniqueIndex("uniq_payroll_bank_batch_items_batch_subject").on(table.orgId, table.batchId, table.runEmployeeId),
+  uniqueIndex("uniq_payroll_bank_batch_items_live_subject")
+    .on(table.orgId, table.runEmployeeId)
+    .where(sql`status <> 'FAILED'`),
   index("idx_payroll_bank_batch_items_batch_status").on(table.batchId, table.status),
   index("idx_payroll_bank_batch_items_org_worker").on(table.orgId, table.workerId),
   check(

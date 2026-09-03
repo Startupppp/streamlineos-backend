@@ -23,8 +23,14 @@ interface TxRecorder {
   inserted: unknown[];
 }
 
-function makeDb(overrides?: { pendingCount?: number; runStatus?: string }) {
-  const { pendingCount = 0, runStatus = "PROCESSING" } = overrides ?? {};
+interface DbOverrides {
+  subjects?: number;
+  paidSubjects?: number;
+  runStatus?: string;
+}
+
+function makeDb(overrides?: DbOverrides) {
+  const { subjects = 1, paidSubjects = 1, runStatus = "PROCESSING" } = overrides ?? {};
   let outerSelectCall = 0;
   const recorder: TxRecorder = { inserted: [] };
 
@@ -66,8 +72,8 @@ function makeDb(overrides?: { pendingCount?: number; runStatus?: string }) {
         call === 0
           ? [{ id: 1 }]
           : call === 1
-            ? Array.from({ length: pendingCount }, (_, i) => ({ id: i + 1 }))
-            : [{ runEmployeeId: 50 }];
+            ? [{ subjects, paidSubjects }]
+            : Array.from({ length: paidSubjects }, (_, i) => ({ runEmployeeId: 50 + i }));
       return {
         from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(mkWhere(data)) }),
       };
@@ -78,7 +84,7 @@ function makeDb(overrides?: { pendingCount?: number; runStatus?: string }) {
   return { db, recorder };
 }
 
-function makeDeps(overrides?: { pendingCount?: number; runStatus?: string }): {
+function makeDeps(overrides?: DbOverrides): {
   deps: RunCompletionDeps;
   recorder: TxRecorder;
 } {
@@ -153,12 +159,45 @@ describe("checkRunCompletion — the paid posting intent commits on the run tran
   });
 
   it("emits no posting intent when pending batch items remain", async () => {
-    const { deps, recorder } = makeDeps({ pendingCount: 2 });
+    const { deps, recorder } = makeDeps({ subjects: 3, paidSubjects: 1 });
 
     await checkRunCompletion(deps, "org-1", 1, "actor-1");
 
     expect(postingIntents(recorder)).toHaveLength(0);
     expect(mockRegisterAfterCommit).not.toHaveBeenCalled();
+  });
+
+  it("never marks the run PAID when every bank item FAILED — nobody was actually paid", async () => {
+    const { deps, recorder } = makeDeps({ subjects: 4, paidSubjects: 0 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
+    expect(mockRegisterAfterCommit).not.toHaveBeenCalled();
+  });
+
+  it("never marks the run PAID while one payee's payment failed and was not re-issued", async () => {
+    const { deps, recorder } = makeDeps({ subjects: 3, paidSubjects: 2 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
+  });
+
+  it("marks the run PAID once a failed payee is re-issued and the retry is paid", async () => {
+    const { deps, recorder } = makeDeps({ subjects: 3, paidSubjects: 3 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(1);
+  });
+
+  it("emits no posting intent when the run has no bank items at all", async () => {
+    const { deps, recorder } = makeDeps({ subjects: 0, paidSubjects: 0 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
   });
 
   it("emits no posting intent when the run is already PAID, so a replayed completion cannot double-post", async () => {

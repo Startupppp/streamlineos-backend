@@ -1,6 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, not, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import {
   payrollRuns,
@@ -120,21 +120,22 @@ export async function checkRunCompletion(
   const batchIds = allBatches.map(b => b.id);
   if (batchIds.length === 0) return;
 
-  const pendingItems = await deps.db
-    .select({ id: payrollBankBatchItems.id })
+  const [coverage] = await deps.db
+    .select({
+      subjects: sql<number>`count(distinct ${payrollBankBatchItems.runEmployeeId})::int`,
+      paidSubjects: sql<number>`count(distinct ${payrollBankBatchItems.runEmployeeId}) filter (where ${payrollBankBatchItems.status} = 'PAID')::int`,
+    })
     .from(payrollBankBatchItems)
     .where(
       and(
         eq(payrollBankBatchItems.orgId, orgId),
         inArray(payrollBankBatchItems.batchId, batchIds),
-        not(eq(payrollBankBatchItems.status, "PAID")),
-        not(eq(payrollBankBatchItems.status, "FAILED")),
-        not(eq(payrollBankBatchItems.status, "HELD")),
       ),
-    )
-    .limit(1);
+    );
 
-  if (pendingItems.length > 0) return;
+  const subjects = coverage?.subjects ?? 0;
+  const paidSubjects = coverage?.paidSubjects ?? 0;
+  if (subjects === 0 || paidSubjects !== subjects) return;
 
   const paidRunEmployees = await deps.db
     .select({ runEmployeeId: payrollBankBatchItems.runEmployeeId })

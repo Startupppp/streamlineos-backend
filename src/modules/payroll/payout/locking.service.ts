@@ -210,6 +210,14 @@ export class LockingService {
    * per-subject Maps collapse duplicates in the run before they reach the statement,
    * because a multi-row `ON CONFLICT DO UPDATE` raises 21000 on an intra-statement
    * duplicate rather than keeping the last one the way the per-row loop did.
+   *
+   * `run_id` is part of both natural keys (migration 1050). Without it the key was
+   * (org, subject, fiscal_year, month) and `DO UPDATE` REPLACED taxable_income_paise
+   * and tds_paise, so locking a BONUS / OFF_CYCLE / CORRECTION / FINAL_SETTLEMENT run
+   * for a month that already had a locked REGULAR run destroyed the regular run's
+   * withholding instead of adding to it — the year-to-date total then under-reported
+   * every rupee withheld by the earlier run. One row per run makes a fiscal year's
+   * withholding the SUM over its rows, which is what a year-to-date ledger means.
    */
   private async writeTdsYtdLedger(
     tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
@@ -279,10 +287,10 @@ export class LockingService {
             payrollTdsYtdLedger.userId,
             payrollTdsYtdLedger.fiscalYear,
             payrollTdsYtdLedger.periodKey,
+            payrollTdsYtdLedger.runId,
           ],
           targetWhere: sql`${payrollTdsYtdLedger.userId} is not null`,
           set: {
-            runId: sql`excluded.run_id`,
             taxableIncomePaise: sql`excluded.taxable_income_paise`,
             tdsPaise: sql`excluded.tds_paise`,
             workerId: sql`excluded.worker_id`,
@@ -299,10 +307,10 @@ export class LockingService {
             payrollTdsYtdLedger.workerId,
             payrollTdsYtdLedger.fiscalYear,
             payrollTdsYtdLedger.periodKey,
+            payrollTdsYtdLedger.runId,
           ],
           targetWhere: sql`${payrollTdsYtdLedger.workerId} is not null`,
           set: {
-            runId: sql`excluded.run_id`,
             taxableIncomePaise: sql`excluded.taxable_income_paise`,
             tdsPaise: sql`excluded.tds_paise`,
           },

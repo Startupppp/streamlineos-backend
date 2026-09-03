@@ -139,6 +139,7 @@ export class RunResultPersisterService {
             .values(workerOnlyRows)
             .onConflictDoUpdate({
               target: [payrollRunEmployees.runId, payrollRunEmployees.workerId],
+              targetWhere: sql`${payrollRunEmployees.workerId} is not null`,
               set: {
                 profileId: sql`excluded.profile_id`,
                 workerType: sql`excluded.worker_type`,
