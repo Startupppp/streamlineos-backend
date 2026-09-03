@@ -77,8 +77,8 @@ export class HrSalaryStructuresService {
           hraPercentage: input.hraPercentage.toString(),
           allowances: input.allowances.toString(),
           deductions: input.deductions.toString(),
-          effectiveFrom: formatDateOnly(new Date(input.effectiveFrom)),
-          effectiveTo: input.effectiveTo ? formatDateOnly(new Date(input.effectiveTo)) : undefined,
+          effectiveFrom: formatDateOnly(input.effectiveFrom),
+          effectiveTo: input.effectiveTo ? formatDateOnly(input.effectiveTo) : undefined,
           status: "ACTIVE",
         })
         .returning();

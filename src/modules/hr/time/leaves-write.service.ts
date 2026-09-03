@@ -100,8 +100,8 @@ export class LeavesWriteService {
             (1000 * 60 * 60 * 24),
         ) + 1;
 
-    const startStr = formatDateOnly(new Date(body.startDate));
-    const endStr = formatDateOnly(new Date(body.endDate));
+    const startStr = formatDateOnly(body.startDate);
+    const endStr = formatDateOnly(body.endDate);
 
     const teamConflicts = await this.detectTeamConflicts(currentUser.orgId, currentUser.userId, startStr, endStr);
 
@@ -433,7 +433,7 @@ export class LeavesWriteService {
         entityType: "leave_request",
         entityId: String(leaveRequestId),
         message: `${actorName ?? "Employee"} submitted a ${leaveTypeName} leave request.`,
-        variables: { employeeName: actorName ?? "Employee", leaveType: leaveTypeName, startDate: formatDateOnly(new Date(body.startDate)), endDate: formatDateOnly(new Date(body.endDate)), reason: body.reason ?? "No reason provided" },
+        variables: { employeeName: actorName ?? "Employee", leaveType: leaveTypeName, startDate: formatDateOnly(body.startDate), endDate: formatDateOnly(body.endDate), reason: body.reason ?? "No reason provided" },
       });
     } catch (err: unknown) {
       logSideEffectFailure("leave requested notification", {

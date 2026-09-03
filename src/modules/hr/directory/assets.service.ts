@@ -181,7 +181,7 @@ export class AssetsService {
         model: body.model,
         notes: body.notes,
         assignedDate: body.assignedDate
-          ? formatDateOnly(new Date(body.assignedDate))
+          ? formatDateOnly(body.assignedDate)
           : formatDateOnly(new Date()),
         status: "ACTIVE",
       })
@@ -223,7 +223,7 @@ export class AssetsService {
         ...(body.model !== undefined && { model: body.model }),
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.status !== undefined && { status: body.status }),
-        ...(body.returnDate !== undefined && { returnDate: formatDateOnly(new Date(body.returnDate)) }),
+        ...(body.returnDate !== undefined && { returnDate: formatDateOnly(body.returnDate) }),
         updatedAt: new Date(),
       })
       .where(and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)));

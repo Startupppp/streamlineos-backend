@@ -122,7 +122,7 @@ export class RecruitmentJobsService {
         requirements: input.requirements,
         benefits: input.benefits,
         openings: input.openings || 1,
-        applicationDeadline: input.applicationDeadline ? formatDateOnly(new Date(input.applicationDeadline)) : undefined,
+        applicationDeadline: input.applicationDeadline ? formatDateOnly(input.applicationDeadline) : undefined,
         status: input.status ?? "DRAFT",
         postedBy: userId,
         screeningQuestions: input.screeningQuestions,
@@ -166,7 +166,7 @@ export class RecruitmentJobsService {
     if (input.benefits !== undefined) updateData.benefits = input.benefits;
     if (input.status !== undefined) updateData.status = input.status;
     if (input.openings !== undefined) updateData.openings = input.openings;
-    if (input.applicationDeadline !== undefined) updateData.applicationDeadline = formatDateOnly(new Date(input.applicationDeadline));
+    if (input.applicationDeadline !== undefined) updateData.applicationDeadline = formatDateOnly(input.applicationDeadline);
     if (input.hiringFlowId !== undefined) updateData.hiringFlowId = input.hiringFlowId;
     if (input.screeningQuestions !== undefined) updateData.screeningQuestions = input.screeningQuestions;
 

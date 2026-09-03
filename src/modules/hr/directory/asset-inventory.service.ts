@@ -82,7 +82,7 @@ export class AssetInventoryService {
         brand: body.brand,
         model: body.model,
         serialNumber: body.serialNumber,
-        purchaseDate: body.purchaseDate ? formatDateOnly(new Date(body.purchaseDate)) : undefined,
+        purchaseDate: body.purchaseDate ? formatDateOnly(body.purchaseDate) : undefined,
         purchaseCost: body.purchaseCost?.toString(),
         location: body.location,
         notes: body.notes,
@@ -147,7 +147,7 @@ export class AssetInventoryService {
     }
     if (body.status !== undefined) updatePayload.status = body.status;
     if (body.purchaseDate !== undefined) {
-      updatePayload.purchaseDate = body.purchaseDate ? formatDateOnly(new Date(body.purchaseDate)) : undefined;
+      updatePayload.purchaseDate = body.purchaseDate ? formatDateOnly(body.purchaseDate) : undefined;
     }
     if (body.purchaseCost !== undefined) updatePayload.purchaseCost = body.purchaseCost?.toString();
     if (body.location !== undefined) updatePayload.location = body.location;

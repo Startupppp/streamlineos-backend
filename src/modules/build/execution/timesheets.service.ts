@@ -420,7 +420,7 @@ export class TimesheetsService {
       }
     }
 
-    const entryDate = formatDateOnly(new Date(input.date));
+    const entryDate = formatDateOnly(input.date);
     const settings = await this.periodService.loadSettings(user.orgId);
     const workWeekStart = settings?.workWeekStart ?? 1;
 

@@ -148,7 +148,7 @@ export class EmployeeOnboardingService {
       const linkedUser = await runInTenantTransaction(this.db, async (tx) => {
         await this.reserveMemberSeat(tx, actor.orgId);
         const updateData: Partial<typeof users.$inferInsert> = {
-          dateOfBirth: body.dateOfBirth ? formatDateOnly(new Date(body.dateOfBirth)) : undefined,
+          dateOfBirth: body.dateOfBirth ? formatDateOnly(body.dateOfBirth) : undefined,
           isActive: true,
         };
 
@@ -176,7 +176,7 @@ export class EmployeeOnboardingService {
 
         if (body.monthlySalary && body.monthlySalary > 0) {
           const effectiveFrom = body.joiningDate
-            ? formatDateOnly(new Date(body.joiningDate))
+            ? formatDateOnly(body.joiningDate)
             : formatDateOnly(new Date());
           await seedEmployeeSalaryProfile(tx, {
             orgId: actor.orgId,
@@ -232,7 +232,7 @@ export class EmployeeOnboardingService {
         workEmail: body.email,
         employeeNumber: resolvedEmployeeId,
         joiningDate: body.joiningDate
-          ? formatDateOnly(new Date(body.joiningDate))
+          ? formatDateOnly(body.joiningDate)
           : null,
         designation: body.designation ?? null,
         phone: body.phone ?? null,
@@ -283,7 +283,7 @@ export class EmployeeOnboardingService {
           phone: body.phone,
           whatsappNumber: body.whatsappSameAsPhone ? body.phone : body.whatsappNumber,
           gender: body.gender,
-          dateOfBirth: body.dateOfBirth ? formatDateOnly(new Date(body.dateOfBirth)) : undefined,
+          dateOfBirth: body.dateOfBirth ? formatDateOnly(body.dateOfBirth) : undefined,
           isActive: true,
         })
         .returning();
@@ -313,7 +313,7 @@ export class EmployeeOnboardingService {
 
       if (body.monthlySalary && body.monthlySalary > 0) {
         const effectiveFrom = body.joiningDate
-          ? formatDateOnly(new Date(body.joiningDate))
+          ? formatDateOnly(body.joiningDate)
           : formatDateOnly(new Date());
         await seedEmployeeSalaryProfile(tx, {
           orgId: actor.orgId,
@@ -371,7 +371,7 @@ export class EmployeeOnboardingService {
       workEmail: body.email,
       employeeNumber: resolvedEmployeeId,
       joiningDate: body.joiningDate
-        ? formatDateOnly(new Date(body.joiningDate))
+        ? formatDateOnly(body.joiningDate)
         : null,
       designation: body.designation ?? null,
       phone: body.phone ?? null,
