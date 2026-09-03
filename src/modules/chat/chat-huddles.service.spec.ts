@@ -1,6 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { ChatHuddlesService, HUDDLE_MESH_MAX_PARTICIPANTS } from "./chat-huddles.service";
+import { ChatHuddlesService } from "./chat-huddles.service";
+import { HUDDLE_MESH_MAX_PARTICIPANTS } from "../billing/core/plan-entitlements.constants";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
 import { AuditService } from "../../common/audit/audit.service";

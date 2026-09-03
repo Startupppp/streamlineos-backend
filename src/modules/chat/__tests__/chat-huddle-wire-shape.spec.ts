@@ -1,4 +1,5 @@
-import { ChatHuddlesService, HUDDLE_PARTICIPANT_WIRE_KEYS, HUDDLE_WIRE_KEYS } from "../chat-huddles.service";
+import { ChatHuddlesService } from "../chat-huddles.service";
+import { HUDDLE_PARTICIPANT_WIRE_KEYS, HUDDLE_WIRE_KEYS } from "../chat-huddle-wire-shape";
 import { type Db } from "../../../db/drizzle.module";
 
 /**
