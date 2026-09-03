@@ -102,9 +102,11 @@ export class RichDocumentsService {
   }
 
   async remove(orgId: string, documentId: number) {
-    await this.db
+    const removed = await this.db
       .delete(richDocuments)
-      .where(and(eq(richDocuments.id, documentId), eq(richDocuments.orgId, orgId)));
+      .where(and(eq(richDocuments.id, documentId), eq(richDocuments.orgId, orgId)))
+      .returning({ id: richDocuments.id });
+    if (removed.length === 0) throw new NotFoundException("Document not found.");
     return { success: true };
   }
 

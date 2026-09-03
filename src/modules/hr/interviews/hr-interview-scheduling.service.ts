@@ -118,9 +118,11 @@ export class HrInterviewSchedulingService {
   }
 
   async deleteInterview(orgId: string, interviewId: number) {
-    await this.db
+    const removed = await this.db
       .delete(interviews)
-      .where(and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)));
+      .where(and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)))
+      .returning({ id: interviews.id });
+    if (removed.length === 0) throw new NotFoundException("Interview not found");
     return { success: true };
   }
 

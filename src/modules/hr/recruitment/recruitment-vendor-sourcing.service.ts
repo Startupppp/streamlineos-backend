@@ -92,9 +92,11 @@ export class RecruitmentVendorSourcingService {
   }
 
   async deleteVendor(orgId: string, vendorId: number) {
-    await this.db
+    const removed = await this.db
       .delete(recruitmentVendors)
-      .where(and(eq(recruitmentVendors.id, vendorId), eq(recruitmentVendors.orgId, orgId)));
+      .where(and(eq(recruitmentVendors.id, vendorId), eq(recruitmentVendors.orgId, orgId)))
+      .returning({ id: recruitmentVendors.id });
+    if (removed.length === 0) throw new NotFoundException("Vendor not found");
     return { success: true };
   }
 

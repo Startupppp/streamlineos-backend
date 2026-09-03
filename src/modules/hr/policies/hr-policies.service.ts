@@ -292,10 +292,12 @@ export class HrPoliciesService {
   }
 
   async archive(orgId: string, policyId: number) {
-    await this.db
+    const archived = await this.db
       .update(hrPolicies)
       .set({ status: "archived" })
-      .where(and(eq(hrPolicies.id, policyId), eq(hrPolicies.orgId, orgId)));
+      .where(and(eq(hrPolicies.id, policyId), eq(hrPolicies.orgId, orgId)))
+      .returning({ id: hrPolicies.id });
+    if (archived.length === 0) throw new NotFoundException("Policy not found");
 
     await Promise.all([
       this.cache.invalidate(POLICIES_CACHE(orgId)),

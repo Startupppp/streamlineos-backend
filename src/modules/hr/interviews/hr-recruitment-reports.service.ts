@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, gte, lte, sql } from "drizzle-orm";
 import {
   candidateOffers,
@@ -136,9 +136,11 @@ export class HrRecruitmentReportsService {
   }
 
   async deleteScheduledReport(orgId: string, id: number) {
-    await this.db
+    const removed = await this.db
       .delete(scheduledReports)
-      .where(and(eq(scheduledReports.id, id), eq(scheduledReports.orgId, orgId)));
+      .where(and(eq(scheduledReports.id, id), eq(scheduledReports.orgId, orgId)))
+      .returning({ id: scheduledReports.id });
+    if (removed.length === 0) throw new NotFoundException("Scheduled report not found");
     return { success: true };
   }
 

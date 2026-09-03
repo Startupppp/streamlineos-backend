@@ -40,9 +40,11 @@ export class ShiftsService {
   }
 
   async deleteShift(orgId: string, id: number) {
-    await this.db.update(shiftTemplates)
+    const removed = await this.db.update(shiftTemplates)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(and(eq(shiftTemplates.id, id), eq(shiftTemplates.orgId, orgId)));
+      .where(and(eq(shiftTemplates.id, id), eq(shiftTemplates.orgId, orgId)))
+      .returning({ id: shiftTemplates.id });
+    if (removed.length === 0) throw new NotFoundException("Shift not found");
   }
 
   async getEmployeeShifts(orgId: string) {

@@ -376,9 +376,11 @@ export class AttendanceService {
   }
 
   async deleteHoliday(orgId: string, id: string) {
-    await this.db
+    const removed = await this.db
       .delete(orgHolidays)
-      .where(and(eq(orgHolidays.id, id), eq(orgHolidays.orgId, orgId)));
+      .where(and(eq(orgHolidays.id, id), eq(orgHolidays.orgId, orgId)))
+      .returning({ id: orgHolidays.id });
+    if (removed.length === 0) throw new NotFoundException("Holiday not found");
   }
 
   emailReport(

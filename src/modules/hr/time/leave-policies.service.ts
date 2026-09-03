@@ -144,10 +144,12 @@ export class LeavePoliciesService {
   }
 
   async remove(orgId: string, id: number) {
-    await this.db
+    const removed = await this.db
       .update(leavePolicies)
       .set({ isActive: false })
-      .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)));
+      .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)))
+      .returning({ id: leavePolicies.id });
+    if (removed.length === 0) throw new NotFoundException("Leave policy not found");
   }
 
   private async resolveOrgWfhQuota(orgId: string): Promise<number | null> {

@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { HrInterviewBookingService } from "./hr-interview-booking.service";
 import { HrInterviewResultsService } from "./hr-interview-results.service";
@@ -42,7 +43,7 @@ function makeDb(rows: unknown[]) {
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }), returning: jest.fn().mockResolvedValue(rows) }) }),
     execute: jest.fn().mockResolvedValue(rows),
   } as unknown as Db;
-  const deleteFn = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) });
+  const deleteFn = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) });
   const db = {
     select: jest.fn().mockReturnValue(builder),
     query: queryProxy,
@@ -197,20 +198,19 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.anything() }));
   });
 
-  it("scopes deleteInterview to org (cross-tenant isolation)", async () => {
-    const { db, where, deleteFn } = makeDb([]);
+  it("scopes deleteInterview to org and refuses a foreign id with 404 (cross-tenant isolation)", async () => {
+    const { db, deleteFn } = makeDb([]);
     const mockCache = { invalidate: jest.fn() };
     const mockNotifications = { create: jest.fn().mockResolvedValue(undefined) };
     const mockEmail = { sendEmail: jest.fn() };
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
     const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never);
-    await svc.deleteInterview(ATTACKER, 999);
+
+    await expect(svc.deleteInterview(ATTACKER, 999)).rejects.toThrow(NotFoundException);
+
     const dbDeleteWhere = deleteFn.mock.results[0]?.value?.where;
-    if (dbDeleteWhere) {
-      expect(sqlValues(dbDeleteWhere.mock.calls[0]?.[0])).toContain(ATTACKER);
-    } else {
-      expect(where.mock.calls.length + 0).toBeGreaterThanOrEqual(0);
-    }
+    expect(dbDeleteWhere).toBeDefined();
+    expect(sqlValues(dbDeleteWhere.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 });
 

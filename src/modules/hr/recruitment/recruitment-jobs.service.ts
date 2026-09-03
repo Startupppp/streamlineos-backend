@@ -171,7 +171,11 @@ export class RecruitmentJobsService {
   }
 
   async remove(orgId: string, jobId: number) {
-    await this.db.delete(jobPostings).where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)));
+    const removed = await this.db
+      .delete(jobPostings)
+      .where(and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)))
+      .returning({ id: jobPostings.id });
+    if (removed.length === 0) throw new NotFoundException("Job posting not found.");
     await this.cache.invalidateNamespace(`hr:jobs:list:${orgId}`);
     return { success: true };
   }
