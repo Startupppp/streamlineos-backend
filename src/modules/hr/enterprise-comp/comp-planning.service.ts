@@ -215,6 +215,11 @@ export class CompPlanningService {
   }
 
   async getBudgetPools(orgId: string, cycleId: number) {
+    const cycle = await this.db.query.hrCompCycles.findFirst({
+      columns: { id: true },
+      where: and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId)),
+    });
+    if (!cycle) throw new NotFoundException("Compensation cycle not found");
     return this.db
       .select()
       .from(hrCompBudgetPools)

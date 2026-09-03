@@ -58,7 +58,12 @@ export class KbTagsService {
     return { success: true };
   }
 
-  getArticleTags(orgId: string, articleId: number): Promise<ArticleTagRow[]> {
+  async getArticleTags(orgId: string, articleId: number): Promise<ArticleTagRow[]> {
+    const article = await this.db.query.kbArticles.findFirst({
+      columns: { id: true },
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+    });
+    if (!article) throw new NotFoundException("Article not found");
     return this.db
       .select({
         id: kbTags.id,

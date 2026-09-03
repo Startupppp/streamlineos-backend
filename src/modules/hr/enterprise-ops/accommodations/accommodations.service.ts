@@ -213,6 +213,7 @@ export class AccommodationsService {
   }
 
   async listTasks(orgId: string, requestId: string) {
+    await this.getById(orgId, requestId, false);
     return this.db
       .select()
       .from(hrAccommodationTasks)

@@ -58,6 +58,7 @@ describe("goal reads exclude soft-deleted rows", () => {
       tickets: [],
       projects: [{ id: 3, org_id: ORG, name: "Deleted project", key: "DEL", deleted_at: new Date() }],
     });
+    Object.assign(db, { query: { okrGoals: { findFirst: jest.fn().mockResolvedValue({ id: 5 }) } } });
     const service = new GoalLinksService(db as unknown as Db);
 
     const links = await service.getLinks(ORG, 5);

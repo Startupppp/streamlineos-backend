@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { eq, and, desc, sql, count, or, inArray, isNull } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
@@ -123,7 +123,7 @@ export class ClientAccountsService {
       where: and(eq(clientAccounts.id, clientAccountId), eq(clientAccounts.orgId, orgId)),
       columns: { id: true },
     });
-    if (!account) return [];
+    if (!account) throw new NotFoundException("Client account not found");
 
     return this.db.query.clientAccountActivities.findMany({
       where: eq(clientAccountActivities.clientAccountId, clientAccountId),

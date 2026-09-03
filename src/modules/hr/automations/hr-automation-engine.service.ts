@@ -299,6 +299,13 @@ export class HrAutomationEngineService {
 
   async listRuns(orgId: string, params: { ruleId?: number } & ListRunsInput) {
     const { ruleId } = params;
+    if (ruleId !== undefined) {
+      const rule = await this.db.query.hrAutomationRules.findFirst({
+        columns: { id: true },
+        where: and(eq(hrAutomationRules.orgId, orgId), eq(hrAutomationRules.id, ruleId)),
+      });
+      if (!rule) throw new NotFoundException("Automation rule not found");
+    }
     const limit = Math.min(params.limit, 100);
     const offset = (params.page - 1) * limit;
     const where = ruleId

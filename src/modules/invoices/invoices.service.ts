@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { invoices, payments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -88,7 +88,12 @@ export class InvoicesService {
     });
   }
 
-  getInvoicePayments(orgId: string, invoiceId: number) {
+  async getInvoicePayments(orgId: string, invoiceId: number) {
+    const invoice = await this.db.query.invoices.findFirst({
+      columns: { id: true },
+      where: and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)),
+    });
+    if (!invoice) throw new NotFoundException("Invoice not found");
     return this.db.query.payments.findMany({
       where: and(eq(payments.invoiceId, invoiceId), eq(payments.orgId, orgId)),
       orderBy: [desc(payments.paymentDate)],

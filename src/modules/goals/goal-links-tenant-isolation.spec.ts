@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { GoalLinksService } from "./goal-links.service";
 
@@ -23,8 +24,12 @@ function makeChainableDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   builder.leftJoin.mockReturnValue(builder);
   builder.orderBy.mockReturnValue(builder);
   builder.where.mockReturnValue(builder);
-  const db = { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
-  return { db, where };
+  const goalFindFirst = jest.fn().mockResolvedValue({ id: 10 });
+  const db = {
+    query: { okrGoals: { findFirst: goalFindFirst } },
+    select: jest.fn().mockReturnValue(builder),
+  } as unknown as Db;
+  return { db, where, goalFindFirst };
 }
 
 describe("GoalLinksService — cross-tenant isolation", () => {
@@ -32,13 +37,15 @@ describe("GoalLinksService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
   const GOAL_ID = 10;
 
-  it("returns no links for a different org's goal", async () => {
-    const { db, where } = makeChainableDb([]);
+  it("refuses a different org's goal instead of returning an empty link list", async () => {
+    const { db, where, goalFindFirst } = makeChainableDb([]);
+    goalFindFirst.mockResolvedValue(undefined);
     const svc = new GoalLinksService(db);
-    const result = await svc.getLinks(ATTACKER, GOAL_ID);
-    expect(result).toHaveLength(0);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+
+    await expect(svc.getLinks(ATTACKER, GOAL_ID)).rejects.toThrow(NotFoundException);
+
+    expect(where).not.toHaveBeenCalled();
+    expect(sqlValues(goalFindFirst.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
   });
 
   it("returns links for the owning org (control — same-tenant)", async () => {

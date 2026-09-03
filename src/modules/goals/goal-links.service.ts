@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { okrGoals, okrLinks, projects, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -59,7 +59,12 @@ export function isLinkProjectNotFound(
 export class GoalLinksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  getLinks(orgId: string, goalId: number): Promise<GoalLinkRow[]> {
+  async getLinks(orgId: string, goalId: number): Promise<GoalLinkRow[]> {
+    const goal = await this.db.query.okrGoals.findFirst({
+      columns: { id: true },
+      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
+    });
+    if (!goal) throw new NotFoundException("Goal not found");
     return this.db
       .select({
         id: okrLinks.id,

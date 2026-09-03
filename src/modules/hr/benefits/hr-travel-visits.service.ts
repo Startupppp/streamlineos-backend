@@ -1,8 +1,9 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrTravelVisitLogs } from "../../../db/schema/hr/benefits";
+import { travelRequests } from "../../../db/schema/hr/travel";
 import type { CreateVisitLogInput } from "./dto/benefits.schemas";
 
 @Injectable()
@@ -10,6 +11,11 @@ export class HrTravelVisitsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listVisits(orgId: string, travelRequestId: number) {
+    const request = await this.db.query.travelRequests.findFirst({
+      columns: { id: true },
+      where: and(eq(travelRequests.id, travelRequestId), eq(travelRequests.orgId, orgId)),
+    });
+    if (!request) throw new NotFoundException("Travel request not found");
     return this.db
       .select()
       .from(hrTravelVisitLogs)
