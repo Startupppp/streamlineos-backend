@@ -32,6 +32,13 @@ if (RESERVED.has(role) && process.env.APP_DB_ROLE_FORCE !== "1") {
   process.exit(1);
 }
 
+// Tables a migration deliberately made append-only for the app role. Each entry is
+// re-revoked after the blanket DML grant above, and asserted in the verification block,
+// so this script can never report READY over a mutable audit log.
+const IMMUTABLE_TABLES = [
+  { schema: "public", table: "audit_logs", revoke: "UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER" },
+];
+
 const sql = postgres(adminUrl, { max: 1, onnotice: () => {} });
 const ident = (v) => `"${v.replace(/"/g, '""')}"`;
 const literal = (v) => `'${v.replace(/'/g, "''")}'`;
@@ -155,6 +162,27 @@ try {
     );
   }
 
+  // A blanket `GRANT ... ON ALL TABLES` re-opens every privilege a migration
+  // deliberately revoked, and it does it silently. `audit_logs` is append-only:
+  // migrations 0840 and 0928 revoke UPDATE/DELETE (and TRUNCATE/REFERENCES/TRIGGER)
+  // from the app role, and running this script afterwards handed them all back.
+  // The append-only trigger still refused the mutation, so nothing failed loudly —
+  // only `check:audit-log-privileges` saw it, and only against a live database.
+  // The privilege, not the trigger, is the boundary the gate measures.
+  for (const t of IMMUTABLE_TABLES) {
+    const [present] = await sql`
+      SELECT 1 AS ok FROM information_schema.tables
+      WHERE table_schema = ${t.schema} AND table_name = ${t.table} AND table_type = 'BASE TABLE'`;
+    if (!present) {
+      console.log(`SKIP  re-revoke on ${t.schema}.${t.table} — table does not exist yet`);
+      continue;
+    }
+    await repair(
+      `re-revoke ${t.revoke} on ${t.schema}.${t.table} (append-only)`,
+      `REVOKE ${t.revoke} ON TABLE ${ident(t.schema)}.${ident(t.table)} FROM ${ident(role)}`,
+    );
+  }
+
   const [final] = await sql`
     SELECT rolsuper, rolcreatedb, rolcreaterole, rolbypassrls, rolcanlogin
     FROM pg_roles WHERE rolname = ${role}`;
@@ -184,6 +212,21 @@ try {
     `can create objects in: ${creatable.length === 0 ? "(none)" : creatable.map((r) => r.nspname).join(", ")} (must be none)`,
   );
 
+  const immutable = [];
+  for (const t of IMMUTABLE_TABLES) {
+    const [row] = await sql`
+      SELECT
+        has_table_privilege(${role}, ${`${t.schema}.${t.table}`}, 'UPDATE') AS can_update,
+        has_table_privilege(${role}, ${`${t.schema}.${t.table}`}, 'DELETE') AS can_delete
+      WHERE EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = ${t.schema} AND table_name = ${t.table})`;
+    if (!row) continue;
+    immutable.push({ name: `${t.schema}.${t.table}`, canUpdate: row.can_update, canDelete: row.can_delete });
+  }
+  for (const t of immutable)
+    console.log(`append-only ${t.name}: update=${t.canUpdate ? "GRANTED" : "revoked"} delete=${t.canDelete ? "GRANTED" : "revoked"}`);
+
   const blockers = [];
   for (const { nspname } of creatable)
     blockers.push(`${role} can still create objects in ${nspname}`);
@@ -196,6 +239,10 @@ try {
   }
   if (counts.granted < counts.tables) {
     blockers.push(`${counts.tables - counts.granted} table(s) have no grant for ${role}`);
+  }
+  for (const t of immutable) {
+    if (t.canUpdate || t.canDelete)
+      blockers.push(`${role} can still ${[t.canUpdate && "UPDATE", t.canDelete && "DELETE"].filter(Boolean).join("/")} ${t.name}, which must be append-only`);
   }
 
   if (manual.length > 0) {

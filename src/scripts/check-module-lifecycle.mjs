@@ -263,8 +263,9 @@ async function main() {
     // database-backed gates use: INCONCLUSIVE is exit 2, never OK.
     const allowPartial = process.env.STREAMLINE_ALLOW_PARTIAL_GATES === "1";
     process.stdout.write(
-      `${allowPartial ? "PARTIAL" : "INCONCLUSIVE"} — APP_DATABASE_URL is not set.\n` +
-        "Gates 1–4 require a non-owner connection to query pg_catalog as the app role.\n" +
+      `${allowPartial ? "PARTIAL" : "PREREQUISITE UNMET — cannot determine"} — APP_DATABASE_URL is not set.\n` +
+        "Gates 1–4 require a live database and a non-owner connection to query pg_catalog\n" +
+        "as the app role.\n" +
         "The owner role has BYPASSRLS; connecting as it would hide tenant-isolation gaps.\n" +
         "Only the schema-side table/index discovery above ran; nothing about RLS,\n" +
         "grants, cold migration, restore or removal was verified.\n" +

@@ -55,7 +55,17 @@ if (selfTest) {
 
 const url = process.env.APP_DATABASE_URL;
 if (!url) {
-  process.stderr.write("APP_DATABASE_URL is required; connect as the non-owner application role\n");
+  // Exit 2 is this repository's "could not determine", never "failed". A harness that
+  // reads the exit code alone cannot tell the two apart, so the PREREQUISITE is named
+  // in the output as well: a gate whose target was absent must not be recorded as a
+  // defect, and must not be recorded as a pass either.
+  process.stderr.write(
+    "PREREQUISITE UNMET — cannot determine. This gate requires a live database and a\n" +
+      "non-owner connection; the owner role has BYPASSRLS and would report a boundary\n" +
+      "the running service does not have. Nothing about audit-log privileges was measured.\n" +
+      "Required variable: APP_DATABASE_URL\n" +
+      "Example: APP_DATABASE_URL=postgres://streamline_app:<password>@<host>/<database>\n",
+  );
   process.exit(2);
 }
 
