@@ -12,6 +12,12 @@ import { isApiClientUserAgent, withClientInfo } from "../../common/http/parse-us
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const REVOKED_SESSION_INDEX_KEY = "revoked:sessions:index";
 const REVOCATION_PRUNE_BATCH = 200;
+/**
+ * One MSET and one variadic ZADD per chunk. The Upstash REST transport puts the
+ * whole command in one request body, so an unbounded id list is an unbounded
+ * payload; a failed chunk then loses only its own tombstones.
+ */
+const REVOCATION_WRITE_CHUNK = 256;
 
 @Injectable()
 export class SessionsService {
@@ -205,7 +211,7 @@ export class SessionsService {
     await this.tombstone(ids);
   }
 
-  // Tombstones carry no TTL on purpose: volatile-lru only evicts keys that have one, and an evicted tombstone silently un-revokes a session.
+  // Tombstones carry no TTL on purpose: volatile-lru only evicts keys that have one, and an evicted tombstone silently un-revokes a session. MSET cannot carry one at all.
   async publishRevocations(sessionIds: string[]): Promise<void> {
     await this.tombstone(sessionIds);
   }
@@ -214,12 +220,20 @@ export class SessionsService {
     if (!this.redis || sessionIds.length === 0) return;
     const redis = this.redis;
     const expiresAt = Date.now() + SESSION_TTL_SECONDS * 1000;
-    await Promise.allSettled(
-      sessionIds.flatMap((id) => [
-        redis.set(`revoked:session:${id}`, true),
-        redis.zadd(REVOKED_SESSION_INDEX_KEY, { score: expiresAt, member: id }),
-      ]),
-    );
+    const unique = [...new Set(sessionIds)];
+    for (let i = 0; i < unique.length; i += REVOCATION_WRITE_CHUNK) {
+      const chunk = unique.slice(i, i + REVOCATION_WRITE_CHUNK);
+      const [head, ...rest] = chunk;
+      if (head === undefined) continue;
+      await Promise.allSettled([
+        redis.mset(Object.fromEntries(chunk.map((id) => [`revoked:session:${id}`, true]))),
+        redis.zadd(
+          REVOKED_SESSION_INDEX_KEY,
+          { score: expiresAt, member: head },
+          ...rest.map((id) => ({ score: expiresAt, member: id })),
+        ),
+      ]);
+    }
   }
 
   async pruneExpiredRevocations(): Promise<{ removed: number }> {
