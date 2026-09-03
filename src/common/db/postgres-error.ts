@@ -1,7 +1,5 @@
 import { sqlstateOf } from "../observability/error-classification";
 
-export { sqlstateOf };
-
 /**
  * The single place SQLSTATE classification happens.
  *
@@ -84,10 +82,6 @@ export function isUniqueViolation(error: unknown): boolean {
 
 export function isForeignKeyViolation(error: unknown): boolean {
   return isSqlstate(error, PG_FOREIGN_KEY_VIOLATION);
-}
-
-export function isRestrictViolation(error: unknown): boolean {
-  return isSqlstate(error, PG_RESTRICT_VIOLATION);
 }
 
 export function isNotNullViolation(error: unknown): boolean {
