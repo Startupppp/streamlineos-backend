@@ -55,7 +55,7 @@ export class CronProjectsService {
           await tx
             .update(tickets)
             .set({ isRecurring: false, recurrenceNextRunAt: null })
-            .where(eq(tickets.id, template.id));
+            .where(and(eq(tickets.orgId, template.orgId), eq(tickets.id, template.id)));
           advanced++;
           continue;
         }
@@ -119,7 +119,7 @@ export class CronProjectsService {
             await innerTx
               .update(tickets)
               .set({ recurrenceNextRunAt: nextRunAt })
-              .where(eq(tickets.id, template.id));
+              .where(and(eq(tickets.orgId, template.orgId), eq(tickets.id, template.id)));
           });
 
           spawned++;
