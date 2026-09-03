@@ -127,9 +127,9 @@ export class MailService {
       }
     });
 
-    // One UPDATE for every mailbox whose grant just failed, and awaited: the previous
-    // per-account `void markNeedsReauth(...)` both issued a write per row and dropped its
-    // rejection, so a failed flag left the mailbox reading `active` with nothing logged.
+    // One awaited UPDATE for every mailbox whose grant just failed. The per-account
+    // fire-and-forget form it replaces issued a write per row and dropped its rejection,
+    // so a failed flag left the mailbox reading `active` with nothing logged.
     if (reauthAccountIds.length > 0) await this.accounts.markNeedsReauthMany(reauthAccountIds, orgId);
 
     const merged = mergeMessagesByDate(allMessages).slice(0, limit);

@@ -97,10 +97,10 @@ export class MailAccountsService {
   /**
    * One UPDATE for every account whose provider grant just failed, instead of one per
    * account. It never rejects — every caller is on an error path and about to rethrow the
-   * provider's own error, so throwing here would replace the real cause — but the failure is
-   * LOGGED rather than discarded: the previous `.catch(() => undefined)` left a revoked
-   * mailbox reading `active` forever with no signal anywhere, so the account was never
-   * offered a reconnect and mail silently stopped arriving.
+   * provider's own error, so throwing here would replace the real cause — but a failed write
+   * is LOGGED rather than discarded. Discarding it left a revoked mailbox reading `active`
+   * forever with no signal anywhere: no reconnect was ever offered and mail silently stopped
+   * arriving.
    */
   async markNeedsReauthMany(accountIds: readonly number[], orgId: string): Promise<void> {
     const ids = [...new Set(accountIds)];
