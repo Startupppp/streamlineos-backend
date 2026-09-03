@@ -80,23 +80,28 @@ function rulingsFor(table: string, column: string): RemovalAction[] {
  * the migration chain: some are stale rulings, some are stale Drizzle
  * declarations, and six name a foreign key the migrated schema does not have.
  * Pinned so the set cannot grow unnoticed while it is worked through.
+ *
+ * Shrunk from 72 to 40 on 2026-09-03 (ticket 03, PRD-C053). Thirty-two entries went
+ * away because the RULING was corrected, not the schema: for all of them the Drizzle
+ * declaration and pg_catalog already agreed on CASCADE and only MEMBERSHIP_ARTIFACTS
+ * claimed set-null. Two more went away because migration 1051 moved the catalog and
+ * the declaration together (performance_reviews.reviewer_membership_id and
+ * hr_mood_checkins.user_membership_id were RESTRICT and blocked member removal
+ * outright). calendar_events.created_by_membership_id left this list by being ruled
+ * blocks-removal, which is what migration 0839 actually left in the catalog.
+ *
+ * This list can only shrink. A new entry means a ruling and a declaration were
+ * allowed to diverge in the same change.
  */
 const RULING_DISAGREES_WITH_DRIZZLE: readonly string[] = [
   "audit_logs.actor_membership_id",
-  "broadcast_read_receipts.membership_id",
-  "calendar_events.created_by_membership_id",
   "chat_channel_members.membership_id",
   "chat_message_reactions.membership_id",
-  "comment_drafts.membership_id",
   "helpdesk_tickets.assignee_membership_id",
   "hr_employments.archived_by_membership_id",
   "hr_employments.updated_by_membership_id",
-  "hr_mood_checkins.user_membership_id",
   "hr_people.archived_by_membership_id",
   "hr_people.updated_by_membership_id",
-  "kb_article_restrictions.membership_id",
-  "kb_chat_conversations.user_membership_id",
-  "kb_chat_messages.user_membership_id",
   "kb_page_favorites.membership_id",
   "kb_page_visits.membership_id",
   "kb_pages.created_by_membership_id",
@@ -104,50 +109,25 @@ const RULING_DISAGREES_WITH_DRIZZLE: readonly string[] = [
   "kb_pages.last_edited_by_membership_id",
   "kb_pages.owner_membership_id",
   "kb_pages.verified_by_membership_id",
-  "kb_research_briefs.user_membership_id",
-  "kb_space_members.membership_id",
   "leave_requests.approver_membership_id",
   "leave_requests.created_by_membership_id",
   "leave_requests.updated_by_membership_id",
-  "meeting_attendees.membership_id",
-  "meeting_standup_entries.membership_id",
-  "notification_consents.membership_id",
-  "notification_deliveries.membership_id",
-  "notification_digest_items.membership_id",
-  "notification_preference_rules.membership_id",
-  "notification_preferences.membership_id",
   "onboarding_documents.updated_by_membership_id",
-  "onboarding_flow_sessions.membership_id",
   "onboarding_tasks.created_by_membership_id",
   "onboarding_tasks.updated_by_membership_id",
-  "org_unit_members.membership_id",
   "org_units.archived_by_membership_id",
   "org_units.updated_by_membership_id",
   "organization_people.archived_by_membership_id",
   "organization_people.updated_by_membership_id",
-  "performance_reviews.reviewer_membership_id",
   "project_approvals.approver_membership_id",
   "project_members.membership_id",
-  "project_team_members.membership_id",
-  "project_whiteboard_shares.membership_id",
-  "project_workspace_members.membership_id",
-  "push_subscriptions.membership_id",
   "role_assignments.assigned_by_membership_id",
-  "support_agent_availability.user_membership_id",
-  "support_agent_skills.user_membership_id",
-  "support_message_mentions.mentioned_user_membership_id",
-  "support_saved_views.owner_membership_id",
-  "support_ticket_drafts.user_membership_id",
-  "support_ticket_watchers.user_membership_id",
   "ticket_activity_log.user_membership_id",
   "ticket_assignees.membership_id",
   "ticket_comment_mentions.mentioned_user_membership_id",
-  "ticket_comment_reactions.membership_id",
-  "ticket_watchers.membership_id",
   "tickets.assignee_membership_id",
   "tickets.reporter_membership_id",
   "user_permission_grants.granted_by_membership_id",
-  "user_tour_progress.membership_id",
   "wfh_requests.approver_membership_id",
   "worker_engagements.archived_by_membership_id",
   "worker_engagements.updated_by_membership_id",
