@@ -13,7 +13,13 @@ interface VaultRow {
   readonly filename: string;
   readonly s3Key: string;
   readonly fileUrl: string;
+  readonly fileType: string;
+  readonly fileSize: number;
   readonly documentType: string | null;
+  readonly avResult: "PENDING" | "CLEAN" | "INFECTED";
+  readonly expiresAt: string | null;
+  readonly uploadedBy: string;
+  readonly createdAt: Date;
 }
 
 function makeDb(row: VaultRow | undefined): Db {
@@ -66,7 +72,13 @@ const BASE_ROW: VaultRow = {
   filename: "passport.pdf",
   s3Key: "org-1/candidate-vault/passport.pdf",
   fileUrl: "org-1/candidate-vault/passport.pdf",
+  fileType: "application/pdf",
+  fileSize: 1024,
   documentType: "PASSPORT",
+  avResult: "CLEAN",
+  expiresAt: null,
+  uploadedBy: "u1",
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
 };
 
 describe("StorageVaultController — the vault never hands back a stored permanent URL", () => {
@@ -129,5 +141,44 @@ describe("StorageVaultController — the vault never hands back a stored permane
     const result = await controller.download(3, 7, USER);
 
     expect(result.signedUrl).toBeNull();
+  });
+
+  /**
+   * The presign was only ever half the fix. The handler used to return
+   * `{ ...doc, signedUrl }`, so the permanent address it had just replaced rode
+   * back out beside its replacement, and so did the raw object key. Asserting
+   * on `signedUrl` alone cannot see that — the assertion has to be that the
+   * response does not CONTAIN the stored value anywhere.
+   */
+  it("does not return the stored permanent URL, or the object key, beside the signed one", async () => {
+    const controller = new StorageVaultController(
+      makeDb({
+        ...BASE_ROW,
+        s3Key: "org-1/candidate-vault/passport.pdf",
+        fileUrl: `${PUBLIC_BASE}/org-1/candidate-vault/passport.pdf`,
+      }),
+      makeStorage(),
+      makeAccess(),
+    );
+
+    const result = await controller.download(3, 7, USER);
+
+    expect(JSON.stringify(result)).not.toContain(PUBLIC_BASE);
+    expect(Object.keys(result).sort()).toEqual([
+      "avResult",
+      "candidateId",
+      "createdAt",
+      "documentType",
+      "expiresAt",
+      "fileSize",
+      "fileType",
+      "filename",
+      "id",
+      "signedUrl",
+    ]);
+    expect(result.filename).toBe("passport.pdf");
+    expect(result.signedUrl).toBe(
+      "https://signed.example/org-1/candidate-vault/passport.pdf?sig=x",
+    );
   });
 });
