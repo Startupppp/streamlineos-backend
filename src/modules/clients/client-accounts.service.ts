@@ -1,18 +1,10 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
-import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
-import { eq, and, desc, sql, count, or, inArray, isNull } from "drizzle-orm";
+import { eq, and, desc, sql, count, or } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
 import { applyClientAccountsScope } from "./client-accounts-scope";
 import { Redis } from "@upstash/redis";
-import {
-  clientAccounts,
-  clientAccountActivities,
-  incentives,
-  incentiveConfig,
-  notifications,
-  users,
-} from "../../db/schema";
+import { clientAccounts, clientAccountActivities } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
@@ -26,6 +18,17 @@ import type {
 } from "./dto/clients.schemas";
 import { AccessService } from "../access/access.service";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { runClientAccountsBackfill } from "./client-accounts-backfill";
+import {
+  backfillCrmAssignments as runCrmAssignmentBackfill,
+  getCrmAssignmentStats as readCrmAssignmentStats,
+} from "./client-accounts-crm-assignment";
+import {
+  buildClientStatusUpdate,
+  formatInvestmentAmount,
+  isInvestmentTransition,
+  recordInvestmentEffects,
+} from "./client-accounts-investment";
 
 @Injectable()
 export class ClientAccountsService {
@@ -44,7 +47,12 @@ export class ClientAccountsService {
     userId: string,
     filters: ListAccountsInput,
   ) {
-    const backfill = () => this.tryBackfill(orgId, userId);
+    const backfill = () =>
+      runClientAccountsBackfill(
+        { db: this.db, redis: this.redis, access: this.access, logger: this.logger },
+        orgId,
+        userId,
+      );
     if (!registerAfterCommit(backfill)) await backfill();
 
     const f = [eq(clientAccounts.orgId, orgId)];
@@ -198,28 +206,10 @@ export class ClientAccountsService {
     });
     if (!account) return null;
 
+    const updateData = buildClientStatusUpdate(input);
     const investmentAmount = input.investmentAmount;
-    const isInvested = input.status === "INVESTED";
-    if (isInvested && !investmentAmount) {
-      throw new BadRequestException("Investment amount is required for INVESTED status");
-    }
-
-    const updateData: Partial<typeof clientAccounts.$inferInsert> = {
-      status: input.status,
-      updatedAt: new Date(),
-    };
-    if (isInvested && investmentAmount) {
-      updateData.investmentAmount = investmentAmount;
-      updateData.planName = input.planName ?? null;
-      updateData.investmentDate = input.investmentDate ? new Date(input.investmentDate) : new Date();
-      updateData.transactionRef = input.transactionRef ?? null;
-      updateData.investedAt = new Date();
-    }
-
-    const recordInvestment = isInvested && !!investmentAmount;
-    const formattedAmount = investmentAmount
-      ? Number.parseFloat(investmentAmount).toLocaleString("en-IN")
-      : "";
+    const recordInvestment = isInvestmentTransition(input);
+    const formattedAmount = formatInvestmentAmount(investmentAmount);
 
     const hrMemberRows = recordInvestment
       ? await this.access.membersWithPermission(orgId, "hr:employees:manage")
@@ -241,50 +231,13 @@ export class ClientAccountsService {
       });
 
       if (recordInvestment && investmentAmount) {
-        const [config] = await tx
-          .select({ incentiveRate: incentiveConfig.incentiveRate })
-          .from(incentiveConfig)
-          .where(and(eq(incentiveConfig.orgId, orgId), eq(incentiveConfig.isActive, true)))
-          .orderBy(desc(incentiveConfig.effectiveFrom))
-          .limit(1);
-
-        if (config) {
-          const amount = Number.parseFloat(investmentAmount);
-          const rate = Number.parseFloat(config.incentiveRate);
-          const calculated = (amount * rate) / 100;
-          await tx.insert(incentives).values({
-            orgId,
-            clientAccountId: accountId,
-            salesRepId: account.salesRepId,
-            investmentAmount,
-            incentiveRate: config.incentiveRate,
-            calculatedAmount: String(calculated),
-            branchId: account.branchId,
-          });
-        }
-
-        await tx.insert(notifications).values({
+        await recordInvestmentEffects(tx, {
           orgId,
-          userId: account.salesRepId,
-          type: "SUCCESS",
-          title: "Client Invested!",
-          message: `${account.clientName} has invested ₹${formattedAmount}. Your incentive is being processed.`,
-          link: `/crm/clients/${account.id}`,
+          account,
+          investmentAmount,
+          formattedAmount,
+          hrRecipientIds: hrMemberRows.map((hr) => hr.userId),
         });
-
-        if (hrMemberRows.length > 0) {
-          const investmentMsg = `${account.clientName} has invested ₹${formattedAmount}. Sales rep: ${account.salesRepId ? "assigned" : "N/A"}.`;
-          await tx.insert(notifications).values(
-            hrMemberRows.map((hr) => ({
-              orgId,
-              userId: hr.userId,
-              type: "SUCCESS" as const,
-              title: "Client Invested!",
-              message: investmentMsg,
-              link: `/crm/clients/${account.id}`,
-            })),
-          );
-        }
       }
 
       return row;
@@ -315,191 +268,11 @@ export class ClientAccountsService {
   }
 
   async getCrmAssignmentStats(orgId: string) {
-    const csMemberIds = (await this.access.membersWithPermission(orgId, "support:tickets:manage", { limit: 500 })).map((m) => m.userId);
-
-    if (csMemberIds.length === 0) {
-      return { members: [], unassignedCount: 0 };
-    }
-
-    const csMembers = await this.db
-      .select({ userId: users.id, name: users.name, image: users.image })
-      .from(users)
-      .where(inArray(users.id, csMemberIds));
-
-    const memberIds = csMembers.map((m) => m.userId);
-
-    const [countRows, [unassignedResult]] = await Promise.all([
-      this.db
-        .select({
-          userId: clientAccounts.assignedCrmId,
-          totalCount: count(),
-          activeCount: sql<number>`count(*) FILTER (WHERE ${clientAccounts.status} != 'INVESTED')`,
-        })
-        .from(clientAccounts)
-        .where(and(eq(clientAccounts.orgId, orgId), inArray(clientAccounts.assignedCrmId, memberIds)))
-        .groupBy(clientAccounts.assignedCrmId),
-      this.db
-        .select({ count: count() })
-        .from(clientAccounts)
-        .where(and(eq(clientAccounts.orgId, orgId), isNull(clientAccounts.assignedCrmId))),
-    ]);
-
-    const countMap = new Map(countRows.map((r) => [r.userId, r]));
-
-    return {
-      members: csMembers.map((m) => ({
-        userId: m.userId,
-        name: m.name,
-        image: m.image,
-        activeCount: Number(countMap.get(m.userId)?.activeCount ?? 0),
-        totalCount: countMap.get(m.userId)?.totalCount ?? 0,
-      })),
-      unassignedCount: unassignedResult?.count ?? 0,
-    };
+    return readCrmAssignmentStats(this.db, this.access, orgId);
   }
 
   async runCrmAssignments(orgId: string) {
-    await this.backfillCrmAssignments(orgId);
-    return this.getCrmAssignmentStats(orgId);
-  }
-
-  private async tryBackfill(orgId: string, userId: string): Promise<void> {
-    const lockKey = `clients:backfill:${orgId}`;
-    if (this.redis) {
-      try {
-        const acquired = await this.redis.set(lockKey, "1", { ex: 60, nx: true });
-        if (!acquired) return;
-      } catch (err) {
-        this.logger.warn(`Redis lock acquire failed for client backfill ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-    await this.backfillConvertedLeadsToClientAccounts(orgId, userId);
-    await this.backfillCrmAssignments(orgId);
-  }
-
-  /**
-   * Opens a client account for every lead that has converted and has none.
-   *
-   * Reads Party, not `leads`. This was raw SQL against the legacy table, which
-   * neither the reader ratchet nor the lint rule could see -- both match Drizzle
-   * symbol imports, and a string never imports anything. So it survived every
-   * migrate batch, and ticket 08's drop would have taken it out at runtime with
-   * nothing having warned.
-   *
-   * The read is not merely relocated. `leads` is a mirror, and a merge leaves the
-   * losing row alive holding the survivor's values while marking only the Party
-   * deleted -- so `FROM leads WHERE deleted_at IS NULL` counted one converted
-   * customer twice and opened two accounts for them. Joining through
-   * `lead_party_map` and filtering on the Party's own `deleted_at` counts the
-   * customer.
-   *
-   * The map is keyed by legacy id and its `party_id` side is deliberately not
-   * unique -- after a merge several ids answer to one Party. That is correct
-   * here rather than a hazard: `client_accounts.lead_id` is the legacy id, the
-   * anti-join is on that id, so each surviving id still gets exactly one account.
-   */
-  private async backfillConvertedLeadsToClientAccounts(orgId: string, fallbackSalesRepId: string): Promise<void> {
-    await this.db.execute(sql`
-      INSERT INTO client_accounts (
-        org_id, lead_id, sales_rep_id,
-        client_name, client_email, client_phone, client_whatsapp,
-        estimated_investment, status, converted_at, created_at, updated_at
-      )
-      SELECT
-        m.organization_id,
-        m.lead_id,
-        COALESCE(p.owner_user_id, ${fallbackSalesRepId}),
-        p.name,
-        p.email,
-        p.phone,
-        p.whatsapp_phone,
-        COALESCE(p.expected_value, p.stated_budget)::numeric(15,2),
-        'ACCOUNT_OPENING'::client_account_status,
-        COALESCE(p.converted_at, NOW()),
-        NOW(),
-        NOW()
-      FROM lead_party_map m
-      JOIN business_parties p
-        ON p.party_id = m.party_id
-       AND p.organization_id = m.organization_id
-      WHERE m.organization_id = ${orgId}
-        AND p.lifecycle_stage = 'CONVERTED'
-        AND p.deleted_at IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM client_accounts ca
-          WHERE ca.org_id = m.organization_id AND ca.lead_id = m.lead_id
-        )
-    `);
-  }
-
-  private async backfillCrmAssignments(orgId: string): Promise<void> {
-    const csMembers = await this.access.membersWithPermission(orgId, "support:tickets:manage", { limit: 500 });
-
-    if (csMembers.length === 0) return;
-
-    const memberIds = csMembers.map((m) => m.userId);
-
-    const [countRows, unassigned] = await Promise.all([
-      this.db
-        .select({ userId: clientAccounts.assignedCrmId, activeCount: count() })
-        .from(clientAccounts)
-        .where(
-          and(
-            eq(clientAccounts.orgId, orgId),
-            inArray(clientAccounts.assignedCrmId, memberIds),
-            sql`${clientAccounts.status} != 'INVESTED'`,
-          ),
-        )
-        .groupBy(clientAccounts.assignedCrmId),
-      this.db
-        .select({ id: clientAccounts.id })
-        .from(clientAccounts)
-        .where(and(eq(clientAccounts.orgId, orgId), isNull(clientAccounts.assignedCrmId)))
-        .orderBy(desc(clientAccounts.createdAt)),
-    ]);
-
-    if (unassigned.length === 0) return;
-
-    const counts: Record<string, number> = Object.fromEntries(memberIds.map((id) => [id, 0]));
-    for (const row of countRows) {
-      if (row.userId) counts[row.userId] = row.activeCount;
-    }
-
-    const assignments: Record<string, number[]> = {};
-    for (const account of unassigned) {
-      let minCount = Infinity;
-      let assignee: string | null = null;
-      for (const id of memberIds) {
-        if ((counts[id] ?? 0) < minCount) {
-          minCount = counts[id] ?? 0;
-          assignee = id;
-        }
-      }
-      if (assignee) {
-        (assignments[assignee] ??= []).push(account.id);
-        counts[assignee] = (counts[assignee] ?? 0) + 1;
-      }
-    }
-
-    const rows: BulkUpdateRow[] = [];
-    for (const [assigneeId, ids] of Object.entries(assignments))
-      for (const id of ids) rows.push({ key: id, values: [assigneeId] });
-
-    /*
-     * One statement, not one per assignee. Every account carries a DIFFERENT
-     * `assigned_crm_id`, so `inArray` can only batch the accounts that share an
-     * assignee and the round trips grew with the number of distinct assignees.
-     * `UPDATE ... FROM (VALUES ...)` is the batched form for a per-row value; the
-     * tenant predicate is mandatory there, and a repeated account id is refused
-     * rather than applying one arbitrary assignee.
-     */
-    await bulkUpdateFromValues(this.db, {
-      table: clientAccounts,
-      orgId,
-      key: { column: "id", type: "integer" },
-      columns: [{ column: "assigned_crm_id", type: "text" }],
-      rows,
-      touch: ["updated_at"],
-    });
+    await runCrmAssignmentBackfill(this.db, this.access, orgId);
+    return readCrmAssignmentStats(this.db, this.access, orgId);
   }
 }
