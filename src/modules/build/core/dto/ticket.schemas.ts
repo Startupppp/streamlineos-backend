@@ -258,7 +258,6 @@ export const addLabelSchema = z.object({ labelId: z.number() }).strict();
 export const attachmentSchema = z.object({
   fileName: z.string().min(1),
   fileUrl: z.string().min(1),
-  fileKey: z.string().optional(),
   fileSize: z.number(),
   mimeType: z.string(),
 }).strict();

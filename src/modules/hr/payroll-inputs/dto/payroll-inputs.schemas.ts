@@ -18,10 +18,6 @@ export const sectionQuerySchema = z
   .object({
     cursor: z.string().trim().min(1).max(2048).optional(),
     limit: pageSizeField(50, 100),
-    preview: z
-      .string()
-      .optional()
-      .transform((v) => v === "true"),
   })
   .strict();
 

@@ -73,7 +73,6 @@ export const createKbAttachmentSchema = z.object({
 
 export const kbAskSchema = z.object({
   question: z.string().trim().min(3, "Question is too short").max(1000),
-  articleId: z.number().int().positive().optional(),
 }).strict();
 
 export type CreateKbCategoryInput = z.infer<typeof createKbCategorySchema>;

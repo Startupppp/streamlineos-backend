@@ -58,7 +58,6 @@ export const policyPreviewSchema = z.object({
   templateId: z.coerce.number().int().positive().optional(),
   toggleOverrides: toggleOverridesSchema,
   country: z.string().trim().max(10).optional(),
-  currency: z.string().trim().length(3).optional(),
   payDay: z.coerce.number().int().min(1).max(31).optional(),
   startMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
 }).strict();
