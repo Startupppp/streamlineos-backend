@@ -28,6 +28,31 @@ import {
 
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
+export const PRIVATE_ANCHOR_TITLE = "Private upcoming anchor (plan fixture)";
+
+/**
+ * The post-conditions of the private upcoming anchor, as a value rather than as a
+ * side effect, so that the check itself can be tested. Each one is a way the fixture
+ * stops forcing the plan it exists to force while still existing.
+ */
+export function anchorDefects(row) {
+  const defects = [];
+  if (!row.is_private) defects.push("not private");
+  if (!row.is_upcoming) defects.push("not upcoming");
+  if (!row.is_single) defects.push("recurring");
+  if (row.sharing_timestamp !== 1) defects.push(`${row.sharing_timestamp} events share its start_date`);
+  if (row.attendees !== 0) defects.push(`${row.attendees} attendee rows`);
+  return defects;
+}
+
+const SOUND_ANCHOR = {
+  is_private: true,
+  is_upcoming: true,
+  is_single: true,
+  sharing_timestamp: 1,
+  attendees: 0,
+};
+
 if (process.argv.includes("--self-test")) {
   const cases = [
     ["rejects a non-scratch database", assertScratchTarget("postgres://u:p@h/neondb", []).ok, false],
@@ -36,6 +61,11 @@ if (process.argv.includes("--self-test")) {
     ["rejects an unparseable url", assertScratchTarget("nope", []).ok, false],
     ["scale never collapses a section to zero", scaled(10, 0.001) >= 1, true],
     ["scale is proportional", scaled(1000, 0.5), 500],
+    ["a sound private anchor reports no defect", anchorDefects(SOUND_ANCHOR).length, 0],
+    ["an anchor sharing its timestamp is reported vacuous", anchorDefects({ ...SOUND_ANCHOR, sharing_timestamp: 6 }).join(), "6 events share its start_date"],
+    ["an anchor that has drifted into the past is reported vacuous", anchorDefects({ ...SOUND_ANCHOR, is_upcoming: false }).join(), "not upcoming"],
+    ["an anchor that is no longer private is reported vacuous", anchorDefects({ ...SOUND_ANCHOR, is_private: false }).join(), "not private"],
+    ["an attended anchor is reported vacuous", anchorDefects({ ...SOUND_ANCHOR, attendees: 2 }).join(), "2 attendee rows"],
   ];
   let failed = false;
   for (const [label, actual, wanted] of cases) {
@@ -204,6 +234,75 @@ async function seedReminderWindow(orgId, label) {
     [orgId, creator, 12 - due],
   );
   log(`  ${label}: reminder-window events -> 12`);
+}
+
+/**
+ * One private, upcoming, non-recurring event at a timestamp no other event of the
+ * tenant shares — per tenant, including the tiny one.
+ *
+ * Report 22d could not pin `GET /dashboard/personal`'s attendee plan because the
+ * branch it guards is only reached when a NON-'org' event lands inside the window.
+ * On this seed every private event shares its start_date with five or six 'org' ones,
+ * the index returns the 'org' rows first, and the SubPlan reads `never executed`; the
+ * two minority tenants had no upcoming private event at all. So the same query measured
+ * 6 blocks on one run and 1,140 on the next, and which one you got moved with the wall
+ * clock as events passed now(). This is that fixture.
+ *
+ * `GREATEST(now(), max(start_date)) + a distinctive offset` makes both invariants hold
+ * by construction rather than by luck: strictly later than every existing event, so the
+ * timestamp is unique AND the event is upcoming. It carries no attendee row, so the
+ * caller-attendance arm is genuinely evaluated rather than short-circuited.
+ *
+ * The post-conditions are checked, not assumed: a fixture that silently stops being
+ * private, upcoming, alone at its timestamp or unattended stops forcing the plan it
+ * exists to force, and every measurement downstream would quietly go back to a coin toss.
+ */
+async function seedPrivateUpcomingAnchor(orgId, label) {
+  const [creatorRow] = await sql.unsafe(
+    `SELECT id FROM organization_members WHERE org_id = $1 ORDER BY id LIMIT 1`,
+    [orgId],
+  );
+  if (!creatorRow) throw new Error(`no organization_members row for ${label}`);
+
+  const have = await count(
+    "calendar_events",
+    "org_id = $1 AND title = $2",
+    [orgId, PRIVATE_ANCHOR_TITLE],
+  );
+  if (have === 0) {
+    await sql.unsafe(
+      `INSERT INTO calendar_events
+         (org_id, title, description, start_date, end_date, all_day, category, timezone,
+          rrule, recurrence_end, reminder_15min_sent, created_by_membership_id, visibility, color)
+       SELECT $1, $2, 'Anchors the non-org visibility branch at a timestamp nothing else shares',
+              anchor, anchor + interval '45 minutes', false, 'meeting', 'UTC',
+              NULL, NULL, true, $3::int, 'private', '#dc2626'
+       FROM (SELECT GREATEST(now(), COALESCE((SELECT max(start_date) FROM calendar_events WHERE org_id = $1), now()))
+                    + interval '400 days 7 hours 13 minutes 11 seconds' AS anchor) a`,
+      [orgId, PRIVATE_ANCHOR_TITLE, creatorRow.id],
+    );
+  }
+
+  const [check] = await sql.unsafe(
+    `SELECT e.id, e.start_date,
+            (e.visibility <> 'org') AS is_private,
+            (e.start_date > now()) AS is_upcoming,
+            (e.rrule IS NULL) AS is_single,
+            (SELECT count(*)::int FROM calendar_events o
+              WHERE o.org_id = e.org_id AND o.start_date = e.start_date) AS sharing_timestamp,
+            (SELECT count(*)::int FROM event_attendees a WHERE a.org_id = e.org_id AND a.event_id = e.id) AS attendees
+     FROM calendar_events e
+     WHERE e.org_id = $1 AND e.title = $2
+     ORDER BY e.id LIMIT 1`,
+    [orgId, PRIVATE_ANCHOR_TITLE],
+  );
+
+  if (!check) throw new Error(`${label}: private upcoming anchor was not created`);
+  const defects = anchorDefects(check);
+  if (defects.length > 0)
+    throw new Error(`${label}: private upcoming anchor is vacuous — ${defects.join(", ")}`);
+
+  log(`  ${label}: private upcoming anchor id=${check.id} at ${new Date(check.start_date).toISOString()} (alone at its timestamp, unattended)`);
 }
 
 async function seedAttendees(orgId, label, perEvent) {
@@ -493,6 +592,7 @@ async function main() {
     await section(`${profile.label}/calendar_events`, () => seedCalendarEvents(profile.id, profile.label, events));
     await section(`${profile.label}/reminder_window`, () => seedReminderWindow(profile.id, profile.label));
     await section(`${profile.label}/attendees`, () => seedAttendees(profile.id, profile.label, 2));
+    await section(`${profile.label}/private_anchor`, () => seedPrivateUpcomingAnchor(profile.id, profile.label));
     await section(`${profile.label}/exceptions`, () => seedExceptions(profile.id, profile.label, Math.max(40, Math.round(events / 8))));
     await section(`${profile.label}/notifications`, () => seedNotifications(profile.id, profile.label, notifications));
     await section(`${profile.label}/fanout`, () => seedFanoutTargets(profile.id, profile.label));
