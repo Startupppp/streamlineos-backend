@@ -30,6 +30,7 @@ export class SupportPortalService {
         category: input.category,
         description: input.description,
         customFields: input.customFields,
+        attachments: input.attachments,
       },
       { channel: "portal" },
       membershipId,

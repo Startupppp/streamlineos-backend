@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
+  supportTicketAttachments,
   supportTicketLinks,
   supportTicketMessages,
   supportTickets,
@@ -37,6 +38,7 @@ import type {
   ReplyMessageInput,
   SnoozeTicketInput,
   SplitTicketInput,
+  TicketAttachmentInput,
   TicketPriority,
   UpdateTicketInput,
 } from "./dto/support.schemas";
@@ -142,7 +144,7 @@ export class SupportTicketsService {
   async createTicket(
     orgId: string,
     userId: string,
-    input: CreateTicketInput,
+    input: CreateTicketInput & { attachments?: TicketAttachmentInput[] },
     source?: {
       channel: string;
       messageId?: string | null;
@@ -217,6 +219,35 @@ export class SupportTicketsService {
           requesterName: source?.requesterName ?? null,
         })
         .returning();
+
+      if (input.attachments && input.attachments.length > 0) {
+        const [openingMessage] = await (tx as Db)
+          .insert(supportTicketMessages)
+          .values({
+            orgId,
+            ticketId: row.id,
+            authorId: userId,
+            body: input.description?.trim() || input.title,
+            isInternal: false,
+            sourceChannel: source?.channel ?? "web",
+            sourceMessageId: source?.messageId ?? null,
+            sourceContactEmail: source?.requesterEmail ?? null,
+            sourceContactName: source?.requesterName ?? null,
+          })
+          .returning({ id: supportTicketMessages.id });
+        if (!openingMessage) throw new Error("Failed to create opening message");
+        await (tx as Db).insert(supportTicketAttachments).values(
+          input.attachments.map((a) => ({
+            orgId,
+            messageId: openingMessage.id,
+            fileName: a.fileName,
+            fileUrl: a.fileUrl,
+            fileSize: a.fileSize,
+            mimeType: a.mimeType,
+          })),
+        );
+      }
+
       return row;
     });
 

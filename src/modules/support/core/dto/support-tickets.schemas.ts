@@ -386,6 +386,7 @@ export type ListTicketsInput = z.infer<typeof listTicketsSchema>;
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateTicketInput = z.infer<typeof updateTicketSchema>;
 export type ReplyMessageInput = z.infer<typeof replyMessageSchema>;
+export type TicketAttachmentInput = NonNullable<ReplyMessageInput["attachments"]>[number];
 export type ListMacrosInput = z.infer<typeof listMacrosSchema>;
 export type CreateMacroInput = z.infer<typeof createMacroSchema>;
 export type UpdateMacroInput = z.infer<typeof updateMacroSchema>;
