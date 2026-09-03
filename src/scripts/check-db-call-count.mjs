@@ -34,6 +34,26 @@ const LOOP_BODY_LOOKFORWARD = 30;
 const MIN_FILES = 200;
 const MIN_MODULES = 40;
 
+/**
+ * Floor on the number of loop openers whose body this run actually read.
+ *
+ * A detector that silently stops looking is the failure this file keeps
+ * producing, and nothing here measured it: the gate printed "All N+1 patterns
+ * are classified" while half of every loop in src/modules went uninspected.
+ * Counting DETECTIONS cannot catch that — a narrower detector detects less and
+ * reads as cleaner. Counting INSPECTIONS can, because removing an opener
+ * pattern, restoring a `continue` or narrowing `scanBracelessBody` all drive
+ * this number down.
+ *
+ * Measured 2026-09-03 at head, by this file: 4,776 openers · 2,736 inspected ·
+ * 2,040 skipped because their statement ended on the opener line. Before the
+ * braceless scanner it was 2,127 inspected against 2,638 discarded outright.
+ * Floor set ~5% below the measurement so ordinary code churn does not red the
+ * gate, and it may only go UP. Raise it when the repo grows; never lower it to
+ * make a change fit.
+ */
+const MIN_INSPECTED_LOOPS = 2600;
+
 const ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 const CLASSIFICATION_FILE = new URL(
   "./baselines/db-call-count-classification.json",
@@ -43,7 +63,9 @@ const CLASSIFICATION_FILE = new URL(
 const EXCLUDED_MODULE_PREFIXES = ["/crm/", "/inventory/"];
 
 const LOOP_OPENERS = [
-  /\bfor\s*\(/,
+  // `for await (` did not match `\bfor\s*\(` — the regex wants the paren straight
+  // after `for`. 13 sites in src/modules were invisible for that reason alone.
+  /\bfor\s*(?:await\s+)?\(/,
   /\bwhile\s*\(/,
   /\bdo\s*\{/,
   /\.forEach\s*\(/,
@@ -212,6 +234,104 @@ function openerIsSelfContained(line) {
   return parenBalance(line) === 0 && bracketBalance(line) === 0 && braceDepthChange(line) === 0;
 }
 
+/**
+ * Drop a trailing `//` line comment without cutting a `//` that lives inside a
+ * string — `const u = "https://x";` must keep its terminating `;`, or the
+ * braceless scanner below reads the statement as unfinished and over-scans.
+ */
+function stripLineComment(line) {
+  let inStr = false;
+  let strChar = "";
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inStr) {
+      if (ch === strChar && line[i - 1] !== "\\") inStr = false;
+    } else if (ch === '"' || ch === "'" || ch === "`") {
+      inStr = true; strChar = ch;
+    } else if (ch === "/" && line[i + 1] === "/") {
+      return line.slice(0, i).trimEnd();
+    }
+  }
+  return line.trimEnd();
+}
+
+/**
+ * THE BLIND SPOT THIS GATE WAS BUILT AROUND, and the reason it could not see two
+ * thirds of the repository: a loop body that is a STATEMENT rather than a BLOCK.
+ *
+ * The rule that stood here — `if (parensClosedOnSameLine && !opensBodyOnSameLine)
+ * continue;` — reads as "this opener has no `{`, so it has no body to scan". That
+ * is true only when the opener's whole STATEMENT also ends on that line. It is
+ * false for the two shapes this codebase writes most:
+ *
+ *   for (const row of rows)
+ *     await claimIdentifiers(db, orgId, row.partyId, claimsOf(row));
+ *
+ * — which CLAUDE.md §6 does not merely permit but MANDATES ("Single-statement
+ * `if`/`for` bodies omit braces"), so the gate was blind by construction to the
+ * house style; and
+ *
+ *   await Promise.all(
+ *     ids.map((id) =>
+ *       this.db.update(t).set(...).where(eq(t.id, id)),
+ *     ),
+ *   );
+ *
+ * — the commonest hidden-N+1 idiom in a Nest/Drizzle service. Its opener line
+ * `ids.map((id) =>` leaves a paren OPEN, and `loopParensBalanced` returns
+ * `parenBalance >= 0`, so an unclosed opener counted as "closed" and was skipped
+ * by the same `continue`.
+ *
+ * MEASURED at HEAD before this change, over src/modules: **2,417 of 4,765 loop
+ * openers (50.7%), spread over 753 files, were discarded by that one `continue`
+ * with no body inspection at all.** Widening found 14 files the gate had never
+ * seen once, four of them real per-row or per-group writes —
+ * clients/client-accounts.service.ts:487, party/party-legacy-employer.ts:213,
+ * party/party-legacy-writer.ts:252 and settings/settings.service.ts:51.
+ *
+ * The body of a braceless loop is exactly one statement, so it is scanned until
+ * every delimiter the opener left open is closed again AND the line terminates a
+ * statement (`;`, `,` or `}`), capped at LOOP_BODY_LOOKFORWARD. Returning `null`
+ * for an opener whose own statement already ended on its line is what keeps
+ * `const ids = rows.map((r) => r.id);` — the noise this file has twice been
+ * broken by — from adopting whatever follows it.
+ */
+function scanBracelessBody(lines, i) {
+  const opener = lines[i];
+  let depth = parenBalance(opener) + bracketBalance(opener) + braceDepthChange(opener);
+  if (depth <= 0 && /[;,]$/.test(stripLineComment(opener))) return null;
+
+  let bodySoFar = "";
+  const end = Math.min(i + 1 + LOOP_BODY_LOOKFORWARD, lines.length);
+  for (let j = i + 1; j < end; j++) {
+    const bodyLine = lines[j];
+    bodySoFar += (bodySoFar ? "\n" : "") + bodyLine;
+    if (DB_CALL_PATTERNS.some((re) => re.test(bodySoFar)))
+      return { loopLine: i + 1, callLine: j + 1, text: bodyLine.trim() };
+    depth += parenBalance(bodyLine) + bracketBalance(bodyLine) + braceDepthChange(bodyLine);
+    if (depth <= 0 && /[;,}]$/.test(stripLineComment(bodyLine))) break;
+  }
+  return null;
+}
+
+/**
+ * Loop openers this run actually looked inside, and the ones it did not.
+ *
+ * Recorded per run so the widening above cannot be quietly undone. `inspected`
+ * is the number of openers whose body was read; `skippedComplete` is the number
+ * whose whole statement finished on the opener line, which is the only honest
+ * reason to look no further. `main` ratchets `inspected` against
+ * MIN_INSPECTED_LOOPS — re-narrowing the detector drops that number and reds the
+ * gate, which is exactly what did NOT happen when 2,417 openers went dark.
+ */
+export const coverage = { openers: 0, inspected: 0, skippedComplete: 0 };
+
+export function resetCoverage() {
+  coverage.openers = 0;
+  coverage.inspected = 0;
+  coverage.skippedComplete = 0;
+}
+
 export function detectLoopDbCalls(src) {
   const lines = src.split("\n");
   const violations = [];
@@ -219,12 +339,23 @@ export function detectLoopDbCalls(src) {
     const line = lines[i];
     const isLoopLine = LOOP_OPENERS.some((re) => re.test(line));
     if (!isLoopLine) continue;
+    coverage.openers++;
 
     const opensBodyOnSameLine = loopBodyOpenedOnLine(line);
     const parensClosedOnSameLine = loopParensBalanced(line);
 
-    if (parensClosedOnSameLine && !opensBodyOnSameLine) continue;
-    if (openerIsSelfContained(line)) continue;
+    if (parensClosedOnSameLine && !opensBodyOnSameLine) {
+      const braceless = scanBracelessBody(lines, i);
+      if (braceless === null && /[;,]$/.test(stripLineComment(line))) coverage.skippedComplete++;
+      else coverage.inspected++;
+      if (braceless) violations.push(braceless);
+      continue;
+    }
+    if (openerIsSelfContained(line)) {
+      coverage.skippedComplete++;
+      continue;
+    }
+    coverage.inspected++;
 
     let depth = 0;
     let enteredBody = false;
@@ -701,7 +832,112 @@ function runSelfTests() {
     }
   }
 
-  console.log("SELF-TEST PASS: all 22 detection/classification checks passed");
+  {
+    // The braceless-body blind spot, pinned in BOTH directions. Every HIT case
+    // here returned 0 before this pass, and every MISS case is the noise that
+    // widening must not start reporting.
+    const bracelessForStatement = [
+      "    for (const row of rows)",
+      "      await claimIdentifiers(db, organizationId, row.partyId, claimsOf(row));",
+    ].join("\n");
+    const bracelessArrowInPromiseAll = [
+      "    await Promise.all(",
+      "      Object.entries(assignments).map(([assigneeId, ids]) =>",
+      "        this.db",
+      "          .update(clientAccounts)",
+      "          .set({ assignedCrmId: assigneeId })",
+      "          .where(inArray(clientAccounts.id, ids)),",
+      "      ),",
+      "    );",
+    ].join("\n");
+    const bracelessWhile = [
+      "    while (cursor)",
+      "      cursor = await this.db.query.rows.findFirst({ where: gt(rows.id, cursor) });",
+    ].join("\n");
+    const forAwaitLoop = [
+      "    for await (const page of pageRecipients(this.db, orgId))",
+      "      await this.db.insert(deliveries).values(page);",
+    ].join("\n");
+    // The noise. A one-line projection whose statement ENDS on its own line must
+    // not adopt the statement that follows it — this is the exact regression the
+    // `openerIsSelfContained` fix was written for, re-asserted for the braceless
+    // path that now runs before it.
+    const completedOneLineMap = [
+      "    const ids = rows.map((r) => r.id);",
+      "    const found = await this.db.select().from(t).where(inArray(t.id, ids));",
+    ].join("\n");
+    const completedChainWithFor = [
+      "    const locked = await this.db.select().from(t).where(eq(t.id, id)).for('update');",
+      "    const other = await this.db.select().from(u);",
+    ].join("\n");
+    const rowLockContinuation = [
+      "      .for('update')",
+      "      .limit(1);",
+    ].join("\n");
+
+    const cases = [
+      ["a braceless for body is a loop DB call", bracelessForStatement, 1],
+      ["a braceless arrow inside Promise.all(map) is a loop DB call", bracelessArrowInPromiseAll, 1],
+      ["a braceless while body is a loop DB call", bracelessWhile, 1],
+      ["a for-await loop body is a loop DB call", forAwaitLoop, 1],
+      ["a one-line .map that ends in a semicolon must not adopt the next statement", completedOneLineMap, 0],
+      ["a completed chain carrying .for('update') is not a loop", completedChainWithFor, 0],
+      ["a .for('update') chain continuation is not a loop DB call", rowLockContinuation, 0],
+    ];
+    for (const [label, fixture, expected] of cases) {
+      const got = detectLoopDbCalls(fixture).length;
+      if (got !== expected) {
+        console.error(`SELF-TEST FAIL: ${label} — expected ${expected} violation(s), got ${got}`);
+        process.exit(1);
+      }
+    }
+  }
+
+  {
+    // The coverage counter itself, which is what ratchets the widening in place.
+    // Without this it could return a constant and MIN_INSPECTED_LOOPS would be
+    // decorative.
+    resetCoverage();
+    detectLoopDbCalls(
+      [
+        "    const ids = rows.map((r) => r.id);",
+        "    for (const row of rows)",
+        "      await touch(this.db, row.id);",
+        "    for (const row of rows) {",
+        "      await this.db.insert(t).values(row);",
+        "    }",
+      ].join("\n"),
+    );
+    if (coverage.openers !== 3 || coverage.inspected !== 2 || coverage.skippedComplete !== 1) {
+      console.error(
+        `SELF-TEST FAIL: coverage counters wrong — openers=${coverage.openers} inspected=${coverage.inspected} skippedComplete=${coverage.skippedComplete}, expected 3/2/1`,
+      );
+      process.exit(1);
+    }
+    resetCoverage();
+  }
+
+  {
+    // stripLineComment is load-bearing for the braceless terminator test: cut a
+    // `//` inside a string and the statement reads as unfinished, so the scanner
+    // runs on into the next one and invents a finding.
+    const cases = [
+      ['const u = "https://x";', 'const u = "https://x";'],
+      ["await run(); // trailing", "await run();"],
+      ["const p = `a//b`;", "const p = `a//b`;"],
+      ["  // whole line", ""],
+    ];
+    for (const [line, expected] of cases) {
+      if (stripLineComment(line) !== expected) {
+        console.error(
+          `SELF-TEST FAIL: stripLineComment(${JSON.stringify(line)}) = ${JSON.stringify(stripLineComment(line))}, expected ${JSON.stringify(expected)}`,
+        );
+        process.exit(1);
+      }
+    }
+  }
+
+  console.log("SELF-TEST PASS: all 33 detection/classification/coverage checks passed");
   process.exitCode = 0;
 }
 
@@ -770,10 +1006,20 @@ async function main() {
     .filter(([, v]) => v.verdict === "ACTIONABLE").length;
 
   console.log(`Scanned ${allFiles.length} service files across ${discoverTerritory().length} modules.`);
+  console.log(
+    `Loop coverage: ${coverage.openers} loop opener(s) — ${coverage.inspected} inspected, ${coverage.skippedComplete} skipped (statement ended on the opener line).`,
+  );
   console.log(`Detected ${detectedTotal} file(s) with loop-internal DB calls (N+1 candidates).`);
   console.log(`  ACTIONABLE: ${actionableFiles} file(s) (${actionable} call site(s) to fix)`);
 
   let failed = false;
+
+  if (coverage.inspected < MIN_INSPECTED_LOOPS) {
+    console.error(
+      `\nCOVERAGE REGRESSION: only ${coverage.inspected} loop opener(s) were inspected (floor ${MIN_INSPECTED_LOOPS}). The detector is looking at less of the repository than it did — a narrower detector reports fewer findings and reads as cleaner, which is why this is a hard failure and not a note.`,
+    );
+    failed = true;
+  }
 
   if (unclassified.length > 0) {
     console.error(`\n${unclassified.length} UNCLASSIFIED file(s) — add to ${CLASSIFICATION_FILE}:`);
@@ -817,7 +1063,18 @@ async function main() {
   process.exitCode = failed ? 1 : 0;
 }
 
-main().catch((e) => {
-  console.error("RUNNER FAILED:", e instanceof Error ? e.message : e);
-  process.exitCode = 1;
-});
+/**
+ * Run only when invoked as a script. Importing this module to reuse
+ * `detectLoopDbCalls` used to run the entire repository scan as an import side
+ * effect, which makes it untestable from a spec and produces a stray exit code
+ * in whatever imported it.
+ */
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  import.meta.url === new URL(`file://${process.argv[1]}`).href;
+
+if (invokedDirectly)
+  main().catch((e) => {
+    console.error("RUNNER FAILED:", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  });
