@@ -59,6 +59,12 @@
  *     asserting ForbiddenException passes this gate while breaking the house
  *     rule that a cross-tenant miss is 404, never 403.
  *   - A refusal asserted inside a helper the test calls.
+ *   - A site whose title carries no risk word. Measured against its own
+ *     findings: of the four real ones above, the calendar "BITE PROOF" is NOT
+ *     caught by this gate — neither its title nor its describe names a refusal,
+ *     so the classifier reads it as noise. It was found by execution, not by a
+ *     title. The classifier is what keeps 139 sites out of the ratchet, and
+ *     that is the price of it.
  *   A green here means "no refusal test on a risk path accepts any throw", not
  *   "every refusal test asserts the right refusal".
  *
