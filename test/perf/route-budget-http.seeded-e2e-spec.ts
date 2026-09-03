@@ -21,6 +21,7 @@ import {
 } from "test/perf/route-budget-http-harness";
 import { buildRoutePlan, type RouteFixtures, type RoutePlanEntry } from "test/perf/route-budget-http-plan";
 import { loadRouteBudgets } from "src/scripts/route-budget-db-calls";
+import { REDIS } from "src/common/cache/cache.service";
 
 /**
  * Ticket 22, box 2: the four end-to-end ceilings measured through the HTTP stack.
@@ -285,7 +286,10 @@ describeIfSeeded("route budgets over the HTTP stack (seeded)", () => {
             journalEntries: journal,
             atHead: appliedMigrations !== null && journal !== null && appliedMigrations === journal,
             role: "streamline_app (rolbypassrls = false, RLS live)",
-            cache: "Redis disabled — every count is the cache-miss ceiling",
+            cache:
+              seeded.app.get(REDIS, { strict: false }) === null
+                ? "Redis disabled — every count is the cache-MISS ceiling"
+                : "Redis ENABLED — counts are a mixture of hit and miss paths and are NOT a miss ceiling",
             compression: "off — responseBytes is the uncompressed payload the application produced",
             samples: SAMPLES,
             writeSamples: WRITE_SAMPLES,
@@ -329,6 +333,44 @@ describeIfSeeded("route budgets over the HTTP stack (seeded)", () => {
       `[route-budget-http] database=${databaseName(APP_URL)} applied=${String(appliedMigrations)} journal=${String(journal)}\n`,
     );
     expect(appliedMigrations).toBe(journal);
+  });
+
+  /**
+   * A placement defect wearing an authorization error's clothes.
+   *
+   * `withTenant` resolves the organisation's placement before it opens a tenant transaction, and
+   * `RegionRegistry` THROWS when the organisation has no `organization_placement` row.
+   * `MembershipStateService` catches every throw into `UNKNOWN`, and `JwtAuthGuard` turns
+   * `UNKNOWN` into `403 ORG_MEMBERSHIP_INACTIVE`. So an unplaced seed answers 403 to every
+   * authenticated request with a message about membership, and no database-side instrument can
+   * see it. `scratch_perf_seed` shipped in exactly that state — 8 organisations, 0 placements.
+   *
+   * The control probe already refuses to score such a run. This says WHY in one line instead of
+   * leaving the next reader to rediscover it through the guard.
+   */
+  it("every tenant it will measure is placed, so withTenant can resolve a region", async () => {
+    const wanted = [REFERENCE_ORG, MINORITY_ORG].filter((id) => id.length > 0);
+    const rows = await owner.unsafe<{ organization_id: string; status: string; cell_id: string }[]>(
+      `SELECT organization_id, status::text AS status, cell_id FROM organization_placement WHERE organization_id = ANY($1)`,
+      [wanted] as never[],
+    );
+    const placed = new Set(rows.filter((r) => r.status === "ACTIVE").map((r) => r.organization_id));
+    const unplaced = wanted.filter((id) => !placed.has(id));
+    if (unplaced.length > 0)
+      process.stderr.write(
+        `[route-budget-http] UNPLACED: ${unplaced.join(", ")} — every authenticated request will answer ` +
+          `403 ORG_MEMBERSHIP_INACTIVE. Run: DATABASE_URL=<scratch> node test/perf/place-perf-orgs.mjs --write\n`,
+      );
+    expect(unplaced).toEqual([]);
+  });
+
+  /**
+   * Proven, not narrated. The artifact claims every count is the cache-MISS ceiling; that claim is
+   * only worth something if the REDIS provider really is null, because a warm Upstash instance
+   * would remove the permission, module-map and placement reads from every count below.
+   */
+  it("runs with Redis disabled, so every count is the cache-miss ceiling", () => {
+    expect(seeded.app.get(REDIS, { strict: false })).toBeNull();
   });
 
   it("every plan entry names a declared budget, and every route budget has a plan entry", () => {
