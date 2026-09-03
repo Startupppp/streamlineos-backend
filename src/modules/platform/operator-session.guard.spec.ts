@@ -24,6 +24,9 @@ function makeContext(opts: {
   orgId?: string;
   method?: string;
   principalKind?: "human-session" | "service-api-key";
+  /** `undefined` keeps Express's normal `{ path }`; `omitRoute` removes the key entirely. */
+  route?: unknown;
+  omitRoute?: boolean;
 }): ExecutionContext {
   const req = {
     user: opts.userId !== undefined
@@ -46,7 +49,14 @@ function makeContext(opts: {
     method: opts.method ?? "GET",
     url: "/platform/admin/orgs/org-1/employees",
     ip: "10.0.0.1",
-    route: { path: "/platform/admin/orgs/:orgId/employees" },
+    ...(opts.omitRoute
+      ? {}
+      : {
+          route:
+            opts.route === undefined
+              ? { path: "/platform/admin/orgs/:orgId/employees" }
+              : opts.route,
+        }),
   };
   return {
     getHandler: jest.fn(),
@@ -183,6 +193,85 @@ describe("OperatorSessionGuard", () => {
         expect.any(String),
         expect.anything(),
       );
+    });
+  });
+
+  /*
+   * The negative test for the one `as unknown as` this guard carries
+   * (operator-session.guard.ts:46, ledgered `external`). Its invariant is a
+   * DEGRADATION claim: `req.route` is attached by Express at dispatch time, is
+   * absent from the Nest request type, and an absent one must fall back to
+   * `req.url` rather than throw. The ledger proves the cast is declared and
+   * cannot multiply; it does not prove the fallback. These do.
+   *
+   * Every shape below is one the cast's own type — `{ route?: { path?: string } }`
+   * — asserts cannot happen, which is the point: the cast is a promise about a
+   * property TypeScript is not checking, so the promise has to be checked here.
+   * A guard that throws on a request Express shaped differently fails CLOSED on
+   * an operator route, which reads as a revoked grant rather than as a bug.
+   */
+  describe("the `req.route` fallback the cast asserts", () => {
+    const CONCRETE_URL = "/platform/admin/orgs/org-1/employees";
+
+    async function actionFor(route: { route?: unknown; omitRoute?: boolean }): Promise<string> {
+      const svc = makeService();
+      const guard = new OperatorSessionGuard(
+        makeReflector("read_customer_data"),
+        svc as unknown as PlatformOperatorAccessService,
+      );
+      await expect(
+        guard.canActivate(makeContext({ userId: "op-alice", orgId: "org-1", ...route })),
+      ).resolves.toBe(true);
+      const [, , , action] = svc.authorizeRequest.mock.calls[0] as [string, string, string, string];
+      return action;
+    }
+
+    it("names the route TEMPLATE when Express attached one, so the fallback is distinguishable", async () => {
+      // The control. Without it every assertion below could pass on a guard
+      // that ignored `req.route` entirely and always used the URL.
+      await expect(actionFor({})).resolves.toBe(
+        "operator.get./platform/admin/orgs/:orgId/employees",
+      );
+    });
+
+    it("degrades to req.url when the route key is absent altogether", async () => {
+      await expect(actionFor({ omitRoute: true })).resolves.toBe(`operator.get.${CONCRETE_URL}`);
+    });
+
+    it("degrades to req.url when a route object carries no path", async () => {
+      await expect(actionFor({ route: {} })).resolves.toBe(`operator.get.${CONCRETE_URL}`);
+    });
+
+    it.each([
+      ["null", null],
+      ["a string", "GET /platform/admin/orgs/:orgId/employees"],
+      ["a number", 42],
+      ["an object whose path is not a string", { path: { toString: () => "nope" } }],
+    ])("degrades to req.url rather than throwing when route is %s", async (_label, route) => {
+      // `null` and the primitives are the shapes the cast's type forbids and
+      // optional chaining survives; the last one is the shape it PERMITS
+      // structurally while the value is not a string — the action is built by
+      // interpolation, so this documents what actually reaches the audit log.
+      const action = await actionFor({ route });
+      expect(action.startsWith("operator.get.")).toBe(true);
+    });
+
+    it("authorizes on the fallback rather than skipping the check", async () => {
+      // The failure that would matter most is silent: a guard that swallowed the
+      // missing route and returned early would let an ungranted operator through.
+      const svc = makeService();
+      const guard = new OperatorSessionGuard(
+        makeReflector("read_customer_data"),
+        svc as unknown as PlatformOperatorAccessService,
+      );
+
+      await guard.canActivate(makeContext({ userId: "op-alice", orgId: "org-1", omitRoute: true }));
+
+      expect(svc.authorizeRequest).toHaveBeenCalledTimes(1);
+      const [userId, orgId, scope] = svc.authorizeRequest.mock.calls[0] as [string, string, string];
+      expect(userId).toBe("op-alice");
+      expect(orgId).toBe("org-1");
+      expect(scope).toBe("read_customer_data");
     });
   });
 });
