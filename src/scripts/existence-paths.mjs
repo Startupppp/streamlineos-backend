@@ -187,3 +187,86 @@ export function scanExistencePaths(relPath, src) {
 
   return findings;
 }
+
+/**
+ * Drizzle table exports carrying a column a read must never hydrate by accident:
+ * a pgvector embedding, a generated tsvector, or a bytea blob. Resolved from the
+ * schema rather than listed, so a new embedding column is covered the day it
+ * lands.
+ */
+export function collectHeavyColumnTables(readFile, schemaFiles) {
+  const heavy = new Map();
+  for (const file of schemaFiles) {
+    const sf = ts.createSourceFile(file, readFile(file), ts.ScriptTarget.Latest, true);
+    (function walk(n) {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer &&
+          ts.isCallExpression(n.initializer)) {
+        const init = n.initializer;
+        const callee = ts.isIdentifier(init.expression) ? init.expression.text : null;
+        if ((callee === "pgTable" || callee === "table") && init.arguments.length >= 2 &&
+            ts.isObjectLiteralExpression(init.arguments[1])) {
+          const cols = [];
+          for (const p of init.arguments[1].properties) {
+            if (!ts.isPropertyAssignment(p) || !p.name) continue;
+            let e = p.initializer;
+            while (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression))
+              e = e.expression.expression;
+            const type = ts.isCallExpression(e) && ts.isIdentifier(e.expression) ? e.expression.text : "";
+            if (/^(vector|tsvector|bytea)$/i.test(type)) cols.push(`${p.name.getText()}:${type}`);
+          }
+          if (cols.length) heavy.set(n.name.text, cols);
+        }
+      }
+      n.forEachChild(walk);
+    })(sf);
+  }
+  return heavy;
+}
+
+/**
+ * Full-row reads of a table carrying an embedding, tsvector or blob.
+ *
+ * The box forbids hydrating a large JSON/blob/VECTOR field on a list, count or
+ * existence path, and an earlier pass recorded this clause as closed at zero.
+ * It was measured only over relations and over `db.query`, so five base-table
+ * reads were invisible: `support-kb.getArticle` spread the whole `kb_articles`
+ * row — `fts` included — into its response, and three `kb_pages` reads did the
+ * same through a bare `.select()`. `kb-page-duplicate.duplicate` even declares
+ * `Promise<KbPageRow>`, which is `Omit<..., "fts">`, and returned the tsvector
+ * anyway: a wider object is assignable to a narrower one, so `tsc` was silent.
+ *
+ * Both modules already own the fix (`KB_PAGE_COLUMNS`, `KB_ARTICLE_COLUMNS`,
+ * "PRD §5.1 forbids hydrating a vector into a response"), which is why this
+ * needs no product decision — the exclusion is the module's own stated contract.
+ */
+export function scanHeavyColumnReads(relPath, src, heavyTables) {
+  const sf = ts.createSourceFile(relPath, src, ts.ScriptTarget.Latest, true);
+  const findings = [];
+  const at = (node) => sf.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+
+  (function walk(n) {
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression)) {
+      const method = n.expression.name.text;
+      if (method === "from") {
+        const arg = n.arguments[0];
+        const table = arg && ts.isIdentifier(arg) ? arg.text : null;
+        const chained = n.expression.expression;
+        if (table && heavyTables.has(table) && ts.isCallExpression(chained) &&
+            ts.isPropertyAccessExpression(chained.expression) &&
+            chained.expression.name.text === "select" && classifySelect(chained))
+          findings.push({ file: relPath, line: at(chained), table, columns: heavyTables.get(table),
+            shape: `.select(${classifySelect(chained) === "bare" ? "" : classifySelect(chained)})` });
+      } else if (method === "findFirst" || method === "findMany") {
+        const owner = n.expression.expression;
+        if (ts.isPropertyAccessExpression(owner) && ts.isPropertyAccessExpression(owner.expression) &&
+            owner.expression.name.text === "query" && heavyTables.has(owner.name.text) &&
+            findIsUnprojected(n))
+          findings.push({ file: relPath, line: at(n), table: owner.name.text,
+            columns: heavyTables.get(owner.name.text), shape: method });
+      }
+    }
+    n.forEachChild(walk);
+  })(sf);
+
+  return findings;
+}

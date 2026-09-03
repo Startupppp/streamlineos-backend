@@ -1,13 +1,14 @@
 {
   "version": 1,
   "measuredAt": "2026-09-03",
-  "files": 3586,
+  "files": 3587,
   "note": "Ratchets for ticket 20's projection box. countPathsAllowed and existencePathsAllowed are the CLOSED clauses and must stay at 0; the three population ceilings hold the BLOCKED clause from growing while the product decision is outstanding. existenceDeferredAllowed covers the modules excluded from this release (crm/leads/deals/contacts/inventory) — enforced as a ratchet so they cannot grow before the exclusion lifts. All may only go DOWN.",
   "countPathsAllowed": 0,
   "existencePathsAllowed": 0,
   "existenceDeferredAllowed": 7,
+  "heavyColumnReadsAllowed": 0,
   "findMany": 287,
-  "findFirst": 493,
-  "bareSelect": 608,
+  "findFirst": 492,
+  "bareSelect": 604,
   "measuredAgainst": "git archive HEAD src — NOT the working tree. Measured on the dirty tree first and it read 294/547/600 against HEAD's 295/547/599, because two concurrent lanes held uncommitted edits in opposite directions (one projecting chat/chat-channel-list.service.ts, one adding a bare .select()). A ceiling taken from a shared dirty tree is not the number the gate will see."
 }

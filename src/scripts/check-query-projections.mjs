@@ -33,8 +33,13 @@
  */
 
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { join, extname } from "node:path";
-import { scanExistencePaths, OUT_OF_RELEASE_SCOPE } from "./existence-paths.mjs";
+import { join, extname, sep } from "node:path";
+import {
+  scanExistencePaths,
+  scanHeavyColumnReads,
+  collectHeavyColumnTables,
+  OUT_OF_RELEASE_SCOPE,
+} from "./existence-paths.mjs";
 
 const ROOT = new URL("../", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 const BASELINE_FILE = new URL(
@@ -333,6 +338,35 @@ function runSelfTests() {
     0,
   );
 
+  /* --- the vector/tsvector/bytea rule --- */
+  const heavy = new Map([["kbPages", ["fts:tsvector"]], ["kbArticleChunks", ["embedding:vector"]]]);
+  const hv = (label, fixture, expected) => {
+    const got = scanHeavyColumnReads("src/modules/kb/x.service.ts", fixture, heavy).length;
+    if (got !== expected) {
+      console.error(`SELF-TEST FAIL: ${label} — expected ${expected}, got ${got}`);
+      process.exit(1);
+    }
+  };
+  hv("a bare .select() from a tsvector table IS a finding",
+     "const p = await tx.select().from(kbPages).where(w);", 1);
+  hv("naming the columns is not a finding",
+     "const p = await tx.select(KB_PAGE_COLUMNS).from(kbPages).where(w);", 0);
+  hv("an unprojected db.query read of a vector table IS a finding",
+     "const c = await this.db.query.kbArticleChunks.findMany({ where: w });", 1);
+  hv("excluding the heavy column is not a finding",
+     "const c = await this.db.query.kbArticleChunks.findMany({ columns: { embedding: false }, where: w });", 0);
+  hv("a table with no heavy column is not a finding",
+     "const t = await tx.select().from(kbTags).where(w);", 0);
+
+  const resolved = collectHeavyColumnTables(
+    (f) => readFileSync(f, "utf8"),
+    collectSourceFiles(ROOT).filter((f) => f.includes(`${sep}db${sep}schema${sep}`)),
+  );
+  if (resolved.size === 0) {
+    console.error("SELF-TEST FAIL: resolved no vector/tsvector/bytea table from the real schema");
+    process.exit(1);
+  }
+
   if (!OUT_OF_RELEASE_SCOPE.test("src/modules/inventory/replenishment/inv.service.ts")) {
     console.error("SELF-TEST FAIL: inventory not recognised as out of release scope");
     process.exit(1);
@@ -348,7 +382,7 @@ function runSelfTests() {
     process.exit(1);
   }
 
-  console.log("SELF-TEST PASS: all 20 projection checks passed");
+  console.log(`SELF-TEST PASS: all 26 projection checks passed (${resolved.size} heavy-column tables resolved from the real schema)`);
 }
 
 function main() {
@@ -361,10 +395,21 @@ function main() {
     return;
   }
 
+  const heavyTables = collectHeavyColumnTables(
+    (f) => readFileSync(f, "utf8"),
+    files.filter((f) => f.includes(`${sep}db${sep}schema${sep}`)),
+  );
+  if (heavyTables.size === 0) {
+    console.error("ERROR: resolved no table with a vector/tsvector/bytea column — the schema scan is broken, not the repo.");
+    process.exitCode = 1;
+    return;
+  }
+
   const totals = { findMany: 0, findFirst: 0, bareSelect: 0 };
   const countPaths = [];
   const existenceInScope = [];
   const existenceDeferred = [];
+  const heavyReads = [];
   for (const file of files) {
     let src;
     try { src = readFileSync(file, "utf8"); } catch { continue; }
@@ -375,6 +420,8 @@ function main() {
     const rel = file.slice(ROOT.length - 1);
     for (const c of r.countPathsUnprojected)
       countPaths.push(`${rel}:${c.line} (${c.kind} on ${c.table}, consumed only as ${c.binding}.length)`);
+    for (const h of scanHeavyColumnReads(rel, src, heavyTables))
+      heavyReads.push(`${h.file}:${h.line} (${h.shape} on ${h.table}, hydrates ${h.columns.join(", ")})`);
     for (const e of scanExistencePaths(rel, src))
       (OUT_OF_RELEASE_SCOPE.test(rel) ? existenceDeferred : existenceInScope).push(
         `${e.file}:${e.line} (${e.shape} on ${e.subject}, ${e.binding} only ${e.kind}-tested)`,
@@ -389,7 +436,8 @@ function main() {
           note: "Ratchets for ticket 20's projection box. countPathsAllowed and existencePathsAllowed are the CLOSED clauses and must stay at 0; the three population ceilings hold the BLOCKED clause from growing while the product decision is outstanding. existenceDeferredAllowed covers the modules excluded from this release (crm/leads/deals/contacts/inventory) — enforced as a ratchet so they cannot grow before the exclusion lifts. All may only go DOWN.",
           countPathsAllowed: countPaths.length,
           existencePathsAllowed: existenceInScope.length,
-          existenceDeferredAllowed: existenceDeferred.length, ...totals,
+          existenceDeferredAllowed: existenceDeferred.length,
+          heavyColumnReadsAllowed: heavyReads.length, ...totals,
           measuredAgainst:
             "git archive HEAD src — NOT the working tree. Measured on the dirty tree first and it read 294/547/600 against HEAD's 295/547/599, because two concurrent lanes held uncommitted edits in opposite directions (one projecting chat/chat-channel-list.service.ts, one adding a bare .select()). A ceiling taken from a shared dirty tree is not the number the gate will see." },
         null, 2,
@@ -410,6 +458,7 @@ function main() {
   console.log(`Unprojected reads — findMany ${totals.findMany} · findFirst ${totals.findFirst} · bare .select() ${totals.bareSelect} = ${totals.findMany + totals.findFirst + totals.bareSelect} (ceiling ${baseline.findMany + baseline.findFirst + baseline.bareSelect}, enforced on the total).`);
   console.log(`Unprojected COUNT paths (.length only): ${countPaths.length} (allowed ${baseline.countPathsAllowed}).`);
   console.log(`Unprojected EXISTENCE/COUNT paths, AST: ${existenceInScope.length} in scope (allowed ${baseline.existencePathsAllowed ?? 0}) · ${existenceDeferred.length} deferred to crm/inventory (ratchet ${baseline.existenceDeferredAllowed ?? 0}).`);
+  console.log(`Full-row reads of a vector/tsvector/bytea table: ${heavyReads.length} (allowed ${baseline.heavyColumnReadsAllowed ?? 0}) over ${heavyTables.size} such tables.`);
 
   let failed = false;
 
@@ -465,6 +514,20 @@ function main() {
    * the total is the honest scoreboard for it. The per-shape numbers stay on the
    * output line so the composition is never hidden.
    */
+  /**
+   * The vector clause, at zero. An embedding or a generated tsvector on a read
+   * path is invisible cost and, for `kb_pages`, a documented contract breach:
+   * the module's own return type is Omit<..., "fts">.
+   */
+  const heavyAllowed = baseline.heavyColumnReadsAllowed ?? 0;
+  if (heavyReads.length > heavyAllowed) {
+    console.error(
+      `\n${heavyReads.length} full-row read(s) of a table carrying a vector, tsvector or bytea column, against an allowance of ${heavyAllowed}. Name the columns, or exclude the heavy one (kb uses KB_PAGE_COLUMNS / KB_ARTICLE_COLUMNS for exactly this):`,
+    );
+    for (const h of heavyReads) console.error(`  HEAVY-COLUMN-READ  ${h}`);
+    failed = true;
+  }
+
   const total = totals.findMany + totals.findFirst + totals.bareSelect;
   const ceiling = baseline.findMany + baseline.findFirst + baseline.bareSelect;
   if (total > ceiling) {
