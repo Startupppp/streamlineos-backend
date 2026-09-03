@@ -78,8 +78,9 @@ export class SignDocumentsController {
   @Get("documents/:documentId/preview")
   @RequirePermission("sign:documents:view")
   @Validate({ params: documentIdParams })
-  preview(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.documents.getPreviewUrl(u.orgId, documentId);
+  async preview(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveEnvelopeViewScope(this.access, u);
+    return this.documents.getPreviewUrl(u.orgId, documentId, scope);
   }
 
   @Delete("documents/:documentId")

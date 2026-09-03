@@ -139,8 +139,16 @@ export class SignDocumentsService {
     return doc;
   }
 
-  async getPreviewUrl(orgId: string, documentId: number) {
+  /**
+   * `sign:documents:view` is not scopable, so its own grant can only ever resolve
+   * "all" — the preview URL is the envelope's source PDF, so it is bound to the
+   * caller's `sign:envelope:view` scope for the same reason the final PDF is.
+   * The refusal reuses the missing-document message, so an unowned document and
+   * an absent one are indistinguishable.
+   */
+  async getPreviewUrl(orgId: string, documentId: number, scope: EnvelopeViewScope) {
     const doc = await this.get(orgId, documentId);
+    await mustGetVisibleEnvelope(this.db, orgId, doc.envelopeId, scope, "Document not found");
     const url = await this.storage.getFileUrl(orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS);
     return { document: doc, url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS };
   }

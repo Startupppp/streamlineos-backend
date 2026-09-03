@@ -286,6 +286,59 @@ describe("GET /sign/envelopes/:envelopeId/audit — already bound, asserted so i
   });
 });
 
+/**
+ * Found while closing the three above, and the same class of defect: the preview
+ * URL is the envelope's own source PDF, and `sign:documents:view` is NOT scopable,
+ * so every holder resolved "all" and could preview any document of any envelope in
+ * the organization — including envelopes their `sign:envelope:view` scope withheld.
+ * This is the shape the certificate/final-pdf fix (register #15) already closed.
+ */
+describe("GET /sign/documents/:documentId/preview — bound to the envelope's view scope", () => {
+  const DOCUMENT_ID = 7;
+  const makePreviewService = (doc: unknown, envelope: unknown) => {
+    const storage = { getFileUrl: jest.fn().mockResolvedValue("https://signed.example/7") };
+    const db = {
+      query: {
+        signDocuments: { findFirst: jest.fn().mockResolvedValue(doc) },
+        signEnvelopes: { findFirst: jest.fn().mockResolvedValue(envelope) },
+      },
+    } as unknown as Db;
+    const service = new SignDocumentsService(db, storage as never, {} as never, {} as never, { record: jest.fn() } as never);
+    return { service, storage };
+  };
+  const doc = { id: DOCUMENT_ID, orgId: CALLER_ORG, envelopeId: OWN_ENVELOPE_ID, currentFileKey: "k" };
+
+  it("returns the signed url when the caller's sign:envelope:view scope admits the envelope", async () => {
+    const { service } = makePreviewService(doc, ownEnvelope);
+    const result = await service.getPreviewUrl(CALLER_ORG, DOCUMENT_ID, SYSTEM_ENVELOPE_SCOPE);
+    expect(result.url).toBe("https://signed.example/7");
+  });
+
+  it("throws NotFoundException, and mints no url, for a document whose envelope the scope withholds", async () => {
+    const { service, storage } = makePreviewService(doc, ownEnvelope);
+    await expect(
+      service.getPreviewUrl(CALLER_ORG, DOCUMENT_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: false }),
+    ).rejects.toThrow(NotFoundException);
+    expect(storage.getFileUrl).not.toHaveBeenCalled();
+  });
+
+  it("answers the same 404 body a missing document answers, so it is not an existence oracle", async () => {
+    const withheld = makePreviewService(doc, ownEnvelope);
+    const missing = makePreviewService(undefined, undefined);
+    const a = await withheld.service
+      .getPreviewUrl(CALLER_ORG, DOCUMENT_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: false })
+      .catch((e: unknown) => e);
+    const b = await missing.service
+      .getPreviewUrl(CALLER_ORG, DOCUMENT_ID, SYSTEM_ENVELOPE_SCOPE)
+      .catch((e: unknown) => e);
+    expect((a as NotFoundException).getResponse()).toEqual((b as NotFoundException).getResponse());
+  });
+
+  it("requires a scope argument", () => {
+    expect(SignDocumentsService.prototype.getPreviewUrl.length).toBe(3);
+  });
+});
+
 /** The bare-findMany shape must not come back in this module. */
 describe("no envelope-child list in e-sign reads its table before the envelope", () => {
   const SOURCES = [
