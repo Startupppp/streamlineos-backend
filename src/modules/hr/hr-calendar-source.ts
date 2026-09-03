@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, exists, gte, lte, or } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
+import { formatZoneClockTime } from "../../common/date/zoned-wall-clock";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -430,8 +431,8 @@ export class HrCalendarSource implements CalendarEventSource {
         isWfh ? "Work from home" : null,
         onBreak ? "Currently on break" : null,
         netHours > 0 ? `${netHours.toFixed(1)} hours recorded` : null,
-        firstCheckIn ? `Check-in ${formatInTimeZone(firstCheckIn, orgTimezone, "p")}` : null,
-        lastCheckOut ? `Check-out ${formatInTimeZone(lastCheckOut, orgTimezone, "p")}` : null,
+        firstCheckIn ? `Check-in ${formatZoneClockTime(firstCheckIn, orgTimezone)}` : null,
+        lastCheckOut ? `Check-out ${formatZoneClockTime(lastCheckOut, orgTimezone)}` : null,
       ].filter((v): v is string => Boolean(v));
       const color =
         status === "ABSENT"

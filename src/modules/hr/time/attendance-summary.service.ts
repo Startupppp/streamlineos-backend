@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
-import { toZonedTime } from "date-fns-tz";
+import { toWallClockUtc } from "../../../common/date/zoned-wall-clock";
 import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, organizationMembers, organizations, rosterEntries, rosters, shiftTemplates, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -365,14 +365,14 @@ export class AttendanceSummaryService {
 
         for (const row of rows) {
           if (row.checkIn) {
-            const localCi = toZonedTime(new Date(row.checkIn), orgTimezone);
-            const ciMinutes = localCi.getHours() * 60 + localCi.getMinutes();
+            const localCi = toWallClockUtc(new Date(row.checkIn), orgTimezone);
+            const ciMinutes = localCi.getUTCHours() * 60 + localCi.getUTCMinutes();
             if (ciMinutes > shiftInfo.shiftStartMinutes + shiftInfo.graceMinutes) lateCount++;
           }
 
           if (row.checkOut) {
-            const localCo = toZonedTime(new Date(row.checkOut), orgTimezone);
-            const coMinutes = localCo.getHours() * 60 + localCo.getMinutes();
+            const localCo = toWallClockUtc(new Date(row.checkOut), orgTimezone);
+            const coMinutes = localCo.getUTCHours() * 60 + localCo.getUTCMinutes();
             if (coMinutes < shiftEndMinutes - 15) earlyExitCount++;
           }
 
