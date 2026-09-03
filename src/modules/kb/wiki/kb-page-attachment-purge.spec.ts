@@ -99,6 +99,8 @@ describe("recordPageAttachmentPurge — the write-ahead record is opened before 
   });
 });
 
+const KB_BUCKET = "kb-files";
+
 describe("attemptPageAttachmentPurge — best effort, never throwing back at the caller", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -108,11 +110,17 @@ describe("attemptPageAttachmentPurge — best effort, never throwing back at the
   it("deletes each object and confirms its row", async () => {
     const storage = { deleteFileIfPresent: jest.fn().mockResolvedValue(true) };
 
-    const result = await attemptPageAttachmentPurge({} as never, storage, ORG, ["k1", "k2"]);
+    const result = await attemptPageAttachmentPurge(
+      {} as never,
+      storage,
+      ORG,
+      ["k1", "k2"],
+      KB_BUCKET,
+    );
 
     expect(result).toEqual({ confirmed: 2, failed: 0 });
-    expect(storage.deleteFileIfPresent).toHaveBeenCalledWith(ORG, "k1");
-    expect(storage.deleteFileIfPresent).toHaveBeenCalledWith(ORG, "k2");
+    expect(storage.deleteFileIfPresent).toHaveBeenCalledWith(ORG, "k1", KB_BUCKET);
+    expect(storage.deleteFileIfPresent).toHaveBeenCalledWith(ORG, "k2", KB_BUCKET);
     expect(mockPurgeMarks.map((m) => m.status)).toEqual(["confirmed", "confirmed"]);
   });
 
@@ -124,7 +132,13 @@ describe("attemptPageAttachmentPurge — best effort, never throwing back at the
         .mockResolvedValueOnce(true),
     };
 
-    const result = await attemptPageAttachmentPurge({} as never, storage, ORG, ["k1", "k2"]);
+    const result = await attemptPageAttachmentPurge(
+      {} as never,
+      storage,
+      ORG,
+      ["k1", "k2"],
+      KB_BUCKET,
+    );
 
     expect(result).toEqual({ confirmed: 1, failed: 1 });
     expect(mockPurgeMarks.map((m) => m.status)).toEqual(["failed", "confirmed"]);
@@ -133,7 +147,9 @@ describe("attemptPageAttachmentPurge — best effort, never throwing back at the
 
   it("touches the object store not at all when there is nothing to purge", async () => {
     const storage = { deleteFileIfPresent: jest.fn() };
-    await expect(attemptPageAttachmentPurge({} as never, storage, ORG, [])).resolves.toEqual({
+    await expect(
+      attemptPageAttachmentPurge({} as never, storage, ORG, [], KB_BUCKET),
+    ).resolves.toEqual({
       confirmed: 0,
       failed: 0,
     });

@@ -1,6 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
-import { organizations, orgUnits, users, organizationMembers } from "../../../db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import {
+  organizations,
+  orgUnits,
+  users,
+  organizationMembers,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { escapeHtml, sanitizeHtml } from "./html-sanitizer";
@@ -42,16 +47,29 @@ export class HrTemplateRenderService {
     const ctx: RenderContext = {};
 
     const today = new Date();
-    ctx["today"] = today.toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
+    ctx["today"] = today.toLocaleDateString("en-IN", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
 
     const [[org], [actorUser]] = await Promise.all([
       this.db
-        .select({ name: organizations.name, address: organizations.address, website: organizations.website, supportEmail: organizations.supportEmail })
+        .select({
+          name: organizations.name,
+          address: organizations.address,
+          website: organizations.website,
+          supportEmail: organizations.supportEmail,
+        })
         .from(organizations)
         .where(eq(organizations.id, orgId))
         .limit(1),
       this.db
-        .select({ firstName: users.firstName, lastName: users.lastName, name: users.name })
+        .select({
+          firstName: users.firstName,
+          lastName: users.lastName,
+          name: users.name,
+        })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1),
@@ -63,14 +81,22 @@ export class HrTemplateRenderService {
       ctx["company.hrEmail"] = org.supportEmail ?? "";
       if (org.address) {
         const a = org.address;
-        ctx["company.address"] = [a.line1, a.city, a.state, a.country].filter(Boolean).join(", ");
+        ctx["company.address"] = [a.line1, a.city, a.state, a.country]
+          .filter(Boolean)
+          .join(", ");
       }
     }
 
     if (actorUser) {
-      const full = actorUser.name ?? [actorUser.firstName, actorUser.lastName].filter(Boolean).join(" ");
+      const full =
+        actorUser.name ??
+        [actorUser.firstName, actorUser.lastName].filter(Boolean).join(" ");
       ctx["workflow.approverName"] = full;
-      ctx["workflow.submittedOn"] = today.toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
+      ctx["workflow.submittedOn"] = today.toLocaleDateString("en-IN", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
     }
 
     if (employeeId !== undefined) {
@@ -86,16 +112,25 @@ export class HrTemplateRenderService {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(and(eq(organizationMembers.id, employeeId), eq(organizationMembers.orgId, orgId)))
+        .where(
+          and(
+            eq(organizationMembers.id, employeeId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        )
         .limit(1);
 
       if (empRow) {
         const [facts, sensitiveFacts] = await Promise.all([
           this.employment.getFacts(orgId, empRow.id),
-          includeSensitive ? this.employment.getSensitiveFacts(orgId, empRow.id) : Promise.resolve(null),
+          includeSensitive
+            ? this.employment.getSensitiveFacts(orgId, empRow.id)
+            : Promise.resolve(null),
         ]);
 
-        const full = empRow.name ?? [empRow.firstName, empRow.lastName].filter(Boolean).join(" ");
+        const full =
+          empRow.name ??
+          [empRow.firstName, empRow.lastName].filter(Boolean).join(" ");
         ctx["employee.fullName"] = full;
         ctx["employee.firstName"] = empRow.firstName ?? "";
         ctx["employee.lastName"] = empRow.lastName ?? "";
@@ -105,13 +140,25 @@ export class HrTemplateRenderService {
         ctx["role.title"] = facts.designation ?? "";
 
         if (facts.joiningDate) {
-          ctx["employee.joiningDate"] = new Date(facts.joiningDate).toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
+          ctx["employee.joiningDate"] = new Date(
+            facts.joiningDate,
+          ).toLocaleDateString("en-IN", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          });
         }
 
         if (includeSensitive) {
           ctx["employee.phone"] = empRow.phone ?? "";
           if (empRow.dateOfBirth) {
-            ctx["employee.dateOfBirth"] = new Date(empRow.dateOfBirth).toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" });
+            ctx["employee.dateOfBirth"] = new Date(
+              empRow.dateOfBirth,
+            ).toLocaleDateString("en-IN", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            });
           }
           if (sensitiveFacts?.salaryAmountCents) {
             const monthly = sensitiveFacts.salaryAmountCents;
@@ -127,12 +174,23 @@ export class HrTemplateRenderService {
             ? this.db
                 .select({ name: orgUnits.name })
                 .from(orgUnits)
-                .where(and(eq(orgUnits.id, facts.departmentId), eq(orgUnits.orgId, orgId)))
+                .where(
+                  and(
+                    eq(orgUnits.id, facts.departmentId),
+                    eq(orgUnits.orgId, orgId),
+                    isNull(orgUnits.deletedAt),
+                  ),
+                )
                 .limit(1)
             : Promise.resolve([]),
           facts.managerUserId
             ? this.db
-                .select({ firstName: users.firstName, lastName: users.lastName, name: users.name, email: users.email })
+                .select({
+                  firstName: users.firstName,
+                  lastName: users.lastName,
+                  name: users.name,
+                  email: users.email,
+                })
                 .from(users)
                 .where(eq(users.id, facts.managerUserId))
                 .limit(1)
@@ -146,7 +204,8 @@ export class HrTemplateRenderService {
         const mgrUserId = facts.managerUserId;
         if (mgr && mgrUserId) {
           const mgrFacts = await this.employment.getFacts(orgId, mgrUserId);
-          ctx["manager.fullName"] = mgr.name ?? [mgr.firstName, mgr.lastName].filter(Boolean).join(" ");
+          ctx["manager.fullName"] =
+            mgr.name ?? [mgr.firstName, mgr.lastName].filter(Boolean).join(" ");
           ctx["manager.designation"] = mgrFacts.designation ?? "";
           ctx["manager.workEmail"] = mgr.email;
         }

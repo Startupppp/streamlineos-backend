@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, desc, gt, inArray, lte, or } from "drizzle-orm";
+import { and, eq, desc, gt, inArray, isNull, lte, or } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -357,7 +357,7 @@ export class HrWorkflowInstancesService {
             .select({ id: orgUnits.id, managerId: organizationMembers.userId })
             .from(orgUnits)
             .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
-            .where(inArray(orgUnits.id, deptIds))
+            .where(and(inArray(orgUnits.id, deptIds), eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)))
             .limit(deptIds.length)
         : Promise.resolve([]),
       locationIds.length > 0 && hrUserIds.length > 0

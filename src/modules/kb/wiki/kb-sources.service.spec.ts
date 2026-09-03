@@ -20,8 +20,16 @@ function makeIndexing() {
   return { removeSourceChunks: jest.fn().mockResolvedValue(undefined) };
 }
 
+/*
+ * A non-empty KB bucket, deliberately. With "" the override resolves to undefined
+ * and requireBucket falls through to the default bucket, so the delete and the
+ * upload agree by accident and the assertion below would pass on a service that
+ * dropped the override entirely.
+ */
+const KB_BUCKET = "kb-files";
+
 function makeConfig() {
-  return { R2_KB_BUCKET_NAME: "", R2_KB_PUBLIC_URL: "" };
+  return { R2_KB_BUCKET_NAME: KB_BUCKET, R2_KB_PUBLIC_URL: "" };
 }
 
 function makeService(
@@ -37,7 +45,7 @@ function makeService(
 }
 
 describe("KbSourcesService.remove — storage cleanup", () => {
-  it("calls storage.deleteFile with (orgId, fileKey) for a file-kind source", async () => {
+  it("calls storage.deleteFile with the KB bucket the upload used, not the default one", async () => {
     const deleteFile = jest.fn().mockResolvedValue(undefined);
     const row = { kind: "file", fileKey: "kb-sources/org-1/doc.pdf" };
     const svc = makeService([row], deleteFile);
@@ -45,7 +53,11 @@ describe("KbSourcesService.remove — storage cleanup", () => {
     await svc.remove("org-1", 42);
 
     expect(deleteFile).toHaveBeenCalledTimes(1);
-    expect(deleteFile).toHaveBeenCalledWith("org-1", "kb-sources/org-1/doc.pdf");
+    expect(deleteFile).toHaveBeenCalledWith(
+      "org-1",
+      "kb-sources/org-1/doc.pdf",
+      KB_BUCKET,
+    );
   });
 
   it("does NOT call storage.deleteFile for a note-kind source", async () => {

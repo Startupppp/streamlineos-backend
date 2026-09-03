@@ -21,6 +21,7 @@ import type { Db } from "../../db/drizzle.module";
 
 const ORG_A = "org-aaaaaaaa-0000-4000-8000-000000000001";
 const ORG_B = "org-bbbbbbbb-0000-4000-8000-000000000002";
+const KB_BUCKET = "kb-files";
 
 function makeOrgsDb(orgIds: string[]): Db {
   (globalThis as { __sweepOrgIds?: string[] }).__sweepOrgIds = orgIds;
@@ -67,6 +68,7 @@ function buildService(orgIds: string[]) {
     mockQuarantine as never,
     mockStorage as never,
     mockPendingPurge as never,
+    { R2_KB_BUCKET_NAME: KB_BUCKET } as never,
   );
   return { svc, db, mockMultipart, mockQuarantine, mockStorage, mockPendingPurge };
 }
@@ -173,10 +175,18 @@ describe("CronStorageSweepService.sweep — storage_pending_purge is drained", (
 
     const result = await svc.sweep();
 
-    expect(mockStorage.deleteFileIfPresent).toHaveBeenCalledWith(ORG_A, `${ORG_A}/uploads/a.pdf`);
-    expect(mockStorage.deleteFileIfPresent).toHaveBeenCalledWith(ORG_A, `${ORG_A}/uploads/b.pdf`);
-    expect(mockPendingPurge.markConfirmed).toHaveBeenCalledWith("pp-1");
-    expect(mockPendingPurge.markConfirmed).toHaveBeenCalledWith("pp-2");
+    expect(mockStorage.deleteFileIfPresent).toHaveBeenCalledWith(
+      ORG_A,
+      `${ORG_A}/uploads/a.pdf`,
+      undefined,
+    );
+    expect(mockStorage.deleteFileIfPresent).toHaveBeenCalledWith(
+      ORG_A,
+      `${ORG_A}/uploads/b.pdf`,
+      undefined,
+    );
+    expect(mockPendingPurge.markConfirmed).toHaveBeenCalledWith(ORG_A, "pp-1");
+    expect(mockPendingPurge.markConfirmed).toHaveBeenCalledWith(ORG_A, "pp-2");
     expect(result.pendingPurgeConfirmed).toBe(2);
     expect(result.pendingPurgeFailed).toBe(0);
   });
@@ -201,6 +211,7 @@ describe("CronStorageSweepService.sweep — storage_pending_purge is drained", (
 
     expect(mockPendingPurge.markConfirmed).not.toHaveBeenCalled();
     expect(mockPendingPurge.markFailed).toHaveBeenCalledWith(
+      ORG_A,
       "pp-3",
       expect.stringContaining("R2 unreachable"),
     );
