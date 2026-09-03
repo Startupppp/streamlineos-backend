@@ -15,6 +15,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
+import { MESSAGE_REACTIONS_WITH, foldReactions } from "./chat-message-reaction-shape";
 
 @Injectable()
 export class ChatReactionsService {
@@ -87,21 +88,16 @@ export class ChatReactionsService {
     orgId: string,
     messageId: number,
   ): Promise<Record<string, string[]>> {
+    // The same projection and the same folder the message reads use, so the map this
+    // mutation returns and the map a refetch produces cannot drift apart.
     const rows = await this.db.query.chatMessageReactions.findMany({
       where: and(
         eq(chatMessageReactions.orgId, orgId),
         eq(chatMessageReactions.messageId, messageId),
       ),
-      columns: { emoji: true, membershipId: true },
-      with: { membership: { columns: { userId: true } } },
+      ...MESSAGE_REACTIONS_WITH,
     });
-    const reactions: Record<string, string[]> = {};
-    for (const row of rows) {
-      const members = reactions[row.emoji] ?? [];
-      if (row.membership?.userId) members.push(row.membership.userId);
-      reactions[row.emoji] = members;
-    }
-    return reactions;
+    return foldReactions(rows);
   }
 
   async addReaction(

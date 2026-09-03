@@ -98,7 +98,17 @@ export const TRIAL_PLAN: PaidPlan = "STARTER";
 export const ANNUAL_DISCOUNT_PCT = 0.2;
 
 /**
- * Monthly price in paise (INR × 100) for paid plans.
+ * The currency `PLAN_PRICES_PAISE` and `ai_credit_packs.price_in_paise` are denominated in.
+ *
+ * Named rather than implied, because an amount without its currency is not a price. The
+ * tenant's own `accounting_settings.base_currency` is a different fact — what the tenant
+ * keeps ITS books in — and must never be substituted for this one: pairing it with these
+ * paise charged a USD-books tenant $999 for a ₹999 plan.
+ */
+export const PLATFORM_PRICE_CURRENCY = "INR";
+
+/**
+ * Monthly price in MINOR UNITS of `PLATFORM_PRICE_CURRENCY` — paise, INR × 100.
  * FREE is not chargeable. These values are what Razorpay charges.
  */
 export const PLAN_PRICES_PAISE: Record<PaidPlan, number> = {

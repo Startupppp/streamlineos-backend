@@ -8,6 +8,7 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 import { ACCOUNT_CODES } from "./posting-rules";
 import { type ProfitLossQuery } from "./dto/accounting.schemas";
+import { baseCreditAmount, baseDebitAmount } from "./journal-base-amount";
 import type { AccountType } from "./accounting.types";
 import {
   absDecimal,
@@ -97,7 +98,7 @@ export class AccountingCashFlowService {
 
     const cashNetUpTo = async (asOf: string): Promise<string> => {
       const rows = await this.db
-        .select({ debit: sum(journalLines.debit), credit: sum(journalLines.credit) })
+        .select({ debit: sum(baseDebitAmount), credit: sum(baseCreditAmount) })
         .from(journalLines)
         .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
         .where(
@@ -145,8 +146,8 @@ export class AccountingCashFlowService {
           code: ledgerAccounts.code,
           name: ledgerAccounts.name,
           accountType: ledgerAccounts.accountType,
-          debit: journalLines.debit,
-          credit: journalLines.credit,
+          debit: baseDebitAmount,
+          credit: baseCreditAmount,
         })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))

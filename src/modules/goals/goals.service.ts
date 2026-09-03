@@ -20,6 +20,7 @@ import type {
   UpdateInput,
 } from "./dto/goal.schemas";
 import { GoalLinksService, type GoalLinkRow } from "./goal-links.service";
+import { buildListResponse, type ListResponse } from "../../common/pagination/pagination";
 
 type GoalStatus =
   | "not_started"
@@ -148,7 +149,7 @@ export class GoalsService {
     });
   }
 
-  async list(u: CurrentUserContext, filters: ListInput): Promise<GoalListItem[]> {
+  async list(u: CurrentUserContext, filters: ListInput): Promise<ListResponse<GoalListItem>> {
     const { orgId, userId } = u;
     const membershipId = actingMembershipId(u.principal);
     const scope = await resolveGoalsScope(this.access, u);
@@ -175,15 +176,21 @@ export class GoalsService {
 
     const limit = Math.min(filters.limit, 100);
     const offset = (filters.page - 1) * limit;
+    const where = and(...conditions);
+    const page = { page: filters.page, pageSize: limit };
 
-    const goals = await this.db.query.okrGoals.findMany({
-      where: and(...conditions),
-      orderBy: [desc(okrGoals.createdAt)],
-      limit,
-      offset,
-    });
+    const [goals, [totalRow]] = await Promise.all([
+      this.db.query.okrGoals.findMany({
+        where,
+        orderBy: [desc(okrGoals.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(okrGoals).where(where),
+    ]);
+    const total = Number(totalRow?.total ?? 0);
 
-    if (goals.length === 0) return [];
+    if (goals.length === 0) return buildListResponse([], total, page);
 
     const goalIds = goals.map((g) => g.id);
     const counts = await this.db
@@ -194,11 +201,15 @@ export class GoalsService {
 
     const countMap = new Map(counts.map((c) => [c.goalId, c.total]));
 
-    return goals.map((goal) => ({
-      ...goal,
-      owner: null,
-      keyResultCount: countMap.get(goal.id) ?? 0,
-    }));
+    return buildListResponse(
+      goals.map((goal) => ({
+        ...goal,
+        owner: null,
+        keyResultCount: countMap.get(goal.id) ?? 0,
+      })),
+      total,
+      page,
+    );
   }
 
   create(orgId: string, userId: string, input: CreateInput, membershipId?: number | null): Promise<typeof okrGoals.$inferSelect> {

@@ -214,7 +214,14 @@ export class InvoicesPaymentService {
       return payment;
     });
 
-    await this.postArFxGainLoss(orgId, userId, invoice, input.amount, input.paymentDate);
+    await this.postArFxGainLoss(
+      orgId,
+      userId,
+      invoice,
+      created.id,
+      input.amount,
+      input.paymentDate,
+    );
 
     const members = await this.db
       .select({ userId: organizationMembers.userId })
@@ -254,6 +261,8 @@ export class InvoicesPaymentService {
     orgId: string,
     userId: string,
     invoice: { id: number; currency: string; exchangeRate: string },
+    /** The `payments` row this settlement created — one instalment, one FX result. */
+    paymentId: number,
     allocatedAmount: number,
     paymentDateIso: string,
   ): Promise<void> {
@@ -282,6 +291,7 @@ export class InvoicesPaymentService {
       await this.fx.postRealizedGainLoss(user, {
         sourceType: "invoice",
         sourceId: String(invoice.id),
+        settlementId: String(paymentId),
         baseAmountBooked,
         baseAmountSettled,
         counterPurpose: "AR",

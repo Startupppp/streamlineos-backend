@@ -44,6 +44,14 @@ import { CalendarProviderWebhookController } from "./calendar-provider-webhook.c
     CalendarSourcePreferencesService,
     CalendarNativeEventSource,
   ],
-  exports: [CalendarService, CalendarReminderSweepService, CalendarSourceRegistry],
+  // CalendarProviderSyncSweepService is exported for exactly one consumer: CronModule's
+  // /cron/calendar-provider-sync-sweep route. Without the export the provider-sync queue
+  // has no drain that a scheduler can reach, and every synced event stays PENDING for ever.
+  exports: [
+    CalendarService,
+    CalendarReminderSweepService,
+    CalendarProviderSyncSweepService,
+    CalendarSourceRegistry,
+  ],
 })
 export class CalendarModule {}

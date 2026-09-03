@@ -59,7 +59,29 @@ export class DashboardStatsService {
       { orgName: "Organization", orgSlug: orgId.slice(0, 8), orgTz: "UTC" },
     );
 
-    const flags = await flagsPromise;
+    /**
+     * The gate is deadline-protected too, and it FAILS CLOSED.
+     *
+     * `await flagsPromise` was bare. It does real database work —
+     * `access.scopeFor` -> `resolveUserPermissions` -> `getPermissionsVersion`
+     * -> cache -> Postgres — and it gates all three counts, so when the
+     * permissions cache stampedes on a version bump or Redis times out into a
+     * slow database the handler parked here with no ceiling, and the response
+     * hung even though the org section (started above, and deadline-protected
+     * since PRD-C144) had already answered. The ceiling was applied one layer
+     * below the thing that actually blocks.
+     *
+     * `flagsPromise` is still started before the org section, so racing it
+     * against the deadline here costs no concurrency; it only bounds the wait.
+     * The fallback denies — an unresolvable permission gate must never read as
+     * "granted" — so a degraded gate yields null counts rather than another
+     * tenant's numbers.
+     */
+    const flags = await settle(
+      "moduleFlags",
+      () => flagsPromise,
+      { employees: false, attendance: false, projects: false },
+    );
 
     const [orgData, totalEmployees, activeProjects, presentToday] = await Promise.all([
       orgDataPromise,

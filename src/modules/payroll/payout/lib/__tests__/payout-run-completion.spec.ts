@@ -24,13 +24,29 @@ interface TxRecorder {
 }
 
 interface DbOverrides {
+  /** distinct payees carrying a bank instruction on this run */
   subjects?: number;
+  /** distinct payees whose instruction settled PAID */
   paidSubjects?: number;
+  /**
+   * Run payees who are owed money and are not on hold — the set a completed
+   * run must have covered. Defaults to `paidSubjects`, i.e. a run where the
+   * batch reached everyone.
+   */
+  payable?: number;
   runStatus?: string;
+  /** Integer paise actually disbursed, as the aggregate returns it (text). */
+  paidNetPaise?: string;
 }
 
 function makeDb(overrides?: DbOverrides) {
-  const { subjects = 1, paidSubjects = 1, runStatus = "PROCESSING" } = overrides ?? {};
+  const {
+    subjects = 1,
+    paidSubjects = 1,
+    payable = paidSubjects,
+    runStatus = "PROCESSING",
+    paidNetPaise = "100000000",
+  } = overrides ?? {};
   let outerSelectCall = 0;
   const recorder: TxRecorder = { inserted: [] };
 
@@ -66,6 +82,9 @@ function makeDb(overrides?: DbOverrides) {
         findFirst: jest.fn().mockResolvedValue(null),
       },
     },
+    // The reads checkRunCompletion issues, in order: the run's batches, the
+    // batched coverage aggregate, the run's payable-payee count, the paid
+    // instruction ids, and the paise those paid payees are owed.
     select: jest.fn().mockImplementation(() => {
       const call = outerSelectCall++;
       const data =
@@ -73,7 +92,11 @@ function makeDb(overrides?: DbOverrides) {
           ? [{ id: 1 }]
           : call === 1
             ? [{ subjects, paidSubjects }]
-            : Array.from({ length: paidSubjects }, (_, i) => ({ runEmployeeId: 50 + i }));
+            : call === 2
+              ? [{ payable }]
+              : call === 3
+                ? Array.from({ length: paidSubjects }, (_, i) => ({ runEmployeeId: 50 + i }))
+                : [{ totalPaise: paidNetPaise }];
       return {
         from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(mkWhere(data)) }),
       };
@@ -136,7 +159,7 @@ describe("checkRunCompletion — the paid posting intent commits on the run tran
     });
   });
 
-  it("carries the run's month and net total in the payload so the consumer needs no extra read", async () => {
+  it("carries the run's month and the disbursed net in the payload so the consumer needs no extra read", async () => {
     const { deps, recorder } = makeDeps();
 
     await checkRunCompletion(deps, "org-1", 1, "actor-1");
@@ -144,9 +167,64 @@ describe("checkRunCompletion — the paid posting intent commits on the run tran
     expect(postingIntents(recorder)[0]?.payload).toEqual({
       runId: 100,
       month: "2026-08",
-      net: "1000000",
+      net: "1000000.00",
       actorUserId: "actor-1",
       orgId: "org-1",
+    });
+  });
+
+  it("posts what the bank moved, not the run's net total, when a payee is held back", async () => {
+    // Nine of ten payees settle; the tenth is on hold, so the run's ₹1,000,000
+    // net total overstates the disbursement by that payee's ₹100,000. Posting
+    // the run total would credit BANK_CLEARING for money that never moved and
+    // write off a payable that is still owed.
+    const { deps, recorder } = makeDeps({
+      subjects: 9,
+      paidSubjects: 9,
+      payable: 9,
+      paidNetPaise: "90000000",
+    });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    const intents = postingIntents(recorder);
+    expect(intents).toHaveLength(1);
+    expect(intents[0]?.payload).toMatchObject({ net: "900000.00" });
+  });
+
+  it("never marks the run PAID while a payee who is owed money never reached a batch", async () => {
+    // Every instruction settled — but the batch only ever held nine of the ten
+    // payees the run owes, and the missing one is not on hold.
+    const { deps, recorder } = makeDeps({ subjects: 9, paidSubjects: 9, payable: 10 });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    expect(postingIntents(recorder)).toHaveLength(0);
+    expect(mockRegisterAfterCommit).not.toHaveBeenCalled();
+  });
+
+  it("records the disbursed net beside the run's net total on the MARKED_PAID event", async () => {
+    const { deps, recorder } = makeDeps({
+      subjects: 9,
+      paidSubjects: 9,
+      payable: 9,
+      paidNetPaise: "90000000",
+    });
+
+    await checkRunCompletion(deps, "org-1", 1, "actor-1");
+
+    const markedPaid = recorder.inserted.find(
+      (row): row is Record<string, unknown> =>
+        typeof row === "object" &&
+        row !== null &&
+        !Array.isArray(row) &&
+        (row as Record<string, unknown>).type === "MARKED_PAID",
+    );
+    expect(markedPaid?.metadata).toEqual({
+      paidCount: 9,
+      payableCount: 9,
+      netDisbursed: "900000.00",
+      netTotal: "1000000",
     });
   });
 

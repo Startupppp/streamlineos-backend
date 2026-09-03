@@ -11900,11 +11900,33 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /cron/calendar-provider-sync-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronCalendarController_getCalendarProviderSyncSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/calendar-provider-sync-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronCalendarController_postCalendarProviderSyncSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /cron/calendar-reminder-sweep": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronPlatformController_getCalendarReminderSweep",
+      "operationId": "CronCalendarController_getCalendarReminderSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -11915,7 +11937,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "public",
-      "operationId": "CronPlatformController_postCalendarReminderSweep",
+      "operationId": "CronCalendarController_postCalendarReminderSweep",
       "owner": null,
       "version": "1",
       "consumers": [],

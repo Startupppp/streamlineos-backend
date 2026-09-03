@@ -24,6 +24,7 @@ import {
   type CreateKbSourceNoteInput,
 } from "./dto/kb-sources.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { MultipartAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
@@ -40,8 +41,24 @@ export class KbSourcesController {
     return this.sources.list(u.orgId);
   }
 
+  /**
+   * `@Idempotent` because this route spends money and creates a row, and the retry that
+   * causes both is the ordinary one: a 20 MB PDF on a phone, the client's 30s timeout
+   * expiring while the server is still embedding, the user pressing upload again. Each POST
+   * inserts a NEW `kb_sources` row, so the content-hash short-circuit that saves the page and
+   * article paths cannot help — the second row is a different `sourceId` and therefore a
+   * different chunk family. Two rows, two full embed batches billed, and `/kb/ask` citing the
+   * same document twice.
+   *
+   * `check:idempotent-commands` reports "every in-scope mutating handler carries @Idempotent"
+   * and did so with this route unfenced: its scope is a keyword list
+   * (`checkout|purchase|payout|…|publish|approve|…`) that no AI-metered KB route matches. The
+   * gate is green over a route it never looked at; that is worth knowing, not worth widening
+   * here.
+   */
   @Post("sources")
   @MultipartAction({ file: "file", fields: { spaceId: "string" } })
+  @Idempotent("kb.source.create")
   @RequirePermission("kb:pages:create")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }))
   @HttpCode(201)
@@ -60,6 +77,7 @@ export class KbSourcesController {
   }
 
   @Post("sources/note")
+  @Idempotent("kb.source.note")
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
   @Validate({ body: createKbSourceNoteSchema })

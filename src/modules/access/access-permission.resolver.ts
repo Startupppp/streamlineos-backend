@@ -7,8 +7,6 @@ import {
   principalGroupMembers,
   roleAssignments,
   roles,
-  userDelegationPermissions,
-  userDelegations,
 } from "../../db/schema";
 import { logger } from "../../common/logger/logger.service";
 import { isDelegablePermission } from "../../common/rbac/grantability";
@@ -35,6 +33,7 @@ import {
   SYSTEM_CLOCK,
 } from "./snapshot-validity";
 import {
+  drainDelegatedPermissionGrants,
   drainRolePermissionGrants,
   drainUserPermissionGrants,
   type ReadAccessTable,
@@ -303,31 +302,12 @@ export class AccessPermissionResolver {
       }
     }
 
-    const delegatedPermissionRows = await this.readAccessTable(
-      () =>
-        this.db
-          .select({
-            permissionKey: userDelegationPermissions.permissionKey,
-            startsAt: userDelegations.startsAt,
-            endsAt: userDelegations.endsAt,
-          })
-          .from(userDelegationPermissions)
-          .innerJoin(
-            userDelegations,
-            and(
-              eq(userDelegations.orgId, userDelegationPermissions.orgId),
-              eq(userDelegations.id, userDelegationPermissions.delegationId),
-            ),
-          )
-          .where(
-            and(
-              eq(userDelegations.orgId, orgId),
-              eq(userDelegations.delegateeMembershipId, membershipId),
-              eq(userDelegations.status, "ACTIVE"),
-              gt(userDelegations.endsAt, now),
-            ),
-          )
-          .limit(500),
+    const delegatedPermissionRows = await drainDelegatedPermissionGrants(
+      this.db,
+      this.readAccessTable,
+      orgId,
+      membershipId,
+      now,
     );
     for (const row of delegatedPermissionRows) {
       if (row.startsAt.getTime() > now.getTime()) continue;

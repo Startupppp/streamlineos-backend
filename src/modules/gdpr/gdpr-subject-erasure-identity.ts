@@ -9,7 +9,9 @@ import {
   organizationPeople,
   users,
 } from "../../db/schema";
-import type { TenantTx } from "../../db/drizzle.types";
+import type { Db, TenantTx } from "../../db/drizzle.types";
+import { runOutsideTenantContext } from "../../common/tenant/tenant-context";
+import { withIdentity } from "../../common/tenant/with-identity";
 import { ERASURE_ID_PAGE, drainIds } from "./gdpr-subject-erasure-paging";
 
 export const ERASED_NAME = "ERASED";
@@ -142,26 +144,83 @@ export async function anonymiseSubjectProfile(
 }
 
 /**
+ * Answers "does a membership outside `orgId` still keep this identity alive?".
+ *
+ * THIS QUESTION CANNOT BE ASKED FROM INSIDE THE ERASING TENANT TRANSACTION, which is
+ * where it used to be asked. `organization_members` carries
+ * `USING ((org_id = app.current_org_id_or_null()) OR (user_id = app.current_user_id_or_null()))`
+ * and a tenant transaction sets only `app.organization_id` (with-tenant.ts:127) —
+ * `app.user_id` is set in exactly one place in this repository, `with-identity.ts:28`.
+ * So under a role RLS actually applies to, BOTH disjuncts fail for another org's row
+ * and the read returns nothing. Measured on a database at journal head as
+ * `streamline_app`, for a subject holding memberships in orgs A and B, asking from
+ * org A's tenant transaction:
+ *
+ *   owner (BYPASSRLS)                         → 1 row
+ *   app role, app.organization_id = A         → 0 rows   ← the guard always said "none"
+ *   app role, same query, app.user_id = subject → 1 row
+ *   app role, control read of A's own row      → 1 row   (the connection works)
+ *
+ * A blind guard here is not a missing feature: `users` has `relrowsecurity = f`, so the
+ * redaction below is unimpeded and a multi-org subject loses the account they still use
+ * in the OTHER controller's tenant — irreversibly, and in the opposite direction from
+ * the usual privacy failure.
+ *
+ * `withIdentity` is this repository's answer to exactly this ordering problem, and
+ * `runOutsideTenantContext` is what makes it a real transaction on its own connection
+ * rather than a savepoint on the tenant one — a savepoint would leave `app.user_id` set
+ * for the remainder of the erasure, widening every later read in it to the subject's
+ * rows in every other org. Three sibling call sites already reach this same fact this
+ * way: `org-membership-access-revocation.ts:321`, `org-lifecycle.service.ts:109` and
+ * `org-purge.service.ts:132`.
+ *
+ * The PREDICATE is deliberately unchanged — any membership row in any other org, whatever
+ * its status. The revocation sibling additionally requires `status = 'ACTIVE'` on both
+ * sides, which is right for "should we kill their sessions" and wrong here: narrowing it
+ * would newly erase the identity of a subject whose only other membership is suspended,
+ * moving the compliance failure rather than fixing it. Only the CONTEXT was wrong.
+ *
+ * Call this BEFORE opening the erasure transaction, not inside it. The borrow of a second
+ * pooled connection is unavoidable either way (the request's own tenant transaction is
+ * already open around the whole handler), but asking first means the wait for a pool slot
+ * does not happen while the erasure holds row locks on the subject's PII.
+ */
+export function subjectHasSurvivingMembership(
+  db: Db,
+  { orgId, subjectUserId }: SubjectIdentityScope,
+): Promise<boolean> {
+  return runOutsideTenantContext(() =>
+    withIdentity(db, subjectUserId, async (tx) => {
+      const [survivor] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.userId, subjectUserId),
+            ne(organizationMembers.orgId, orgId),
+          ),
+        )
+        .limit(1);
+      return survivor !== undefined;
+    }),
+  );
+}
+
+/**
  * The global `users` row is shared across every organization the subject belongs to,
  * so it may only be redacted once no other membership remains. Returns false when a
  * surviving membership keeps the identity alive.
+ *
+ * The answer is a REQUIRED ARGUMENT rather than a query, because `tx` is the erasing
+ * org's tenant transaction and is structurally unable to see another org's membership
+ * row — see `subjectHasSurvivingMembership`, which is the only context that can.
  */
 export async function anonymiseGlobalIdentity(
   tx: TenantTx,
-  { orgId, subjectUserId }: SubjectIdentityScope,
+  { subjectUserId }: SubjectIdentityScope,
+  { hasSurvivingMembership }: { readonly hasSurvivingMembership: boolean },
 ): Promise<boolean> {
-  const [otherMembership] = await tx
-    .select({ id: organizationMembers.id })
-    .from(organizationMembers)
-    .where(
-      and(
-        eq(organizationMembers.userId, subjectUserId),
-        ne(organizationMembers.orgId, orgId),
-      ),
-    )
-    .limit(1);
-
-  if (otherMembership) return false;
+  if (hasSurvivingMembership) return false;
 
   await tx
     .update(users)

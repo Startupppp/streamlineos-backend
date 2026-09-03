@@ -34,8 +34,8 @@ function makeOrgsDb(orgIds: string[]): Db {
 }
 
 function makeServices() {
-  const mockMultipart: jest.Mocked<Pick<StorageMultipartService, "sweepAbandonedUploads">> = {
-    sweepAbandonedUploads: jest.fn().mockResolvedValue(0),
+  const mockMultipart: jest.Mocked<Pick<StorageMultipartService, "sweepAbandonedUploadsForOrgs">> = {
+    sweepAbandonedUploadsForOrgs: jest.fn().mockResolvedValue(0),
   };
   const mockQuarantine: jest.Mocked<
     Pick<FileQuarantineService, "listForSweep" | "softDelete">
@@ -73,15 +73,14 @@ function buildService(orgIds: string[]) {
   return { svc, db, mockMultipart, mockQuarantine, mockStorage, mockPendingPurge };
 }
 
-describe("CronStorageSweepService.sweep — sweepAbandonedUploads is called", () => {
-  it("calls sweepAbandonedUploads for every active org — no caller had caused this to run before", async () => {
+describe("CronStorageSweepService.sweep — the multipart sweep is driven once, over every active org", () => {
+  it("hands every active org to ONE multipart sweep — no caller had caused this to run before, and the per-org call was one outbound list per tenant", async () => {
     const { svc, mockMultipart } = buildService([ORG_A, ORG_B]);
 
     await svc.sweep();
 
-    expect(mockMultipart.sweepAbandonedUploads).toHaveBeenCalledTimes(2);
-    expect(mockMultipart.sweepAbandonedUploads).toHaveBeenCalledWith(ORG_A);
-    expect(mockMultipart.sweepAbandonedUploads).toHaveBeenCalledWith(ORG_B);
+    expect(mockMultipart.sweepAbandonedUploadsForOrgs).toHaveBeenCalledTimes(1);
+    expect(mockMultipart.sweepAbandonedUploadsForOrgs).toHaveBeenCalledWith([ORG_A, ORG_B]);
   });
 
   it("queries infected/error and stale pending_scan records per org", async () => {
@@ -114,9 +113,9 @@ describe("CronStorageSweepService.sweep — sweepAbandonedUploads is called", ()
     expect(mockQuarantine.softDelete).toHaveBeenCalledWith(staleRecord.id);
   });
 
-  it("accumulates the count of aborted uploads in the result", async () => {
+  it("reports the count of aborted uploads in the result", async () => {
     const { svc, mockMultipart } = buildService([ORG_A, ORG_B]);
-    mockMultipart.sweepAbandonedUploads.mockResolvedValueOnce(3).mockResolvedValueOnce(1);
+    mockMultipart.sweepAbandonedUploadsForOrgs.mockResolvedValueOnce(4);
 
     const result = await svc.sweep();
 
@@ -124,16 +123,16 @@ describe("CronStorageSweepService.sweep — sweepAbandonedUploads is called", ()
     expect(result.organizations).toBe(2);
   });
 
-  it("continues sweeping remaining orgs when one org's multipart sweep fails", async () => {
-    const { svc, mockMultipart } = buildService([ORG_A, ORG_B]);
-    mockMultipart.sweepAbandonedUploads
-      .mockRejectedValueOnce(new Error("S3 unreachable"))
-      .mockResolvedValueOnce(2);
+  it("keeps the tenant-scoped half of the sweep when the object store is unreachable", async () => {
+    const { svc, mockMultipart, mockPendingPurge } = buildService([ORG_A, ORG_B]);
+    mockMultipart.sweepAbandonedUploadsForOrgs.mockRejectedValueOnce(new Error("S3 unreachable"));
 
     const result = await svc.sweep();
 
-    expect(result.multipartAborted).toBe(2);
+    expect(result.multipartAborted).toBe(0);
     expect(result.organizations).toBe(2);
+    expect(mockPendingPurge.listForRetry).toHaveBeenCalledWith(ORG_A, expect.any(Number));
+    expect(mockPendingPurge.listForRetry).toHaveBeenCalledWith(ORG_B, expect.any(Number));
   });
 
   it("keeps the quarantine record when the S3 delete fails, so an infected key stays blocked", async () => {

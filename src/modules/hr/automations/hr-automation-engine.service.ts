@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { hrAutomationRules, hrAutomationRuns } from "../../../db/schema/hr/automation-engine";
@@ -17,6 +17,7 @@ import type { HrAutomationEvent } from "./hr-automation-events";
 import { HrWebhooksService } from "./hr-webhooks.service";
 import { evaluateNormalizedCondition, evaluateNormalizedConditions, type NormalizedCondition } from "../../automation/shared-condition-evaluator";
 import { boundHrReadLimit } from "../hr-read-limits";
+import { buildListResponse } from "../../../common/pagination/pagination";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const MAX_DEPTH = 3;
@@ -217,12 +218,17 @@ export class HrAutomationEngineService {
       params.search ? ilike(hrAutomationRules.name, `${params.search}%`) : undefined,
     );
 
-    return this.db.query.hrAutomationRules.findMany({
-      where: baseWhere,
-      orderBy: [desc(hrAutomationRules.createdAt)],
-      limit,
-      offset,
-    });
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.hrAutomationRules.findMany({
+        where: baseWhere,
+        orderBy: [desc(hrAutomationRules.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(hrAutomationRules).where(baseWhere),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
   }
 
   async getRule(orgId: string, ruleId: number) {

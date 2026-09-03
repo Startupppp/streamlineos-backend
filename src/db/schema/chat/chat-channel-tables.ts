@@ -10,6 +10,7 @@ import {
   foreignKey,
   unique,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, organizationMembers } from "../common/auth";
 import { deals } from "../crm";
 
@@ -41,11 +42,17 @@ export const chatChannels = pgTable(
   },
   (table) => [
     index("idx_chat_channels_last_msg").on(table.orgId, table.lastMessageAt),
-    index("idx_chat_channels_org_entity").on(
-      table.orgId,
-      table.entityType,
-      table.entityId,
-    ),
+    // UNIQUE, and it is the only thing preventing two chat channels for one record.
+    // `getOrCreateEntityChannel` is reached by a TanStack useQuery — a GET that writes —
+    // so a StrictMode double-mount or a retry issues two concurrent requests that both
+    // miss the pre-check and both insert; `createChannel` accepts entityType/entityId too
+    // and does not pre-check at all, so an application-side lock could not close it.
+    // Partial on `entity_type IS NOT NULL` because most channels are not attached to a
+    // record and must not share one uniqueness class — the call site names that predicate
+    // in its ON CONFLICT `targetWhere`, which is what keeps it inferable (see 1054).
+    uniqueIndex("uniq_chat_channels_org_entity")
+      .on(table.orgId, table.entityType, table.entityId)
+      .where(sql`entity_type IS NOT NULL`),
     unique("uniq_chat_channels_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_channels_org_created_by_membership" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.linkedDealId], foreignColumns: [deals.orgId, deals.id], name: "fk_chat_channels_linked_deal_id_org" }).onDelete("set null"),

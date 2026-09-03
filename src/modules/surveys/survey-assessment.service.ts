@@ -1,11 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { surveyAssessmentAttempts, surveyCertificates, surveyForms } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { assertSurveyInOrg } from "./survey-tenant";
 import type { ListAttemptsInput } from "./dto/survey-assessment.schemas";
+import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 
 interface AssessmentSettings {
   passScore?: number;
@@ -22,12 +23,20 @@ export class SurveyAssessmentService {
     await assertSurveyInOrg(this.db, orgId, surveyId);
     const conditions = [eq(surveyAssessmentAttempts.orgId, orgId), eq(surveyAssessmentAttempts.surveyId, surveyId)];
     if (filters.status) conditions.push(eq(surveyAssessmentAttempts.status, filters.status));
-    return this.db.query.surveyAssessmentAttempts.findMany({
-      where: and(...conditions),
-      orderBy: [desc(surveyAssessmentAttempts.startedAt)],
-      limit: filters.pageSize,
-      offset: (filters.page - 1) * filters.pageSize,
-    });
+    const where = and(...conditions);
+    const { limit, offset } = paginateOffset(filters);
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.surveyAssessmentAttempts.findMany({
+        where,
+        orderBy: [desc(surveyAssessmentAttempts.startedAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(surveyAssessmentAttempts).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), filters);
   }
 
   async createAttempt(orgId: string, surveyId: number, participantId: number | null) {

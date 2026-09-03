@@ -131,7 +131,25 @@ export async function callProvider<T>(
       const error = err instanceof Error ? err : new Error(String(err));
       lastError = error;
       const cls = descriptor.classify(err);
-      breaker.recordFailure(descriptor.provider, Date.now());
+
+      /**
+       * Only a RETRYABLE failure is evidence about the provider. A terminal
+       * failure is the caller's own classification of "the provider answered and
+       * the request was wrong" — a 4xx — which proves the provider is reachable
+       * and healthy. Counting it opened a circuit whose key is shared by every
+       * other caller of the same provider: `razorpay-orders` is one process-wide
+       * string on one module-level breaker, so five 400s from one tenant's
+       * mis-saved credential returned `circuit-open` to every other tenant's
+       * checkout for the full 120s cooldown, without a single further call to
+       * Razorpay.
+       *
+       * The counter is left untouched rather than reset: a 4xx is not evidence of
+       * recovery either, and calling `recordSuccess` here would let interleaved
+       * bad requests keep clearing a genuine outage's failure count. A terminal
+       * failure is also never retried (below), so declining to count it adds no
+       * load — the provider still sees exactly one request per call.
+       */
+      if (cls === "retryable") breaker.recordFailure(descriptor.provider, Date.now());
 
       if (cls === "terminal")
         return { ok: false, kind: "terminal", error, attempts: attempt };

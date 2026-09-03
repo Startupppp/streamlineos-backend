@@ -396,7 +396,14 @@ export class AccountingPayablesService {
       return inserted;
     });
 
-    await this.postApFxGainLoss(orgId, userId, bill, input.amount, input.paymentDate);
+    await this.postApFxGainLoss(
+      orgId,
+      userId,
+      bill,
+      payment.id,
+      input.amount,
+      input.paymentDate,
+    );
 
     this.audit.log({
       action: "accounting.bill.payment_recorded",
@@ -415,6 +422,8 @@ export class AccountingPayablesService {
     orgId: string,
     userId: string,
     bill: { id: number; currency: string; exchangeRate: string; total: string },
+    /** The `vendor_payments` row this settlement created — one instalment, one FX result. */
+    vendorPaymentId: number,
     allocatedAmount: number,
     paymentDateIso: string,
   ): Promise<void> {
@@ -444,6 +453,7 @@ export class AccountingPayablesService {
       await this.fx.postRealizedGainLoss(user, {
         sourceType: "purchase_bill",
         sourceId: String(bill.id),
+        settlementId: String(vendorPaymentId),
         baseAmountBooked,
         baseAmountSettled,
         counterPurpose: "AP",

@@ -108,7 +108,7 @@ function build(rows: Array<{ id: string; storageKey: string; purpose: string; bu
   };
   const svc = new CronStorageSweepService(
     {} as never,
-    { sweepAbandonedUploads: jest.fn().mockResolvedValue(0) } as never,
+    { sweepAbandonedUploadsForOrgs: jest.fn().mockResolvedValue(0) } as never,
     { listForSweep: jest.fn().mockResolvedValue([]), softDelete: jest.fn() } as never,
     store,
     pendingPurge as never,

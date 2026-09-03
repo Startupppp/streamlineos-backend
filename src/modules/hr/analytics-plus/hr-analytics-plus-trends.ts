@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { type Db } from "../../../db/drizzle.module";
 import { MAX_ANALYTICS_ROWS } from "./hr-analytics-plus.constants";
+import { departmentMemberFilter } from "./hr-analytics-plus-department-filter";
 
 export async function fetchAttritionBreakdown(db: Db, orgId: string, departmentId?: string) {
   const deptFilter = departmentId ? sql` AND e.department_id = ${departmentId}` : sql``;
@@ -67,7 +68,8 @@ export async function fetchAttritionBreakdown(db: Db, orgId: string, departmentI
   };
 }
 
-export async function fetchLeaveTrends(db: Db, orgId: string) {
+export async function fetchLeaveTrends(db: Db, orgId: string, departmentId?: string) {
+  const deptFilter = departmentMemberFilter(orgId, departmentId, sql`l.user_id`);
   const rows = await db.execute(sql`
     SELECT
       to_char(date_trunc('month', l.effective_date::timestamp), 'YYYY-MM') as month,
@@ -77,7 +79,7 @@ export async function fetchLeaveTrends(db: Db, orgId: string) {
     JOIN leave_types lt ON lt.id = l.leave_type_id
     WHERE l.org_id = ${orgId}
       AND l.txn_type = 'consumption'
-      AND l.effective_date >= NOW() - INTERVAL '12 months'
+      AND l.effective_date >= NOW() - INTERVAL '12 months'${deptFilter}
     GROUP BY 1, 2
     ORDER BY 1, 2
     LIMIT ${MAX_ANALYTICS_ROWS}
@@ -142,13 +144,14 @@ export async function fetchPerformanceDistribution(db: Db, orgId: string, cycleI
   };
 }
 
-export async function fetchComplianceGaps(db: Db, orgId: string) {
+export async function fetchComplianceGaps(db: Db, orgId: string, departmentId?: string) {
+  const deptFilter = departmentMemberFilter(orgId, departmentId, sql`subject_employee_id`);
   const rows = await db.execute(sql`
     SELECT category, severity, COUNT(*) as count
     FROM hr_cases
     WHERE org_id = ${orgId}
       AND status IN ('open','under_investigation')
-      AND deleted_at IS NULL
+      AND deleted_at IS NULL${deptFilter}
     GROUP BY category, severity
     ORDER BY count DESC
     LIMIT ${MAX_ANALYTICS_ROWS}

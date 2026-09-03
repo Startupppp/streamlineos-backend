@@ -149,7 +149,7 @@ export class UnifiedInboxService {
         wantsNotifications
           ? this.fetchNotifications(
               orgId,
-              userId,
+              actingMembershipId(user.principal),
               limit + 1,
               cursorState.n,
               query.unreadOnly ?? false,
@@ -222,13 +222,20 @@ export class UnifiedInboxService {
     }
   }
 
+  /**
+   * Also keyed on `membership_id` — see `countNotificationUnread` for the numbers.
+   * `idx_notifications_list_cursor` is `(org_id, membership_id, id DESC)
+   * WHERE deleted_at IS NULL AND archived_at IS NULL`, which is this query exactly;
+   * on `user_id` it cost 2,043 blocks to return 20 rows and grew with the tenant.
+   */
   private async fetchNotifications(
     orgId: string,
-    userId: string,
+    membershipId: number | null,
     fetchLimit: number,
     cursor: number | null,
     unreadOnly: boolean,
   ): Promise<NotificationInboxItem[]> {
+    if (membershipId === null) return [];
     const rows = await this.db
       .select({ ...NOTIF_COLUMNS, ...ACTOR_COLUMNS })
       .from(notifications)
@@ -236,7 +243,7 @@ export class UnifiedInboxService {
       .where(
         and(
           eq(notifications.orgId, orgId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           isNull(notifications.deletedAt),
           isNull(notifications.archivedAt),
           cursor !== null ? lt(notifications.id, cursor) : undefined,
@@ -360,7 +367,7 @@ export class UnifiedInboxService {
     ]);
 
     const [notifCount, mailCount, approvalCount] = await Promise.all([
-      this.countNotificationUnread(orgId, userId),
+      this.countNotificationUnread(orgId, actingMembershipId(user.principal)),
       canMail
         ? this.countMailUnread(orgId, userId, actingMembershipId(user.principal))
         : Promise.resolve({ unread: 0, exact: true }),
@@ -376,14 +383,40 @@ export class UnifiedInboxService {
     };
   }
 
-  private async countNotificationUnread(orgId: string, userId: string): Promise<number> {
+  /**
+   * Keyed on `membership_id`, not `user_id`, because every index on `notifications`
+   * leads `(org_id, membership_id, …)` and none mentions `user_id`.
+   *
+   * MEASURED on the shipped perf seed (a tenant with 240,000 notifications), as an
+   * EXPLAIN (ANALYZE, BUFFERS) of this exact predicate:
+   *
+   *   user_id       Seq Scan on EVERY monthly partition — 10,231 blocks, 15.4 ms
+   *   membership_id Index scan on idx_notifications_unread_count — 24 blocks, 0.5 ms
+   *
+   * 426x fewer blocks for one integer, and the user_id form grows linearly with the
+   * tenant's notification volume, on a badge that every authenticated page renders.
+   * This is the unmeasured twin of a defect already fixed once: GET
+   * /notifications/unread-count measured 10,234 blocks before it was re-keyed on
+   * membership_id and now measures 16 (.github/workflows/ci.yml:928).
+   *
+   * A principal with no membership (an API token) counts zero rather than scanning:
+   * `notifications.membership_id` is the recipient, so there is nothing to count.
+   * Rows whose `membership_id` is NULL are excluded, which is the same set
+   * `NotificationsReadService.queryUnreadCount` already excludes — the badge and the
+   * page it links to now agree instead of differing by those rows.
+   */
+  private async countNotificationUnread(
+    orgId: string,
+    membershipId: number | null,
+  ): Promise<number> {
+    if (membershipId === null) return 0;
     const rows = await this.db
       .select({ cnt: count() })
       .from(notifications)
       .where(
         and(
           eq(notifications.orgId, orgId),
-          eq(notifications.userId, userId),
+          eq(notifications.membershipId, membershipId),
           eq(notifications.isRead, false),
           isNull(notifications.deletedAt),
           isNull(notifications.archivedAt),

@@ -1,11 +1,12 @@
 import { Inject, Injectable, ConflictException, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
 import { invWarehouses, invLocations, invStockLevels, invProductVariants, invProducts } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
+import { buildListResponse } from "../../../common/pagination/pagination";
 import type { CreateWarehouseInput, UpdateWarehouseInput, CreateLocationInput, UpdateLocationInput, ListWarehousesInput } from "./dto/inv-warehouses.schemas";
 
 function escapeLike(value: string): string {
@@ -64,36 +65,44 @@ export class InvWarehousesService {
     const limit = Math.min(filters.limit ?? MAX_PAGE_LIMIT, MAX_PAGE_LIMIT);
     const offset = (page - 1) * limit;
 
-    const warehouses = await this.db
-      .select({
-        id: invWarehouses.id,
-        orgId: invWarehouses.orgId,
-        name: invWarehouses.name,
-        code: invWarehouses.code,
-        address: invWarehouses.address,
-        city: invWarehouses.city,
-        state: invWarehouses.state,
-        country: invWarehouses.country,
-        isDefault: invWarehouses.isDefault,
-        isActive: invWarehouses.isActive,
-        branchId: invWarehouses.branchId,
-        managerUserId: invWarehouses.managerUserId,
-        createdBy: invWarehouses.createdBy,
-        createdAt: invWarehouses.createdAt,
-        updatedAt: invWarehouses.updatedAt,
-        locationCount: sql<number>`(SELECT COUNT(*) FROM inv_locations l WHERE l.warehouse_id = ${invWarehouses.id} AND l.org_id = ${invWarehouses.orgId})`,
-      })
-      .from(invWarehouses)
-      .where(and(...conds))
-      .orderBy(asc(invWarehouses.name))
-      .limit(limit)
-      .offset(offset);
+    const where = and(...conds);
+    const [warehouses, [totalRow]] = await Promise.all([
+      this.db
+        .select({
+          id: invWarehouses.id,
+          orgId: invWarehouses.orgId,
+          name: invWarehouses.name,
+          code: invWarehouses.code,
+          address: invWarehouses.address,
+          city: invWarehouses.city,
+          state: invWarehouses.state,
+          country: invWarehouses.country,
+          isDefault: invWarehouses.isDefault,
+          isActive: invWarehouses.isActive,
+          branchId: invWarehouses.branchId,
+          managerUserId: invWarehouses.managerUserId,
+          createdBy: invWarehouses.createdBy,
+          createdAt: invWarehouses.createdAt,
+          updatedAt: invWarehouses.updatedAt,
+          locationCount: sql<number>`(SELECT COUNT(*) FROM inv_locations l WHERE l.warehouse_id = ${invWarehouses.id} AND l.org_id = ${invWarehouses.orgId})`,
+        })
+        .from(invWarehouses)
+        .where(where)
+        .orderBy(asc(invWarehouses.name))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ total: count() }).from(invWarehouses).where(where),
+    ]);
 
-    return warehouses.map((wh) => ({
-      ...wh,
-      _count: { locations: Number(wh.locationCount) },
-      locationCount: undefined,
-    }));
+    return buildListResponse(
+      warehouses.map((wh) => ({
+        ...wh,
+        _count: { locations: Number(wh.locationCount) },
+        locationCount: undefined,
+      })),
+      Number(totalRow?.total ?? 0),
+      { page, pageSize: limit },
+    );
   }
 
   async getWarehouse(orgId: string, warehouseId: number) {

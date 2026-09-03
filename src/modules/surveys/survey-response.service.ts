@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   surveyVersions,
@@ -19,6 +19,7 @@ import { SurveyAssessmentService } from "./survey-assessment.service";
 import { SurveyLeadAutomationService } from "./survey-lead-automation.service";
 import type { SaveAnswerInput, StartSessionInput } from "./dto/survey-public.schemas";
 import type { ListResponsesInput } from "./dto/survey-analytics.schemas";
+import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 
 @Injectable()
 export class SurveyResponseService {
@@ -266,12 +267,20 @@ export class SurveyResponseService {
     if (filters.collectorId) conditions.push(eq(surveyResponseSessions.collectorId, filters.collectorId));
     if (filters.status) conditions.push(eq(surveyResponseSessions.status, filters.status));
 
-    return this.db.query.surveyResponseSessions.findMany({
-      where: and(...conditions),
-      orderBy: [desc(surveyResponseSessions.startedAt)],
-      limit: filters.pageSize,
-      offset: (filters.page - 1) * filters.pageSize,
-    });
+    const where = and(...conditions);
+    const { limit, offset } = paginateOffset(filters);
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.surveyResponseSessions.findMany({
+        where,
+        orderBy: [desc(surveyResponseSessions.startedAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(surveyResponseSessions).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), filters);
   }
 
   async getResponse(orgId: string, surveyId: number, sessionId: number) {

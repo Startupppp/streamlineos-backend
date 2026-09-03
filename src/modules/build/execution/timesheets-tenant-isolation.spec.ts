@@ -11,6 +11,9 @@ describe("TimesheetsService — cross-tenant isolation", () => {
   const periodService = {} as never;
 
   function makeDb(entryRow: unknown | null) {
+    // The list now answers inside the shared offset envelope, so it also runs a count beside
+    // the page — the mock has to satisfy `select().from().where()` or the read throws.
+    const countRows = [{ total: entryRow ? 1 : 0 }];
     return {
       query: {
         timesheets: {
@@ -18,6 +21,11 @@ describe("TimesheetsService — cross-tenant isolation", () => {
           findMany: jest.fn().mockResolvedValue(entryRow ? [entryRow] : []),
         },
       },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockResolvedValue(countRows),
+        }),
+      }),
     } as unknown as Db;
   }
 
@@ -34,6 +42,7 @@ describe("TimesheetsService — cross-tenant isolation", () => {
     const svc = new TimesheetsService(db, cache, access, periodService);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listTimeEntries(u, { page: 1, limit: 20 } as never);
-    expect(result).toHaveLength(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.total).toBe(1);
   });
 });

@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import {
   salaryLoans,
   auditLogs,
@@ -8,6 +8,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateLoanInput, UpdateLoanInput } from "./dto/payroll.schemas";
+import { buildListResponse } from "../../../common/pagination/pagination";
 
 export type UpdateLoanResult =
   | { ok: false; reason: "not_found" | "own_request" }
@@ -17,7 +18,7 @@ export type UpdateLoanResult =
 export class LoansService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listLoans(
+  async listLoans(
     orgId: string,
     userId: string,
     membershipId: number | null,
@@ -32,24 +33,30 @@ export class LoansService {
       conditions.push(eq(salaryLoans.userMembershipId, membershipId));
     }
 
-    return this.db.query.salaryLoans.findMany({
-      where: and(...conditions),
-      with: {
-        user: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            image: true,
+    const where = and(...conditions);
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.salaryLoans.findMany({
+        where,
+        with: {
+          user: {
+            columns: {
+              id: true,
+              name: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              image: true,
+            },
           },
         },
-      },
-      orderBy: [desc(salaryLoans.createdAt)],
-      limit,
-      offset: (page - 1) * limit,
-    });
+        orderBy: [desc(salaryLoans.createdAt)],
+        limit,
+        offset: (page - 1) * limit,
+      }),
+      this.db.select({ total: count() }).from(salaryLoans).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
   }
 
   async createLoan(

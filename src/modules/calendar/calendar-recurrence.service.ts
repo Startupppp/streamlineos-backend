@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import { calendarEvents, calendarEventExceptions, notificationOutbox, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import type { TenantTx } from "../../db/drizzle.types";
 import type { UpsertOccurrenceExceptionInput } from "./dto/occurrence-exception.schemas";
 
 @Injectable()
@@ -29,6 +30,78 @@ export class CalendarRecurrenceService {
     return ev;
   }
 
+  /**
+   * Maps whatever instant the caller named onto the exception's real key.
+   *
+   * `calendar_event_exceptions` is keyed on the NOMINAL instant — the one the RRULE
+   * generates — because that is the only handle `expandRecurring` can look an exception
+   * up by (`exceptionMap.get(utcStart.getTime())`). But the only instant a client can
+   * name for an occurrence that has already been moved is the one it currently sits at:
+   * the projection carries `start`, and the frontend sends exactly that back.
+   *
+   * So a second edit of a moved occurrence used to arrive keyed on the MODIFIED start,
+   * miss the existing row's conflict target, insert a second exception keyed on an
+   * instant the RRULE never generates, and vanish — invisible to `expandRecurring` (not
+   * an RRULE instant) and skipped by `collectRescheduledOccurrences` (its key is inside
+   * the window). "Occurrence updated", and nothing moved.
+   *
+   * Precedence is exact-key first: if a row is already keyed on the instant supplied,
+   * that instant IS nominal and the caller means that occurrence — even when some other
+   * occurrence happens to have been moved onto the same time.
+   */
+  private async resolveOccurrenceKey(
+    tx: TenantTx,
+    orgId: string,
+    eventId: number,
+    supplied: Date,
+  ): Promise<Date> {
+    const exact = await tx
+      .select({ occurrenceStart: calendarEventExceptions.occurrenceStart })
+      .from(calendarEventExceptions)
+      .where(
+        and(
+          eq(calendarEventExceptions.orgId, orgId),
+          eq(calendarEventExceptions.eventId, eventId),
+          eq(calendarEventExceptions.occurrenceStart, supplied),
+        ),
+      )
+      .limit(1);
+    if (exact.length > 0) return supplied;
+
+    const moved = await tx
+      .select({ occurrenceStart: calendarEventExceptions.occurrenceStart })
+      .from(calendarEventExceptions)
+      .where(
+        and(
+          eq(calendarEventExceptions.orgId, orgId),
+          eq(calendarEventExceptions.eventId, eventId),
+          eq(calendarEventExceptions.modifiedStart, supplied),
+        ),
+      )
+      .limit(1);
+    return moved[0]?.occurrenceStart ?? supplied;
+  }
+
+  /**
+   * Records the series itself as locally changed.
+   *
+   * `CalendarProviderWebhookService.handleScoped` discards a provider notification whose
+   * timestamp is not newer than `calendar_events.updated_at`, which is how "local wins"
+   * is decided. An occurrence edit that left the parent untouched was invisible to that
+   * comparison, so a provider notification issued between the parent's last edit and the
+   * occurrence edit read as provider-newer. `updateEvent` bumps both columns together on
+   * every local change; an occurrence edit is a local change to the same series.
+   */
+  private bumpSeries(tx: TenantTx, orgId: string, eventId: number) {
+    return tx
+      .update(calendarEvents)
+      .set({
+        localVersion: sql`${calendarEvents.localVersion} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(calendarEvents.orgId, orgId), eq(calendarEvents.id, eventId)));
+  }
+
   async upsertOccurrenceException(
     orgId: string,
     userId: string,
@@ -37,8 +110,9 @@ export class CalendarRecurrenceService {
     input: UpsertOccurrenceExceptionInput,
   ) {
     if (!(await this.getRecurringEventForOwner(orgId, userId, eventId))) return null;
-    const occurrenceStart = new Date(occurrenceStartIso);
+    const supplied = new Date(occurrenceStartIso);
     const [row] = await this.db.transaction(async (tx) => {
+      const occurrenceStart = await this.resolveOccurrenceKey(tx, orgId, eventId, supplied);
       const rows = await tx
         .insert(calendarEventExceptions)
         .values({
@@ -61,7 +135,10 @@ export class CalendarRecurrenceService {
           },
         })
         .returning();
+      await this.bumpSeries(tx, orgId, eventId);
       if (input.modifiedStart)
+        // The reminders being dead-lettered are the ones scheduled against the key that
+        // was actually written, not the instant the caller happened to name.
         await tx
           .update(notificationOutbox)
           .set({ state: "DEAD" })
@@ -79,8 +156,9 @@ export class CalendarRecurrenceService {
 
   async cancelOccurrence(orgId: string, userId: string, eventId: number, occurrenceStartIso: string) {
     if (!(await this.getRecurringEventForOwner(orgId, userId, eventId))) return null;
-    const occurrenceStart = new Date(occurrenceStartIso);
+    const supplied = new Date(occurrenceStartIso);
     const [row] = await this.db.transaction(async (tx) => {
+      const occurrenceStart = await this.resolveOccurrenceKey(tx, orgId, eventId, supplied);
       const rows = await tx
         .insert(calendarEventExceptions)
         .values({ orgId, eventId, occurrenceStart, isCancelled: true })
@@ -89,6 +167,7 @@ export class CalendarRecurrenceService {
           set: { isCancelled: true, updatedAt: new Date() },
         })
         .returning();
+      await this.bumpSeries(tx, orgId, eventId);
       await tx
         .update(notificationOutbox)
         .set({ state: "DEAD" })

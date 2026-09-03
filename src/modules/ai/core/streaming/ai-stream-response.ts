@@ -19,8 +19,29 @@ export interface AiStreamPipeOptions {
 /**
  * `pipeTextStreamToResponse` returns a promise that rejects on a mid-stream
  * provider fault; dropped, that is an unhandled rejection and the client is left
- * with a truncated 200. Headers are already on the wire by then, so the only
- * honest close is to end the response and record the fault.
+ * with a truncated 200.
+ *
+ * The status line is already on the wire by then, so the fault cannot be
+ * expressed as a status code — but it MUST still be expressed. Ending the
+ * response cleanly (`res.end()`, which is what this did) sends the terminating
+ * zero-length chunk, so the client's read loop sees an ordinary `done`: the
+ * frontend returned `{ status: "completed", text: <partial> }`, rendered a
+ * half-sentence as the finished draft, and offered an Apply button for it. An
+ * error surfaced as a successful state, which none of the nine AI failure
+ * states can fire on because the transport reported success.
+ *
+ * `res.destroy()` is the mechanism HTTP already has for this: the chunked body
+ * ends without its terminator, so `fetch`'s reader rejects instead of
+ * completing, `classifyAiError` puts the surface into a real failure state with
+ * a retry, and a non-browser client (curl, a mobile app, a proxy) sees the same
+ * truncation. It needs no wire-format change, so all 26 `respondWithAiTextStream`
+ * routes and both client tests keep their contract. A sentinel token in the body
+ * was the alternative and is worse twice over: `onToken` has already painted it
+ * on screen before the reader could strip it, and "a string the model cannot
+ * emit" is not a property anything enforces.
+ *
+ * A response the failed pipe already ended is left alone — the client has its
+ * terminator and there is nothing left to signal.
  */
 export async function pipeAiTextStream(
   res: ServerResponse,
@@ -39,7 +60,9 @@ export async function pipeAiTextStream(
       feature: options.feature,
       orgId: options.orgId,
     });
-    if (!res.writableEnded) res.end();
+    // No argument: `destroy(err)` would emit 'error' on the response, and an
+    // unhandled 'error' on a Writable takes the process down.
+    if (!res.writableEnded) res.destroy();
   }
 }
 

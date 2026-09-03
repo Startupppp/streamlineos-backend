@@ -40,13 +40,24 @@ function makeRequest(): Request & { emitClose: () => void } {
   return { ...closeEmitter(), complete: true } as unknown as Request & { emitClose: () => void };
 }
 
-function makeResponse(): Response & { writeHead: jest.Mock; end: jest.Mock; emitClose: () => void } {
+function makeResponse(): Response & {
+  writeHead: jest.Mock;
+  end: jest.Mock;
+  destroy: jest.Mock;
+  emitClose: () => void;
+} {
   return {
     ...closeEmitter(),
     writableEnded: false,
     writeHead: jest.fn(),
     end: jest.fn(),
-  } as unknown as Response & { writeHead: jest.Mock; end: jest.Mock; emitClose: () => void };
+    destroy: jest.fn(),
+  } as unknown as Response & {
+    writeHead: jest.Mock;
+    end: jest.Mock;
+    destroy: jest.Mock;
+    emitClose: () => void;
+  };
 }
 
 function makeController(overrides: Partial<KbRagService> = {}) {
@@ -155,10 +166,14 @@ describe("KbRagController.streamAsk — failures keep their status", () => {
         },
       }),
     } as unknown as Partial<KbRagService>);
+    const res = makeResponse();
 
-    await expect(
-      controller.streamAsk(makeRequest(), BODY, makeResponse()),
-    ).resolves.toBeUndefined();
+    await expect(controller.streamAsk(makeRequest(), BODY, res)).resolves.toBeUndefined();
+
+    // Truncated, not ended: a clean `end()` here reads to the client as a
+    // finished answer. See `ai-stream-fault-is-visible.spec.ts`.
+    expect(res.destroy).toHaveBeenCalledTimes(1);
+    expect(res.end).not.toHaveBeenCalled();
   });
 });
 

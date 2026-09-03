@@ -22,6 +22,7 @@ import {
   anonymiseGlobalIdentity,
   anonymiseSubjectProfile,
   hashSubjectId,
+  subjectHasSurvivingMembership,
 } from "./gdpr-subject-erasure-identity";
 import {
   anonymiseSubjectConversations,
@@ -152,6 +153,14 @@ export class GdprSubjectErasureService {
     let globalIdentityAnonymised = false;
     const scope = { orgId, subjectUserId, membershipId: membership.id };
 
+    // Asked out here, on its own identity-scoped connection, because the transaction
+    // below cannot answer it: `organization_members` admits a row only when its org is
+    // the tenant GUC's or its user is `app.user_id`, and a tenant transaction never sets
+    // the second. Inside, this guard read 0 rows for every subject and the shared `users`
+    // row — which has no RLS of its own — was redacted out from under whatever OTHER
+    // organisation the subject still belongs to. See `subjectHasSurvivingMembership`.
+    const hasSurvivingMembership = await subjectHasSurvivingMembership(this.db, scope);
+
     await this.db.transaction(async (tx) => {
       tablesAnonymised.push(...(await anonymiseSubjectProfile(tx, scope)));
       const conversations = await anonymiseSubjectConversations(tx, scope);
@@ -181,7 +190,9 @@ export class GdprSubjectErasureService {
       if (supportErasure.ticketsAnonymised > 0) tablesAnonymised.push("support_tickets");
       if (supportErasure.embeddingsDeleted > 0) tablesAnonymised.push("support_ticket_embeddings");
 
-      globalIdentityAnonymised = await anonymiseGlobalIdentity(tx, scope);
+      globalIdentityAnonymised = await anonymiseGlobalIdentity(tx, scope, {
+        hasSurvivingMembership,
+      });
       if (globalIdentityAnonymised) tablesAnonymised.push("users");
 
       tablesAnonymised.push(...(await eraseSubjectKbContent(tx, scope)));

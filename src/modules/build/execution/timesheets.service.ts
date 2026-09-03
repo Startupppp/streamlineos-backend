@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import {
   organizationMembers,
   projectMembers,
@@ -24,6 +24,7 @@ import { applyMembershipScope } from "../../timesheets/core/timesheets-core-scop
 import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";
 import { resolveTimesheetsScope } from "./timesheets-scope";
 import { formatDateOnly } from "../../../common/date";
+import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
 import type {
   BillingSummaryQuery,
@@ -69,8 +70,8 @@ export class TimesheetsService {
 
   async listTimeEntries(user: CurrentUserContext, query: TimeEntriesListQuery) {
     const page = query.page ?? 1;
-    const limit = query.limit;
-    const offset = (page - 1) * limit;
+    const pageSize = query.limit;
+    const { limit, offset } = paginateOffset({ page, pageSize });
 
     const scope = await resolveTimesheetsScope(this.access, user);
     const membershipId = actingMembershipId(user.principal);
@@ -93,18 +94,24 @@ export class TimesheetsService {
     if (query.projectId)
       conditions.push(eq(timesheets.projectId, query.projectId));
 
-    return this.db.query.timesheets.findMany({
-      where: and(...conditions),
-      orderBy: [desc(timesheets.date)],
-      limit,
-      offset,
-      with: {
-        ticket: {
-          columns: { id: true, title: true, projectId: true },
-          with: { project: { columns: { id: true, name: true, key: true } } },
+    const where = and(...conditions);
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.timesheets.findMany({
+        where,
+        orderBy: [desc(timesheets.date)],
+        limit,
+        offset,
+        with: {
+          ticket: {
+            columns: { id: true, title: true, projectId: true },
+            with: { project: { columns: { id: true, name: true, key: true } } },
+          },
         },
-      },
-    });
+      }),
+      this.db.select({ total: count() }).from(timesheets).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize });
   }
 
   async updateEntry(
@@ -280,6 +287,10 @@ export class TimesheetsService {
   }
 
   async teamTimesheets(user: CurrentUserContext, query: TeamTimesheetsQuery) {
+    const page = query.page;
+    const pageSize = query.limit;
+    const { limit, offset } = paginateOffset({ page, pageSize });
+
     const scope = await resolveTimesheetsScope(this.access, user);
     if (scope === "none") {
       throw new ForbiddenException(
@@ -304,21 +315,27 @@ export class TimesheetsService {
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
     if (query.status) conditions.push(eq(timesheets.status, query.status));
 
-    return this.db.query.timesheets.findMany({
-      where: and(...conditions),
-      orderBy: [desc(timesheets.date)],
-      limit: query.limit,
-      offset: (query.page - 1) * query.limit,
-      with: {
-        userMember: {
-          columns: { id: true, userId: true },
+    const where = and(...conditions);
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.timesheets.findMany({
+        where,
+        orderBy: [desc(timesheets.date)],
+        limit,
+        offset,
+        with: {
+          userMember: {
+            columns: { id: true, userId: true },
+          },
+          ticket: {
+            columns: { id: true, title: true, projectId: true },
+            with: { project: { columns: { id: true, name: true, key: true } } },
+          },
         },
-        ticket: {
-          columns: { id: true, title: true, projectId: true },
-          with: { project: { columns: { id: true, name: true, key: true } } },
-        },
-      },
-    });
+      }),
+      this.db.select({ total: count() }).from(timesheets).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize });
   }
 
   async billingSummary(user: CurrentUserContext, query: BillingSummaryQuery) {

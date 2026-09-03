@@ -75,6 +75,12 @@ export class BlogAdminController {
     return result;
   }
 
+  @Get("categories")
+  @RequirePermission("blog:categories:manage")
+  listCategories() {
+    return this.blog.getAdminCategories();
+  }
+
   @Post("categories")
   @RequirePermission("blog:categories:manage")
   @Validate({ body: categoryCreateSchema })

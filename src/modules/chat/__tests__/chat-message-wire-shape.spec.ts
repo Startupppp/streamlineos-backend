@@ -52,6 +52,7 @@ function nestedMessageRow(userId: string | null, id: number, over: Record<string
     createdAt: new Date("2026-09-01T10:00:00Z"),
     updatedAt: new Date("2026-09-01T10:00:00Z"),
     attachments: [],
+    reactions: [],
     replyTo: null,
     senderMembership: userId === null ? null : { userId },
     ...over,

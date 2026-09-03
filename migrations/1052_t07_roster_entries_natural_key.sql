@@ -1,5 +1,14 @@
 -- 1052: make roster_entries' declared integrity real.
 --
+-- @data-loss  The orphan repair below overwrites user_membership_id with NULL on every
+--             row whose membership no longer exists. Nothing records what it held: the
+--             membership row it named is already deleted, a re-added member is issued a
+--             new serial id, and user_id -- which does survive and still names the
+--             person -- cannot yield the id of a row that no longer exists. So the
+--             overwritten value is gone, and the foreign key would reject it back
+--             anyway. A rollback file accompanies this migration for the index and
+--             foreign-key half, which is reversible. The nulled pointers are not.
+--
 -- Three objects, one purpose: every one of them is about the
 -- (org_id, user_membership_id, date) grain of roster_entries, and all three are
 -- either assumed by running code or declared in Drizzle while absent from the

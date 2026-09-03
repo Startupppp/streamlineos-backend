@@ -1,10 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, max } from "drizzle-orm";
+import { and, count, desc, eq, max } from "drizzle-orm";
 import { hiringFlowRounds, hiringFlows } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { buildListResponse } from "../../../common/pagination/pagination";
 import type {
   CreateHiringFlowInput,
   CreateRoundInput,
@@ -23,14 +24,25 @@ export class HrHiringFlowsService {
     return this.cache.cachedVersioned(
       `hr:hiring-flows:${orgId}`,
       `list:${limit}:${offset}`,
-      () =>
-        this.db.query.hiringFlows.findMany({
-          where: eq(hiringFlows.orgId, orgId),
-          orderBy: [desc(hiringFlows.isDefault), desc(hiringFlows.createdAt)],
-          limit,
-          offset,
-          with: { rounds: { orderBy: (r, { asc }) => [asc(r.orderIndex)] } },
-        }),
+      async () => {
+        const where = eq(hiringFlows.orgId, orgId);
+        const [rows, [totalRow]] = await Promise.all([
+          this.db.query.hiringFlows.findMany({
+            where,
+            orderBy: [desc(hiringFlows.isDefault), desc(hiringFlows.createdAt)],
+            limit,
+            offset,
+            with: { rounds: { orderBy: (r, { asc }) => [asc(r.orderIndex)] } },
+          }),
+          this.db.select({ total: count() }).from(hiringFlows).where(where),
+        ]);
+        // The controller pages by `limit`/`offset`, so the page number the envelope
+        // reports has to be derived from the offset rather than passed in.
+        return buildListResponse(rows, Number(totalRow?.total ?? 0), {
+          page: limit > 0 ? Math.floor(offset / limit) + 1 : 1,
+          pageSize: limit,
+        });
+      },
       CACHE_TTL.SHORT,
     );
   }

@@ -190,7 +190,10 @@ export const affiliates = pgTable(
   "affiliates",
   {
     id: serial("id").primaryKey(),
-    userId: text("user_id").notNull().unique(),
+    // NOT .unique(): a bare global unique here constrained the whole DEPLOYMENT, so a
+    // person could be an affiliate in exactly one organisation. Tenant-scoped uniqueness
+    // is composite — see uniq_affiliates_org_user below, and migration 1055.
+    userId: text("user_id").notNull(),
     userMembershipId: integer("user_membership_id"),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     referralCode: varchar("referral_code", { length: 20 }).notNull().unique(),
@@ -208,6 +211,7 @@ export const affiliates = pgTable(
   (t) => [
     index("affiliates_org_mbr_idx").on(t.orgId, t.userMembershipId),
     unique("uniq_affiliates_org_id").on(t.orgId, t.id),
+    unique("uniq_affiliates_org_user").on(t.orgId, t.userId),
     foreignKey({ columns: [t.orgId, t.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_affiliates_org_user_mbr" }).onDelete("set null"),
   ],
 );

@@ -22,6 +22,32 @@ const SUPPRESSING_EVENTS: Record<string, EmailSuppressionReason> = {
   invalid: "INVALID_ADDRESS",
 };
 
+/**
+ * How long a spam complaint suppresses the address for.
+ *
+ * A hard bounce and an invalid address are facts about the ADDRESS — it does not
+ * exist, nobody can deliver to it — so they stay permanent and platform-wide. A
+ * complaint is a fact about ONE relationship: alice@corp.com marked one tenant's
+ * broadcast as spam. It was being written with the same `orgId: null` and no
+ * expiry, and `email_suppressions` has no reversal path anywhere in the product
+ * (`emailSuppressions` is referenced by exactly two non-spec files, exposing only
+ * `findSuppressed` and `suppress`, and `suppress` is `onConflictDoNothing` so a
+ * later write cannot correct it). So one click in one tenant permanently stopped
+ * every other tenant's password resets, invoices and e-signature requests to her,
+ * with a DBA as the only way back.
+ *
+ * The scope stays platform-wide because neither provider's payload names a tenant:
+ * `email_outbox` has no provider message id to join on, and nothing tags outbound
+ * mail with the organisation. Guessing the tenant from the most recent send to that
+ * address would silently suppress the WRONG tenant whenever it guessed wrong, which
+ * is worse than what it replaces. Bounding it in time is the part that can be done
+ * correctly here: `findSuppressed` already ignores an expired row
+ * (`or(isNull(expiresAt), gt(expiresAt, now))`), so this needs no new read path and
+ * no schema change, and the suppression heals itself instead of needing a human who
+ * has no button to press.
+ */
+const COMPLAINT_SUPPRESSION_DAYS = 365;
+
 function constantTimeEquals(expected: string, provided: string): boolean {
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(provided, "utf8");
@@ -69,6 +95,12 @@ export class EmailWebhookService {
         orgId: null,
         reason,
         source: "PROVIDER_WEBHOOK",
+        // A complaint is a relationship, not an address defect — it expires.
+        // A bounce and an invalid address do not.
+        expiresAt:
+          reason === "COMPLAINT"
+            ? new Date(Date.now() + COMPLAINT_SUPPRESSION_DAYS * 24 * 60 * 60 * 1000)
+            : null,
         evidence: { provider: params.provider, type: event.type },
       });
       suppressed++;

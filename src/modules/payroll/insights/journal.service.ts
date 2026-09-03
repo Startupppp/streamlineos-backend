@@ -1,12 +1,12 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollLineItems, payrollRunEmployees, employeeSalaryProfiles } from "../../../db/schema";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { findRunForMonth } from "./lib/report-builders";
 import { AccountingMappingsService } from "./accounting-mappings.service";
-import { toPaise } from "../runs/lib/money";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 
 export interface JournalLine {
   account: string;
@@ -23,15 +23,6 @@ export interface JournalResult {
   unmappedCodes: string[];
   totalDebits: number;
   totalCredits: number;
-}
-
-interface LineGroup {
-  componentId: number | null;
-  code: string;
-  category: string;
-  name: string;
-  totalPaise: number;
-  costCenter: string | null;
 }
 
 const EMPTY_RESULT = (month: string): JournalResult => ({
@@ -56,62 +47,76 @@ export class JournalService {
 
     const provisional = !PAYROLL_LOCKED_STATUSES.includes(run.status);
 
-    const [lineItems, runEmployees, empCostCenters, mappings] = await Promise.all([
+    // The journal is one line per (componentId, code, category, costCenter)
+    // group, so the grouping is done in SQL: a run writes a line item per
+    // employee per component (13 for one employee in the frozen calculation
+    // fixture), and reading those rows to fold them in JS put the debit side of
+    // the ledger behind a per-row cap while the credit side stayed complete —
+    // an unbalanceable journal from roughly 77 employees upward. Grouped, the
+    // result set is bounded by the org's component × cost-centre count, not by
+    // headcount, and the probe row makes an org past even that bound fail
+    // visibly instead of posting silently short figures.
+    //
+    // The inner join to payroll_run_employees only carries the cost centre;
+    // fk_payroll_line_items_run_employee_id_org guarantees it drops nothing.
+    //
+    // MONEY: amount and net are numeric(15,2) rupees. Both sums are scaled to
+    // integer paise inside Postgres (round(x * 100)) and added there exactly,
+    // so no float ever holds a running total; `::text` keeps the value out of
+    // the driver's float path and Number() reads back an exact integer.
+    const [groupRows, netRows, mappings] = await Promise.all([
       this.db
         .select({
-          runEmployeeId: payrollLineItems.runEmployeeId,
           componentId: payrollLineItems.componentId,
           code: payrollLineItems.code,
           category: payrollLineItems.category,
-          name: payrollLineItems.name,
-          amount: payrollLineItems.amount,
+          name: sql<string>`min(${payrollLineItems.name})`,
+          costCenter: employeeSalaryProfiles.costCenter,
+          totalPaise: sql<string>`sum(round(${payrollLineItems.amount} * 100))::text`,
         })
         .from(payrollLineItems)
-        .where(eq(payrollLineItems.runId, run.id))
-        .limit(1000),
-      this.db
-        .select({ net: payrollRunEmployees.net })
-        .from(payrollRunEmployees)
-        .where(eq(payrollRunEmployees.runId, run.id))
-        .limit(1000),
-      this.db
-        .select({
-          runEmployeeId: payrollRunEmployees.id,
-          costCenter: employeeSalaryProfiles.costCenter,
-        })
-        .from(payrollRunEmployees)
+        .innerJoin(
+          payrollRunEmployees,
+          and(
+            eq(payrollRunEmployees.id, payrollLineItems.runEmployeeId),
+            eq(payrollRunEmployees.orgId, payrollLineItems.orgId),
+          ),
+        )
         .leftJoin(
           employeeSalaryProfiles,
-          eq(payrollRunEmployees.profileId, employeeSalaryProfiles.id),
+          and(
+            eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId),
+            eq(employeeSalaryProfiles.orgId, payrollRunEmployees.orgId),
+          ),
         )
-        .where(eq(payrollRunEmployees.runId, run.id))
-        .limit(1000),
+        .where(and(eq(payrollLineItems.orgId, orgId), eq(payrollLineItems.runId, run.id)))
+        .groupBy(
+          payrollLineItems.componentId,
+          payrollLineItems.code,
+          payrollLineItems.category,
+          employeeSalaryProfiles.costCenter,
+        )
+        // Deterministic order, so the batch sourceHash of an unchanged run is
+        // stable and createBatch replays instead of minting a new version.
+        .orderBy(
+          payrollLineItems.code,
+          payrollLineItems.category,
+          employeeSalaryProfiles.costCenter,
+          payrollLineItems.componentId,
+        )
+        .limit(PAYROLL_READ_CAP + 1),
+      this.db
+        .select({
+          totalPaise: sql<string>`coalesce(sum(round(${payrollRunEmployees.net} * 100)), 0)::text`,
+        })
+        .from(payrollRunEmployees)
+        .where(
+          and(eq(payrollRunEmployees.orgId, orgId), eq(payrollRunEmployees.runId, run.id)),
+        ),
       this.accountingMappingsService.getMappings(orgId),
     ]);
 
-    const costCenterMap = new Map<number, string | null>();
-    for (const e of empCostCenters) {
-      costCenterMap.set(e.runEmployeeId, e.costCenter ?? null);
-    }
-
-    const groups = new Map<string, LineGroup>();
-    for (const item of lineItems) {
-      const costCenter = costCenterMap.get(item.runEmployeeId) ?? null;
-      const key = `${item.componentId ?? ""}\0${item.code}\0${item.category}\0${costCenter ?? ""}`;
-      const existing = groups.get(key);
-      if (existing !== undefined) {
-        existing.totalPaise += toPaise(item.amount);
-      } else {
-        groups.set(key, {
-          componentId: item.componentId,
-          code: item.code,
-          category: item.category,
-          name: item.name,
-          totalPaise: toPaise(item.amount),
-          costCenter,
-        });
-      }
-    }
+    const groups = requirePayrollReadWithinCap(groupRows, "build journal line groups");
 
     const employerLiabilityAccount =
       mappings.get("EMPLOYER_CONTRIBUTION_LIABILITY") ?? "Statutory Liabilities Payable";
@@ -119,7 +124,7 @@ export class JournalService {
     const lines: JournalLine[] = [];
     const unmappedCodes: string[] = [];
 
-    for (const group of groups.values()) {
+    for (const group of groups) {
       const cidKey = group.componentId !== null ? String(group.componentId) : undefined;
       const ledgerFromCid = cidKey !== undefined ? mappings.get(cidKey) : undefined;
       const ledgerFromCat = mappings.get(group.category);
@@ -139,14 +144,16 @@ export class JournalService {
         group.category === "REIMBURSEMENT" ||
         group.category === "EMPLOYER_CONTRIBUTION";
 
-      const amount = group.totalPaise / 100;
+      // group.totalPaise is integer paise as text; rupees only at the wire edge.
+      const amount = Number(group.totalPaise) / 100;
+      const costCenter = group.costCenter ?? null;
 
       lines.push({
         account,
         description: `${group.name} (${group.code})`,
         debit: isDebit ? amount : 0,
         credit: isDebit ? 0 : amount,
-        costCenter: group.costCenter,
+        costCenter,
       });
 
       if (group.category === "EMPLOYER_CONTRIBUTION") {
@@ -155,12 +162,14 @@ export class JournalService {
           description: `${group.name} payable (${group.code})`,
           debit: 0,
           credit: amount,
-          costCenter: group.costCenter,
+          costCenter,
         });
       }
     }
 
-    const totalNetPaise = runEmployees.reduce((acc, emp) => acc + toPaise(emp.net), 0);
+    // Integer paise summed in Postgres over every run employee — no per-employee
+    // read, so the credit side cannot fall out of step with the debit side.
+    const totalNetPaise = Number(netRows[0]?.totalPaise ?? "0");
     lines.push({
       account: "Salaries Payable",
       description: "Net payable to employees",

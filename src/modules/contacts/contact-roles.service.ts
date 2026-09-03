@@ -17,6 +17,20 @@ import {
   contactPartyScope,
 } from "./contact-party-reader";
 import { isUniqueViolation } from "../../common/db/postgres-error";
+import { buildListResponse, paginateOffset, type ListResponse } from "../../common/pagination/pagination";
+
+interface DuplicateContactSide {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+}
+
+export interface DuplicateContactPair {
+  contact1: DuplicateContactSide;
+  contact2: DuplicateContactSide;
+  matchReason: string;
+}
 
 @Injectable()
 export class ContactRolesService {
@@ -108,9 +122,11 @@ export class ContactRolesService {
     return { success: true };
   }
 
-  async getDuplicateContacts(orgId: string, query: DuplicatesQueryInput) {
-    const limit = query.limit;
-    const offset = (query.page - 1) * query.limit;
+  async getDuplicateContacts(
+    orgId: string,
+    query: DuplicatesQueryInput,
+  ): Promise<ListResponse<DuplicateContactPair>> {
+    const { limit, offset } = paginateOffset({ page: query.page, pageSize: query.limit });
 
     /*
      * The pair search now compares parties, reached through `contact_party_map`
@@ -126,8 +142,32 @@ export class ContactRolesService {
      * should converge on `partiesSharingIdentifiers`. Doing that here would
      * change which duplicates the screen reports, which is its own ticket.
      */
-    const rows = await this.db.execute(
-      sql`
+    // One definition of "a duplicate pair", shared by the page and the count, so the two can
+    // never disagree about what they are counting.
+    const pairs = sql`
+      FROM contact_party_map m1
+      JOIN business_parties p1
+        ON p1.party_id = m1.party_id
+       AND p1.organization_id = m1.organization_id
+      JOIN contact_party_map m2
+        ON m2.organization_id = m1.organization_id
+       AND m2.contact_id > m1.contact_id
+      JOIN business_parties p2
+        ON p2.party_id = m2.party_id
+       AND p2.organization_id = m2.organization_id
+      WHERE m1.organization_id = ${orgId}
+        AND p1.deleted_at IS NULL
+        AND p2.deleted_at IS NULL
+        AND (
+              (p1.email IS NOT NULL AND p1.email = p2.email)
+           OR (p1.phone IS NOT NULL AND p1.phone = p2.phone)
+           OR (p1.name ILIKE p2.name)
+        )
+    `;
+
+    const [rows, totals] = await Promise.all([
+      this.db.execute(
+        sql`
         SELECT m1.contact_id AS id1, p1.name AS name1, p1.email AS email1, p1.phone AS phone1,
                m2.contact_id AS id2, p2.name AS name2, p2.email AS email2, p2.phone AS phone2,
                CASE
@@ -135,31 +175,16 @@ export class ContactRolesService {
                  WHEN p1.phone IS NOT NULL AND p1.phone = p2.phone THEN 'phone'
                  ELSE 'name'
                END AS match_reason
-        FROM contact_party_map m1
-        JOIN business_parties p1
-          ON p1.party_id = m1.party_id
-         AND p1.organization_id = m1.organization_id
-        JOIN contact_party_map m2
-          ON m2.organization_id = m1.organization_id
-         AND m2.contact_id > m1.contact_id
-        JOIN business_parties p2
-          ON p2.party_id = m2.party_id
-         AND p2.organization_id = m2.organization_id
-        WHERE m1.organization_id = ${orgId}
-          AND p1.deleted_at IS NULL
-          AND p2.deleted_at IS NULL
-          AND (
-                (p1.email IS NOT NULL AND p1.email = p2.email)
-             OR (p1.phone IS NOT NULL AND p1.phone = p2.phone)
-             OR (p1.name ILIKE p2.name)
-          )
+        ${pairs}
         ORDER BY m1.contact_id, m2.contact_id
         LIMIT ${limit}
         OFFSET ${offset}
       `,
-    );
+      ),
+      this.db.execute(sql`SELECT COUNT(*) AS total ${pairs}`),
+    ]);
 
-    return rows.map((row) => ({
+    const items = rows.map((row) => ({
       contact1: {
         id: Number(row["id1"]),
         name: String(row["name1"] ?? ""),
@@ -174,6 +199,11 @@ export class ContactRolesService {
       },
       matchReason: String(row["match_reason"] ?? "name"),
     }));
+
+    return buildListResponse(items, Number(totals[0]?.["total"] ?? 0), {
+      page: query.page,
+      pageSize: query.limit,
+    });
   }
 
   async mergeContacts(orgId: string, input: MergeContactsInput, actorId: string) {

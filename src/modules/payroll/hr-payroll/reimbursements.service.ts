@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { reimbursements, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -13,6 +13,7 @@ import {
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { buildListResponse } from "../../../common/pagination/pagination";
 
 export type UpdateReimbursementResult =
   | { ok: false; reason: "not_found" | "own_request" }
@@ -25,24 +26,29 @@ export class ReimbursementsService {
     private readonly automation: AutomationService,
   ) {}
 
-  listReimbursements(orgId: string, userId: string, membershipId: number | null, scope: DataScope, page = 1, limit = 100) {
+  async listReimbursements(orgId: string, userId: string, membershipId: number | null, scope: DataScope, page = 1, limit = 100) {
     if (scope === "own" && membershipId === null) throw new ForbiddenException("Organization membership required");
     const ownerPredicate = scope === "own"
       ? eq(reimbursements.userMembershipId, membershipId ?? -1)
       : applyScope(scope, orgId, userId, { ownerColumn: reimbursements.userId });
-    const conditions = [eq(reimbursements.orgId, orgId), ownerPredicate];
+    const where = and(eq(reimbursements.orgId, orgId), ownerPredicate);
 
-    return this.db.query.reimbursements.findMany({
-      where: and(...conditions),
-      with: {
-        user: {
-          columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.reimbursements.findMany({
+        where,
+        with: {
+          user: {
+            columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
+          },
         },
-      },
-      orderBy: [desc(reimbursements.createdAt)],
-      limit,
-      offset: (page - 1) * limit,
-    });
+        orderBy: [desc(reimbursements.createdAt)],
+        limit,
+        offset: (page - 1) * limit,
+      }),
+      this.db.select({ total: count() }).from(reimbursements).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
   }
 
   async createReimbursement(orgId: string, userId: string, membershipId: number | null, body: CreateReimbursementInput) {

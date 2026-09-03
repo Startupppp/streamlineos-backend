@@ -22,7 +22,10 @@ function makeDb(channels: unknown[]) {
 
   const makeChain = () => {
     const chain: Record<string, unknown> = {};
-    for (const method of ["from", "where", "innerJoin", "leftJoin", "groupBy", "orderBy", "limit", "as"])
+    // `innerJoinLateral` joined the list here when the last-message preview stopped being a
+    // DISTINCT ON over every message in every listed channel (182 ms / 6,839 shared +
+    // 4,244 temp buffers) and became one index probe per channel (0.39 ms / 203 buffers).
+    for (const method of ["from", "where", "innerJoin", "innerJoinLateral", "leftJoin", "groupBy", "orderBy", "limit", "as"])
       chain[method] = jest.fn(() => chain);
     chain.then = (resolve: (v: unknown[]) => unknown) => resolve(nextResult());
     return chain;

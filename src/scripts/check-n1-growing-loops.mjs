@@ -61,10 +61,36 @@ import ts from "typescript";
  * a defect planted in a temp tree is then judged against the untouched original.
  * An explicit argument still overrides, for the self-test and for tooling.
  */
-const ROOT =
-  process.argv.slice(2).find((a) => !a.startsWith("--")) ??
-  new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+const ROOT_ARG = process.argv.slice(2).find((a) => !a.startsWith("--"));
+const MODULES_ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+const COMMON_ROOT = new URL("../common", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+const DB_ROOT = new URL("../db", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+const ROOT = ROOT_ARG ?? MODULES_ROOT;
 const JSON_OUT = process.argv.includes("--json");
+
+/** Per-root floors for the two trees that joined this gate's corpus on 2026-09-03. */
+const MIN_COMMON_FILES = 150;
+const MIN_DB_FILES = 300;
+
+/**
+ * The gate reads THREE trees, not one.
+ *
+ * `src/modules` alone until 2026-09-03, so 97 growing sites over 2,173 files read as
+ * a statement about the repository while `src/common` — every sweep, relay, workflow
+ * and cache path in the system — and `src/db` were outside the corpus entirely. Three
+ * more growing sites live in src/common, under the existing ratchet of 102.
+ *
+ * An explicit root argument still overrides and still scans exactly that one tree:
+ * the hermetic proofs plant a defect in a temp copy and must judge THAT copy, so
+ * silently unioning the real src/common into a temp-tree run would defeat them.
+ */
+const SCAN_ROOTS = ROOT_ARG
+  ? [{ key: "", dir: ROOT_ARG, minFiles: 0, label: ROOT_ARG }]
+  : [
+      { key: "", dir: MODULES_ROOT, minFiles: 0, label: "src/modules" },
+      { key: "@common", dir: COMMON_ROOT, minFiles: MIN_COMMON_FILES, label: "src/common" },
+      { key: "@db", dir: DB_ROOT, minFiles: MIN_DB_FILES, label: "src/db" },
+    ];
 
 const EXCLUDED_PREFIXES = ["/crm/", "/inventory/"];
 
@@ -431,14 +457,14 @@ const MIN_FILES = 1800;
 
 /* ------------------------------------------------------------------- scan */
 
-export function scanTree(root) {
+export function scanTree(root, keyPrefix = "") {
   const files = collect(root);
   const results = [];
   let loopNodes = 0;
 
   for (const file of files) {
     const src = readFileSync(file, "utf8");
-    const rel = file.slice(root.length).replace(/\\/g, "/");
+    const rel = keyPrefix + file.slice(root.length).replace(/\\/g, "/");
     const found = scanSource(src, file, rel);
     loopNodes += found.loopNodes;
     results.push(...found.findings);
@@ -552,7 +578,35 @@ function runSelfTests() {
     if (n !== 0) { console.error(`SELF-TEST FAIL: ${label} — expected no finding, got ${n}`); process.exit(1); }
   }
 
-  console.log("SELF-TEST PASS: 13 growing/fixed/paging classification checks passed");
+  // The corpus itself. Three roots by default, exactly one when a root is named on
+  // the command line — the hermetic proofs depend on the second half of that.
+  if (!ROOT_ARG) {
+    if (SCAN_ROOTS.length !== 3) {
+      console.error(`SELF-TEST FAIL: expected 3 default scan roots, got ${String(SCAN_ROOTS.length)}`);
+      process.exit(1);
+    }
+    for (const root of SCAN_ROOTS) {
+      const found = collect(root.dir).length;
+      if (found < root.minFiles) {
+        console.error(
+          `SELF-TEST FAIL: scan root ${root.label} yielded ${String(found)} files (expected >= ${String(root.minFiles)}) — it resolves to ${root.dir}`,
+        );
+        process.exit(1);
+      }
+    }
+    const common = SCAN_ROOTS.find((r) => r.key === "@common");
+    const rel = common.key + join(common.dir, "tenant/for-each-org.ts").slice(common.dir.length);
+    if (rel !== "@common/tenant/for-each-org.ts") {
+      console.error(`SELF-TEST FAIL: a src/common finding would be keyed "${rel}", not under @common`);
+      process.exit(1);
+    }
+    if (EXCLUDED_PREFIXES.some((pre) => rel.startsWith(pre))) {
+      console.error("SELF-TEST FAIL: an @common key was matched by the crm/inventory exclusion");
+      process.exit(1);
+    }
+  }
+
+  console.log("SELF-TEST PASS: 16 growing/fixed/paging/corpus checks passed");
 }
 
 /* ------------------------------------------------------------------- main */
@@ -560,9 +614,26 @@ function runSelfTests() {
 function main() {
   if (process.argv.includes("--self-test")) { runSelfTests(); return; }
 
-  const { files, loopNodes, results } = scanTree(ROOT);
+  let files = 0;
+  let loopNodes = 0;
+  const results = [];
+  const perRoot = [];
+  for (const root of SCAN_ROOTS) {
+    const scanned = scanTree(root.dir, root.key);
+    if (scanned.files < root.minFiles) {
+      console.error(
+        `ERROR: ${root.label} yielded only ${String(scanned.files)} service files (expected >= ${String(root.minFiles)}) — that root resolved to nothing or to the wrong tree: ${root.dir}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    perRoot.push({ ...root, scanned: scanned.files });
+    files += scanned.files;
+    loopNodes += scanned.loopNodes;
+    results.push(...scanned.results);
+  }
   if (files < MIN_FILES) {
-    console.error(`ERROR: only ${String(files)} service files found (expected >= ${String(MIN_FILES)}) — ROOT is wrong: ${ROOT}`);
+    console.error(`ERROR: only ${String(files)} service files found across ${String(SCAN_ROOTS.length)} root(s) (expected >= ${String(MIN_FILES)}) — ROOT is wrong: ${ROOT}`);
     process.exitCode = 1;
     return;
   }
@@ -577,7 +648,8 @@ function main() {
     return;
   }
 
-  console.log(`Parsed ${String(files)} service files, ${String(loopNodes)} loop nodes.`);
+  console.log(`Parsed ${String(files)} service files, ${String(loopNodes)} loop nodes, across ${String(SCAN_ROOTS.length)} root(s):`);
+  for (const root of perRoot) console.log(`  ${root.label.padEnd(12)}: ${String(root.scanned)} file(s)`);
   console.log(`${String(results.length - inScope.length)} finding(s) in excluded crm/inventory.`);
   console.log(`  GROWING (one round trip per row): ${String(growing.length)} site(s) across ${String(new Set(growing.map((g) => g.file)).size)} file(s)  [ratchet ${String(MAX_GROWING_SITES)}]`);
   console.log(`  FIXED   (literal-bounded):        ${String(fixed.length)} site(s)`);

@@ -21,6 +21,7 @@ import {
   UnsafeWebhookTargetError,
 } from "../../common/outbound/safe-webhook-transport";
 import { logger } from "../../common/logger/logger.service";
+import { registerAfterCommit } from "../../common/tenant";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const WEBHOOK_MAX_ATTEMPTS = 5;
@@ -116,10 +117,32 @@ export class WebhooksDispatchService {
 
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /**
+   * Deferred to after-commit, never detached with a bare `void`.
+   *
+   * A promise detached with `void` inherits the AsyncLocalStorage store it was
+   * created in, so `getTenantContext()` keeps answering with the request's
+   * context after the handler returned — and `this.db` is the tenant-aware proxy
+   * that resolves to `context.tx`. `run()` therefore issued its endpoint read
+   * and its `webhook_logs` insert on a transaction whose connection
+   * `TenantContextInterceptor` had already committed and released to the pool,
+   * up to WEBHOOK_MAX_ATTEMPTS x WEBHOOK_TIMEOUT_MS x chunks later. Best case
+   * the write throws and the `.catch` below hides it, so delivery logs go
+   * silently missing; worst case it lands on a connection another request has
+   * since checked out under a different `app.organization_id` GUC.
+   *
+   * `registerAfterCommit` returns false when there is no ambient context — a
+   * sweep or a consumer — and there the inline run is correct, because there is
+   * no request transaction to wait for and dropping the work would lose the
+   * webhook. The pattern is `storage.controller.ts:201`.
+   */
   dispatch(orgId: string, eventName: string, payload: Record<string, unknown>): void {
-    void this.run(orgId, eventName, payload).catch((error) =>
-      logger.error("[webhooks] dispatch run failed", { orgId, eventName, error }),
-    );
+    const deliver = (): Promise<void> =>
+      this.run(orgId, eventName, payload).catch((error: unknown) => {
+        logger.error("[webhooks] dispatch run failed", { orgId, eventName, error });
+      });
+
+    if (!registerAfterCommit(deliver)) void deliver();
   }
 
   private async run(orgId: string, eventName: string, payload: Record<string, unknown>): Promise<void> {

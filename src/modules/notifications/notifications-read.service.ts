@@ -19,7 +19,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
-import type { ListInput } from "./dto/notification.schemas";
+import { buildIdCursorPage } from "../../common/pagination/cursor";
+import { listSchema, type ListInput } from "./dto/notification.schemas";
 import type { NotificationTicketContext } from "./notifications.types";
 import { ASSIGNED_EVENT_KEYS, MENTION_EVENT_KEYS } from "./inbox-section-keys";
 import { notificationWindowEnd, notificationWindowStart } from "./notification-read-window";
@@ -97,10 +98,31 @@ export class NotificationsReadService {
     private readonly cache: CacheService,
   ) {}
 
+  /**
+   * Derived from `listSchema` itself rather than written out, because the
+   * hand-written key omitted `sourceModule` — an accepted, `.strict()`-validated
+   * query parameter and a real predicate at `queryNotifications`. So
+   * `?sourceModule=hr` and `?sourceModule=chat` hashed to the same key and, within
+   * CACHE_TTL.SHORT, the second caller was served the first one's filtered page.
+   * Scoped to one user+org, so not a tenant leak — silently wrong data.
+   *
+   * `check:namespace-coverage` cannot see this class of bug: it verifies that
+   * namespaces are bumped, never that the inner key enumerates every filter
+   * dimension. Enumerating the schema is what makes the next added filter safe by
+   * construction instead of by whoever remembers this comment.
+   */
+  private listCacheKey(filters: ListInput, section: string, limit: number): string {
+    const resolved: Record<string, unknown> = { ...filters, section, limit };
+    const parts = Object.keys(listSchema.shape)
+      .sort()
+      .map((field) => `${field}=${String(resolved[field] ?? "")}`);
+    return `list:${parts.join("&")}`;
+  }
+
   list(orgId: string, userId: string, filters: ListInput) {
     const limit = Math.min(filters.limit ?? 20, 100);
     const section = filters.unreadOnly ? "UNREAD" : (filters.section ?? "ALL");
-    const key = `list:${section}:${filters.category ?? ""}:${filters.priority ?? ""}:${limit}:${filters.cursor ?? ""}:${filters.search ?? ""}`;
+    const key = this.listCacheKey(filters, section, limit);
     return this.cache.cachedVersioned(
       `notifications:${userId}:${orgId}`,
       key,
@@ -237,15 +259,20 @@ export class NotificationsReadService {
       .from(notifications)
       .where(and(...conditions))
       .orderBy(desc(notifications.id))
-      .limit(filters.limit);
+      // One row past the page: its presence is what `hasMore` is read from, which is
+      // cheaper here than a second COUNT over an unbounded notification table.
+      .limit(filters.limit + 1);
 
-    return this.attachTicketContext(
+    const page = buildIdCursorPage(rows, filters.limit, (row) => row.id);
+    const data = await this.attachTicketContext(
       orgId,
-      rows.map((row) => ({
+      page.data.map((row) => ({
         ...row,
         isRead: row.isRead || (lastReadId > 0 && row.id <= lastReadId),
       })),
     );
+
+    return { data, hasMore: page.hasMore, nextCursor: page.nextCursor };
   }
 
   private async attachTicketContext(

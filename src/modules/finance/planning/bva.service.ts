@@ -7,6 +7,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { addDecimals, subtractDecimals, compareDecimals, formatDecimal } from "../../accounting/core/money.util";
+import { baseCreditAmount, baseDebitAmount } from "../../accounting/core/journal-base-amount";
 import type { BvaQuery } from "./dto/finance-planning.schemas";
 import type { BvaResponse, BvaAccountPeriodRow } from "./finance-planning.types";
 
@@ -98,8 +99,8 @@ export class BvaService {
       .select({
         accountId: journalLines.accountId,
         periodKey: periodExpr,
-        debit: sql<string>`SUM(${journalLines.debit})`,
-        credit: sql<string>`SUM(${journalLines.credit})`,
+        debit: sql<string>`SUM(${baseDebitAmount})`,
+        credit: sql<string>`SUM(${baseCreditAmount})`,
       })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))

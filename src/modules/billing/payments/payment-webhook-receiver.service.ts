@@ -17,6 +17,14 @@ import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { normalizedPaymentWebhookEventSchema } from "./dto/webhook.schemas";
+import { minorUnitsToDecimalString } from "./currency-minor-units";
+
+/**
+ * Used only when a payload reaches the bridge with no currency string at all. The schema
+ * requires one, so this is the defensive branch for an entity `extractPaymentEntity` picked
+ * out of an undeclared payload key rather than an expected shape.
+ */
+const FALLBACK_PROVIDER_CURRENCY = "INR";
 
 function redactPayload(
   payload: Record<string, unknown>,
@@ -287,22 +295,31 @@ export class PaymentWebhookReceiverService {
         normalized.eventType.includes("payment") &&
         typeof paymentEntity.amount === "number"
       ) {
+        /*
+         * The provider reports MINOR UNITS of its OWN currency, and how many minor units
+         * make a major one is a property of that currency — 0 for JPY/KRW/VND, 3 for
+         * KWD/BHD/JOD, 2 for the rest. So the currency has to be resolved BEFORE the
+         * amount can be scaled. Dividing by a constant 100 recorded a ¥100,000 capture as
+         * ¥1,000 and posted it to the general ledger.
+         */
+        const currency =
+          typeof paymentEntity.currency === "string"
+            ? paymentEntity.currency.trim().toUpperCase()
+            : FALLBACK_PROVIDER_CURRENCY;
         await this.providerBridge.recordProviderPayment(
           params.orgId,
           "system",
           {
             provider: params.providerKey,
             providerEventId: providerEventId,
-            grossAmount: String(paymentEntity.amount / 100),
-            feeAmount: String(
-              typeof paymentEntity.fee === "number"
-                ? paymentEntity.fee / 100
-                : 0,
+            // MAJOR units of `currency` as a decimal string — the ledger's carrier type.
+            // Integer/string arithmetic only: no double ever holds the amount.
+            grossAmount: minorUnitsToDecimalString(paymentEntity.amount, currency),
+            feeAmount: minorUnitsToDecimalString(
+              typeof paymentEntity.fee === "number" ? paymentEntity.fee : 0,
+              currency,
             ),
-            currency:
-              typeof paymentEntity.currency === "string"
-                ? paymentEntity.currency.toUpperCase()
-                : "INR",
+            currency,
             occurredAt:
               typeof paymentEntity.createdAt === "number"
                 ? new Date(paymentEntity.createdAt * 1000)
@@ -366,24 +383,31 @@ export function validateNormalizedPaymentWebhook(normalized: {
   });
 }
 
+/**
+ * The webhook idempotency key, and it comes only from signed material.
+ *
+ * The signature is an HMAC over `rawBody` alone (adapters/razorpay.adapter.ts), and the
+ * route carrying the header is `@Public()`, so `header` is unsigned input that any caller
+ * holding one captured body can vary at will. It may CROSS-CHECK the signed envelope; it
+ * may never BE the key. When it was the key, N forged headers over one signed body opened
+ * N rows through `uq_payment_webhook_events_provider_env_event` and posted N journal
+ * entries, because the ledger dedupe in finance-posting.service.ts is keyed on this id.
+ *
+ * With no id in the envelope — the ordinary Razorpay shape — the digest of the signed body
+ * is the key. It is stable, so a genuine provider retry of the same body still dedupes.
+ */
 export function resolveProviderEventId(
   header: string | undefined,
   normalized: { providerEventId?: string },
   rawBody: string,
 ): { ok: true; id: string } | { ok: false } {
   const supplied = header?.trim();
-  if (
-    supplied &&
-    normalized.providerEventId &&
-    supplied !== normalized.providerEventId
-  ) {
+  const signedId = normalized.providerEventId?.trim();
+  if (supplied && signedId && supplied !== signedId) {
     return { ok: false };
   }
   return {
     ok: true,
-    id:
-      supplied ||
-      normalized.providerEventId ||
-      createHash("sha256").update(rawBody).digest("hex"),
+    id: signedId || createHash("sha256").update(rawBody).digest("hex"),
   };
 }

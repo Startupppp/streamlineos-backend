@@ -4,7 +4,10 @@ import { filterToolsByPersona, getPersona } from "../persona-registry";
 import { ModuleRef } from "@nestjs/core";
 import { stepCountIs, streamText, type ModelMessage } from "ai";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../../common/tenant/run-in-tenant-transaction";
 import { resolveLlmRetryPolicy } from "../providers/llm-retry";
 import { withTenantScopedTools } from "../tenant-scoped-tools";
 import { type Db } from "../../../../db/drizzle.module";
@@ -44,6 +47,7 @@ import { buildInlineTools } from "./chat-assistant-inline-tools";
 import { REDIS } from "../../../../common/cache/cache.service";
 import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
 import { AiStreamBreaker } from "../streaming/ai-stream-breaker";
+import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
 
 const MAX_HISTORY_MESSAGES = 40;
 const MAX_OUTPUT_TOKENS = 4_096;
@@ -119,11 +123,13 @@ export class ChatAssistantService {
     let reservationId = 0;
     try {
       const reserveMilli = getReserveEstimateMilli(CHAT_FEATURE);
+      const idempotencyKey = aiReservationIdempotencyKey(CHAT_FEATURE, { orgId, userId });
       const reserved = await this.ledger.reserve({
         orgId,
         userId,
         feature: CHAT_FEATURE,
         credits: reserveMilli,
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
       reservationId = reserved.reservationId;
     } catch (error) {
@@ -140,28 +146,60 @@ export class ChatAssistantService {
     };
 
     try {
-      const context = await this.fetchContext(userId, orgId);
+      // Both pre-stream database seams go inside ONE short tenant transaction
+      // that COMMITS before `streamText` opens the provider connection.
+      //
+      // The handler is `@NoTenantTransaction()` (chat-assistant.controller.ts),
+      // so `TenantContextInterceptor` never opens one and the DRIZZLE proxy
+      // falls through to the bare pool with no `app.organization_id`. Every
+      // table read here is RLS-protected and `app.current_org_id()` RAISES
+      // 42501 rather than returning NULL, so without this wrapper the context
+      // read and the user-message append both fail and the whole route answers
+      // 500 for every tenant. Passing `orgId` explicitly is what makes this open
+      // its own transaction under that decorator; an ambient context, if a
+      // caller ever has one, is reused unchanged.
+      //
+      // It must NOT be the request transaction and must not span the stream:
+      // holding a pooled connection idle-in-transaction across a provider round
+      // trip is the thing `@NoTenantTransaction()` exists to prevent (PRD-C078).
+      // Same shape as `SignAiService.summarizeDocument`. The nine context reads
+      // stay inside `fetchChatContext`'s single `Promise.all`: postgres.js
+      // pipelines them onto the one connection this transaction holds
+      // (connection.js:168-176, up to `max_pipeline`), so the round trips are
+      // not serialized even though the server executes them in turn. The
+      // alternative — one transaction per read — would borrow nine connections
+      // for one chat turn.
+      const context = await runInTenantTransaction(
+        this.db,
+        async () => {
+          const loaded = await this.fetchContext(userId, orgId);
+
+          const latest = messages.at(-1);
+          if (latest?.role === "user") {
+            if (conversationId !== undefined) {
+              await this.history.appendToConversation(
+                orgId,
+                userId,
+                membershipId,
+                conversationId,
+                "user",
+                latest.content,
+              );
+            } else {
+              await this.history.append(orgId, userId, membershipId, "user", latest.content);
+            }
+          }
+
+          return loaded;
+        },
+        { orgId },
+      );
+
       const basePrompt = buildContextPrompt(context);
       const personaConfig = persona ? getPersona(persona) : undefined;
       const contextPrompt = personaConfig
         ? `${personaConfig.preamble}\n\n${basePrompt}`
         : basePrompt;
-
-      const latest = messages.at(-1);
-      if (latest?.role === "user") {
-        if (conversationId !== undefined) {
-          await this.history.appendToConversation(
-            orgId,
-            userId,
-            membershipId,
-            conversationId,
-            "user",
-            latest.content,
-          );
-        } else {
-          await this.history.append(orgId, userId, membershipId, "user", latest.content);
-        }
-      }
 
       const modelMessages: ModelMessage[] = messages.slice(-MAX_HISTORY_MESSAGES).map((m) =>
         m.role === "user"
@@ -211,6 +249,29 @@ export class ChatAssistantService {
           stopWhen: stepCountIs(10),
           ...(signal !== undefined ? { abortSignal: signal } : {}),
           onChunk: () => call.firstToken(),
+          /**
+           * The abort handler for the branch `finishReason` does NOT reject on.
+           *
+           * Measured in ai@7.0.51 (dist/index.js:9209-9221): `flush` rejects the
+           * result promises only while `recordedSteps.length === 0`. This is the
+           * one `streamText` in the repo with `tools` and `stopWhen`, and a tool
+           * call ends a step, so as soon as the model has used a tool an abort
+           * takes the RESOLVE branch — the `finishReason.catch` below never
+           * fires, and `flush` goes on to notify `onEnd` (aliased from
+           * `onFinish` at :8785) with the null usage it substitutes when no
+           * `finish` part arrived. Without this the reservation was SETTLED at
+           * zero and the turn recorded `ok`, on a turn the user cancelled.
+           *
+           * The SDK notifies `onAbort` before it closes the controller
+           * (:9296-9304), so this runs first and `onFinish`'s `if (resolved)`
+           * guard stops the settle. Deliberately identical to the `.catch`
+           * below: both branches now end the same way, and both are idempotent.
+           */
+          onAbort: () => {
+            releaseConcurrency();
+            releaseReservation("stream_aborted_no_settle");
+            call.finish("cancelled");
+          },
           onError: ({ error }) => {
             if (signal?.aborted === true || isAbortError(error)) return;
             this.breaker.recordFailure();

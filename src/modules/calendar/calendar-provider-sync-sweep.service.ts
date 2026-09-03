@@ -7,9 +7,24 @@ import { forEachOrg } from "../../common/tenant";
 import type { ForEachOrgResult } from "../../common/tenant/for-each-org";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { ExternalCalendarSyncService, type PushConnection, type PushEventInput } from "./external-calendar-sync.service";
+import { connectionOwnerPredicate } from "../integrations/core/connection-owner.predicate";
 import { providerSyncPayloadSchema } from "./dto/provider-sync.schemas";
 
-const BATCH_LIMIT = 20;
+/**
+ * Per ORGANISATION, not per tick. A single global budget consumed inside `forEachOrg` —
+ * which enumerates tenants in `order by organizations.id` — let one busy tenant take the
+ * whole allowance every tick and starve every tenant after it, permanently, because the
+ * busy one refills between ticks. Pinned by `calendar-provider-sync-drain-reachability`.
+ */
+export const PER_ORG_CLAIM_LIMIT = 20;
+
+/**
+ * The ceiling on one whole tick. Each claimed row costs a provider round trip and the cron
+ * lease is 120s, so a tick has to end; a large multiple of the per-org allowance bounds it
+ * without reintroducing the starvation above.
+ */
+export const GLOBAL_CLAIM_LIMIT = 200;
+
 const LEASE_MS = 90_000;
 const MAX_ATTEMPTS = 5;
 const RETRY_BACKOFF_MS: readonly number[] = [0, 30_000, 120_000, 600_000, 1_800_000];
@@ -36,7 +51,7 @@ export class CalendarProviderSyncSweepService {
     const claimed: Array<typeof calendarProviderSyncQueue.$inferSelect> = [];
 
     const organizations = await forEachOrg(this.db, "calendar-provider-sync-sweep", async (tx, orgId) => {
-      const remaining = BATCH_LIMIT - claimed.length;
+      const remaining = Math.min(PER_ORG_CLAIM_LIMIT, GLOBAL_CLAIM_LIMIT - claimed.length);
       if (remaining <= 0) return;
       const rows = await tx
         .update(calendarProviderSyncQueue)
@@ -97,7 +112,7 @@ export class CalendarProviderSyncSweepService {
     const payload = parsed.data;
     const { userId } = payload;
 
-    const conn = await this.resolveConnection(row.orgId, row.connectionId);
+    const conn = await this.resolveConnection(row.orgId, row.connectionId, userId);
 
     if (row.operation === "delete") {
       if (!row.externalEventId) return;
@@ -107,15 +122,17 @@ export class CalendarProviderSyncSweepService {
       return;
     }
 
-    if (!row.eventId) return;
-
-    const eventRow = await this.db.query.calendarEvents.findFirst({
-      where: and(eq(calendarEvents.id, row.eventId), eq(calendarEvents.orgId, row.orgId)),
-      columns: {
-        id: true, title: true, description: true, startDate: true, endDate: true,
-        allDay: true, externalEventId: true, localVersion: true,
-      },
-    });
+    const eventId = row.eventId;
+    if (!eventId) return;
+    const eventRow = await runInNewTenantTransaction(this.db, row.orgId, (tx) =>
+      tx.query.calendarEvents.findFirst({
+        where: and(eq(calendarEvents.id, eventId), eq(calendarEvents.orgId, row.orgId)),
+        columns: {
+          id: true, title: true, description: true, startDate: true, endDate: true,
+          allDay: true, externalEventId: true, localVersion: true,
+        },
+      }),
+    );
     if (!eventRow) return;
 
     const pushInput: PushEventInput = {
@@ -137,16 +154,40 @@ export class CalendarProviderSyncSweepService {
         return;
       }
       const pushed = await this.sync.pushCreate(userId, conn, pushInput);
-      await runInNewTenantTransaction(this.db, row.orgId, async (tx) => {
-        await tx
+      const writtenBack = await runInNewTenantTransaction(this.db, row.orgId, (tx) =>
+        tx
           .update(calendarEvents)
           .set({
             integrationConnectionId: conn.id,
             externalEventId: pushed.externalEventId,
             meetingUrl: pushed.meetingUrl ?? null,
           })
-          .where(and(eq(calendarEvents.id, row.eventId!), eq(calendarEvents.orgId, row.orgId)));
-      });
+          .where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.orgId, row.orgId)))
+          .returning({ id: calendarEvents.id }),
+      );
+
+      // The push and the write-back cannot be one transaction, so the gap between them is
+      // a whole provider round trip wide. A delete inside that gap leaves the provider
+      // copy orphaned for ever: this update matches nothing and `deleteEvent` enqueued no
+      // delete of its own, because the row it removed did not yet carry an external id.
+      // The id the push returned is the only surviving handle on that copy. See
+      // `calendar-provider-sync-tenant-context.spec.ts`.
+      if (writtenBack.length === 0) {
+        await runInNewTenantTransaction(this.db, row.orgId, async (tx) => {
+          await tx.insert(calendarProviderSyncQueue).values({
+            orgId: row.orgId,
+            eventId: null,
+            connectionId: conn.id,
+            operation: "delete",
+            externalEventId: pushed.externalEventId,
+            payload: { userId },
+          });
+        });
+        this.logger.warn(
+          `calendar-provider-sync row ${row.id}: event ${eventId} (org=${row.orgId}) was gone by the ` +
+            `time ${pushed.externalEventId} came back from ${conn.toolkit}; queued a compensating delete.`,
+        );
+      }
       return;
     }
 
@@ -170,43 +211,73 @@ export class CalendarProviderSyncSweepService {
     }
   }
 
-  private async resolveConnection(orgId: string, connectionId: number): Promise<PushConnection> {
-    const rows = await this.db
-      .select({
-        id: userIntegrationConnections.id,
-        toolkit: userIntegrationConnections.toolkit,
-        composioConnectedAccountId: userIntegrationConnections.composioConnectedAccountId,
-      })
-      .from(userIntegrationConnections)
-      .where(
-        and(
-          eq(userIntegrationConnections.id, connectionId),
-          eq(userIntegrationConnections.orgId, orgId),
-          eq(userIntegrationConnections.status, "active"),
-          inArray(userIntegrationConnections.toolkit, ["googlecalendar", "outlook"]),
-        ),
-      )
-      .limit(1);
+  /**
+   * Resolves the connection a queue row names, inside the row's own tenant transaction.
+   *
+   * `forEachOrg` sets `app.organization_id` only for the duration of its own callback,
+   * and that callback is used above purely to CLAIM rows. Everything from here on runs
+   * in a `@Public()` cron request with no ambient tenant context, so a read issued on
+   * `this.db` goes to the pool with no GUC — and `user_integration_connections` is behind
+   * `org_id = app.current_org_id()`, which RAISES 42501 rather than returning nothing.
+   * Measured on scratch_head_1010 as `streamline_app`; this was the first statement in
+   * the processing loop, so every claimed row failed here and retried into FAILED.
+   *
+   * The predicate also carries the connection's OWNER, not just its org: the account —
+   * never the `userId` argument beside it — selects the calendar the event lands in.
+   * `createEvent` refuses a connection the caller does not own, so this is defence in
+   * depth for rows written before that check existed. A queue row is only ever enqueued by
+   * the event's creator, so the payload's userId and the connection's owner must agree.
+   */
+  private async resolveConnection(
+    orgId: string,
+    connectionId: number,
+    actorUserId: string,
+  ): Promise<PushConnection> {
+    const rows = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx
+        .select({
+          id: userIntegrationConnections.id,
+          toolkit: userIntegrationConnections.toolkit,
+          composioConnectedAccountId: userIntegrationConnections.composioConnectedAccountId,
+        })
+        .from(userIntegrationConnections)
+        .where(
+          and(
+            eq(userIntegrationConnections.id, connectionId),
+            eq(userIntegrationConnections.orgId, orgId),
+            // The queue row carries the actor's user id, not a membership id, so this is
+            // the predicate's user_id arm. It is the same shared rule createEvent uses.
+            connectionOwnerPredicate(actorUserId, null),
+            eq(userIntegrationConnections.status, "active"),
+            inArray(userIntegrationConnections.toolkit, ["googlecalendar", "outlook"]),
+          ),
+        )
+        .limit(1),
+    );
     const row = rows[0];
     if (!row || (row.toolkit !== "googlecalendar" && row.toolkit !== "outlook"))
-      throw new Error(`Calendar connection ${connectionId} not found or inactive`);
+      throw new Error(`Calendar connection ${connectionId} not found, inactive, or not the actor's`);
     return { id: row.id, toolkit: row.toolkit, composioConnectedAccountId: row.composioConnectedAccountId };
   }
 
   private async hasNewerPendingUpdateFor(orgId: string, eventId: number, currentRowId: number): Promise<boolean> {
-    const rows = await this.db
-      .select({ id: calendarProviderSyncQueue.id })
-      .from(calendarProviderSyncQueue)
-      .where(
-        and(
-          eq(calendarProviderSyncQueue.orgId, orgId),
-          eq(calendarProviderSyncQueue.eventId, eventId),
-          eq(calendarProviderSyncQueue.operation, "update"),
-          inArray(calendarProviderSyncQueue.state, ["PENDING", "IN_FLIGHT"]),
-          gt(calendarProviderSyncQueue.id, currentRowId),
-        ),
-      )
-      .limit(1);
+    // Same reason as resolveConnection: calendar_provider_sync_queue is RLS-protected and
+    // this runs outside forEachOrg's callback, so it needs its own tenant transaction.
+    const rows = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx
+        .select({ id: calendarProviderSyncQueue.id })
+        .from(calendarProviderSyncQueue)
+        .where(
+          and(
+            eq(calendarProviderSyncQueue.orgId, orgId),
+            eq(calendarProviderSyncQueue.eventId, eventId),
+            eq(calendarProviderSyncQueue.operation, "update"),
+            inArray(calendarProviderSyncQueue.state, ["PENDING", "IN_FLIGHT"]),
+            gt(calendarProviderSyncQueue.id, currentRowId),
+          ),
+        )
+        .limit(1),
+    );
     return rows.length > 0;
   }
 

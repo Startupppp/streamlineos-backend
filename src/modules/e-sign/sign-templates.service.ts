@@ -35,8 +35,6 @@ export class SignTemplatesService {
         category: input.category,
         ownerMembershipId,
         templateJson: input.templateJson,
-        restrictedToRoles: input.restrictedToRoles,
-        restrictedToTeams: input.restrictedToTeams,
       })
       .returning();
 
@@ -62,7 +60,7 @@ export class SignTemplatesService {
     ]);
 
     const templateJson: Record<string, unknown> = { ...buildTemplateSnapshot({ envelope, documents, recipients, fields }) };
-    return this.create(orgId, ownerMembershipId, { name, templateJson, restrictedToRoles: [], restrictedToTeams: [] });
+    return this.create(orgId, ownerMembershipId, { name, templateJson });
   }
 
   async update(orgId: string, templateId: number, input: UpdateTemplateInput, actor: RequestActorContext) {
@@ -93,8 +91,9 @@ export class SignTemplatesService {
         category: template.category,
         ownerMembershipId: actor.membershipId,
         templateJson: template.templateJson,
-        restrictedToRoles: template.restrictedToRoles,
-        restrictedToTeams: template.restrictedToTeams,
+        // `restrictedToRoles` / `restrictedToTeams` are deliberately NOT copied.
+        // They were never enforced anywhere, and propagating them into new rows
+        // spreads a setting that looks like an access control and is not one.
       })
       .returning();
     return copy;

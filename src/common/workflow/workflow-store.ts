@@ -308,10 +308,7 @@ export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> 
          * at it. Left out of the projection, every step of every workflow reports
          * under whatever correlation id the cron tick happened to carry.
          */
-        correlationId:
-          record.correlation_id === null || record.correlation_id === undefined
-            ? null
-            : String(record.correlation_id),
+        correlationId: record.correlation_id as string | null,
         attempt: Number(record.attempt ?? 0),
         maxAttempts: Number(record.max_attempts ?? 5),
       });

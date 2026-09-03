@@ -6,9 +6,9 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { randomBytes, createHash } from "node:crypto";
 import { randomUUID } from "node:crypto";
 import { apiKeys } from "../../../db/schema/common/auth-session-security";
+import { generateApiToken } from "./api-token-key";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -81,9 +81,7 @@ export class ApiTokensService {
   }
 
   async createToken(orgId: string, userId: string, input: CreateApiTokenInput) {
-    const rawKey = `sk_${randomBytes(32).toString("hex")}`;
-    const keyPrefix = rawKey.slice(0, 10);
-    const keyHash = createHash("sha256").update(rawKey).digest("hex");
+    const { rawKey, keyPrefix, keyHash } = generateApiToken();
 
     const [created] = await this.db
       .insert(apiKeys)

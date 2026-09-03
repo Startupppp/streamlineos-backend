@@ -173,13 +173,28 @@ export type UpdateFieldInput = z.infer<typeof updateFieldSchema>;
 
 // ---- Templates ----
 
+/**
+ * `restrictedToRoles` / `restrictedToTeams` used to be here and are gone.
+ *
+ * Both were written to `sign_templates`, copied on duplicate and returned by the
+ * read endpoints, and used as a predicate nowhere: `list()` returned every
+ * template in the organisation, `get()` returned any of them, and `instantiate()`
+ * never consulted either. An administrator who restricted a template to a role
+ * got a setting that persisted, round-tripped, and gated nothing.
+ *
+ * Accepting them is what made that a security claim rather than an empty field,
+ * so acceptance is what was removed. Enforcement was not added instead: the
+ * stored values are free strings with no foreign key and no declared vocabulary
+ * — role slug, role name, team id and team name are all consistent with what is
+ * on disk — and guessing wrong on an authority predicate locks people out. The
+ * columns remain so existing values survive for whoever implements this.
+ * See `../sign-template-restrictions.spec.ts`.
+ */
 export const createTemplateSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).optional(),
   category: z.string().trim().max(100).optional(),
   templateJson: z.record(z.string(), z.unknown()).default({}),
-  restrictedToRoles: z.array(z.string().trim().max(100)).max(50).default([]),
-  restrictedToTeams: z.array(z.string().trim().max(100)).max(50).default([]),
 }).strict();
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 

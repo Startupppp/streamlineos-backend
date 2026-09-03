@@ -8,6 +8,7 @@ import { accTaxPayments } from "../../../db/schema/accounting/finance-tax";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
+import { baseCreditAmount, baseDebitAmount } from "../../accounting/core/journal-base-amount";
 import type { TaxDashboardQuery } from "./dto/tax-reports.schemas";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
@@ -227,8 +228,8 @@ export class TaxDashboardService {
       const accountId = await this.posting.resolveSystemAccount(orgId, purpose);
       const rows = await this.db
         .select({
-          totalDebit: sum(journalLines.debit),
-          totalCredit: sum(journalLines.credit),
+          totalDebit: sum(baseDebitAmount),
+          totalCredit: sum(baseCreditAmount),
         })
         .from(journalLines)
         .where(and(eq(journalLines.orgId, orgId), eq(journalLines.accountId, accountId)));

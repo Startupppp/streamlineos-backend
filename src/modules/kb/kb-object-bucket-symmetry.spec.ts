@@ -111,8 +111,14 @@ afterEach(() => {
 
 describe("KB sources — the delete addresses the bucket the upload used", () => {
   function sourcesDb(removed: Record<string, unknown>[]) {
+    // `createNote`/`createFile` write the row and its `kb.content.index` outbox event in one
+    // transaction, so the stub has to invoke the callback — a bare jest.fn() would silently
+    // void every assertion inside it (root CLAUDE.md §11).
+    const inserter = { values: () => ({ returning: async () => [{ id: 1 }] }) };
+    const tx = { insert: () => inserter };
     return {
-      insert: () => ({ values: () => ({ returning: async () => [{ id: 1 }] }) }),
+      transaction: async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx),
+      insert: () => inserter,
       update: () => ({
         set: () => ({
           where: () => thenable(removed, { returning: async () => removed }),
@@ -168,9 +174,12 @@ describe("KB sources — the delete addresses the bucket the upload used", () =>
             fileKey: put.key,
             mimeType: "text/plain",
             status: "ready",
+            deletedAt: null,
           }),
         },
       },
+      // The adapter now settles the source's terminal status, so it writes as well as reads.
+      update: () => ({ set: () => ({ where: async () => undefined }) }),
     };
     const adapter = new KbSourceAdapter(
       adapterDb as never,
@@ -295,18 +304,23 @@ describe("KB article attachments — the read stays on the bucket /storage/uploa
     );
     const put = only(sent, "PutObjectCommand");
 
+    // `indexAttachment` resolves the attachment and its article's acl_revision in one
+    // joined select, so the stub answers that chain rather than a relational findFirst.
+    const attachmentRow = {
+      articleId: 3,
+      fileKey: uploaded.key,
+      mimeType: "text/plain",
+      fileName: "handbook.txt",
+      articleAclRevision: 4,
+    };
     const db = {
-      query: {
-        kbArticleAttachments: {
-          findFirst: async () => ({
-            id: 7,
-            articleId: 3,
-            fileKey: uploaded.key,
-            mimeType: "text/plain",
-            fileName: "handbook.txt",
+      select: () => ({
+        from: () => ({
+          leftJoin: () => ({
+            where: () => ({ limit: async () => [attachmentRow] }),
           }),
-        },
-      },
+        }),
+      }),
       delete: () => ({ where: async () => undefined }),
     };
     const svc = new KbAttachmentIndexingService(

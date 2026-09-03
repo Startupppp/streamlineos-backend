@@ -6,6 +6,7 @@ import type { Db } from "../../db/drizzle.module";
 import { registerAfterCommit } from "../../common/tenant";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { logger } from "../../common/logger/logger.service";
+import { keysetBeforeId } from "../../common/pagination/keyset";
 import type { MailFolder, MailMessageSummary } from "./dto/mail-schemas";
 import type { MailMetadataCursor } from "./providers/mail-metadata-cursor";
 
@@ -182,6 +183,13 @@ export class MailMetadataService {
    * the row is filtered out) — which is the correct behaviour, not an accident.
    * A null-dated cursor is still inside that leading block, so it takes the
    * remaining null-dated rows and then everything dated.
+   *
+   * The dated branch goes through `keysetBeforeId` rather than a `sql` template
+   * of its own. The right-hand side of a keyset comparison is a value, and a
+   * value interpolated into a template reaches the driver with no type
+   * attached — postgres re-parses the cursor's `date` from text instead of
+   * round-tripping it through the same column encoder the row came back
+   * through, which is how a boundary row starts repeating or getting skipped.
    */
   private keysetCondition(after: MailMetadataCursor): SQL {
     if (after.d === null) {
@@ -191,7 +199,10 @@ export class MailMetadataService {
       );
       return clause ?? sql`true`;
     }
-    return sql`(${mailMessageMetadata.date}, ${mailMessageMetadata.id}) < (${after.d}::timestamptz, ${after.i})`;
+    return keysetBeforeId(mailMessageMetadata.date, mailMessageMetadata.id, {
+      sortValue: after.d,
+      id: String(after.i),
+    });
   }
 
   async listCached(

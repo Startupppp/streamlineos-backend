@@ -8,10 +8,14 @@ import { DashboardLeaveService } from "./dashboard-leave.service";
 import { DashboardAnnouncementsService } from "./dashboard-announcements.service";
 import { DashboardCrmService } from "./dashboard-crm.service";
 import { DashboardProjectService } from "./dashboard-project.service";
-import { NotificationsModule } from "../notifications/notifications.module";
 
+/**
+ * `NotificationsModule` was imported only for `DashboardPersonalService`'s
+ * unread-notification count, which was deleted as dead: the number reached no
+ * client and was the most expensive query on the Home surface. Nothing under
+ * `dashboard/` injects `NotificationsService` any more.
+ */
 @Module({
-  imports: [NotificationsModule],
   controllers: [DashboardController],
   providers: [
     DashboardStatsService,

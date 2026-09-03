@@ -325,10 +325,6 @@
       "as": 5,
       "nonNull": 0
     },
-    "src/modules/build/core/projects-budget.service.ts": {
-      "as": 2,
-      "nonNull": 0
-    },
     "src/modules/build/core/projects-changelog.service.ts": {
       "as": 0,
       "nonNull": 1
@@ -376,10 +372,6 @@
     "src/modules/build/entity/build-entity.actions.ts": {
       "as": 1,
       "nonNull": 0
-    },
-    "src/modules/calendar/calendar-provider-sync-sweep.service.ts": {
-      "as": 0,
-      "nonNull": 1
     },
     "src/modules/calendar/external-event-normalizers.ts": {
       "as": 1,
@@ -1712,10 +1704,6 @@
     "src/modules/support/core/support-macros.service.ts": {
       "as": 2,
       "nonNull": 1
-    },
-    "src/modules/support/core/support-sla.controller.ts": {
-      "as": 2,
-      "nonNull": 0
     },
     "src/modules/support/core/support-tickets.service.ts": {
       "as": 2,

@@ -97,18 +97,25 @@ describe("NotificationOutboxRelayService", () => {
   });
 
   /**
-   * The whole reason `dedupeKey` is threaded through. `chat.message.direct` sets
+   * The whole reason the row's key is threaded through. `chat.message.direct` sets
    * `dedupeWindowSeconds: 0`, so without this the delivery idempotency key falls back to
    * a fresh uuid, the unique index never fires, and a replayed row sends a second DM.
+   *
+   * It travels as `replayKey`, not `dedupeKey`. The row's key is a random UUID for any
+   * emission that supplied no key of its own — 84 of 111 emit sites — and passing it as
+   * `dedupeKey` made it WIN over the event's declared time bucket in
+   * `buildNotifIdempotencyKey`, so `dedupeWindowSeconds` applied to almost nothing.
    */
-  it("passes the row's dedupe key down so a replay cannot double-deliver", async () => {
+  it("passes the row's key down as a replay key so a replay cannot double-deliver", async () => {
     claimed.push(row());
 
     await svc.flush();
 
     expect(emitNow).toHaveBeenCalledWith(
-      expect.objectContaining({ dedupeKey: "chat.message.direct:::user-2:intent-abc" }),
+      expect.objectContaining({ replayKey: "chat.message.direct:::user-2:intent-abc" }),
     );
+    // And NOT as a caller dedupe key, which is what overrode the window.
+    expect(emitNow.mock.calls[0]?.[0]).not.toHaveProperty("dedupeKey");
   });
 
   it("keeps a failed intent for another pass instead of dropping it", async () => {

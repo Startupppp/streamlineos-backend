@@ -11,8 +11,15 @@ export const webhookEnvelopeSchema = z.object({
 export const paymentWebhookPaymentSchema = z.object({
   id: z.string().min(1),
   orderId: z.string().optional(),
-  amount: z.number(),
-  fee: z.number().optional(),
+  /**
+   * MINOR UNITS of `currency` — paise for INR, cents for USD, whole yen for JPY, thousandths
+   * for KWD. A minor unit is indivisible, so `.int()` is part of the contract and not a
+   * tightening for its own sake: without it an adapter emitting MAJOR units was accepted and
+   * silently rounded into an integer column, a 100x error with no diagnostic.
+   */
+  amount: z.number().int(),
+  /** MINOR UNITS of `currency`, same as `amount`. */
+  fee: z.number().int().optional(),
   currency: z.string(),
   status: z.string(),
   method: z.string().optional(),

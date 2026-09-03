@@ -160,6 +160,10 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "KB Ask, decorated for the same reason and the largest hold of the four: KbAskService.ask awaits gateway.invokeTextWithUsage after a vector retrieval, so the request transaction spanned retrieval AND the provider call. It is now split into three short tenant transactions — gatherContext (orgHasIndexedContent, retrieveTopArticles, retrieveTopSources, retrieveAttachmentSnippets) commits BEFORE the provider call; the kb_events write and resolveCitations run in one afterwards; and the controller's own conversation create and two appendToConversation writes each open their own. The ACL filtering is unchanged and still in the SQL predicate on both sides, so the post-call citation re-verification still runs under the asker's own visibility. Creating the conversation is deliberately no longer atomic with the answer — it cannot be, the provider call sits between them — and an empty conversation from a failed answer is a better outcome than a connection held across the provider",
   ],
   [
+    "src/modules/kb/retrieval/kb-page-indexing.controller.ts#reindexPage,reindexAllPages",
+    "the two KB reindex handlers, audited 2026-09-03. They are the batch shape of the AI entries above, and the worst hold of the set: KbIndexingService.reindexAllPages loops `for (const page of batch) await this.indexPage(...)` with REINDEX_ALL_BATCH_SIZE = 100, and every indexPage awaits an embedding round trip through embedChunksWithResumption -> aiGateway.embedBatchWithCredit. Under the request transaction that is up to a hundred sequential provider calls with one pooled connection checked out and idle in transaction, against the 60s idle_in_transaction_session_timeout withTenant sets — ten to sixty seconds in, the timeout kills the transaction mid-embed with every embedding already issued already billed, and under pool pressure that is a tenant-wide 500 rather than one slow request. POST :pageId/reindex is the same shape with one page instead of a hundred. Removing the transaction is only half of it and the missing half fails SILENTLY: kb_pages' policy is `org_id = app.current_org_id_or_null() OR public_token = app.current_public_token_or_null()` (read from pg_policy, not assumed), and the _or_null variant RETURNS NULL where app.current_org_id() raises 42501, so the bare listing at the top of reindexAllPages would have matched nothing and answered {\"reindexed\":0,\"nextPageId\":null} for a tenant with a thousand pages. That listing now opens its own short runInTenantTransaction(db, fn, { orgId }) which commits before the loop, and each indexPage, loadPageChunkState and replacePageBodyChunks already opened their own — so nothing on the path reaches the pool without a tenant GUC, and no transaction spans an embedding call. Both halves are pinned by kb-page-reindex-placement.db.spec.ts against a real Postgres. AiRequestAbortInterceptor is declared on the class for the same PRD-C091 reason as the entries above: the decorator removes the tenant context's disconnect signal, which getAmbientAiAbortSignal was the gateway's only cancellation source",
+  ],
+  [
     "src/modules/kb/wiki/kb-page-ai.controller.ts#summarizeStream,askStream,improveStream,suggestRelatedStream",
     "the four STREAMED wiki actions, the twin of kb-article-ai.controller and the same shape: respondWithAiTextStream awaits the pipe, so the request transaction would be held across the provider stream. KbPageAiService.stream resolves accessible project ids and the page visibility predicate inside loadPage's runInTenantTransaction(db, fn, { orgId }) that commits before the provider call; kb-doc-ai-stream.spec.ts drives both surfaces from one table so the two cannot diverge",
   ],
@@ -174,6 +178,22 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
   [
     "src/modules/contacts/contacts.controller.ts#exportCsv",
     "GET /contacts/export is the same paged-generator export as audit-log: ContactsService.exportCsvChunks opens one runInTenantTransaction(db, fn, { orgId }) per 500-row keyset page, and contacts.service.spec.ts pins one transaction per page. The DataScope is resolved first through AccessService.scopeFor, which opens its own explicit tenant transaction. The controller's other eight handlers keep the request transaction",
+  ],
+  // The two below are the AI shape again, and they arrived the other way round
+  // from the KB pair: the CODE was fixed first (the decorator plus a short
+  // runInTenantTransaction in the service) and the audit reason was never
+  // written, so this check failed on six correctly-shaped handlers while their
+  // stale PRE-EXISTING, UNAUDITED entries still sat in
+  // PROVIDER_IN_TRANSACTION_ALLOWLIST excusing the defect they no longer had.
+  // Those entries are deleted; these replace them. Handler-scoped, so the sixth
+  // route somebody adds to either controller has to be argued on its own.
+  [
+    "src/modules/e-sign/sign-ai.controller.ts#summarize",
+    "e-sign summarize, audited 2026-09-03: the only handler on this controller, and the longest hold of the set — SignAiService.summarizeDocument fetches each document from the object store and drains the whole stream, extracts its text on the CPU, and only then awaits gateway.invokeText. Under the request transaction a pooled connection sat idle in transaction across all three, against the 60s idle_in_transaction_session_timeout withTenant sets from resolveTransactionGuards (pool.config.ts:122) and a direct Neon endpoint whose safe max is 10 connections (pool.config.ts:15), so a slow provider is a tenant-wide pool exhaustion, not one slow request. The envelope visibility check (mustGetVisibleEnvelope, which carries the caller's EnvelopeViewScope) and the signDocuments read now share ONE short runInTenantTransaction(db, fn, { orgId }) that commits before the store fetch begins; resolveEnvelopeViewScope runs through AccessService in the controller before that, and the gateway's credit reservation, settlement and ai_usage_logs insert each pass an explicit orgId, so nothing on the path reaches the pool without a tenant GUC. AiRequestAbortInterceptor is declared on the class because the decorator removes the tenant context's disconnect signal that getAmbientAiAbortSignal was reading — without it the released connection would have been bought with an uncancellable, still-billed provider call (PRD-C091)",
+  ],
+  [
+    "src/modules/timesheets/core/timesheets-ai.controller.ts#summarize,draftRejectionReason,describeEntry,billingNarrative,reportsNarrative",
+    "the five timesheets AI actions, audited 2026-09-03 and the same fix as the KB pair above: each one ends in an AiGatewayService call, and under the request transaction that provider round trip was made with a pooled connection still checked out and idle in transaction, against the 60s idle_in_transaction_session_timeout withTenant sets. TimesheetsAiService now routes every evidence read through readEvidence, one short runInTenantTransaction(db, fn, { orgId }) that commits before the gateway call — periods.getPeriod for summarize and draftRejectionReason, reports.getOverview for reportsNarrative, billing.getBillableWorkForNarrative for billingNarrative. describeEntry reads nothing at all: its prompt is built entirely from the request body, the same shape as kb-authoring. The delegate services keep their signatures because this.db is the tenant-aware proxy and resolves to the transaction opened here. Everything the gateway itself touches — credit reservation, settlement and the ai_usage_logs insert — already passes an explicit orgId. AiRequestAbortInterceptor is declared on the class for the same PRD-C091 reason as the e-sign entry above: the decorator removes the tenant context's disconnect signal, which was the only cancellation source these five had",
   ],
 ]);
 
@@ -353,10 +373,12 @@ export const PROVIDER_IN_TRANSACTION_ALLOWLIST = new Map([
     "src/modules/deals/deals.controller.ts#updateDeal",
     "PRE-EXISTING, UNAUDITED — updateDeal -> DealsService.updateDeal -> AutomationService.runAutomationsForEvent -> AutomationService.runRule -> AutomationService.executeAction -> AiNodeExecutorService.executeNode -> AiGatewayService.invokeStructured",
   ],
-  [
-    "src/modules/e-sign/sign-ai.controller.ts#summarize",
-    "PRE-EXISTING, UNAUDITED — summarize -> SignAiService.summarizeDocument -> AiGatewayService.invokeText",
-  ],
+  // e-sign summarize and the five timesheets handlers used to sit here as
+  // PRE-EXISTING, UNAUDITED. They are fixed, so they no longer produce a finding
+  // of this kind at all and their entries are DELETED rather than left behind:
+  // a dead excuse is worse than no excuse, because it silently re-excuses the
+  // same handler the day somebody drops the decorator. Their audited rationales
+  // now live in NO_TENANT_TRANSACTION_ALLOWLIST, where the fixed shape belongs.
   [
     "src/modules/feedbucket/feedbucket-public.controller.ts#aiAssist",
     "PRE-EXISTING, UNAUDITED — aiAssist -> FeedbucketAiService.analyzePublic -> FeedbucketAiService.runVisionAnalysis -> AiGatewayService.invokeStructuredWithImageWithUsage",
@@ -428,10 +450,6 @@ export const PROVIDER_IN_TRANSACTION_ALLOWLIST = new Map([
   [
     "src/modules/support/core/support-kb.controller.ts#askQuestion,reindexArticle,reindexAll",
     "PRE-EXISTING, UNAUDITED — askQuestion -> KbAskService.ask -> AiGatewayService.invokeTextWithUsage; reindexArticle -> KbArticleReindexService.reindexArticle -> KbAttachmentIndexingService.indexAttachment -> KbAttachmentIndexingService.embedInBatches -> AiGatewayService.embedBatchWithCredit; reindexAll -> KbArticleReindexService.reindexAll -> KbArticleReindexService.reindexArticle -> KbAttachmentIndexingService.indexAttachment -> KbAttachmentIndexingService.embedInBatches -> AiGatewayService.embedBatchWithCredit",
-  ],
-  [
-    "src/modules/timesheets/core/timesheets-ai.controller.ts#summarize,draftRejectionReason,describeEntry,billingNarrative,reportsNarrative",
-    "PRE-EXISTING, UNAUDITED — summarize -> TimesheetsAiService.summarizePeriod -> AiGatewayService.invokeText; draftRejectionReason -> TimesheetsAiService.draftRejectionReason -> AiGatewayService.invokeTextWithUsage; describeEntry -> TimesheetsAiService.describeEntry -> AiGatewayService.invokeTextWithUsage; billingNarrative -> TimesheetsAiService.billingNarrative -> AiGatewayService.invokeTextWithUsage; reportsNarrative -> TimesheetsAiService.reportsNarrative -> AiGatewayService.invokeTextWithUsage",
   ],
 ]);
 

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   chatAttachments,
@@ -197,6 +197,15 @@ export class ChatMessagesService {
           }));
         }
 
+        // `isNotNull(archivedAt)` is what turns this from an O(members) write into a
+        // no-op in the overwhelmingly common case. Without it every single message
+        // rewrote EVERY member row of the channel and held a row lock on each until
+        // commit: 5,000 row updates and 5,000 locks per message in a 5,000-member
+        // channel, two concurrent sends serialising on the whole roster, and every
+        // markRead / mute / favourite on that channel queueing behind an in-flight send.
+        // Table bloat grew as messages x members. The predicate does not change what the
+        // statement means — a row with `archived_at` already NULL is set to NULL — it
+        // only stops the rows that need nothing from being written.
         await tx
           .update(chatChannelMembers)
           .set({ archivedAt: null })
@@ -204,6 +213,7 @@ export class ChatMessagesService {
             and(
               eq(chatChannelMembers.orgId, orgId),
               eq(chatChannelMembers.channelId, channelId),
+              isNotNull(chatChannelMembers.archivedAt),
             ),
           );
 

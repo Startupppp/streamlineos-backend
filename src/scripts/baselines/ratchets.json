@@ -157,6 +157,18 @@
         "value": 40,
         "direction": "floor"
       },
+      "MIN_COMMON_FILES": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/common, which joined this gate's corpus on 2026-09-03 (190 measured). Six files there carry loop-internal DB calls and had never been classified, because the gate read src/modules only."
+      },
+      "MIN_DB_FILES": {
+        "value": 300,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/db, which joined this gate's corpus on 2026-09-03 (362 measured)."
+      },
       "MIN_INSPECTED_LOOPS": {
         "value": 2600,
         "direction": "floor"
@@ -336,6 +348,14 @@
         "direction": "floor"
       }
     },
+    "check-migration-immutability.mjs": {
+      "MIN_SEALED_ENTRIES": {
+        "value": 600,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Entries the migration seal must cover before a clean result means anything. Set at 600 against a journal of 684; the journal is append-only, so this may only rise."
+      }
+    },
     "check-migration-rollback.mjs": {
       "MIN_SQL_FILES": {
         "value": 380,
@@ -406,6 +426,18 @@
       "MIN_FILES": {
         "value": 1800,
         "direction": "floor"
+      },
+      "MIN_COMMON_FILES": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/common, which joined this gate's corpus on 2026-09-03 (190 measured). It carries 3 of the 100 growing sites, all previously outside the scan."
+      },
+      "MIN_DB_FILES": {
+        "value": 300,
+        "direction": "floor",
+        "owner": "perf/db owner",
+        "reason": "Per-root floor for src/db, which joined this gate's corpus on 2026-09-03 (362 measured)."
       }
     },
     "check-namespace-coverage.mjs": {
@@ -684,12 +716,32 @@
     },
     "check-unbounded-reads.mjs": {
       "MIN_FILES": {
-        "value": 500,
-        "direction": "floor"
+        "value": 2700,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "RAISED from 500 to 2700 on 2026-09-03 when src/common and src/db joined the corpus (2,871 files measured across the three roots). At 500 the floor could not have detected either new root resolving to nothing."
       },
       "MIN_MODULES": {
         "value": 40,
         "direction": "floor"
+      },
+      "MIN_COMMON_FILES": {
+        "value": 150,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Per-root floor for src/common (191 measured). An aggregate floor cannot tell one root resolving to nothing from the repository shrinking, which is how this gate stayed blind to the asynchronous substrate."
+      },
+      "MIN_DB_FILES": {
+        "value": 300,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Per-root floor for src/db (364 measured)."
+      },
+      "MAX_SUPPRESSED_UNBOUNDED": {
+        "value": 651,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Unbounded reads hidden behind a FALSE-POSITIVE verdict, counted as instances. A verdict is keyed per FILE and carries one sentence, so a read added to an already-blessed file inherits a justification never written about it — /clients/clients.service.ts' unbounded CSV export of every client in the org sat under 'client reads bounded by clientId+orgId (single-record lookups)' and no other check in the gate moved. Measured at 651 with no headroom; lower it when you bound a read, and raising it means naming the newly hidden read here."
       },
       "ORDER_BY_LOOKBACK": {
         "value": 25,

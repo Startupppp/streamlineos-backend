@@ -8,6 +8,7 @@ import {
   organizationMembers,
   notificationOutbox,
 } from "../../db/schema";
+import { assertOwnedCalendarConnection } from "./calendar-sync-connection";
 import type { TenantTx } from "../../db/drizzle.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -115,6 +116,13 @@ export class CalendarService {
           ),
         });
         if (!creatorMembership) throw new Error("Active organization membership required");
+
+        // A caller-supplied connection id is an object reference, so it is authorized
+        // before anything is written against it. See calendar-sync-connection.ts.
+        const syncConnectionId = input.syncConnectionId;
+        if (syncConnectionId !== undefined)
+          await assertOwnedCalendarConnection(tx, orgId, userId, creatorMembership.id, syncConnectionId);
+
         const conflicts = await this.conflict.checkConflictsInTx(
           tx,
           orgId,

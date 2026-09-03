@@ -97,7 +97,13 @@ function tableName(table: unknown): string {
  * A database stand-in that answers the four reads the workflow makes and records
  * every write, so the assertions are about behaviour rather than about SQL.
  */
-function makeDb(recorder: Recorder, existingParty: string | null, payload = FIXTURE): Db {
+/**
+ * `payload` is `unknown` because the column is: `inbound_events.payload` is jsonb, and the
+ * whole point of the parse in `loadEvent` is that what comes back is not known to be an
+ * `InboundCommunicationEvent` until it has been checked. Typing this parameter as the
+ * happy shape would make a drifted-payload test unwritable.
+ */
+function makeDb(recorder: Recorder, existingParty: string | null, payload: unknown = FIXTURE): Db {
   let selectCall = 0;
 
   return {
@@ -388,5 +394,64 @@ describe("inbound ingress, end to end from a fixture", () => {
       "shadow-score",
       "mark-processed",
     ]);
+  });
+  /**
+   * The receipt is the read half of a jsonb round-trip whose write half is
+   * `inbound-ingress.service.ts`. HEAD cast it: `row.payload as unknown as
+   * InboundCommunicationEvent`. A cast over a stored shape cannot fail, so a row written by
+   * an earlier release deserialised into a LIE rather than an error and the whole pipeline
+   * — sender, identifier kind, participants, the activity's kind — was computed from
+   * fields that might not be there. The lesson is one file away, in
+   * `adapters/mail-to-inbound-event.ts`: "a message somebody marked private is filed into
+   * the CRM with nobody the wiser".
+   */
+  describe("the receipt is parsed, not cast", () => {
+    it("refuses a stored payload that does not match the seam's contract, instead of filing on it", async () => {
+      // A channel this release no longer knows. Under the cast, `activityKindFor` had no arm
+      // for it and the activity was filed with an undefined kind, silently.
+      const recorder: Recorder = { inserts: [], updates: [] };
+      const drifted = { ...FIXTURE, channel: "sms" };
+
+      await expect(runWorkflow(makeDb(recorder, null, drifted), memoryStore())).rejects.toThrow(
+        /receipt receipt-1 payload does not match the inbound-event contract/,
+      );
+
+      // And nothing at all was written on the strength of it.
+      expect(recorder.inserts).toHaveLength(0);
+      expect(recorder.updates).toHaveLength(0);
+    });
+
+    it("names where the payload drifted, and never echoes a participant address", async () => {
+      const recorder: Recorder = { inserts: [], updates: [] };
+      const drifted = {
+        ...FIXTURE,
+        participants: [{ address: "priya@example.com", role: "sender" }],
+      };
+
+      const thrown: unknown = await runWorkflow(
+        makeDb(recorder, null, drifted),
+        memoryStore(),
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      expect(thrown).toBeInstanceOf(Error);
+      const message = thrown instanceof Error ? thrown.message : "";
+      // A dead-letter has to say WHERE, or an operator is left diffing releases by hand.
+      expect(message).toContain("participants.0.role");
+      // A Zod issue can echo the offending value. An address is personal data, and the
+      // reason a delivery dead-lettered is not the place for it.
+      expect(message).not.toContain("priya@example.com");
+    });
+
+    it("(bite proof) the fixture every other test here drives DOES parse — the two above are not vacuous", async () => {
+      const recorder: Recorder = { inserts: [], updates: [] };
+
+      await expect(
+        runWorkflow(makeDb(recorder, null, FIXTURE), memoryStore()),
+      ).resolves.toBeUndefined();
+      expect(insertsInto(recorder, "activities")).toHaveLength(1);
+    });
   });
 });

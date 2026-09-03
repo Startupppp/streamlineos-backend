@@ -56,11 +56,15 @@ function makeServiceHarness(options: {
   let selectCall = 0;
   const tx = {
     select: jest.fn().mockImplementation(() => {
+      // 0 is the connection re-read under RLS (migration 1057 moved it here from the
+      // untenanted pool, where it raised 42501), 1 the event, 2 the pending-sync probe.
       const callIdx = selectCall++;
       return {
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue(callIdx === 0 ? events : []),
+            limit: jest
+              .fn()
+              .mockResolvedValue(callIdx === 0 ? connections : callIdx === 1 ? events : []),
           }),
         }),
       };
@@ -83,16 +87,17 @@ function makeServiceHarness(options: {
     return cb(tx as never);
   });
 
+  // The pool handle a @Public() request actually gets carries no tenant GUC, so a row
+  // read against user_integration_connections raises 42501 (see
+  // calendar-provider-webhook-tenant-guc.db.spec.ts, which measures it). The only thing
+  // that can answer here is the SECURITY DEFINER resolver, and it returns org_id alone.
   const db = {
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockImplementation(() => {
-            lookups.count += 1;
-            return Promise.resolve(connections);
-          }),
-        }),
-      }),
+    select: jest.fn().mockImplementation(() => {
+      throw new Error("untenanted select on user_integration_connections would raise 42501");
+    }),
+    execute: jest.fn().mockImplementation(() => {
+      lookups.count += 1;
+      return Promise.resolve([{ org_id: connections[0]?.orgId ?? null }]);
     }),
   };
 

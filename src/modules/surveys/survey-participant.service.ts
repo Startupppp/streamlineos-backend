@@ -1,11 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes, createHash } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { surveyParticipants } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { assertSurveyInOrg } from "./survey-tenant";
 import type { ImportParticipantsInput, ListParticipantsInput } from "./dto/survey-participants.schemas";
+import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 
 const PARTICIPANT_INSERT_CHUNK = 500;
 
@@ -22,12 +23,20 @@ export class SurveyParticipantService {
     const conditions = [eq(surveyParticipants.orgId, orgId), eq(surveyParticipants.surveyId, surveyId)];
     if (filters.status) conditions.push(eq(surveyParticipants.status, filters.status));
 
-    return this.db.query.surveyParticipants.findMany({
-      where: and(...conditions),
-      orderBy: [desc(surveyParticipants.createdAt)],
-      limit: filters.pageSize,
-      offset: (filters.page - 1) * filters.pageSize,
-    });
+    const where = and(...conditions);
+    const { limit, offset } = paginateOffset(filters);
+
+    const [rows, [totalRow]] = await Promise.all([
+      this.db.query.surveyParticipants.findMany({
+        where,
+        orderBy: [desc(surveyParticipants.createdAt)],
+        limit,
+        offset,
+      }),
+      this.db.select({ total: count() }).from(surveyParticipants).where(where),
+    ]);
+
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), filters);
   }
 
   /**

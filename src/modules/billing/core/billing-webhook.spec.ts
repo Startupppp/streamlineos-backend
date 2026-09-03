@@ -828,3 +828,119 @@ describe("c17-04 — delayed arrival cannot regress payment state", () => {
     expect(laterGuard).toContain('"platform_payments"."status"');
   });
 });
+
+/**
+ * The regression net for the P1: the org-mismatch guard lived on the live entrance only.
+ *
+ * `handle` refuses a webhook whose `payment.notes` name a DIFFERENT organisation than the
+ * endpoint it arrived at — but it refuses AFTER `ledger.claim` has already written the row,
+ * and it returns without stamping `processed_at`. `listRedrivable` selects on exactly
+ * `processed_at IS NULL` plus an age window, so `minAgeMs` later the cron picked that same
+ * row up and `redriveUnprocessed` called `settle` with no notes check at all: the payment
+ * was persisted under the endpoint's org and `effects.apply` granted IT the credits from
+ * `notes.packId`. The guard that exists to stop precisely this was skipped on the replay.
+ */
+describe("the organization-mismatch guard is on the settle path, not on one entrance", () => {
+  const REDRIVE_WINDOW = { minAgeMs: 5 * 60 * 1000, maxAgeMs: 24 * 60 * 60 * 1000, limit: 100 };
+
+  // Correctly signed for org1's endpoint, but its notes name org2 and buy org2 a credit pack.
+  const FOREIGN_NOTES_BODY = JSON.stringify({
+    event: "payment.captured",
+    payload: {
+      payment: {
+        entity: {
+          id: "pay_foreign_001",
+          amount: 49900,
+          currency: "INR",
+          status: "captured",
+          method: "card",
+          notes: { orgId: "org2", packId: "1" },
+        },
+      },
+    },
+  });
+
+  function foreignOrgHarness() {
+    const db = makeWebhookDb();
+    db.query.organizations.findFirst = jest.fn().mockResolvedValue({ id: "org2" });
+    return db;
+  }
+
+  it("the live entrance still refuses it, and grants nobody anything", async () => {
+    const db = foreignOrgHarness();
+    const { service, aiCredits } = await buildHarness({ db });
+
+    const result = await service.handlePaymentProviderWebhook("org1", "razorpay", FOREIGN_NOTES_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+    expect(result.status).toBe(400);
+    expect(result.body).toMatchObject({ error: "organization mismatch" });
+    expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
+    expect(db._store.payments).toHaveLength(0);
+  });
+
+  it("the refused row stays unprocessed — which is exactly what makes it redrivable", async () => {
+    const db = foreignOrgHarness();
+    const { service } = await buildHarness({ db });
+
+    await service.handlePaymentProviderWebhook("org1", "razorpay", FOREIGN_NOTES_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+    expect(db._store.providerEvent).toEqual({ processedAt: null, visible: true });
+  });
+
+  it("the redrive entrance refuses it too, instead of settling org2's payment into org1", async () => {
+    const db = foreignOrgHarness();
+    const { service, aiCredits } = await buildHarness({ db });
+    db._store.providerEvent = { processedAt: null, visible: true };
+    db._store.unprocessed = [
+      {
+        provider: "razorpay",
+        providerEventId: "pay_foreign_001",
+        eventType: "payment.captured",
+        rawPayload: JSON.parse(FOREIGN_NOTES_BODY) as Record<string, unknown>,
+      },
+    ];
+
+    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+
+    expect(result).toEqual({ attempted: 1, recovered: 0, failed: 1 });
+    expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
+    expect(db._store.payments).toHaveLength(0);
+    expect(db._store.providerEvent?.processedAt).toBeNull();
+  });
+
+  it("a redrive whose notes name the SAME org still settles — the guard is not a blanket refusal", async () => {
+    const db = makeWebhookDb();
+    db.query.organizations.findFirst = jest.fn().mockResolvedValue({ id: "org1" });
+    const { service, aiCredits } = await buildHarness({ db });
+    db._store.providerEvent = { processedAt: null, visible: true };
+    db._store.unprocessed = [
+      {
+        provider: "razorpay",
+        providerEventId: "pay_same_001",
+        eventType: "payment.captured",
+        rawPayload: JSON.parse(
+          JSON.stringify({
+            event: "payment.captured",
+            payload: {
+              payment: {
+                entity: {
+                  id: "pay_same_001",
+                  amount: 49900,
+                  currency: "INR",
+                  status: "captured",
+                  method: "card",
+                  notes: { orgId: "org1", packId: "1" },
+                },
+              },
+            },
+          }),
+        ) as Record<string, unknown>,
+      },
+    ];
+
+    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+
+    expect(result).toEqual({ attempted: 1, recovered: 1, failed: 0 });
+    expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledTimes(1);
+  });
+});

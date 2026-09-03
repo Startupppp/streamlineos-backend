@@ -15,6 +15,7 @@ import {
   CHANNEL_MEMBER_MEMBERSHIP_WITH,
   flattenChannelMember,
 } from "./chat-channel-member-shape";
+import { CHAT_ENTITY_CHANNEL_CONFLICT } from "./chat-entity-channel-conflict-target";
 
 export { entityChannelFallbackName } from "./chat-channel-list.service";
 
@@ -209,7 +210,66 @@ export class ChatChannelsService {
     if (resolution?.status !== "resolved")
       throw new NotFoundException("Record not found");
 
-    const existing = await this.db.query.chatChannels.findFirst({
+    const existing = await this.loadEntityChannel(entityType, entityId, actor);
+    if (existing) return existing;
+
+    const actorMembershipId = actor.membershipId;
+    if (!actorMembershipId) throw new ForbiddenException("Membership required to create a channel");
+
+    // Check-then-insert with nothing behind it produced TWO channels for one record: the
+    // only caller is a TanStack `useQuery` (a GET that writes), so a StrictMode
+    // double-mount, a second tab or a retry ran two of these concurrently, both missed the
+    // findFirst above and both inserted. `idx_chat_channels_org_entity` was a plain index,
+    // so nothing refused the second row; `findFirst` then returned whichever the scan
+    // reached first and the conversation split between two channels whose members could
+    // not see each other.
+    //
+    // `uniq_chat_channels_org_entity` (migration 1058) is now the arbiter and the loser of
+    // the race gets no row back — it re-reads the winner's channel INSIDE the same
+    // transaction and returns that, so both callers see one channel and neither 500s.
+    const raced = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(chatChannels)
+        .values({
+          orgId: actor.orgId,
+          name: resolution.card.title,
+          type: "GROUP",
+          isPrivate: true,
+          createdByMembershipId: actorMembershipId,
+          entityType,
+          entityId,
+        })
+        .onConflictDoNothing(CHAT_ENTITY_CHANNEL_CONFLICT)
+        .returning();
+
+      if (!created) return null;
+
+      await tx.insert(chatChannelMembers).values({
+        orgId: actor.orgId,
+        channelId: created.id,
+        membershipId: actorMembershipId,
+        role: "ADMIN",
+      });
+
+      return created;
+    });
+
+    if (raced) return raced;
+
+    const winner = await this.loadEntityChannel(entityType, entityId, actor);
+    if (!winner) throw new NotFoundException("Record not found");
+    return winner;
+  }
+
+  /**
+   * The record's channel with its roster, named through the entity seam.
+   *
+   * Shared by the pre-check and the conflict-loser path so the two return the same shape:
+   * the loser of a create race must not get a bare channel row where the winner's peer got
+   * one with members on it.
+   */
+  private async loadEntityChannel(entityType: string, entityId: string, actor: EntityActor) {
+    const channel = await this.db.query.chatChannels.findFirst({
       where: and(
         eq(chatChannels.entityType, entityType),
         eq(chatChannels.entityId, entityId),
@@ -222,37 +282,8 @@ export class ChatChannelsService {
         },
       },
     });
-
-    if (existing) {
-      const named = await this.listService.resolveEntityChannelDisplayName(existing, actor);
-      return { ...named, members: named.members.map(flattenChannelMember) };
-    }
-
-    const actorMembershipId = actor.membershipId;
-    if (!actorMembershipId) throw new ForbiddenException("Membership required to create a channel");
-
-    return this.db.transaction(async (tx) => {
-      const [created] = await tx
-        .insert(chatChannels)
-        .values({
-          orgId: actor.orgId,
-          name: resolution.card.title,
-          type: "GROUP",
-          isPrivate: true,
-          createdByMembershipId: actorMembershipId,
-          entityType,
-          entityId,
-        })
-        .returning();
-
-      await tx.insert(chatChannelMembers).values({
-        orgId: actor.orgId,
-        channelId: created.id,
-        membershipId: actorMembershipId,
-        role: "ADMIN",
-      });
-
-      return created;
-    });
+    if (!channel) return null;
+    const named = await this.listService.resolveEntityChannelDisplayName(channel, actor);
+    return { ...named, members: named.members.map(flattenChannelMember) };
   }
 }

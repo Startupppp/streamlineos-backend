@@ -16,6 +16,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 import { ComposioGateway } from "./composio.gateway";
+import { connectionOwnerPredicate } from "./connection-owner.predicate";
 
 const CONNECTION_COLUMNS = {
   id: userIntegrationConnections.id,
@@ -44,13 +45,14 @@ export class IntegrationsService {
     private readonly gateway: ComposioGateway,
   ) {}
 
+  /**
+   * Delegates to the shared definition. The rule moved out of this class when
+   * `CalendarService.createEvent` had to enforce it too — a caller-supplied
+   * `syncConnectionId` is an object reference — and two copies of an ownership rule is
+   * one copy too many. This wrapper stays so the twelve call sites below read unchanged.
+   */
   private ownerPredicate(userId: string, membershipId: number | null | undefined) {
-    if (membershipId != null)
-      return or(
-        eq(userIntegrationConnections.membershipId, membershipId),
-        and(isNull(userIntegrationConnections.membershipId), eq(userIntegrationConnections.userId, userId)),
-      );
-    return eq(userIntegrationConnections.userId, userId);
+    return connectionOwnerPredicate(userId, membershipId);
   }
 
   listConnections(orgId: string, userId: string, membershipId?: number | null) {

@@ -19,6 +19,17 @@ export interface CalendarOccurrence {
   title: string;
   startDate: Date;
   endDate: Date;
+  /**
+   * The instant the RRULE generated, before any exception moved it — equal to
+   * `startDate` unless this occurrence carries a `modifiedStart`.
+   *
+   * This is the occurrence's identity, and `calendar_event_exceptions.occurrence_start`
+   * is keyed on it. `startDate` is where the occurrence currently sits and therefore
+   * changes every time it is moved; anything that has to NAME the occurrence — the
+   * projection id, the exception key — has to use this instead, or the name changes
+   * with the thing it names. For a non-recurring event the two are the same value.
+   */
+  nominalStart: Date;
   allDay: boolean;
   timezone: string;
   orgId: string;
@@ -110,6 +121,7 @@ function expandRecurring(
       eventId: event.id,
       title: ex?.modifiedTitle ?? event.title,
       startDate: effectiveStart,
+      nominalStart: utcStart,
       endDate: effectiveEnd,
       allDay: event.allDay,
       timezone: event.timezone,
@@ -137,6 +149,7 @@ export function expandToOccurrences(
       eventId: event.id,
       title: event.title,
       startDate: event.startDate,
+      nominalStart: event.startDate,
       endDate: event.endDate,
       allDay: event.allDay,
       timezone: event.timezone,

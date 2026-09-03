@@ -13,6 +13,7 @@ import {
   type TrialBalanceQuery,
 } from "./dto/accounting.schemas";
 import { AccountingCashFlowService } from "./accounting-cash-flow.service";
+import { baseCreditAmount, baseDebitAmount } from "./journal-base-amount";
 import {
   compareDecimals,
   isZero,
@@ -86,8 +87,8 @@ export class AccountingStatementsService {
         code: ledgerAccounts.code,
         name: ledgerAccounts.name,
         accountType: ledgerAccounts.accountType,
-        debit: sum(journalLines.debit),
-        credit: sum(journalLines.credit),
+        debit: sum(baseDebitAmount),
+        credit: sum(baseCreditAmount),
       })
       .from(ledgerAccounts)
       .leftJoin(journalLines, eq(journalLines.accountId, ledgerAccounts.id))
@@ -153,8 +154,8 @@ export class AccountingStatementsService {
         code: ledgerAccounts.code,
         name: ledgerAccounts.name,
         accountType: ledgerAccounts.accountType,
-        debit: sum(journalLines.debit),
-        credit: sum(journalLines.credit),
+        debit: sum(baseDebitAmount),
+        credit: sum(baseCreditAmount),
       })
       .from(ledgerAccounts)
       .innerJoin(journalLines, eq(journalLines.accountId, ledgerAccounts.id))
@@ -211,8 +212,8 @@ export class AccountingStatementsService {
         code: ledgerAccounts.code,
         name: ledgerAccounts.name,
         accountType: ledgerAccounts.accountType,
-        debit: sum(journalLines.debit),
-        credit: sum(journalLines.credit),
+        debit: sum(baseDebitAmount),
+        credit: sum(baseCreditAmount),
       })
       .from(ledgerAccounts)
       .leftJoin(journalLines, eq(journalLines.accountId, ledgerAccounts.id))

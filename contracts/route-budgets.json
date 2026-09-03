@@ -6451,6 +6451,37 @@
         }
       }
     },
+    "GET /cron/calendar-provider-sync-sweep": {
+      "kind": "worker-batch",
+      "class": "worker",
+      "maxDbCalls": 1000,
+      "maxDownstreamCalls": 200,
+      "maxResponseBytes": 4096,
+      "maxLatencyP95Ms": 120000,
+      "maxMemoryMb": 256,
+      "maxReadPathP95Ms": 50,
+      "maxBatchSize": 200,
+      "maxDurationMs": 120000,
+      "dbCallBasis": "counted-call-path",
+      "note": "Calendar provider-sync queue drain. Ceilings are counted off the claim and processRow paths in calendar-provider-sync-sweep.service.ts; NOT measured, because a real tick needs a live Composio calendar connection and the scratch databases hold zero calendar rows. Declared here rather than left undeclared because this batch was added by the fix for the P0 that left calendar_provider_sync_queue with no drain at all.",
+      "measuredDbCalls": null,
+      "measuredDownstreamCalls": null,
+      "measuredResponseBytes": null,
+      "measuredMemoryMb": null,
+      "measuredLatencyP95Ms": null,
+      "measuredBufferBlocks": null,
+      "measuredReadPathP50Ms": null,
+      "measuredReadPathP95Ms": null,
+      "measuredReadPathP99Ms": null,
+      "measurement": null,
+      "measuredBatchSize": null,
+      "measuredDurationMs": null,
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "not yet captured \u2014 this batch's route was created by the drain fix and the harness run that would measure it needs a configured provider connection"
+      }
+    },
     "GET /cron/build-due-sweep": {
       "kind": "worker-batch",
       "class": "worker",

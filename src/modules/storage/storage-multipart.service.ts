@@ -5,6 +5,7 @@ import {
   CreateMultipartUploadCommand,
   ListMultipartUploadsCommand,
   UploadPartCommand,
+  type S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { StorageService, isMissingObjectError } from "./storage.service";
@@ -35,6 +36,26 @@ function isUnknownUploadError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const details = error as Error & { name?: string; Code?: string };
   return details.name === "NoSuchUpload" || details.Code === "NoSuchUpload";
+}
+
+/** One bucket, and the organisations whose objects live in it. */
+interface BucketSweep {
+  readonly client: S3Client;
+  readonly bucketName: string;
+  readonly orgIds: Set<string>;
+}
+
+/**
+ * The organisation a multipart key belongs to.
+ *
+ * `initiate` above builds every key as `<orgId>/<folder>/<uuid>-<name>`, so the first
+ * path segment is the owner and a key with no segment separator belongs to nobody.
+ * Returning `""` for that case is deliberate: no organisation identifier is empty, so
+ * an unattributable key never matches a swept organisation and is never aborted.
+ */
+function owningOrgOf(key: string): string {
+  const slash = key.indexOf("/");
+  return slash <= 0 ? "" : key.slice(0, slash);
 }
 
 @Injectable()
@@ -145,21 +166,88 @@ export class StorageMultipartService {
     }
   }
 
-  async sweepAbandonedUploads(orgId: string): Promise<number> {
-    const placement = await this.storage.placementForOrg(orgId);
-    if (!placement.bucketName) return 0;
-
+  /**
+   * One list per BUCKET, not one per organisation.
+   *
+   * This used to take a single `orgId` and ask the object store for
+   * `Prefix: <orgId>/`, and `CronStorageSweepService` calls it from inside
+   * `forEachOrg` — so the sweep issued one outbound `ListMultipartUploads` per
+   * organisation. That is O(organisations swept): 8 measured outbound calls on the
+   * perf seed's 8 organisations, and one per tenant on a real deployment, against a
+   * declared `maxDownstreamCalls` of 0. The magnitude was never the interesting part;
+   * the UNIT was wrong, because the reconciliation does not need a call per tenant.
+   *
+   * In-progress multipart uploads are rare and short-lived, and one unprefixed list
+   * returns up to a thousand of them, so the same reconciliation costs one round trip
+   * per distinct bucket plus one per pagination page — independent of how many
+   * organisations share that bucket. The abort calls that follow are unchanged and
+   * stay proportional to the objects actually abandoned.
+   *
+   * The organisation filter is preserved exactly rather than dropped along with the
+   * prefix: only an upload whose key begins with a swept organisation's identifier is
+   * aborted, so an upload sitting under an unknown, unswept or soft-deleted prefix
+   * survives here just as it did when each organisation asked for its own prefix.
+   *
+   * It cannot reach zero outbound calls, and it should not: reconciling the object
+   * store is what this sweep is for, and a sweep that never asks the store what is
+   * there cannot find the orphan a crash between `CreateMultipartUpload` and the
+   * database left behind.
+   */
+  async sweepAbandonedUploadsForOrgs(orgIds: readonly string[]): Promise<number> {
+    const buckets = await this.groupByBucket(orgIds);
     const cutoff = new Date(Date.now() - ABANDONED_AFTER_MS);
-    let aborted = 0;
 
+    let aborted = 0;
+    for (const bucket of buckets) {
+      // Per bucket, so one unreachable region does not cost the others their sweep —
+      // the isolation the per-organisation caller used to provide.
+      try {
+        aborted += await this.sweepBucket(bucket, cutoff);
+      } catch (err: unknown) {
+        this.logger.warn(`Multipart sweep failed for bucket: ${String(err)}`, {
+          bucket: bucket.bucketName,
+          organizations: bucket.orgIds.size,
+        });
+      }
+    }
+    return aborted;
+  }
+
+  /**
+   * Placement resolution is per organisation and stays that way — it is a local
+   * lookup, not a round trip — but two organisations that resolve to the same client
+   * AND the same bucket are one sweep. Client identity is part of the key because two
+   * regions may legitimately name their buckets alike while pointing at different
+   * endpoints and credentials.
+   */
+  private async groupByBucket(orgIds: readonly string[]): Promise<BucketSweep[]> {
+    const buckets: BucketSweep[] = [];
+    for (const orgId of orgIds) {
+      const placement = await this.storage.placementForOrg(orgId);
+      if (!placement.bucketName) continue;
+      const existing = buckets.find(
+        (b) => b.client === placement.client && b.bucketName === placement.bucketName,
+      );
+      if (existing) existing.orgIds.add(orgId);
+      else
+        buckets.push({
+          client: placement.client,
+          bucketName: placement.bucketName,
+          orgIds: new Set([orgId]),
+        });
+    }
+    return buckets;
+  }
+
+  private async sweepBucket(bucket: BucketSweep, cutoff: Date): Promise<number> {
+    let aborted = 0;
     let keyMarker: string | undefined;
     let uploadIdMarker: string | undefined;
 
     do {
-      const list = await placement.client.send(
+      const list = await bucket.client.send(
         new ListMultipartUploadsCommand({
-          Bucket: placement.bucketName,
-          Prefix: `${orgId}/`,
+          Bucket: bucket.bucketName,
           KeyMarker: keyMarker,
           UploadIdMarker: uploadIdMarker,
         }),
@@ -168,11 +256,12 @@ export class StorageMultipartService {
       for (const upload of list.Uploads ?? []) {
         if (!upload.Initiated || upload.Initiated >= cutoff) continue;
         if (!upload.Key || !upload.UploadId) continue;
+        if (!bucket.orgIds.has(owningOrgOf(upload.Key))) continue;
 
         try {
-          await placement.client.send(
+          await bucket.client.send(
             new AbortMultipartUploadCommand({
-              Bucket: placement.bucketName,
+              Bucket: bucket.bucketName,
               Key: upload.Key,
               UploadId: upload.UploadId,
             }),
@@ -191,7 +280,9 @@ export class StorageMultipartService {
     } while (keyMarker || uploadIdMarker);
 
     if (aborted > 0)
-      this.logger.log(`Swept ${aborted} abandoned multipart upload(s) for org=${orgId}`);
+      this.logger.log(
+        `Swept ${aborted} abandoned multipart upload(s) in bucket=${bucket.bucketName}`,
+      );
 
     return aborted;
   }

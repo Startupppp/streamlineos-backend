@@ -423,7 +423,11 @@ describe("Chat controllers hand the service an actor that carries the membership
   it("ChatSavedController.list passes membershipId through — without it the list is always empty", () => {
     const saved = { list: jest.fn().mockResolvedValue({ items: [], nextCursor: undefined }) };
     const controller = new ChatSavedController(saved as never);
-    controller.list(undefined, undefined, currentUser());
+    // The controller now takes the zod-parsed query object rather than two raw strings:
+    // `?limit=abc` used to reach the database as NaN, and drizzle drops a NaN `limit`
+    // clause instead of erroring, so the saved list became an unbounded read.
+    // `pageSizeField(30, 100)` supplies the 30 when `limit` is absent.
+    controller.list({ cursor: undefined, limit: 30 }, currentUser());
     expect(saved.list).toHaveBeenCalledWith(
       expect.objectContaining({ membershipId: MEMBERSHIP_ID }),
       undefined,

@@ -5,11 +5,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { eq } from "drizzle-orm";
-import {
-  accountingSettings,
-  subscriptionPayments,
-  subscriptions,
-} from "../../../db/schema";
+import { subscriptionPayments, subscriptions } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
@@ -18,7 +14,11 @@ import { AiCreditsService } from "./ai-credits.service";
 import { BillingCoupons } from "./billing-coupons";
 import { type BillingCycle, type ConfirmCheckoutInput, type Plan } from "./dto/billing.schemas";
 import { PlanLimitsService } from "./plan-limits.service";
-import { ANNUAL_DISCOUNT_PCT, PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
+import {
+  ANNUAL_DISCOUNT_PCT,
+  PLAN_PRICES_PAISE,
+  PLATFORM_PRICE_CURRENCY,
+} from "./plan-entitlements.constants";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { classifyPlanChange } from "./revenue-events";
@@ -51,16 +51,6 @@ export class BillingPaymentActivation {
     this.couponAdmin = new BillingCoupons(deps.db);
   }
 
-  async currencyForOrg(orgId: string, fallback?: string): Promise<string> {
-    if (typeof this.deps.db.select !== "function") return fallback ?? "INR";
-
-    const [settings] = await this.deps.db
-      .select({ baseCurrency: accountingSettings.baseCurrency })
-      .from(accountingSettings)
-      .where(eq(accountingSettings.orgId, orgId));
-    return settings?.baseCurrency ?? fallback ?? "INR";
-  }
-
   async createOrder(
     orgId: string,
     userId: string,
@@ -74,7 +64,7 @@ export class BillingPaymentActivation {
     }
     if (!PLAN_PRICES_PAISE[plan]) throw new BadRequestException("Invalid plan");
 
-    const price = await this.billablePrice(orgId, plan, billingCycle);
+    const price = await this.billablePrice(plan, billingCycle);
     const baseAmount = price.amount;
     let amount = baseAmount;
     let couponDiscountAmount = 0;
@@ -115,7 +105,7 @@ export class BillingPaymentActivation {
     if (!valid) throw new BadRequestException("Payment verification failed: invalid signature");
 
     const billingCycle = input.billingCycle ?? "monthly";
-    const price = await this.billablePrice(orgId, input.plan, billingCycle);
+    const price = await this.billablePrice(input.plan, billingCycle);
     const amount = price.amount;
     const now = new Date();
     const periodEnd = new Date(now);
@@ -196,14 +186,28 @@ export class BillingPaymentActivation {
     return { success: true, plan: input.plan, status: "ACTIVE" };
   }
 
-  private async billablePrice(orgId: string, plan: Plan, billingCycle: BillingCycle) {
+  /**
+   * What this organisation is charged, as an amount AND the currency denominating it.
+   *
+   * Both halves come from ONE source and are never mixed: the platform catalog row if the
+   * plan has one, otherwise the built-in list. They used to disagree — the amount from the
+   * INR-paise list, the currency from `accounting_settings.base_currency` — which charged a
+   * USD-books tenant $999.00 for a ₹999.00 plan and then recorded 99900 "paise" as USD.
+   *
+   * The tenant's base currency is deliberately absent: it is what the tenant keeps its own
+   * books in and has no bearing on what this vendor bills. Refusing checkout on a mismatch
+   * would be wrong for the same reason — a US company may legitimately pay an INR invoice.
+   */
+  private async billablePrice(plan: Plan, billingCycle: BillingCycle) {
     const catalogPrice = await this.deps.catalog.getActivePriceForPlanTier(plan);
-    const currency = await this.currencyForOrg(orgId, catalogPrice?.currency);
-    const monthlyAmount = catalogPrice?.amountMinor ?? PLAN_PRICES_PAISE[plan];
+    // MINOR UNITS of `currency` on both branches: amountMinor as the catalog declares it,
+    // PLAN_PRICES_PAISE as paise of PLATFORM_PRICE_CURRENCY.
+    const monthlyAmountMinor = catalogPrice?.amountMinor ?? PLAN_PRICES_PAISE[plan];
+    const currency = catalogPrice?.currency ?? PLATFORM_PRICE_CURRENCY;
     return {
       amount: billingCycle === "annual"
-        ? Math.round(monthlyAmount * 12 * (1 - ANNUAL_DISCOUNT_PCT))
-        : monthlyAmount,
+        ? Math.round(monthlyAmountMinor * 12 * (1 - ANNUAL_DISCOUNT_PCT))
+        : monthlyAmountMinor,
       currency,
     };
   }

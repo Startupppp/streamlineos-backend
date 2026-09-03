@@ -1,9 +1,10 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { JournalService } from "../journal.service";
 import { AccountingMappingsService } from "../accounting-mappings.service";
 import { ReportsService } from "../reports.service";
+import { PAYROLL_READ_CAP } from "../../lib/query-bounds";
 
 function chain(data: unknown) {
   const c: Record<string, unknown> = {
@@ -15,29 +16,35 @@ function chain(data: unknown) {
   return c;
 }
 
-function makeLineItem(overrides: {
-  id?: number;
-  runId?: number;
-  runEmployeeId?: number;
+/**
+ * One row of `buildJournal`'s grouped read: the service groups by
+ * (componentId, code, category, costCenter) in SQL and sums the amounts there,
+ * so the fixture is a group, not a raw line item. `totalPaise` is integer paise
+ * as text — the exact wire shape `sum(round(amount * 100))::text` returns.
+ */
+function makeJournalGroup(overrides: {
   componentId?: number | null;
   code?: string;
   category?: string;
   name?: string;
+  /** Rupee string, converted to the paise text the read actually returns. */
   amount?: string;
+  costCenter?: string | null;
 }): Record<string, unknown> {
+  const rupees = overrides.amount ?? "1000.00";
   return {
-    id: overrides.id ?? 1,
-    runId: overrides.runId ?? 10,
-    runEmployeeId: overrides.runEmployeeId ?? 100,
     componentId: overrides.componentId ?? null,
     code: overrides.code ?? "BASIC",
     category: overrides.category ?? "EARNING",
     name: overrides.name ?? "Basic",
-    amount: overrides.amount ?? "1000.00",
-    orgId: "org1",
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    costCenter: overrides.costCenter ?? null,
+    totalPaise: String(Math.round(parseFloat(rupees) * 100)),
   };
+}
+
+/** The single-row aggregate `buildJournal` reads for "Salaries Payable". */
+function makeNetTotal(rupees: string): Array<Record<string, unknown>> {
+  return [{ totalPaise: String(Math.round(parseFloat(rupees) * 100)) }];
 }
 
 function _makeRunEmployee(net: string, id = 100): Record<string, unknown> {
@@ -81,12 +88,10 @@ describe("JournalService — double-entry balancing", () => {
     const mappings = new Map<string, string>([["EARNING", "Salaries Expense"]]);
     const mockMappingsService = { getMappings: jest.fn().mockResolvedValue(mappings) };
 
-    const lineItems = [
-      makeLineItem({ category: "EARNING", amount: "5000.00", code: "BASIC", name: "Basic" }),
-      makeLineItem({ id: 2, category: "DEDUCTION", amount: "600.00", code: "PF_EMP", name: "PF Employee" }),
+    const groups = [
+      makeJournalGroup({ category: "EARNING", amount: "5000.00", code: "BASIC", name: "Basic" }),
+      makeJournalGroup({ category: "DEDUCTION", amount: "600.00", code: "PF_EMP", name: "PF Employee" }),
     ];
-    const runEmployees = [{ net: "4400.00" }];
-    const costCenters = [{ runEmployeeId: 100, costCenter: null }];
 
     const run = { id: 10, status: "LOCKED", month: "2026-07", orgId: "org1" };
 
@@ -95,9 +100,9 @@ describe("JournalService — double-entry balancing", () => {
       from: jest.fn().mockReturnThis(),
       where: jest.fn()
         .mockReturnValueOnce(chain([run]))
-        .mockReturnValueOnce(chain(lineItems))
-        .mockReturnValueOnce(chain(runEmployees))
-        .mockReturnValueOnce(chain(costCenters)),
+        .mockReturnValueOnce(chain(groups))
+        .mockReturnValueOnce(chain(makeNetTotal("4400.00"))),
+      innerJoin: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
     };
@@ -106,6 +111,7 @@ describe("JournalService — double-entry balancing", () => {
     const result = await service.buildJournal("org1", "2026-07");
 
     expect(result.totalDebits).toBe(result.totalCredits);
+    expect(result.totalDebits).toBe(5000);
   });
 
   it("debits === credits with EMPLOYER_CONTRIBUTION present", async () => {
@@ -115,13 +121,11 @@ describe("JournalService — double-entry balancing", () => {
     ]);
     const mockMappingsService = { getMappings: jest.fn().mockResolvedValue(mappings) };
 
-    const lineItems = [
-      makeLineItem({ category: "EARNING", amount: "10000.00", code: "BASIC", name: "Basic" }),
-      makeLineItem({ id: 2, category: "DEDUCTION", amount: "1200.00", code: "PF_EMP", name: "PF Employee" }),
-      makeLineItem({ id: 3, category: "EMPLOYER_CONTRIBUTION", amount: "1300.00", code: "PF_ER", name: "PF Employer" }),
+    const groups = [
+      makeJournalGroup({ category: "EARNING", amount: "10000.00", code: "BASIC", name: "Basic" }),
+      makeJournalGroup({ category: "DEDUCTION", amount: "1200.00", code: "PF_EMP", name: "PF Employee" }),
+      makeJournalGroup({ category: "EMPLOYER_CONTRIBUTION", amount: "1300.00", code: "PF_ER", name: "PF Employer" }),
     ];
-    const runEmployees = [{ net: "8800.00" }];
-    const costCenters = [{ runEmployeeId: 100, costCenter: null }];
 
     const run = { id: 10, status: "LOCKED", month: "2026-07", orgId: "org1" };
 
@@ -130,9 +134,9 @@ describe("JournalService — double-entry balancing", () => {
       from: jest.fn().mockReturnThis(),
       where: jest.fn()
         .mockReturnValueOnce(chain([run]))
-        .mockReturnValueOnce(chain(lineItems))
-        .mockReturnValueOnce(chain(runEmployees))
-        .mockReturnValueOnce(chain(costCenters)),
+        .mockReturnValueOnce(chain(groups))
+        .mockReturnValueOnce(chain(makeNetTotal("8800.00"))),
+      innerJoin: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
     };
@@ -141,6 +145,8 @@ describe("JournalService — double-entry balancing", () => {
     const result = await service.buildJournal("org1", "2026-07");
 
     expect(result.totalDebits).toBe(result.totalCredits);
+    // 10,000 salary + 1,300 employer contribution on the debit side.
+    expect(result.totalDebits).toBe(11300);
     expect(typeof result.totalDebits).toBe("number");
     expect(typeof result.totalCredits).toBe("number");
   });
@@ -156,8 +162,8 @@ describe("JournalService — double-entry balancing", () => {
       where: jest.fn()
         .mockReturnValueOnce(chain([run]))
         .mockReturnValueOnce(chain([]))
-        .mockReturnValueOnce(chain([{ net: "1000.00" }]))
-        .mockReturnValueOnce(chain([])),
+        .mockReturnValueOnce(chain(makeNetTotal("1000.00"))),
+      innerJoin: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
     };
@@ -169,6 +175,33 @@ describe("JournalService — double-entry balancing", () => {
       expect(typeof line.debit).toBe("number");
       expect(typeof line.credit).toBe("number");
     }
+  });
+
+  it("refuses a run whose grouped journal overflows the payroll read bound", async () => {
+    const mappings = new Map<string, string>([["EARNING", "Salaries Expense"]]);
+    const mockMappingsService = { getMappings: jest.fn().mockResolvedValue(mappings) };
+
+    // One row past PAYROLL_READ_CAP: the probe row the bound exists to see.
+    const overflow = Array.from({ length: PAYROLL_READ_CAP + 1 }, (_, i) =>
+      makeJournalGroup({ code: `C${i}`, amount: "1.00" }),
+    );
+    const run = { id: 10, status: "LOCKED", month: "2026-07", orgId: "org1" };
+
+    const db = {
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn()
+        .mockReturnValueOnce(chain([run]))
+        .mockReturnValueOnce(chain(overflow))
+        .mockReturnValueOnce(chain(makeNetTotal("0.00"))),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+    };
+
+    const service = new JournalService(db as never, mockMappingsService as never);
+
+    await expect(service.buildJournal("org1", "2026-07")).rejects.toBeInstanceOf(ConflictException);
   });
 });
 

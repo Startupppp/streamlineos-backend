@@ -245,6 +245,15 @@ export class NotificationRoutingService {
             eq(notificationSuppressionRules.scopeType, "category"),
             eq(notificationSuppressionRules.scopeKey, def.category),
           ),
+          // COMP-002. The scope a one-click unsubscribe writes for
+          // ALL_NON_MANDATORY: every event, not one key. Without this arm the rule
+          // is stored, listed in the preferences UI and never read.
+          // `computeRouting` is what keeps "non-mandatory" honest — it applies a
+          // rule only when the event is not mandatory.
+          and(
+            eq(notificationSuppressionRules.scopeType, "all"),
+            eq(notificationSuppressionRules.scopeKey, "*"),
+          ),
         ),
       ),
     });

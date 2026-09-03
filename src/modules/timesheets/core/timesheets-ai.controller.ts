@@ -1,5 +1,6 @@
-import { Body, Controller, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, HttpCode, Param, ParseIntPipe, Post, UseGuards, UseInterceptors } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { AiRequestAbortInterceptor } from "../../ai/core/streaming";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -37,10 +38,18 @@ const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }
  * gateway itself touches — the credit reservation, the settlement and the
  * `ai_usage_logs` insert — already passes an explicit `orgId`, so no statement
  * reaches the pool without a tenant GUC.
+ *
+ * The opt-out also removes the tenant context's disconnect signal, which is the
+ * only thing `getAmbientAiAbortSignal` had to read on these five routes — hence
+ * `@UseInterceptors(AiRequestAbortInterceptor)` on the class. Without it the
+ * released connection would have been paid for with an uncancellable provider
+ * call: a client that hangs up still gets billed for tokens nobody reads
+ * (PRD-C091). Same pairing as `KbAuthoringController`.
  */
 @RequireModule("timesheets")
 @Controller("timesheets")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard, RateLimitGuard)
+@UseInterceptors(AiRequestAbortInterceptor)
 export class TimesheetsAiController {
   constructor(private readonly ai: TimesheetsAiService) {}
 

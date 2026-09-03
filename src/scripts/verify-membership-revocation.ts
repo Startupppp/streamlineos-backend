@@ -153,6 +153,104 @@ const FK_ACTION_BY_CODE: Record<string, RemovalAction> = {
   r: "blocks-removal",
 };
 
+/**
+ * Artifacts whose declared `onRemoval` is enforced by NOTHING.
+ *
+ * `checkArtifactFkDrift` used to print `SKIP` for these and `continue` without
+ * touching `pass`, and `driftPass` is the only input to `process.exitCode` for
+ * that sub-check — so "no FK exists" was indistinguishable from "the FK is
+ * correct", and the gate reported PASS over 67 unenforced relationships.
+ * Measured at head: 262 PASS / 0 FAIL / 67 SKIP, overall exit 0. Independently
+ * confirmed against `pg_constraint`: 92 of 511 `*_membership_id` columns carry
+ * no foreign key to `organization_members`.
+ *
+ * The trap is that the absence sits BESIDE a present one on the same table:
+ * `org_units.head_membership_id` and
+ * `organization_people.organization_membership_id` both have their FK, while
+ * `archived_by_membership_id` and `updated_by_membership_id` on those same two
+ * tables have none. On revocation the membership row goes and every dangling id
+ * survives with nothing to enforce it.
+ *
+ * This list is the frozen measurement, NOT a justification. It exists so the
+ * 68th unenforced relationship fails instead of joining a silent majority:
+ *
+ *   - an artifact with no FK that is NOT listed here FAILS;
+ *   - an artifact listed here that HAS acquired its FK also FAILS, so the entry
+ *     must be deleted in the same commit as the migration that added it.
+ *
+ * The list may only ever shrink. Removing an entry without adding the FK turns
+ * that artifact back into a hard failure, which is the point.
+ */
+const UNENFORCED_MEMBERSHIP_ARTIFACTS: ReadonlySet<string> = new Set([
+  "alumni_profiles_user_membership",
+  "announcement_reads_user_membership",
+  "assessment_attempts_user_membership",
+  "assets_assigned_to_membership",
+  "attendance_user_membership",
+  "background_verifications_user_membership",
+  "biometric_logs_user_membership",
+  "booking_link_interviewers_user_actor",
+  "calibration_participants_user_actor",
+  "certifications_user_membership",
+  "client_accounts",
+  "client_onboarding_items",
+  "comp_off_balances_user_membership",
+  "employee_devices_user_membership",
+  "employee_shift_assignments_user_membership",
+  "employee_skills_user_membership",
+  "enps_scores_user_membership",
+  "exit_checklists_assigned_to_membership",
+  "feedback_cycle_requests_memberships",
+  "feedback_requests_reviewer_actor",
+  "feedback_requests_subject_actor",
+  "goals_user_membership",
+  "hr_access_provisioning_user_membership",
+  "hr_accommodation_requests_user_membership",
+  "hr_accommodation_tasks_assignee_membership",
+  "hr_arrears_adjustments_user_membership",
+  "hr_calibration_entries_employee_membership",
+  "hr_community_members_user_membership",
+  "hr_comp_recommendations_user_membership",
+  "hr_data_requests_subject_membership",
+  "hr_device_employee_mappings_user_membership",
+  "hr_emergency_responses_user_membership",
+  "hr_employments_actors",
+  "hr_equity_grants_user_membership",
+  "hr_helpdesk_comments_author_membership",
+  "hr_helpdesk_routing_assignee_membership",
+  "hr_leave_ledger_user_membership",
+  "hr_legal_holds_subject_membership",
+  "hr_people_actors",
+  "hr_poll_votes_user_membership",
+  "hr_reward_points_ledger_user_membership",
+  "hr_union_memberships_user_membership",
+  "interview_panel_members_user_actor",
+  "job_recruiters_user_membership",
+  "job_requisitions_memberships",
+  "kb_article_versions",
+  "kb_page_versions",
+  "leave_balances_user_membership",
+  "onboarding_documents_actors",
+  "onboarding_tasks_actors",
+  "one_on_one_meetings_memberships",
+  "org_units_archived_by_membership",
+  "org_units_updated_by_membership",
+  "organization_people_archived_by_membership",
+  "organization_people_updated_by_membership",
+  "overtime_requests_memberships",
+  "performance_improvement_plans_memberships",
+  "policy_acknowledgments_user_membership",
+  "shift_swap_requests_memberships",
+  "survey_responses_user_membership",
+  "tax_declarations_user_membership",
+  "team_event_participants_user_membership",
+  "terminations_user_membership",
+  "travel_requests_memberships",
+  "worker_engagements_archived_by_membership",
+  "worker_engagements_updated_by_membership",
+  "workers_actors",
+]);
+
 async function checkArtifactFkDrift(db: Db): Promise<boolean> {
   const result = await db.execute(sql`
     SELECT
@@ -177,6 +275,7 @@ async function checkArtifactFkDrift(db: Db): Promise<boolean> {
 
   console.log("\n=== INVENTORY vs pg_constraint (declared onRemoval must match the real FK) ===");
   let pass = true;
+  const skippedIds: string[] = [];
   for (const artifact of MEMBERSHIP_ARTIFACTS) {
     if (artifact.table === null) continue;
     if (artifact.onRemoval !== "cascade" && artifact.onRemoval !== "set-null" && artifact.onRemoval !== "blocks-removal") continue;
@@ -190,7 +289,17 @@ async function checkArtifactFkDrift(db: Db): Promise<boolean> {
     });
 
     if (matches.length === 0) {
-      console.log(`  SKIP  ${(artifact.table ?? "").padEnd(34)} no FK on [${keys.join(", ")}] references organization_members`);
+      skippedIds.push(artifact.id);
+      if (UNENFORCED_MEMBERSHIP_ARTIFACTS.has(artifact.id)) {
+        console.log(
+          `  SKIP  ${(artifact.table ?? "").padEnd(34)} no FK on [${keys.join(", ")}] references organization_members — baselined as UNENFORCED (${artifact.id})`,
+        );
+      } else {
+        pass = false;
+        console.log(
+          `  FAIL  ${(artifact.table ?? "").padEnd(34)} declared=${artifact.onRemoval} but NO FK on [${keys.join(", ")}] references organization_members — nothing enforces it (${artifact.id})`,
+        );
+      }
       continue;
     }
 
@@ -218,6 +327,27 @@ async function checkArtifactFkDrift(db: Db): Promise<boolean> {
         `  ${ok ? "PASS" : "FAIL"}  ${(artifact.table ?? "").padEnd(34)} declared=${artifact.onRemoval} actual=${actual ?? "unknown"} (${String(record.constraint_name ?? "")})`,
       );
     }
+  }
+
+  /**
+   * The ratchet. A baseline entry whose FK now exists is a STALE entry, and a
+   * stale entry is what lets the list stop shrinking: it would silently absorb
+   * a future regression on the same artifact. Deleting it is part of the same
+   * commit as the migration that adds the constraint.
+   */
+  const skipped = new Set(skippedIds);
+  const staleBaseline = [...UNENFORCED_MEMBERSHIP_ARTIFACTS].filter(
+    (id) => !skipped.has(id),
+  );
+  console.log(
+    `\n  unenforced: ${skippedIds.length} measured / ${UNENFORCED_MEMBERSHIP_ARTIFACTS.size} baselined`,
+  );
+  if (staleBaseline.length > 0) {
+    pass = false;
+    console.log(
+      "\n  FAIL — the unenforced baseline is stale; these artifacts now have their FK and must be removed from UNENFORCED_MEMBERSHIP_ARTIFACTS:",
+    );
+    for (const id of staleBaseline) console.log(`    ${id}`);
   }
 
   const brokenSetNull = rows.filter((row) => {

@@ -25,7 +25,6 @@ import {
   assertDebitsEqualsCredits,
   compareDecimals,
   formatDecimal,
-  isZero,
   multiplyDecimals,
 } from "../core/money.util";
 import type {
@@ -35,6 +34,7 @@ import type {
   SystemAccountPurpose,
 } from "../core/finance-posting.types";
 import { FinancePostingAccountsService } from "./finance-posting-accounts.service";
+import { buildJournalLineRows } from "./finance-posting-lines";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type DbOrTx = Db | Tx;
@@ -157,10 +157,20 @@ export class FinancePostingService {
       const resolvedLines = await this.accounts.resolveLineAccountIds(orgId, input.lines, tx);
       const entryNumber = await this.nextSequenceNumber(orgId, input.entryDate, tx);
 
-      const entryTotal = resolvedLines.reduce(
+      // txnTotal: the entry's debit total in the ENTRY's currency, major units
+      // at scale 4. entryTotal: the same figure in the org's BASE currency,
+      // which is the unit `fin_approval_policies.min_amount` is denominated in
+      // and the unit the approval notification quotes. Comparing the raw
+      // transaction total against the threshold lets a USD 1,000 journal
+      // (INR 83,500) read as 1000 and clear an INR 50,000 policy.
+      const txnTotal = resolvedLines.reduce(
         (acc, l) => addDecimals(acc, l.debit ?? "0"),
         "0",
       );
+      const entryTotal =
+        isForeign && input.exchangeRate
+          ? multiplyDecimals(txnTotal, input.exchangeRate)
+          : txnTotal;
 
       const allPolicies = await tx
         .select({
@@ -207,37 +217,15 @@ export class FinancePostingService {
 
       if (!inserted) throw new Error("Journal entry insert returned no rows");
 
-      const lineRows = resolvedLines.map((line, idx) => {
-        const debit = formatDecimal(line.debit ?? "0");
-        const credit = formatDecimal(line.credit ?? "0");
-        let baseDebit: string | null = null;
-        let baseCredit: string | null = null;
-
-        if (isForeign && input.exchangeRate) {
-          baseDebit = isZero(debit) ? "0.0000" : multiplyDecimals(debit, input.exchangeRate);
-          baseCredit = isZero(credit) ? "0.0000" : multiplyDecimals(credit, input.exchangeRate);
-        }
-
-        return {
-          entryId: inserted.id,
-          accountId: line.resolvedAccountId,
-          orgId,
-          debit,
-          credit,
-          description: line.description ?? null,
-          lineOrder: idx,
-          currency: entryCurrency !== baseCurrency ? entryCurrency : null,
-          exchangeRate: input.exchangeRate ?? null,
-          baseDebit,
-          baseCredit,
-          clientId: line.clientId ?? null,
-          vendorId: line.vendorId ?? null,
-          projectId: line.projectId ?? null,
-          departmentId: line.departmentId ?? null,
-          employeeId: line.employeeId ?? null,
-          taxCodeId: line.taxCodeId ?? null,
-          dimensionValues: line.dimensionValues ?? null,
-        };
+      // Both units, plus the base-currency balance assertion `:125` cannot make.
+      const lineRows = buildJournalLineRows({
+        entryId: inserted.id,
+        orgId,
+        entryCurrency,
+        baseCurrency,
+        exchangeRate: input.exchangeRate ?? null,
+        entryBaseTotal: entryTotal,
+        lines: resolvedLines,
       });
 
       await tx.insert(journalLines).values(lineRows);
@@ -345,6 +333,8 @@ export class FinancePostingService {
           lineOrder: journalLines.lineOrder,
           currency: journalLines.currency,
           exchangeRate: journalLines.exchangeRate,
+          baseDebit: journalLines.baseDebit,
+          baseCredit: journalLines.baseCredit,
           clientId: journalLines.clientId,
           vendorId: journalLines.vendorId,
           projectId: journalLines.projectId,
@@ -395,8 +385,15 @@ export class FinancePostingService {
         lineOrder: idx,
         currency: line.currency,
         exchangeRate: line.exchangeRate,
-        baseDebit: null,
-        baseCredit: null,
+        // A reversal must cancel the original in BASE currency too. Dropping the
+        // base amounts left every base-currency reader falling back to the
+        // reversal's transaction-currency figure (COALESCE in
+        // `core/journal-base-amount.ts`), so reversing a USD 100 entry booked at
+        // INR 8350 took only INR 100 back out of the account.
+        // Both are the base currency, major units, numeric(18,4); NULL stays
+        // NULL, which is exactly right for an entry already in base currency.
+        baseDebit: line.baseCredit === null ? null : formatDecimal(line.baseCredit),
+        baseCredit: line.baseDebit === null ? null : formatDecimal(line.baseDebit),
         clientId: line.clientId,
         vendorId: line.vendorId,
         projectId: line.projectId,

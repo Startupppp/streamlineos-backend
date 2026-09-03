@@ -21,6 +21,7 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
+import { roundDecimal, toDecimal } from "../../accounting/core/money.util";
 import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 import { RateResolverService } from "../controls/rate-resolver.service";
 import { FxService } from "../controls/fx.service";
@@ -93,12 +94,29 @@ export class PaymentRunExecutorService {
     for (const item of pendingItems) {
       type FxCapture = {
         billId: number;
+        /** The `vendor_payments` row this item created — one instalment, one FX result. */
+        vendorPaymentId: number;
         currency: string;
         exchangeRate: string;
         amount: number;
         userId: string;
       };
       let fxCapture: FxCapture | null = null;
+
+      /*
+       * One economic quantity, one number. `vendor_payments.amount` is
+       * numeric(12,2) — a bank moves whole paise and that column is the
+       * authoritative record of what left the account — while the run item, the
+       * allocation, `amount_paid` and the ledger are all numeric(18,4). Writing
+       * the item's raw scale-4 amount to some of them and a separately rounded
+       * one to the payment left the register and the AP subledger permanently
+       * apart (a Rs 100.0050 item registered Rs 100.00 and allocated Rs 100.0050,
+       * because `Number("100.0050").toFixed(2)` is "100.00" in IEEE-754).
+       *
+       * `paidAmount` is that quantity, in the vendor's currency at scale 2,
+       * rounded half-up exactly. Every write below uses it and nothing else.
+       */
+      const paidAmount = roundDecimal(toDecimal(item.amount), 2);
 
       try {
         await this.db.transaction(async (tx) => {
@@ -107,7 +125,7 @@ export class PaymentRunExecutorService {
             .values({
               orgId,
               billId: item.billId,
-              amount: Number(item.amount).toFixed(2),
+              amount: paidAmount,
               paymentDate: today,
               paymentMethod: "bank_transfer",
               notes: `Payment run ${run.name}`,
@@ -123,7 +141,7 @@ export class PaymentRunExecutorService {
               orgId,
               vendorPaymentId: payment.id,
               billId: item.billId,
-              amount: item.amount,
+              amount: paidAmount,
             })
             .onConflictDoNothing();
 
@@ -139,8 +157,8 @@ export class PaymentRunExecutorService {
             const [settled] = await tx
               .update(purchaseBills)
               .set({
-                amountPaid: sql`round(${purchaseBills.amountPaid} + ${item.amount}::numeric, 4)`,
-                status: sql`CASE WHEN ${purchaseBills.amountPaid} + ${item.amount}::numeric >= ${purchaseBills.total} - 0.005 THEN 'PAID' ELSE 'PARTIALLY_PAID' END`,
+                amountPaid: sql`round(${purchaseBills.amountPaid} + ${paidAmount}::numeric, 4)`,
+                status: sql`CASE WHEN ${purchaseBills.amountPaid} + ${paidAmount}::numeric >= ${purchaseBills.total} - 0.005 THEN 'PAID' ELSE 'PARTIALLY_PAID' END`,
                 updatedAt: new Date(),
               })
               .where(and(eq(purchaseBills.id, item.billId), eq(purchaseBills.orgId, orgId)))
@@ -153,7 +171,7 @@ export class PaymentRunExecutorService {
                 billNumber: billRow.billNumber,
                 paymentDate: today,
                 paymentMethod: "bank_transfer",
-                amount: Number(item.amount),
+                amount: Number(paidAmount),
                 createdBy: userId,
               },
               tx,
@@ -175,7 +193,7 @@ export class PaymentRunExecutorService {
                   bill_id: item.billId,
                   bill_number: billRow.billNumber,
                   payment_id: payment.id,
-                  amount_cents: Math.round(Number(item.amount) * 100),
+                  amount_cents: Math.round(Number(paidAmount) * 100),
                   run_id: runId,
                   actor_user_id: userId,
                 },
@@ -186,9 +204,10 @@ export class PaymentRunExecutorService {
             if (billRow.currency !== baseCurrency) {
               fxCapture = {
                 billId: billRow.id,
+                vendorPaymentId: payment.id,
                 currency: billRow.currency,
                 exchangeRate: billRow.exchangeRate,
-                amount: Number(item.amount),
+                amount: Number(paidAmount),
                 userId,
               };
             }
@@ -208,7 +227,7 @@ export class PaymentRunExecutorService {
             targetUserIds: [userId],
             entityType: "vendor_payment",
             entityId: String(payment.id),
-            variables: { amount: Number(item.amount), billId: item.billId },
+            variables: { amount: Number(paidAmount), billId: item.billId },
           });
         });
 
@@ -246,6 +265,7 @@ export class PaymentRunExecutorService {
     baseCurrency: string,
     capture: {
       billId: number;
+      vendorPaymentId: number;
       currency: string;
       exchangeRate: string;
       amount: number;
@@ -269,6 +289,7 @@ export class PaymentRunExecutorService {
       await this.fx.postRealizedGainLoss(user, {
         sourceType: "purchase_bill",
         sourceId: String(capture.billId),
+        settlementId: String(capture.vendorPaymentId),
         baseAmountBooked,
         baseAmountSettled,
         counterPurpose: "AP",

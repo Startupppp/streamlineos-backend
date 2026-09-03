@@ -48,7 +48,12 @@ describe("CronOutboxRetentionService — cross-tenant isolation", () => {
     const outboxRendered = dialect.sqlToQuery(captured[0]!);
     expect(outboxRendered.params).toContain(ORG_B);
     expect(outboxRendered.params).not.toContain(ORG_A);
-    expect(outboxRendered.sql).toContain("org_id =");
+    // The tenant column on `outbox_events` is `organization_id`. This assertion
+    // read `org_id` — a column that does not exist — so it certified a statement
+    // that raised 42703 for every tenant. Rendering the predicate proves the
+    // shape; only `outbox-retention-sweep.db.spec.ts` proves it can execute.
+    expect(outboxRendered.sql).toContain('"outbox_events"."organization_id" =');
+    expect(outboxRendered.sql).not.toContain('"org_id"');
   });
 
   it("inbox predicate binds only the sweeping org's id — another tenant's rows are unreachable", async () => {
@@ -63,7 +68,9 @@ describe("CronOutboxRetentionService — cross-tenant isolation", () => {
     const inboxRendered = dialect.sqlToQuery(captured[1]!);
     expect(inboxRendered.params).toContain(ORG_B);
     expect(inboxRendered.params).not.toContain(ORG_A);
-    expect(inboxRendered.sql).toContain("org_id =");
+    // Same defect, same table-specific truth: `inbox_records.organization_id`.
+    expect(inboxRendered.sql).toContain('"inbox_records"."organization_id" =');
+    expect(inboxRendered.sql).not.toContain('"org_id"');
   });
 
   it("sweeps each org under its own id — predicates for two orgs carry different bound ids", async () => {

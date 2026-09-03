@@ -21,8 +21,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
-import { NotificationsService } from "../notifications/notifications.service";
-import { DashboardLeaveService } from "./dashboard-leave.service";
 import { DashboardProjectService } from "./dashboard-project.service";
 import { resolvePersonalDashboardModules } from "./dashboard-scope";
 import { settleSection } from "./dashboard-section-settle";
@@ -36,27 +34,12 @@ export class DashboardPersonalService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
-    private readonly leaveService: DashboardLeaveService,
     private readonly projectService: DashboardProjectService,
-    private readonly notificationsService: NotificationsService,
   ) {}
 
   async getPersonalDashboard(u: CurrentUserContext) {
     const { orgId, userId } = u;
-    const [modules, selfMember] = await Promise.all([
-      resolvePersonalDashboardModules(this.access, u),
-      this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)), columns: { id: true, status: true } }),
-    ]);
-    const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - now.getDay() + 1);
-    weekStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-    weekEnd.setHours(23, 59, 59, 999);
-
     const degraded: string[] = [];
-    const attendeeMembershipId = selfMember?.status === "ACTIVE" ? selfMember.id : 0;
     const settle = <T>(source: string, run: () => Promise<T>, fallback: T): Promise<T> =>
       settleSection({
         name: source,
@@ -67,13 +50,82 @@ export class DashboardPersonalService {
         onDegraded: (name) => degraded.push(name),
       });
 
-    const [
-      myTasks,
-      timesheetRows,
-      leaveBalanceRows,
-      upcomingEvents,
-      unreadNotifResult,
-    ] = await Promise.all([
+    /**
+     * The prologue is deadline-protected too, and it FAILS CLOSED.
+     *
+     * These two reads gate the entire fanout — nothing below starts until they
+     * resolve — and both do real database work: `moduleAvailability` goes
+     * through `entitlements.getModuleMap` -> `cache.cachedForOrg` ->
+     * `runInTenantTransaction`, and the membership lookup is a direct query.
+     * Awaiting them bare put the one thing that gates every section outside the
+     * only ceiling the endpoint has, so an entitlements cache stampede on a
+     * version bump, or Redis timing out into a slow Postgres, hung `/dashboard/personal`
+     * with every section still unstarted. PRD-C144 forbids exactly that, one
+     * layer above where the deadline was applied.
+     *
+     * Fallbacks deny rather than open: a gate that could not be resolved must not
+     * be read as "allowed". And the sections the gate governs are reported as
+     * degraded, because "we could not find out" has to render as "couldn't load",
+     * never as an authoritative empty list.
+     */
+    const [modules, selfMember] = await Promise.all([
+      settle(
+        "modules",
+        () => resolvePersonalDashboardModules(this.access, u),
+        { build: false, timesheets: false, hr: false },
+      ).then((resolved) => {
+        if (degraded.includes("modules")) degraded.push("myTasks", "timesheet");
+        return resolved;
+      }),
+      settle(
+        "membership",
+        () =>
+          this.db.query.organizationMembers.findFirst({
+            where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
+            columns: { id: true, status: true },
+          }),
+        undefined,
+      ).then((resolved) => {
+        if (degraded.includes("membership")) degraded.push("timesheet", "upcomingEvents");
+        return resolved;
+      }),
+    ]);
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay() + 1);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    const attendeeMembershipId = selfMember?.status === "ACTIVE" ? selfMember.id : 0;
+
+    /**
+     * THREE branches, not five.
+     *
+     * `unreadNotifications` and `leaveBalance` were computed on every uncached
+     * Home load and read by nothing. A grep over the frontend finds
+     * `unreadNotifications` exactly once — as a type field at
+     * `hooks/api/dashboard.ts` — and the aggregate's `leaveBalance` exactly once,
+     * in the same interface; `usePersonalDashboard` has exactly three consumers
+     * (`my-tasks-widget`, `timesheet-widget`, `upcoming-events-widget`) and they
+     * read `myTasks`, `timesheetStatus` and `upcomingEvents`. The leave balance
+     * Home actually renders comes from a different route entirely
+     * (`hr-widgets.tsx` -> `useMyLeaveBalance` -> GET /dashboard/my-leave-balance).
+     *
+     * The unread count was also the most expensive query on the surface —
+     * measured on scratch_head_1010 as `streamline_app` with the tenant GUC at
+     * 14,053 planning buffers and 14.4 ms of PLANNING against 0.69-1.57 ms of
+     * execution, because `notifications` has 49 partitions and `prepare: false`
+     * rebuilds the plan every request. It is the branch that forced
+     * HOME_SECTION_DEADLINE_MS into existence, so the most timeout-prone source
+     * on Home was producing a number nothing rendered.
+     *
+     * If either is wanted back, wire it to a consumer AND to its `degraded`
+     * entry in the same change. `dashboard-home-fanout.spec.ts` pins the branch
+     * count so a re-added dead branch is caught.
+     */
+    const [myTasks, timesheetRows, upcomingEvents] = await Promise.all([
       modules.build
         ? settle(
             "myTasks",
@@ -98,13 +150,6 @@ export class DashboardPersonalService {
                   ),
                 );
             },
-            [],
-          )
-        : [],
-      modules.hr
-        ? settle(
-            "leaveBalance",
-            () => this.leaveService.getMyLeaveBalance(orgId, userId),
             [],
           )
         : [],
@@ -162,11 +207,6 @@ export class DashboardPersonalService {
         },
         [],
       ),
-      settle(
-        "unreadNotifications",
-        () => this.notificationsService.unreadCount(orgId, userId),
-        { count: 0 },
-      ),
     ]);
 
     const hoursLogged = Number(timesheetRows[0]?.hours ?? 0);
@@ -186,11 +226,6 @@ export class DashboardPersonalService {
         weekLabel,
         hoursLogged,
       },
-      leaveBalance: leaveBalanceRows.map((r) => ({
-        type: r.leaveTypeName ?? "Leave",
-        remaining: Number(r.balance),
-        total: r.daysPerYear ?? 0,
-      })),
       upcomingEvents: upcomingEvents.map((e) => ({
         id: e.id,
         title: e.title,
@@ -198,8 +233,9 @@ export class DashboardPersonalService {
         endTime: e.endDate,
         type: e.category,
       })),
-      unreadNotifications: unreadNotifResult.count,
-      degraded,
+      // Deduped: a degraded prologue names the sections it gates, and one of
+      // those can also fail on its own.
+      degraded: [...new Set(degraded)],
     };
   }
 }

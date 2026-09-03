@@ -1,14 +1,12 @@
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { AiCreditsService } from "./ai-credits.service";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
-
-type CurrencyForOrg = (orgId: string, fallback?: string) => Promise<string>;
+import { PLATFORM_PRICE_CURRENCY } from "./plan-entitlements.constants";
 
 export class BillingMarketplace {
   constructor(
     private readonly aiCredits: AiCreditsService,
     private readonly providers: PaymentProviderResolver,
-    private readonly currencyForOrg: CurrencyForOrg,
   ) {}
 
   getMarketplace() {
@@ -32,8 +30,12 @@ export class BillingMarketplace {
       );
     }
 
-    const currency = await this.currencyForOrg(orgId);
+    // `ai_credit_packs.price_in_paise` is a platform table with no org_id: MINOR UNITS of
+    // PLATFORM_PRICE_CURRENCY, full stop. This used to be labelled with the buyer's own
+    // accounting base currency, which billed a USD-books tenant $499 for a ₹499 pack.
+    const currency = PLATFORM_PRICE_CURRENCY;
     const { providerOrderId: addonOrderId } = await adapter.createOrder({
+      // paise x quantity — minor units of `currency`
       amount: String(pack.priceInPaise * quantity),
       currency,
       receipt: `aip_${packId}_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,

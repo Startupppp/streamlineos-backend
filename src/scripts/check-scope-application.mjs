@@ -19,6 +19,24 @@ const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
 const MODULES_DIR = join(BACKEND_ROOT, "src", "modules");
 
+/**
+ * The corpus is three trees, not one.
+ *
+ * `src/modules` alone until 2026-09-03. src/common and src/db were outside every
+ * data-access gate in this directory, so five of them reported clean over a corpus
+ * that excluded the asynchronous substrate.
+ *
+ * Measured on the day of the change: NEITHER new tree contains a single scope
+ * resolution, so this union surfaces nothing today and is not claimed to. What it
+ * buys is that a handler which resolves a DataScope and drops it can no longer
+ * become invisible by moving out of src/modules.
+ */
+const SCAN_DIRS = [
+  MODULES_DIR,
+  join(BACKEND_ROOT, "src", "common"),
+  join(BACKEND_ROOT, "src", "db"),
+];
+
 const SPEC_RE = /\.(spec|e2e-spec)\.ts$/;
 
 // `const x = await resolveSomethingScope(...)`, `= readRequestScope(req)`, `= req.rbacScope`
@@ -261,9 +279,9 @@ function walkTs(dir) {
   return results;
 }
 
-const all = walkTs(MODULES_DIR).flatMap((file) =>
-  analyseSource(readFileSync(file, "utf8"), file),
-);
+const all = SCAN_DIRS.filter(existsSync)
+  .flatMap(walkTs)
+  .flatMap((file) => analyseSource(readFileSync(file, "utf8"), file));
 
 // The vocabulary is 30 named resolvers across 132 call sites
 if (all.length < 20) {

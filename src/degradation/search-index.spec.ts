@@ -1,17 +1,32 @@
-import "dotenv/config";
 import postgres from "postgres";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { applyScope } from "../modules/access/apply-scope";
+import { connectForProbe, requiredDatabase } from "./degraded-db";
 import { tickets, projects } from "../db/schema";
 import { and, eq, isNull, ilike, sql } from "drizzle-orm";
 import { resolveSearchAccess } from "../modules/search/search.service";
 import type { AccessResolver } from "../modules/access/authorize";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
 
+/**
+ * This file used to open with `import "dotenv/config"`, and that one line was the
+ * defect under every other symptom here. It loaded `.env` into the process, so
+ * `DATABASE_URL` was never absent, so the guard below never skipped and the spec
+ * quietly connected to the shared remote branch named in `.env` no matter where
+ * the caller had pointed it. `APP_DATABASE_URL` is deliberately unset in that
+ * file, so the tenant-isolation proof at the bottom took the other silent branch
+ * and skipped without saying so — a security-relevant assertion that read as
+ * green because it never ran at all. The database is now named by the caller: the
+ * spec either runs where it was pointed, or skips and says what is missing.
+ */
 const dialect = new PgDialect();
 const ROLLBACK_MARKER = "rollback-explain-probe";
-const ownerDatabaseUrl = process.env.DATABASE_URL;
-const describeAgainstOwner = ownerDatabaseUrl ? describe : describe.skip;
+const owner = requiredDatabase(
+  "DATABASE_URL",
+  "The 42883 guard is proved by asking a real Postgres for a function that does not exist, " +
+    "which needs an owner connection string named by the caller.",
+);
+const describeAgainstOwner = owner.url ? describe : describe.skip;
 
 function render(condition: Parameters<PgDialect["sqlToQuery"]>[0]): { sql: string; params: unknown[] } {
   return dialect.sqlToQuery(condition);
@@ -157,11 +172,11 @@ describe("resolveSearchAccess — ACL gate runs before search, not after", () =>
     expect(access.build).not.toBeNull();
   });
 
-  describeAgainstOwner("integration — real Postgres, read-only", () => {
+  describeAgainstOwner(owner.title("integration — real Postgres, read-only"), () => {
     let sqlOwner: ReturnType<typeof postgres>;
 
     beforeAll(() => {
-      sqlOwner = postgres(ownerDatabaseUrl ?? "", { prepare: false });
+      sqlOwner = connectForProbe(owner.url ?? "");
     });
 
     afterAll(async () => {
@@ -194,16 +209,23 @@ describe("resolveSearchAccess — ACL gate runs before search, not after", () =>
   });
 });
 
-const appDatabaseUrl = process.env.APP_DATABASE_URL;
-const describeAgainstAppRole = appDatabaseUrl ? describe : describe.skip;
+const appRole = requiredDatabase(
+  "APP_DATABASE_URL",
+  "This proof only means something when it runs as the non-owner application role: the owner " +
+    "has rolbypassrls and would satisfy every assertion below without RLS ever being consulted. " +
+    "Point APP_DATABASE_URL at a role with rolbypassrls = false and re-run.",
+);
+const describeAgainstAppRole = appRole.url ? describe : describe.skip;
 
 describeAgainstAppRole(
-  "the degraded ILIKE fallback filters by tenant inside the query, proved by EXPLAIN as streamline_app",
+  appRole.title(
+    "the degraded ILIKE fallback filters by tenant inside the query, proved by EXPLAIN as streamline_app",
+  ),
   () => {
     let sql: ReturnType<typeof postgres>;
 
     beforeAll(() => {
-      sql = postgres(appDatabaseUrl ?? "", { prepare: false, ssl: "require", max: 1 });
+      sql = connectForProbe(appRole.url ?? "");
     });
 
     afterAll(async () => {
@@ -233,11 +255,51 @@ describeAgainstAppRole(
   },
 );
 
+const PROBE_ORG_PREFIX = "explain-probe-org-";
+const PROBE_TENANTS = 20;
+const PROBE_ROWS_PER_TENANT = 100;
+const PROBE_SUBJECT_ORG = `${PROBE_ORG_PREFIX}7`;
+
+/**
+ * An EXPLAIN only says something about the access path if the planner had a reason
+ * to choose one. Against an empty table every plan is a zero-cost Seq Scan, so the
+ * assertion would fail for a reason that has nothing to do with the query; against
+ * a shared database it would pass or fail on whatever rows some other session
+ * happened to leave behind. The probe therefore builds its own multi-tenant
+ * fixture, measures the plan, and rolls the whole thing back, so the plan it
+ * reports came from data this test controls and nothing survives for anyone else
+ * to trip over.
+ *
+ * The rows go in one tenant at a time because build.tickets carries the
+ * `tenant_isolation` RLS policy and this connection is a non-owner role: the WITH
+ * CHECK admits only rows matching the tenant GUC currently in force. Having to
+ * move the GUC to insert each tenant is that isolation working.
+ */
+async function seedTenantFixture(tx: postgres.TransactionSql): Promise<void> {
+  // organizations.owner_membership_id carries a deferrable FK to a membership row
+  // this fixture has no reason to create; the transaction never commits, so the
+  // deferred check never runs.
+  await tx`SET CONSTRAINTS ALL DEFERRED`;
+
+  for (let tenant = 0; tenant < PROBE_TENANTS; tenant++) {
+    const org = `${PROBE_ORG_PREFIX}${tenant}`;
+    await tx`
+      INSERT INTO organizations (id, name, slug, owner_membership_id)
+      VALUES (${org}, ${`EXPLAIN probe ${tenant}`}, ${org}, 1)`;
+    await tx`SELECT set_config('app.organization_id', ${org}, true)`;
+    await tx`
+      INSERT INTO build.tickets (org_id, title, ticket_number)
+      SELECT ${org}, 'probe title ' || g, g
+      FROM generate_series(1, ${PROBE_ROWS_PER_TENANT}) g`;
+  }
+}
+
 async function captureFallbackPlan(client: ReturnType<typeof postgres>): Promise<string> {
   let plan = "";
   try {
     await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.organization_id', ${"org-explain-probe"}, true)`;
+      await seedTenantFixture(tx);
+      await tx`SELECT set_config('app.organization_id', ${PROBE_SUBJECT_ORG}, true)`;
       const rows = await tx`
         EXPLAIN (FORMAT JSON)
         SELECT id, title FROM build.tickets

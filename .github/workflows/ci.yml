@@ -501,6 +501,16 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:migration-discipline:self-test && pnpm check:migration-discipline
 
+      # An applied migration's SQL may not change. Both runners now decide "already applied"
+      # from the journal's `when`, so an edited applied file is skipped rather than re-run —
+      # correct, and silent: a cold build gets the new SQL while every warm database keeps the
+      # old one. migrations/meta/_chain.sha256.json is the committed "before"; the seal keeps a
+      # comment-stripped hash beside the raw one, so a new comment block warns and a changed
+      # statement fails.
+      - name: Applied migrations are immutable
+        if: ${{ !cancelled() }}
+        run: pnpm check:migration-immutability:self-test && pnpm check:migration-immutability
+
       # A forward migration must carry a truthful rollback or an explicit irreversible
       # declaration. The 0143 rollback failed live because a later migration added a partial
       # index whose enum predicate blocked the column rewrite — this is the gate for that class.

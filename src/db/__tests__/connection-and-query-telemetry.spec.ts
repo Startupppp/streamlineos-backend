@@ -80,10 +80,17 @@ describe("§5.1 box 8 — connection hold time and idle-in-transaction are measu
 
 describe("§5.1 box 9 — fingerprints, call counts, rows and lock waits without bind values", () => {
   it("normalises every literal and placeholder out of the shape", () => {
+    // The table name is inert to this assertion — only the literals are under
+    // test — so it is deliberately NOT one of the four identity tables the Party
+    // migration is retiring. `legacy-reader-ratchet.spec.ts` scans every file
+    // under `src/` for raw SQL naming those tables, and it cannot skip string
+    // literals without going blind to the `db.execute(sql`...`)` reads it exists
+    // to catch. A fixture naming one is indistinguishable from a real read, and
+    // would put this file on the migration's debt register having read nothing.
     const shape = normalizeQueryShape(
-      "select id from contacts where org_id = 'org-secret' and email = $1 and age > 42 -- note",
+      "select id from hr_people where org_id = 'org-secret' and email = $1 and age > 42 -- note",
     );
-    expect(shape).toBe("select id from contacts where org_id = ? and email = ? and age > ?");
+    expect(shape).toBe("select id from hr_people where org_id = ? and email = ? and age > ?");
     expect(shape).not.toContain("org-secret");
     expect(shape).not.toContain("42");
   });
