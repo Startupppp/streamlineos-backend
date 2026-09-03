@@ -21,7 +21,7 @@ export function declaredTablesOf(barrel: Readonly<Record<string, unknown>>): Dec
     if (seen.has(key)) continue;
     seen.add(key);
     const declaredIndexes: DeclaredIndex[] = config.indexes.map((index) => ({
-      name: index.config.name,
+      name: index.config.name ?? "",
       unique: index.config.unique === true,
       partial: index.config.where !== undefined,
       columns: index.config.columns.map((column) =>
