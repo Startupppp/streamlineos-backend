@@ -31,10 +31,15 @@ jobs:
         with:
           node-version: 22
 
+      # 2026-09-03 — both steps carried `working-directory: backend`. There is no
+      # `backend/` directory in this repository: the package root IS the repo
+      # root. Every run since this workflow was added failed in ~15s with
+      # "An error occurred trying to start process '/usr/bin/bash' with working
+      # directory '.../streamlineos-backend/backend'. No such file or directory"
+      # — so this ratchet has never once executed, and its red was never about
+      # the legacy actor count. Measured on run 33719024462.
       - name: Check legacy org-actor count against baseline
         run: node src/scripts/scan-legacy-org-actors.mjs --check
-        working-directory: backend
 
       - name: Self-test the scanner
         run: node src/scripts/scan-legacy-org-actors.mjs --self-test
-        working-directory: backend
