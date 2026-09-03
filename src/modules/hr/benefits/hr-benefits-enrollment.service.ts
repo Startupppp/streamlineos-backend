@@ -10,6 +10,7 @@ import {
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
 import { HrBenefitsPlansService } from "./hr-benefits-plans.service";
 import type { EnrollInput, WaiveInput, CreateDependentInput, PatchDependentInput } from "./dto/benefits.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class HrBenefitsEnrollmentService {
@@ -68,7 +69,7 @@ export class HrBenefitsEnrollmentService {
         .returning();
       return enrollment;
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("You are already enrolled in this plan");
       }
       throw err;

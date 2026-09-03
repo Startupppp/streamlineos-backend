@@ -38,6 +38,7 @@ import type {
   DeclineInvitationInput,
 } from "./dto/organization.schemas";
 import { lockPendingInvitation, requireActiveOrg } from "./invitations.helpers";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class InvitationAcceptanceService {
@@ -385,8 +386,7 @@ export class InvitationAcceptanceService {
         { orgId },
       );
     } catch (err) {
-      const code = (err as { code?: string }).code;
-      if (code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("Invitation has already been accepted");
       }
       throw err;

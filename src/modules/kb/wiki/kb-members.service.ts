@@ -11,10 +11,9 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
-import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
+import { PG_UNIQUE_VIOLATION, getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import type { AddMemberInput } from "./dto/kb-members.schemas";
 
-const PG_UNIQUE_VIOLATION = "23505";
 
 type MemberRow = typeof kbSpaceMembers.$inferSelect;
 

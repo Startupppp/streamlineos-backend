@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { kbPageTemplates, kbPages } from "../../../db/schema";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -9,7 +9,6 @@ import type { CreatePageTemplateInput } from "./dto/kb-page-templates.schemas";
 
 type TemplateRow = typeof kbPageTemplates.$inferSelect;
 
-const PG_UNIQUE_VIOLATION = "23505";
 const TEMPLATE_LIST_CAP = 200;
 
 @Injectable()
@@ -47,7 +46,7 @@ export class KbPageTemplatesService {
         .returning();
       return template;
     } catch (err) {
-      if (getPostgresErrorCode(err) === PG_UNIQUE_VIOLATION)
+      if (isUniqueViolation(err))
         throw new ConflictException("A template with that name already exists");
       throw err;
     }

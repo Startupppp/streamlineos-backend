@@ -16,15 +16,7 @@ import {
   contactIdIs,
   contactPartyScope,
 } from "./contact-party-reader";
-
-function isDbConflict(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as Record<string, unknown>).code === "23505"
-  );
-}
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class ContactRolesService {
@@ -81,7 +73,7 @@ export class ContactRolesService {
 
       return role;
     } catch (err) {
-      if (isDbConflict(err)) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("This role already exists for this contact on this entity");
       }
       throw err;

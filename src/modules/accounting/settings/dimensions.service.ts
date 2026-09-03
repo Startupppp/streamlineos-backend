@@ -20,6 +20,7 @@ import type {
   UpdateDimensionValueInput,
 } from "./dto/dimensions.schemas";
 import { hasPatchValues } from "../../../common/db/patch-values";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const DIMENSIONS_CACHE_KEY = (orgId: string) => `acc:dimensions:${orgId}`;
 const DIMENSIONS_PAGE_SIZE = 100;
@@ -106,12 +107,7 @@ export class DimensionsService {
 
       return dim;
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code: string }).code === "23505"
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           `A dimension with key "${input.key}" already exists in this organisation.`,
         );
@@ -219,12 +215,7 @@ export class DimensionsService {
 
       return val;
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code: string }).code === "23505"
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           `A value with code "${input.code}" already exists for this dimension.`,
         );

@@ -21,8 +21,6 @@ export const LINKABLE_MEMBERSHIP_STATUSES = [
   "SUSPENDED",
 ] as const;
 
-export const PG_UNIQUE_VIOLATION = "23505";
-
 export type MemberIdentity = {
   membershipId: number;
   userId: string;

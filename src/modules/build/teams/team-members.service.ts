@@ -23,8 +23,7 @@ import type {
   ListTeamMembersQuery,
   UpdateTeamMemberRoleInput,
 } from "./dto/teams.schemas";
-
-const PG_UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class TeamMembersService {
@@ -125,12 +124,7 @@ export class TeamMembersService {
       });
       return row;
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code: string }).code === PG_UNIQUE_VIOLATION
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("User is already a member of this team.");
       }
       throw err;

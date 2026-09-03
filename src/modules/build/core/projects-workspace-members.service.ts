@@ -17,8 +17,7 @@ import type {
   AddWorkspaceMemberInput,
   ListWorkspaceMembersInput,
 } from "./dto/projects-workspace-members.schemas";
-
-const PG_UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class ProjectsWorkspaceMembersService {
@@ -140,12 +139,7 @@ export class ProjectsWorkspaceMembersService {
       });
       return row;
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code: string }).code === PG_UNIQUE_VIOLATION
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("This user is already a workspace member.");
       }
       throw err;

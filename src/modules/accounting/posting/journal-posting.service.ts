@@ -22,6 +22,7 @@ import {
   INVOICE_SEND_SOURCE_EVENT,
 } from "./journal-posting.data";
 import { compareDecimals, decimalFromNumber, sumDecimals } from "../core/money.util";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 export type { DbOrTx, DraftLine, DraftEntry, PersistedEntry, PostInvoiceInput, PostPaymentInput, PostPurchaseBillInput, PostVendorPaymentInput };
 
@@ -169,9 +170,7 @@ export class JournalPostingService {
 
         return entry;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const isUniqueViolation = message.includes("uniq_je_org_number") || message.includes("23505");
-        if (!isUniqueViolation || attempt === maxAttempts - 1) throw error;
+        if (!isUniqueViolation(error) || attempt === maxAttempts - 1) throw error;
       }
     }
     throw new Error(`Failed to allocate journal entry number after ${maxAttempts} attempts`);

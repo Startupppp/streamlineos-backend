@@ -34,12 +34,7 @@ import type {
 } from "./dto/principal-groups.schemas";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetAfterValueUuid } from "../../common/pagination/keyset";
-
-function isDuplicateKeyError(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const e = err as Record<string, unknown>;
-  return e["code"] === "23505";
-}
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class PrincipalGroupsService {
@@ -119,7 +114,7 @@ export class PrincipalGroupsService {
       );
       return row;
     } catch (err) {
-      if (isDuplicateKeyError(err))
+      if (isUniqueViolation(err))
         throw new ConflictException(`A group named "${input.name}" already exists`);
       throw err;
     }
@@ -148,7 +143,7 @@ export class PrincipalGroupsService {
         { orgId: actor.orgId },
       );
     } catch (err) {
-      if (isDuplicateKeyError(err))
+      if (isUniqueViolation(err))
         throw new ConflictException(`A group named "${input.name}" already exists`);
       throw err;
     }

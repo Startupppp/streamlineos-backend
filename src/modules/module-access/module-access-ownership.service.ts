@@ -28,6 +28,7 @@ import { canTransferModuleOwnership } from "./module-standing";
 import { moduleOwnershipDenied } from "./module-access-errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 export interface ModuleOwnership {
   moduleKey: string;
@@ -149,12 +150,7 @@ export class ModuleAccessOwnershipService {
         { orgId },
       );
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        err.code === "23505"
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           `A pending transfer for module "${moduleKey}" already exists`,
         );

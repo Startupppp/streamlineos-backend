@@ -5,6 +5,7 @@ import {
   type RemovalAction,
 } from "./membership-artifacts";
 import { departureBlockMessage } from "./org-member-departure.service";
+import { DrizzleQueryError } from "drizzle-orm";
 
 interface MembershipForeignKey {
   readonly table: string;
@@ -214,23 +215,37 @@ describe("every membership foreign key is ruled in MEMBERSHIP_ARTIFACTS", () => 
   });
 });
 
+/**
+ * postgres-js reports `constraint_name` / `table_name` / `column_name` on a
+ * `PostgresError` that Drizzle wraps, so the classifier only sees these fields
+ * one `cause` link down. A bare `{ code, table, constraint }` is a shape the
+ * driver never produces and would pass whether or not the classifier worked.
+ */
+function driverFailure(fields: Record<string, string>): Error {
+  return new DrizzleQueryError("delete from organization_members", [], Object.assign(new Error("blocked"), fields));
+}
+
 describe("a blocked departure is classified, not surfaced as a 500", () => {
   it("names the constraint behind the support-ticket authorship block", () => {
-    const message = departureBlockMessage({
-      code: "23503",
-      table: "support_tickets",
-      constraint: "fk_support_tickets_created_actor",
-    });
+    const message = departureBlockMessage(
+      driverFailure({
+        code: "23503",
+        table_name: "support_tickets",
+        constraint_name: "fk_support_tickets_created_actor",
+      }),
+    );
 
     expect(message).toContain("fk_support_tickets_created_actor");
   });
 
   it("names the column behind an unreachable SET NULL", () => {
-    const message = departureBlockMessage({
-      code: "23502",
-      table: "support_tickets",
-      column: "created_by_membership_id",
-    });
+    const message = departureBlockMessage(
+      driverFailure({
+        code: "23502",
+        table_name: "support_tickets",
+        column_name: "created_by_membership_id",
+      }),
+    );
 
     expect(message).toContain("support_tickets.created_by_membership_id");
   });

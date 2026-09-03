@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollJobs } from "../../../db/schema";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterId, keysetBeforeId } from "../../../common/pagination/keyset";
@@ -64,7 +64,7 @@ export class PayrollJobsService {
         .returning();
       return row!;
     } catch (err) {
-      if (getPostgresErrorCode(err) !== "23505") {
+      if (!isUniqueViolation(err)) {
         logger.error("payroll-jobs.enqueue: insert failed unexpectedly", {
           cause: err instanceof Error ? err.message : String(err),
         });

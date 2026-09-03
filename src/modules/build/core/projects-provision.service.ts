@@ -12,16 +12,12 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
 import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
-
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 function generateProjectKey(name: string): string {
   const namePart = name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
   const randomPart = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
   return (namePart.length >= 2 ? namePart : "PRJ") + "-" + randomPart;
-}
-
-function isDuplicateKeyError(err: unknown): boolean {
-  return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
 }
 
 @Injectable()
@@ -97,7 +93,7 @@ export class ProjectsProvisionService {
 
       return created;
     }).catch((err: unknown) => {
-      if (isDuplicateKeyError(err)) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(`A project with key "${projectKey}" already exists in this organization.`);
       }
       throw err;
@@ -191,7 +187,7 @@ export class ProjectsProvisionService {
 
       return created;
     }).catch((err: unknown) => {
-      if (isDuplicateKeyError(err)) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(`A project with key "${projectKey}" already exists in this organization.`);
       }
       throw err;

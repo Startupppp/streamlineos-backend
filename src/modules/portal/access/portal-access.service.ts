@@ -17,8 +17,7 @@ import type {
   CreateGrantInput,
   UpdateGrantInput,
 } from "./dto/portal-access.schemas";
-
-const PG_UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type MembershipRow = typeof portalMemberships.$inferSelect;
 type GrantRow = typeof projectClientGrants.$inferSelect;
@@ -134,12 +133,7 @@ export class PortalAccessService {
       })
       .returning()
       .catch((err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
+        if (isUniqueViolation(err)) {
           throw new ConflictException("Contact already has portal access in this organization.");
         }
         throw err;
@@ -283,12 +277,7 @@ export class PortalAccessService {
       })
       .returning()
       .catch((err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
+        if (isUniqueViolation(err)) {
           throw new ConflictException("A grant already exists for this membership and project.");
         }
         throw err;

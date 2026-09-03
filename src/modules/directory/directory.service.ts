@@ -25,8 +25,8 @@ import {
   toDirectoryPerson,
 } from "./directory-person-projection";
 import { WorkerEngagementsService } from "./worker-engagements.service";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
-const PG_UNIQUE_VIOLATION = "23505";
 const DIRECTORY_SEARCH_CAP = 500;
 type PersonRow = typeof organizationPeople.$inferSelect;
 type PersonPatch = Partial<typeof organizationPeople.$inferInsert>;
@@ -154,12 +154,7 @@ export class DirectoryService {
       })
       .returning()
       .catch((error: unknown) => {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          (error as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
+        if (isUniqueViolation(error)) {
           throw new ConflictException(
             "A person with this work email already exists in this organization.",
           );
@@ -253,12 +248,7 @@ export class DirectoryService {
       )
       .returning()
       .catch((error: unknown) => {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          (error as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
+        if (isUniqueViolation(error)) {
           throw new ConflictException(
             "A person with this work email already exists in this organization.",
           );

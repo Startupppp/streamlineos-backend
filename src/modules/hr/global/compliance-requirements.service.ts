@@ -24,6 +24,7 @@ import type {
   MarkEventDoneInput,
   SeedCountryPackInput,
 } from "./dto/hr-global.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class ComplianceRequirementsService {
@@ -86,8 +87,8 @@ export class ComplianceRequirementsService {
         createdBy: actorId,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505")
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e))
           throw new ConflictException("A compliance requirement with this name already exists.");
         throw e;
       });
@@ -123,8 +124,8 @@ export class ComplianceRequirementsService {
       })
       .where(and(eq(hrComplianceRequirements.id, id), eq(hrComplianceRequirements.orgId, orgId)))
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505")
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e))
           throw new ConflictException("A compliance requirement with this name already exists.");
         throw e;
       });

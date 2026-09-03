@@ -18,16 +18,7 @@ import type {
   CreateSubjectTypeInput,
   UpdateSubjectTypeInput,
 } from "./dto/subject.schemas";
-
-const PG_UNIQUE_VIOLATION = "23505";
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { code?: unknown }).code === PG_UNIQUE_VIOLATION
-  );
-}
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class SubjectTypeService {

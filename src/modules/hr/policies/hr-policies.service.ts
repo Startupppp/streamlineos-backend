@@ -21,6 +21,7 @@ import type { PolicyType } from "./hr-policy-types";
 import { buildDefaultPolicies } from "./seed-default-policies";
 import { HrPolicyEvaluationService } from "./hr-policy-evaluation.service";
 import { HrPolicyConflictService } from "./hr-policy-conflict.service";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const POLICIES_CACHE = (orgId: string) => `hr:policies:list:${orgId}`;
 const POLICY_CACHE = (orgId: string, id: number) => `hr:policies:detail:${orgId}:${id}`;
@@ -116,8 +117,8 @@ export class HrPoliciesService {
         version: 1,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") {
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) {
           throw new ConflictException(
             "A policy with this name, type, and version already exists",
           );
@@ -200,8 +201,8 @@ export class HrPoliciesService {
         parentPolicyId: policyId,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") throw new ConflictException("Version already exists");
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) throw new ConflictException("Version already exists");
         throw e;
       });
 

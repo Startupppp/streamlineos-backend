@@ -31,6 +31,7 @@ import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { classifyPlanChange } from "./revenue-events";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 import { applyDiscount, couponDiscountPaise } from "./coupon-pricing";
+import { isUniqueViolation, isUniqueViolationOn } from "../../../common/db/postgres-error";
 
 export interface BillingPaymentActivationDeps {
   db: Db;
@@ -176,7 +177,7 @@ export class BillingPaymentActivation {
       });
     } catch (err: unknown) {
       if (isUniqueViolation(err)) {
-        if (err.constraint === "uq_coupon_redemptions_coupon_org") {
+        if (isUniqueViolationOn(err, "uq_coupon_redemptions_coupon_org")) {
           throw new ConflictException("This coupon has already been used by your organization");
         }
         return { success: true, plan: input.plan, status: "ACTIVE" };
@@ -306,12 +307,3 @@ export class BillingPaymentActivation {
   }
 }
 
-function isUniqueViolation(error: unknown): error is { code: "23505"; constraint?: string } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "23505" &&
-    (!("constraint" in error) || typeof error.constraint === "string")
-  );
-}

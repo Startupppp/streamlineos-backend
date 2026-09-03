@@ -27,6 +27,7 @@ import { ACCESS_MANAGED_MODULES } from "../rbac/permissions";
 import { assignModuleOwnerRole } from "../ownership/module-owner-role.helper";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
+import { isUndefinedTable } from "../../common/db/postgres-error";
 
 export { MODULE_CATALOG };
 
@@ -44,7 +45,7 @@ export interface ModuleStatus {
 
 function isMissingRelationError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
-  if ("code" in error && error.code === "42P01") return true;
+  if (isUndefinedTable(error)) return true;
   if (
     "message" in error &&
     typeof error.message === "string" &&

@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { kbPageLinks, kbPages } from "../../../db/schema";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -9,7 +9,6 @@ import type { CreateRecordLinkDto, RecordLinkByRecordQuery } from "./dto/kb-page
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 
-const PG_UNIQUE_VIOLATION = "23505";
 
 @Injectable()
 export class KbPageRecordLinksService {
@@ -55,7 +54,7 @@ export class KbPageRecordLinksService {
         });
       return row;
     } catch (err) {
-      if (getPostgresErrorCode(err) === PG_UNIQUE_VIOLATION)
+      if (isUniqueViolation(err))
         throw new ConflictException("Record link already exists");
       throw err;
     }

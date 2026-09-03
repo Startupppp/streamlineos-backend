@@ -1,6 +1,5 @@
 import { DrizzleQueryError } from "drizzle-orm";
 import {
-  getPostgresErrorCode,
   getPostgresErrorDetails,
   isCheckViolation,
   isExclusionViolation,
@@ -66,7 +65,7 @@ describe("PostgreSQL error helpers", () => {
     });
 
     it("reads the SQLSTATE off the cause", () => {
-      expect(getPostgresErrorCode(error)).toBe("23505");
+      expect(getPostgresErrorDetails(error).code).toBe("23505");
       expect(isUniqueViolation(error)).toBe(true);
     });
 
@@ -108,7 +107,7 @@ describe("PostgreSQL error helpers", () => {
 
   describe("shapes that are not a database error", () => {
     it("still supports an unwrapped driver error", () => {
-      expect(getPostgresErrorCode(driverError(UNIQUE))).toBe("23505");
+      expect(getPostgresErrorDetails(driverError(UNIQUE)).code).toBe("23505");
       expect(getPostgresErrorDetails(driverError(UNIQUE)).constraint).toBe(
         "uniq_hr_people_org_person_link",
       );
@@ -130,7 +129,7 @@ describe("PostgreSQL error helpers", () => {
       const socket = new DrizzleQueryError("select 1", [], Object.assign(new Error("boom"), {
         code: "ECONNRESET",
       }));
-      expect(getPostgresErrorCode(socket)).toBeUndefined();
+      expect(getPostgresErrorDetails(socket).code).toBeUndefined();
       expect(isUniqueViolation(socket)).toBe(false);
     });
 
@@ -139,7 +138,7 @@ describe("PostgreSQL error helpers", () => {
       error.cause = error;
 
       expect(getPostgresErrorDetails(error)).toEqual({});
-      expect(getPostgresErrorCode(error)).toBeUndefined();
+      expect(getPostgresErrorDetails(error).code).toBeUndefined();
     });
   });
 });

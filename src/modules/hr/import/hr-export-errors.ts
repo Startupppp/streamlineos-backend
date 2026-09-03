@@ -1,8 +1,9 @@
 import { ServiceUnavailableException } from "@nestjs/common";
+import { isUndefinedTable } from "../../../common/db/postgres-error";
 
 export function isMissingHrExportTable(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
-  if ("code" in error && error.code === "42P01") return true;
+  if (isUndefinedTable(error)) return true;
   if (
     "message" in error &&
     typeof error.message === "string" &&

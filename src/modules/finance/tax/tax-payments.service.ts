@@ -14,6 +14,7 @@ import type { CreateTaxPaymentInput, ListTaxPaymentsQuery } from "./dto/tax-paym
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { assertOrganizationActor } from "../../../common/organization/organization-actor";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -95,7 +96,7 @@ export class TaxPaymentsService {
         .returning();
       payment = inserted;
     } catch (err: unknown) {
-      if (err instanceof Error && "code" in err && (err as Record<string, unknown>).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(`Tax payment with reference '${input.reference}' already exists`);
       }
       throw err;

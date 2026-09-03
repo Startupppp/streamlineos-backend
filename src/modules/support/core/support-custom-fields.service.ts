@@ -6,6 +6,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateCustomFieldInput, CustomFieldValueInput, UpdateCustomFieldInput } from "./dto/support.schemas";
 import { supportTickets } from "../../../db/schema";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const SUPPORT_ENTITY_TYPE = "support_ticket" as const;
 
@@ -102,8 +103,8 @@ export class SupportCustomFieldsService {
         isActive: input.isActive,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") {
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) {
           throw new ConflictException(`A custom field with key "${input.key}" already exists`);
         }
         throw e;

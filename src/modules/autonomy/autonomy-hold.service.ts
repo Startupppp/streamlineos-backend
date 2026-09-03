@@ -16,6 +16,7 @@ import { clampHoldWindow, secondsRemaining } from "./hold-window";
 import { draftQuoteFromDeal } from "./quote-draft";
 import { QuotesService } from "../quotes/quotes.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 export const HOLD_WORKFLOW = "crm.autonomy-hold";
 
@@ -438,13 +439,3 @@ export class AutonomyHoldService {
 
 const DECISION_REVERSAL_CHUNK = 500;
 
-const PG_UNIQUE_VIOLATION = "23505";
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: string }).code === PG_UNIQUE_VIOLATION
-  );
-}

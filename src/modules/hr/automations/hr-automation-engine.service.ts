@@ -17,6 +17,7 @@ import type { HrAutomationEvent } from "./hr-automation-events";
 import { HrWebhooksService } from "./hr-webhooks.service";
 import { evaluateNormalizedCondition, evaluateNormalizedConditions, type NormalizedCondition } from "../../automation/shared-condition-evaluator";
 import { boundHrReadLimit } from "../hr-read-limits";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const MAX_DEPTH = 3;
 const COOLDOWN_MS = 5_000;
@@ -247,7 +248,7 @@ export class HrAutomationEngineService {
       }).returning();
       return rule;
     } catch (error: unknown) {
-      if (error instanceof Error && error.message.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException(`An automation rule named "${input.name}" already exists`);
       }
       throw error;
@@ -272,7 +273,7 @@ export class HrAutomationEngineService {
       return updated;
     } catch (error: unknown) {
       if (error instanceof ConflictException || error instanceof NotFoundException) throw error;
-      if (error instanceof Error && error.message.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException("An automation rule with that name already exists");
       }
       throw error;

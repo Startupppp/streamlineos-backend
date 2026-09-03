@@ -9,7 +9,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollEntities, payrollPeriods } from "../../../db/schema";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
 import { getCountryPack } from "../../hr/global/country-packs";
 import {
@@ -76,7 +76,7 @@ export class PayrollEntitiesService {
         .returning();
       return row;
     } catch (err) {
-      if (getPostgresErrorCode(err) !== "23505") {
+      if (!isUniqueViolation(err)) {
         logger.error("entities.create: insert failed unexpectedly", {
           cause: err instanceof Error ? err.message : String(err),
         });

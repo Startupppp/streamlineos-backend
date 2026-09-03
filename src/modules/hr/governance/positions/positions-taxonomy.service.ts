@@ -16,6 +16,7 @@ import type {
   CreatePositionTransitionInput,
   UpdatePositionTransitionInput,
 } from "./positions-taxonomy.dto";
+import { isUniqueViolation } from "../../../../common/db/postgres-error";
 
 @Injectable()
 export class PositionsTaxonomyService {
@@ -51,8 +52,8 @@ export class PositionsTaxonomyService {
         isActive: true,
       })
       .returning()
-      .catch((err: { code?: string }) => {
-        if (err.code === "23505")
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err))
           throw new ConflictException(
             `A status named '${input.name}' already exists in this organisation.`,
           );

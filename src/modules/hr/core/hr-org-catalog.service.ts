@@ -15,6 +15,7 @@ import type {
   UpdateOrgLocationInput,
   UpdateOrgTeamInput,
 } from "../../organization/hierarchy/dto/org-hierarchy.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type CatalogInput = {
   name: string;
@@ -71,7 +72,7 @@ export class HrOrgCatalogService {
         .returning();
       return row;
     } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A job role with this name already exists");
       }
       throw err;
@@ -109,7 +110,7 @@ export class HrOrgCatalogService {
         .returning();
       return row;
     } catch (err: unknown) {
-      if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A job level with this name already exists");
       }
       throw err;

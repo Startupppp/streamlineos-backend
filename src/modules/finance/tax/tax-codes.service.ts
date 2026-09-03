@@ -10,6 +10,7 @@ import { FinancePostingService } from "../../accounting/posting/finance-posting.
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
 import type { CreateTaxCodeInput, ListTaxCodesQuery, UpdateTaxCodeInput } from "./dto/tax-codes.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const DEFAULT_CODES = [
   { code: "GST0", name: "GST 0%", rate: "0.00", taxType: "GST" as const, isReverseCharge: false },
@@ -140,8 +141,7 @@ export class TaxCodesService {
 
       return row;
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("uniq_acc_tax_codes_org_code") || msg.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException(`Tax code '${input.code}' already exists for this organization`);
       }
       throw error;
@@ -171,8 +171,7 @@ export class TaxCodesService {
 
       return row;
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("uniq_acc_tax_codes_org_code") || msg.includes("23505")) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException(`Tax code '${input.code}' already exists for this organization`);
       }
       throw error;

@@ -3,15 +3,7 @@ import { eq, and, asc } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollAccountingMappings, salaryComponents } from "../../../db/schema";
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as Record<string, unknown>).code === "23505"
-  );
-}
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class AccountingMappingsService {

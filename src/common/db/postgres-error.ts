@@ -1,5 +1,7 @@
 import { sqlstateOf } from "../observability/error-classification";
 
+export { sqlstateOf };
+
 /**
  * The single place SQLSTATE classification happens.
  *
@@ -70,10 +72,6 @@ export function getPostgresErrorDetails(error: unknown): PostgresErrorDetails {
   }
 
   return {};
-}
-
-export function getPostgresErrorCode(error: unknown): string | undefined {
-  return sqlstateOf(error);
 }
 
 function isSqlstate(error: unknown, sqlstate: string): boolean {

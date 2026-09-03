@@ -17,8 +17,7 @@ import type {
   CreateContactInput,
   UpdateContactInput,
 } from "./dto/party.schemas";
-
-const PG_UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 type PartyRow = typeof businessParties.$inferSelect;
 type PartyPatch = Partial<typeof businessParties.$inferInsert>;
@@ -225,12 +224,7 @@ export class PartyService {
       })
       .returning()
       .catch((err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
+        if (isUniqueViolation(err)) {
           throw new ConflictException("A party with this identifier already exists in this organization.");
         }
         throw err;
@@ -288,12 +282,7 @@ export class PartyService {
     // that has to move with it, in the same transaction.
     const updated = await updatePartyWithMirror(this.db, organizationId, partyId, patch).catch(
       (err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
+        if (isUniqueViolation(err)) {
           throw new ConflictException("A party with this identifier already exists in this organization.");
         }
         throw err;
@@ -356,12 +345,7 @@ export class PartyService {
       })
       .returning()
       .catch((err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
+        if (isUniqueViolation(err)) {
           throw new ConflictException("A contact with this identifier already exists.");
         }
         throw err;

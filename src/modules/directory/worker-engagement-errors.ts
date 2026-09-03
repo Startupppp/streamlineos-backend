@@ -1,8 +1,5 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
-import { getPostgresErrorCode } from "../../common/db/postgres-error";
-
-const PG_UNIQUE_VIOLATION = "23505";
-const PG_EXCLUSION_VIOLATION = "23P01";
+import { isExclusionViolation, isUniqueViolation } from "../../common/db/postgres-error";
 
 export const ENGAGEMENT_ERROR = {
   DATE_OVERLAP: "WORKER_ENGAGEMENT_DATE_OVERLAP",
@@ -25,15 +22,14 @@ export function assertValidEngagementPeriod(
 }
 
 export function throwEngagementWriteError(error: unknown): never {
-  const code = getPostgresErrorCode(error);
-  if (code === PG_UNIQUE_VIOLATION) {
+  if (isUniqueViolation(error)) {
     throw new ConflictException({
       code: ENGAGEMENT_ERROR.PRIMARY_EXISTS,
       message:
         "This worker already has an active primary engagement. Unmark Primary, or end the current primary engagement first.",
     });
   }
-  if (code === PG_EXCLUSION_VIOLATION) {
+  if (isExclusionViolation(error)) {
     throw new ConflictException({
       code: ENGAGEMENT_ERROR.DATE_OVERLAP,
       message:

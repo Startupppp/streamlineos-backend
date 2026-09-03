@@ -24,6 +24,7 @@ import type {
 } from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { HrWorkflowApproverService } from "./hr-workflow-approver.service";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 interface StepInput {
   stepOrder: number;
@@ -166,8 +167,7 @@ export class HrWorkflowDefinitionsService {
       await this.upsertSteps(orgId, definition.id, dto.steps);
       return this.get(orgId, definition.id);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("23505") || msg.includes("uniq_hr_wf_def")) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           "A workflow with this name and version already exists for this object type",
         );

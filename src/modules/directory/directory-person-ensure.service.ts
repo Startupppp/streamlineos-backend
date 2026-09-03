@@ -3,13 +3,12 @@ import { and, eq, isNotNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { organizationPeople } from "../../db/schema";
-import { getPostgresErrorCode } from "../../common/db/postgres-error";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import {
   assertCompatibleLink,
   findMemberIdentity,
   findPersonForIdentity,
   normalizeEmail,
-  PG_UNIQUE_VIOLATION,
 } from "./directory-identity-helpers";
 import { DirectoryIdentityService } from "./directory-identity.service";
 
@@ -68,7 +67,7 @@ export class DirectoryPersonEnsureService {
           .returning();
         if (restored) return restored;
       } catch (error) {
-        if (getPostgresErrorCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+        if (!isUniqueViolation(error)) throw error;
         throw new ConflictException({
           code: "DIRECTORY_MEMBER_ALREADY_LINKED",
           message:
@@ -105,7 +104,7 @@ export class DirectoryPersonEnsureService {
         throw new NotFoundException("Failed to create person record");
       return created;
     } catch (error) {
-      if (getPostgresErrorCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+      if (!isUniqueViolation(error)) throw error;
       const winner = await findPersonForIdentity(this.db, organizationId, identity);
       if (winner) {
         assertCompatibleLink(winner, identity);

@@ -25,10 +25,7 @@ import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { defaultFormatFromCurrency, csvHeader, csvRow } from "./lib/payout-csv";
 import { toPaise, fromPaise } from "../runs/lib/money";
 import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
-
-function isDuplicateKeyError(err: unknown): boolean {
-  return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
-}
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type ItemData = {
   runEmployeeId: number;
@@ -276,7 +273,7 @@ export class BatchCreatorService {
         newBatch = txResult.batch;
         newBatchItems = txResult.items;
       } catch (err: unknown) {
-        if (subKey && isDuplicateKeyError(err)) {
+        if (subKey && isUniqueViolation(err)) {
           const racedBatch = await this.db.query.payrollBankBatches.findFirst({
             where: and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.idempotencyKey, subKey)),
           });

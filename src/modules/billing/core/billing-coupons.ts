@@ -13,6 +13,7 @@ import {
   type Plan,
   type UpdateCouponInput,
 } from "./dto/billing.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 // A coupon is redeemable by the organisation that owns it, or by everyone when it is a
 // platform-wide coupon (`org_id IS NULL`). Every read applies this predicate.
@@ -153,11 +154,7 @@ export class BillingCoupons {
         .returning();
       return created;
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        (err as { code?: string }).code === "23505"
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A coupon with this code already exists");
       }
       throw err;

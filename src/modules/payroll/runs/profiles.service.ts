@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { and, eq, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
 import {
   employeeSalaryProfiles,
@@ -143,7 +143,7 @@ export class ProfilesService {
           .returning();
         inserted = row;
       } catch (err) {
-        if (getPostgresErrorCode(err) !== "23505") {
+        if (!isUniqueViolation(err)) {
           logger.error("profiles.createWorkerProfile: insert failed unexpectedly", {
             orgId,
             cause: err instanceof Error ? err.message : String(err),
@@ -286,7 +286,7 @@ export class ProfilesService {
           .returning();
         inserted = row;
       } catch (err) {
-        if (getPostgresErrorCode(err) !== "23505") {
+        if (!isUniqueViolation(err)) {
           logger.error("profiles.createEmployeeProfile: insert failed unexpectedly", {
             orgId,
             cause: err instanceof Error ? err.message : String(err),
@@ -316,7 +316,7 @@ export class ProfilesService {
             })),
           );
         } catch (err) {
-          if (getPostgresErrorCode(err) !== "23505") {
+          if (!isUniqueViolation(err)) {
             logger.error("profiles.createProfile: component insert failed unexpectedly", {
               orgId,
               cause: err instanceof Error ? err.message : String(err),

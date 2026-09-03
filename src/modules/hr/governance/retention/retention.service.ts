@@ -25,6 +25,7 @@ import type {
   UpdateDataRequestInput,
   ListDataRequestsInput,
 } from "./retention.dto";
+import { isUniqueViolation } from "../../../../common/db/postgres-error";
 
 @Injectable()
 export class RetentionService {
@@ -67,8 +68,8 @@ export class RetentionService {
         active: input.active ?? true,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505")
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e))
           throw new ConflictException(
             "A retention policy for this record type and country already exists.",
           );
@@ -102,8 +103,8 @@ export class RetentionService {
       .set({ ...input, updatedAt: new Date() })
       .where(and(eq(hrRetentionPolicies.orgId, orgId), eq(hrRetentionPolicies.id, policyId)))
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505")
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e))
           throw new ConflictException(
             "A retention policy for this record type and country already exists.",
           );

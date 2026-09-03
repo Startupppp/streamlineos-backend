@@ -32,6 +32,7 @@ import {
   requireActiveOrg,
   type InviteActor,
 } from "./invitations.helpers";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 interface InvitationMutationResult {
   success: true;
@@ -297,8 +298,7 @@ export class InvitationCreateService {
         { orgId },
       );
     } catch (err) {
-      const code = (err as { code?: string }).code;
-      if (code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           "An invitation is already pending for this email",
         );

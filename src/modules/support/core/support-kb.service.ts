@@ -16,6 +16,7 @@ import type {
   UpdateKbArticleInput,
   UpdateKbCategoryInput,
 } from "./dto/support.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -66,8 +67,8 @@ export class SupportKbService {
         isPublished: input.isPublished ?? false,
       })
       .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") {
+      .catch((e: unknown) => {
+        if (isUniqueViolation(e)) {
           throw new ConflictException("A category with this name already exists");
         }
         throw e;

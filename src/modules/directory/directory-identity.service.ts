@@ -22,7 +22,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { getPostgresErrorCode } from "../../common/db/postgres-error";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import {
   assertCompatibleLink,
   effectiveEmail,
@@ -31,7 +31,6 @@ import {
   invitationAccess,
   LINKABLE_MEMBERSHIP_STATUSES,
   normalizeEmail,
-  PG_UNIQUE_VIOLATION,
   type IdentitySelector,
   type MemberIdentity,
 } from "./directory-identity-helpers";
@@ -126,7 +125,7 @@ export class DirectoryIdentityService {
         }
       );
     } catch (error) {
-      if (getPostgresErrorCode(error) !== PG_UNIQUE_VIOLATION) throw error;
+      if (!isUniqueViolation(error)) throw error;
       throw new ConflictException({
         code: "DIRECTORY_MEMBER_ALREADY_LINKED",
         message:

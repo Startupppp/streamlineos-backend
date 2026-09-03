@@ -20,20 +20,10 @@ import type {
 } from "./dto/offer-fulfillment.schemas";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetBeforeValue } from "../../common/pagination/keyset";
-
-const PG_UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 type ComponentRow = typeof offerFulfillmentComponents.$inferSelect;
 type ComponentPatch = Partial<typeof offerFulfillmentComponents.$inferInsert>;
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: string }).code === PG_UNIQUE_VIOLATION
-  );
-}
 
 @Injectable()
 export class OfferFulfillmentService {

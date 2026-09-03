@@ -5,6 +5,7 @@ import { shiftTemplates, employeeShiftAssignments, shiftSwapRequests } from "../
 import { eq, and, desc } from "drizzle-orm";
 import type { CreateShiftInput, UpdateShiftInput } from "./dto/shifts.schemas";
 import { requireOrganizationMembershipId } from "./organization-membership";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class ShiftsService {
@@ -22,8 +23,7 @@ export class ShiftsService {
       const [shift] = await this.db.insert(shiftTemplates).values({ orgId, ...data }).returning();
       return shift;
     } catch (err: unknown) {
-      const pg = err as { code?: string };
-      if (pg.code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A shift template with this name already exists.");
       }
       throw err;

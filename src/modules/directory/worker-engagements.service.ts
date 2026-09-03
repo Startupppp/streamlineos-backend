@@ -8,7 +8,7 @@ import {
 import { and, asc, eq, gt, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { assertActiveOrgUnit } from "../../common/org/sync-org-unit-placement";
 import { AuditService } from "../../common/audit/audit.service";
-import { getPostgresErrorCode } from "../../common/db/postgres-error";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -31,7 +31,6 @@ import {
   throwEngagementWriteError,
 } from "./worker-engagement-errors";
 
-const PG_UNIQUE_VIOLATION = "23505";
 const WORKER_SEARCH_CAP = 500;
 
 type PersonRow = typeof organizationPeople.$inferSelect;
@@ -190,7 +189,7 @@ export class WorkerEngagementsService {
       })
       .returning()
       .catch((error: unknown) => {
-        if (getPostgresErrorCode(error) === PG_UNIQUE_VIOLATION) {
+        if (isUniqueViolation(error)) {
           throw new ConflictException("This person is already a worker in this organization.");
         }
         throw error;

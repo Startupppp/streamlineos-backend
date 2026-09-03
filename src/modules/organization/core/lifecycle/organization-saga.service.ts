@@ -9,18 +9,8 @@ import {
   type OrganizationReservationKind,
   type OrganizationSagaKind,
 } from "../../../../db/schema/common/organization-lifecycle";
-import { sqlstateOf } from "../../../../common/observability/error-classification";
+import { isUniqueViolation } from "../../../../common/db/postgres-error";
 import { SAGA_STEPS, TRANSITION_TABLE } from "./organization-lifecycle-transitions";
-
-/**
- * Drizzle wraps the driver error, so the SQLSTATE is a cause link down and
- * `err.code` is undefined — a direct read reports every taken slug as a 500.
- * `sqlstateOf` walks the chain by shape, which also survives postgres-js
- * building that inner error in another realm.
- */
-function isUniqueViolation(err: unknown): boolean {
-  return sqlstateOf(err) === "23505";
-}
 
 export type SagaWithSteps = {
   saga: typeof organizationLifecycleSagas.$inferSelect;

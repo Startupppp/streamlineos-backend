@@ -22,6 +22,7 @@ import {
   type ClaimsCursorScope,
   decodeClaimsCursor,
 } from "./hr-benefits-claims.helpers";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class HrBenefitsClaimsService {
@@ -120,7 +121,7 @@ export class HrBenefitsClaimsService {
         .returning();
       return claim;
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A claim with this claim number already exists");
       }
       throw err;

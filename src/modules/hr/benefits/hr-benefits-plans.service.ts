@@ -22,7 +22,7 @@ import type {
 } from "./dto/benefits.schemas";
 import { boundHrReadLimit } from "../hr-read-limits";
 import { hasPatchValues } from "../../../common/db/patch-values";
-import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import { isForeignKeyViolation, isUniqueViolation } from "../../../common/db/postgres-error";
 
 type BenefitPlansCursorScope = {
   orgId: string;
@@ -121,7 +121,7 @@ export class HrBenefitsPlansService {
         .returning();
       return plan;
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A benefit plan with this name already exists");
       }
       throw err;
@@ -139,7 +139,7 @@ export class HrBenefitsPlansService {
       return updated;
     } catch (err: unknown) {
       if (err instanceof NotFoundException) throw err;
-      if ((err as { code?: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A benefit plan with this name already exists");
       }
       throw err;
@@ -155,7 +155,7 @@ export class HrBenefitsPlansService {
       if (!deleted) throw new NotFoundException("Benefit plan not found");
       return { ok: true };
     } catch (error) {
-      if (getPostgresErrorCode(error) === "23503")
+      if (isForeignKeyViolation(error))
         throw new ConflictException(
           "This benefit plan still has enrollments or claims and cannot be deleted",
         );

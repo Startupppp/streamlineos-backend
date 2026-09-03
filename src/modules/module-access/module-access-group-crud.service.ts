@@ -28,6 +28,7 @@ import { resolveActorRankContext } from "./module-access.helpers";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import type { CursorPage } from "../../common/pagination/cursor";
 import { keysetAfterValue } from "../../common/pagination/keyset";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class ModuleAccessGroupCrudService {
@@ -148,7 +149,7 @@ export class ModuleAccessGroupCrudService {
       await bumpPermissionsVersion(tx, actor.orgId);
       return created;
     }, { orgId: actor.orgId }).catch((error: unknown) => {
-      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+      if (isUniqueViolation(error)) throw new ConflictException(`A group named "${input.name}" already exists in this module`);
       throw error;
     });
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
@@ -167,7 +168,7 @@ export class ModuleAccessGroupCrudService {
       await bumpPermissionsVersion(tx, actor.orgId);
       return updated;
     }, { orgId: actor.orgId }).catch((error: unknown) => {
-      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+      if (isUniqueViolation(error)) throw new ConflictException(`A group named "${input.name}" already exists in this module`);
       throw error;
     });
     if (!row) throw new BadRequestException("Failed to rename group");

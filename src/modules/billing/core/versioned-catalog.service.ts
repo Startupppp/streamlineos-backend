@@ -14,6 +14,7 @@ import {
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 export interface ActivePriceVersion {
   id: number;
@@ -196,8 +197,7 @@ export class VersionedCatalogService {
           setWhere: sql`idempotency_key IS NOT NULL`,
         });
     } catch (err: unknown) {
-      const pgErr = err as { code?: string };
-      if (pgErr.code === "23505") throw new ConflictException("Entitlement override already exists for this window");
+      if (isUniqueViolation(err)) throw new ConflictException("Entitlement override already exists for this window");
       throw err;
     }
     const deferred = registerAfterCommit(() => this.bustOrgEntitlementCache(orgId));

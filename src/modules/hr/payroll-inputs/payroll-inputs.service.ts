@@ -29,6 +29,7 @@ import type {
   SectionQueryInput,
   CreateAdjustmentInput,
 } from "./dto/payroll-inputs.schemas";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 function periodBoundsFrom(periodKey: string): { start: string; end: string } {
   const [year, month] = periodKey.split("-");
@@ -104,8 +105,7 @@ export class PayrollInputsService {
 
       return period;
     } catch (err: unknown) {
-      const pg = err as { code?: string };
-      if (pg.code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(`Period ${input.periodKey} already exists for this organisation`);
       }
       throw err;

@@ -35,6 +35,7 @@ import { canTransferModuleOwnership } from "../module-access/module-standing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetBeforeUuid } from "../../common/pagination/keyset";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class OwnershipTransfersService {
@@ -140,8 +141,7 @@ export class OwnershipTransfersService {
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {
-      const pgErr = err as { code?: string };
-      if (pgErr.code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           "A pending org ownership transfer already exists",
         );
@@ -270,8 +270,7 @@ export class OwnershipTransfersService {
 
       return { transferId: transfer.id, expiresAt: transfer.expiresAt };
     } catch (err: unknown) {
-      const pgErr = err as { code?: string };
-      if (pgErr.code === "23505") {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           `A pending transfer for module "${moduleKey}" already exists`,
         );

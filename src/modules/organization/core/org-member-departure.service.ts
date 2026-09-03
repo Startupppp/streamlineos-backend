@@ -30,16 +30,7 @@ import {
   queryOwnedModuleKeys,
   queryPrivilegedRoleNames,
 } from "./org-member-authority-queries";
-
-const PG_FK_VIOLATION = "23503";
-const PG_RESTRICT_VIOLATION = "23001";
-const PG_NOT_NULL_VIOLATION = "23502";
-
-function pgField(err: unknown, field: string): string | undefined {
-  if (typeof err !== "object" || err === null) return undefined;
-  const value = Reflect.get(err, field);
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
+import { PG_FOREIGN_KEY_VIOLATION, PG_NOT_NULL_VIOLATION, PG_RESTRICT_VIOLATION, getPostgresErrorDetails } from "../../../common/db/postgres-error";
 
 /**
  * A 23502 raised while deleting a membership is an ON DELETE SET NULL writing
@@ -48,13 +39,11 @@ function pgField(err: unknown, field: string): string | undefined {
  * escapes as a 500, which is how this failed silently before 0992.
  */
 export function departureBlockMessage(err: unknown): string | null {
-  const code = pgField(err, "code");
-  if (code === PG_FK_VIOLATION || code === PG_RESTRICT_VIOLATION) {
-    return `a related record still references the membership (constraint: ${pgField(err, "constraint") ?? "unknown"})`;
+  const { code, constraint, table, column } = getPostgresErrorDetails(err);
+  if (code === PG_FOREIGN_KEY_VIOLATION || code === PG_RESTRICT_VIOLATION) {
+    return `a related record still references the membership (constraint: ${constraint ?? "unknown"})`;
   }
   if (code === PG_NOT_NULL_VIOLATION) {
-    const table = pgField(err, "table");
-    const column = pgField(err, "column");
     const where = table && column ? `${table}.${column}` : (table ?? "an unknown table");
     return `a related record requires the membership and cannot release it (${where})`;
   }

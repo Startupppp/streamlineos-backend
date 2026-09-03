@@ -16,6 +16,7 @@ import type {
 } from "./dto/hr-forms.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type FormRow = typeof hrForms.$inferSelect;
 
@@ -87,8 +88,8 @@ export class HrFormsService {
         createdBy: userId,
       })
       .returning()
-      .catch((err: { code?: string }) => {
-        if (err.code === "23505") throw new ConflictException("Form name or slug already exists");
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) throw new ConflictException("Form name or slug already exists");
         throw err;
       });
     if (!row) throw new BadRequestException("Failed to create form");
@@ -120,8 +121,8 @@ export class HrFormsService {
       .set(patch)
       .where(and(eq(hrForms.id, formId), eq(hrForms.orgId, orgId)))
       .returning()
-      .catch((err: { code?: string }) => {
-        if (err.code === "23505") throw new ConflictException("Form name or slug already exists");
+      .catch((err: unknown) => {
+        if (isUniqueViolation(err)) throw new ConflictException("Form name or slug already exists");
         throw err;
       });
     if (!row) throw new NotFoundException("Form not found");

@@ -20,6 +20,7 @@ import type {
 } from "./dto/hr-webhook.schemas";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
 import { boundHrReadLimit } from "../hr-read-limits";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 5;
@@ -84,7 +85,7 @@ export class HrWebhooksService {
         .returning();
       return { ...row, secret };
     } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("23505")) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(`A webhook named "${input.name}" already exists`);
       }
       throw err;
@@ -118,7 +119,7 @@ export class HrWebhooksService {
       return this.getSubscription(orgId, id);
     } catch (err: unknown) {
       if (err instanceof ConflictException || err instanceof NotFoundException) throw err;
-      if (err instanceof Error && err.message.includes("23505")) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A webhook with that name already exists");
       }
       throw err;

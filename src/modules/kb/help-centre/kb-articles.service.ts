@@ -17,6 +17,7 @@ import type {
   VoteArticleInput,
 } from "../core/dto/kb.schemas";
 import { KB_ARTICLE_COLUMNS, type KbArticleRow } from "./kb-article-columns";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -102,14 +103,10 @@ export class KbArticlesService {
           return { ...article, tags: resolvedTags };
         });
       } catch (err) {
-        if (attempt < maxAttempts && this.isUniqueViolation(err)) continue;
+        if (attempt < maxAttempts && isUniqueViolation(err)) continue;
         throw err;
       }
     }
-  }
-
-  private isUniqueViolation(err: unknown): boolean {
-    return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
   }
 
   async update(user: CurrentUserContext, articleId: number, input: UpdateArticleInput): Promise<ArticleWithTags> {
