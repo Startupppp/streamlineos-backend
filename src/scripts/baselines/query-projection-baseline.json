@@ -1,10 +1,11 @@
 {
   "version": 1,
   "measuredAt": "2026-09-03",
-  "files": 3575,
+  "files": 3574,
   "note": "Ratchets for ticket 20's projection box. countPathsAllowed is the CLOSED clause and must stay at 0; the three population ceilings hold the BLOCKED clause from growing while the product decision is outstanding. All four may only go DOWN.",
   "countPathsAllowed": 0,
-  "findMany": 294,
+  "findMany": 295,
   "findFirst": 547,
-  "bareSelect": 600
+  "bareSelect": 599,
+  "measuredAgainst": "git archive HEAD src — NOT the working tree. Measured on the dirty tree first and it read 294/547/600 against HEAD's 295/547/599, because two concurrent lanes held uncommitted edits in opposite directions (one projecting chat/chat-channel-list.service.ts, one adding a bare .select()). A ceiling taken from a shared dirty tree is not the number the gate will see."
 }
