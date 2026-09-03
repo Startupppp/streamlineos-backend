@@ -11,7 +11,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
-function makeChainableDb(rows: unknown[]): { db: Db; where: jest.Mock } {
+function makeChainableDb(rows: unknown[]): { db: Db; where: jest.Mock; goalFindFirst: jest.Mock } {
   const where = jest.fn().mockResolvedValue(rows);
   const builder = {
     from: jest.fn(),
