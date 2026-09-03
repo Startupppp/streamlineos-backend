@@ -52,12 +52,17 @@ const MIN_FILES = 1500;
 /**
  * TIER 2 RATCHET — the measured count of floating promises and swallowed rejections in `src`.
  *
- * MEASURED 2026-09-02 at 283 across 3,572 scanned files: 200 `void x.y(` floating promises and
- * 83 swallowed `.catch()` rejections. That is the number this gate holds; it is not a target and
- * not an approval of those 283 call sites. Lower it whenever the real count drops — the gate says
- * so on every run that comes in under it.
+ * RE-MEASURED 2026-09-03 (ticket 35, box 5) at 279 across 3,605 scanned files: 198 `void x.y(`
+ * floating promises and 81 swallowed `.catch()` rejections. Measured HERMETICALLY against
+ * `git archive HEAD src test` — not the shared working tree — so the number this gate holds is the
+ * committed one CI will see, not another agent's in-flight work. The gate had been reporting
+ * "TIER 2 IMPROVED — 4 fewer than the ratchet" on every run since the 4 sites left; four sites of
+ * slack is four regressions a future change may land for free, which is the same defect as a
+ * baseline raised to go green, only pointing the other way. It is not a target and not an approval
+ * of those 279 call sites. Lower it whenever the real count drops — the gate says so on every run
+ * that comes in under it.
  */
-const TIER2_RATCHET = 283;
+const TIER2_RATCHET = 279;
 
 // --- TIER 1: banned shapes -------------------------------------------------
 const VOID_EMIT_RE = /\bvoid\s+(?:this\.\w+\s*\.\s*emit|[\w.]+\s*\.\s*emit)\s*\(/;
