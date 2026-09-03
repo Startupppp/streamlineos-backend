@@ -3,7 +3,6 @@ import { pageNumberField, pageSizeField } from "../../../common/pagination/list-
 
 export const createAttemptSchema = z.object({
   participantId: z.number().int().positive().optional(),
-  accessToken: z.string().optional(),
 }).strict();
 
 export const listAttemptsSchema = z.object({

@@ -16,7 +16,6 @@ export const budgetVsActualQuerySchema = z.object({
   budgetId: z.coerce.number().int().positive(),
   from: isoDate,
   to: isoDate,
-  format: z.enum(["json", "csv"]).default("json"),
 }).strict();
 
 export const workingCapitalQuerySchema = z.object({

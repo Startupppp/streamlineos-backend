@@ -36,7 +36,7 @@ function improveWritingPrompt(post: BlogPostContext, draft: { content: string })
   };
 }
 
-function suggestTitlePrompt(post: BlogPostContext, draft?: { content?: string; excerpt?: string }) {
+function suggestTitlePrompt(post: BlogPostContext, draft?: { content?: string }) {
   const sourceText = (draft?.content || post.content || post.excerpt || "").slice(0, 1500);
   return {
     system: SUGGEST_TITLE_SYSTEM,
@@ -97,7 +97,7 @@ export class BlogAiService {
     return { content: content.slice(0, 4000) };
   }
 
-  async suggestTitle(orgId: string, userId: string, postId: string, draft?: { content?: string; excerpt?: string }) {
+  async suggestTitle(orgId: string, userId: string, postId: string, draft?: { content?: string }) {
     const post = await runInTenantTransaction(
       this.db,
       (tx) => this.assertPost(postId, tx),

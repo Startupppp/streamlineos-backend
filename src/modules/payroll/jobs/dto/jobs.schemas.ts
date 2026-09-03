@@ -2,7 +2,6 @@ import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listJobsQuerySchema = z.object({
-  failedOnly: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
   runId: z.coerce.number().int().positive().optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(50, 100),

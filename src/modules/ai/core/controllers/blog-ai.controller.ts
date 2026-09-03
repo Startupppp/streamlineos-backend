@@ -29,7 +29,6 @@ const postIdParams = z.object({ postId: z.string().min(1) }).strict();
 const improveWritingSchema = z.object({ content: z.string().min(1).max(10000) });
 const suggestTitleSchema = z.object({
   content: z.string().max(10000).optional(),
-  excerpt: z.string().max(1000).optional(),
 });
 const summarizeSchema = z.object({ content: z.string().max(10000).optional() });
 
