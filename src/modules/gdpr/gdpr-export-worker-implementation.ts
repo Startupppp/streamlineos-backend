@@ -79,10 +79,8 @@ import {
 
 export { countExportRows, drainExportPages } from "./gdpr-export-types";
 export {
-  GDPR_EXPORT_SOURCE_ADAPTERS,
   GENERIC_GDPR_EXPORT_EXCLUDED_SOURCES,
   REQUIRED_GDPR_EXPORT_SOURCES,
-  SUBJECT_SCOPED_GDPR_EXPORT_SOURCES,
 } from "./gdpr-export-adapters";
 
 @Injectable()

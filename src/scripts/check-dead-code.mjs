@@ -91,50 +91,17 @@ const OUT_OF_SCOPE_SEGMENTS = new Set([
  *             stale-verdict check deletes the entry the moment they go.
  */
 const FINDING_VERDICTS = new Map([
-  // ---- src/common/observability/index.ts — module barrel -------------------
-  ["src/common/observability/index.ts:correlationIdToPersist", { verdict: "REMOVE", reason: "barrel re-export with no consumer; a barrel export does not make a symbol used. Owned by the module-barrel workstream" }],
-  ["src/common/observability/index.ts:AsyncHop", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
+  // ---- src/common/tenant ---------------------------------------------------
+  ["src/common/tenant/tenant-context.ts:getTenantAbortSignal", { verdict: "WIRE", reason: "the read accessor for `TenantContext.abortSignal`, which `tenant-context.interceptor.ts:107` sets on every request and `__tests__/tenant-context.abort.spec.ts` asserts is set. Nothing in production reads it, so a client disconnect never reaches the database layer — that missing consumer is the defect, not the accessor. The consumer to write is `run-in-tenant-transaction.ts` / `with-tenant.ts`, which should abort the open transaction when the signal fires. Deleting it would make a live cancellation signal unreachable (ticket 11 box 2, ticket 13 box 3)" }],
 
-  // ---- src/common/tenant — module barrel + its source ----------------------
-  ["src/common/tenant/index.ts:getTenantAbortSignal", { verdict: "REMOVE", reason: "barrel re-export whose only reference is the barrel itself. Owned by the module-barrel workstream" }],
-  ["src/common/tenant/index.ts:hasSweepFailureSink", { verdict: "REMOVE", reason: "barrel re-export with no consumer. Owned by the module-barrel workstream" }],
-  ["src/common/tenant/index.ts:ForEachOrgResult", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/common/tenant/index.ts:SweepFailureSink", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/common/tenant/tenant-context.ts:getTenantAbortSignal", { verdict: "REMOVE", reason: "the source of the barrel re-export above; both go together or the barrel breaks. Owned by the module-barrel workstream" }],
-
-  // ---- src/db/query-telemetry.ts ------------------------------------------
-  ["src/db/query-telemetry.ts:FINGERPRINT_CAP", { verdict: "REMOVE", reason: "constant with no reader outside its own module. Owned by the query-instrumentation workstream, which has this file open" }],
-  ["src/db/query-telemetry.ts:SLOW_QUERY_MS", { verdict: "REMOVE", reason: "constant with no reader outside its own module. Owned by the query-instrumentation workstream, which has this file open" }],
-
-  // ---- src/modules/ai/core/streaming/index.ts — module barrel --------------
-  ["src/modules/ai/core/streaming/index.ts:getAiRequestAbortSignal", { verdict: "REMOVE", reason: "barrel re-export with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:runWithAiRequestAbort", { verdict: "REMOVE", reason: "barrel re-export with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:AI_REQUEST_DEADLINE_MS", { verdict: "REMOVE", reason: "barrel re-export with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:AiStreamBreaker", { verdict: "REMOVE", reason: "barrel re-export with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:AI_STREAM_BREAKER_FAILURE_THRESHOLD", { verdict: "REMOVE", reason: "barrel re-export with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:AI_STREAM_BREAKER_OPEN_DURATION_MS", { verdict: "REMOVE", reason: "barrel re-export with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:AI_TEXT_STREAM_DEADLINE_MS", { verdict: "REMOVE", reason: "barrel re-export with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:CloseableRequest", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:EndableResponse", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:StreamAbortHandle", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:StreamAbortReason", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:AiStreamBreakerOptions", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:AiStreamBreakerRedis", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:AiStreamPipeOptions", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:PipeableAiTextStream", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
-  ["src/modules/ai/core/streaming/index.ts:AiTextStreamRouteOptions", { verdict: "REMOVE", reason: "barrel re-export type with no consumer. Owned by the module-barrel workstream" }],
+  // ---- src/modules/ai/core/services ----------------------------------------
+  ["src/modules/ai/core/services/crm-brief-loaders.ts:loadLeadProfile", { verdict: "REMOVE", reason: "orphaned by `1cc7ded8` (\"stream the live meeting-prep surface and retire the dead CRM duplicate\"), which deleted its only production caller. The single remaining reference is a key in the `jest.mock(\"./crm-brief-loaders\")` factory in `crm-meeting-brief.isolation.spec.ts`, which is not an import. It reads `leads` through the party seam, so removal belongs to the CRM/leads lane that orphaned it — CRM is excluded from this release's dead-code scope" }],
 
   // ---- src/modules/gdpr ----------------------------------------------------
-  ["src/modules/gdpr/gdpr-export-adapters.ts:GDPR_EXPORT_SOURCE_ADAPTERS", { verdict: "REMOVE", reason: "the source of a three-hop re-export chain (adapters -> worker-implementation -> worker.service) with no consumer at the end. Owned by the GDPR erasure workstream, which has this module open" }],
-  ["src/modules/gdpr/gdpr-export-worker-implementation.ts:GDPR_EXPORT_SOURCE_ADAPTERS", { verdict: "REMOVE", reason: "second hop of the same dead chain. Owned by the GDPR erasure workstream" }],
-  ["src/modules/gdpr/gdpr-export-worker-implementation.ts:SUBJECT_SCOPED_GDPR_EXPORT_SOURCES", { verdict: "REMOVE", reason: "re-export with no consumer at the end of the chain. Owned by the GDPR erasure workstream" }],
-  ["src/modules/gdpr/gdpr-export-worker.service.ts:GDPR_EXPORT_SOURCE_ADAPTERS", { verdict: "REMOVE", reason: "third hop of the same dead chain. Owned by the GDPR erasure workstream" }],
-  ["src/modules/gdpr/gdpr-export-worker.service.ts:SUBJECT_SCOPED_GDPR_EXPORT_SOURCES", { verdict: "REMOVE", reason: "third hop of the same dead chain. Owned by the GDPR erasure workstream" }],
   ["src/modules/gdpr/dto/gdpr-export-outbox.schemas.ts:GdprExportRequestedPayload", { verdict: "WIRE", reason: "the payload contract for the live `gdpr.export.requested` outbox event. Nothing validates the payload on the consuming side today, which is the defect — the relay handler should parse with `gdprExportRequestedPayloadSchema` and take its argument type from here. Deleting it would remove a boundary contract rather than dead code" }],
 
-  // ---- src/modules/notifications ------------------------------------------
-  ["src/modules/notifications/dto/provider-result.schemas.ts:ProviderValidationResultParsed", { verdict: "REMOVE", reason: "inferred type with no consumer. Owned by the notifications workstream, which has this module open" }],
-  ["src/modules/notifications/notifications.service.ts:NotificationCategoryValue", { verdict: "REMOVE", reason: "re-exported type with no consumer. Owned by the notifications workstream" }],
+  // ---- src/modules/notifications -------------------------------------------
+  ["src/modules/notifications/dto/provider-result.schemas.ts:providerValidationResultSchema", { verdict: "REMOVE", reason: "surfaced when its only reader — the inferred type `ProviderValidationResultParsed` — was removed as dead. It is the Zod contract for `NotificationProvider.validateConfig()`, the sibling of `providerSendResultSchema`, which IS parsed at `notification-delivery-worker.service.ts:347`. The deeper finding: `validateConfig` is declared on `providers/notification-provider.interface.ts:11` and implemented by five providers, and NOTHING calls it anywhere in `src/` — the seam has no caller, so the schema has no boundary to guard. Removing the schema (and deciding the fate of the uncalled seam) belongs to the notifications workstream, which holds this module" }],
 
   // ---- dependencies --------------------------------------------------------
   ["dep:@jitl/quickjs-wasmfile-release-sync", { verdict: "KEEP", reason: "not a direct dependency by design. `script.executor.ts` resolves it with `require.resolve(spec, { paths: [dirname(require.resolve(\"quickjs-emscripten\"))] })`, i.e. from the declared dependency's own directory, to get a CJS build of the WASM module that Jest can load. Verified resolvable; knip reports it because it does not model the `paths` option" }],

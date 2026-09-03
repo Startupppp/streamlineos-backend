@@ -17,4 +17,3 @@ export const providerValidationResultSchema = z.object({
 });
 
 export type ProviderSendResultParsed = z.infer<typeof providerSendResultSchema>;
-export type ProviderValidationResultParsed = z.infer<typeof providerValidationResultSchema>;

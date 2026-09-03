@@ -7,11 +7,7 @@ import {
   type QueryFingerprintStat,
 } from "./query-fingerprint-registry";
 
-export {
-  FINGERPRINT_CAP,
-  SLOW_QUERY_MS,
-  type QueryFingerprintStat,
-} from "./query-fingerprint-registry";
+export { type QueryFingerprintStat } from "./query-fingerprint-registry";
 
 export const RESERVOIR_CAP = 1_024;
 

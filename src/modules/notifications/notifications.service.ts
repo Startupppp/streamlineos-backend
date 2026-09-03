@@ -20,11 +20,7 @@ import type {
   NotificationCategoryValue,
 } from "./notifications.types";
 
-export type {
-  AnnounceInput,
-  CreateNotificationInput,
-  NotificationCategoryValue,
-};
+export type { AnnounceInput, CreateNotificationInput };
 
 @Injectable()
 export class NotificationsService {
