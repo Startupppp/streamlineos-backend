@@ -1,4 +1,4 @@
-import { Injectable, Inject } from "@nestjs/common";
+import { Injectable, Inject, NotFoundException } from "@nestjs/common";
 import { sql, eq, and } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -343,6 +343,15 @@ export class HrAnalyticsPlusService {
         ),
       )
       .returning();
+    /**
+     * A tenant-bound UPDATE that matches nothing returns no row, and returning that row unchecked
+     * answers 200 with an empty body — for another organization's plan id and for an id belonging
+     * to no organization alike. Measured by the live cross-tenant sweep: control 200, cross-tenant
+     * 200, absent 200. Nothing crossed (the predicate held), but a caller — and any retry or
+     * idempotency layer above it — cannot tell a write that landed from one that did not, and the
+     * 404 the contract requires is absent.
+     */
+    if (!row) throw new NotFoundException("Headcount plan not found");
     return row;
   }
 
