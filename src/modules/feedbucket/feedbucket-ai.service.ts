@@ -109,7 +109,12 @@ export class FeedbucketAiService {
         eq(feedbucketSubmissions.orgId, orgId),
         isNull(feedbucketSubmissions.deletedAt),
       ),
-      with: { widget: { with: { project: true } } },
+      with: {
+        widget: {
+          columns: { id: true, projectId: true },
+          with: { project: { columns: { id: true, orgId: true } } },
+        },
+      },
     });
     if (!row) throw new NotFoundException("Submission not found");
     return row;

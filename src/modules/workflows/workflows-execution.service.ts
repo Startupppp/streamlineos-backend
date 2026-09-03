@@ -41,8 +41,13 @@ export class WorkflowsExecutionService {
         eq(workflows.orgId, orgId),
         eq(workflows.status, "published"),
       ),
+      columns: { id: true },
       with: {
-        versions: { orderBy: [desc(workflowVersions.version)], limit: 1 },
+        versions: {
+          columns: { id: true },
+          orderBy: [desc(workflowVersions.version)],
+          limit: 1,
+        },
       },
     });
     if (!workflow) throw new NotFoundException("Published workflow not found");

@@ -114,7 +114,13 @@ export class TimesheetsService {
   ) {
     const entry = await this.db.query.timesheets.findFirst({
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
-      with: { ticket: { with: { project: true } } },
+      columns: {
+        id: true,
+        payrollStatus: true,
+        status: true,
+        userMembershipId: true,
+        ticketId: true,
+      },
     });
     if (!entry) throw new NotFoundException("Time entry not found");
     if (entry.payrollStatus === "EXPORTED") {
