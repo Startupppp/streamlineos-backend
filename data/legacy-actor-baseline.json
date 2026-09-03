@@ -1,27 +1,27 @@
 {
-  "capturedAt": "2026-09-01T11:17:18.936Z",
+  "capturedAt": "2026-09-03T05:42:21.028Z",
   "totals": {
     "byClass": {
-      "organizational": 471,
+      "organizational": 366,
       "bridge": 3,
       "authentication": 5,
       "unknown": 0
     },
     "byModule": {
       "accounting": {
-        "organizational": 36,
+        "organizational": 34,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
       },
       "ai": {
-        "organizational": 6,
+        "organizational": 3,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
       },
       "billing": {
-        "organizational": 18,
+        "organizational": 17,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
@@ -51,7 +51,7 @@
         "unknown": 0
       },
       "hr": {
-        "organizational": 121,
+        "organizational": 33,
         "bridge": 1,
         "authentication": 0,
         "unknown": 0
@@ -63,13 +63,13 @@
         "unknown": 0
       },
       "kb": {
-        "organizational": 16,
+        "organizational": 17,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
       },
       "payroll": {
-        "organizational": 54,
+        "organizational": 42,
         "bridge": 0,
         "authentication": 0,
         "unknown": 0
@@ -88,16 +88,8 @@
       }
     }
   },
-  "actionableCount": 20,
+  "actionableCount": 1,
   "entries": [
-    {
-      "table": "fin_approval_policies",
-      "column": "approver_user_id",
-      "jsName": "approverUserId",
-      "class": "organizational",
-      "module": "accounting",
-      "file": "src/db/schema/accounting/accounting-core.ts"
-    },
     {
       "table": "fin_approval_requests",
       "column": "requested_by",
@@ -121,14 +113,6 @@
       "class": "organizational",
       "module": "accounting",
       "file": "src/db/schema/accounting/accounting-core.ts"
-    },
-    {
-      "table": "journal_entries",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "accounting",
-      "file": "src/db/schema/accounting/accounting.ts"
     },
     {
       "table": "journal_entries",
@@ -243,30 +227,6 @@
       "file": "src/db/schema/accounting/finance-tax.ts"
     },
     {
-      "table": "ai_chat_conversations",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "ai",
-      "file": "src/db/schema/ai/ai-chat.ts"
-    },
-    {
-      "table": "ai_chat_messages",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "ai",
-      "file": "src/db/schema/ai/ai-chat.ts"
-    },
-    {
-      "table": "ai_action_proposals",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "ai",
-      "file": "src/db/schema/ai/ai-confirmation.ts"
-    },
-    {
       "table": "ai_feedback",
       "column": "user_id",
       "jsName": "userId",
@@ -308,14 +268,6 @@
     },
     {
       "table": "ai_credit_reservations",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "billing",
-      "file": "src/db/schema/billing/billing.ts"
-    },
-    {
-      "table": "affiliates",
       "column": "user_id",
       "jsName": "userId",
       "class": "organizational",
@@ -1619,49 +1571,9 @@
       "file": "src/db/schema/hr/automation-engine.ts"
     },
     {
-      "table": "hr_insurance_claims",
-      "column": "decided_by",
-      "jsName": "decidedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/benefits.ts"
-    },
-    {
       "table": "hr_cases",
       "column": "subject_employee_id",
       "jsName": "subjectEmployeeId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/cases.ts"
-    },
-    {
-      "table": "hr_case_notes",
-      "column": "author_id",
-      "jsName": "authorId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/cases.ts"
-    },
-    {
-      "table": "hr_case_documents",
-      "column": "uploaded_by",
-      "jsName": "uploadedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/cases.ts"
-    },
-    {
-      "table": "hr_disciplinary_actions",
-      "column": "issued_by",
-      "jsName": "issuedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/cases.ts"
-    },
-    {
-      "table": "hr_disciplinary_actions",
-      "column": "acknowledged_by",
-      "jsName": "acknowledgedBy",
       "class": "organizational",
       "module": "hr",
       "file": "src/db/schema/hr/cases.ts"
@@ -1673,214 +1585,6 @@
       "class": "bridge",
       "module": "hr",
       "file": "src/db/schema/hr/core-people.ts"
-    },
-    {
-      "table": "hr_reporting_lines",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/core-people.ts"
-    },
-    {
-      "table": "rich_documents",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/documents.ts"
-    },
-    {
-      "table": "rich_documents",
-      "column": "updated_by",
-      "jsName": "updatedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/documents.ts"
-    },
-    {
-      "table": "documents",
-      "column": "uploaded_by",
-      "jsName": "uploadedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/documents.ts"
-    },
-    {
-      "table": "handbook_versions",
-      "column": "published_by",
-      "jsName": "publishedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/documents.ts"
-    },
-    {
-      "table": "hr_email_templates",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/documents.ts"
-    },
-    {
-      "table": "team_events",
-      "column": "organized_by",
-      "jsName": "organizedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/documents.ts"
-    },
-    {
-      "table": "hr_badge_awards",
-      "column": "awarded_by",
-      "jsName": "awardedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/engagement-extras.ts"
-    },
-    {
-      "table": "hr_polls",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/engagement-extras.ts"
-    },
-    {
-      "table": "hr_communities",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/engagement-extras.ts"
-    },
-    {
-      "table": "hr_campaigns",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/engagement-extras.ts"
-    },
-    {
-      "table": "hr_payroll_variance_approvals",
-      "column": "approver_id",
-      "jsName": "approverId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-comp.ts"
-    },
-    {
-      "table": "hr_arrears_adjustments",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-comp.ts"
-    },
-    {
-      "table": "hr_payroll_compliance_tasks",
-      "column": "completed_by",
-      "jsName": "completedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-comp.ts"
-    },
-    {
-      "table": "hr_comp_cycles",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-comp.ts"
-    },
-    {
-      "table": "hr_comp_recommendations",
-      "column": "submitted_by",
-      "jsName": "submittedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-comp.ts"
-    },
-    {
-      "table": "hr_comp_recommendations",
-      "column": "calibrated_by",
-      "jsName": "calibratedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-comp.ts"
-    },
-    {
-      "table": "hr_comp_recommendations",
-      "column": "approved_by",
-      "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-comp.ts"
-    },
-    {
-      "table": "hr_equity_grants",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-comp.ts"
-    },
-    {
-      "table": "hr_equity_exercises",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-comp.ts"
-    },
-    {
-      "table": "hr_accommodation_requests",
-      "column": "reviewed_by",
-      "jsName": "reviewedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-ops.ts"
-    },
-    {
-      "table": "hr_emergency_events",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-ops.ts"
-    },
-    {
-      "table": "hr_access_provisioning",
-      "column": "verified_by",
-      "jsName": "verifiedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-ops.ts"
-    },
-    {
-      "table": "hr_simulations",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-ops.ts"
-    },
-    {
-      "table": "hr_event_stream",
-      "column": "actor_user_id",
-      "jsName": "actorUserId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/enterprise-ops.ts"
-    },
-    {
-      "table": "feedback_cycles",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/feedback.ts"
     },
     {
       "table": "hr_forms",
@@ -1939,260 +1643,12 @@
       "file": "src/db/schema/hr/global-compliance.ts"
     },
     {
-      "table": "hr_legal_holds",
-      "column": "placed_by",
-      "jsName": "placedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/governance.ts"
-    },
-    {
-      "table": "hr_legal_holds",
-      "column": "released_by",
-      "jsName": "releasedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/governance.ts"
-    },
-    {
-      "table": "hr_data_requests",
-      "column": "requested_by",
-      "jsName": "requestedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/governance.ts"
-    },
-    {
-      "table": "hr_data_requests",
-      "column": "approved_by",
-      "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/governance.ts"
-    },
-    {
-      "table": "hr_proxy_access",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/governance.ts"
-    },
-    {
-      "table": "hr_positions",
-      "column": "incumbent_user_id",
-      "jsName": "incumbentUserId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/governance.ts"
-    },
-    {
-      "table": "hr_reorg_scenarios",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/governance.ts"
-    },
-    {
-      "table": "hr_labor_cases",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/governance.ts"
-    },
-    {
       "table": "candidates",
       "column": "referred_by",
       "jsName": "referredBy",
       "class": "organizational",
       "module": "hr",
       "file": "src/db/schema/hr/hiring-candidates.ts"
-    },
-    {
-      "table": "candidate_referrals",
-      "column": "referred_by",
-      "jsName": "referredBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-candidates.ts"
-    },
-    {
-      "table": "candidate_documents_vault",
-      "column": "uploaded_by",
-      "jsName": "uploadedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-candidates.ts"
-    },
-    {
-      "table": "vault_access_logs",
-      "column": "accessed_by",
-      "jsName": "accessedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-candidates.ts"
-    },
-    {
-      "table": "candidate_reference_checks",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-candidates.ts"
-    },
-    {
-      "table": "candidate_messages",
-      "column": "sent_by",
-      "jsName": "sentBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-candidates.ts"
-    },
-    {
-      "table": "hiring_flows",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-core.ts"
-    },
-    {
-      "table": "scorecard_templates",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-core.ts"
-    },
-    {
-      "table": "job_postings",
-      "column": "posted_by",
-      "jsName": "postedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-core.ts"
-    },
-    {
-      "table": "candidate_sources",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-core.ts"
-    },
-    {
-      "table": "interview_booking_links",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-interviews.ts"
-    },
-    {
-      "table": "calibration_sessions",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-interviews.ts"
-    },
-    {
-      "table": "interview_questions",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-interviews.ts"
-    },
-    {
-      "table": "pipeline_automations",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "offer_letter_templates",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "candidate_offers",
-      "column": "offered_by",
-      "jsName": "offeredBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "candidate_offers",
-      "column": "approved_by",
-      "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "offer_versions",
-      "column": "changed_by",
-      "jsName": "changedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "offer_negotiations",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "email_sequences",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "recruitment_vendors",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "headcount_requests",
-      "column": "requested_by",
-      "jsName": "requestedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "headcount_requests",
-      "column": "approved_by",
-      "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
-    },
-    {
-      "table": "job_recruiters",
-      "column": "assigned_by",
-      "jsName": "assignedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/hiring-pipeline.ts"
     },
     {
       "table": "recruiter_activity_log",
@@ -2219,22 +1675,6 @@
       "file": "src/db/schema/hr/import-jobs.ts"
     },
     {
-      "table": "job_board_postings",
-      "column": "posted_by",
-      "jsName": "postedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/job-boards.ts"
-    },
-    {
-      "table": "job_board_postings",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/job-boards.ts"
-    },
-    {
       "table": "hr_leave_ledger",
       "column": "created_by",
       "jsName": "createdBy",
@@ -2251,137 +1691,9 @@
       "file": "src/db/schema/hr/leaves.ts"
     },
     {
-      "table": "document_templates",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "candidate_documents",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "document_template_versions",
-      "column": "archived_by",
-      "jsName": "archivedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "onboarding_templates",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "onboarding_tasks",
-      "column": "completed_by",
-      "jsName": "completedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "onboarding_documents",
-      "column": "reviewed_by",
-      "jsName": "reviewedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "document_audit_logs",
-      "column": "performed_by",
-      "jsName": "performedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "resignations",
-      "column": "approved_by",
-      "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "resignations",
-      "column": "hr_reviewed_by",
-      "jsName": "hrReviewedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "resignations",
-      "column": "final_reviewed_by",
-      "jsName": "finalReviewedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "resignations",
-      "column": "exit_interview_conducted_by",
-      "jsName": "exitInterviewConductedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "terminations",
-      "column": "initiated_by",
-      "jsName": "initiatedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "terminations",
-      "column": "final_reviewed_by",
-      "jsName": "finalReviewedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/offboarding.ts"
-    },
-    {
-      "table": "review_cycles",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/performance.ts"
-    },
-    {
-      "table": "pulse_surveys",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/performance.ts"
-    },
-    {
       "table": "employee_skills",
       "column": "verified_by",
       "jsName": "verifiedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/performance.ts"
-    },
-    {
-      "table": "skill_assessments",
-      "column": "created_by",
-      "jsName": "createdBy",
       "class": "organizational",
       "module": "hr",
       "file": "src/db/schema/hr/performance.ts"
@@ -2435,30 +1747,6 @@
       "file": "src/db/schema/hr/succession.ts"
     },
     {
-      "table": "hr_succession_plans",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/succession.ts"
-    },
-    {
-      "table": "talent_pools",
-      "column": "created_by",
-      "jsName": "createdBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/talent-pools.ts"
-    },
-    {
-      "table": "talent_pool_members",
-      "column": "added_by",
-      "jsName": "addedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/talent-pools.ts"
-    },
-    {
       "table": "tax_declarations",
       "column": "verified_by",
       "jsName": "verifiedBy",
@@ -2505,30 +1793,6 @@
       "class": "organizational",
       "module": "hr",
       "file": "src/db/schema/hr/webhooks.ts"
-    },
-    {
-      "table": "hr_workflow_instances",
-      "column": "requested_by",
-      "jsName": "requestedBy",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/workflow-engine.ts"
-    },
-    {
-      "table": "hr_workflow_instances",
-      "column": "subject_employee_id",
-      "jsName": "subjectEmployeeId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/workflow-engine.ts"
-    },
-    {
-      "table": "hr_workflow_step_actions",
-      "column": "approver_user_id",
-      "jsName": "approverUserId",
-      "class": "organizational",
-      "module": "hr",
-      "file": "src/db/schema/hr/workflow-engine.ts"
     },
     {
       "table": "hr_workforce_reconciliation_items",
@@ -2835,6 +2099,14 @@
       "file": "src/db/schema/inventory/warehouses.ts"
     },
     {
+      "table": "kb_page_attachments",
+      "column": "uploaded_by_id",
+      "jsName": "uploadedById",
+      "class": "organizational",
+      "module": "kb",
+      "file": "src/db/schema/kb/attachments.ts"
+    },
+    {
       "table": "kb_page_reviews",
       "column": "requested_by_id",
       "jsName": "requestedById",
@@ -2964,14 +2236,6 @@
     },
     {
       "table": "expenses",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/claims-and-settlements.ts"
-    },
-    {
-      "table": "expenses",
       "column": "approver_id",
       "jsName": "approverId",
       "class": "organizational",
@@ -2980,24 +2244,8 @@
     },
     {
       "table": "reimbursements",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/claims-and-settlements.ts"
-    },
-    {
-      "table": "reimbursements",
       "column": "approved_by",
       "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/claims-and-settlements.ts"
-    },
-    {
-      "table": "salary_loans",
-      "column": "user_id",
-      "jsName": "userId",
       "class": "organizational",
       "module": "payroll",
       "file": "src/db/schema/payroll/claims-and-settlements.ts"
@@ -3012,14 +2260,6 @@
     },
     {
       "table": "bonuses",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/claims-and-settlements.ts"
-    },
-    {
-      "table": "bonuses",
       "column": "approved_by",
       "jsName": "approvedBy",
       "class": "organizational",
@@ -3028,24 +2268,8 @@
     },
     {
       "table": "fnf_settlements",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/claims-and-settlements.ts"
-    },
-    {
-      "table": "fnf_settlements",
       "column": "approved_by",
       "jsName": "approvedBy",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/claims-and-settlements.ts"
-    },
-    {
-      "table": "asset_returns",
-      "column": "user_id",
-      "jsName": "userId",
       "class": "organizational",
       "module": "payroll",
       "file": "src/db/schema/payroll/claims-and-settlements.ts"
@@ -3123,22 +2347,6 @@
       "file": "src/db/schema/payroll/input-capture.ts"
     },
     {
-      "table": "hr_payroll_input_snapshots",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/input-capture.ts"
-    },
-    {
-      "table": "hr_payroll_adjustments",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/input-capture.ts"
-    },
-    {
       "table": "hr_payroll_adjustments",
       "column": "created_by",
       "jsName": "createdBy",
@@ -3161,14 +2369,6 @@
       "class": "organizational",
       "module": "payroll",
       "file": "src/db/schema/payroll/input-capture.ts"
-    },
-    {
-      "table": "payroll_inputs",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/inputs.ts"
     },
     {
       "table": "payroll_inputs",
@@ -3233,14 +2433,6 @@
       "class": "organizational",
       "module": "payroll",
       "file": "src/db/schema/payroll/payout.ts"
-    },
-    {
-      "table": "payslip_publications",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/payslip-publications.ts"
     },
     {
       "table": "payslip_publications",
@@ -3339,14 +2531,6 @@
       "file": "src/db/schema/payroll/runs.ts"
     },
     {
-      "table": "payroll_run_employees",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/runs.ts"
-    },
-    {
       "table": "payroll_exceptions",
       "column": "user_id",
       "jsName": "userId",
@@ -3361,14 +2545,6 @@
       "class": "organizational",
       "module": "payroll",
       "file": "src/db/schema/payroll/runs.ts"
-    },
-    {
-      "table": "employee_salary_profiles",
-      "column": "user_id",
-      "jsName": "userId",
-      "class": "organizational",
-      "module": "payroll",
-      "file": "src/db/schema/payroll/workforce.ts"
     },
     {
       "table": "employee_salary_profiles",
@@ -3720,22 +2896,6 @@
       "jsName": "created_by",
       "class": "organizational",
       "module": "crm",
-      "file": "raw-sql-migration"
-    },
-    {
-      "table": "employee_career_plans",
-      "column": "mentor_id",
-      "jsName": "mentor_id",
-      "class": "organizational",
-      "module": "hr",
-      "file": "raw-sql-migration"
-    },
-    {
-      "table": "employee_career_plans",
-      "column": "user_id",
-      "jsName": "user_id",
-      "class": "organizational",
-      "module": "hr",
       "file": "raw-sql-migration"
     },
     {
