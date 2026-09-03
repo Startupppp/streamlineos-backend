@@ -60,8 +60,10 @@ function makeEventRow(overrides: {
   };
 }
 
-function chain(rows: unknown[]): Record<string, unknown> {
-  const node: Record<string, unknown> = Object.assign(Promise.resolve(rows), {});
+type ChainNode = Promise<unknown[]> & Record<string, unknown>;
+
+function chain(rows: unknown[]): ChainNode {
+  const node = Promise.resolve(rows) as ChainNode;
   for (const key of ["from", "leftJoin", "innerJoin", "where", "orderBy", "limit"])
     node[key] = jest.fn(() => node);
   return node;

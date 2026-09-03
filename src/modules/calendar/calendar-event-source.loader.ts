@@ -1,6 +1,7 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { calendarEvents, eventAttendees, organizationMembers, projects, tickets, users } from "../../db/schema";
+import { CALENDAR_EVENTS_CAP } from "./dto/calendar.schemas";
 import { loadExceptionsByEvent } from "./calendar-exception-loader";
 import type { CalendarEventException } from "./calendar-occurrence.service";
 import type { LinkedTicket } from "./calendar.types";
@@ -112,6 +113,19 @@ export class CalendarEventSourceLoader {
     return { eventsData, linkedTicketMap, exceptionsByEvent };
   }
 
+  /**
+   * The drain is bounded, and that is what keeps the statement count down.
+   *
+   * Every consumer of this loader is already capped twice over —
+   * `CalendarNativeEventSource` stops projecting at `CALENDAR_EVENTS_CAP` and
+   * `CalendarSourceRegistry` then keeps the first `CALENDAR_PER_SOURCE_CAP` (400) of
+   * what it produced — but the loop below used to page until the tenant's whole window
+   * was in memory regardless: 8,522 rows over 18 round trips on the 89.93% tenant, to
+   * feed a cap of 400. Rows arrive in `(start_date, id)` order and both caps keep a
+   * prefix of that order, so stopping at the same bound the projector stops at changes
+   * what the caller sees only for events whose every occurrence is cancelled or falls
+   * outside the window — and only then if fewer than 400 survive.
+   */
   private async queryVisibleEvents(
     orgId: string,
     callerMembershipId: number,
@@ -135,6 +149,7 @@ export class CalendarEventSourceLoader {
       }
 
       if (candidates.length < BATCH_SIZE) break;
+      if (events.length >= CALENDAR_EVENTS_CAP) break;
       const last = candidates[candidates.length - 1];
       if (!last) break;
       after = { startDate: last.startDate, id: last.id };
