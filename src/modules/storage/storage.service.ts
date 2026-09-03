@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-  ServiceUnavailableException,
-} from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash } from "crypto";
 import { Readable } from "stream";
 import { extname } from "path";
@@ -229,16 +224,29 @@ export class StorageService {
     orgId: string,
     key: string,
     expiresIn = 3600,
+    bucketOverride?: string,
   ): Promise<string> {
     const placement = await this.placement.forOrg(orgId);
-    const bucketName = this.placement.requireBucket(placement);
+    const bucketName = this.placement.requireBucket(placement, bucketOverride);
     const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
     return getSignedUrl(placement.client, command, { expiresIn });
   }
 
-  async deleteFile(orgId: string, key: string): Promise<void> {
+  /**
+   * `bucketOverride` is not optional decoration: it has to be the same argument
+   * `uploadFile` takes, because a delete that omits an override the upload used
+   * addresses a bucket the object was never written to. S3 answers a delete of an
+   * absent key with success, so the asymmetry cannot surface as an error — the
+   * caller is told the object is gone and the orphan is invisible. Every reader
+   * below carries it for the same reason.
+   */
+  async deleteFile(
+    orgId: string,
+    key: string,
+    bucketOverride?: string,
+  ): Promise<void> {
     const placement = await this.placement.forOrg(orgId);
-    const bucketName = this.placement.requireBucket(placement);
+    const bucketName = this.placement.requireBucket(placement, bucketOverride);
     await placement.client.send(
       new DeleteObjectCommand({ Bucket: bucketName, Key: key }),
     );
@@ -249,9 +257,13 @@ export class StorageService {
    * multipart all have to remove the object, and none of them may fail because
    * the object was never written in the first place.
    */
-  async deleteFileIfPresent(orgId: string, key: string): Promise<boolean> {
+  async deleteFileIfPresent(
+    orgId: string,
+    key: string,
+    bucketOverride?: string,
+  ): Promise<boolean> {
     try {
-      await this.deleteFile(orgId, key);
+      await this.deleteFile(orgId, key, bucketOverride);
       return true;
     } catch (error) {
       if (isMissingObjectError(error)) return false;
@@ -262,9 +274,10 @@ export class StorageService {
   async describeObject(
     orgId: string,
     key: string,
+    bucketOverride?: string,
   ): Promise<{ contentLength: number; contentType: string } | null> {
     const placement = await this.placement.forOrg(orgId);
-    const bucketName = this.placement.requireBucket(placement);
+    const bucketName = this.placement.requireBucket(placement, bucketOverride);
     try {
       const response = await placement.client.send(
         new HeadObjectCommand({ Bucket: bucketName, Key: key }),
@@ -287,9 +300,10 @@ export class StorageService {
     orgId: string,
     key: string,
     byteCount: number,
+    bucketOverride?: string,
   ): Promise<Buffer | null> {
     const placement = await this.placement.forOrg(orgId);
-    const bucketName = this.placement.requireBucket(placement);
+    const bucketName = this.placement.requireBucket(placement, bucketOverride);
     try {
       const response = await placement.client.send(
         new GetObjectCommand({
@@ -312,10 +326,13 @@ export class StorageService {
     }
   }
 
-  async fileExists(orgId: string, key: string): Promise<boolean> {
+  async fileExists(
+    orgId: string,
+    key: string,
+    bucketOverride?: string,
+  ): Promise<boolean> {
     const placement = await this.placement.forOrg(orgId);
-    const bucketName = placement.bucketName;
-    if (!bucketName) throw new ServiceUnavailableException("R2 bucket not configured");
+    const bucketName = this.placement.requireBucket(placement, bucketOverride);
     try {
       await placement.client.send(
         new HeadObjectCommand({ Bucket: bucketName, Key: key }),
@@ -327,9 +344,13 @@ export class StorageService {
     }
   }
 
-  async getFileStream(orgId: string, key: string): Promise<FileStreamResult> {
+  async getFileStream(
+    orgId: string,
+    key: string,
+    bucketOverride?: string,
+  ): Promise<FileStreamResult> {
     const placement = await this.placement.forOrg(orgId);
-    const bucketName = this.placement.requireBucket(placement);
+    const bucketName = this.placement.requireBucket(placement, bucketOverride);
     const response = await placement.client.send(
       new GetObjectCommand({ Bucket: bucketName, Key: key }),
     );
