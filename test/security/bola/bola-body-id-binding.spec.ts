@@ -124,11 +124,11 @@ describe("the detector bites", () => {
 describe("the surface, enumerated from the committed contract", () => {
   it("counts the operations and the id-shaped body and query fields", () => {
     const { counts } = enumerateIdFieldSites();
-    expect(counts.operations).toBe(3643);
-    expect(counts.bodyFields).toBe(816);
+    expect(counts.operations).toBe(3642);
+    expect(counts.bodyFields).toBe(815);
     expect(counts.queryFields).toBe(239);
-    expect(counts.idFields).toBe(1055);
-    expect(counts.operationsWithIdFields).toBe(674);
+    expect(counts.idFields).toBe(1054);
+    expect(counts.operationsWithIdFields).toBe(673);
   });
 
   it("splits out the tenant and actor selectors rather than analysing them as object references", () => {

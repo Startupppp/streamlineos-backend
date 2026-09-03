@@ -38,6 +38,31 @@ export const NON_OBJECT_PARAMS: readonly string[] = [
   "path",
 ];
 
+/**
+ * The same statement as the list above, by suffix.
+ *
+ * MEASURED: the exact list caught `moduleKey`, `providerKey`, `entityType`, `token` and `slug`, and
+ * missed `sourceKey`, `tourKey`, `layoutKey`, `publicKey`, `eventKey`, `itemKey`, `permissionKey`,
+ * `optionType`, `collectorToken`, `sessionToken` and `unitKind` — the same kinds of segment under
+ * longer names. `resolveTable` then found a table whose name happened to match, the sweep borrowed
+ * a real primary key for a parameter no handler resolves, and the handler answered the caller's own
+ * data regardless. That is worse than losing coverage: four routes were scored **NO-404** —
+ * `PUT /calendar/sources/:sourceKey` and the three `POST /onboarding/tours/:tourKey/*` — for a
+ * parameter that names a per-user preference key, not a tenant object.
+ *
+ * Every occurrence of these suffixes in the tree was read individually before the rule was written;
+ * none of them names a row this sweep could borrow.
+ */
+const NON_OBJECT_PARAM_SUFFIXES: readonly string[] = ["Key", "Type", "Token", "Kind"];
+
+/** Whether a path parameter names something other than a borrowable object id. */
+export function isNonObjectParam(param: string): boolean {
+  return (
+    NON_OBJECT_PARAMS.includes(param) ||
+    NON_OBJECT_PARAM_SUFFIXES.some((suffix) => param.length > suffix.length && param.endsWith(suffix))
+  );
+}
+
 export type ParamBinding =
   | { readonly kind: "table"; readonly param: string; readonly table: TableRef }
   | { readonly kind: "org"; readonly param: string }
@@ -68,7 +93,7 @@ export function bindParam(
 ): ParamBinding {
   if (param === "orgId" || param === "organizationId") return { kind: "org", param };
   if (param === "userId" || param === "actorId") return { kind: "user", param };
-  if (NON_OBJECT_PARAMS.includes(param))
+  if (isNonObjectParam(param))
     return { kind: "unbindable", param, reason: `":${param}" does not address an object` };
   const candidates = candidateTableNames(route, param);
   const table = resolveTable(candidates, known, populated, pathHints(route.path));
