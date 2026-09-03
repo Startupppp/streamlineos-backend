@@ -32,6 +32,7 @@ import type {
   ResignationHrReviewInput,
 } from "./dto/hr-lifecycle.schemas";
 import { transitionResignation } from "./lifecycle-transition";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 
 export interface ExitActor {
   userId: string;
@@ -56,7 +57,14 @@ export class ExitWriteService {
   ) {}
 
   private async resolveNoticePeriod(orgId: string, userId: string, fallbackDays: number): Promise<number> {
-    const result = await this.policyEval.evaluatePolicy(orgId, userId, "notice_period", new Date().toISOString().slice(0, 10)).catch(() => null);
+    const result = await this.policyEval
+      .evaluatePolicy(orgId, userId, "notice_period", new Date().toISOString().slice(0, 10))
+      .catch((error: unknown) => {
+        this.logger.error(
+          `notice-period policy evaluation failed for org ${orgId} user ${userId}, falling back to ${fallbackDays} days: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return null;
+      });
     if (!result) return fallbackDays;
     const rules = result.rules as Record<string, unknown>;
     const permanentDays = typeof rules["permanentDays"] === "number" ? rules["permanentDays"] : null;
@@ -156,7 +164,9 @@ export class ExitWriteService {
           .onConflictDoNothing();
       });
 
-      void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId).catch(() => undefined);
+      this.deferAfterCommit("exit checklist seeding", orgId, () =>
+        this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId),
+      );
 
       this.dispatchResignationApproved(
         orgId,
@@ -325,11 +335,35 @@ export class ExitWriteService {
     this.resignationJobs.notifyFinalDecision(orgId, record.userId, approved);
 
     if (approved) {
-      void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId).catch(() => undefined);
+      this.deferAfterCommit("exit checklist seeding", orgId, () =>
+        this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId),
+      );
       this.dispatchResignationApprovedAutomation(orgId, resignationId, record.userId, record.lastWorkingDate, actorUserId);
     }
 
     return { success: true };
+  }
+
+  /**
+   * Runs an exit-lifecycle side effect after the request transaction commits, and reports it
+   * when it fails.
+   *
+   * These were `void (async () => …)().catch(() => undefined)`. Two things were wrong with
+   * that. The work ran on `this.db` while the request transaction was still open, so under
+   * `TenantContextInterceptor` it read a handle whose tenant GUC was about to disappear
+   * (CLAUDE.md §4); and the rejection went nowhere, so a notification that never reached the
+   * employee, an automation that never fired, or an exit checklist that was never seeded left
+   * no trace anywhere. `registerAfterCommit` defers the work into its own tenant transaction
+   * and the interceptor reports what it throws. When there is no ambient context — a job or a
+   * sweep — it still runs inline, but the failure is now logged rather than discarded.
+   */
+  private deferAfterCommit(label: string, orgId: string, work: () => Promise<unknown>): void {
+    if (registerAfterCommit(work)) return;
+    void work().catch((error: unknown) => {
+      this.logger.error(
+        `${label} failed for org ${orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      );
+    });
   }
 
   private dispatchResignationSubmitted(
@@ -339,7 +373,7 @@ export class ExitWriteService {
     input: ResignationCreateInput,
     noticePeriodDays: number,
   ): void {
-    void (async () => {
+    this.deferAfterCommit("hr.resignation.submitted dispatch", orgId, async () => {
       const adminMembers = await this.access.membersWithPermission(orgId, "hr:exit:manage");
 
       const submittingUser = await this.db.query.users.findFirst({
@@ -382,7 +416,7 @@ export class ExitWriteService {
         reasonCategory: input.reasonCategory ?? null,
         submittedAt: new Date().toISOString(),
       });
-    })().catch(() => undefined);
+    });
   }
 
   private dispatchResignationApproved(
@@ -394,7 +428,7 @@ export class ExitWriteService {
     noticePeriodDays: number,
     submittedAt: Date | null,
   ): void {
-    void (async () => {
+    this.deferAfterCommit("hr.resignation.approved dispatch", orgId, async () => {
       const [employee, approver] = await Promise.all([
         this.db.query.users.findFirst({ where: eq(users.id, employeeId), columns: { name: true } }),
         this.db.query.users.findFirst({ where: eq(users.id, actorUserId), columns: { name: true } }),
@@ -411,7 +445,7 @@ export class ExitWriteService {
         message: "Your resignation has been approved.",
         variables: { employeeName: employee?.name ?? "Employee", approverName: approver?.name ?? "Approver", lastWorkingDate: formatDdMmmYyyy(lwd), noticePeriodDays: noticePeriodDays ?? 30, submittedAt: formatDdMmmYyyy(sub) },
       });
-    })().catch(() => undefined);
+    });
   }
 
   private dispatchResignationApprovedAutomation(
@@ -421,7 +455,7 @@ export class ExitWriteService {
     lastWorkingDate: string | null,
     actorUserId: string,
   ): void {
-    void (async () => {
+    this.deferAfterCommit("resignation.approved automation", orgId, async () => {
       const employee = await this.db.query.users.findFirst({
         where: eq(users.id, employeeId),
         columns: { name: true },
@@ -434,11 +468,11 @@ export class ExitWriteService {
         approvedBy: actorUserId,
         approvedAt: new Date().toISOString(),
       });
-    })().catch(() => undefined);
+    });
   }
 
   private dispatchExitCompleted(orgId: string, resignationId: number, employeeId: string): void {
-    void (async () => {
+    this.deferAfterCommit("exit.completed automation", orgId, async () => {
       const employee = await this.db.query.users.findFirst({
         where: eq(users.id, employeeId),
         columns: { name: true },
@@ -455,6 +489,6 @@ export class ExitWriteService {
         exitType: "resignation",
         resignationId,
       });
-    })().catch(() => undefined);
+    });
   }
 }
