@@ -33,7 +33,30 @@ export async function bustMembershipStatusCache(
   // constant time. A targeted bust intentionally expires the user's other
   // short-lived membership entries too; membership changes are rare and this
   // avoids maintaining per-org generation counters.
-  await cache.invalidateNamespace(`membership:status:${userId}`);
+  await cache.invalidateNamespace(membershipStatusNamespace(userId));
+}
+
+function membershipStatusNamespace(userId: string): string {
+  return `membership:status:${userId}`;
+}
+
+/**
+ * The whole-org form of the bust above, in two round trips per chunk instead of
+ * two per user.
+ *
+ * Every caller that busts a membership for a LIST of users was written as
+ * `Promise.all(userIds.map((id) => bustMembershipStatusCache(cache, id, orgId)))`,
+ * which is a `DEL` and an `INCR` per user issued concurrently — six sites, the
+ * widest of them reading members at `.limit(10000)`. The work is identical; only
+ * the number of commands changes.
+ */
+export async function bustMembershipStatusCacheMany(
+  cache: CacheService,
+  userIds: readonly string[],
+): Promise<void> {
+  if (userIds.length === 0) return;
+  await cache.invalidateMany(userIds.map((id) => CACHE_KEYS.membershipAccount(id)));
+  await cache.invalidateNamespaceMany(userIds.map(membershipStatusNamespace));
 }
 
 @Injectable()

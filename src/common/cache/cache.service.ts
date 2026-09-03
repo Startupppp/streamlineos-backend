@@ -230,6 +230,68 @@ export class CacheService {
     await this.invalidateWithRetry("invalidate", key, () => redis.del(key));
   }
 
+  /**
+   * One `DEL` for many keys instead of one round trip per key.
+   *
+   * `await Promise.all(users.map((u) => cache.invalidate(userSession(u.id))))`
+   * reads as batched and is not: it issues one Redis command per user, all
+   * concurrently against a single Upstash connection. Measured call sites before
+   * this existed — `rbac/role-member` and `rbac/role-permission` at `.limit(500)`,
+   * and `access/entitlements` at `.limit(10000)` — so one module toggle could fan
+   * out to ten thousand commands.
+   *
+   * `DEL` is variadic, so the same work is `ceil(n / INVALIDATE_KEY_CHUNK)`
+   * commands. The chunk exists because the Upstash REST transport puts the whole
+   * command in one request body, so an unbounded key list becomes an unbounded
+   * payload; 256 keys is well inside that limit and keeps a single failed chunk
+   * from dropping every invalidation in the batch.
+   *
+   * Duplicates are collapsed first: the caller's list is usually derived from
+   * rows, and `DEL k k` bills twice for one deletion.
+   */
+  private static readonly INVALIDATE_KEY_CHUNK = 256;
+
+  async invalidateMany(keys: readonly ExactCacheKey[]): Promise<void> {
+    const redis = this.redis;
+    if (!redis) return;
+    const unique = [...new Set(keys)];
+    for (let i = 0; i < unique.length; i += CacheService.INVALIDATE_KEY_CHUNK) {
+      const chunk = unique.slice(i, i + CacheService.INVALIDATE_KEY_CHUNK);
+      const [head, ...rest] = chunk;
+      if (head === undefined) continue;
+      await this.invalidateWithRetry(
+        "invalidateMany",
+        `${String(chunk.length)} keys`,
+        () => redis.del(head, ...rest),
+      );
+    }
+  }
+
+  /**
+   * The generation-counter half of the same problem: `invalidateNamespace` is an
+   * `INCR`, which cannot be folded into a `DEL`, so a per-user namespace bust
+   * stayed one round trip per user even after `invalidateMany`. A pipeline sends
+   * the whole chunk in one request.
+   */
+  async invalidateNamespaceMany(namespaces: readonly string[]): Promise<void> {
+    const redis = this.redis;
+    if (!redis) return;
+    const unique = [...new Set(namespaces)];
+    for (let i = 0; i < unique.length; i += CacheService.INVALIDATE_KEY_CHUNK) {
+      const chunk = unique.slice(i, i + CacheService.INVALIDATE_KEY_CHUNK);
+      if (chunk.length === 0) continue;
+      await this.invalidateWithRetry(
+        "invalidateNamespaceMany",
+        `${String(chunk.length)} namespaces`,
+        () => {
+          const pipeline = redis.pipeline();
+          for (const ns of chunk) pipeline.incr(this.namespaceVersionKey(ns));
+          return pipeline.exec();
+        },
+      );
+    }
+  }
+
   async del(key: ExactCacheKey): Promise<void> {
     return this.invalidate(key);
   }

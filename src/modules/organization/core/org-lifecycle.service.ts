@@ -20,7 +20,7 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { bustMembershipStatusCacheMany } from "../../../common/auth/membership-state.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -66,14 +66,8 @@ export class OrgLifecycleService {
   }
 
   private async bustMembersMembership(orgId: string, memberUserIds: string[]): Promise<void> {
-    await Promise.all(
-      memberUserIds.map((memberUserId) =>
-        Promise.all([
-          bustMembershipStatusCache(this.cache, memberUserId, orgId),
-          this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
-        ]),
-      ),
-    );
+    await bustMembershipStatusCacheMany(this.cache, memberUserIds);
+    await this.cache.invalidateMany(memberUserIds.map(CACHE_KEYS.userSession));
   }
 
   private async revokeMembersAccess(orgId: string, memberUserIds: string[]): Promise<void> {

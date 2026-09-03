@@ -81,10 +81,8 @@ export class RolePermissionService {
         ),
       )
       .limit(500);
-    await Promise.all(
-      assignees.map((a) =>
-        this.cache.invalidate(CACHE_KEYS.userSession(a.userId)),
-      ),
+    await this.cache.invalidateMany(
+      assignees.map((a) => CACHE_KEYS.userSession(a.userId)),
     );
   }
 

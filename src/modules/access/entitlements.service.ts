@@ -293,8 +293,8 @@ export class EntitlementsService implements OnModuleInit {
     this.moduleMapCache.delete(orgId);
     await this.cache.invalidateForOrg(orgId, `entitlements:module:${moduleKey}`);
     await this.cache.invalidateForOrg(orgId, "entitlements:modules");
-    await Promise.all(
-      affectedMembers.map((m) => this.cache.invalidate(CACHE_KEYS.userSession(m.userId))),
+    await this.cache.invalidateMany(
+      affectedMembers.map((m) => CACHE_KEYS.userSession(m.userId)),
     );
   }
 

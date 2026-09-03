@@ -51,8 +51,8 @@ export class RoleMemberService {
       )
       .where(and(eq(roleAssignments.orgId, orgId), eq(roleAssignments.roleId, roleId)))
       .limit(500);
-    await Promise.all(
-      assignees.map((a) => this.cache.invalidate(CACHE_KEYS.userSession(a.userId))),
+    await this.cache.invalidateMany(
+      assignees.map((a) => CACHE_KEYS.userSession(a.userId)),
     );
   }
 

@@ -22,7 +22,7 @@ import { assertTransitionAllowed } from "./lifecycle/organization-lifecycle-tran
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
+import { bustMembershipStatusCacheMany } from "../../../common/auth/membership-state.service";
 import { OrgMembershipService } from "./org-membership.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -35,7 +35,6 @@ import {
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 
 const MEMBER_PAGE_SIZE = 500;
-const CACHE_BUST_CONCURRENCY = 50;
 
 @Injectable()
 export class OrgPurgeService {
@@ -92,16 +91,8 @@ export class OrgPurgeService {
   }
 
   private async bustMembersMembership(orgId: string, memberUserIds: string[]): Promise<void> {
-    for (let i = 0; i < memberUserIds.length; i += CACHE_BUST_CONCURRENCY) {
-      await Promise.all(
-        memberUserIds.slice(i, i + CACHE_BUST_CONCURRENCY).map((memberUserId) =>
-          Promise.all([
-            bustMembershipStatusCache(this.cache, memberUserId, orgId),
-            this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
-          ]),
-        ),
-      );
-    }
+    await bustMembershipStatusCacheMany(this.cache, memberUserIds);
+    await this.cache.invalidateMany(memberUserIds.map(CACHE_KEYS.userSession));
   }
 
   private async revokeMembersAccess(orgId: string, memberUserIds: string[]): Promise<void> {
