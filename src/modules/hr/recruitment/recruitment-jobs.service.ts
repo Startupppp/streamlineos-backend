@@ -13,6 +13,7 @@ import {
   candidates,
   jobPostings,
   jobRecruiters,
+  orgUnits,
   organizations,
   users,
 } from "../../../db/schema";
@@ -356,28 +357,42 @@ export class RecruitmentJobsService {
     };
   }
 
-  listInternalJobs(orgId: string) {
-    return this.db.query.jobPostings.findMany({
-      limit: 100,
-      where: and(eq(jobPostings.orgId, orgId), eq(jobPostings.isInternal, true), eq(jobPostings.status, "OPEN")),
-      with: {
-        orgDepartment: { columns: { id: true, name: true } },
-        postedByUser: { columns: { id: true, name: true } },
-      },
-      columns: {
-        id: true,
-        title: true,
-        orgDepartmentId: true,
-        location: true,
-        type: true,
-        experience: true,
-        description: true,
-        requirements: true,
-        openings: true,
-        applicationDeadline: true,
-        createdAt: true,
-      },
-    });
+  /**
+   * The client's `InternalJob` declares `department` and `departmentId`; this read shipped the
+   * relation under its schema name, `orgDepartment` / `orgDepartmentId`, and `apiClient.get` is a
+   * cast, so `job.department` was `undefined` on every row and the department badge in
+   * `internal-jobs-client.tsx:109` — guarded by `{job.department && ...}` — silently never rendered
+   * on any internal opening. `postedByUser` leaves the wire: no consumer reads it.
+   */
+  async listInternalJobs(orgId: string) {
+    const rows = await this.db
+      .select({
+        id: jobPostings.id,
+        title: jobPostings.title,
+        departmentId: jobPostings.orgDepartmentId,
+        departmentName: orgUnits.name,
+        location: jobPostings.location,
+        type: jobPostings.type,
+        experience: jobPostings.experience,
+        description: jobPostings.description,
+        requirements: jobPostings.requirements,
+        openings: jobPostings.openings,
+        applicationDeadline: jobPostings.applicationDeadline,
+        createdAt: jobPostings.createdAt,
+      })
+      .from(jobPostings)
+      .leftJoin(
+        orgUnits,
+        and(eq(orgUnits.orgId, jobPostings.orgId), eq(orgUnits.id, jobPostings.orgDepartmentId)),
+      )
+      .where(
+        and(eq(jobPostings.orgId, orgId), eq(jobPostings.isInternal, true), eq(jobPostings.status, "OPEN")),
+      )
+      .limit(100);
+    return rows.map(({ departmentName, ...job }) => ({
+      ...job,
+      department: job.departmentId !== null && departmentName !== null ? { id: job.departmentId, name: departmentName } : null,
+    }));
   }
 
   async internalApply(orgId: string, userId: string, jobId: number, input: InternalApplyInput) {

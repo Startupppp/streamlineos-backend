@@ -221,17 +221,32 @@ export class ProjectsTicketSubresourcesService {
     if (!ticket) throw new NotFoundException("Ticket not found");
   }
 
+  /**
+   * The `user` relation on `ticket_watchers` points at `organization_members`, not at a person, so
+   * this read shipped the membership row where the client's `TicketWatcher.user` declares a
+   * `TicketUser` and `w.userId` where the row only carries `membershipId`. `apiClient.get` is a
+   * cast, so both typechecks passed: every avatar in `watcher-list.tsx` fell back to "?" with the
+   * tooltip "Unknown", every `key={w.userId}` was `undefined`, and `isWatching` was permanently
+   * false — so the toggle could only ever add a watcher and un-watching was unreachable.
+   */
   async getWatchers(orgId: string, ticketId: number) {
     await this.requireTicket(orgId, ticketId);
-    return this.db.query.ticketWatchers.findMany({
+    const rows = await this.db.query.ticketWatchers.findMany({
       where: eq(ticketWatchers.ticketId, ticketId),
+      columns: { id: true, ticketId: true, createdAt: true },
       with: {
         user: {
+          columns: { userId: true },
           with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } },
         },
       },
       limit: 100,
     });
+    return rows.map(({ user: membership, ...watcher }) => ({
+      ...watcher,
+      userId: membership?.userId ?? null,
+      user: membership?.user ?? null,
+    }));
   }
 
   async addWatcher(

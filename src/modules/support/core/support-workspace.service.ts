@@ -225,12 +225,32 @@ export class SupportWorkspaceService {
     return { success: true };
   }
 
+  /**
+   * A watcher reaches a person only through `organization_members`, and this read shipped that join
+   * verbatim as `membership.userId`. The client's `SupportTicketWatcher` declares `userId` and
+   * `user` at the top level and reads through `apiClient.get<SupportTicketWatcher[]>`, a cast, so
+   * `w.userId` was `undefined` on every row: `isFollowing` in `ticket-detail-header.tsx:65` was
+   * permanently false, the star never filled, and `handleToggleFollow` could only ever take the
+   * follow branch — `DELETE /support/:id/follow` was unreachable and nobody could stop watching a
+   * ticket they had followed. `user` was never selected at all, so no watcher could be named.
+   */
   async listWatchers(orgId: string, ticketId: number) {
     await this.assertTicketInOrg(orgId, ticketId);
-    return this.db.query.supportTicketWatchers.findMany({
+    const rows = await this.db.query.supportTicketWatchers.findMany({
       where: and(eq(supportTicketWatchers.orgId, orgId), eq(supportTicketWatchers.ticketId, ticketId)),
-      with: { membership: { columns: { id: true, userId: true } } },
+      columns: { id: true, orgId: true, ticketId: true, createdAt: true },
+      with: {
+        membership: {
+          columns: { userId: true },
+          with: { user: { columns: { id: true, name: true, image: true } } },
+        },
+      },
     });
+    return rows.map(({ membership, ...watcher }) => ({
+      ...watcher,
+      userId: membership?.userId ?? null,
+      user: membership?.user ?? null,
+    }));
   }
 
   private async assertTicketInOrg(orgId: string, ticketId: number) {
