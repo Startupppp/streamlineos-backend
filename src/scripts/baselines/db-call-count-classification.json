@@ -64,20 +64,20 @@
       "note": "the up-to-100-hop ancestor walk is one WITH RECURSIVE CTE; cycle, project and depth checks read from its rows"
     },
     "/build/core/projects-tickets-workflow-utils.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "the ticket read at 150 is LOOP-INVARIANT — same ticket, same columns, once per matching transition. Hoist it above the loop"
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass, verified by reading: the ticket read is memoized in `ticketRows` above the loop and runs at most once for any number of matching transitions. The inner `for (const field of transition.requiredFields)` touches nothing but the row already in hand."
     },
     "/build/core/projects-webhooks-dispatch.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Was N+1-FIXED; the claim was false and its own note said so. The deliveries insert is batched, but `for (const delivery of deliveries) await OutboxWriter.emit(tx, ...)` at 177/178 is still one write per delivery. Needs a bulk emit on outbox-writer.ts."
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass, verified by reading: the deliveries insert is one multi-row INSERT ... RETURNING and the outbox emit is a single `OutboxWriter.emitMany` over `deliveries.map(...)`. The per-delivery `OutboxWriter.emit` the earlier note named is gone."
     },
     "/build/core/projects-write.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "the loop is over byNewAssignee — one inArray UPDATE per distinct assignee, covering every ticket assigned to them. The call count tracks distinct assignees, not tickets"
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass: the member-removal reassignment grouped open tickets by target assignee and issued one `tx.update(tickets)` per group. It is now one `bulkUpdateFromValues`, so no statement is issued from inside a loop. Pinned by projects-write-reassign.spec.ts, which fails against the grouped shape."
     },
     "/build/forms/submissions.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "allocateTicketNumbers is called once per form action. allocate-ticket-number.ts already supports allocating a block, so one call for the whole submission is available"
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass, verified by reading: `allocateTicketNumbers` is called once for the whole submission with `ticketActions.length`, and the tickets are one multi-row INSERT. The remaining `for (const [index, ticket] of inserted.entries())` only fills two in-memory arrays."
     },
     "/build/qa/test-runs.service.ts": {
       "verdict": "N+1-FIXED",
@@ -301,11 +301,7 @@
     },
     "/hr/core/hr-effective-change-applier.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "applyOne is genuinely per change, but the `status: applied` marking that follows it is an identical SET and should be one inArray UPDATE after the loop"
-    },
-    "/hr/global/compliance-requirements.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "verified by reading it: the loops compute due dates in memory; the inArray read and the bulk insert both sit outside them"
+      "note": "Ticket 21 third pass: the `status: applied` marking is one inArray UPDATE and the per-change `audit.log` is now one `HrAuditService.logMany` — one membership resolution and one multi-row INSERT. What is left inside the loop is `applyOne`, which writes a different table per change type and is per row by nature. NOTE: the detector no longer matches this file; `await tx` and `.update(` sit on different lines, which its line-scoped patterns cannot see."
     },
     "/hr/governance/retention/retention.service.ts": {
       "verdict": "ACTIONABLE",
@@ -324,8 +320,8 @@
       "note": "while(true) keyset drain on afterUserId — one bounded SELECT and one bulk INSERT per iteration"
     },
     "/hr/onboarding/flow/hr-checklist-reconciliation.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "one UPDATE per checklist item, in exactly two SET shapes (done / not-done). Partition the items and issue two inArray UPDATEs"
+      "verdict": "N+1-FIXED",
+      "note": "Ticket 21 third pass, verified by reading: the loop partitions items into `nowDone` / `nowTodo` in memory and the two `inArray` UPDATEs sit outside it, one per SET shape, exactly as the earlier note prescribed."
     },
     "/hr/onboarding/flow/module-checklist.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -345,7 +341,7 @@
     },
     "/hr/time/leave-approver.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "one resolveUserPermissions and one users SELECT per candidate approver. The user read is a straightforward inArray batch; the permission resolution needs a batched resolver"
+      "note": "Ticket 21 third pass: the per-candidate `includesSubject` probe is deleted — it could never match (applyScope got no team column, so it degraded to `member.user_id = candidate` under a WHERE already pinning `member.user_id = subject`). What is left is one `access.resolveUserPermissions` per candidate, bounded by APPROVER_CANDIDATE_LIMIT = 100. Closing it needs a batched scope resolver on AccessService (access territory), because `membersWithPermission` returns `{userId, membershipId}` and drops the scope the loop is asking for. NOTE: the detector no longer matches this file — `await this.db` and `.select(` sit on different lines."
     },
     "/inventory/channels/channels.service.ts": {
       "verdict": "EXCLUDED-MODULE",
@@ -657,7 +653,7 @@
     },
     "/timesheets/core/approvals-bulk.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "one audit.record per period id inside a BULK rejection — the exact shape the bulk endpoint exists to avoid. AuditService needs a multi-row record path"
+      "note": "Ticket 21 third pass: bulkReject is fully batched — `audit.recordMany`, two inArray UPDATEs, and the per-candidate delegation probe replaced by one `activeDelegationsToActor` multi-key read. What is left is bulkApprove's `approveSinglePeriod` per period, which is a per-period state transition with its own transaction and must stay independent (one rejected period may not roll back the rest). NOTE: the detector no longer matches this file."
     },
     "/timesheets/core/approvals.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -682,6 +678,10 @@
     "/workflows/engine/workflow-schedule-tick.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "each due schedule triggers a different workflow; the call in the loop is that schedule's own trigger, not a repeated lookup"
+    },
+    "/access/access-grant-drains.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Classified by reading from ticket 21 (access is not that ticket's territory; the service was not edited). Both `for(;;)` bodies are keyset drains over role_permission_grants / user_permission_grants — the loop's query IS the next page, one round trip per page and not per row. Same shape as /access/access-permission.resolver.ts, already FALSE-POSITIVE. Split out of access-permission.resolver.ts, which is why the baseline had never seen the path."
     }
   }
 }
