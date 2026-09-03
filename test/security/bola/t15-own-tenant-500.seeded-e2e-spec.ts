@@ -16,7 +16,12 @@ import { createSeededE2eApp, signSeededToken, type SeededE2eApp } from "test/hel
 
 const PLAN = process.env.T15_PLAN ?? join(__dirname, "live", "own-tenant-500-routes.json");
 const ARTIFACT = process.env.T15_ARTIFACT ?? "";
-const enabled = (process.env.DATABASE_URL ?? "").length > 0 && (process.env.AUTH_SIGNING_KEYS ?? "").length > 0;
+// Opt-in only. The replay sends 88 real requests, DELETEs among them, so it must never join an
+// ordinary seeded run by inheriting that run's DATABASE_URL.
+const enabled =
+  process.env.T15_REPLAY === "1" &&
+  (process.env.DATABASE_URL ?? "").length > 0 &&
+  (process.env.AUTH_SIGNING_KEYS ?? "").length > 0;
 const describeIf = enabled ? describe : describe.skip;
 
 interface PlannedRoute {
