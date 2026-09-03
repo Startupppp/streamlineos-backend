@@ -10,6 +10,7 @@ import { milliToCredits } from "../../ai/core/billing/ai-model-pricing.constants
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { TenantTx } from "../../../db/drizzle.types";
 import {
   aiCreditReservations,
   aiCreditTransactions,
@@ -45,31 +46,7 @@ export class AiCreditsReservationService {
         this.db,
         (outer) =>
           outer.transaction(async (tx) => {
-            let [wallet] = await tx
-              .select()
-              .from(orgAiCredits)
-              .where(eq(orgAiCredits.orgId, orgId))
-              .for("update");
-
-            if (!wallet) {
-              [wallet] = await tx
-                .insert(orgAiCredits)
-                .values({
-                  orgId,
-                  balance: TRIAL_GRANT_MILLI,
-                  lifetimeGranted: TRIAL_GRANT_MILLI,
-                })
-                .returning();
-              await tx.insert(aiCreditTransactions).values({
-                orgId,
-                userId: null,
-                type: "PLAN_GRANT",
-                amount: TRIAL_GRANT_MILLI,
-                balanceAfter: TRIAL_GRANT_MILLI,
-                feature: "trial-grant",
-                referenceId: "trial-grant",
-              });
-            }
+            const wallet = await this.ensureWallet(tx, orgId);
 
             if (wallet.balance < credits)
               throw new InsufficientAiCreditsException({
@@ -114,6 +91,64 @@ export class AiCreditsReservationService {
       }
       throw err;
     }
+  }
+
+  /**
+   * `SELECT … FOR UPDATE` locks nothing when the row is not there yet, so the
+   * first two AI calls an organisation ever made both found no wallet, both
+   * INSERTed, and the loser took a raw 23505 out of the request as a 500. The
+   * unique index on `org_id` is the only thing that can serialise a row that
+   * does not exist: `onConflictDoNothing().returning()` yields the row to the
+   * transaction that actually created it and an empty array to every other one,
+   * which is what keeps the trial grant to exactly one row — a loser that also
+   * wrote a PLAN_GRANT would hand out the free credits twice. The loser then
+   * re-reads under `FOR UPDATE`, which by then has a row to lock, and takes its
+   * deduction behind the winner's.
+   */
+  private async ensureWallet(
+    tx: TenantTx,
+    orgId: string,
+  ): Promise<typeof orgAiCredits.$inferSelect> {
+    const [locked] = await tx
+      .select()
+      .from(orgAiCredits)
+      .where(eq(orgAiCredits.orgId, orgId))
+      .for("update");
+    if (locked) return locked;
+
+    const [created] = await tx
+      .insert(orgAiCredits)
+      .values({
+        orgId,
+        balance: TRIAL_GRANT_MILLI,
+        lifetimeGranted: TRIAL_GRANT_MILLI,
+      })
+      .onConflictDoNothing({ target: orgAiCredits.orgId })
+      .returning();
+
+    if (created) {
+      await tx.insert(aiCreditTransactions).values({
+        orgId,
+        userId: null,
+        type: "PLAN_GRANT",
+        amount: TRIAL_GRANT_MILLI,
+        balanceAfter: TRIAL_GRANT_MILLI,
+        feature: "trial-grant",
+        referenceId: "trial-grant",
+      });
+      return created;
+    }
+
+    const [existing] = await tx
+      .select()
+      .from(orgAiCredits)
+      .where(eq(orgAiCredits.orgId, orgId))
+      .for("update");
+    if (!existing)
+      throw new ConflictException(
+        `AI credit wallet for organisation ${orgId} was neither created nor readable`,
+      );
+    return existing;
   }
 
   private async findByIdempotencyKey(
@@ -349,8 +384,18 @@ export class AiCreditsReservationService {
   }
 }
 
+/**
+ * Drizzle wraps every driver error in a `DrizzleQueryError` that carries no
+ * `code` of its own — the `PostgresError` holding `23505` sits on `cause`. A
+ * check that only read the outer object was therefore false for every real
+ * database error, which left the idempotency-key recovery below unreachable.
+ */
 function isUniqueViolation(err: unknown): boolean {
-  if (err === null || typeof err !== "object") return false;
-  const code: unknown = Reflect.get(err, "code");
-  return code === "23505";
+  let current: unknown = err;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (current === null || typeof current !== "object") return false;
+    if (Reflect.get(current, "code") === "23505") return true;
+    current = Reflect.get(current, "cause");
+  }
+  return false;
 }
