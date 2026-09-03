@@ -206,6 +206,7 @@ export class IncentivesService {
   ): Promise<{ ok: boolean }> {
     await this.assertCanApprove(actor);
     const existing = await this.db.query.incentives.findFirst({
+      columns: { id: true },
       where: and(
         eq(incentives.id, incentiveId),
         eq(incentives.orgId, actor.orgId),

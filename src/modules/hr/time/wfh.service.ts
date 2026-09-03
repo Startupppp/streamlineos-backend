@@ -131,6 +131,7 @@ export class WfhService {
 
   async update(orgId: string, approverId: string, requestId: number, body: UpdateWfhInput) {
     const existing = await this.db.query.wfhRequests.findFirst({
+      columns: { id: true },
       where: and(eq(wfhRequests.id, requestId), eq(wfhRequests.orgId, orgId)),
     });
 

@@ -179,6 +179,7 @@ export class OrgHierarchyBranchesService {
     body: CreateOrgBranchInput,
   ) {
     const conflict = await this.db.query.orgUnits.findFirst({
+      columns: { id: true },
       where: and(
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "BRANCH"),
@@ -265,6 +266,7 @@ export class OrgHierarchyBranchesService {
 
     if (body.code && body.code !== existing.code) {
       const conflict = await this.db.query.orgUnits.findFirst({
+        columns: { id: true },
         where: and(
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "BRANCH"),
@@ -395,6 +397,7 @@ export class OrgHierarchyBranchesService {
     newBusinessUnitId: string | null,
   ) {
     const branch = await this.db.query.orgUnits.findFirst({
+      columns: { id: true },
       where: and(
         eq(orgUnits.id, branchId),
         eq(orgUnits.orgId, orgId),

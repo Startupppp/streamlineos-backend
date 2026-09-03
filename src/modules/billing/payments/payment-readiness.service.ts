@@ -95,6 +95,7 @@ export class PaymentReadinessService {
     }
 
     const succeededTestPayment = await this.db.query.paymentTestTransactions.findFirst({
+      columns: { id: true },
       where: and(
         eq(paymentTestTransactions.orgId, orgId),
         eq(paymentTestTransactions.providerId, provider.id),

@@ -25,6 +25,7 @@ export class ChatOrgSettingsService {
 
   async updateSettings(orgId: string, membershipId: number | null, patch: UpdateChatOrgSettingsInput) {
     const existing = await this.db.query.chatOrgSettings.findFirst({
+      columns: { id: true },
       where: eq(chatOrgSettings.orgId, orgId),
     });
 

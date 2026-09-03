@@ -266,6 +266,7 @@ export class HrPolicyEvaluationService {
     employeeId: string,
   ): Promise<EmployeeAttributes> {
     const member = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
       where: and(
         eq(organizationMembers.orgId, orgId),
         eq(organizationMembers.userId, employeeId),

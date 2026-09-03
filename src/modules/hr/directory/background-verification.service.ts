@@ -83,6 +83,7 @@ export class BackgroundVerificationService {
 
   async update(orgId: string, body: UpdateBgvInput) {
     const existing = await this.db.query.backgroundVerifications.findFirst({
+      columns: { id: true },
       where: and(eq(backgroundVerifications.id, body.id), eq(backgroundVerifications.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Verification not found.");

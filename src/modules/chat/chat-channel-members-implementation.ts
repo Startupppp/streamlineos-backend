@@ -137,6 +137,7 @@ export class ChatChannelMembersImplementation {
     const targetMembershipId = await this.resolveMembership(orgId, targetUserId);
 
     const existing = await this.db.query.chatChannelMembers.findFirst({
+      columns: { id: true },
       where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
@@ -242,6 +243,7 @@ export class ChatChannelMembersImplementation {
     }
 
     const existing = await this.db.query.chatChannelMembers.findFirst({
+      columns: { id: true },
       where: and(
         eq(chatChannelMembers.orgId, actor.orgId),
         eq(chatChannelMembers.channelId, channelId),

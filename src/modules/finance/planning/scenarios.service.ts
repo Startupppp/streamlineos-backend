@@ -121,7 +121,7 @@ export class ScenariosService {
     input: UpdateScenarioInput,
   ) {
     const existing = await this.db
-      .select()
+      .select({ id: finCashFlowScenarios.id })
       .from(finCashFlowScenarios)
       .where(
         and(

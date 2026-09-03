@@ -61,6 +61,7 @@ export class ComplianceService {
 
   async acknowledge(orgId: string, userId: string, input: AckInput) {
     const existing = await this.db.query.policyAcknowledgments.findFirst({
+      columns: { id: true },
       where: and(
         eq(policyAcknowledgments.id, input.acknowledgmentId),
         eq(policyAcknowledgments.orgId, orgId),

@@ -17,6 +17,7 @@ export class GuidedTourService {
   /** Idempotently seeds the global "hr_setup" tour definition. Safe to call repeatedly — mirrors ModuleChecklistService.ensureChecklistsForModules. */
   private async ensureHrSetupTourDefinition() {
     const existing = await this.db.query.guidedTours.findFirst({
+      columns: { id: true },
       where: and(isNull(guidedTours.orgId), eq(guidedTours.tourKey, HR_SETUP_TOUR_KEY)),
     });
     if (existing) return;

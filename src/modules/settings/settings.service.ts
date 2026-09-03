@@ -131,6 +131,7 @@ export class SettingsService {
     }
 
     const existing = await this.db.query.apiKeys.findFirst({
+      columns: { id: true },
       where: and(eq(apiKeys.id, keyId), eq(apiKeys.orgId, u.orgId)),
     });
     if (!existing) throw new NotFoundException("API key not found.");

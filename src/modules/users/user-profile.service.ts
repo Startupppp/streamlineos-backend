@@ -147,6 +147,7 @@ export class UserProfileService {
   ) {
     await this.assertMember(orgId, userId);
     const existing = await this.db.query.userPreferences.findFirst({
+      columns: { userId: true },
       where: eq(userPreferences.userId, userId),
     });
 

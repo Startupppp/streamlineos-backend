@@ -84,6 +84,7 @@ export class NotificationProvidersService {
 
   async update(orgId: string, userId: string, id: number, dto: UpdateProviderInput) {
     const existing = await this.db.query.notificationProviderAccounts.findFirst({
+      columns: { id: true },
       where: and(eq(notificationProviderAccounts.id, id), eq(notificationProviderAccounts.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Provider not found");

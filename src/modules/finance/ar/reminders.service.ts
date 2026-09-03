@@ -54,7 +54,7 @@ export class RemindersService {
   }
 
   async updatePolicy(orgId: string, id: number, input: UpdateReminderPolicyInput) {
-    const existing = await this.db.query.finReminderPolicies.findFirst({ where: and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId), isNull(finReminderPolicies.archivedAt)) });
+    const existing = await this.db.query.finReminderPolicies.findFirst({ columns: { id: true }, where: and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId), isNull(finReminderPolicies.archivedAt)) });
     if (!existing) throw new NotFoundException("Reminder policy not found");
     const [updated] = await this.db
       .update(finReminderPolicies)

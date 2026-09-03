@@ -134,6 +134,7 @@ export class PerformanceGoalsService {
 
   async listKeyResults(orgId: string, goalId: number) {
     const goal = await this.db.query.goals.findFirst({
+      columns: { id: true },
       where: and(eq(goals.id, goalId), eq(goals.orgId, orgId)),
     });
     if (!goal) throw new NotFoundException("Goal not found.");

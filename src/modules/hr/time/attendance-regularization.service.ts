@@ -63,6 +63,7 @@ export class AttendanceRegularizationService {
       `);
 
       const existingPending = await tx.query.hrAttendanceRegularizations.findFirst({
+        columns: { id: true },
         where: and(
           eq(hrAttendanceRegularizations.orgId, u.orgId),
           eq(hrAttendanceRegularizations.userMembershipId, membershipId),

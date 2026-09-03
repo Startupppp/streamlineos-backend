@@ -35,6 +35,7 @@ export class ChatHuddleSignalsService {
     });
     if (!channel) throw new NotFoundException("Channel not found");
     const member = await this.db.query.chatChannelMembers.findFirst({
+      columns: { id: true },
       where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),

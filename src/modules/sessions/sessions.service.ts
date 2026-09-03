@@ -78,6 +78,7 @@ export class SessionsService {
     }
 
     const target = await this.db.query.userSessions.findFirst({
+      columns: { id: true },
       where: and(eq(userSessions.id, targetSessionId), eq(userSessions.userId, userId)),
     });
 

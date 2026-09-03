@@ -148,6 +148,7 @@ export class OrgHierarchyDepartmentsService {
 
   async createDepartment(orgId: string, userId: string, body: CreateOrgDepartmentInput) {
     const conflict = await this.db.query.orgUnits.findFirst({
+      columns: { id: true },
       where: and(
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "DEPARTMENT"),
@@ -194,6 +195,7 @@ export class OrgHierarchyDepartmentsService {
 
     if (body.code && body.code !== existing.code) {
       const conflict = await this.db.query.orgUnits.findFirst({
+        columns: { id: true },
         where: and(
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "DEPARTMENT"),
@@ -256,6 +258,7 @@ export class OrgHierarchyDepartmentsService {
 
   async moveDepartment(orgId: string, departmentId: string, newBranchId: string | null) {
     const dept = await this.db.query.orgUnits.findFirst({
+      columns: { id: true },
       where: and(
         eq(orgUnits.id, departmentId),
         eq(orgUnits.orgId, orgId),

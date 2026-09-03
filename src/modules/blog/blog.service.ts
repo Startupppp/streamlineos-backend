@@ -163,6 +163,7 @@ export class BlogService {
     const slug = slugify(input.name);
 
     const existing = await this.db.query.blogCategories.findFirst({
+      columns: { id: true },
       where: eq(blogCategories.slug, slug),
     });
     if (existing) return { error: "duplicate" as const };

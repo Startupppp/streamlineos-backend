@@ -71,6 +71,7 @@ export class ChatSavedService {
     if (!membershipId) throw new ForbiddenException("Access denied");
 
     const membership = await this.db.query.chatChannelMembers.findFirst({
+      columns: { id: true },
       where: and(
         eq(chatChannelMembers.orgId, actor.orgId),
         eq(chatChannelMembers.channelId, message.channelId),

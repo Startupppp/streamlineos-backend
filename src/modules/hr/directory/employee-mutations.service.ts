@@ -163,6 +163,7 @@ export class EmployeeMutationsService {
 
     const effectiveScope: DataScope = isSelf && manageScope === "none" ? "own" : manageScope;
     const targetMember = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
       where: and(
         eq(organizationMembers.userId, targetUserId),
         eq(organizationMembers.orgId, actor.orgId),

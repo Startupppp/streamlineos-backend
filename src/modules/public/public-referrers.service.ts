@@ -177,6 +177,7 @@ export class PublicReferrersService {
             )[0]!.id;
 
         const existingReferral = await tx.query.externalReferrals.findFirst({
+          columns: { id: true },
           where: and(
             eq(externalReferrals.referrerId, referrer.id),
             eq(externalReferrals.candidateId, candidateId),

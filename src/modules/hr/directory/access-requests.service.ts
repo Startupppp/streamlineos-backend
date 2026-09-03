@@ -39,6 +39,7 @@ export class AccessRequestsService {
 
   async update(orgId: string, id: string, input: PatchAccessRequestInput, actorUserId: string) {
     const existing = await this.db.query.hrAccessRequests.findFirst({
+      columns: { id: true },
       where: and(eq(hrAccessRequests.id, id), eq(hrAccessRequests.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Access request not found.");

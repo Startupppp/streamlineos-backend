@@ -84,6 +84,7 @@ export class RichDocumentsService {
     input: UpdateRichDocumentInput,
   ) {
     const existing = await this.db.query.richDocuments.findFirst({
+      columns: { id: true },
       where: and(eq(richDocuments.id, documentId), eq(richDocuments.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Document not found.");

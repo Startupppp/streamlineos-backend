@@ -116,6 +116,7 @@ export class OrgHierarchyCostCentersService {
 
   async createCostCenter(orgId: string, userId: string, body: CreateCostCenterInput) {
     const conflict = await this.db.query.orgUnits.findFirst({
+      columns: { id: true },
       where: and(
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "COST_CENTER"),
@@ -150,6 +151,7 @@ export class OrgHierarchyCostCentersService {
 
     if (body.code && body.code !== existing.code) {
       const conflict = await this.db.query.orgUnits.findFirst({
+        columns: { id: true },
         where: and(
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "COST_CENTER"),

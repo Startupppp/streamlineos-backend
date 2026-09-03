@@ -94,6 +94,7 @@ export class PaymentManualMethodsService {
 
   async disable(orgId: string, id: number, actor: RequestActorContext) {
     const existing = await this.db.query.paymentManualMethods.findFirst({
+      columns: { id: true },
       where: and(eq(paymentManualMethods.id, id), eq(paymentManualMethods.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Manual payment method not found");

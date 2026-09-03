@@ -113,6 +113,7 @@ export class OrgHierarchyBusinessUnitsService {
 
   async createBusinessUnit(orgId: string, userId: string, body: CreateBusinessUnitInput) {
     const existing = await this.db.query.orgUnits.findFirst({
+      columns: { id: true },
       where: and(
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "BUSINESS_UNIT"),
@@ -148,6 +149,7 @@ export class OrgHierarchyBusinessUnitsService {
 
     if (body.code && body.code !== existing.code) {
       const conflict = await this.db.query.orgUnits.findFirst({
+        columns: { id: true },
         where: and(
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "BUSINESS_UNIT"),
@@ -187,6 +189,7 @@ export class OrgHierarchyBusinessUnitsService {
 
   async moveBusinessUnit(orgId: string, buId: string, newParentId: string | null) {
     const bu = await this.db.query.orgUnits.findFirst({
+      columns: { id: true },
       where: and(
         eq(orgUnits.id, buId),
         eq(orgUnits.orgId, orgId),

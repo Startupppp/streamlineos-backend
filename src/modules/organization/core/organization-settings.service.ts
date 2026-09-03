@@ -71,10 +71,12 @@ export class OrganizationSettingsService {
   async updateSettings(orgId: string, actorUserId: string, input: UpdateOrgSettingsInput) {
     if (input.slug) {
       const existing = await this.db.query.organizations.findFirst({
+        columns: { id: true },
         where: and(eq(organizations.slug, input.slug), eq(organizations.id, orgId)),
       });
       if (!existing) {
         const slugTaken = await this.db.query.organizations.findFirst({
+          columns: { id: true },
           where: eq(organizations.slug, input.slug),
         });
         if (slugTaken) throw new ConflictException("Slug already in use");
@@ -339,6 +341,7 @@ export class OrganizationSettingsService {
 
   async addCustomDomain(orgId: string, userId: string, input: AddCustomDomainInput) {
     const existing = await this.db.query.orgCustomDomains.findFirst({
+      columns: { id: true },
       where: eq(orgCustomDomains.domain, input.domain),
     });
     if (existing) throw new ConflictException("Domain already registered");
@@ -361,6 +364,7 @@ export class OrganizationSettingsService {
 
   async verifyCustomDomain(orgId: string, userId: string, domainId: string) {
     const record = await this.db.query.orgCustomDomains.findFirst({
+      columns: { id: true },
       where: and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)),
     });
     if (!record) throw new NotFoundException("Domain not found");

@@ -54,6 +54,7 @@ export class SignFieldsService {
     }
 
     const recipient = await this.db.query.signRecipients.findFirst({
+      columns: { id: true },
       where: and(eq(signRecipients.id, input.recipientId), eq(signRecipients.orgId, orgId), eq(signRecipients.envelopeId, envelopeId)),
     });
     if (!recipient) throw new BadRequestException("Recipient does not belong to this envelope");

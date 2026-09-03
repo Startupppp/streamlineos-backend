@@ -192,6 +192,7 @@ export class AssetsService {
 
   async updateDevice(orgId: string, deviceId: number, body: PatchDeviceInput) {
     const existing = await this.db.query.employeeDevices.findFirst({
+      columns: { id: true },
       where: and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)),
     });
 
@@ -232,6 +233,7 @@ export class AssetsService {
 
   async deleteDevice(orgId: string, deviceId: number) {
     const existing = await this.db.query.employeeDevices.findFirst({
+      columns: { id: true },
       where: and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)),
     });
 

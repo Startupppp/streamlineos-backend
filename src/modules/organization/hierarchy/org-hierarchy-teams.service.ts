@@ -209,6 +209,7 @@ export class OrgHierarchyTeamsService {
       this.assertActiveLead(orgId, body.leadUserId),
     ]);
     const conflict = await this.db.query.orgUnits.findFirst({
+      columns: { id: true },
       where: and(
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "TEAM"),
@@ -274,6 +275,7 @@ export class OrgHierarchyTeamsService {
 
     if (body.code && body.code !== existing.code) {
       const conflict = await this.db.query.orgUnits.findFirst({
+        columns: { id: true },
         where: and(
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "TEAM"),
@@ -364,6 +366,7 @@ export class OrgHierarchyTeamsService {
 
   async moveTeam(orgId: string, teamId: string, newDepartmentId: string) {
     const team = await this.db.query.orgUnits.findFirst({
+      columns: { id: true },
       where: and(
         eq(orgUnits.id, teamId),
         eq(orgUnits.orgId, orgId),
