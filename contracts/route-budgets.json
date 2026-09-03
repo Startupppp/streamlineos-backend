@@ -3796,10 +3796,10 @@
       "maxLatencyP95Ms": 600,
       "maxMemoryMb": 64,
       "maxReadPathP95Ms": 50,
-      "dbCallBasis": "default-ceiling",
+      "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "clients-list",
-      "note": "Client account list.",
-      "measuredDbCalls": null,
+      "note": "Client account list. Cache-miss ceiling, counted statement-by-statement out of ClientAccountsService.getClientAccounts: the read itself is 2 — one relational findMany over client_accounts with the salesRep/assignedCrm column joins, and one count() over the same predicate, issued together in a Promise.all. The handler also runs tryBackfill, which registerAfterCommit defers past commit but still inside the request: backfillConvertedLeadsToClientAccounts is 1 execute, and backfillCrmAssignments is 2 selects plus ceil(unassigned / BULK_UPDATE_CHUNK 500) bulk updates, both skipped once nothing is unassigned. Steady state is therefore 5 (2 read + 1 backfill insert + 2 assignment probes) and the first request after a tenant gains unassigned accounts adds the chunked write. resolveClientsReadScope and membersWithPermission are access reads, not counted — the same convention GET /dashboard/personal set. The ceiling stays at 10 rather than being tightened to the counted 5, because the chunk term is unbounded in the number of unassigned accounts; tightening it would declare a ceiling the cold path can exceed on data alone. Read from the call path AND confirmed against a live statement count.",
+      "measuredDbCalls": 5,
       "measuredDownstreamCalls": 0,
       "measuredResponseBytes": 23547,
       "measuredMemoryMb": 3.388,
@@ -3875,6 +3875,23 @@
             "overPrdCeiling": false
           }
         }
+      },
+      "dbCallMeasurement": {
+        "status": "measured",
+        "method": "db-call-count",
+        "instrument": "QueryTelemetryTracker over instrumentPostgresClient (src/db/query-telemetry.ts), via countDbCalls",
+        "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
+        "alsoMeasuredOn": [
+          "aaaaaaaa-1111-0000-0000-000000000003",
+          "aaaaaaaa-1111-0000-0000-000000000002",
+          "aaaaaaaa-1111-0000-0000-000000000004"
+        ],
+        "database": "scratch_t21_clients (a copy of scratch_perf_seed at journal head; the route writes, so it was not measured on the seed itself)",
+        "role": "streamline_app, rolbypassrls=false, RLS live, tenant GUC set",
+        "cache": "miss (redis null) — every maxDbCalls is the cache-miss ceiling",
+        "branch": "steady state, the per-request cost: 5 on ALL FOUR tenants (89.93 / 9.00 / 0.90 / 0.18 percent)",
+        "coldBranch": "the first request per tenant also runs the deferred backfill: measured 6 on the three smaller tenants (1 chunk) and 9 on the 89.93% tenant (1,600 accounts = 4 chunks of 500). NOT recorded as the measurement because the chunk term grows with unassigned rows; a ratchet placed on it would be data-dependent.",
+        "caveat": "measured against the real ClientAccountsService over a seeded database, with AccessService stubbed to return the tenant's active memberships — access resolution is excluded by the manifest's own convention, so stubbing it removes statements this field does not count."
       }
     },
     "POST /leads": {
