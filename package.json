@@ -210,6 +210,7 @@
     "check:openapi-coverage": "node src/scripts/check-openapi-coverage.mjs",
     "check:openapi-coverage:self-test": "node src/scripts/check-openapi-coverage.mjs --self-test",
     "check:bodyless-conflicts": "node src/scripts/check-bodyless-conflicts.mjs",
+    "check:body-binding": "node --max-old-space-size=8192 src/scripts/check-body-binding.mjs",
     "check:bodyless-conflicts:self-test": "node src/scripts/check-bodyless-conflicts.mjs --self-test",
     "check:restrict-fks": "node src/scripts/check-restrict-fks.mjs",
     "check:restrict-fks:self-test": "node src/scripts/check-restrict-fks.mjs --self-test",
