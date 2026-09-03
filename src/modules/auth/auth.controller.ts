@@ -29,6 +29,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { AuthService } from "./auth.service";
 import { AuthTokensService } from "./auth-tokens.service";
+import { internalSecretMatches } from "./internal-secret";
 import {
   registerSchema,
   verifyEmailSchema,
@@ -101,6 +102,15 @@ export class AuthController {
     return { userAgent, ipAddress };
   }
 
+  /**
+   * The three INTERNAL_API_SECRET routes are limited on their SUBJECT (the user
+   * the call is about, or the signing-in email) and only AFTER the secret check
+   * passes. Their caller is the web tier, so every request arrives from one
+   * server IP and a per-IP tier would be a single global bucket that throttles
+   * the product; and the subject on two of them is attacker-supplied, so
+   * limiting before the secret check would let an unauthenticated request
+   * exhaust a named user's budget and lock them out of session refresh.
+   */
   private async enforceRateLimit(
     tier: string,
     identifier: string,
@@ -174,10 +184,10 @@ export class AuthController {
     @Param("userId") userId: string,
     @Request() req: { headers: Record<string, string> },
   ) {
-    const secret = process.env.INTERNAL_API_SECRET;
-    if (!secret || req.headers["x-internal-secret"] !== secret) {
+    if (!internalSecretMatches(process.env.INTERNAL_API_SECRET, req.headers["x-internal-secret"])) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
+    await this.enforceRateLimit("auth:session-data", userId);
     return this.authService.getSessionData(userId);
   }
 
@@ -214,10 +224,10 @@ export class AuthController {
     @Body() body: GoogleOAuthInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
-    const secret = process.env.INTERNAL_API_SECRET;
-    if (!secret || req.headers["x-internal-secret"] !== secret) {
+    if (!internalSecretMatches(process.env.INTERNAL_API_SECRET, req.headers["x-internal-secret"])) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
+    await this.enforceRateLimit("auth:google", body.email.toLowerCase());
     return this.authTokensService.googleOAuth(body, this.resolveClientContext(req));
   }
 
@@ -254,8 +264,7 @@ export class AuthController {
     @Body() body: SessionExchangeInput,
     @Request() req: { headers: Record<string, string> },
   ): Promise<{ token: string }> {
-    const internalSecret = process.env.INTERNAL_API_SECRET;
-    if (!internalSecret || req.headers["x-internal-secret"] !== internalSecret) {
+    if (!internalSecretMatches(process.env.INTERNAL_API_SECRET, req.headers["x-internal-secret"])) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
 
@@ -296,6 +305,8 @@ export class AuthController {
     } catch {
       throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
     }
+
+    await this.enforceRateLimit("auth:session-exchange", userId);
 
     const nonceAccepted = await this.isNonceFirstUse(nonce, 90);
     if (!nonceAccepted) {

@@ -21,6 +21,14 @@ const TIERS: Record<string, Tier> = {
   // valid long enough for an unthrottled loop to walk a meaningful slice of the
   // 10^6 space. Keyed per user, not per IP.
   "auth:mfa-verify": { limit: 10, windowSecs: 300 },
+  // The three INTERNAL_API_SECRET routes. They were the only @Public() routes on
+  // auth.controller.ts with no limiter at all, so a leaked shared secret minted
+  // sessions unbounded. Keyed on the SUBJECT, not the source: the caller is the
+  // web tier, so every request shares one server IP and a per-IP tier would be a
+  // single global bucket. Generous enough that no real user reaches them.
+  "auth:google": { limit: 10, windowSecs: 60 },
+  "auth:session-exchange": { limit: 300, windowSecs: 60 },
+  "auth:session-data": { limit: 300, windowSecs: 60 },
   "auth:mfa-disable": { limit: 10, windowSecs: 300 },
   // Provider bounce/complaint callbacks. Generous — a real provider can burst — but
   // bounded so an attacker who obtains the signing secret cannot flood the write path.
