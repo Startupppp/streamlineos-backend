@@ -646,10 +646,10 @@
         "reason": "6 describe.skip blocks in src/modules/ai/core/crm-copilot.service.phase2.spec.ts, all targeting CrmScoringService/CrmBriefService. Accepted residual R-9, blocker SCOPE, review 2026-12-01."
       },
       "CONDITIONAL_BASELINE": {
-        "value": 28,
+        "value": 29,
         "direction": "ratchet",
         "owner": "backend platform owner",
-        "reason": "Runtime-selected describes gated on DATABASE_URL / APP_DATABASE_URL / a provider key. Honest skips, each with a registered blocker."
+        "reason": "Runtime-selected describes gated on DATABASE_URL / APP_DATABASE_URL / a provider key. Honest skips, each with a registered blocker. RE-REGISTERED 28 -> 29 on 2026-09-03 for src/modules/chat/__tests__/chat-send-conflict-target.db.spec.ts, the regression net for the 42P10 that made every POST /chat/channels/:id/messages return 500 at journal head. Its CATALOG half is gated on CHAT_DB_TESTS=1 because index inference happens inside Postgres at PLAN time and only a real catalog can observe it; its HERMETIC half is unconditional and would alone have caught the defect. Verified before signing off, not asserted: run against a local partial index (scratch_gates_head) the full spec is 7/7 green, 3 of those in the always-on half. A raise here is a debt increase and must stay exceptional -- the next request to raise it should retire an existing conditional site instead."
       }
     },
     "check-transaction-callbacks.mjs": {
