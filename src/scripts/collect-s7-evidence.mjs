@@ -3,11 +3,24 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as dotenv from "dotenv";
+import { WORKSPACE_ROOT, workspaceAvailable, workspaceUnreachableReason } from "./check-repo-paths.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-const backendDir = resolve(scriptDir, "../..");
-const repoDir = resolve(backendDir, "..");
-const evidenceDir = resolve(repoDir, "architecture-refactor/final-refactor/evidence/45-scale");
+const backendDir = resolve(scriptDir, "..", "..");
+/**
+ * The evidence tree lives in the WORKSPACE docs repository. `resolve(backendDir, "..")`
+ * guessed a depth and landed on `<parent-of-backend>/architecture-refactor`, which
+ * exists in no layout this project uses -- measured 2026-09-03 it resolved to
+ * `.../streamline/architecture-refactor/...` while the tree is at
+ * `.../streamlineos-frontend/architecture-refactor/...`, so this script wrote its
+ * report outside both repositories. Resolve from the marker instead.
+ */
+if (!workspaceAvailable) {
+  console.error("INCONCLUSIVE - collect-s7-evidence: the evidence tree could not be located, so no report was written.");
+  console.error(`  ${workspaceUnreachableReason()}`);
+  process.exit(2);
+}
+const evidenceDir = resolve(WORKSPACE_ROOT, "architecture-refactor", "final-refactor", "evidence", "45-scale");
 const outputPath = resolve(evidenceDir, "S7-LIVE-DEV-EVIDENCE.md");
 
 dotenv.config({ path: resolve(backendDir, ".env") });

@@ -14,7 +14,8 @@
     "start:prod": "node --max-old-space-size=8192 --env-file-if-exists=.env dist/main.js",
     "db:push": "node scripts/guard-db-push.mjs",
     "db:generate": "node scripts/guard-db-generate.mjs",
-    "check:db-generate-guard": "node scripts/guard-db-generate.mjs --self-test",
+    "check:db-generate-guard": "node scripts/guard-db-generate.mjs --check",
+    "check:db-generate-guard:self-test": "node scripts/guard-db-generate.mjs --self-test",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
     "db:bootstrap": "node src/scripts/db-bootstrap.mjs",
     "db:bootstrap-role": "node src/scripts/db-bootstrap-app-role.mjs",
@@ -213,6 +214,8 @@
     "check:body-binding": "node --max-old-space-size=8192 src/scripts/check-body-binding.mjs",
     "check:bodyless-conflicts:self-test": "node src/scripts/check-bodyless-conflicts.mjs --self-test",
     "check:restrict-fks": "node src/scripts/check-restrict-fks.mjs",
+    "check:conflict-targets": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-conflict-target-inference.ts",
+    "check:conflict-targets:self-test": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-conflict-target-inference.ts --self-test",
     "check:restrict-fks:self-test": "node src/scripts/check-restrict-fks.mjs --self-test",
     "check:multipart-contracts": "node src/scripts/check-multipart-contracts.mjs",
     "check:multipart-contracts:self-test": "node src/scripts/check-multipart-contracts.mjs --self-test",
@@ -365,7 +368,8 @@
     "check:baseline-integrity": "node src/scripts/check-baseline-integrity.mjs",
     "check:baseline-integrity:self-test": "node src/scripts/check-baseline-integrity.mjs --self-test",
     "check:baseline-integrity:emit": "node src/scripts/check-baseline-integrity.mjs --emit",
-    "check:gate-wiring": "node src/scripts/check-gate-wiring.mjs"
+    "check:gate-wiring": "node src/scripts/check-gate-wiring.mjs",
+    "check:gate-wiring:self-test": "node src/scripts/check-gate-wiring.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

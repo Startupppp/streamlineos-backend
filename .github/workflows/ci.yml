@@ -55,6 +55,17 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # KNOWINGLY RED, and allow-failure for that reason. MEASURED 2026-09-03 (v2 ticket 30) at
+      # head through the release mutex: `pnpm exec knip --no-progress` exit 1 — unused exports
+      # and unused exported types in src/modules/** (chat, notifications, ai, gdpr,
+      # organization). Owner: the owning module tickets, not ticket 30; every finding is in
+      # application source, which the gates territory may not edit. The frontend half of this
+      # rule (`check:dead-code`) is the ratcheted, classified version and is red for one
+      # unclassified export; this raw knip report has no ratchet at all, so making it blocking
+      # would red the pipeline on debt that is already tracked elsewhere.
+      # AND: what it reports is a floor, not the number. See the note on "Dead code is
+      # classified" in the gates job — knip's own config cannot see production code kept alive
+      # only by its tests, so these unused exports are what survives a blind scan.
       - name: Dead-code report
         run: pnpm exec knip --no-progress
         continue-on-error: true
@@ -216,6 +227,25 @@ jobs:
       # comes back under the floor fails as a broken scan rather than passing as
       # a clean codebase. Measured at head: rc=0, 36 findings, 0 unclassified,
       # importer graph 9,811 files / 68,259 edges.
+      #
+      # 2026-09-03 (v2 ticket 30) — READ THIS BEFORE CITING THIS GREEN. This step is BLOCKING
+      # and it passes, but ITS INPUT IS BLIND. It drives `knip`, and knip.json lists every spec
+      # file as an `entry` AND leaves knip's jest plugin enabled, so every file a spec imports is
+      # reachable. In a repository where nearly every service has a spec, production code kept
+      # alive only by its own test CANNOT be reported. MEASURED at head: knip as configured
+      # reports 0 unused files; with the spec globs removed from `entry` AND `jest: false` it
+      # reports 36 — 29 after test-only helpers (*.test-double.ts, *.spec-fixtures.ts,
+      # *.fixture.ts, *-fixtures.ts, **/testing/**) are classified out by naming convention.
+      # BOTH changes are required: `jest: false` alone still reports 0, and removing the entry
+      # globs alone reports 0-1. Bite-proved on a minimal fixture where a production file
+      # imported only by a spec is invisible to the committed config and reported by the
+      # corrected one.
+      # NOT FIXED HERE, deliberately: correcting the config takes this BLOCKING gate from green
+      # to 29 unclassified dead files owned by ~10 module lanes, and the fix and the
+      # classification are one atomic change. The corrected config and the full classified file
+      # list are in .scratch/code-release-10-10-v2/reports/30-knip-reach/. Root CLAUDE.md §10
+      # makes knip the required proof for any dead-code claim, so no "proven with knip" citation
+      # in this release should be trusted until this lands.
       - name: Dead code is classified, and no verdict is stale
         if: ${{ !cancelled() }}
         run: pnpm check:dead-code:self-test && pnpm check:dead-code
@@ -238,9 +268,17 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:tenant-isolation:run
 
-      - name: Every check:* script is wired into a workflow
+      # 2026-09-03 (v2 ticket 30) — this gate now also fails on a gate that is wired but CANNOT
+      # FAIL: one whose every invocation sits under `continue-on-error`, at step level or job
+      # level. It found 7 such gates in this repository and 8 in the frontend on the day it was
+      # added — including gates that exit 2 (prerequisite absent) and 1 (a real defect)
+      # indistinguishably, so a genuine finding could never fail CI.
+      # The self-test is new too: the gate that decides whether every other gate can run had
+      # none. 28 assertions, each naming a specific verdict, plus a control that the real
+      # workflow corpus still parses.
+      - name: Every check:* script is wired into a workflow and can fail
         if: ${{ !cancelled() }}
-        run: pnpm check:gate-wiring
+        run: pnpm check:gate-wiring:self-test && pnpm check:gate-wiring
 
       # Hard zero for `as any` / `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`
       # in application code, and a zero-GROWTH ledger for `as unknown as` where
@@ -263,10 +301,18 @@ jobs:
       # the INCONCLUSIVE is visible without skipping the 70 gates below it.
       # To make this blocking, add a checkout of the frontend repository and set
       # STREAMLINE_FRONTEND_ROOT to it.
+      #
+      # 2026-09-03 (v2 ticket 30) — `continue-on-error: true` REMOVED. It swallowed exit 2
+      # (frontend checkout absent) and exit 1 (a REAL key divergence) identically, so a
+      # backend-only key — which can never be gated in the UI — could be merged past a green
+      # job. run-gate.mjs keeps the tolerance for the absent sibling and restores the bite.
+      # MEASURED 2026-09-03: two-repo layout exit 0; STREAMLINE_FRONTEND_ROOT pointed at a
+      # nonexistent directory exit 2, which run-gate reports as a warning annotation and exit 0.
       - name: Permission key catalog check
         if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: pnpm check:permission-keys
+        run: >-
+          node src/scripts/run-gate.mjs check:permission-keys
+          --prerequisite "a checkout of Startupppp/streamlineos-frontend beside this repository (set STREAMLINE_FRONTEND_ROOT)"
 
       # Absence of a declaration is the defect, so this gates every commit now
       # that the count is zero. RouteClassifierGuard enforces the same thing at
@@ -279,10 +325,13 @@ jobs:
       # check" above: it reads the frontend navigation manifest. MEASURED
       # 2026-09-03: backend-only checkout exit 2 (INCONCLUSIVE), two-repo layout
       # exit 0.
+      # 2026-09-03 (v2 ticket 30) — flag removed, same reasoning as the step above.
+      # MEASURED: two-repo layout exit 0, no sibling exit 2.
       - name: Navigation gates name the route's permission
         if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: pnpm check:navigation-permissions
+        run: >-
+          node src/scripts/run-gate.mjs check:navigation-permissions
+          --prerequisite "a checkout of Startupppp/streamlineos-frontend beside this repository (set STREAMLINE_FRONTEND_ROOT)"
 
       - name: OpenAPI contract is current
         if: ${{ !cancelled() }}
@@ -466,9 +515,33 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:drop-column-safety:self-test && pnpm check:drop-column-safety
 
+      # 2026-09-03 (v2 ticket 30) — THIS STEP COULD NOT FAIL. The package script it runs was
+      # `node scripts/guard-db-generate.mjs --self-test`, and that self-test asserts `decide()`
+      # against four hard-coded argument pairs (entries: 634, snapshot: 464). It never opened
+      # migrations/meta. Its own assertion key was named `reports_the_real_drift` and the number
+      # it checked was 169, while the real drift that day was 207 (672 journal entries, latest
+      # snapshot 0464). Deleting every migration in the repository left it exit 0.
+      # The script had no gate mode to run instead — its default path spawns `drizzle-kit
+      # generate` — so one was added (`--check`), and the two halves are now separate steps.
+      # Bite-proved in a temp fixture: an empty journal, a missing snapshot, and a neutered
+      # `decide()` each exit 1 and name the reason; the unmutated control exits 0.
+      - name: db:generate guard self-test
+        if: ${{ !cancelled() }}
+        run: pnpm check:db-generate-guard:self-test
+
       - name: db:generate cannot be run against a stale snapshot
         if: ${{ !cancelled() }}
         run: pnpm check:db-generate-guard
+
+      # Wired 2026-09-03 (v2 ticket 30). It landed in package.json during this session and
+      # check:gate-wiring caught it UNWIRED the same hour — a gate that cannot run is
+      # indistinguishable from a gate that passes, which is why that rule exists.
+      # MEASURED at head: self-test exit 0 ("the known-bad fixture is flagged and the correct
+      # forms are not"), gate exit 0 ("no new uninferable ON CONFLICT target, 3 ratcheted,
+      # shrink-only").
+      - name: ON CONFLICT targets are inferable
+        if: ${{ !cancelled() }}
+        run: pnpm check:conflict-targets:self-test && pnpm check:conflict-targets
 
       - name: Tenant foreign keys use the right referential action
         if: ${{ !cancelled() }}
@@ -662,17 +735,24 @@ jobs:
       # INCONCLUSIVE is visible rather than skipping every step below it. To
       # make this blocking, check the frontend repository out and set
       # STREAMLINE_WORKSPACE_ROOT to it.
+      # 2026-09-03 (v2 ticket 30) — flag removed. A BROKEN SEAL is exit 1 and must fail;
+      # only the absent evidence tree is exit 2. MEASURED: two-repo layout self-test 0 / gate 0,
+      # no workspace exit 2.
       - name: Evidence seals hold
         if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: pnpm check:evidence-seal:self-test && pnpm check:evidence-seal
+        run: >-
+          node src/scripts/run-gate.mjs check:evidence-seal:self-test check:evidence-seal
+          --prerequisite "a checkout of Startupppp/streamlineos-frontend carrying the evidence tree (set STREAMLINE_WORKSPACE_ROOT)"
 
       # CANNOT RUN IN CI — same prerequisite and same measurement as "Evidence
       # seals hold" above: the S05 artifacts live in the workspace tree.
+      # 2026-09-03 (v2 ticket 30) — flag removed, same split as "Evidence seals hold".
+      # MEASURED: two-repo layout exit 0, no workspace exit 2.
       - name: S05 approval and evidence artifact contract
         if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: pnpm check:s05-artifact-contract
+        run: >-
+          node src/scripts/run-gate.mjs check:s05-artifact-contract
+          --prerequisite "a checkout of Startupppp/streamlineos-frontend carrying the S05 artifacts (set STREAMLINE_WORKSPACE_ROOT)"
 
       - name: Offset, unbounded and unordered reads do not increase
         if: ${{ !cancelled() }}
@@ -696,10 +776,15 @@ jobs:
       # sweep that built this found, 5 were real user-visible bugs. Allow-failure so the
       # INCONCLUSIVE is visible without skipping the steps below it; to make it
       # blocking, add a frontend checkout and set STREAMLINE_FRONTEND_ROOT.
+      # 2026-09-03 (v2 ticket 30) — flag removed. Of the 17 findings the sweep that built this
+      # gate produced, 5 were real user-visible bugs; those are exit 1 and must fail the job.
+      # Only the absent frontend corpus is exit 2. MEASURED: two-repo layout exit 0, no sibling
+      # exit 2.
       - name: Relation keys reach the frontend
         if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: pnpm check:relation-keys
+        run: >-
+          node src/scripts/run-gate.mjs check:relation-keys
+          --prerequisite "a checkout of Startupppp/streamlineos-frontend beside this repository (set STREAMLINE_FRONTEND_ROOT)"
 
       - name: Production operations evidence gate self-test
         if: ${{ !cancelled() }}
@@ -745,10 +830,18 @@ jobs:
       # frontend repository. So this step reports allow-failure red in CI while
       # being green locally, and the gate half never executes there. Named
       # prerequisite: a frontend checkout, same as the four steps above.
+      #
+      # 2026-09-03 (v2 ticket 30) — `continue-on-error: true` REMOVED. Both halves already
+      # report the absent registry as exit 2 rather than exit 1, which is the whole reason the
+      # note above gave for keeping the flag; the flag additionally swallowed a REAL over-limit
+      # file, which is exit 1. RE-MEASURED at head: two-repo layout self-test 0 and gate 0
+      # ("3574 files scanned"); with STREAMLINE_WORKSPACE_ROOT pointed at a nonexistent
+      # directory the self-test exits 2 and the gate exits 2, both now surfaced as a warning.
       - name: Files over 500 lines
         if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: pnpm check:file-sizes:self-test && pnpm check:file-sizes
+        run: >-
+          node src/scripts/run-gate.mjs check:file-sizes:self-test check:file-sizes
+          --prerequisite "a checkout of Startupppp/streamlineos-frontend carrying the §7 exception registry (set STREAMLINE_WORKSPACE_ROOT)"
 
       # Measured rc=1 on 2026-09-02: 400 files exceed 300 lines, 6 above the
       # baseline of 394 (the 401 recorded mid-run has since come down by one).
@@ -756,9 +849,15 @@ jobs:
       # ratchet to turn a regression green. The splits are ticket 37's; blocking
       # here would red the pipeline on work that is already ticketed and outside
       # this gate's territory.
+      # BLOCKING as of 2026-09-03 (v2 ticket 30). The note above recorded 400 files against a
+      # baseline of 394 and kept the flag so ticket 37's splits could land without redding the
+      # pipeline. Those splits landed. RE-MEASURED at head, hermetically (this gate reads no
+      # sibling repository — confirmed by running it with both root overrides pointed at
+      # nonexistent directories: self-test 0, gate 0, identical output): rc=0,
+      # "388 of 3646 production files exceed 300 lines (baseline 392) — OK". At four below the
+      # ratchet. Nothing was baselined away: the in-script BASELINE came DOWN 394 -> 392.
       - name: Files over 300 lines do not increase
         if: ${{ !cancelled() }}
-        continue-on-error: true
         run: pnpm check:over-300:self-test && pnpm check:over-300
 
       # BLOCKING. Ticket 35 fixed the detector (41 -> 147 files seen), which
@@ -999,6 +1098,17 @@ jobs:
       #
       # Allow-failure until the secrets exist: a step that cannot reach its
       # prerequisite must be visibly inconclusive, not silently red.
+      #
+      # 2026-09-03 (v2 ticket 30) — REVIEWED and the flag KEPT, with the owner named. This is
+      # the only remaining allow-failure gate step in this repository besides the knip report
+      # and the artifact upload that depends on this one. It is a jest run, not a `check:*`
+      # gate, so it has no exit-2 INCONCLUSIVE convention to split on the way the six
+      # cross-repository gates above now do; without CI_PERF_SEED_* it can only skip.
+      # NOT RUN by v2 ticket 30: the five repository secrets it needs do not exist, so its
+      # exit code in CI was not measured and is not claimed here.
+      # Owner: whoever provisions CI_PERF_SEED_DATABASE_URL / CI_PERF_SEED_APP_DATABASE_URL /
+      # CI_PERF_SEED_ORG_ID / CI_PERF_SEED_MINORITY_ORG_ID / CI_PERF_AUTH_SIGNING_KEYS.
+      # Remove the flag in the same change that adds them.
       - name: Route-budget HTTP capture (perf) — needs a seeded database
         if: ${{ !cancelled() }}
         continue-on-error: true
@@ -1017,6 +1127,9 @@ jobs:
           # insert, and several reports quote this seed's row counts to the unit.
           ROUTE_BUDGET_HTTP_SKIP_WRITES: "1"
 
+      # Allow-failure because the step it uploads for is. `if-no-files-found: ignore` already
+      # makes an absent artifact a non-event; the flag only covers an upload-service outage.
+      # Owner: same as the capture step above. v2 ticket 30 reviewed and kept it.
       - name: Upload the perf capture
         if: ${{ !cancelled() }}
         continue-on-error: true

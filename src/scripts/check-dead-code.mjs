@@ -340,7 +340,12 @@ function staleVerdicts(verdicts, seen) {
 // Self-test
 // ---------------------------------------------------------------------------
 
+/**
+ * Counted, not narrated -- the PASS line printed a hard-coded literal. See v2 ticket 30.
+ */
+let assertionsRun = 0;
 function assert(cond, msg) {
+  assertionsRun++;
   if (!cond) {
     console.error("SELF-TEST FAIL:", msg);
     process.exit(1);
@@ -430,7 +435,7 @@ function runSelfTest() {
     rmSync(fixture, { recursive: true, force: true });
   }
 
-  console.log("PASS: self-test (20 assertions)\n");
+  console.log(`PASS: self-test (${assertionsRun} assertions)\n`);
   for (const line of [
     "  (a) file with no live importers                 -> DEAD",
     "  (b) file reached by a side-effect import         -> RETAINED-BY-CONTRACT",

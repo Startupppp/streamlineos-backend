@@ -21,9 +21,30 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path
 import { tmpdir } from "node:os";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { WORKSPACE_ROOT, workspaceAvailable, workspaceUnreachableReason } from "./check-repo-paths.mjs";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const EVIDENCE_ROOT = resolve(ROOT, "architecture-refactor/final-refactor/evidence/42-production-ops");
+/**
+ * The evidence tree lives in the WORKSPACE docs repository, which is a sibling
+ * checkout here. `resolve(scriptDir, "../../..")` guessed a depth and landed on
+ * `<parent-of-backend>/architecture-refactor`, a directory that exists in no
+ * layout this project uses -- measured 2026-09-03: the guess resolved to
+ * `.../streamline/architecture-refactor/...` while the real tree is
+ * `.../streamlineos-frontend/architecture-refactor/...`. Every capture wrote,
+ * and every verify read, somewhere that was not the evidence root. Resolve it
+ * from the marker instead, and fail loudly when it is absent rather than
+ * composing onto a wrong root.
+ */
+const EVIDENCE_REL = ["architecture-refactor", "final-refactor", "evidence", "42-production-ops"];
+const EVIDENCE_ROOT = workspaceAvailable ? resolve(WORKSPACE_ROOT, ...EVIDENCE_REL) : null;
+
+function requireEvidenceRoot() {
+  if (EVIDENCE_ROOT !== null) return EVIDENCE_ROOT;
+  console.error(
+    "INCONCLUSIVE - production-ops-evidence: the evidence tree could not be located, so nothing was captured or verified.",
+  );
+  console.error(`  ${workspaceUnreachableReason()}`);
+  process.exit(2);
+}
 const FORMAT = "streamlineos.production-ops-evidence/v1";
 const RUNBOOKS = ["RB-01", "RB-02", "RB-03", "RB-04", "RB-05", "RB-06", "RB-07", "RB-08"];
 const REQUIRED_ASSERTIONS = {
@@ -48,7 +69,7 @@ Production-operations evidence intake and gate
   node src/scripts/production-ops-evidence.mjs --self-test
 
 Capture only accepts redacted artifacts already inside:
-  ${EVIDENCE_ROOT}
+  ${EVIDENCE_ROOT ?? "(evidence tree not located - see check-repo-paths)"}
 
 The gate is intentionally not satisfied by this script's self-test, a dry-run,
 or evidence for a local/test/mock environment.
@@ -169,24 +190,25 @@ function verify(dir) {
 }
 
 function capture(metadataPath, outputPath) {
-  const inputPath = safePath(EVIDENCE_ROOT, metadataPath);
+  const evidenceRoot = requireEvidenceRoot();
+  const inputPath = safePath(evidenceRoot, metadataPath);
   const input = readJson(inputPath);
   const artifacts = (input.artifacts ?? []).map((artifact) => {
-    const full = safePath(EVIDENCE_ROOT, artifact?.path);
+    const full = safePath(evidenceRoot, artifact?.path);
     const bytes = readFileSync(full);
-    return { path: relative(EVIDENCE_ROOT, full).replaceAll("\\", "/"), bytes: bytes.length, sha256: sha256(bytes) };
+    return { path: relative(evidenceRoot, full).replaceAll("\\", "/"), bytes: bytes.length, sha256: sha256(bytes) };
   });
   const record = { ...input, format: FORMAT, artifacts, capturedAt: new Date().toISOString() };
   const errors = checksFor(record);
-  for (const artifact of record.artifacts) validateArtifact(record, artifact, EVIDENCE_ROOT);
+  for (const artifact of record.artifacts) validateArtifact(record, artifact, evidenceRoot);
   if (errors.length > 0) throw new Error(`refusing to capture evidence: ${errors.join("; ")}`);
   const target = outputPath
-    ? resolve(EVIDENCE_ROOT, outputPath)
+    ? resolve(evidenceRoot, outputPath)
     : resolve(dirname(inputPath), `${basename(inputPath, ".input.json")}.json`);
-  if (!isInside(EVIDENCE_ROOT, target)) throw new Error("output path must stay inside the production-ops evidence root");
+  if (!isInside(evidenceRoot, target)) throw new Error("output path must stay inside the production-ops evidence root");
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`, "utf8");
-  process.stdout.write(`CAPTURED ${record.runbook} evidence: ${relative(EVIDENCE_ROOT, target).replaceAll("\\", "/")}\n`);
+  process.stdout.write(`CAPTURED ${record.runbook} evidence: ${relative(evidenceRoot, target).replaceAll("\\", "/")}\n`);
 }
 
 function selfTest() {
@@ -232,8 +254,9 @@ else if (args[0] === "capture") {
   capture(metadata, out);
 } else if (args[0] === "verify") {
   const directory = args.find((arg) => arg.startsWith("--dir="))?.slice("--dir=".length);
-  const root = directory ? resolve(EVIDENCE_ROOT, directory) : EVIDENCE_ROOT;
-  if (!isInside(EVIDENCE_ROOT, root) && root !== EVIDENCE_ROOT) throw new Error("verification directory must stay inside the production-ops evidence root");
+  const evidenceRoot = requireEvidenceRoot();
+  const root = directory ? resolve(evidenceRoot, directory) : evidenceRoot;
+  if (!isInside(evidenceRoot, root) && root !== evidenceRoot) throw new Error("verification directory must stay inside the production-ops evidence root");
   verify(root);
 } else {
   usage();
