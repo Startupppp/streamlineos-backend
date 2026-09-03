@@ -107,6 +107,14 @@ const CONFIRMABLE_ACTIONS = [
 
 type ConfirmableAction = (typeof CONFIRMABLE_ACTIONS)[number];
 
+/**
+ * DELIBERATE, PENDING AN OWNER'S DECISION (findings register #241): "email.send"
+ * is gated on `chat:messages:write`, so anyone who may post a chat message may
+ * also send outbound email through `EmailOutboxService.enqueueAndTry`. The
+ * matching key is `mail:messages:send`, which "mail.send" below already uses.
+ * Tightening this key would lock out callers who use the path today, so it is
+ * left exactly as it was until an owner decides; do not "fix" it silently.
+ */
 const CONFIRM_ACTION_PERMISSION: Record<ConfirmableAction, string> = {
   "ticket.create": "build:tickets:create",
   "ticket.updateStatus": "build:tickets:update",
