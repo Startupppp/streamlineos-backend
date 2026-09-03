@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { PROBE_SPECS, UNCATALOGUED_MODULE } from "./verify-rbac-probes.mjs";
-import { REQUIRED_CONSTRAINTS, administeringModuleOf, verdict } from "./verify-rbac-verdict.mjs";
+import { REQUIRED_CONSTRAINTS, administeringModuleOf, describeError, verdict } from "./verify-rbac-verdict.mjs";
 
-export { REQUIRED_CONSTRAINTS, administeringModuleOf, sqlErrorShape, verdict } from "./verify-rbac-verdict.mjs";
+export { REQUIRED_CONSTRAINTS, administeringModuleOf, describeError, sqlErrorShape, verdict } from "./verify-rbac-verdict.mjs";
 
 class Rollback extends Error {}
 
@@ -147,6 +147,14 @@ async function main() {
       console.log(`  ${row.pass ? "PASS" : "FAIL"}  [${claim}]  ${spec.label(catalog)} — ${row.why}`);
       if (!row.pass) failures += 1;
     }
+  } catch (error) {
+    console.error(`  UNREADABLE DATABASE  ${describeError(error)}`);
+    console.error(
+      "\nFAIL — the gate could not read the RBAC schema, so it asserted nothing. That is a failure, " +
+        "not a skip. Point DATABASE_URL at a database bootstrapped to journal head.",
+    );
+    process.exitCode = 1;
+    return;
   } finally {
     await sql.end();
   }
