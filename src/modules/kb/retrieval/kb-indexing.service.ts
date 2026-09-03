@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, asc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import {
   kbArticleChunks,
@@ -274,6 +274,31 @@ export class KbIndexingService {
       articleId,
       chunks: chunks.length,
     });
+  }
+
+  /**
+   * The HTTP entry point for a reindex, as distinct from the internal one.
+   *
+   * `indexPage` treats a page it cannot find as "nothing to index": it drops any stale chunks and
+   * returns 0. That is right for the internal callers — a content event may arrive after the page
+   * was deleted — and wrong for a request, because `POST /kb/pages/:pageId/reindex` then answered
+   * 200 `{"reindexed":true}` for another organisation's page id and for an id belonging to no
+   * organisation alike. Measured live by the cross-tenant sweep. Nothing crossed (every statement
+   * inside is org-bound) but the caller is told a page was reindexed that does not exist, and the
+   * 404 the contract requires is absent.
+   */
+  async reindexPageOnRequest(orgId: string, pageId: number): Promise<number> {
+    const page = await runInTenantTransaction(
+      this.db,
+      async (tx) =>
+        tx.query.kbPages.findFirst({
+          where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+          columns: { id: true },
+        }),
+      { orgId },
+    );
+    if (!page) throw new NotFoundException("Page not found");
+    return this.indexPage(orgId, pageId);
   }
 
   async indexPage(orgId: string, pageId: number, signal?: AbortSignal): Promise<number> {

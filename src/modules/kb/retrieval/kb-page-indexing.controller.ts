@@ -35,7 +35,7 @@ export class KbPageIndexingController {
     @CurrentUser() user: CurrentUserContext,
     @Param("pageId", ParseIntPipe) pageId: number,
   ): Promise<{ reindexed: boolean }> {
-    await this.indexing.indexPage(user.orgId, pageId);
+    await this.indexing.reindexPageOnRequest(user.orgId, pageId);
     return { reindexed: true };
   }
 
