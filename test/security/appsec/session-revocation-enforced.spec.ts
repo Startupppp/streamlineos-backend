@@ -31,13 +31,27 @@ interface SessionRow {
  */
 function makeRedis() {
   const store = new Map<string, unknown>();
+  /** Every write that lands on a key, with the options it carried — a TTL shows up here. */
+  const writes: Array<{ key: string; value: unknown; opts?: { ex?: number; px?: number } }> = [];
   return {
     store,
+    writes,
     get: jest.fn(<T>(key: string): Promise<T | null> =>
       Promise.resolve((store.has(key) ? store.get(key) : null) as T | null),
     ),
-    set: jest.fn((key: string, value: unknown) => {
+    set: jest.fn((key: string, value: unknown, opts?: { ex?: number; px?: number }) => {
+      writes.push({ key, value, opts });
       store.set(key, value);
+      return Promise.resolve("OK");
+    }),
+    // The revocation writer uses MSET, which is the reason a tombstone cannot carry a TTL.
+    // The double has to land in the same `store` the guard reads, or the enforcement cases
+    // below would pass on a write that never reached the guard's channel.
+    mset: jest.fn((kv: Record<string, unknown>) => {
+      for (const [key, value] of Object.entries(kv)) {
+        writes.push({ key, value });
+        store.set(key, value);
+      }
       return Promise.resolve("OK");
     }),
     zadd: jest.fn(() => Promise.resolve(1)),
@@ -390,9 +404,25 @@ describe("Every revocation entry point writes the tombstone the guard reads", ()
     }
   });
 
-  it("the tombstone is written without a TTL so an eviction policy cannot un-revoke a session", () => {
+  it("the tombstone is written without a TTL so an eviction policy cannot un-revoke a session", async () => {
+    const redis = makeRedis();
+    const db = makeSessionsDb([sessionRow("sess-ttl")]);
+    const sessions = new SessionsService(db as unknown as Db, redis as unknown as Redis);
+
+    await sessions.publishRevocations(["sess-ttl"]);
+
+    const tombstones = redis.writes.filter((w) => w.key === "revoked:session:sess-ttl");
+    expect(tombstones).toEqual([{ key: "revoked:session:sess-ttl", value: true }]);
+    expect(tombstones.filter((w) => w.opts !== undefined)).toEqual([]);
+  });
+
+  it("no expiry API is applied to a tombstone key anywhere in the writer", () => {
     const source = readFileSync(resolve(BACKEND_ROOT, REVOCATION_WRITER), "utf8");
-    expect(source).toMatch(/redis\.set\(`revoked:session:\$\{id\}`,\s*true\)/);
-    expect(source).not.toMatch(/redis\.set\(`revoked:session:[^`]*`,\s*true,\s*\{/);
+    // MSET cannot carry a TTL, which is why the property is structural rather than a
+    // convention. These pin the two ways it could be reintroduced.
+    expect(source).toMatch(/redis\.mset\(/);
+    expect(source).toMatch(/\[`revoked:session:\$\{id\}`, true\]/);
+    expect(source).not.toMatch(/redis\.set\(\s*`revoked:session:/);
+    expect(source).not.toMatch(/(setex|psetex|expire|pexpire|expireat)\(/);
   });
 });
