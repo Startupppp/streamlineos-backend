@@ -225,7 +225,8 @@ export class SupportWorkspaceService {
     return { success: true };
   }
 
-  listWatchers(orgId: string, ticketId: number) {
+  async listWatchers(orgId: string, ticketId: number) {
+    await this.assertTicketInOrg(orgId, ticketId);
     return this.db.query.supportTicketWatchers.findMany({
       where: and(eq(supportTicketWatchers.orgId, orgId), eq(supportTicketWatchers.ticketId, ticketId)),
       with: { membership: { columns: { id: true, userId: true } } },

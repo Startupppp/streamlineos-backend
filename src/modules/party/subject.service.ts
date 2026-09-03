@@ -31,6 +31,7 @@ import type {
   UpdateSubjectInput,
 } from "./dto/subject.schemas";
 import { SubjectTypeService } from "./subject-type.service";
+import { assertPartyInOrg } from "./party-tenant";
 
 const PG_UNIQUE_VIOLATION = "23505";
 
@@ -271,6 +272,7 @@ export class SubjectService {
   }
 
   async listForParty(organizationId: string, partyId: string) {
+    await assertPartyInOrg(this.db, organizationId, partyId);
     return this.db
       .select({
         subjectId: subjects.subjectId,

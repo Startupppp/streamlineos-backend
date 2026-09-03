@@ -8,6 +8,7 @@ import { assessDuplicate, type PartyFingerprint } from "./party-duplicates";
 import { identifiersOfParty, partiesSharingIdentifiers } from "./party-identifiers";
 import { orderPair } from "./party-merge-plan";
 import { PartyMergeService } from "./party-merge.service";
+import { assertPartyInOrg } from "./party-tenant";
 
 /** How many potential matches one detection pass will consider. */
 const CANDIDATE_LIMIT = 25;
@@ -26,6 +27,7 @@ export class PartyRolesService {
   ) {}
 
   async listRoles(organizationId: string, partyId: string): Promise<string[]> {
+    await assertPartyInOrg(this.db, organizationId, partyId);
     const rows = await this.db
       .select({ role: partyRoles.role })
       .from(partyRoles)

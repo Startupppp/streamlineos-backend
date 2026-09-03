@@ -5,6 +5,7 @@ import { supportTicketCustomFieldValues } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateCustomFieldInput, CustomFieldValueInput, UpdateCustomFieldInput } from "./dto/support.schemas";
+import { supportTickets } from "../../../db/schema";
 
 const SUPPORT_ENTITY_TYPE = "support_ticket" as const;
 
@@ -154,6 +155,11 @@ export class SupportCustomFieldsService {
   }
 
   async getFieldValues(orgId: string, ticketId: number) {
+    const ticket = await this.db.query.supportTickets.findFirst({
+      columns: { id: true },
+      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
     return this.db
       .select({
         fieldId: supportTicketCustomFieldValues.fieldDefinitionId,

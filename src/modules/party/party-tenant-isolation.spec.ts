@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import { PartyRolesService } from "./party-roles.service";
 import { PartyDivergenceService } from "./party-divergence.service";
@@ -17,7 +18,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
+function makeDb(rows: unknown[]): { db: Db; where: jest.Mock; partyFindFirst: jest.Mock } {
   const where = jest.fn();
   const chain: Record<string, unknown> = {
     then: (fn: (v: unknown) => unknown) => Promise.resolve(rows).then(fn),
@@ -30,8 +31,12 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   }
   where.mockReturnValue(chain);
   const from = jest.fn().mockReturnValue(chain);
-  const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
-  return { db, where };
+  const partyFindFirst = jest.fn().mockResolvedValue({ partyId: "p1" });
+  const db = {
+    query: { businessParties: { findFirst: partyFindFirst } },
+    select: jest.fn().mockReturnValue({ from }),
+  } as unknown as Db;
+  return { db, where, partyFindFirst };
 }
 
 const ATTACKER = "org-attacker";
@@ -44,13 +49,15 @@ describe("PartyRolesService — cross-tenant isolation", () => {
     return new PartyRolesService(db, audit as never, merges as never);
   }
 
-  it("listRoles: returns nothing for a different org (deny)", async () => {
-    const { db, where } = makeDb([]);
+  it("listRoles: refuses a party outside the org instead of returning an empty role list (deny)", async () => {
+    const { db, where, partyFindFirst } = makeDb([]);
+    partyFindFirst.mockResolvedValue(undefined);
     const svc = buildSvc(db);
-    const result = await svc.listRoles(ATTACKER, "p1");
-    expect(result).toHaveLength(0);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+
+    await expect(svc.listRoles(ATTACKER, "p1")).rejects.toThrow(NotFoundException);
+
+    expect(where).not.toHaveBeenCalled();
+    expect(sqlValues(partyFindFirst.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
   });
 
   it("listRoles: returns rows for the owning org (control)", async () => {

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Inject } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -7,6 +7,7 @@ import { logger } from "../../../common/logger/logger.service";
 import {
   employeeSalaryProfiles,
   employeeSalaryProfileComponents,
+  organizationMembers,
 } from "../../../db/schema";
 import {
   assertPayrollPayeeEligible,
@@ -29,7 +30,16 @@ export class ProfilesService {
     return this.profiles.list(orgId, query, scope, userId);
   }
 
+  private async assertEmployeeInOrg(orgId: string, employeeUserId: string): Promise<void> {
+    const member = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, employeeUserId)),
+    });
+    if (!member) throw new NotFoundException("Employee not found in this organization");
+  }
+
   async getProfile(orgId: string, employeeUserId: string) {
+    await this.assertEmployeeInOrg(orgId, employeeUserId);
     return this.profiles.findByUser(orgId, employeeUserId);
   }
 
@@ -335,6 +345,7 @@ export class ProfilesService {
   }
 
   async listHistory(orgId: string, employeeUserId: string) {
+    await this.assertEmployeeInOrg(orgId, employeeUserId);
     return this.profiles.historyByUser(orgId, employeeUserId);
   }
 

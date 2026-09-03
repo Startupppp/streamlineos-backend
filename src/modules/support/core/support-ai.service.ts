@@ -75,7 +75,12 @@ export class SupportAiService {
     ]);
   }
 
-  listSuggestions(orgId: string, ticketId: number) {
+  async listSuggestions(orgId: string, ticketId: number) {
+    const ticket = await this.db.query.supportTickets.findFirst({
+      columns: { id: true },
+      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
     return this.db.query.supportAiSuggestions.findMany({
       where: and(eq(supportAiSuggestions.orgId, orgId), eq(supportAiSuggestions.ticketId, ticketId)),
       orderBy: [desc(supportAiSuggestions.createdAt)],

@@ -88,7 +88,10 @@ describe("pay-projection-exposure", () => {
         effectiveFrom: "2024-01-01",
       };
       const chain = makeChain([row]);
-      const db = { select: jest.fn().mockReturnValue(chain) };
+      const db = {
+        query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+        select: jest.fn().mockReturnValue(chain),
+      };
       const service = new ProfilesService(
         db as never,
         {} as never,
