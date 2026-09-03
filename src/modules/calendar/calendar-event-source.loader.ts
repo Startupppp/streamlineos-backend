@@ -1,5 +1,4 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
-import { unionAll } from "drizzle-orm/pg-core";
 import type { Db } from "../../db/drizzle.module";
 import { calendarEvents, eventAttendees, organizationMembers, projects, tickets, users } from "../../db/schema";
 import { loadExceptionsByEvent } from "./calendar-exception-loader";
@@ -177,9 +176,10 @@ export class CalendarEventSourceLoader {
    * for the non-recurring one and the partial `idx_calendar_events_org_recurring_start`
    * for the recurring one.
    *
-   * The union is safe against the page boundary because each branch is ordered and
-   * limited by the same key: a row in the global first `BATCH_SIZE` is necessarily in
-   * the first `BATCH_SIZE` of its own branch, so the outer limit can never skip one.
+   * Merging the two branches in memory is safe against the page boundary because each
+   * is ordered and limited by the same key: a row in the global first `BATCH_SIZE` is
+   * necessarily in the first `BATCH_SIZE` of its own branch, so the merge can never
+   * skip one.
    */
   private async candidatePage(
     orgId: string,
@@ -210,7 +210,7 @@ export class CalendarEventSourceLoader {
         .orderBy(asc(calendarEvents.startDate), asc(calendarEvents.id))
         .limit(BATCH_SIZE);
 
-    const nonRecurring = branch(
+    const nonRecurring = await branch(
       and(
         isNull(calendarEvents.rrule),
         lt(calendarEvents.startDate, end),
@@ -218,7 +218,7 @@ export class CalendarEventSourceLoader {
       ),
     );
 
-    const recurring = branch(
+    const recurring = await branch(
       and(
         isNotNull(calendarEvents.rrule),
         lt(calendarEvents.startDate, end),
@@ -226,9 +226,9 @@ export class CalendarEventSourceLoader {
       ),
     );
 
-    return unionAll(nonRecurring, recurring)
-      .orderBy(asc(sql`start_date`), asc(sql`id`))
-      .limit(BATCH_SIZE);
+    return [...nonRecurring, ...recurring]
+      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime() || a.id - b.id)
+      .slice(0, BATCH_SIZE);
   }
 
   /**

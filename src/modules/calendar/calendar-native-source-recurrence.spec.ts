@@ -54,44 +54,45 @@ function makeEventRow(overrides: {
     visibility: "org",
     rrule: overrides.rrule ?? null,
     recurrenceEnd: overrides.recurrenceEnd ?? null,
+    createdByMembershipId: 1,
     creatorName: null,
     rsvpStatus: null,
   };
 }
 
+function chain(rows: unknown[]): Record<string, unknown> {
+  const node: Record<string, unknown> = Object.assign(Promise.resolve(rows), {});
+  for (const key of ["from", "leftJoin", "innerJoin", "where", "orderBy", "limit"])
+    node[key] = jest.fn(() => node);
+  return node;
+}
+
+/**
+ * The loader asks five different questions per page, so this double routes on the
+ * projection it is handed rather than on call order: an order-indexed double silently
+ * answered the recurring branch with the exception rows the moment a statement moved.
+ */
 function makeNativeSourceDb(
   events: ReturnType<typeof makeEventRow>[],
   exceptions: Array<{ eventId: number; occurrenceStart: Date; isCancelled: boolean; modifiedTitle?: string | null; modifiedStart?: Date | null; modifiedEnd?: Date | null }> = [],
 ): Db {
-  let selectCall = 0;
-  let eventsCallCount = 0;
+  let candidateCall = 0;
   return {
     query: {
       organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
     },
-    select: jest.fn().mockImplementation(() => {
-      selectCall++;
-      if (selectCall === 1) {
-        const chain = {
-          from: jest.fn().mockReturnThis(),
-          leftJoin: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          orderBy: jest.fn().mockReturnThis(),
-          limit: jest.fn().mockImplementation(() => {
-            eventsCallCount++;
-            return Promise.resolve(eventsCallCount === 1 ? events : []);
-          }),
-        };
-        return chain;
+    select: jest.fn().mockImplementation((fields: Record<string, unknown> | undefined) => {
+      const keys = Object.keys(fields ?? {});
+      const has = (k: string) => keys.includes(k);
+
+      if (has("startDate") && keys.length === 2) {
+        candidateCall++;
+        return chain(candidateCall === 1 ? events.map((e) => ({ id: e.id, startDate: e.startDate })) : []);
       }
-      return {
-        from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue(exceptions),
-          }),
-        }),
-      };
+      if (has("eventId") && has("status")) return chain([]);
+      if (has("membershipId") && has("name")) return chain([]);
+      if (has("title") && has("rrule")) return chain(events);
+      return chain(exceptions);
     }),
   } as unknown as Db;
 }
@@ -368,20 +369,26 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
 
   it("exception fetch predicate includes the orgId (bounded and org-scoped after update)", async () => {
     let exceptionWhere: unknown = undefined;
-    let selectCall = 0;
+    const events = [makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })];
+    let candidateCall = 0;
     const db = {
       query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
-      select: jest.fn().mockImplementation(() => {
-        selectCall++;
-        if (selectCall === 1)
-          return { from: jest.fn().mockReturnThis(), leftJoin: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(), limit: jest.fn().mockImplementation(() => selectCall === 1 ? Promise.resolve([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })]) : Promise.resolve([])) };
-        return {
-          from: jest.fn().mockReturnThis(),
-          where: jest.fn().mockImplementation((cond: unknown) => {
-            exceptionWhere = cond;
-            return { orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) };
-          }),
-        };
+      select: jest.fn().mockImplementation((fields: Record<string, unknown> | undefined) => {
+        const keys = Object.keys(fields ?? {});
+        const has = (k: string) => keys.includes(k);
+        if (has("startDate") && keys.length === 2) {
+          candidateCall++;
+          return chain(candidateCall === 1 ? events.map((e) => ({ id: e.id, startDate: e.startDate })) : []);
+        }
+        if (has("eventId") && has("status")) return chain([]);
+        if (has("membershipId") && has("name")) return chain([]);
+        if (has("title") && has("rrule")) return chain(events);
+        const node = chain([]);
+        node["where"] = jest.fn((cond: unknown) => {
+          exceptionWhere = cond;
+          return node;
+        });
+        return node;
       }),
     } as unknown as Db;
 
