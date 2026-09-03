@@ -37,16 +37,20 @@ export class TaxComplianceService {
     today.setUTCHours(0, 0, 0, 0);
     const todayIso = today.toISOString().slice(0, 10);
 
-    const prevMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
-    const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const year = today.getUTCFullYear();
+    const month = today.getUTCMonth();
+
+    const prevMonthStart = new Date(Date.UTC(year, month - 1, 1));
+    const prevMonthEnd = new Date(Date.UTC(year, month, 0));
     const from = prevMonthStart.toISOString().slice(0, 10);
     const to = prevMonthEnd.toISOString().slice(0, 10);
 
-    const nextYear = today.getMonth() === 11 ? today.getFullYear() + 1 : today.getFullYear();
-    const nextMonth = today.getMonth() === 11 ? 0 : today.getMonth() + 1;
-    const monthStr = String(nextMonth + 1).padStart(2, "0");
-    const gstr1Due = `${nextYear}-${monthStr}-11`;
-    const gstr3bDue = `${nextYear}-${monthStr}-20`;
+    // GSTR-1 and GSTR-3B for a period ending in month M fall due on the 11th and
+    // the 20th of month M+1. The period is the previous month, so both deadlines
+    // land in the CURRENT month.
+    const monthStr = String(month + 1).padStart(2, "0");
+    const gstr1Due = `${year}-${monthStr}-11`;
+    const gstr3bDue = `${year}-${monthStr}-20`;
 
     const gstr1Days = this.daysBetween(todayIso, gstr1Due);
     const gstr3bDays = this.daysBetween(todayIso, gstr3bDue);

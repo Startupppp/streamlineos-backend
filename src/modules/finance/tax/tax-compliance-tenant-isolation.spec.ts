@@ -27,14 +27,11 @@ type ServicePrivate = { daysBetween: (from: string, to: string) => number };
 
 /**
  * checkTaxDue returns [] before touching the database unless a GSTR due date is
- * within DUE_WARNING_DAYS. It computes those due dates in the month AFTER the
- * filing period, so the smallest daysUntilGstr1 the real arithmetic can produce
- * is 11 against a threshold of 5 — the window never opens (measured: 0 of 730
- * consecutive days). An isolation test that does not force the window open never
- * reaches a query and cannot observe org binding at all; that is precisely how
- * the previous version of this file passed while asserting nothing.
- * The unreachability itself is a production defect, characterised by the last
- * test in this file.
+ * within DUE_WARNING_DAYS. An isolation test that does not force the window open
+ * never reaches a query and cannot observe org binding at all; that is precisely
+ * how the previous version of this file passed while asserting nothing. The
+ * window arithmetic itself is walked across a full calendar in
+ * tax-compliance-due-window.spec.ts.
  */
 function openDueWindow(svc: TaxComplianceService): void {
   jest.spyOn(svc as unknown as ServicePrivate, "daysBetween").mockReturnValue(3);
@@ -121,22 +118,48 @@ describe("TaxComplianceService — cross-tenant isolation (background sweep)", (
     expect(dispatch.emit).not.toHaveBeenCalled();
   });
 
-  describe("DEFECT FIN-TAX-WINDOW — the real due window never opens", () => {
-    // The clock is pinned to the day BEFORE a GSTR-1 deadline. Correct code
-    // would be one day out and inside DUE_WARNING_DAYS; this code puts the
-    // deadline in the following month instead, so it is 31 days out and the
-    // sweep returns before any query. Without the pin this assertion would be
-    // a wall-clock fixture: it happens to hold on most days for the wrong
-    // reason, and would decay into passing over a fixed window.
+  describe("FIN-TAX-WINDOW — the real due window, with no stub over the arithmetic", () => {
+    // The clock is pinned rather than read, because on a wall clock these two
+    // assertions happen to hold on most days for the wrong reason and would
+    // decay into passing. On the eve of a GSTR-1 deadline the sweep must run;
+    // five days earlier, with both deadlines still out of range, it must not.
+    function liabilityDb(): Db {
+      let call = 0;
+      return {
+        select: jest.fn().mockImplementation(() => {
+          call += 1;
+          const rows = call === 1 ? [{ cgst: "500", sgst: "500", igst: "0" }] : [{ cgst: "0", sgst: "0", igst: "0" }];
+          const where = jest.fn().mockReturnValue(makeChainResult(rows));
+          return { from: jest.fn().mockReturnValue({ where, innerJoin: jest.fn().mockReturnValue({ where }) }) };
+        }),
+      } as unknown as Db;
+    }
+
     beforeEach(() => {
       jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate"] });
-      jest.setSystemTime(new Date("2026-09-10T00:00:00Z"));
     });
     afterEach(() => {
       jest.useRealTimers();
     });
 
-    it("returns [] without reaching the database on the eve of a GSTR-1 deadline", async () => {
+    it("sweeps the owning org on the eve of a GSTR-1 deadline", async () => {
+      jest.setSystemTime(new Date("2026-09-10T00:00:00Z"));
+      const db = liabilityDb();
+      const { dispatch, cache } = makeDeps();
+      const svc = new TaxComplianceService(db, cache as never, dispatch as never);
+
+      const result = await svc.checkTaxDue(TARGET_ORG);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.orgId).toBe(TARGET_ORG);
+      expect(result[0]?.gstr1DueDate).toBe("2026-09-11");
+      expect(result[0]?.daysUntilGstr1).toBe(1);
+      expect(dispatch.emit).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(dispatch.emit.mock.calls)).not.toContain(INTRUDER_ORG);
+    });
+
+    it("returns [] without reaching the database while both deadlines are still out of range", async () => {
+      jest.setSystemTime(new Date("2026-09-05T00:00:00Z"));
       const db = { select: jest.fn() } as unknown as Db;
       const { dispatch, cache } = makeDeps();
       const svc = new TaxComplianceService(db, cache as never, dispatch as never);
