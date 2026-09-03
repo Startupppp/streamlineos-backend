@@ -200,5 +200,6 @@ describe("CronStorageSweepService — a row is confirmed only against the bucket
 
     expect(pendingPurge.listForRetry).toHaveBeenCalledTimes(2);
     expect(pendingPurge.markFailed).not.toHaveBeenCalled();
+    expect(pendingPurge.markConfirmed).not.toHaveBeenCalled();
   });
 });
