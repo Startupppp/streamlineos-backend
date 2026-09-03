@@ -21,19 +21,31 @@ const PENDING_PURGE_BATCH = 100;
 type PurgeBucketKind = "default" | "kb";
 
 /*
- * A pending-purge row names an object but not the bucket holding it, and an
- * S3-compatible delete of an absent key answers SUCCESS. A delete addressed at
- * the wrong bucket is therefore indistinguishable from a real one, and the
+ * An S3-compatible delete of an absent key answers SUCCESS, so a delete
+ * addressed at the wrong bucket is indistinguishable from a real one, and the
  * markConfirmed that follows destroys the row — the only pointer left to the
- * object. So every purpose resolves through this table, and one it does not
- * know refuses instead of guessing: guessing is precisely what confirms a row
- * against a bucket the object was never in.
+ * object. Two sources answer "which bucket", in this order.
+ *
+ * 1. The row's own `bucket` column, written by the producer at the moment it
+ *    knew. It wins whenever it is present.
+ * 2. Failing that, the purpose — but ONLY for a purpose that has exactly one
+ *    producer writing into exactly one bucket.
+ *
+ * `org-purge` is not such a purpose and is therefore absent from this map. The
+ * organization purge registers a row for every file-key column in the schema
+ * under that one purpose, and three of those columns name KB-bucket objects
+ * (`storage-key-catalog.ts`), so no single entry here can be right for all of
+ * them. On a row it wrote, its `bucket` column answers; on a row predating that
+ * column there is nothing left to ask, because the row outlives the table its
+ * key came from. Such a row is left untouched rather than deleted from a guessed
+ * bucket and confirmed away.
  */
 const PURGE_BUCKET_BY_PURPOSE: ReadonlyMap<string, PurgeBucketKind> = new Map([
-  ["org-purge", "default"],
   ["e-sign:document:delete", "default"],
   [KB_PAGE_ATTACHMENT_PURGE_PURPOSE, "kb"],
 ]);
+
+const PURGE_BUCKET_KINDS: ReadonlySet<string> = new Set<PurgeBucketKind>(["default", "kb"]);
 
 type PurgeBucket =
   | { readonly known: true; readonly bucket: string | undefined }
@@ -109,10 +121,19 @@ export class CronStorageSweepService {
    * which is what `requireBucket` falls back to. `known: false` is the absence,
    * and it is the only value that must never reach a delete.
    */
-  private bucketForPurpose(purpose: string): PurgeBucket {
-    const kind = PURGE_BUCKET_BY_PURPOSE.get(purpose);
-    if (kind === undefined) return { known: false };
+  private resolve(kind: PurgeBucketKind): PurgeBucket {
     return { known: true, bucket: kind === "kb" ? this.config.R2_KB_BUCKET_NAME : undefined };
+  }
+
+  private bucketForRow(row: PendingPurgeRow): PurgeBucket {
+    const recorded = row.bucket;
+    if (recorded !== null) {
+      if (!PURGE_BUCKET_KINDS.has(recorded)) return { known: false };
+      return this.resolve(recorded === "kb" ? "kb" : "default");
+    }
+    const kind = PURGE_BUCKET_BY_PURPOSE.get(row.purpose);
+    if (kind === undefined) return { known: false };
+    return this.resolve(kind);
   }
 
   private async drainPendingPurge(
@@ -132,12 +153,12 @@ export class CronStorageSweepService {
       // attempts, and a row that exhausts them drops out of listForRetry forever —
       // the unrecoverable orphan this table exists to prevent. The row survives,
       // the sweep logs it every cycle, and a human resolves the purpose.
-      const target = this.bucketForPurpose(row.purpose);
+      const target = this.bucketForRow(row);
       if (!target.known) {
         result.pendingPurgeSkipped += 1;
         this.logger.error(
-          `[storage-sweep] pending-purge row left untouched: purpose "${row.purpose}" resolves to no known bucket, and a delete against a guessed one would confirm the row while the object survived`,
-          { orgId, purpose: row.purpose },
+          `[storage-sweep] pending-purge row left untouched: bucket ${row.bucket === null ? "not recorded" : `"${row.bucket}"`} and purpose "${row.purpose}" resolves to no known bucket, and a delete against a guessed one would confirm the row while the object survived`,
+          { orgId, purpose: row.purpose, bucket: row.bucket },
         );
         continue;
       }

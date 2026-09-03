@@ -9,6 +9,49 @@ export interface FileKeyColumn {
   column: string;
 }
 
+export type StorageBucketRole = "default" | "kb";
+
+export interface OrgFileKey {
+  key: string;
+  bucket: StorageBucketRole;
+}
+
+/**
+ * The file-key columns whose objects were uploaded with R2_KB_BUCKET_NAME as the
+ * bucket override, and therefore are NOT in the default bucket.
+ *
+ * `enumerateFileKeyColumns` below sweeps every `%_key` column in the schema plus
+ * three URL-shaped names, so it finds these three whether or not anyone thought
+ * about buckets. Deleting one of them without the override addresses a bucket
+ * the object was never written to, and an S3-compatible delete of an absent key
+ * answers SUCCESS -- so the asymmetry cannot surface as an error.
+ *
+ * `kb_sources.file_url` is here because KbSourcesService writes the object KEY
+ * into it (`fileUrl: result.key`), not a URL. `kb_article_attachments.file_key`
+ * is deliberately ABSENT: those objects come from POST /storage/upload with no
+ * override, so they really are default-bucket rows, and "completing" this list
+ * with them would 404 every read wherever the two buckets differ.
+ *
+ * Anything not listed resolves to `default`, which is what every other uploader
+ * in the repo addresses. The list is pinned against the set of KB-bucket
+ * uploaders by `organization-purge-bucket-symmetry.spec.ts`, so a new one fails
+ * a test rather than silently inheriting `default`.
+ */
+const KB_BUCKET_KEY_COLUMNS: ReadonlySet<string> = new Set([
+  "public.kb_page_attachments.file_key",
+  "public.kb_sources.file_key",
+  "public.kb_sources.file_url",
+]);
+
+export function bucketRoleForColumn(table: string, column: string): StorageBucketRole {
+  return KB_BUCKET_KEY_COLUMNS.has(`${table}.${column}`) ? "kb" : "default";
+}
+
+const BUCKET_ROLE_LITERAL: Readonly<Record<StorageBucketRole, string>> = {
+  default: "'default'",
+  kb: "'kb'",
+};
+
 /** Drizzle expands a JS array into the row constructor `($1, $2)`, which `= ANY()` rejects with 42809. */
 function inList(values: readonly string[]): SQL {
   return sql.join(
@@ -42,25 +85,35 @@ export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> 
   }));
 }
 
+/**
+ * Each key carries the bucket its column's uploader addressed. The role is a SQL
+ * literal from a closed union rather than a bound parameter, so the UNION ALL
+ * keeps `$1` for the org id and Postgres never has to infer a parameter type in
+ * a SELECT list.
+ */
 export async function collectOrgFileKeys(
   db: Db,
   orgId: string,
   columns: FileKeyColumn[],
-): Promise<string[]> {
+): Promise<OrgFileKey[]> {
   if (columns.length === 0) return [];
   const parts: SQL[] = columns.map(({ table, column }) =>
-    sql`SELECT ${sql.raw(`"${column}"`)} AS k FROM ${sql.raw(table)} WHERE org_id = ${orgId} AND ${sql.raw(`"${column}"`)} IS NOT NULL`,
+    sql`SELECT ${sql.raw(`"${column}"`)} AS k, ${sql.raw(BUCKET_ROLE_LITERAL[bucketRoleForColumn(table, column)])} AS bucket FROM ${sql.raw(table)} WHERE org_id = ${orgId} AND ${sql.raw(`"${column}"`)} IS NOT NULL`,
   );
-  const keys = new Set<string>();
+  const roles = new Map<string, StorageBucketRole>();
   try {
     const rows = await db.execute(sql.join(parts, sql` UNION ALL `));
     for (const row of rows) {
       const k = row["k"];
-      if (typeof k === "string" && k.length > 0) keys.add(k);
+      if (typeof k !== "string" || k.length === 0) continue;
+      // `kb` wins a tie: it is a positive assertion that a KB uploader wrote the
+      // object, where `default` is only the absence of one.
+      if (row["bucket"] === "kb") roles.set(k, "kb");
+      else if (!roles.has(k)) roles.set(k, "default");
     }
   } catch {
   }
-  return [...keys];
+  return [...roles].map(([key, bucket]) => ({ key, bucket }));
 }
 
 export async function collectUserFileKeys(

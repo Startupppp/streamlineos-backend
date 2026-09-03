@@ -99,7 +99,7 @@ async function uploadKbMedia(store: StorageService): Promise<void> {
   );
 }
 
-function build(rows: Array<{ id: string; storageKey: string; purpose: string }>) {
+function build(rows: Array<{ id: string; storageKey: string; purpose: string; bucket: string | null }>) {
   const store = new StorageService({} as MediaCompressionService, config);
   const pendingPurge = {
     listForRetry: jest.fn().mockResolvedValue(rows),
@@ -130,12 +130,12 @@ afterEach(() => {
 describe("CronStorageSweepService — a row is confirmed only against the bucket its object is in", () => {
   it("deletes a kb:page:purge row from the KB bucket KbMediaService uploaded into, then confirms it", async () => {
     const sent = captureS3();
-    const rows: Array<{ id: string; storageKey: string; purpose: string }> = [];
+    const rows: Array<{ id: string; storageKey: string; purpose: string; bucket: string | null }> = [];
     const { svc, store, pendingPurge } = build(rows);
 
     await uploadKbMedia(store);
     const put = only(sent, "PutObjectCommand");
-    rows.push({ id: "pp-kb", storageKey: put.key, purpose: "kb:page:purge" });
+    rows.push({ id: "pp-kb", storageKey: put.key, purpose: "kb:page:purge", bucket: null });
 
     const result = await svc.sweep();
 
@@ -151,7 +151,7 @@ describe("CronStorageSweepService — a row is confirmed only against the bucket
 
   it("deletes an org-purge row from the default bucket its object was written to", async () => {
     const sent = captureS3();
-    const rows: Array<{ id: string; storageKey: string; purpose: string }> = [];
+    const rows: Array<{ id: string; storageKey: string; purpose: string; bucket: string | null }> = [];
     const { svc, store, pendingPurge } = build(rows);
 
     const uploaded = await store.uploadFile(
@@ -162,7 +162,7 @@ describe("CronStorageSweepService — a row is confirmed only against the bucket
       "application/pdf",
     );
     const put = only(sent, "PutObjectCommand");
-    rows.push({ id: "pp-org", storageKey: uploaded.key, purpose: "org-purge" });
+    rows.push({ id: "pp-org", storageKey: uploaded.key, purpose: "org-purge", bucket: "default" });
 
     await svc.sweep();
 
@@ -176,7 +176,7 @@ describe("CronStorageSweepService — a row is confirmed only against the bucket
   it("bites: a purpose with no known bucket issues no delete and confirms nothing", async () => {
     const sent = captureS3();
     const { svc, pendingPurge } = build([
-      { id: "pp-unknown", storageKey: "org-1/vault/secret.bin", purpose: "vault:archive" },
+      { id: "pp-unknown", storageKey: "org-1/vault/secret.bin", purpose: "vault:archive", bucket: null },
     ]);
 
     const result = await svc.sweep();
@@ -191,7 +191,7 @@ describe("CronStorageSweepService — a row is confirmed only against the bucket
 
   it("leaves the row retryable rather than spending an attempt on an unresolvable purpose", async () => {
     const { svc, pendingPurge } = build([
-      { id: "pp-unknown", storageKey: "org-1/vault/secret.bin", purpose: "vault:archive" },
+      { id: "pp-unknown", storageKey: "org-1/vault/secret.bin", purpose: "vault:archive", bucket: null },
     ]);
     captureS3();
 

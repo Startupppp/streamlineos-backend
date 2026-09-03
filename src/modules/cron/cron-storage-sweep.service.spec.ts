@@ -169,8 +169,8 @@ describe("CronStorageSweepService.sweep — storage_pending_purge is drained", (
   it("retries every pending row and confirms it once the object is gone", async () => {
     const { svc, mockStorage, mockPendingPurge } = buildService([ORG_A]);
     mockPendingPurge.listForRetry.mockResolvedValueOnce([
-      { id: "pp-1", storageKey: `${ORG_A}/uploads/a.pdf`, purpose: "org-purge" },
-      { id: "pp-2", storageKey: `${ORG_A}/uploads/b.pdf`, purpose: "e-sign:document:delete" },
+      { id: "pp-1", storageKey: `${ORG_A}/uploads/a.pdf`, purpose: "org-purge", bucket: "default" },
+      { id: "pp-2", storageKey: `${ORG_A}/uploads/b.pdf`, purpose: "e-sign:document:delete", bucket: null },
     ]);
 
     const result = await svc.sweep();
@@ -203,7 +203,7 @@ describe("CronStorageSweepService.sweep — storage_pending_purge is drained", (
   it("keeps the row and records the reason when the object delete fails", async () => {
     const { svc, mockPendingPurge, mockStorage } = buildService([ORG_A]);
     mockPendingPurge.listForRetry.mockResolvedValueOnce([
-      { id: "pp-3", storageKey: `${ORG_A}/uploads/c.pdf`, purpose: "org-purge" },
+      { id: "pp-3", storageKey: `${ORG_A}/uploads/c.pdf`, purpose: "org-purge", bucket: "default" },
     ]);
     mockStorage.deleteFileIfPresent.mockRejectedValueOnce(new Error("R2 unreachable"));
 
@@ -223,7 +223,7 @@ describe("CronStorageSweepService.sweep — storage_pending_purge is drained", (
     const order: string[] = [];
     const { svc, mockPendingPurge, mockStorage } = buildService([ORG_A]);
     mockPendingPurge.listForRetry.mockResolvedValueOnce([
-      { id: "pp-4", storageKey: `${ORG_A}/uploads/d.pdf`, purpose: "org-purge" },
+      { id: "pp-4", storageKey: `${ORG_A}/uploads/d.pdf`, purpose: "org-purge", bucket: "default" },
     ]);
     mockStorage.deleteFileIfPresent.mockImplementation(async () => {
       order.push("object-deleted");

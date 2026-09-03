@@ -10,6 +10,12 @@ export interface PendingPurgeRow {
   id: string;
   storageKey: string;
   purpose: string;
+  /**
+   * The bucket role the producer recorded, or NULL where none did. NULL is not
+   * `default`: `purpose` alone cannot resolve an `org-purge` row, which spans a
+   * key from every table in the schema. The consumer refuses on it.
+   */
+  bucket: string | null;
 }
 
 /**
@@ -36,6 +42,7 @@ export class StoragePendingPurgeService {
         id: storagePendingPurge.id,
         storageKey: storagePendingPurge.storageKey,
         purpose: storagePendingPurge.purpose,
+        bucket: storagePendingPurge.bucket,
       })
       .from(storagePendingPurge)
       .where(

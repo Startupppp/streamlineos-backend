@@ -89,12 +89,15 @@ describe("PURGE_ADAPTER_REGISTRY — object_storage", () => {
   it("fails when purge bookkeeping cannot be recorded even if no keys remain", async () => {
     (enumerateFileKeyColumns as jest.Mock).mockResolvedValue([]);
     (collectOrgFileKeys as jest.Mock)
-      .mockResolvedValueOnce(["documents/example.pdf"])
+      .mockResolvedValueOnce([{ key: "documents/example.pdf", bucket: "default" }])
       .mockResolvedValueOnce([]);
     (runInNewTenantTransaction as jest.Mock).mockRejectedValueOnce(new Error("RLS denied"));
 
-    const storage = { deleteFile: jest.fn() };
-    const result = await PURGE_ADAPTER_REGISTRY.object_storage.confirm(ORG_A, PURGE_JOB, FAKE_DB, storage);
+    const deleteFile = jest.fn();
+    const result = await PURGE_ADAPTER_REGISTRY.object_storage.confirm(ORG_A, PURGE_JOB, FAKE_DB, {
+      port: { deleteFile },
+      kbBucket: "kb-files",
+    });
 
     expect(result.state).toBe("FAILED");
     // The guarantee is that a failed bookkeeping write stops the purge before
@@ -104,7 +107,7 @@ describe("PURGE_ADAPTER_REGISTRY — object_storage", () => {
     // behavioural assertions either side of this are the contract.
     expect(result.detail).toMatch(/failed to register|failed keys/i);
     expect(result.detail).toMatch(/RLS denied/);
-    expect(storage.deleteFile).not.toHaveBeenCalled();
+    expect(deleteFile).not.toHaveBeenCalled();
   });
 });
 

@@ -10,10 +10,13 @@ import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { StorageService } from "../storage/storage.service";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import {
   PURGE_ADAPTERS,
   PURGE_ADAPTER_REGISTRY,
   type PurgeAdapterResult,
+  type PurgeStorage,
 } from "../organization/core/lifecycle/organization-purge-adapters";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { assertNever } from "../../common/auth/principal";
@@ -35,6 +38,7 @@ export class CronOrgPurgeWorkerService {
     private readonly cache: CacheService,
     private readonly orgMembership: OrgMembershipService,
     private readonly storage: StorageService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   async run(): Promise<{ processed: number; skipped: number; moreRemaining: boolean }> {
@@ -178,13 +182,20 @@ export class CronOrgPurgeWorkerService {
     });
 
     const adapterResults: Record<string, PurgeAdapterResult> = {};
+    // The KB bucket is threaded here because the adapter registry is a set of
+    // free functions with no injector: object_storage enumerates keys from every
+    // file-key column in the schema, three of which name KB-bucket objects.
+    const purgeStorage: PurgeStorage = {
+      port: this.storage,
+      kbBucket: this.config.R2_KB_BUCKET_NAME,
+    };
     for (const adapter of PURGE_ADAPTERS) {
       try {
         adapterResults[adapter] = await PURGE_ADAPTER_REGISTRY[adapter].confirm(
           orgId,
           purgeJobId,
           this.db,
-          this.storage,
+          purgeStorage,
         );
       } catch (err) {
         adapterResults[adapter] = { state: "FAILED", detail: String(err) };

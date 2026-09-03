@@ -8,6 +8,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { logger } from "../../../common/logger/logger.service";
 import { PURGE_ADAPTERS } from "../../../db/schema/common/organization-purge";
 import { PURGE_ADAPTER_REGISTRY } from "../../organization/core/lifecycle/organization-purge-adapters";
+import { APP_CONFIG } from "../../../config/config.module";
 
 jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
   refreshRelocationTargets: jest.fn().mockResolvedValue(undefined),
@@ -89,6 +90,7 @@ describe("CronOrgPurgeWorkerService", () => {
         { provide: CacheService, useValue: mockCache },
         { provide: OrgMembershipService, useValue: mockOrgMembership },
         { provide: StorageService, useValue: mockStorage },
+        { provide: APP_CONFIG, useValue: { R2_KB_BUCKET_NAME: "kb-files" } },
       ],
     }).compile();
 

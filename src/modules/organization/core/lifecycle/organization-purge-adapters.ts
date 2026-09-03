@@ -11,6 +11,7 @@ import { storagePendingPurge } from "../../../../db/schema/common/storage-pendin
 import {
   enumerateFileKeyColumns,
   collectOrgFileKeys,
+  type OrgFileKey,
 } from "../../../storage/storage-key-catalog";
 
 const OBJECT_DELETE_ATTEMPTS = 3;
@@ -22,8 +23,23 @@ export type PurgeAdapterResult = {
 };
 
 export interface StoragePort {
-  deleteFile(orgId: string, key: string): Promise<void>;
-  fileExists?(orgId: string, key: string): Promise<boolean>;
+  deleteFile(orgId: string, key: string, bucketOverride?: string): Promise<void>;
+  fileExists?(orgId: string, key: string, bucketOverride?: string): Promise<boolean>;
+}
+
+/**
+ * The port plus the one thing the port cannot answer: which bucket the KB
+ * uploaders addressed. `kbBucket` is a REQUIRED property even where its value is
+ * `undefined` -- `undefined` is a resolution, not an absence. It means a
+ * single-bucket deployment, where `requireBucket` falls back to the default
+ * bucket and the KB uploads went there too. Required so it is passed
+ * deliberately rather than forgotten, because forgetting it is invisible: an
+ * S3-compatible delete of an absent key answers SUCCESS, and the `fileExists`
+ * that follows then confirms the object absent from a bucket it was never in.
+ */
+export interface PurgeStorage {
+  readonly port: StoragePort;
+  readonly kbBucket: string | undefined;
 }
 
 export type PurgeAdapterDef = {
@@ -31,7 +47,7 @@ export type PurgeAdapterDef = {
     orgId: string,
     purgeJobId: string,
     db: Db,
-    storage?: StoragePort,
+    storage?: PurgeStorage,
   ) => Promise<PurgeAdapterResult>;
 };
 
@@ -92,7 +108,7 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
         };
       }
 
-      let keys: string[];
+      let keys: OrgFileKey[];
       try {
         keys = await collectOrgFileKeys(db, orgId, columns);
       } catch (err) {
@@ -109,9 +125,20 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
         };
       }
 
+      /*
+       * The bucket travels with the key from the column it was enumerated from,
+       * and both the delete and its verification take the same override. Passing
+       * it to the delete alone would be worse than passing it to neither: the
+       * object would be removed from the KB bucket and then looked for in the
+       * default one, which answers "absent" for a reason that has nothing to do
+       * with the delete.
+       */
+      const bucketFor = (file: OrgFileKey): string | undefined =>
+        file.bucket === "kb" ? storage.kbBucket : undefined;
+
       const failedKeys: string[] = [];
-      const confirmedKeys: string[] = [];
-      const failures: Array<{ key: string; reason: string }> = [];
+      const confirmedKeys: OrgFileKey[] = [];
+      const failures: Array<{ file: OrgFileKey; reason: string }> = [];
 
       const flushBookkeeping = async (): Promise<void> => {
         if (confirmedKeys.length === 0 && failures.length === 0) return;
@@ -133,7 +160,7 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
                     eq(storagePendingPurge.orgId, orgId),
                     inArray(
                       storagePendingPurge.storageKey,
-                      confirmed.slice(i, i + PURGE_BOOKKEEPING_CHUNK),
+                      confirmed.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((file) => file.key),
                     ),
                   ),
                 );
@@ -144,8 +171,9 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
                 .values(
                   failedRows.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((row) => ({
                     orgId,
-                    storageKey: row.key,
+                    storageKey: row.file.key,
                     purpose: "org-purge",
+                    bucket: row.file.bucket,
                     status: "failed",
                     failedReason: row.reason,
                     lastAttemptedAt: new Date(),
@@ -155,6 +183,7 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
                   target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
                   set: {
                     status: "failed",
+                    bucket: sql`excluded.bucket`,
                     failedReason: sql`excluded.failed_reason`,
                     lastAttemptedAt: new Date(),
                     attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
@@ -179,16 +208,24 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
             await tx
               .insert(storagePendingPurge)
               .values(
-                keys.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((key) => ({
+                keys.slice(i, i + PURGE_BOOKKEEPING_CHUNK).map((file) => ({
                   orgId,
-                  storageKey: key,
+                  storageKey: file.key,
                   purpose: "org-purge",
+                  bucket: file.bucket,
                   status: "pending",
                 })),
               )
               .onConflictDoUpdate({
                 target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
-                set: { status: "pending", lastAttemptedAt: null, failedReason: null },
+                // `excluded.bucket` heals a row registered before the column
+                // existed: a re-run of the purge is the only party that can.
+                set: {
+                  status: "pending",
+                  bucket: sql`excluded.bucket`,
+                  lastAttemptedAt: null,
+                  failedReason: null,
+                },
               });
         });
       } catch (err) {
@@ -198,12 +235,13 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
         };
       }
 
-      for (const key of keys) {
+      for (const file of keys) {
+        const bucket = bucketFor(file);
         try {
           let lastError: unknown;
           for (let attempt = 1; attempt <= OBJECT_DELETE_ATTEMPTS; attempt++) {
             try {
-              await storage.deleteFile(orgId, key);
+              await storage.port.deleteFile(orgId, file.key, bucket);
               lastError = undefined;
               break;
             } catch (err) {
@@ -212,20 +250,23 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
           }
           if (lastError !== undefined) throw lastError;
 
-          if (typeof storage.fileExists === "function" && await storage.fileExists(orgId, key)) {
+          if (
+            typeof storage.port.fileExists === "function" &&
+            await storage.port.fileExists(orgId, file.key, bucket)
+          ) {
             throw new Error("object remains after delete verification");
           }
-          confirmedKeys.push(key);
+          confirmedKeys.push(file);
         } catch (err) {
-          failedKeys.push(key);
-          failures.push({ key, reason: String(err) });
+          failedKeys.push(file.key);
+          failures.push({ file, reason: String(err) });
         }
         if (confirmedKeys.length + failures.length >= PURGE_BOOKKEEPING_CHUNK)
           await flushBookkeeping();
       }
       await flushBookkeeping();
 
-      let remaining: string[];
+      let remaining: OrgFileKey[];
       try {
         remaining = await collectOrgFileKeys(db, orgId, columns);
       } catch (err) {
