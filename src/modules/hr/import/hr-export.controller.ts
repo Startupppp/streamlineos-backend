@@ -36,7 +36,7 @@ import { HrExportWorkerService } from "./hr-export-worker.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const exportJobIdParams = z.object({ exportJobId: z.string().min(1) }).strict();
+const exportJobIdParams = z.object({ exportJobId: z.string().uuid() }).strict();
 
 @RequireModule("hr")
 @RequirePermission("hr:export:manage")

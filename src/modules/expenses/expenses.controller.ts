@@ -59,7 +59,7 @@ import { z } from "zod";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
-const jobIdParams = z.object({ jobId: z.string().min(1) }).strict();
+const jobIdParams = z.object({ jobId: z.string().uuid() }).strict();
 
 @RequireModule("accounting")
 @Controller("hr/expenses")

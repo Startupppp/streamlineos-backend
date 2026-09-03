@@ -35,8 +35,8 @@ import {
 import { z } from "zod";
 import { Validate } from "../../../../common/validation/validate.decorator";
 
-const provisioningIdParams = z.object({ provisioningId: z.string().min(1) }).strict();
-const templateIdParams = z.object({ templateId: z.string().min(1) }).strict();
+const provisioningIdParams = z.object({ provisioningId: z.string().uuid() }).strict();
+const templateIdParams = z.object({ templateId: z.string().uuid() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/identity")

@@ -24,7 +24,11 @@ import { authorize } from "../access/authorize";
 import { GdprService } from "./gdpr.service";
 import { GdprExportService } from "./gdpr-export.service";
 import { exportRequestBodySchema, type ExportRequestBody } from "./dto/gdpr.schemas";
-import { gdprAsyncExportBodySchema, type GdprAsyncExportBody } from "./dto/gdpr-async-export.schemas";
+import {
+  gdprAsyncExportBodySchema,
+  gdprExportJobIdParams,
+  type GdprAsyncExportBody,
+} from "./dto/gdpr-async-export.schemas";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
@@ -133,6 +137,7 @@ export class GdprController {
   )
   @UseGuards(JwtAuthGuard)
   @Get("export-async/:jobId/status")
+  @Validate({ params: gdprExportJobIdParams })
   async getExportJobStatus(
     @Param("jobId") jobId: string,
     @CurrentUser() user: CurrentUserContext,
@@ -148,6 +153,7 @@ export class GdprController {
   )
   @UseGuards(JwtAuthGuard)
   @Get("export-async/:jobId/download")
+  @Validate({ params: gdprExportJobIdParams })
   @Header("Content-Disposition", "attachment")
   async downloadExportJob(
     @Param("jobId") jobId: string,

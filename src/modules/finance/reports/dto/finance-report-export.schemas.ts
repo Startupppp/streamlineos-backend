@@ -39,7 +39,7 @@ export const createFinanceReportExportJobSchema = z
 
 export type CreateFinanceReportExportJobInput = z.infer<typeof createFinanceReportExportJobSchema>;
 
-export const finReportExportJobIdParams = z.object({ jobId: z.string().min(1) }).strict();
+export const finReportExportJobIdParams = z.object({ jobId: z.string().uuid() }).strict();
 
 export const financeReportExportRequestedPayloadSchema = z.object({
   jobId: z.string().uuid(),

@@ -33,7 +33,7 @@ import {
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const eventIdParams = z.object({ eventId: z.string().min(1) }).strict();
+const eventIdParams = z.object({ eventId: z.string().uuid() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/emergency")

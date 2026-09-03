@@ -38,8 +38,8 @@ import { Idempotent } from "../../../../common/idempotency/idempotent.decorator"
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
 
-const accommodationIdParams = z.object({ accommodationId: z.string().min(1) }).strict();
-const accommodationIdtaskIdParams = z.object({ accommodationId: z.string().min(1), taskId: z.string().min(1) }).strict();
+const accommodationIdParams = z.object({ accommodationId: z.string().uuid() }).strict();
+const accommodationIdtaskIdParams = z.object({ accommodationId: z.string().uuid(), taskId: z.string().uuid() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/accommodations")

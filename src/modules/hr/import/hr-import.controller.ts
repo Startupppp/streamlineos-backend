@@ -32,7 +32,7 @@ import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
-const jobIdParams = z.object({ jobId: z.string().min(1) }).strict();
+const jobIdParams = z.object({ jobId: z.string().uuid() }).strict();
 const entityParams = z.object({ entity: z.string().min(1) }).strict();
 
 const entityParamSchema = z.enum(hrImportEntityValues);
