@@ -56,7 +56,7 @@ export class HrWorkflowInstancesController {
   @Validate({ query: PaginationSchema })
   inbox(
     @CurrentUser() u: CurrentUserContext,
-    @Query() query: { page: number; limit: number },
+    @Query() query: z.infer<typeof PaginationSchema>,
   ) {
     return this.instancesService.getInbox(u, query.page, query.limit);
   }

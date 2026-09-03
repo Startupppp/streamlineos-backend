@@ -151,7 +151,7 @@ export class PayrollComplianceController {
   @HttpCode(200)
   @Validate({ body: seedPresetsSchema })
   seedPresets(
-    @Body() body: { countryCode: string; periodKey: string },
+    @Body() body: z.infer<typeof seedPresetsSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.seedCountryPresets(u.orgId, u.userId, body.countryCode, body.periodKey);

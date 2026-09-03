@@ -102,7 +102,7 @@ export class ReconciliationController {
   @Validate({ params: bankAccountIdParams, query: rulesQuerySchema })
   listRules(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
-    @Query() query: { cursor?: string; limit: number },
+    @Query() query: z.infer<typeof rulesQuerySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.listRules(u, { ...query, bankAccountId });

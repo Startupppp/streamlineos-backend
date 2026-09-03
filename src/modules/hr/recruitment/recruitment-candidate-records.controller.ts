@@ -100,7 +100,7 @@ export class RecruitmentCandidateRecordsController {
   resumeParse(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @UploadedFile() file: Express.Multer.File | undefined,
-    @Body() body: unknown,
+    @Body() body: z.infer<typeof resumeParseRequestSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.ai.parseResume(u.orgId, candidateId, u.userId, file, body);

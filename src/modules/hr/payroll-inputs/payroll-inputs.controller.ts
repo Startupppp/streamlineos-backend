@@ -179,7 +179,7 @@ export class PayrollInputsController {
   @Validate({ body: rejectAdjustmentSchema, params: adjustmentIdParams })
   rejectAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
-    @Body() body: { reason: string },
+    @Body() body: z.infer<typeof rejectAdjustmentSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.rejectAdjustment(u.orgId, u.userId, adjustmentId, body.reason);

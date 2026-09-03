@@ -50,7 +50,7 @@ export class PartyMergeController {
   async addRole(
     @CurrentUser() user: CurrentUserContext,
     @Param("partyId") partyId: string,
-    @Body() body: { role: string },
+    @Body() body: z.infer<typeof partyRoleBodySchema>,
   ) {
     return { roles: await this.roles.addRole(user.orgId, partyId, body.role, user.userId) };
   }
@@ -106,7 +106,7 @@ export class PartyMergeController {
   @Validate({ body: partyMergeBodySchema })
   async merge(
     @CurrentUser() user: CurrentUserContext,
-    @Body() body: { leftPartyId: string; rightPartyId: string },
+    @Body() body: z.infer<typeof partyMergeBodySchema>,
   ) {
     return this.merges.merge(user.orgId, {
       leftPartyId: body.leftPartyId,

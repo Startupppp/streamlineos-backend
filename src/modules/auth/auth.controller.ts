@@ -162,7 +162,7 @@ export class AuthController {
   @HttpCode(200)
   @Validate({ body: resendVerificationSchema })
   async resendVerification(
-    @Body() body: { email: string },
+    @Body() body: z.infer<typeof resendVerificationSchema>,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:resend-verification", this.getIp(req));

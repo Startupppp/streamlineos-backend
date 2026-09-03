@@ -118,7 +118,7 @@ export class CrmAiController {
 
   @Post("score-lead")
   @Validate({ body: scoreLeadBodySchema })
-  async scoreLead(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
+  async scoreLead(@Body() body: z.infer<typeof scoreLeadBodySchema>, @CurrentUser() u: CurrentUserContext) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
     await this.planLimits.assertFeature(u.orgId, "ai.lead-scoring");
     this.ensureLlm("AI scoring is not configured. Set OPENAI_API_KEY.");

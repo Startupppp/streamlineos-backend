@@ -45,7 +45,7 @@ export class ApprovalPoliciesController {
   @RequirePermission("accounting:approvals:read")
   @Validate({ query: listPoliciesSchema })
   list(
-    @Query() query: { cursor?: string; limit: number },
+    @Query() query: z.infer<typeof listPoliciesSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, query.cursor, query.limit);

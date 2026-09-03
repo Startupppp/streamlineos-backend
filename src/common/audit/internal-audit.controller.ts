@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Body, Controller, Headers, HttpCode, Post, UnauthorizedException } from "@nestjs/common";
 import { Public } from "../auth/public.decorator";
 import { Validate } from "../validation/validate.decorator";
@@ -14,7 +15,7 @@ export class InternalAuditController {
   @Validate({ body: auditEntrySchema })
   logAudit(
     @Headers("x-internal-secret") secret: string | undefined,
-    @Body() body: AuditEntry,
+    @Body() body: z.infer<typeof auditEntrySchema>,
   ): { ok: true } {
     const expected = process.env.INTERNAL_API_SECRET;
     if (!expected || secret !== expected) {

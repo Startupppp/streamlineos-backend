@@ -394,7 +394,7 @@ export class ChatChannelsController {
   updateRole(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Param("userId") targetUserId: string,
-    @Body() body: { role: string },
+    @Body() body: z.infer<typeof memberRoleSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateMemberRole(channelId, targetUserId, u.userId, u.orgId, body.role);

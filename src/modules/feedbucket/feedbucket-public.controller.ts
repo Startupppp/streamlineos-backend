@@ -177,7 +177,7 @@ export class FeedbucketPublicController {
   @Validate({ params: publicKeyParams, body: publicSubmitDeclSchema })
   async submit(
     @Param("publicKey") publicKey: string,
-    @Body() rawBody: Record<string, unknown>,
+    @Body() rawBody: z.infer<typeof publicSubmitDeclSchema>,
     @UploadedFiles()
     files: {
       screenshot?: Express.Multer.File[];
@@ -334,7 +334,7 @@ export class FeedbucketPublicController {
   @Validate({ params: publicKeyParams, body: publicAiAssistDeclSchema })
   async aiAssist(
     @Param("publicKey") publicKey: string,
-    @Body() rawBody: Record<string, unknown>,
+    @Body() rawBody: z.infer<typeof publicAiAssistDeclSchema>,
     @UploadedFile() screenshot: Express.Multer.File | undefined,
     @Req() req: Request,
   ) {

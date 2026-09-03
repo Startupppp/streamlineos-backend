@@ -90,7 +90,7 @@ export class KbArticleAiController {
   @Validate({ params: articleIdParams, body: kbAiAskBodySchema })
   async ask(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body() body: { question: string },
+    @Body() body: z.infer<typeof kbAiAskBodySchema>,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.svc.ask(u, articleId, body.question);
@@ -103,7 +103,7 @@ export class KbArticleAiController {
   async askStream(
     @Req() req: Request,
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body() body: { question: string },
+    @Body() body: z.infer<typeof kbAiAskBodySchema>,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {

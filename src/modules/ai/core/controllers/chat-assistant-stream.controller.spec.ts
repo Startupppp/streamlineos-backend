@@ -5,7 +5,9 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
+import { z } from "zod";
 import { ChatAssistantController } from "./chat-assistant.controller";
+import { chatRequestSchema } from "../dto/request.schemas";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
@@ -20,7 +22,7 @@ const ACTOR: CurrentUserContext = {
   principal: humanSessionPrincipal(1, false),
 } as unknown as CurrentUserContext;
 
-const BODY = { messages: [{ role: "user", content: "hi" }] };
+const BODY: z.infer<typeof chatRequestSchema> = { messages: [{ role: "user", content: "hi" }] };
 
 function closeEmitter() {
   const listeners = new Set<() => void>();

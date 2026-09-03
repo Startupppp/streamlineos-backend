@@ -180,7 +180,7 @@ export class ChatAssistantController {
   @HttpCode(201)
   @RequirePermission("ai:chat:use")
   @Validate({ body: conversationCreateSchema })
-  async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
+  async createConversation(@Body() body: z.infer<typeof conversationCreateSchema>, @CurrentUser() u: CurrentUserContext) {
     const parsed = conversationCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
     return this.history.createConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, parsed.data.title);
@@ -191,7 +191,7 @@ export class ChatAssistantController {
   @Validate({ params: conversationIdParams, body: conversationRenameSchema })
   async renameConversation(
     @Param("conversationId") conversationIdParam: string,
-    @Body() body: unknown,
+    @Body() body: z.infer<typeof conversationRenameSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const conversationId = parseInt(conversationIdParam, 10);
@@ -240,7 +240,7 @@ export class ChatAssistantController {
   @Validate({ body: chatRequestSchema })
   async chatAssistant(
     @Req() req: Request,
-    @Body() body: unknown,
+    @Body() body: z.infer<typeof chatRequestSchema>,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
@@ -273,7 +273,7 @@ export class ChatAssistantController {
   @Post("confirm")
   @RequirePermission("ai:chat:use")
   @Validate({ body: confirmActionBodySchema })
-  async confirmAction(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
+  async confirmAction(@Body() body: z.infer<typeof confirmActionBodySchema>, @CurrentUser() u: CurrentUserContext) {
     const parsed = confirmActionBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
 

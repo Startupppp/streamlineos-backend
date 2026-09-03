@@ -30,7 +30,7 @@ export class WorkforceCostingController {
   @RequirePermission("hr:analytics:read")
   @Validate({ query: costByDeptSchema })
   byDepartment(
-    @Query() query: { periodKey: string },
+    @Query() query: z.infer<typeof costByDeptSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.costByDepartment(u.orgId, query.periodKey);
@@ -48,7 +48,7 @@ export class WorkforceCostingController {
   @RequirePermission("hr:salary:view")
   @Validate({ query: forecastedCostQuerySchema })
   forecasted(
-    @Query() query: { cycleId: number },
+    @Query() query: z.infer<typeof forecastedCostQuerySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.forecastedCost(u.orgId, query.cycleId);

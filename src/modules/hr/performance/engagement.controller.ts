@@ -94,7 +94,7 @@ export class EngagementController {
   @Validate({ body: createOrSubmitAssessmentSchema })
   createOrSubmitAssessment(
     @Headers("x-action") action: string | undefined,
-    @Body() body: unknown,
+    @Body() body: z.infer<typeof createOrSubmitAssessmentSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const isManager = u.isOrgOwner;
@@ -153,7 +153,7 @@ export class EngagementController {
   @Validate({ body: createOrRespondSurveySchema })
   createOrRespondSurvey(
     @Headers("x-action") action: string | undefined,
-    @Body() body: unknown,
+    @Body() body: z.infer<typeof createOrRespondSurveySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const isManager = u.isOrgOwner;

@@ -57,7 +57,7 @@ export class KbResearchBriefController {
   @Validate({ params: briefIdParams, body: kbResearchBriefRateSchema })
   async rateBrief(
     @Param("briefId", ParseIntPipe) briefId: number,
-    @Body() body: { rating: "helpful" | "not_helpful" },
+    @Body() body: z.infer<typeof kbResearchBriefRateSchema>,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<{ success: boolean }> {
     await this.briefs.rateBrief(u, briefId, body.rating);

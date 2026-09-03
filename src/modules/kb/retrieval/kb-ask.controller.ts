@@ -117,7 +117,7 @@ export class KbAskController {
   @RequirePermission("kb:pages:view")
   @HttpCode(201)
   @Validate({ body: kbConversationCreateSchema })
-  async createConversation(@Body() body: { title?: string }, @CurrentUser() u: CurrentUserContext) {
+  async createConversation(@Body() body: z.infer<typeof kbConversationCreateSchema>, @CurrentUser() u: CurrentUserContext) {
     return this.history.createConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, body.title);
   }
 
@@ -126,7 +126,7 @@ export class KbAskController {
   @Validate({ params: conversationIdParams, body: kbConversationRenameSchema })
   async renameConversation(
     @Param("conversationId", ParseIntPipe) conversationId: number,
-    @Body() body: { title: string },
+    @Body() body: z.infer<typeof kbConversationRenameSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.history.renameConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, conversationId, body.title);

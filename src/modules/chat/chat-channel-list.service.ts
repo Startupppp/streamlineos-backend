@@ -47,6 +47,45 @@ export class ChatChannelListService {
     return row?.id ?? null;
   }
 
+  async resolveEntityChannelDisplayNames<
+    T extends {
+      id: number;
+      name: string;
+      entityType: string | null;
+      entityId: string | null;
+    },
+  >(channels: T[], actor: EntityActor): Promise<T[]> {
+    const pending: { position: number; type: string; id: string }[] = [];
+    channels.forEach((channel, position) => {
+      if (!channel.entityType || !channel.entityId) return;
+      pending.push({ position, type: channel.entityType, id: channel.entityId });
+    });
+    if (pending.length === 0) return channels;
+
+    const resolutions = await this.entities.resolve(
+      actor,
+      pending.map((entry) => ({ type: entry.type, id: entry.id })),
+    );
+
+    const renamed = new Map<number, string>();
+    pending.forEach((entry, position) => {
+      const resolution = resolutions[position];
+      if (resolution?.status !== "resolved") return;
+      const channel = channels[entry.position];
+      if (channel === undefined) return;
+      const resolved = resolution.card.title;
+      if (channel.name === resolved) return;
+      if (channel.name !== entityChannelFallbackName(entry.type, entry.id)) return;
+      renamed.set(entry.position, resolved);
+    });
+
+    if (renamed.size === 0) return channels;
+    return channels.map((channel, position) => {
+      const name = renamed.get(position);
+      return name === undefined ? channel : { ...channel, name };
+    });
+  }
+
   async resolveEntityChannelDisplayName<
     T extends {
       id: number;
@@ -55,16 +94,8 @@ export class ChatChannelListService {
       entityId: string | null;
     },
   >(channel: T, actor: EntityActor): Promise<T> {
-    if (!channel.entityType || !channel.entityId) return channel;
-    const [resolution] = await this.entities.resolve(actor, [
-      { type: channel.entityType, id: channel.entityId },
-    ]);
-    if (resolution?.status !== "resolved") return channel;
-    const resolved = resolution.card.title;
-    if (channel.name === resolved) return channel;
-    if (channel.name !== entityChannelFallbackName(channel.entityType, channel.entityId))
-      return channel;
-    return { ...channel, name: resolved };
+    const [named] = await this.resolveEntityChannelDisplayNames([channel], actor);
+    return named ?? channel;
   }
 
   async getMyChannels(actor: EntityActor, cursor?: string | null, limit?: number) {
@@ -253,9 +284,19 @@ export class ChatChannelListService {
           createdAt: chatMessages.createdAt,
         })
         .from(chatMessages)
-        .leftJoin(organizationMembers, eq(organizationMembers.id, chatMessages.senderMembershipId))
+        .leftJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.id, chatMessages.senderMembershipId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        )
         .where(
-          and(inArray(chatMessages.channelId, channelIds), eq(chatMessages.isDeleted, false)),
+          and(
+            inArray(chatMessages.channelId, channelIds),
+            eq(chatMessages.isDeleted, false),
+            eq(chatMessages.orgId, orgId),
+          ),
         )
         .orderBy(chatMessages.channelId, desc(chatMessages.createdAt));
 
@@ -275,13 +316,9 @@ export class ChatChannelListService {
         }),
       );
 
-      const resolutions = await Promise.allSettled(
-        channels.map((ch) => this.resolveEntityChannelDisplayName(ch, actor)),
+      const enrichedChannels = await this.resolveEntityChannelDisplayNames(channels, actor).catch(
+        () => channels,
       );
-      const enrichedChannels = channels.map((ch, i) => {
-        const r = resolutions[i];
-        return r !== undefined && r.status === "fulfilled" ? r.value : ch;
-      });
 
       const orderedChannels = channelIds
         .map((id) => enrichedChannels.find((ch) => ch.id === id))
