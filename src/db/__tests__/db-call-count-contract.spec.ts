@@ -22,6 +22,7 @@ import { AutonomyHoldService } from "../../modules/autonomy/autonomy-hold.servic
 import { CronHolidayService } from "../../modules/cron/cron-holiday.service";
 import { SurveyParticipantService } from "../../modules/surveys/survey-participant.service";
 import { VendorPaymentsAllocationsService } from "../../modules/finance/ap/vendor-payments-allocations.service";
+import { ClientAccountsService } from "../../modules/clients/client-accounts.service";
 
 /**
  * §5.1 box 2: no database call inside a growing loop.
@@ -41,6 +42,27 @@ const ROW_COUNTS = [1, 50] as const;
 
 function repeat<T>(count: number, make: (index: number) => T): T[] {
   return Array.from({ length: count }, (_unused, index) => make(index));
+}
+
+/**
+ * The string parameters a drizzle `SQL` carries, flattened.
+ *
+ * A batched `UPDATE … FROM (VALUES …)` puts every row's new value in the same
+ * statement, so "did all five assignees get written" is a question about the
+ * bindings of ONE statement rather than about how many statements ran. Recursing
+ * over the whole object with a `seen` guard cannot miss a chunk class a future
+ * drizzle version nests differently.
+ */
+function bindings(value: unknown, seen = new Set<object>()): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => bindings(item, seen));
+  if (typeof value !== "object" || value === null || seen.has(value)) return [];
+  seen.add(value);
+  const record = value as { queryChunks?: unknown; value?: unknown };
+  const out: string[] = [];
+  if (record.queryChunks !== undefined) out.push(...bindings(record.queryChunks, seen));
+  if (Object.prototype.hasOwnProperty.call(record, "value")) out.push(...bindings(record.value, seen));
+  return out;
 }
 
 describe("database call-count contract", () => {
@@ -194,6 +216,68 @@ describe("database call-count contract", () => {
         counts.push(statements());
       }
       expect(counts[0]).toBe(counts[1]);
+    });
+  });
+
+  /*
+   * The round trips here grew with the number of DISTINCT ASSIGNEES, not with the
+   * number of rows, which is why five members is the interesting axis and not the
+   * fifty accounts. The old shape grouped the accounts by assignee and issued one
+   * `inArray` UPDATE per group, so one unassigned account cost one statement and
+   * fifty spread over five members cost five. Equality across ROW_COUNTS is the
+   * assertion because a small absolute number would still pass on the broken shape
+   * at the low end.
+   */
+  describe("ClientAccountsService.runCrmAssignments", () => {
+    const MEMBERS = 5;
+
+    function harness(unassignedRows: number) {
+      const members = repeat(MEMBERS, (index) => ({ userId: `cs-${index}` }));
+      const counting = makeCountingDb({
+        select: [
+          [],
+          repeat(unassignedRows, (index) => ({ id: index + 1 })),
+          members.map((member) => ({ userId: member.userId, name: member.userId, image: null })),
+          [],
+          [{ count: 0 }],
+        ],
+      });
+      const access = { membersWithPermission: jest.fn().mockResolvedValue(members) };
+      const service = new ClientAccountsService(
+        counting.db as Db,
+        null,
+        {} as ConstructorParameters<typeof ClientAccountsService>[2],
+        {} as ConstructorParameters<typeof ClientAccountsService>[3],
+        access as never,
+      );
+      return { ...counting, service };
+    }
+
+    it("assigns every unassigned account in one update regardless of how many assignees share them", async () => {
+      const counts: number[] = [];
+      for (const rows of ROW_COUNTS) {
+        const { service, statements, countOf } = harness(rows);
+        await service.runCrmAssignments("org-1");
+        expect(countOf("update")).toBe(0);
+        expect(countOf("execute")).toBe(1);
+        counts.push(statements());
+      }
+      expect(counts[0]).toBe(counts[1]);
+    });
+
+    it("spreads the accounts across every member, so the fixture really does exercise many assignees", async () => {
+      const { service, db } = harness(50);
+      const executor = db as { execute: (statement: unknown) => unknown };
+      const seen: string[] = [];
+      const original = executor.execute;
+      executor.execute = (statement: unknown) => {
+        seen.push(...bindings(statement));
+        return original(statement);
+      };
+
+      await service.runCrmAssignments("org-1");
+
+      for (let index = 0; index < MEMBERS; index++) expect(seen).toContain(`cs-${String(index)}`);
     });
   });
 });

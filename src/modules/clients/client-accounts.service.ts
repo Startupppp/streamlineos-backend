@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
+import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
 import { eq, and, desc, sql, count, or, inArray, isNull } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
 import { applyClientAccountsScope } from "./client-accounts-scope";
@@ -480,14 +481,25 @@ export class ClientAccountsService {
       }
     }
 
-    const now = new Date();
-    await Promise.all(
-      Object.entries(assignments).map(([assigneeId, ids]) =>
-        this.db
-          .update(clientAccounts)
-          .set({ assignedCrmId: assigneeId, updatedAt: now })
-          .where(and(eq(clientAccounts.orgId, orgId), inArray(clientAccounts.id, ids))),
-      ),
-    );
+    const rows: BulkUpdateRow[] = [];
+    for (const [assigneeId, ids] of Object.entries(assignments))
+      for (const id of ids) rows.push({ key: id, values: [assigneeId] });
+
+    /*
+     * One statement, not one per assignee. Every account carries a DIFFERENT
+     * `assigned_crm_id`, so `inArray` can only batch the accounts that share an
+     * assignee and the round trips grew with the number of distinct assignees.
+     * `UPDATE ... FROM (VALUES ...)` is the batched form for a per-row value; the
+     * tenant predicate is mandatory there, and a repeated account id is refused
+     * rather than applying one arbitrary assignee.
+     */
+    await bulkUpdateFromValues(this.db, {
+      table: clientAccounts,
+      orgId,
+      key: { column: "id", type: "integer" },
+      columns: [{ column: "assigned_crm_id", type: "text" }],
+      rows,
+      touch: ["updated_at"],
+    });
   }
 }

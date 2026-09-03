@@ -664,8 +664,8 @@
       "note": "First seen 2026-09-03. `rows.map((r, i) => sql`WHEN ... THEN ...`)` builds CASE branches joined into ONE `tx.update(tickets).set({ rank: sql`(CASE ... END)` })`. Zero round trips inside the loop — this is the bulk rank rewrite, not an N+1."
     },
     "/clients/client-accounts.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "First seen 2026-09-03 by the braceless scanner, and REAL: reassignAccounts runs `await Promise.all(Object.entries(assignments).map(([assigneeId, ids]) => this.db.update(clientAccounts).set({ assignedCrmId: assigneeId }).where(inArray(clientAccounts.id, ids))))` — one UPDATE per distinct assignee, growing with the number of assignees in the request. Batched form: one `bulkUpdateFromValues` keyed on id with assignedCrmId per row. The opener leaves a paren open, so `parenBalance >= 0` counted it as closed and the gate skipped it for as long as it has existed."
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03 (register A-4). reassignAccounts issued one `db.update(clientAccounts)` per DISTINCT ASSIGNEE inside `Promise.all(Object.entries(assignments).map(...))` — every account carries a different assigned_crm_id, so `inArray` could only batch the accounts that share an assignee and the round trips grew with the number of assignees. Now one `bulkUpdateFromValues` keyed on id with assigned_crm_id per row and touch ['updated_at'], which is the batched form this entry already recorded. Measured hermetically over `git archive HEAD` with the counting double: 1 unassigned account -> 6 statements before and after; 50 accounts over 5 members -> 10 before (5 UPDATEs) and 6 after (1 execute). Pinned by src/db/__tests__/db-call-count-contract.spec.ts (`ClientAccountsService.runCrmAssignments`), which asserts statement equality across 1 and 50 rows, countOf('update') === 0, and that all five assignees appear in the bindings of the ONE statement; both cases fail against the pre-fix service."
     },
     "/crm/core/crm-rules.service.ts": {
       "verdict": "EXCLUDED-MODULE",
