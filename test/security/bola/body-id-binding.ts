@@ -181,6 +181,24 @@ const ASSERTION_CALL_RE =
 const DELEGATION_HEAD_RE = /this\.(\w+)(?:\.(\w+))?\s*\($/;
 
 /**
+ * A bare `someFunction(` call head — a delegation into a FREE function.
+ *
+ * MEASURED, and it is a blind spot the file-size programme opens repeatedly. `c7e4628a` moved
+ * `ActivitiesService.timeline`'s query into an exported `queryTimeline(db, organizationId, query)`
+ * in a new module; the method now reads `return queryTimeline(this.db, organizationId, query);` and
+ * nothing about the field is visible in it any more. Three query id sites on
+ * `ActivitiesController_timeline` — `partyId`, `dealId`, `subjectId` — went `filter-in-org-query`
+ * -> `never-read` on that commit alone, which reads as "the surface shrank" when what shrank was
+ * the analyser's reach.
+ *
+ * Unlike `this.` delegation this does NOT stop the scan of enclosing groups: `eq(`, `and(` and
+ * `push(` are call heads too, and breaking on them would lose the `org-predicate` evidence that
+ * sits one group further out. Free calls are collected and followed only after every other rule
+ * has had its say, and only when the name resolves to a function declared in `src/`.
+ */
+const FREE_CALL_HEAD_RE = /(?:^|[^.\w$])([a-z][A-Za-z0-9_$]*)\s*\($/;
+
+/**
  * A predicate position: the id is being used to SELECT rows, not to store a
  * reference. A foreign id in a predicate that sits in an org-bound query simply
  * matches nothing, which is why `filter-in-org-query` is a pass rather than a
@@ -399,6 +417,42 @@ function lookupMethod(index: SourceIndex, owner: string, name: string): SourceMe
   return index.methodsByClass.get(owner)?.get(name) ?? index.functions.get(name);
 }
 
+/**
+ * Calls in `body` that forward `carrier` WHOLE — `queryTimeline(this.db, orgId, query)`.
+ *
+ * `traceFromHandler` already does this at the controller boundary, where the DTO is normally passed
+ * on entire and the field name never appears. The same thing happens one level down and had no
+ * equivalent: after `c7e4628a` extracted `ActivitiesService.timeline`'s query into a free
+ * `queryTimeline(...)`, the method body reads `return queryTimeline(this.db, organizationId,
+ * query);` — `query.partyId` occurs nowhere in it, so the trace ended at `never-read` with the org
+ * predicate sitting one file away. Three sites moved on that commit alone.
+ */
+function forwardedCalls(body: string, carrier: string): { head: string; slot: number }[] {
+  const out: { head: string; slot: number }[] = [];
+  const call = /(?:(this\.\w+(?:\.\w+)?)|(?:^|[^.\w$])([a-z][A-Za-z0-9_$]*))\s*\(/g;
+  let match: RegExpExecArray | null;
+  while ((match = call.exec(body)) !== null) {
+    const open = match.index + match[0].length - 1;
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < body.length; i++) {
+      if (body[i] === "(") depth += 1;
+      else if (body[i] === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          close = i;
+          break;
+        }
+      }
+    }
+    if (close === -1) continue;
+    const slot = carrierSlot(body.slice(open + 1, close), carrier);
+    if (slot === -1) continue;
+    out.push({ head: (match[1] ?? match[2]) as string, slot });
+  }
+  return out;
+}
+
 function traceSymbol(
   owner: string,
   method: SourceMethod,
@@ -416,6 +470,7 @@ function traceSymbol(
   const body = method.body.slice(method.signature.length);
   const occurrences = findOccurrences(body, symbol);
   const delegations: { property: string; callee: string | null; slot: number }[] = [];
+  const freeCalls: { name: string; slot: number }[] = [];
   let sawWrite = false;
   let sawNonWrite = false;
   let sawPredicate = false;
@@ -443,6 +498,9 @@ function traceSymbol(
         return { verdict: "object-assertion", evidence: group.head.trim().slice(-60), where: at };
       if (ORG_TOKEN_RE.test(group.text))
         return { verdict: "org-predicate", evidence: group.text.replace(/\s+/g, " ").slice(0, 140), where: at };
+      const free = FREE_CALL_HEAD_RE.exec(group.head);
+      if (free)
+        freeCalls.push({ name: free[1] as string, slot: argumentSlot(body, group.open, occurrence.index) });
     }
   }
 
@@ -457,6 +515,35 @@ function traceSymbol(
     const nested = traceSymbol(calleeClass, callee, { object: null, field: next }, index, depth + 1, seen);
     if (nested.verdict === "org-predicate" || nested.verdict === "object-assertion") return nested;
   }
+
+  for (const call of freeCalls) {
+    const callee = index.functions.get(call.name);
+    if (!callee) continue;
+    const next = parameterNames(callee.signature)[call.slot];
+    if (!next) continue;
+    const nested = traceSymbol(callee.owner, callee, { object: null, field: next }, index, depth + 1, seen);
+    if (nested.verdict !== "never-read" && nested.verdict !== "unresolved") return nested;
+  }
+
+  /**
+   * The object was forwarded whole and the field never named — follow the carrier one level down.
+   * Only when nothing about the field was visible here, so it can never override closer evidence.
+   */
+  if (occurrences.length === 0 && symbol.object !== null)
+    for (const forward of forwardedCalls(body, symbol.object)) {
+      const viaThis = /^this\.(\w+)(?:\.(\w+))?$/.exec(forward.head);
+      const calleeClass = viaThis
+        ? (viaThis[2] ? resolveInjectedType(method.file, viaThis[1] as string) : owner)
+        : owner;
+      const calleeName = viaThis ? ((viaThis[2] ?? viaThis[1]) as string) : forward.head;
+      if (!calleeClass) continue;
+      const callee = lookupMethod(index, calleeClass, calleeName);
+      if (!callee) continue;
+      const next = parameterNames(callee.signature)[forward.slot];
+      if (!next) continue;
+      const nested = traceSymbol(callee.owner, callee, { object: next, field: symbol.field }, index, depth + 1, seen);
+      if (nested.verdict !== "never-read" && nested.verdict !== "unresolved") return nested;
+    }
 
   const local = destructuredName(body, symbol);
   if (local) {

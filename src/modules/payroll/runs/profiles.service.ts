@@ -13,6 +13,7 @@ import {
   assertPayrollPayeeEligible,
   assertPayrollWorkerPayeeEligible,
 } from "../lib/payroll-payee-eligibility";
+import { resolvePerson } from "../../directory/person-seam";
 import type { DataScope } from "../../access/access.types";
 import type { ListProfilesQuery, CreateProfileInput, PatchProfileInput } from "./dto/runs.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -28,6 +29,21 @@ export class ProfilesService {
 
   async listProfiles(orgId: string, query: ListProfilesQuery, scope: DataScope, userId: string) {
     return this.profiles.list(orgId, query, scope, userId);
+  }
+
+  /**
+   * The worker half of `assertEmployeeInOrg`, which the worker-addressed reads never had.
+   *
+   * `GET /payroll/workers/:workerId/history` filtered salary profiles on `orgId` and `workerId` and
+   * never resolved the worker, so another organisation's `:workerId` — and one belonging to nobody
+   * — both answered **200 with an empty array**. Measured live: control 200 / cross-tenant 200 /
+   * absent 200. The seam re-asserts `orgId` on every query, and backend/CLAUDE.md §1 says an
+   * unresolved subject is surfaced as 404, never 403.
+   */
+  private async assertWorkerInOrg(orgId: string, workerId: string): Promise<void> {
+    const resolution = await resolvePerson(this.db, orgId, { kind: "worker", workerId });
+    if (resolution.status !== "resolved")
+      throw new NotFoundException("Worker not found in this organization");
   }
 
   private async assertEmployeeInOrg(orgId: string, employeeUserId: string): Promise<void> {
@@ -191,6 +207,7 @@ export class ProfilesService {
   }
 
   async getProfileByWorker(orgId: string, workerId: string) {
+    await this.assertWorkerInOrg(orgId, workerId);
     return this.profiles.findByWorker(orgId, workerId);
   }
 
@@ -350,6 +367,7 @@ export class ProfilesService {
   }
 
   async listHistoryByWorker(orgId: string, workerId: string) {
+    await this.assertWorkerInOrg(orgId, workerId);
     return this.profiles.historyByWorker(orgId, workerId);
   }
 

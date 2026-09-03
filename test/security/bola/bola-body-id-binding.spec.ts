@@ -178,13 +178,51 @@ describe("the surface, enumerated from the committed contract", () => {
  *
  * They are pinned by name below, so raising the number does not hide them.
  */
-const WRITTEN_UNRESOLVED_BASELINE = 211;
+/**
+ * RAISED 211 -> 223 on 2026-09-03, and again the reason is VISIBILITY, not regression.
+ *
+ * The tracer could not follow a carrier forwarded WHOLE out of a service method — the shape
+ * `return queryTimeline(this.db, organizationId, query);`, where the field name occurs nowhere in
+ * the method. It handled that at the controller boundary and nowhere below it, so every id the
+ * DTO carried past one hand-off was scored `never-read`. That blind spot is now closed
+ * (`forwardedCalls` in `body-id-binding.ts`) and the whole surface moved at once:
+ * `never-read` **272 -> 179**, resolved **384 -> 465**, `written-unresolved` **211 -> 223**.
+ *
+ * The 14 sites below are the ones the closed blind spot exposed. NONE of them is new code: each is
+ * a write that was always there and that the analyser could not see. They are pinned by name so
+ * raising the number cannot absorb them, and the count is +12 rather than +14 because two former
+ * findings resolved into `org-predicate` once the trace could reach the query.
+ *
+ * ⚠ The blind spot was opened wider by `c7e4628a`, which split fourteen files by responsibility:
+ * `ActivitiesService.timeline`'s query became a free function and three sites on
+ * `ActivitiesController_timeline` went `filter-in-org-query` -> `never-read` on that commit alone.
+ * The file-size programme will keep producing that shape, so the fix belongs in the analyser.
+ */
+const WRITTEN_UNRESOLVED_BASELINE = 223;
 const UNRESOLVED_BASELINE = 179;
 
 /** The two sites the regenerated contract made visible. Named so the ratchet cannot absorb them. */
 const NEWLY_VISIBLE_WRITTEN_UNRESOLVED: readonly string[] = [
   "GitConnectionsController_createConnection|projectId",
   "SettingsDeprecatedRoutesController_createGitConnection|projectId",
+];
+
+/** The 14 the forwarded-carrier trace made visible. Same rule: named, so they cannot be absorbed. */
+const NEWLY_VISIBLE_BY_FORWARDED_CARRIER: readonly string[] = [
+  "AgentController_createTicket|sprintId",
+  "AgentController_createTicket|cycleId",
+  "AgentController_createTicket|parentTicketId",
+  "ProjectsTicketsController_createTicket|sprintId",
+  "ProjectsTicketsController_createTicket|cycleId",
+  "ProjectsTicketsController_createTicket|parentTicketId",
+  "ProjectsTicketChecklistsController_createChecklistItem|assigneeId",
+  "DealsController_createDeal|leadId",
+  "DealsController_createDeal|clientId",
+  "DealsController_createDeal|partyId",
+  "DealsController_createDeal|subjectId",
+  "PerformanceController_createPip|hrRepId",
+  "RecruitmentSourcingController_createSubmission|candidateId",
+  "RecruitmentSourcingController_createSubmission|jobPostingId",
 ];
 
 describe("findings", () => {
@@ -203,10 +241,20 @@ describe("findings", () => {
     for (const site of NEWLY_VISIBLE_WRITTEN_UNRESOLVED) expect(present.has(site)).toBe(true);
   });
 
+  it("still holds the fourteen sites the forwarded-carrier trace made visible", () => {
+    const present = new Set(
+      bindings
+        .filter((b) => b.verdict === "written-unresolved")
+        .map((b) => `${b.operationId}|${b.field}`),
+    );
+    expect(NEWLY_VISIBLE_BY_FORWARDED_CARRIER.filter((site) => !present.has(site))).toEqual([]);
+  });
+
   it("keeps a majority of the surface resolved, so the ratchet is measuring a real remainder", () => {
     const counts = summarize(bindings);
     const resolved = counts["org-predicate"] + counts["object-assertion"] + counts["filter-in-org-query"];
-    expect(resolved).toBeGreaterThanOrEqual(386);
+    // 386 -> 465 with the forwarded-carrier trace. It is a FLOOR, so it may only move up.
+    expect(resolved).toBeGreaterThanOrEqual(465);
   });
 
   /**

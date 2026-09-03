@@ -13,6 +13,10 @@ function makeChain(result: unknown[]) {
   const promise = Promise.resolve(result);
   return {
     from: jest.fn().mockReturnThis(),
+    // The worker-addressed reads resolve the worker through the person seam before they query, and
+    // that resolution joins. Without these the chain throws before the projection under test runs.
+    innerJoin: jest.fn().mockReturnThis(),
+    leftJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
@@ -139,9 +143,12 @@ describe("pay-projection-exposure", () => {
 
       const result = await service.listHistoryByWorker("org-1", "w1");
 
-      expect(Object.keys(db.select.mock.calls[0][0] as object).sort()).toEqual(
-        PROFILE_KEYS,
-      );
+      // The LAST select is the history query. `listHistoryByWorker` now resolves the worker under
+      // the caller's organisation first — the guard that makes a cross-tenant `:workerId` answer
+      // 404 instead of an empty 200 — so the projection under test is no longer call zero. The
+      // claim this test makes is about the profile projection, not about call ordering.
+      const historySelect = db.select.mock.calls.at(-1)?.[0] as object;
+      expect(Object.keys(historySelect).sort()).toEqual(PROFILE_KEYS);
       const first = result[0] ?? {};
       expect(Object.keys(first).sort()).toEqual(PROFILE_KEYS);
       expect(first).not.toHaveProperty("basicSalary");
