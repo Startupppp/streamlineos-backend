@@ -24,6 +24,7 @@ import type {
   UpdateRenewalInput,
 } from "./dto/clients.schemas";
 import { AccessService } from "../access/access.service";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 
 @Injectable()
 export class ClientAccountsService {
@@ -42,7 +43,8 @@ export class ClientAccountsService {
     userId: string,
     filters: ListAccountsInput,
   ) {
-    void this.tryBackfill(orgId, userId);
+    const backfill = () => this.tryBackfill(orgId, userId);
+    if (!registerAfterCommit(backfill)) await backfill();
 
     const f = [eq(clientAccounts.orgId, orgId)];
     if (scope !== "all") f.push(applyClientAccountsScope(scope, orgId, userId));
@@ -370,12 +372,8 @@ export class ClientAccountsService {
         this.logger.warn(`Redis lock acquire failed for client backfill ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    try {
-      await this.backfillConvertedLeadsToClientAccounts(orgId, userId);
-      await this.backfillCrmAssignments(orgId);
-    } catch (err) {
-      this.logger.warn(`Client account backfill failed for org ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    await this.backfillConvertedLeadsToClientAccounts(orgId, userId);
+    await this.backfillCrmAssignments(orgId);
   }
 
   /**
@@ -415,7 +413,7 @@ export class ClientAccountsService {
         p.phone,
         p.whatsapp_phone,
         COALESCE(p.expected_value, p.stated_budget)::numeric(15,2),
-        'ACCOUNT_OPENING'::text,
+        'ACCOUNT_OPENING'::client_account_status,
         COALESCE(p.converted_at, NOW()),
         NOW(),
         NOW()

@@ -117,6 +117,7 @@ describe("ClientAccountsService — cross-tenant isolation", () => {
     const fromCount = jest.fn().mockReturnValue(chainCount);
     const db = {
       select: jest.fn().mockReturnValue({ from: fromCount }),
+      execute: jest.fn().mockResolvedValue(undefined),
       query: {
         clientAccounts: { findMany, findFirst },
         clientAccountActivities: { findMany, findFirst },
