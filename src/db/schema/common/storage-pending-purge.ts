@@ -1,6 +1,7 @@
 import {
   index,
   pgTable,
+  uniqueIndex,
   text,
   integer,
   timestamp,
@@ -22,7 +23,7 @@ export const storagePendingPurge = pgTable(
     failedReason: text("failed_reason"),
   },
   (table) => [
-    index("uniq_storage_pending_purge_org_key").on(table.orgId, table.storageKey),
+    uniqueIndex("uniq_storage_pending_purge_org_key").on(table.orgId, table.storageKey),
     index("idx_storage_pending_purge_retry").on(table.orgId, table.status, table.createdAt),
   ],
 );

@@ -1,0 +1,70 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import { storagePendingPurge } from "../../db/schema/common/storage-pending-purge";
+
+export const PENDING_PURGE_MAX_ATTEMPTS = 10;
+
+export interface PendingPurgeRow {
+  id: string;
+  storageKey: string;
+  purpose: string;
+}
+
+/**
+ * `storage_pending_purge` is the write-ahead record that an object was ours to
+ * delete: the row is written before the delete is attempted, so a crash between
+ * the two cannot lose the only pointer to the object. Two writers open rows on
+ * it — the organization purge and e-sign document deletion — and until this
+ * service existed nothing ever read one back, so a row parked at `failed` was a
+ * permanent orphan rather than a retry.
+ */
+@Injectable()
+export class StoragePendingPurgeService {
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  async listForRetry(orgId: string, limit: number): Promise<PendingPurgeRow[]> {
+    return this.db
+      .select({
+        id: storagePendingPurge.id,
+        storageKey: storagePendingPurge.storageKey,
+        purpose: storagePendingPurge.purpose,
+      })
+      .from(storagePendingPurge)
+      .where(
+        and(
+          eq(storagePendingPurge.orgId, orgId),
+          inArray(storagePendingPurge.status, ["pending", "failed"]),
+          lt(storagePendingPurge.attemptCount, PENDING_PURGE_MAX_ATTEMPTS),
+        ),
+      )
+      .orderBy(asc(storagePendingPurge.createdAt))
+      .limit(limit);
+  }
+
+  async markConfirmed(id: string): Promise<void> {
+    await this.db
+      .update(storagePendingPurge)
+      .set({
+        status: "confirmed",
+        confirmedAt: new Date(),
+        lastAttemptedAt: new Date(),
+        failedReason: null,
+        attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
+      })
+      .where(eq(storagePendingPurge.id, id));
+  }
+
+  async markFailed(id: string, reason: string): Promise<void> {
+    await this.db
+      .update(storagePendingPurge)
+      .set({
+        status: "failed",
+        failedReason: reason.slice(0, 1_000),
+        lastAttemptedAt: new Date(),
+        attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
+      })
+      .where(eq(storagePendingPurge.id, id));
+  }
+}

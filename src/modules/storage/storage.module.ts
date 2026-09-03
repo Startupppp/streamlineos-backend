@@ -1,6 +1,7 @@
 import { Global, Module } from "@nestjs/common";
 import { StorageService } from "./storage.service";
 import { StoragePurgeService } from "./storage-purge.service";
+import { StoragePendingPurgeService } from "./storage-pending-purge.service";
 import { FileQuarantineService } from "./file-quarantine.service";
 import { StorageMultipartService } from "./storage-multipart.service";
 import { StorageController } from "./storage.controller";
@@ -29,11 +30,13 @@ import { AvScannerModule } from "../../common/security/av-scanner.module";
     MediaTransformRunner,
     StorageService,
     StoragePurgeService,
+    StoragePendingPurgeService,
     FileQuarantineService,
     StorageMultipartService,
   ],
   exports: [
     StorageService,
+    StoragePendingPurgeService,
     FileQuarantineService,
     StorageMultipartService,
     MediaTransformRunner,

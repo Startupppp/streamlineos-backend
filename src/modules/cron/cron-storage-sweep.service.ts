@@ -5,10 +5,15 @@ import { forEachOrg } from "../../common/tenant";
 import { StorageMultipartService } from "../storage/storage-multipart.service";
 import { FileQuarantineService } from "../storage/file-quarantine.service";
 import { StorageService } from "../storage/storage.service";
+import {
+  StoragePendingPurgeService,
+  type PendingPurgeRow,
+} from "../storage/storage-pending-purge.service";
 
 const STALE_PENDING_SCAN_MS = 24 * 60 * 60 * 1000;
 const INFECTED_REVIEW_MS = 48 * 60 * 60 * 1000;
 const SWEEP_BATCH = 50;
+const PENDING_PURGE_BATCH = 100;
 
 export interface StorageSweepResult {
   organizations: number;
@@ -16,6 +21,8 @@ export interface StorageSweepResult {
   quarantineExpired: number;
   s3ObjectsDeleted: number;
   deleteFailures: number;
+  pendingPurgeConfirmed: number;
+  pendingPurgeFailed: number;
 }
 
 @Injectable()
@@ -27,6 +34,7 @@ export class CronStorageSweepService {
     private readonly multipart: StorageMultipartService,
     private readonly quarantine: FileQuarantineService,
     private readonly storage: StorageService,
+    private readonly pendingPurge: StoragePendingPurgeService,
   ) {}
 
   async sweep(): Promise<StorageSweepResult> {
@@ -36,6 +44,8 @@ export class CronStorageSweepService {
       quarantineExpired: 0,
       s3ObjectsDeleted: 0,
       deleteFailures: 0,
+      pendingPurgeConfirmed: 0,
+      pendingPurgeFailed: 0,
     };
 
     // forEachOrg, not a hand-rolled enumeration: it opens the tenant transaction that sets
@@ -50,9 +60,64 @@ export class CronStorageSweepService {
         `${result.multipartAborted} multipart aborted, ` +
         `${result.quarantineExpired} quarantine expired, ` +
         `${result.s3ObjectsDeleted} S3 objects deleted, ` +
+        `${result.pendingPurgeConfirmed} pending-purge confirmed, ` +
+        `${result.pendingPurgeFailed} pending-purge still failing, ` +
         `${result.deleteFailures} deletion failure(s) left blocked`,
     );
     return result;
+  }
+
+  /*
+   * The organization purge and e-sign document deletion both open a
+   * `storage_pending_purge` row BEFORE attempting the object delete, precisely
+   * so a crash or a provider failure between the two leaves a record. Nothing
+   * had ever read one back, so every row those writers parked at `pending` or
+   * `failed` was an object that would never be deleted and a leak no other
+   * sweep could find — the pointer lived only in this table. This is that
+   * reader.
+   */
+  private async drainPendingPurge(
+    orgId: string,
+    result: StorageSweepResult,
+  ): Promise<void> {
+    let rows: PendingPurgeRow[];
+    try {
+      rows = await this.pendingPurge.listForRetry(orgId, PENDING_PURGE_BATCH);
+    } catch (err) {
+      this.logger.error(`[storage-sweep] pending-purge scan failed: ${String(err)}`, { orgId });
+      return;
+    }
+
+    for (const row of rows) {
+      // deleteFileIfPresent, not deleteFile: an object already gone is the purge
+      // succeeding, and retrying it forever is what would keep the row alive.
+      try {
+        await this.storage.deleteFileIfPresent(orgId, row.storageKey);
+      } catch (err) {
+        result.pendingPurgeFailed += 1;
+        try {
+          await this.pendingPurge.markFailed(row.id, String(err));
+        } catch (markErr) {
+          this.logger.error(
+            `[storage-sweep] pending-purge failure could not be recorded: ${String(markErr)}`,
+            { orgId, purpose: row.purpose },
+          );
+        }
+        continue;
+      }
+      // Confirm only after the object is gone, never before: the row is the
+      // write-ahead record and confirming first would discard it while the
+      // object survived.
+      try {
+        await this.pendingPurge.markConfirmed(row.id);
+        result.pendingPurgeConfirmed += 1;
+      } catch (err) {
+        this.logger.error(
+          `[storage-sweep] pending-purge confirmation failed; row is retried next sweep: ${String(err)}`,
+          { orgId, purpose: row.purpose },
+        );
+      }
+    }
   }
 
   private async sweepOrg(orgId: string, result: StorageSweepResult): Promise<void> {
@@ -62,6 +127,8 @@ export class CronStorageSweepService {
     } catch (err) {
       this.logger.warn(`Multipart sweep failed: ${String(err)}`, { orgId });
     }
+
+    await this.drainPendingPurge(orgId, result);
 
     const now = Date.now();
     const stalePendingCutoff = new Date(now - STALE_PENDING_SCAN_MS);
