@@ -22,7 +22,55 @@ import {
   FREE_HUDDLE_UPGRADE_MESSAGE,
   HUDDLE_MESH_MAX_PARTICIPANTS,
 } from "../billing/core/plan-entitlements.constants";
+import { flattenChannelMember } from "./chat-channel-member-shape";
 export { HUDDLE_MESH_MAX_PARTICIPANTS };
+
+/** Huddle columns that reach the client. `orgId` and `startedByMembershipId` deliberately do not. */
+export const HUDDLE_WIRE_COLUMNS = {
+  id: true,
+  channelId: true,
+  status: true,
+  calendarEventId: true,
+  startedAt: true,
+  endedAt: true,
+} as const;
+
+/** Participant columns that reach the client. `orgId` and `membershipId` deliberately do not. */
+export const HUDDLE_PARTICIPANT_WIRE_COLUMNS = {
+  id: true,
+  huddleId: true,
+  joinedAt: true,
+  leftAt: true,
+  isMuted: true,
+  handRaised: true,
+  isScreenSharing: true,
+} as const;
+
+/** Every key a huddle carries on the wire, and nothing else. */
+export const HUDDLE_WIRE_KEYS = [
+  "calendarEventId",
+  "channelId",
+  "endedAt",
+  "id",
+  "participants",
+  "startedAt",
+  "startedBy",
+  "startedByUser",
+  "status",
+] as const;
+
+/** Every key a huddle participant carries on the wire, and nothing else. */
+export const HUDDLE_PARTICIPANT_WIRE_KEYS = [
+  "handRaised",
+  "huddleId",
+  "id",
+  "isMuted",
+  "isScreenSharing",
+  "joinedAt",
+  "leftAt",
+  "user",
+  "userId",
+] as const;
 
 @Injectable()
 export class ChatHuddlesService {
@@ -119,14 +167,37 @@ export class ChatHuddlesService {
       return null;
     }
 
-    return this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.orgId, orgId), eq(chatHuddles.id, huddle.id)),
+    return this.loadHuddleWire(huddle.id, orgId);
+  }
+
+  /**
+   * The one wire shape a huddle is read in, by every route that returns one.
+   *
+   * `chat_huddle_participants` reaches a person only through `organization_members`, and this read
+   * used to ship that join verbatim as `participants[].membership.user` while the client's
+   * `HuddleParticipant` declared `user` and `userId` at the top level — and
+   * `apiClient.get<Huddle | null>` is a cast, so the compiler vouched for a shape the API had never
+   * sent. `membership.columns` was additionally `{}`, so `userId` was not even selected: every tile
+   * and every screenshare label read "Unknown", `isInHuddle` was permanently false so the huddle
+   * panel never rendered, and the WebRTC mesh had no peer ids to dial.
+   *
+   * The join is flattened by the same `flattenChannelMember` the channel-member routes use, so the
+   * two member shapes in chat are one shape. `startedByMembership` becomes `startedByUser`, and
+   * `startedBy` carries the host's USER id — the client compares it to its own user id, and the
+   * membership id it used to receive could never match. `orgId`, `membershipId` and
+   * `startedByMembershipId` leave the wire with them: internal join keys the client never read.
+   */
+  private async loadHuddleWire(huddleId: number, orgId: string) {
+    const row = await this.db.query.chatHuddles.findFirst({
+      where: and(eq(chatHuddles.orgId, orgId), eq(chatHuddles.id, huddleId)),
+      columns: HUDDLE_WIRE_COLUMNS,
       with: {
         participants: {
           where: isNull(chatHuddleParticipants.leftAt),
+          columns: HUDDLE_PARTICIPANT_WIRE_COLUMNS,
           with: {
             membership: {
-              columns: {},
+              columns: { userId: true },
               with: {
                 user: { columns: { id: true, name: true, image: true } },
               },
@@ -134,13 +205,21 @@ export class ChatHuddlesService {
           },
         },
         startedByMembership: {
-          columns: {},
+          columns: { userId: true },
           with: {
             user: { columns: { id: true, name: true } },
           },
         },
       },
     });
+    if (!row) return null;
+    const { startedByMembership, participants, ...huddle } = row;
+    return {
+      ...huddle,
+      startedBy: startedByMembership?.userId ?? null,
+      startedByUser: startedByMembership?.user ?? null,
+      participants: participants.map(flattenChannelMember),
+    };
   }
 
   async startHuddle(channelId: number, userId: string, orgId: string) {
@@ -298,7 +377,7 @@ export class ChatHuddlesService {
       }
     }
 
-    return huddle;
+    return this.loadHuddleWire(huddle.id, orgId);
   }
 
   async joinHuddle(huddleId: number, userId: string, orgId: string) {
