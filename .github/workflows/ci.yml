@@ -652,6 +652,25 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:db-call-count:self-test && pnpm check:db-call-count
 
+      # BLOCKING. check:query-projections reads only the TOP-LEVEL keys of a
+      # relational query — by design, it tracks brace depth so a `columns:` nested
+      # inside a `with:` does NOT count as a projection. That leaves the relation
+      # itself unmeasured, and in Drizzle `with: { rel: true }` selects EVERY
+      # column of the related table (verified against the installed dialect;
+      # `with: { rel: { where: ... } }` takes the same branch, because a config
+      # without a `columns:` key falls through to Object.keys(tableConfig.columns)).
+      # Two clauses here are at an allowance of ZERO and need no product decision:
+      # a relation onto the GLOBAL users row, and a relation onto a table carrying
+      # a credential column. The second found four live sites when it was written —
+      # GET /hr/recruitment/jobs/:jobId was returning every applicant's
+      # tracking_token, the bearer credential for the unauthenticated
+      # GET /public/application-status/:token. The population total is a RATCHET,
+      # not a pass: narrowing most of it changes a response DTO, which is the
+      # product decision ticket 20 box 1 is blocked on.
+      - name: A with: block does not ship a whole related row
+        if: ${{ !cancelled() }}
+        run: pnpm check:relation-hydration:self-test && pnpm check:relation-hydration
+
       # BLOCKING as of 2026-09-02. It was rc=1 on both the gate and its self-test
       # at 76 against a baseline of 75. Bisected by running the CURRENT detector
       # over each tree: the 76th was KbTagsService.setArticleTags, a primary read
