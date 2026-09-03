@@ -12,12 +12,14 @@ import type {
   CreateModuleInput,
   UpdateModuleInput,
 } from "./dto/iterations.schemas";
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class ModulesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listModules(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const moduleList = await this.db
       .select({
         id: modules.id,

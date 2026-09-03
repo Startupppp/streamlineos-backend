@@ -67,14 +67,14 @@ export class ProjectsMembersService {
     u: CurrentUserContext,
     projectId: number,
   ): Promise<void> {
-    if (u.isOrgOwner) return;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
       columns: { managerMembershipId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
+    if (u.isOrgOwner) return;
+    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
+    if (perms.has("build:manage")) return;
     const callerMid = actingMembershipId(u.principal);
     if (callerMid !== null && project.managerMembershipId === callerMid) return;
     const membership = await this.db

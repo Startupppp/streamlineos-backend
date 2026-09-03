@@ -37,25 +37,27 @@ function makeSelectChain(result: unknown = []): Db["select"] {
 }
 
 describe("ProjectsWebhooksService — cross-tenant isolation", () => {
-  it("listWebhooks scopes WHERE to the requesting org (cross-tenant isolation — attacker gets empty list)", async () => {
+  it("listWebhooks refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) });
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = {
+      query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
     const svc = new ProjectsWebhooksService(db);
 
-    const result = await svc.listWebhooks(ATTACKER_ORG, 1);
+    await expect(svc.listWebhooks(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
 
-    expect(where).toHaveBeenCalled();
-    const predicate = where.mock.calls[0]?.[0];
+    expect(where).not.toHaveBeenCalled();
+    const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
     expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
     expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
-    expect(result).toHaveLength(0);
   });
 
   it("listWebhooks returns webhooks for the owning org (control — same-tenant access works)", async () => {
     const fakeWebhook = { id: 1, orgId: OWNER_ORG, projectId: 1, url: "https://x.com", events: [], isActive: true, createdAt: new Date() };
     const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([fakeWebhook]) }),

@@ -19,26 +19,28 @@ const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
 
 describe("ModulesService — cross-tenant isolation", () => {
-  it("listModules scopes WHERE to requesting org and returns empty for attacker (cross-tenant isolation)", async () => {
+  it("listModules refuses a project the requesting org does not own (cross-tenant isolation — 404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = {
+      query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
     const svc = new ModulesService(db);
 
-    const result = await svc.listModules(ATTACKER_ORG, 1);
+    await expect(svc.listModules(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
 
-    expect(where).toHaveBeenCalled();
-    const predicate = where.mock.calls[0]?.[0];
+    expect(where).not.toHaveBeenCalled();
+    const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
     expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
     expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
-    expect(result).toHaveLength(0);
   });
 
   it("listModules returns modules for the owning org (control — same-tenant access works)", async () => {
     const fakeModule = { id: 1, orgId: OWNER_ORG, name: "Alpha", status: "IN_PROGRESS" };
     let call = 0;
     const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
       select: jest.fn().mockImplementation(() => {
         call++;
         if (call === 1) {
@@ -55,26 +57,28 @@ describe("ModulesService — cross-tenant isolation", () => {
 });
 
 describe("SprintsService — cross-tenant isolation", () => {
-  it("listSprints scopes WHERE to requesting org and returns empty for attacker (cross-tenant isolation)", async () => {
+  it("listSprints refuses a project the requesting org does not own (cross-tenant isolation — 404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = {
+      query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
     const svc = new SprintsService(db, null);
 
-    const result = await svc.listSprints(ATTACKER_ORG, 1);
+    await expect(svc.listSprints(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
 
-    expect(where).toHaveBeenCalled();
-    const predicate = where.mock.calls[0]?.[0];
+    expect(where).not.toHaveBeenCalled();
+    const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
     expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
     expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
-    expect(result).toHaveLength(0);
   });
 
   it("listSprints returns sprints for the owning org (control — same-tenant access works)", async () => {
     const fakeSprint = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "Sprint 1", status: "ACTIVE" };
     let call = 0;
     const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
       select: jest.fn().mockImplementation(() => {
         call++;
         if (call === 1) {

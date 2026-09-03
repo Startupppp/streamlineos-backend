@@ -4,12 +4,14 @@ import { cycles, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateCycleInput, CycleListQuery, UpdateCycleInput } from "./dto/iterations.schemas";
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class CyclesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listCycles(orgId: string, projectId: number, query: CycleListQuery) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const conditions = [eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)];
     if (query.status) conditions.push(eq(cycles.status, query.status));
 

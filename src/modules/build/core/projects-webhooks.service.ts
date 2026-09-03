@@ -5,12 +5,14 @@ import type { Db } from "../../../db/drizzle.module";
 import { projectWebhooks, webhookDeliveries } from "../../../db/schema/build/tasks";
 import type { CreateWebhookInput } from "./dto/webhook.schemas";
 import { generateWebhookSecret } from "./projects-webhooks-dispatch.service";
+import { assertProjectInOrg } from "./project-access";
 
 @Injectable()
 export class ProjectsWebhooksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listWebhooks(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const rows = await this.db
       .select({
         id: projectWebhooks.id,

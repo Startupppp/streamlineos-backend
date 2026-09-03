@@ -7,6 +7,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateSprintInput, UpdateSprintInput } from "./dto/iterations.schemas";
 import { ProjectsWebhooksDispatchService } from "../../build/core/projects-webhooks-dispatch.service";
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class SprintsService {
@@ -16,6 +17,7 @@ export class SprintsService {
   ) {}
 
   async listSprints(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const sprintList = await this.db
       .select({
         id: sprints.id,

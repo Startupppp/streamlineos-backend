@@ -5,12 +5,14 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateEpicInput, UpdateEpicInput } from "./dto/iterations.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class EpicsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listEpics(orgId: string, projectId: number) {
+  async listEpics(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     return this.db.query.tickets.findMany({
       where: and(
         eq(tickets.orgId, orgId),
