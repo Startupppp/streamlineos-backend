@@ -6631,7 +6631,7 @@
       "maxBatchSize": 500,
       "maxDurationMs": 60000,
       "dbCallBasis": "default-ceiling",
-      "note": "Orphaned object sweep.",
+      "note": "Orphaned object sweep. It is the ONLY worker batch in this manifest that leaves the process, and it must: reconciling the object store is what it does.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": 8,
       "measuredResponseBytes": 166,
@@ -6692,7 +6692,9 @@
             "overPrdCeiling": false
           }
         }
-      }
+      },
+      "downstreamCallBasis": "measured-and-unreconcilable-at-this-unit",
+      "downstreamCallNote": "MEASURED 8 outbound calls, both tenants, 40 samples, all to one origin: https://streamlineos.<bucket>.r2.cloudflarestorage.com — the Cloudflare R2 bucket this sweep exists to reconcile, one call per organisation over the 8 in the seed. So the 8 are not a stray provider call, and maxDownstreamCalls=0 is not a magnitude that needs raising: it is the WRONG UNIT. forEachOrg makes this count O(organisations swept), so no fixed per-request integer describes the route on any deployment other than the one it was measured on — writing 8 here would make the gate green on this seed and meaningless in production. The ceiling is deliberately LEFT AT 0 and the gate deliberately LEFT FAILING rather than rubber-stamped. Closing it needs a per-organisation unit (a maxDownstreamCallsPerOrg pair in src/scripts/check-route-budgets.mjs, plus the harness recording the org count it swept) or a product decision that a per-request cap is the right shape for an all-tenant sweep. The other 11 worker batches genuinely measure 0, so the invariant this ceiling encodes -- a worker batch does not leave the process -- is worth keeping for them."
     }
   },
   "measurement": {
