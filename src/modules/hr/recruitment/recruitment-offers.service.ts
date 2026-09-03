@@ -1,23 +1,29 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { randomBytes } from "node:crypto";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
-import {
-  candidateApplications,
-  candidateOffers,
-  candidates,
-  jobPostings,
-  offerNegotiations,
-  offerVersions,
-  type OfferNegotiationDirection,
-} from "../../../db/schema";
+import { and, desc, eq } from "drizzle-orm";
+import { candidateOffers, candidates, type OfferNegotiationDirection } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AutomationService } from "../../automation/automation.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { RecruitmentHandoffService } from "./recruitment-handoff.service";
-import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import {
+  approveOffer,
+  buildAcceptanceToken,
+  rejectOfferApproval,
+  submitOfferForApproval,
+} from "./recruitment-offer-approvals";
+import { queryOrgOffers } from "./recruitment-offer-list-query";
+import { addOfferNegotiationEntry, listOfferNegotiations } from "./recruitment-offer-negotiations";
+import {
+  deferOfferEffect,
+  dispatchOfferAutomation,
+  type DispatchedOfferStatus,
+} from "./recruitment-offer-effects";
+import {
+  listOfferVersions,
+  recordInitialOfferVersion,
+  snapshotOfferVersion,
+} from "./recruitment-offer-versions";
 import type {
   CreateOfferInput,
   CreateOfferNegotiationInput,
@@ -28,6 +34,18 @@ import type {
 const LOCKED_STATUSES = new Set(["SENT", "VIEWED", "ACCEPTED", "DECLINED", "COUNTERED", "EXPIRED"]);
 const COMP_FIELDS = ["offeredSalary", "offeredDesignation", "joiningDate", "validUntil"] as const;
 
+/**
+ * The `candidate_offers` record itself — reads, creation, terms edits and deletion — and the
+ * tenant/object-level load (`findOffer`, `ensureCandidate`) every other offer surface routes
+ * through. §4: a miss inside the wrong tenant is a 404 here, never a 403 downstream.
+ *
+ * The three behaviours that change on their own schedules live beside this file rather than
+ * in it: the approval state machine (`recruitment-offer-approvals`), the candidate-facing
+ * negotiation (`recruitment-offer-negotiations`), the `offer_versions` write protocol
+ * (`recruitment-offer-versions`) and the post-commit automation/handoff dispatch
+ * (`recruitment-offer-effects`). Each is loaded here after the offer has been authorized, so
+ * the tenant assertion stays in exactly one place.
+ */
 @Injectable()
 export class RecruitmentOffersService {
   private readonly logger = new Logger(RecruitmentOffersService.name);
@@ -47,55 +65,8 @@ export class RecruitmentOffersService {
     });
   }
 
-  async listAllOffers(orgId: string, query: OfferListInput) {
-    const conditions = [eq(candidateOffers.orgId, orgId)];
-    if (query.status) conditions.push(eq(candidateOffers.offerStatus, query.status));
-    const baseWhere = and(...conditions);
-    const position = decodeCursor(query.cursor);
-    if (position)
-      conditions.push(keysetBeforeId(candidateOffers.createdAt, candidateOffers.id, position));
-    const where = and(...conditions);
-
-    const [rows, totalRow] = await Promise.all([
-      this.db
-        .select({
-          id: candidateOffers.id,
-          candidateId: candidateOffers.candidateId,
-          candidateFirstName: candidates.firstName,
-          candidateLastName: candidates.lastName,
-          candidateEmail: candidates.email,
-          jobPostingId: candidateOffers.jobPostingId,
-          jobTitle: jobPostings.title,
-          offerStatus: candidateOffers.offerStatus,
-          offeredSalary: candidateOffers.offeredSalary,
-          offeredDesignation: candidateOffers.offeredDesignation,
-          joiningDate: candidateOffers.joiningDate,
-          validUntil: candidateOffers.validUntil,
-          sentAt: candidateOffers.sentAt,
-          respondedAt: candidateOffers.respondedAt,
-          createdAt: candidateOffers.createdAt,
-        })
-        .from(candidateOffers)
-        .innerJoin(candidates, eq(candidateOffers.candidateId, candidates.id))
-        .leftJoin(jobPostings, eq(candidateOffers.jobPostingId, jobPostings.id))
-        .where(where)
-        .orderBy(desc(candidateOffers.createdAt), desc(candidateOffers.id))
-        .limit(query.pageSize + 1),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(candidateOffers)
-        .where(baseWhere)
-        .then((rows) => rows[0] ?? { total: 0 }),
-    ]);
-    const page = buildCursorPage(rows, query.pageSize, (offer) => ({
-      sortValue: offer.createdAt.toISOString(),
-      id: String(offer.id),
-    }));
-    return {
-      items: page.data,
-      total: Number(totalRow.total),
-      pagination: page.pagination,
-    };
+  listAllOffers(orgId: string, query: OfferListInput) {
+    return queryOrgOffers(this.db, orgId, query);
   }
 
   async createOffer(orgId: string, userId: string, candidateId: number, input: CreateOfferInput) {
@@ -116,18 +87,7 @@ export class RecruitmentOffersService {
       })
       .returning();
 
-    await this.db.insert(offerVersions).values({
-      orgId,
-      offerId: offer.id,
-      versionNumber: 1,
-      offeredSalary: offer.offeredSalary,
-      offeredDesignation: offer.offeredDesignation,
-      joiningDate: offer.joiningDate,
-      validUntil: offer.validUntil,
-      notes: offer.notes,
-      changeReason: "Offer created",
-      changedBy: userId,
-    });
+    await recordInitialOfferVersion(this.db, orgId, offer.id, offer, userId);
 
     this.audit.log({
       action: "OFFER_CREATED",
@@ -143,96 +103,27 @@ export class RecruitmentOffersService {
 
   async submitForApproval(orgId: string, offerId: number, userId: string) {
     const offer = await this.findOffer(orgId, offerId);
-    if (offer.offerStatus !== "DRAFT") {
-      throw new BadRequestException("Only DRAFT offers can be submitted for approval.");
-    }
-    await this.db
-      .update(candidateOffers)
-      .set({ offerStatus: "PENDING_APPROVAL", updatedAt: new Date() })
-      .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
-    this.audit.log({
-      action: "OFFER_SUBMITTED_FOR_APPROVAL",
-      userId,
-      orgId,
-      targetId: String(offerId),
-      targetType: "candidate_offer",
-    });
-    return { success: true };
+    return submitOfferForApproval(this.db, this.audit, orgId, offer, userId);
   }
 
   async approveOffer(orgId: string, userId: string, offerId: number, remarks?: string) {
     const offer = await this.findOffer(orgId, offerId);
-    if (offer.offerStatus !== "PENDING_APPROVAL") {
-      throw new BadRequestException("Only PENDING_APPROVAL offers can be approved.");
-    }
-    const now = new Date();
-    const tokenFields = offer.acceptanceToken ? {} : this.buildAcceptanceToken();
-    await this.db
-      .update(candidateOffers)
-      .set({
-        offerStatus: "SENT",
-        approvedBy: userId,
-        approvedAt: now,
-        approvalRemarks: remarks ?? null,
-        sentAt: now,
-        updatedAt: now,
-        ...tokenFields,
-      })
-      .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
-    this.audit.log({
-      action: "OFFER_APPROVED",
-      userId,
-      orgId,
-      targetId: String(offerId),
-      targetType: "candidate_offer",
-      metadata: { remarks },
-    });
-    return { success: true };
-  }
-
-  private buildAcceptanceToken() {
-    return {
-      acceptanceToken: randomBytes(24).toString("hex"),
-      acceptanceTokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    };
+    return approveOffer(this.db, this.audit, orgId, offer, userId, remarks);
   }
 
   async rejectApproval(orgId: string, offerId: number, remarks: string | undefined, userId: string) {
     const offer = await this.findOffer(orgId, offerId);
-    if (offer.offerStatus !== "PENDING_APPROVAL") {
-      throw new BadRequestException("Only PENDING_APPROVAL offers can be rejected.");
-    }
-    await this.db
-      .update(candidateOffers)
-      .set({ offerStatus: "APPROVAL_REJECTED", approvalRemarks: remarks ?? null, updatedAt: new Date() })
-      .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
-    this.audit.log({
-      action: "OFFER_APPROVAL_REJECTED",
-      userId,
-      orgId,
-      targetId: String(offerId),
-      targetType: "candidate_offer",
-      metadata: { remarks },
-    });
-    return { success: true };
+    return rejectOfferApproval(this.db, this.audit, orgId, offer, remarks, userId);
   }
 
   async listVersions(orgId: string, offerId: number) {
     await this.findOffer(orgId, offerId);
-    return this.db.query.offerVersions.findMany({
-      limit: 100,
-      where: and(eq(offerVersions.offerId, offerId), eq(offerVersions.orgId, orgId)),
-      orderBy: [desc(offerVersions.versionNumber)],
-    });
+    return listOfferVersions(this.db, orgId, offerId);
   }
 
   async listNegotiations(orgId: string, offerId: number) {
     await this.findOffer(orgId, offerId);
-    return this.db.query.offerNegotiations.findMany({
-      limit: 100,
-      where: and(eq(offerNegotiations.offerId, offerId), eq(offerNegotiations.orgId, orgId)),
-      orderBy: [asc(offerNegotiations.createdAt)],
-    });
+    return listOfferNegotiations(this.db, orgId, offerId);
   }
 
   async addNegotiationEntry(
@@ -243,64 +134,7 @@ export class RecruitmentOffersService {
     userId?: string,
   ) {
     const offer = await this.findOffer(orgId, offerId);
-
-    const [entry] = await this.db
-      .insert(offerNegotiations)
-      .values({
-        orgId,
-        offerId,
-        direction,
-        proposedSalary: input.proposedSalary !== undefined ? String(input.proposedSalary) : null,
-        proposedJoiningDate: input.proposedJoiningDate,
-        message: input.message,
-        createdBy: userId,
-      })
-      .returning();
-
-    if (direction === "CANDIDATE_COUNTER") {
-      await this.db
-        .update(candidateOffers)
-        .set({ offerStatus: "COUNTERED", respondedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
-      if (offer.offeredBy) {
-        this.audit.log({
-          action: "OFFER_COUNTERED_BY_CANDIDATE",
-          userId: offer.offeredBy,
-          orgId,
-          targetId: String(offerId),
-          targetType: "candidate_offer",
-          metadata: { proposedSalary: entry.proposedSalary, source: "public_candidate_response" },
-        });
-      }
-    }
-
-    if (direction === "INTERNAL_RESPONSE" && input.applyToOffer && userId) {
-      const hasNewTerms = input.proposedSalary !== undefined || input.proposedJoiningDate !== undefined;
-      if (hasNewTerms) {
-        await this.snapshotVersion(orgId, offerId, offer, userId, "Terms revised during negotiation");
-        const now = new Date();
-        await this.db
-          .update(candidateOffers)
-          .set({
-            offeredSalary: input.proposedSalary !== undefined ? String(input.proposedSalary) : offer.offeredSalary,
-            joiningDate: input.proposedJoiningDate ?? offer.joiningDate,
-            offerStatus: "SENT",
-            sentAt: now,
-            updatedAt: now,
-          })
-          .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)));
-        this.audit.log({
-          action: "OFFER_TERMS_REVISED",
-          userId,
-          orgId,
-          targetId: String(offerId),
-          targetType: "candidate_offer",
-          metadata: { proposedSalary: input.proposedSalary },
-        });
-      }
-    }
-
-    return entry;
+    return addOfferNegotiationEntry(this.db, this.audit, orgId, offer, direction, input, userId);
   }
 
   async updateOffer(orgId: string, userId: string, candidateId: number, offerId: number, input: UpdateOfferInput) {
@@ -320,7 +154,7 @@ export class RecruitmentOffersService {
       );
     }
     if (compFieldsChanged) {
-      await this.snapshotVersion(orgId, offerId, existing, userId, "Offer terms updated");
+      await snapshotOfferVersion(this.db, orgId, offerId, existing, userId, "Offer terms updated");
     }
 
     const now = new Date();
@@ -330,7 +164,7 @@ export class RecruitmentOffersService {
       updateData.offerStatus = input.offerStatus;
       if (input.offerStatus === "SENT") {
         if (!input.sentAt) updateData.sentAt = now;
-        if (!existing.acceptanceToken) Object.assign(updateData, this.buildAcceptanceToken());
+        if (!existing.acceptanceToken) Object.assign(updateData, buildAcceptanceToken());
       }
       if (input.offerStatus === "VIEWED" && !input.viewedAt) updateData.viewedAt = now;
       if (["ACCEPTED", "DECLINED", "COUNTERED"].includes(input.offerStatus) && !input.respondedAt) {
@@ -353,136 +187,41 @@ export class RecruitmentOffersService {
       .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)))
       .returning();
 
-    const dispatchedStatus = input.offerStatus;
+    const dispatchedStatus: UpdateOfferInput["offerStatus"] = input.offerStatus;
     if (
       dispatchedStatus === "SENT" ||
       dispatchedStatus === "ACCEPTED" ||
       dispatchedStatus === "DECLINED"
     ) {
-      this.deferAfterCommit("offer automation dispatch", orgId, () =>
-        this.dispatchOfferAutomation(orgId, candidateId, offerId, dispatchedStatus, existing.offerStatus, {
-          offeredSalary: updated.offeredSalary,
-          joiningDate: updated.joiningDate,
-          validUntil: updated.validUntil,
-        }),
-      );
+      this.dispatchStatusEffects(orgId, candidateId, offerId, dispatchedStatus, existing.offerStatus, {
+        offeredSalary: updated.offeredSalary,
+        joiningDate: updated.joiningDate,
+        validUntil: updated.validUntil,
+      });
     }
 
     return updated;
   }
 
-  private async snapshotVersion(
-    orgId: string,
-    offerId: number,
-    existing: typeof candidateOffers.$inferSelect,
-    userId: string,
-    reason: string,
-  ) {
-    const [{ count }] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(offerVersions)
-      .where(eq(offerVersions.offerId, offerId));
-
-    await this.db.insert(offerVersions).values({
-      orgId,
-      offerId,
-      versionNumber: count + 1,
-      offeredSalary: existing.offeredSalary,
-      offeredDesignation: existing.offeredDesignation,
-      joiningDate: existing.joiningDate,
-      validUntil: existing.validUntil,
-      notes: existing.notes,
-      changeReason: reason,
-      changedBy: userId,
-    });
-  }
-
-  /**
-   * Runs an offer side effect after the request transaction commits, and reports it when it
-   * fails.
-   *
-   * The dispatch was a discarded promise with a rejection handler that returned undefined, and
-   * `handleOfferAccepted` — which creates the employment records an accepted offer turns into —
-   * was a second one nested inside it. An accepted offer whose handoff threw therefore left no
-   * employee record and no trace that anything had gone wrong; the candidate showed as hired
-   * and nothing downstream existed. The handoff is now awaited inside the dispatch so its
-   * failure reaches this reporter, and the whole thing is deferred through
-   * `registerAfterCommit` so it runs in its own tenant transaction after the offer row commits
-   * (CLAUDE.md §4) rather than on a handle whose tenant GUC is about to be gone.
-   */
-  private deferAfterCommit(label: string, orgId: string, work: () => Promise<unknown>): void {
-    if (registerAfterCommit(work)) return;
-    void work().catch((error: unknown) => {
-      this.logger.error(
-        `${label} failed for org ${orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-      );
-    });
-  }
-
-  private async dispatchOfferAutomation(
+  private dispatchStatusEffects(
     orgId: string,
     candidateId: number,
     offerId: number,
-    newStatus: "SENT" | "ACCEPTED" | "DECLINED",
+    newStatus: DispatchedOfferStatus,
     previousStatus: string,
-    offer: { offeredSalary: string | null; joiningDate: string | null; validUntil: string | null },
-  ): Promise<void> {
-    const [candidate, latestApp] = await Promise.all([
-      this.db.query.candidates.findFirst({
-        where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-        columns: { firstName: true, lastName: true, email: true },
-      }),
-      this.db.query.candidateApplications.findFirst({
-        where: eq(candidateApplications.candidateId, candidateId),
-        with: { jobPosting: { columns: { title: true } } },
-        orderBy: (t, { desc: d }) => [d(t.appliedAt)],
-      }),
-    ]);
-
-    const candidateName = candidate ? `${candidate.firstName} ${candidate.lastName}` : "";
-    const candidateEmail = candidate?.email ?? "";
-    const jobTitle = latestApp?.jobPosting?.title ?? "";
-    const respondedAt = new Date().toISOString();
-
-    if (newStatus === "SENT") {
-      if (previousStatus === "SENT") return;
-      await this.automation.runAutomationsForEvent(orgId, "offer.sent", {
-        offerId,
+    terms: { offeredSalary: string | null; joiningDate: string | null; validUntil: string | null },
+  ): void {
+    deferOfferEffect(this.logger, "offer automation dispatch", orgId, () =>
+      dispatchOfferAutomation(
+        { db: this.db, automation: this.automation, handoff: this.handoff },
+        orgId,
         candidateId,
-        candidateName,
-        candidateEmail,
-        jobTitle,
-        offeredSalary: offer.offeredSalary ?? "",
-        joiningDate: offer.joiningDate ?? null,
-        validUntil: offer.validUntil ?? null,
-        sentAt: respondedAt,
-      });
-      return;
-    }
-
-    if (newStatus === "ACCEPTED") {
-      await this.automation.runAutomationsForEvent(orgId, "offer.accepted", {
         offerId,
-        candidateId,
-        candidateName,
-        candidateEmail,
-        jobTitle,
-        decision: "ACCEPTED",
-        respondedAt,
-      });
-      await this.handoff.handleOfferAccepted(orgId, candidateId, offerId);
-      return;
-    }
-
-    await this.automation.runAutomationsForEvent(orgId, "offer.rejected", {
-      offerId,
-      candidateId,
-      candidateName,
-      candidateEmail,
-      jobTitle,
-      decision: "REJECTED",
-      respondedAt,
-    });
+        newStatus,
+        previousStatus,
+        terms,
+      ),
+    );
   }
 
   async deleteOffer(orgId: string, candidateId: number, offerId: number, userId: string) {
