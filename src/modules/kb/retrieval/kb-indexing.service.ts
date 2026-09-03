@@ -1,7 +1,6 @@
-import { Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import {
-  kbArticleChunks,
   kbArticles,
   kbPages,
 } from "../../../db/schema";
@@ -9,11 +8,20 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
-import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { sha256, chunkText } from "./kb-chunk-utils";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
+import { embedChunksWithResumption } from "./kb-embedding-resumption";
+import {
+  deleteArticleChunks,
+  deletePageChunks,
+  loadArticleChunkState,
+  loadPageChunkState,
+  replaceArticleBodyChunks,
+  replacePageBodyChunks,
+  updateArticleChunkRevisions,
+  updatePageChunkAcl,
+} from "./kb-chunk-repository";
 
 export function isPageIndexable(page: {
   status: string;
@@ -22,16 +30,7 @@ export function isPageIndexable(page: {
   return page.status !== "archived" && page.deletedAt === null;
 }
 
-function articleBodyChunks(orgId: string, articleId: number) {
-  return and(
-    eq(kbArticleChunks.orgId, orgId),
-    eq(kbArticleChunks.articleId, articleId),
-    eq(kbArticleChunks.source, "article_body"),
-  );
-}
-
 const REINDEX_ALL_BATCH_SIZE = 100;
-const KB_INDEXING_FEATURE = "kb.indexing";
 
 export interface ReindexAllPagesResult {
   reindexed: number;
@@ -48,42 +47,7 @@ export class KbIndexingService {
     private readonly checkpoint: KbIngestionCheckpointService,
   ) {}
 
-  private async getPageChunkState(
-    orgId: string,
-    pageId: number,
-  ): Promise<{
-    contentHash: string | null;
-    pageVisibility: string | null;
-    pageProjectId: number | null;
-    pageCreatedById: string | null;
-    pageCreatedByMembershipId: number | null;
-    aclRevision: number | null;
-  } | null> {
-    const [existing] = await runInTenantTransaction(this.db, async (tx) =>
-      tx
-        .select({
-          contentHash: kbArticleChunks.contentHash,
-          pageVisibility: kbArticleChunks.pageVisibility,
-          pageProjectId: kbArticleChunks.pageProjectId,
-          pageCreatedById: kbArticleChunks.pageCreatedById,
-          pageCreatedByMembershipId: kbArticleChunks.pageCreatedByMembershipId,
-          aclRevision: kbArticleChunks.aclRevision,
-        })
-        .from(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.pageId, pageId),
-            eq(kbArticleChunks.source, "page_body"),
-          ),
-        )
-        .limit(1),
-    { orgId });
-
-    return existing ?? null;
-  }
-
-  private async embedWithResumption(
+  private embed(
     orgId: string,
     contentType: string,
     contentId: number,
@@ -91,75 +55,10 @@ export class KbIndexingService {
     chunks: string[],
     signal?: AbortSignal,
   ): Promise<number[][]> {
-    const cached = await this.checkpoint.loadCheckpoints(
-      orgId,
-      contentType,
-      contentId,
-      contentHash,
+    return embedChunksWithResumption(
+      { aiGateway: this.aiGateway, checkpoint: this.checkpoint, logger: this.logger },
+      { orgId, contentType, contentId, contentHash, chunks, signal },
     );
-
-    const resumedFrom = cached.size > 0 ? Math.min(...cached.keys()) : chunks.length;
-    if (cached.size > 0)
-      this.logger.log("KB ingestion resuming from checkpoint", {
-        orgId,
-        contentType,
-        contentId,
-        cachedChunks: cached.size,
-        totalChunks: chunks.length,
-        resumedFrom,
-      });
-
-    const vectors = new Array<number[]>(chunks.length);
-    const pending: number[] = [];
-    for (let i = 0; i < chunks.length; i++) {
-      const hit = cached.get(i);
-      if (hit === undefined) pending.push(i);
-      else vectors[i] = hit;
-    }
-
-    if (pending.length === 0) return vectors;
-
-    const embedResult = await this.aiGateway.embedBatchWithCredit({
-      texts: pending.map((i) => chunks[i]),
-      orgId,
-      feature: KB_INDEXING_FEATURE,
-      charge: true,
-    });
-
-    if (!embedResult.ok) {
-      if (embedResult.kind === "quota_exceeded")
-        throw new InsufficientAiCreditsException({ message: embedResult.message });
-      throw new ServiceUnavailableException(embedResult.message);
-    }
-
-    if (signal?.aborted) throw new DOMException("KB ingestion cancelled", "AbortError");
-
-    pending.forEach((chunkIndex, n) => {
-      vectors[chunkIndex] = embedResult.vectors[n];
-    });
-
-    await this.checkpoint.saveCheckpoints(
-      orgId,
-      contentType,
-      contentId,
-      contentHash,
-      pending.map((chunkIndex) => ({
-        chunkIndex,
-        content: chunks[chunkIndex],
-        embedding: vectors[chunkIndex],
-      })),
-    );
-
-    this.logger.log("KB ingestion chunks embedded", {
-      orgId,
-      contentType,
-      contentId,
-      embedded: pending.length,
-      reused: cached.size,
-      total: chunks.length,
-    });
-
-    return vectors;
   }
 
   async indexArticle(orgId: string, articleId: number, signal?: AbortSignal): Promise<void> {
@@ -193,17 +92,7 @@ export class KbIndexingService {
       return;
     }
 
-    const [firstExisting] = await runInTenantTransaction(this.db, async (tx) =>
-      tx
-        .select({
-          contentHash: kbArticleChunks.contentHash,
-          aclRevision: kbArticleChunks.aclRevision,
-          contentRevision: kbArticleChunks.contentRevision,
-        })
-        .from(kbArticleChunks)
-        .where(articleBodyChunks(orgId, articleId))
-        .limit(1),
-    { orgId });
+    const stored = await loadArticleChunkState(this.db, orgId, articleId);
 
     const contentRevision = article.contentRevision;
     const aclRevision = article.aclRevision;
@@ -211,20 +100,18 @@ export class KbIndexingService {
     // An unchanged hash returned unconditionally, stranding the chunk ACL: the candidate
     // gate joins acl_revision with `=`, so a restriction change that left the text alone
     // dropped the article out of retrieval until somebody edited its body.
-    if (firstExisting?.contentHash === contentHash) {
+    if (stored?.contentHash === contentHash) {
       if (
-        firstExisting.aclRevision === aclRevision &&
-        firstExisting.contentRevision === contentRevision
+        stored.aclRevision === aclRevision &&
+        stored.contentRevision === contentRevision
       )
         return;
 
       this.logger.log("KB article ACL updated (content unchanged)", { orgId, articleId });
-      await runInTenantTransaction(this.db, async (tx) =>
-        tx
-          .update(kbArticleChunks)
-          .set({ aclRevision, contentRevision })
-          .where(articleBodyChunks(orgId, articleId)),
-      { orgId });
+      await updateArticleChunkRevisions(this.db, orgId, articleId, {
+        aclRevision,
+        contentRevision,
+      });
       return;
     }
 
@@ -234,7 +121,7 @@ export class KbIndexingService {
       chunks: chunks.length,
     });
 
-    const embeddings = await this.embedWithResumption(
+    const embeddings = await this.embed(
       orgId,
       "article",
       articleId,
@@ -243,31 +130,15 @@ export class KbIndexingService {
       signal,
     );
 
-    await runInTenantTransaction(this.db, async (tx) => {
-      await tx
-        .delete(kbArticleChunks)
-        .where(articleBodyChunks(orgId, articleId));
-
-      await tx.insert(kbArticleChunks).values(
-        chunks.map((chunk, index) => ({
-          orgId,
-          articleId,
-          pageId: null,
-          attachmentId: null,
-          source: "article_body" as const,
-          chunkIndex: index,
-          content: chunk,
-          contentHash,
-          tokens: Math.ceil(chunk.length / 4),
-          embedding: embeddings[index],
-          embeddingModel: EMBEDDING_MODEL,
-          contentRevision,
-          aclRevision,
-        })),
-      );
-
-      await this.checkpoint.clearCheckpoints(tx, orgId, "article", articleId);
-    }, { orgId });
+    await replaceArticleBodyChunks(
+      this.db,
+      orgId,
+      articleId,
+      chunks,
+      embeddings,
+      { contentHash, contentRevision, aclRevision },
+      (tx) => this.checkpoint.clearCheckpoints(tx, orgId, "article", articleId),
+    );
 
     this.logger.log("KB article indexing committed", {
       orgId,
@@ -329,40 +200,29 @@ export class KbIndexingService {
       return 0;
     }
 
-    const stored = await this.getPageChunkState(orgId, pageId);
+    const stored = await loadPageChunkState(this.db, orgId, pageId);
     const contentHash = sha256(page.contentText);
-    const aclRevision = page.aclRevision;
+    const acl = {
+      pageVisibility: page.visibility,
+      pageProjectId: page.projectId,
+      pageCreatedById: page.createdById,
+      pageCreatedByMembershipId: page.createdByMembershipId,
+      aclRevision: page.aclRevision,
+    };
     const contentRevision = page.contentRevision;
 
     if (stored !== null && stored.contentHash === contentHash) {
       const aclChanged =
-        stored.pageVisibility !== page.visibility ||
-        stored.pageProjectId !== page.projectId ||
-        stored.pageCreatedById !== page.createdById ||
-        stored.pageCreatedByMembershipId !== page.createdByMembershipId ||
-        stored.aclRevision !== aclRevision;
+        stored.pageVisibility !== acl.pageVisibility ||
+        stored.pageProjectId !== acl.pageProjectId ||
+        stored.pageCreatedById !== acl.pageCreatedById ||
+        stored.pageCreatedByMembershipId !== acl.pageCreatedByMembershipId ||
+        stored.aclRevision !== acl.aclRevision;
 
       if (!aclChanged) return 0;
 
       this.logger.log("KB page ACL updated (content unchanged)", { orgId, pageId });
-      await runInTenantTransaction(this.db, async (tx) =>
-        tx
-          .update(kbArticleChunks)
-          .set({
-            pageVisibility: page.visibility,
-            pageProjectId: page.projectId,
-            pageCreatedById: page.createdById,
-            pageCreatedByMembershipId: page.createdByMembershipId,
-            aclRevision,
-          })
-          .where(
-            and(
-              eq(kbArticleChunks.pageId, pageId),
-              eq(kbArticleChunks.orgId, orgId),
-              eq(kbArticleChunks.source, "page_body"),
-            ),
-          ),
-      { orgId });
+      await updatePageChunkAcl(this.db, orgId, pageId, acl);
       return 0;
     }
 
@@ -379,7 +239,7 @@ export class KbIndexingService {
       chunks: chunks.length,
     });
 
-    const embeddings = await this.embedWithResumption(
+    const embeddings = await this.embed(
       orgId,
       "page",
       pageId,
@@ -388,41 +248,15 @@ export class KbIndexingService {
       signal,
     );
 
-    await runInTenantTransaction(this.db, async (tx) => {
-      await tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.pageId, pageId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "page_body"),
-          ),
-        );
-
-      await tx.insert(kbArticleChunks).values(
-        chunks.map((chunk, index) => ({
-          orgId,
-          articleId: null,
-          pageId,
-          attachmentId: null,
-          source: "page_body" as const,
-          chunkIndex: index,
-          content: chunk,
-          contentHash,
-          tokens: Math.ceil(chunk.length / 4),
-          embedding: embeddings[index],
-          embeddingModel: EMBEDDING_MODEL,
-          pageVisibility: page.visibility,
-          pageProjectId: page.projectId,
-          pageCreatedById: page.createdById,
-          pageCreatedByMembershipId: page.createdByMembershipId,
-          aclRevision,
-          contentRevision,
-        })),
-      );
-
-      await this.checkpoint.clearCheckpoints(tx, orgId, "page", pageId);
-    }, { orgId });
+    await replacePageBodyChunks(
+      this.db,
+      orgId,
+      pageId,
+      chunks,
+      embeddings,
+      { ...acl, contentHash, contentRevision },
+      (tx) => this.checkpoint.clearCheckpoints(tx, orgId, "page", pageId),
+    );
 
     this.logger.log("KB page indexing committed", {
       orgId,
@@ -434,29 +268,11 @@ export class KbIndexingService {
   }
 
   async removeArticleChunks(orgId: string, articleId: number): Promise<void> {
-    await runInTenantTransaction(this.db, async (tx) =>
-      tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.articleId, articleId),
-            eq(kbArticleChunks.orgId, orgId),
-          ),
-        ),
-    { orgId });
+    await deleteArticleChunks(this.db, orgId, articleId);
   }
 
   async removePageChunks(orgId: string, pageId: number): Promise<void> {
-    await runInTenantTransaction(this.db, async (tx) =>
-      tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.pageId, pageId),
-            eq(kbArticleChunks.orgId, orgId),
-          ),
-        ),
-    { orgId });
+    await deletePageChunks(this.db, orgId, pageId);
   }
 
   async bumpSpaceAclRevision(orgId: string, spaceId: number): Promise<void> {
