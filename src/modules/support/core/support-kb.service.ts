@@ -210,6 +210,7 @@ export class SupportKbService {
     if (!current) throw new NotFoundException("Article not found");
 
     const values: Partial<typeof kbArticles.$inferInsert> = {
+      updatedAt: new Date(),
       categoryId: input.categoryId,
       excerpt: input.excerpt,
       content: input.content,

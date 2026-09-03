@@ -143,6 +143,7 @@ export class HrCustomFieldsService {
     const [row] = await this.db
       .update(customFieldDefinitions)
       .set({
+        updatedAt: new Date(),
         label: input.name,
         options: input.options,
         settings: input.settings,

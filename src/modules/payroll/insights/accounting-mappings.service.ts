@@ -107,7 +107,7 @@ export class AccountingMappingsService {
 
     if (existing.length === 0) throw new NotFoundException("Accounting mapping not found");
 
-    const setValues: Partial<typeof payrollAccountingMappings.$inferInsert> = {};
+    const setValues: Partial<typeof payrollAccountingMappings.$inferInsert> = { updatedAt: new Date() };
     if (data.componentId !== undefined) setValues.componentId = data.componentId;
     if (data.category !== undefined) setValues.category = data.category;
     if (data.ledgerName !== undefined) setValues.ledgerName = data.ledgerName;

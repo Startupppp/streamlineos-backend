@@ -7,6 +7,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { hasPatchValues } from "../../../common/db/patch-values";
 
 @Injectable()
 export class KpisService {
@@ -60,11 +61,10 @@ export class KpisService {
 
     if (existing.length === 0) throw new NotFoundException("KPI not found.");
 
-    return this.db
-      .update(kpiDefinitions)
-      .set(data)
-      .where(and(eq(kpiDefinitions.id, id), eq(kpiDefinitions.orgId, orgId)))
-      .returning();
+    const scope = and(eq(kpiDefinitions.id, id), eq(kpiDefinitions.orgId, orgId));
+    if (!hasPatchValues(data)) return this.db.select().from(kpiDefinitions).where(scope);
+
+    return this.db.update(kpiDefinitions).set(data).where(scope).returning();
   }
 
   async deleteKpi(orgId: string, id: number) {
@@ -130,16 +130,10 @@ export class KpisService {
     if (existing.length === 0)
       throw new NotFoundException("Framework not found.");
 
-    return this.db
-      .update(competencyFrameworks)
-      .set(data)
-      .where(
-        and(
-          eq(competencyFrameworks.id, id),
-          eq(competencyFrameworks.orgId, orgId),
-        ),
-      )
-      .returning();
+    const scope = and(eq(competencyFrameworks.id, id), eq(competencyFrameworks.orgId, orgId));
+    if (!hasPatchValues(data)) return this.db.select().from(competencyFrameworks).where(scope);
+
+    return this.db.update(competencyFrameworks).set(data).where(scope).returning();
   }
 
   async listCompetencies(orgId: string, frameworkId: number) {

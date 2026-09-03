@@ -142,7 +142,7 @@ export class BudgetsService {
       throw new ForbiddenException("Budget is not in DRAFT status");
     }
 
-    const updates: Partial<typeof finBudgets.$inferInsert> = {};
+    const updates: Partial<typeof finBudgets.$inferInsert> = { updatedAt: new Date() };
     if (input.name !== undefined) updates.name = input.name;
     if (input.dimensionType !== undefined) updates.dimensionType = input.dimensionType;
 

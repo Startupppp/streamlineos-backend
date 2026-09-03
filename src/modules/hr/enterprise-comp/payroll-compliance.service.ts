@@ -31,6 +31,7 @@ import type {
   UpdateComplianceTaskInput,
   ListComplianceTasksInput,
 } from "./dto/enterprise-comp.schemas";
+import { hasPatchValues } from "../../../common/db/patch-values";
 
 function decodePaginationCursor(cursor: string | undefined) {
   if (cursor === undefined) return null;
@@ -348,6 +349,7 @@ export class PayrollComplianceService {
       setData["completedBy"] = actorId;
       setData["completedAt"] = new Date();
     }
+    if (!hasPatchValues(setData)) return existing;
 
     const [updated] = await this.db
       .update(hrPayrollComplianceTasks)

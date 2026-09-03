@@ -22,6 +22,7 @@ import type {
   UpdatePollInput,
   VotePollInput,
 } from "./dto/engagement-extras.schemas";
+import { hasPatchValues } from "../../../common/db/patch-values";
 
 const MIN_GROUP_SIZE = 5;
 
@@ -143,13 +144,15 @@ export class EngagementMoodPollsService {
       .limit(1);
     if (!poll) throw new NotFoundException("Poll not found.");
 
-    await this.db
-      .update(hrPolls)
-      .set({
-        ...(input.status !== undefined && { status: input.status }),
-        ...(input.question !== undefined && { question: input.question }),
-      })
-      .where(and(eq(hrPolls.id, pollId), eq(hrPolls.orgId, orgId)));
+    const values = {
+      ...(input.status !== undefined && { status: input.status }),
+      ...(input.question !== undefined && { question: input.question }),
+    };
+    if (hasPatchValues(values))
+      await this.db
+        .update(hrPolls)
+        .set(values)
+        .where(and(eq(hrPolls.id, pollId), eq(hrPolls.orgId, orgId)));
     return { success: true };
   }
 

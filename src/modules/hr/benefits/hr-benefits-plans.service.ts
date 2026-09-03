@@ -21,6 +21,7 @@ import type {
   BenefitPlansQuery,
 } from "./dto/benefits.schemas";
 import { boundHrReadLimit } from "../hr-read-limits";
+import { hasPatchValues } from "../../../common/db/patch-values";
 
 type BenefitPlansCursorScope = {
   orgId: string;
@@ -180,13 +181,16 @@ export class HrBenefitsPlansService {
     if (!existing) throw new NotFoundException("Enrollment window not found");
 
     const { opensAt, closesAt, ...rest } = data;
+    const values = {
+      ...rest,
+      ...(opensAt ? { opensAt: new Date(opensAt) } : {}),
+      ...(closesAt ? { closesAt: new Date(closesAt) } : {}),
+    };
+    if (!hasPatchValues(values)) return existing;
+
     const [updated] = await this.db
       .update(hrBenefitEnrollmentWindows)
-      .set({
-        ...rest,
-        ...(opensAt ? { opensAt: new Date(opensAt) } : {}),
-        ...(closesAt ? { closesAt: new Date(closesAt) } : {}),
-      })
+      .set(values)
       .where(and(eq(hrBenefitEnrollmentWindows.id, windowId), eq(hrBenefitEnrollmentWindows.orgId, orgId)))
       .returning();
     return updated;

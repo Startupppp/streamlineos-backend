@@ -222,6 +222,7 @@ export class EngagementCommunitiesCampaignsService {
     const [updated] = await this.db
       .update(hrCampaigns)
       .set({
+        updatedAt: new Date(),
         ...(input.name !== undefined && { name: input.name }),
         ...(input.description !== undefined && {
           description: input.description,

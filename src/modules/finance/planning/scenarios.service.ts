@@ -148,7 +148,7 @@ export class ScenariosService {
         );
     }
 
-    const updateValues: Partial<typeof finCashFlowScenarios.$inferInsert> = {};
+    const updateValues: Partial<typeof finCashFlowScenarios.$inferInsert> = { updatedAt: new Date() };
     if (input.name !== undefined) updateValues.name = input.name;
     if (input.isDefault !== undefined) updateValues.isDefault = input.isDefault;
     if (input.assumptions !== undefined)

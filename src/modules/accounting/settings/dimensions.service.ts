@@ -19,6 +19,7 @@ import type {
   CreateDimensionValueInput,
   UpdateDimensionValueInput,
 } from "./dto/dimensions.schemas";
+import { hasPatchValues } from "../../../common/db/patch-values";
 
 const DIMENSIONS_CACHE_KEY = (orgId: string) => `acc:dimensions:${orgId}`;
 const DIMENSIONS_PAGE_SIZE = 100;
@@ -128,11 +129,10 @@ export class DimensionsService {
 
     if (!existing) throw new NotFoundException(`Dimension ${dimensionId} not found`);
 
-    const [updated] = await this.db
-      .update(accountingDimensions)
-      .set({ ...input })
-      .where(and(eq(accountingDimensions.id, dimensionId), eq(accountingDimensions.orgId, u.orgId)))
-      .returning();
+    const scope = and(eq(accountingDimensions.id, dimensionId), eq(accountingDimensions.orgId, u.orgId));
+    const [updated] = hasPatchValues(input)
+      ? await this.db.update(accountingDimensions).set({ ...input }).where(scope).returning()
+      : await this.db.select().from(accountingDimensions).where(scope).limit(1);
 
     if (!updated) throw new InternalServerErrorException("Failed to update dimension.");
 
@@ -253,17 +253,14 @@ export class DimensionsService {
 
     if (!val) throw new NotFoundException(`Value ${valueId} not found`);
 
-    const [updated] = await this.db
-      .update(accountingDimensionValues)
-      .set({ ...input })
-      .where(
-        and(
-          eq(accountingDimensionValues.id, valueId),
-          eq(accountingDimensionValues.dimensionId, dimensionId),
-          eq(accountingDimensionValues.orgId, u.orgId),
-        ),
-      )
-      .returning();
+    const valueScope = and(
+      eq(accountingDimensionValues.id, valueId),
+      eq(accountingDimensionValues.dimensionId, dimensionId),
+      eq(accountingDimensionValues.orgId, u.orgId),
+    );
+    const [updated] = hasPatchValues(input)
+      ? await this.db.update(accountingDimensionValues).set({ ...input }).where(valueScope).returning()
+      : await this.db.select().from(accountingDimensionValues).where(valueScope).limit(1);
 
     if (!updated) throw new InternalServerErrorException("Failed to update dimension value.");
 

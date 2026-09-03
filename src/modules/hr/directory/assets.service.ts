@@ -223,6 +223,7 @@ export class AssetsService {
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.status !== undefined && { status: body.status }),
         ...(body.returnDate !== undefined && { returnDate: formatDateOnly(new Date(body.returnDate)) }),
+        updatedAt: new Date(),
       })
       .where(and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)));
 

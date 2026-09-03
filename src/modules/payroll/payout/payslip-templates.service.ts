@@ -118,6 +118,7 @@ export class PayslipTemplatesService {
           ...(data.layout !== undefined && { layout: data.layout }),
           ...(mergedConfig !== undefined && { config: mergedConfig }),
           ...(data.isDefault !== undefined && { isDefault: data.isDefault }),
+          updatedAt: new Date(),
         })
         .where(and(eq(payslipTemplates.id, templateId), eq(payslipTemplates.orgId, orgId)))
         .returning();

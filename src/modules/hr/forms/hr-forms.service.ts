@@ -107,7 +107,7 @@ export class HrFormsService {
       throw new BadRequestException("Public forms cannot contain sensitive fields");
     }
 
-    const patch: Partial<typeof hrForms.$inferInsert> = {};
+    const patch: Partial<typeof hrForms.$inferInsert> = { updatedAt: new Date() };
     if (input.name !== undefined) patch.name = input.name;
     if (input.slug !== undefined) patch.slug = input.slug;
     if (input.description !== undefined) patch.description = input.description ?? null;
