@@ -371,9 +371,34 @@ describeIfSeeded("route budgets over the HTTP stack (seeded)", () => {
     if (unplaced.length > 0)
       process.stderr.write(
         `[route-budget-http] UNPLACED: ${unplaced.join(", ")} — every authenticated request will answer ` +
-          `403 ORG_MEMBERSHIP_INACTIVE. Run: DATABASE_URL=<scratch> node test/perf/place-perf-orgs.mjs --write\n`,
+          `403 ORG_MEMBERSHIP_INACTIVE. Run: DATABASE_URL=<scratch> node test/perf/prepare-perf-http-seed.mjs --write\n`,
       );
     expect(unplaced).toEqual([]);
+  });
+
+  /**
+   * The second seed gap, and the one that costs the most coverage.
+   *
+   * `ModuleGuard` answers `402 PAYMENT_REQUIRED` for any `@RequireModule` route whose module has
+   * no enabled `org_modules` row. The perf seed shipped with that table EMPTY, so HR, CRM,
+   * inventory, payroll, timesheets, support, invoices and accounting all answered 402 and 36 of
+   * 82 route pairs measured the guard instead of the route. An organisation with no enabled
+   * module is not production-shaped.
+   */
+  it("every tenant it will measure has its modules enabled, so ModuleGuard does not answer 402", async () => {
+    const wanted = [REFERENCE_ORG, MINORITY_ORG].filter((id) => id.length > 0);
+    const rows = await owner.unsafe<{ org_id: string; n: number }[]>(
+      `SELECT org_id, count(*)::int AS n FROM org_modules WHERE org_id = ANY($1) AND enabled GROUP BY org_id`,
+      [wanted] as never[],
+    );
+    const enabled = new Map(rows.map((r) => [r.org_id, Number(r.n)]));
+    const bare = wanted.filter((id) => (enabled.get(id) ?? 0) === 0);
+    if (bare.length > 0)
+      process.stderr.write(
+        `[route-budget-http] NO ENABLED MODULES: ${bare.join(", ")} — every @RequireModule route will ` +
+          `answer 402. Run: DATABASE_URL=<scratch> node test/perf/prepare-perf-http-seed.mjs --write\n`,
+      );
+    expect(bare).toEqual([]);
   });
 
   /**
