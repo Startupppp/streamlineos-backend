@@ -194,7 +194,6 @@ export const PARAM_ALIASES: Readonly<Record<string, readonly string[]>> = {
   unitId: ["org_units"],
   divisionId: ["org_units"],
 
-  workerId: ["workers"],
   subjectId: ["subjects"],
   subjectTypeId: ["subject_types"],
   subjectPartyLinkId: ["subject_party_links"],
@@ -204,7 +203,6 @@ export const PARAM_ALIASES: Readonly<Record<string, readonly string[]>> = {
   crmConnectorSyncId: ["crm_connector_syncs"],
   issueRecordId: ["issue_records"],
   threadId: ["relationship_threads", "mail_threads"],
-  notificationId: ["notifications"],
   leaveId: ["leave_requests"],
   blackoutId: ["leave_blackout_dates"],
   timerId: ["timer_sessions"],

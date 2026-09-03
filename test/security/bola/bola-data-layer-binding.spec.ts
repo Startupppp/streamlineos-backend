@@ -128,7 +128,7 @@ describe("BOLA sweep — authorization is asserted at the data layer", () => {
   });
 
   it("RATCHET: the unbound-by-design list does not grow", () => {
-    const openNow = unbound.map(key).filter((k) => PLATFORM_GLOBAL_RESOURCE.has(k));
+    const openNow = unbound.map((b) => key(b.route)).filter((k) => PLATFORM_GLOBAL_RESOURCE.has(k));
     expect(new Set(openNow).size).toBeLessThanOrEqual(PLATFORM_GLOBAL_RESOURCE.size);
   });
 

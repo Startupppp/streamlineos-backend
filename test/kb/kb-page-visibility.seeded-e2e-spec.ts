@@ -8,17 +8,24 @@ import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-trans
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import type { CurrentUserContext } from "src/common/auth/backend-claims";
+import { humanSessionPrincipal } from "src/common/auth/principal";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
-import { seedOrg } from "test/helpers/seed-builder";
+import { seedOrg, type SeededMember } from "test/helpers/seed-builder";
 
-const asMember = (userId: string, orgId: string): CurrentUserContext => ({
-  userId,
+/**
+ * The membership has to be real. `KbPagesService` resolves the reader through
+ * `actingMembershipId(user.principal)`, so a context without one reads every
+ * project-scoped page as a non-member and the visibility assertions below would
+ * pass for the wrong reason.
+ */
+const asMember = (member: SeededMember, orgId: string): CurrentUserContext => ({
+  userId: member.userId,
   orgId,
   isOrgOwner: false,
   role: "MEMBER",
-  permissions: [],
-  sessionId: `seeded-${userId}`,
+  sessionId: `seeded-${member.userId}`,
   tokenScopes: null,
+  principal: humanSessionPrincipal(member.membershipId, false),
 });
 
 describe("[seeded-e2e] a page that belongs to a project", () => {
@@ -82,8 +89,8 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
         if (!shared || !projectPage) throw new Error("seed: page insert failed");
         created.push(shared.id, projectPage.id);
 
-        const insiderCtx = asMember(insider.userId, fixture.orgId);
-        const outsiderCtx = asMember(outsider.userId, fixture.orgId);
+        const insiderCtx = asMember(insider, fixture.orgId);
+        const outsiderCtx = asMember(outsider, fixture.orgId);
 
         await expect(
           asReader(fixture.orgId, () => pages.get(insiderCtx, projectPage.id, false)),
@@ -136,7 +143,7 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
 
         await expect(
           asReader(fixture.orgId, () =>
-            pages.get(asMember(author.userId, fixture.orgId), own.id, false),
+            pages.get(asMember(author, fixture.orgId), own.id, false),
           ),
         ).resolves.toMatchObject({ id: own.id });
       } finally {
@@ -171,14 +178,14 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
       );
       const created: { pageId: number; chunkId: number } = { pageId: 0, chunkId: 0 };
       const query = "seeded parity needle";
-      const insiderCtx = asMember(insider.userId, fixture.orgId);
-      const outsiderCtx = asMember(outsider.userId, fixture.orgId);
+      const insiderCtx = asMember(insider, fixture.orgId);
+      const outsiderCtx = asMember(outsider, fixture.orgId);
 
       // This is the production KbSearchService against the seeded database.
       // Only the external embedding request is deterministic here; the pgvector
       // candidate query, denormalized ACL columns, and final page re-check are real.
       const configured = jest.spyOn(embeddings, "isConfigured").mockReturnValue(true);
-      const embedQuery = jest.spyOn(embeddings, "embedQuery").mockResolvedValue(vector);
+      const embedQueryRaw = jest.spyOn(embeddings, "embedQueryRaw").mockResolvedValue(vector);
       try {
         const [page] = await db
           .insert(kbPages)
@@ -234,10 +241,13 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
           search.retrieveTopArticles(outsiderCtx, query, 5),
         );
         expect(outsiderVector.filter((row) => row.kind === "page").map((row) => row.id)).not.toContain(page.id);
-        expect(embedQuery).toHaveBeenCalledWith(query);
+        expect(embedQueryRaw).toHaveBeenCalled();
+        // The gateway helper always passes an abort signal alongside the text,
+        // so the text is asserted positionally rather than by whole-call shape.
+        expect(embedQueryRaw.mock.calls[0]?.[0]).toBe(query);
       } finally {
         configured.mockRestore();
-        embedQuery.mockRestore();
+        embedQueryRaw.mockRestore();
         if (created.chunkId > 0) await db.delete(kbArticleChunks).where(eq(kbArticleChunks.id, created.chunkId));
         if (created.pageId > 0) await db.delete(kbPages).where(eq(kbPages.id, created.pageId));
         await fixture.teardown();

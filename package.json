@@ -264,6 +264,8 @@
     "check:migration-ledger:self-test": "node src/scripts/check-migration-ledger.mjs --self-test",
     "check:spec-typecheck": "node src/scripts/check-spec-typecheck.mjs",
     "check:spec-typecheck:self-test": "node src/scripts/check-spec-typecheck.mjs --self-test",
+    "check:test-typecheck": "node src/scripts/check-test-typecheck.mjs",
+    "check:test-typecheck:self-test": "node src/scripts/check-test-typecheck.mjs --self-test",
     "check:module-gate": "node src/scripts/check-module-gate.mjs",
     "check:module-gate:self-test": "node src/scripts/check-module-gate.mjs --self-test",
     "check:ai-charge": "node src/scripts/check-ai-charge-declared.mjs",

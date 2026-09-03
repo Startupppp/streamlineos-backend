@@ -6,6 +6,7 @@ import type { Db } from "src/db/drizzle.module";
 import { instrumentPostgresClient } from "src/db/query-telemetry";
 import { CacheService } from "src/common/cache/cache.service";
 import { NotificationsReadService } from "src/modules/notifications/notifications-read.service";
+import { listSchema } from "src/modules/notifications/dto/notification.schemas";
 import {
   assertNoDbCallRegression,
   assertWithinDbCallBudget,
@@ -44,6 +45,13 @@ const describeIfSeeded = USABLE ? describe : describe.skip;
 
 describeIfSeeded("route database-call budgets (seeded)", () => {
   const manifest = loadRouteBudgets();
+  /**
+   * What the controller hands the service for an unfiltered request: the parsed
+   * query, defaults applied. Written as a parse rather than a literal so a new
+   * required field lands here as a type error instead of a silently different
+   * measurement.
+   */
+  const DEFAULT_QUERY = listSchema.parse({});
   const counted: Record<string, number> = {};
   let client: ReturnType<typeof postgres>;
   let db: Db;
@@ -113,14 +121,14 @@ describeIfSeeded("route database-call budgets (seeded)", () => {
    * 4 fails here rather than being absorbed. Neither ceiling was raised.
    */
   it("GET /notifications does not add a database statement", async () => {
-    const { count } = await countDbCalls(() => service.list(orgId, userId, {}));
+    const { count } = await countDbCalls(() => service.list(orgId, userId, DEFAULT_QUERY));
     counted["GET /notifications"] = count.queries;
     expect(count.queries).toBeGreaterThan(0);
     expect(() => assertNoDbCallRegression(manifest, "GET /notifications", count.queries)).not.toThrow();
   });
 
   it("GET /notifications stays within its declared database-call budget", async () => {
-    const { count } = await countDbCalls(() => service.list(orgId, userId, {}));
+    const { count } = await countDbCalls(() => service.list(orgId, userId, DEFAULT_QUERY));
     expect(count.queries).toBeLessThanOrEqual(3);
     expect(() =>
       assertWithinDbCallBudget(manifest, "GET /notifications", count.queries),
