@@ -146,6 +146,8 @@
     "check:unbounded-reads:baseline": "node src/scripts/check-unbounded-reads.mjs --emit-baseline",
     "check:benchmark-manifest": "node src/scripts/check-benchmark-manifest.mjs",
     "check:benchmark-manifest:self-test": "node src/scripts/check-benchmark-manifest.mjs --self-test",
+    "check:benchmark-http:self-test": "node test/perf/merge-http-measurement.mjs --self-test",
+    "perf:prepare-http-seed:self-test": "node test/perf/prepare-perf-http-seed.mjs --self-test",
     "check:benchmark-regression:self-test": "node src/scripts/benchmark-regression.mjs --self-test",
     "check:db-call-count": "node src/scripts/check-db-call-count.mjs",
     "check:db-call-count:self-test": "node src/scripts/check-db-call-count.mjs --self-test",
