@@ -20,7 +20,7 @@
  * result across the wire, and the top-level gate scores it clean.
  *
  * Measured on the tree this gate was written against: 191 relation hydrations
- * carry no `columns:` at all.
+ * carried no `columns:` at all; 186 after this session's fixes.
  *
  * WHAT IT HARD-FAILS ON, AND WHY ONLY THAT
  * ----------------------------------------
@@ -100,8 +100,15 @@ const SCHEMA = join(SRC, "db", "schema");
 
 /* ------------------------------------------------------------------ ratchets */
 
-/** Unprojected relation hydrations. Measured at HEAD when this gate landed. */
-const MAX_UNPROJECTED_RELATIONS = 191;
+/**
+ * Unprojected relation hydrations.
+ *
+ * Taken from `git archive HEAD src`, NOT from the shared working tree — around
+ * ten lanes hold uncommitted edits here at any moment and a ceiling measured on
+ * that tree is not the number the gate will see. 191 when the gate landed,
+ * lowered to 186 once this session's projections were committed.
+ */
+const MAX_UNPROJECTED_RELATIONS = 186;
 
 /** Relations to global `users` with no projection. CLOSED clause — stays at 0. */
 const MAX_UNPROJECTED_USERS = 0;
