@@ -62,7 +62,8 @@ export class KpisService {
     if (existing.length === 0) throw new NotFoundException("KPI not found.");
 
     const scope = and(eq(kpiDefinitions.id, id), eq(kpiDefinitions.orgId, orgId));
-    if (!hasPatchValues(data)) return this.db.select().from(kpiDefinitions).where(scope);
+    if (!hasPatchValues(data))
+      return this.db.select().from(kpiDefinitions).where(scope).limit(1);
 
     return this.db.update(kpiDefinitions).set(data).where(scope).returning();
   }
@@ -131,7 +132,8 @@ export class KpisService {
       throw new NotFoundException("Framework not found.");
 
     const scope = and(eq(competencyFrameworks.id, id), eq(competencyFrameworks.orgId, orgId));
-    if (!hasPatchValues(data)) return this.db.select().from(competencyFrameworks).where(scope);
+    if (!hasPatchValues(data))
+      return this.db.select().from(competencyFrameworks).where(scope).limit(1);
 
     return this.db.update(competencyFrameworks).set(data).where(scope).returning();
   }
