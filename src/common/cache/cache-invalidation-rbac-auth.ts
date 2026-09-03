@@ -66,6 +66,23 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     },
   },
   {
+    namespace: "membership:status:<userId>",
+    description:
+      "Per-user generation counter over MembershipStateService.resolve(userId, orgId), which JwtAuthGuard consults on every request to decide whether the caller's membership is still active. Read as cachedVersioned('membership:status:<userId>', orgId) with a 15s TTL; one counter per user covers every organisation that user belongs to. This entry was missing while the namespace was bumped through a module-local helper, which is also why check:namespace-coverage could not see the bump.",
+    invalidation: {
+      kind: "write",
+      events: [
+        "bustMembershipStatusCache / bustMembershipStatusCacheMany (common/auth/membership-state.service.ts) on any membership status change",
+        "OrgMembershipService.updateMember and OrgMemberDepartureService (leave/remove/deactivate)",
+        "InvitationAcceptanceService.accept",
+        "OrgLifecycleService, OrgPurgeService and CronOrgPurgeWorkerService (whole-org suspension/purge, batched)",
+        "GdprSubjectErasureService.erase",
+      ],
+    },
+    dimensions: ["userId"] as const,
+    staleToleranceSeconds: 0,
+  },
+  {
     namespace: "mfa:org-policy:<orgId>",
     description: "Organisation-level MFA enforcement policy (cachedForOrg, actual key: <orgId>:mfa:org-policy)",
     invalidation: {

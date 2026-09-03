@@ -1,6 +1,7 @@
 import type { Redis } from "@upstash/redis";
 import { CacheService } from "./cache.service";
 import { REDIS_COMMAND_TIMEOUT } from "./cache.service";
+import { CacheFiller } from "./cache-fill";
 
 function buildRedis(values = new Map<string, unknown>()): Redis {
   return {
@@ -167,12 +168,15 @@ describe("tenant-aware wrappers", () => {
     expect(fetchE).toHaveBeenCalledTimes(2);
   });
 
-  it("applyJitter — TTLs across many fills are spread rather than identical", () => {
-    const cache = new CacheService(null);
+  // TTL jitter is now owned by CacheFiller, which is the collaborator that
+  // resolves a TTL for the write; CacheService.cachedForOrgWith is the only
+  // caller that needs it directly, to jitter inside its own declared bound.
+  it("jitterTtl — TTLs across many fills are spread rather than identical", () => {
+    const filler = new CacheFiller((operation) => operation());
     const base = 300;
     const ttls = new Set<number>();
     for (let i = 0; i < 50; i++) {
-      const result = cache["applyJitter"](base);
+      const result = filler.jitterTtl(base);
       expect(result).toBeGreaterThanOrEqual(Math.floor(base * 0.85));
       expect(result).toBeLessThanOrEqual(Math.ceil(base * 1.15));
       ttls.add(result);

@@ -23,6 +23,22 @@ const UNKNOWN: MembershipState = {
   membershipId: null,
 };
 
+/**
+ * The `membership:status:<userId>` namespace is written out in full at each of
+ * the three sites that touch it — the read in `resolve` and the two busts here —
+ * rather than routed through a module-local helper.
+ *
+ * That is deliberate, and it is the fix for a real blind spot. `pnpm
+ * check:namespace-coverage` pairs a `cachedVersioned` read with an
+ * `invalidateNamespace` bump by resolving each namespace argument statically: a
+ * string literal, a template literal, or a registered `CACHE_KEYS` factory.
+ * A private `membershipStatusNamespace(userId)` is none of those, so the bump
+ * resolved to nothing and the gate reported this namespace — the only
+ * authorization-bearing one in the codebase — as "read but never bumped, served
+ * stale forever". The bumps were real; they were merely unprovable. Keep the
+ * literal at every site so the pairing stays checkable, and do not re-hide it
+ * behind an indirection.
+ */
 export async function bustMembershipStatusCache(
   cache: CacheService,
   userId: string,
@@ -33,11 +49,7 @@ export async function bustMembershipStatusCache(
   // constant time. A targeted bust intentionally expires the user's other
   // short-lived membership entries too; membership changes are rare and this
   // avoids maintaining per-org generation counters.
-  await cache.invalidateNamespace(membershipStatusNamespace(userId));
-}
-
-function membershipStatusNamespace(userId: string): string {
-  return `membership:status:${userId}`;
+  await cache.invalidateNamespace(`membership:status:${userId}`);
 }
 
 /**
@@ -56,7 +68,7 @@ export async function bustMembershipStatusCacheMany(
 ): Promise<void> {
   if (userIds.length === 0) return;
   await cache.invalidateMany(userIds.map((id) => CACHE_KEYS.membershipAccount(id)));
-  await cache.invalidateNamespaceMany(userIds.map(membershipStatusNamespace));
+  await cache.invalidateNamespaceMany(userIds.map((id) => `membership:status:${id}`));
 }
 
 @Injectable()

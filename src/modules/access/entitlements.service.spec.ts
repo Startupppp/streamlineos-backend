@@ -18,14 +18,22 @@ function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number |
   const findFirst = jest.fn();
   const findMany = jest.fn().mockResolvedValue([]);
   const orgFindFirst = jest.fn();
-  const activeMemberRows = [{ userId: "member-1" }, { userId: "member-2" }];
+  const activeMemberRows = [
+    { membershipId: 1, userId: "member-1" },
+    { membershipId: 2, userId: "member-2" },
+  ];
 
   const limit = jest.fn()
     .mockResolvedValueOnce(ownerMembershipId !== null ? [{ ownerMembershipId }] : [])
     .mockResolvedValueOnce(mockRoleId !== null ? [{ id: mockRoleId }] : [])
     .mockResolvedValue(activeMemberRows);
+  // The ACTIVE-member scan is keyset-paged, so it orders by membership id before
+  // taking a page. Without `orderBy` here the mock would throw rather than fail
+  // an assertion, which reads as an unrelated crash.
+  const orderBy = jest.fn().mockReturnValue({ limit });
   const txWhere = jest.fn().mockReturnValue({
     limit,
+    orderBy,
     then: (resolve: (rows: { userId: string }[]) => unknown) => resolve(activeMemberRows),
   });
   const txFrom = jest.fn().mockReturnValue({ where: txWhere });
@@ -61,6 +69,7 @@ function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number |
       txSelect,
       txFrom,
       txWhere,
+      orderBy,
       limit,
       activeMemberRows,
     },
@@ -248,13 +257,20 @@ describe("EntitlementsService", () => {
   });
 
   describe("setModuleEnabled", () => {
-    it("wraps the upsert in a single transaction", async () => {
+    it("wraps the upsert in a single transaction, and reads members in a second", async () => {
       const { db, mocks } = buildMockDb();
       const { cache } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.transaction).toHaveBeenCalledTimes(1);
+      // Two, not one, and the second is the point. Every write — the upsert, the
+      // default workspace, the ownership row, the version bump — is still one
+      // atomic transaction. The ACTIVE-member scan that feeds the session bust is
+      // deliberately NOT in it: it is deferred past the commit so the request's
+      // pooled connection is released first. There is no ambient request context
+      // in a unit test, so `registerAfterCommit` declines and the hook runs
+      // inline here, opening its own tenant transaction.
+      expect(mocks.transaction).toHaveBeenCalledTimes(2);
     });
 
     it("upserts with enabled=true and the correct field values", async () => {
@@ -298,7 +314,10 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(mocks.execute).toHaveBeenCalledTimes(1);
+      // One set_config per transaction and no other raw SQL: the write transaction
+      // and the deferred member scan. Anything above two is hand-written SQL that
+      // has escaped the query builder.
+      expect(mocks.execute).toHaveBeenCalledTimes(2);
     });
 
     it("executes only the tenant context SQL when disabling a module", async () => {
@@ -307,7 +326,7 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
 
-      expect(mocks.execute).toHaveBeenCalledTimes(1);
+      expect(mocks.execute).toHaveBeenCalledTimes(2);
     });
 
     it("throws 400 BadRequestException when toggling a core module (kb)", async () => {
@@ -352,14 +371,47 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "actor-not-a-member");
 
-      // ONE call carrying every member's key, not one call per member: the read
-      // that feeds this is `.limit(10000)`, so a per-member bust is up to ten
-      // thousand Redis commands from a single module toggle.
+      // ONE call carrying every member's key, not one call per member. A
+      // `members.map((m) => cache.invalidate(...))` reads as batched and is not:
+      // it is one Redis command per member, so the widest tenant in the seeded
+      // database — 89.93% of the rows — pays the worst price for one toggle.
       expect(cacheMocks.invalidateMany).toHaveBeenCalledTimes(1);
       const keys = cacheMocks.invalidateMany.mock.calls[0]?.[0] as string[];
       for (const row of mocks.activeMemberRows)
         expect(keys).toContain(`user:session:${row.userId}`);
       expect(keys).not.toContain("user:session:actor-not-a-member");
+    });
+
+    it("keyset-pages the member scan so an org past one page is not truncated", async () => {
+      // The scan used to be a single `.limit(10000)`: member 10,001 onward kept a
+      // stale enabledModules until TTL and nothing said so. This proves the loop
+      // continues past a full page and advances on the last membership id.
+      const { db, mocks } = buildMockDb();
+      const { cache, mocks: cacheMocks } = buildMockCache();
+
+      const fullPage = Array.from({ length: 500 }, (_, i) => ({
+        membershipId: i + 1,
+        userId: `member-${String(i + 1)}`,
+      }));
+      const tail = [{ membershipId: 501, userId: "member-501" }];
+      mocks.limit
+        .mockReset()
+        .mockResolvedValueOnce([{ ownerMembershipId: 42 }])
+        .mockResolvedValueOnce([{ id: 999 }])
+        .mockResolvedValueOnce(fullPage)
+        .mockResolvedValueOnce(tail)
+        .mockResolvedValue([]);
+
+      await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
+
+      expect(cacheMocks.invalidateMany).toHaveBeenCalledTimes(2);
+      expect(cacheMocks.invalidateMany).toHaveBeenNthCalledWith(
+        2,
+        ["user:session:member-501"],
+      );
+      // A short page ends the scan: no third read is issued for a page that
+      // cannot exist.
+      expect(mocks.orderBy).toHaveBeenCalledTimes(2);
     });
 
     describe("ownership seeding", () => {

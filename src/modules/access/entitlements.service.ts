@@ -5,11 +5,12 @@ import {
   Injectable,
   OnModuleInit,
 } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import { moduleOwnerships, modulesCatalog, orgModules, organizationMembers, organizations, pmWorkspaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { CacheService } from "../../common/cache/cache.service";
 import { PLAN_LOCKED_MODULES } from "../billing/core/plan-entitlements.constants";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -228,7 +229,7 @@ export class EntitlementsService implements OnModuleInit {
         );
       }
     }
-    const affectedMembers = await runInTenantTransaction(this.db, async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .insert(orgModules)
         .values({ orgId, moduleKey, enabled, enabledBy })
@@ -282,20 +283,80 @@ export class EntitlementsService implements OnModuleInit {
       }
 
       await bumpPermissionsVersion(tx, orgId);
-
-      return tx
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")))
-        .limit(10000);
     }, { orgId });
 
     this.moduleMapCache.delete(orgId);
     await this.cache.invalidateForOrg(orgId, `entitlements:module:${moduleKey}`);
     await this.cache.invalidateForOrg(orgId, "entitlements:modules");
-    await this.cache.invalidateMany(
-      affectedMembers.map((m) => CACHE_KEYS.userSession(m.userId)),
-    );
+
+    const bustSessions = (): Promise<void> => this.bustActiveMemberSessions(orgId);
+    if (!registerAfterCommit(bustSessions)) await bustSessions();
+  }
+
+  /**
+   * Every ACTIVE member's session carries `enabledModules`, so one module toggle
+   * makes every member's session stale — not just the actor's. Leaving them is
+   * revoked access surviving revocation for the length of the session TTL.
+   *
+   * There is no generation counter to bump instead. `user:session:<userId>` is a
+   * per-user key with no organisation segment — deliberately, because the payload
+   * spans organisations — and it is read through `cache.cached`, not
+   * `cachedVersioned`, so `invalidateNamespaceForOrg` cannot reach it. Naming the
+   * members' keys is the only path, and the cost of doing so is bounded three
+   * ways rather than left to grow with the tenant:
+   *
+   *   · **Off the request thread.** `registerAfterCommit` defers the whole scan
+   *     until the toggle has committed; the interceptor runs each hook in its own
+   *     tenant transaction, so the request's pooled connection is already back.
+   *     With no ambient request context (a background caller, a unit test) the
+   *     hook runs inline rather than being dropped.
+   *   · **No ceiling.** The scan was one `.limit(10000)`, which silently never
+   *     invalidated member 10,001 onward. Keyset paging on the membership id
+   *     removes the ceiling: a 10,000-member org is 20 indexed reads of 500 rows.
+   *   · **Bounded fan-out.** `invalidateMany` collapses each page into variadic
+   *     `DEL`s, so 10,000 members cost ~40 Redis commands, not 10,000. A
+   *     `members.map((m) => cache.invalidate(...))` reads as batched and is not.
+   *
+   * A crash between the commit and the bust costs at most the 60s session TTL and
+   * is re-drivable from state already stored, which is why this is an
+   * after-commit hook (backend §4 mechanism 3) and not an outbox event.
+   */
+  private static readonly SESSION_BUST_PAGE = 500;
+
+  private async bustActiveMemberSessions(orgId: string): Promise<void> {
+    const page = EntitlementsService.SESSION_BUST_PAGE;
+    let afterMembershipId = 0;
+    for (;;) {
+      const members = await runInTenantTransaction(
+        this.db,
+        (tx) =>
+          tx
+            .select({
+              membershipId: organizationMembers.id,
+              userId: organizationMembers.userId,
+            })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.status, "ACTIVE"),
+                gt(organizationMembers.id, afterMembershipId),
+              ),
+            )
+            .orderBy(asc(organizationMembers.id))
+            .limit(page),
+        { orgId },
+      );
+      if (members.length === 0) return;
+
+      await this.cache.invalidateMany(
+        members.map((member) => CACHE_KEYS.userSession(member.userId)),
+      );
+
+      const last = members[members.length - 1];
+      if (last === undefined || members.length < page) return;
+      afterMembershipId = last.membershipId;
+    }
   }
 
   /**

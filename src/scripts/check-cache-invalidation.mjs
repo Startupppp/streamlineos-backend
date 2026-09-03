@@ -57,7 +57,7 @@ const TABLE_TO_CACHE_FAMILIES = [
     table: "org_modules",
     families: [
       { key: "entitlements:module:", invalidationKeywords: ["entitlements:module:", "entitlements:modules"] },
-      { key: "user:session:", invalidationKeywords: ["userSession", "user:session:"], note: "Only invalidates enabledBy user; all org members stale until TTL — see F03" },
+      { key: "user:session:", invalidationKeywords: ["userSession", "user:session:"], note: "Every ACTIVE member's session carries enabledModules — see F03/F03b" },
     ],
   },
   {
@@ -708,6 +708,84 @@ function runSelfTests() {
     TABLE_TO_CACHE_FAMILIES.every((e) => tableIdentifiers(e.table).length >= 1),
   );
 
+  // ── F03 / F03b: the module-toggle session bust ────────────────────────────
+  // Four fixtures pin both halves of the rule. Without them the correction to
+  // moduleEnableBustsEveryMember would be indistinguishable from deleting it.
+  const activeScan = `.where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")))`;
+
+  const actorOnly = `
+    async setModuleEnabled(orgId, moduleKey, enabled, enabledBy) {
+      await this.cache.invalidate(CACHE_KEYS.userSession(enabledBy));
+    }
+  `;
+  check(
+    "F03 negative-control: busting only the actor is still a finding",
+    moduleEnableBustsEveryMember(actorOnly) === false,
+  );
+
+  const noSessionBustAtAll = `
+    async setModuleEnabled(orgId, moduleKey, enabled) {
+      await this.cache.invalidateForOrg(orgId, "entitlements:modules");
+    }
+  `;
+  check(
+    "F03 negative-control: no session bust at all is a finding",
+    moduleEnableBustsEveryMember(noSessionBustAtAll) === false,
+  );
+
+  const scanWithoutBust = `
+    async setModuleEnabled(orgId) {
+      const members = await tx.select({ userId: organizationMembers.userId })
+        .from(organizationMembers)${activeScan};
+      await this.cache.invalidateForOrg(orgId, "entitlements:modules");
+    }
+  `;
+  check(
+    "F03 negative-control: scanning ACTIVE members but never busting them is a finding",
+    moduleEnableBustsEveryMember(scanWithoutBust) === false,
+  );
+
+  const perMemberLoop = `
+    async setModuleEnabled(orgId) {
+      const members = await tx.select({ userId: organizationMembers.userId })
+        .from(organizationMembers)${activeScan}.limit(10000);
+      await Promise.all(members.map((m) => this.cache.invalidate(CACHE_KEYS.userSession(m.userId))));
+    }
+  `;
+  check(
+    "F03 positive: a per-member loop does reach every member",
+    moduleEnableBustsEveryMember(perMemberLoop) === true,
+  );
+  check(
+    "F03b negative-control: that same per-member loop is reported as unbounded fan-out",
+    moduleEnableFansOutPerMember(perMemberLoop) === true,
+  );
+
+  const batchedPaged = `
+    async bustActiveMemberSessions(orgId) {
+      const members = await tx.select({ membershipId: organizationMembers.id, userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+          gt(organizationMembers.id, afterMembershipId),
+        ))
+        .orderBy(asc(organizationMembers.id))
+        .limit(page);
+      await this.cache.invalidateMany(
+        members.map((member) => CACHE_KEYS.userSession(member.userId)),
+      );
+    }
+  `;
+  check(
+    "F03 positive: a batched, keyset-paged bust reaches every member",
+    moduleEnableBustsEveryMember(batchedPaged) === true,
+  );
+  check(
+    "F03b positive: the batched bust is NOT reported as unbounded fan-out",
+    moduleEnableFansOutPerMember(batchedPaged) === false,
+  );
+
   const allPass = results.every((r) => r.pass);
   return { results, allPass };
 }
@@ -903,32 +981,88 @@ function runFullScan() {
   return { findings, vacuityFailed: false, fileCount: serviceFiles.length, shapeCounts, coverage };
 }
 
+/**
+ * A module toggle must reach every ACTIVE member's session, and must not cost one
+ * Redis command per member to do it.
+ *
+ * ⚠ CORRECTED 2026-09-03. This check used to demand one literal shape:
+ *
+ *     members.map((m) => this.cache.invalidate(CACHE_KEYS.userSession(m.userId)))
+ *
+ * and reported F03 against anything else. That regex does not describe the
+ * defect — it describes one implementation of the fix, and specifically the
+ * implementation the cache layer had already measured and replaced.
+ * `CacheService.invalidateMany` exists because that `.map` issues one command per
+ * member against a single Upstash connection; its docblock names this very call
+ * site, then reading members at `.limit(10000)`, as the worst measured instance.
+ * So the gate failed the corrected code and would have passed the regression —
+ * and it would do so worst on the tenant that matters, since the seeded database
+ * puts 89.93% of rows in one organisation.
+ *
+ * The requirement has two halves and they are now checked separately, without
+ * prescribing the shape of the fix:
+ *
+ *   F03  — the ACTIVE-member scan and a session bust covering it must both be
+ *          present, and the bust must not be actor-only.
+ *   F03b — the per-member `.map(... cache.invalidate(userSession(...)))` fan-out
+ *          is itself a finding: it is unbounded in the tenant's member count.
+ *          Batch it through `invalidateMany`, which chunks into variadic DELs.
+ *
+ * F03b is why the correction does not weaken the gate: before it, the ONLY shape
+ * this file accepted is now the one shape it rejects.
+ */
+const ACTIVE_MEMBER_SCAN = /organizationMembers\.status\s*,\s*"ACTIVE"/;
+const ACTOR_ONLY_SESSION_BUST = /invalidate\(\s*CACHE_KEYS\.userSession\(\s*enabledBy\s*\)\s*\)/;
+const PER_MEMBER_SESSION_FANOUT =
+  /\.map\(\s*\(\s*\w+\s*\)\s*=>\s*this\.cache\.invalidate\(\s*CACHE_KEYS\.userSession\(/;
+const BATCHED_SESSION_BUST = /invalidateMany\(\s*[\s\S]{0,240}?CACHE_KEYS\.userSession\(/;
+
 export function moduleEnableBustsEveryMember(source) {
-  const bustsOneActor = /invalidate\(\s*CACHE_KEYS\.userSession\(\s*enabledBy\s*\)\s*\)/.test(source);
-  const bustsEveryMember =
-    /organizationMembers\.status\s*,\s*"ACTIVE"/.test(source) &&
-    /\.map\(\s*\(\s*\w+\s*\)\s*=>\s*this\.cache\.invalidate\(\s*CACHE_KEYS\.userSession\(/.test(source);
-  return bustsEveryMember && !bustsOneActor;
+  if (ACTOR_ONLY_SESSION_BUST.test(source)) return false;
+  if (!ACTIVE_MEMBER_SCAN.test(source)) return false;
+  return BATCHED_SESSION_BUST.test(source) || PER_MEMBER_SESSION_FANOUT.test(source);
+}
+
+/** True when the bust is one Redis command per member — correct, but unbounded. */
+export function moduleEnableFansOutPerMember(source) {
+  return PER_MEMBER_SESSION_FANOUT.test(source);
 }
 
 function checkModuleEnableSessionBust() {
   const file = "src/modules/access/entitlements.service.ts";
-  const abs = join(BACKEND_SRC, "modules/access/entitlements.service.ts".replace("modules/", "modules/"));
-  
+  const abs = join(BACKEND_SRC, "modules/access/entitlements.service.ts");
+
   let src; try { src = readFileSync(abs, "utf8"); } catch { return []; }
-  if (moduleEnableBustsEveryMember(src)) return [];
-  return [
-    {
+
+  const findings = [];
+  if (!moduleEnableBustsEveryMember(src)) {
+    findings.push({
       id: "F03-module-enable-partial-session-bust",
       severity: "MEDIUM",
       file,
       line: "setModuleEnabled",
       description:
         "setModuleEnabled does not invalidate userSession for every ACTIVE org member. Members keep a " +
-        "stale enabledModules in their session until TTL. Bust each active member, not just the actor.",
+        "stale enabledModules in their session until TTL. Bust every active member, not just the actor — " +
+        "scan organizationMembers on status ACTIVE and pass their userSession keys to cache.invalidateMany.",
       kind: "partial-session-invalidation",
-    },
-  ];
+    });
+  }
+  if (moduleEnableFansOutPerMember(src)) {
+    findings.push({
+      id: "F03b-module-enable-unbounded-session-fanout",
+      severity: "MEDIUM",
+      file,
+      line: "setModuleEnabled",
+      description:
+        "setModuleEnabled busts member sessions one Redis command at a time " +
+        "(members.map((m) => cache.invalidate(CACHE_KEYS.userSession(...)))). That reads as batched and is " +
+        "not: a 10,000-member org issues 10,000 commands from one toggle. Use cache.invalidateMany, which " +
+        "collapses each page into variadic DELs.",
+      kind: "unbounded-invalidation-fanout",
+    });
+  }
+  return findings;
 }
 
 // ─── output ───────────────────────────────────────────────────────────────────
