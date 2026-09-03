@@ -1,11 +1,18 @@
 /**
- * The retention cadence declaration — one source of truth for three consumers.
+ * The cadence declaration for every sweep that must run on a timer — one source of
+ * truth for three consumers.
  *
  * `CronRetentionSchedulerService` runs these in process, `alert-retention-dead-man.mjs`
  * alerts on their heartbeats, and `retention-schedule-parity.spec.ts` asserts that the
  * three agree. Before this existed the sweeps were reachable only as `POST /cron/<job>`
  * and no scheduler in either repository ever sent that request, so every drain was
  * correct and dead.
+ *
+ * Most entries are retention drains, which is where the name comes from. It is no
+ * longer only that: `ai-reservations-sweep` is a **compensator**, not a drain, and it
+ * is here because being unscheduled costs a customer money rather than disk. Anything
+ * whose absence has a consequence belongs on this list; the name is now narrower than
+ * the contract and renaming it is a follow-up, not a licence to start a second list.
  */
 
 export interface RetentionJobDeclaration {
@@ -121,6 +128,29 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
     intervalMs: HOUR_MS,
     maxAgeMs: 3 * HOUR_MS,
     label: "GDPR subject-export artifact retention (72h expiry, object purge, stale-job reclaim)",
+  },
+  {
+    /*
+     * Not retention — the compensator for AI credit reservations.
+     *
+     * `reserve` debits the wallet by the catalogue ceiling up front and writes a
+     * RESERVED row expiring in 15 minutes; `settle` refunds the over-estimate. A lost
+     * or failed settle therefore leaves the organisation charged the ceiling with no
+     * `ai_credit_transactions` row explaining it, and this sweep is the only thing that
+     * gives the money back. It was reachable only as `POST /cron/ai-reservations-sweep`,
+     * which nothing sent — the README's external contract named five jobs and not this
+     * one — so no over-charge had ever been refunded.
+     *
+     * Cadence is 15 minutes, not daily, because the reservation window is 15 minutes:
+     * a daily sweep would leave the balance wrong for most of a day. The lease matches
+     * the HTTP route's 120s so an external POST and this scheduler take the same lock.
+     */
+    jobKey: "ai-reservations-sweep",
+    sweepName: "sweep:expired-ai-reservations",
+    leaseSeconds: 120,
+    intervalMs: 15 * 60_000,
+    maxAgeMs: HOUR_MS,
+    label: "AI credit reservation compensator (expired reservations refunded to the wallet)",
   },
   {
     jobKey: "notifications-retention-detach",

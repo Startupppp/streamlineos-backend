@@ -166,12 +166,17 @@ export class CronBillingService {
     return { granted, skipped };
   }
 
+  /**
+   * `sweepExpiredReservations` iterates every organisation itself, under
+   * `forEachOrg("sweep:expired-ai-reservations")`. Wrapping it in a second `forEachOrg`
+   * ran the whole cross-tenant sweep once per organisation — 64 tenant blocks and 64
+   * enumeration queries for the eight-tenant fixture, of which 56 found nothing because
+   * the first pass had already drained them. Each inner `withTenant` also reset
+   * `app.organization_id` inside the outer transaction, so the outer tenant's GUC was
+   * left pointing at whichever organisation the inner loop had reached last.
+   */
   async sweepAiReservations(): Promise<{ released: number }> {
-    let released = 0;
-    await forEachOrg(this.db, "billing-ai-sweep-reservations", async (_tx, _orgId) => {
-      released += await this.aiCredits.sweepExpiredReservations();
-    });
-    return { released };
+    return { released: await this.aiCredits.sweepExpiredReservations() };
   }
 
   /**

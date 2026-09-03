@@ -88,7 +88,7 @@ carried forward. The complete implemented job catalog is the route list in
 `src/modules/cron/cron.controller.ts`; only enable jobs whose product workflow and cadence
 have been approved.
 
-### Retention sweeps are code-scheduled — no external configuration required
+### Cadenced sweeps are code-scheduled — no external configuration required
 
 The table above never contained a retention sweep, and no scheduler in either repository
 ever sent one of these requests. Every retention drain was therefore correct and dead.
@@ -96,6 +96,12 @@ ever sent one of these requests. Every retention drain was therefore correct and
 now runs all of them in process, on the cadence declared in
 `src/modules/cron/retention-schedule.ts`, taking the same `CronLeaseService` lease the HTTP
 route takes.
+
+The list is no longer only retention. `ai-reservations-sweep` is a **compensator**: AI
+credit `reserve` debits the wallet by the catalogue ceiling up front, so a lost or failed
+settle leaves the organisation over-charged with no transaction row to explain it, and this
+sweep is what gives the money back. It had the same defect the retention drains had — a
+correct sweep behind a route nothing called — with a customer-visible cost.
 
 | Sweep | Manual trigger | Cadence | Lease |
 | --- | --- | --- | --- |
@@ -112,6 +118,7 @@ route takes.
 | Build webhook delivery retention | `POST /cron/build-retention-prune` | daily | 120s |
 | Notification partition detach/drop | `POST /cron/notifications-retention-detach` | daily | 300s |
 | GDPR subject-export artifact retention | `POST /cron/gdpr-export-artifact-retention` | hourly | 900s |
+| AI credit reservation compensator (expired reservations refunded) | `POST /cron/ai-reservations-sweep` | every 15 minutes | 120s |
 
 The two mechanisms compose rather than compete. Due-ness is read from the same
 `cron:heartbeat:<jobKey>` key the lease writes on every successful run, so an external

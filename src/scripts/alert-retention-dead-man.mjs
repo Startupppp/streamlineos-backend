@@ -89,6 +89,13 @@ export const MONITORED_SWEEPS = [
     label: "Notification partition maintenance (DETACH CONCURRENTLY + DROP)",
     maxAgeMs: 26 * 3_600_000,
   },
+  {
+    // Not retention. A silent death here means organisations stay charged the reservation
+    // ceiling for calls that never settled, so the window is an hour, not a day.
+    jobKey: "ai-reservations-sweep",
+    label: "AI credit reservation compensator (expired reservations refunded to the wallet)",
+    maxAgeMs: 3_600_000,
+  },
 ];
 
 /**

@@ -18,6 +18,7 @@ import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
 import { NotificationRetentionService } from "../notifications/notification-retention.service";
+import { CronBillingService } from "./cron-billing.service";
 
 const DEFAULT_TICK_MS = 10 * 60_000;
 /** Spreads the first tick so a fleet restarting together does not converge on one instant. */
@@ -38,7 +39,7 @@ function tickIntervalMs(): number {
 }
 
 /**
- * Runs every declared retention sweep in process, on its declared cadence.
+ * Runs every declared sweep in process, on its declared cadence.
  *
  * Until this existed the sweeps were reachable only as `POST /cron/<job>` behind
  * `CRON_SECRET`, and no scheduler in either repository ever sent that request: the
@@ -76,6 +77,7 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
     buildRetention: CronBuildRetentionService,
     gdprExportRetention: CronGdprExportRetentionService,
     partitionRetention: NotificationRetentionService,
+    billing: CronBillingService,
   ) {
     this.runners = new Map<string, () => Promise<unknown>>([
       ["hr-policy-retention-sweep", () => hrRetention.sweep()],
@@ -91,6 +93,7 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
       ["build-retention-prune", () => buildRetention.pruneWebhookDeliveries()],
       ["gdpr-export-artifact-retention", () => gdprExportRetention.sweep()],
       ["notifications-retention-detach", () => partitionRetention.sweep()],
+      ["ai-reservations-sweep", () => billing.sweepAiReservations()],
     ]);
   }
 
