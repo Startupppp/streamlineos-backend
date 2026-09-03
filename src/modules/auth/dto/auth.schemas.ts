@@ -6,7 +6,6 @@ export const registerSchema = z.object({
   email: z.string().email("Valid email required").max(254),
   companyName: z.string().min(1, "Company name is required").max(200),
   phone: z.string().max(32).optional(),
-  plan: z.string().max(50).optional(),
 }).strict();
 
 export const verifyEmailSchema = z.object({

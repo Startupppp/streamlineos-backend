@@ -137,7 +137,6 @@ const criterionSchema = z.object({
 export const createScorecardTemplateSchema = z.object({
   name: z.string().min(1),
   criteria: z.array(criterionSchema).min(1),
-  isBlindMode: z.boolean().optional(),
 }).strict();
 export type CreateScorecardTemplateInput = z.infer<typeof createScorecardTemplateSchema>;
 

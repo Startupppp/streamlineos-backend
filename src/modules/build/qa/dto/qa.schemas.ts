@@ -68,7 +68,6 @@ export const createBugFromResultSchema = z.object({
   title: z.string().min(1).max(500).optional(),
   severity: z.enum(["blocker", "critical", "major", "minor", "trivial"]).optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-  assigneeId: z.string().optional(),
   description: z.string().optional(),
   expectedResult: z.string().optional(),
   actualResult: z.string().optional(),

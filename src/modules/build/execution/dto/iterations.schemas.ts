@@ -185,7 +185,6 @@ export const createEpicSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
-  assigneeId: z.string().optional(),
   startDate: z.string().optional(),
   dueDate: z.string().optional(),
   points: z.number().optional(),
