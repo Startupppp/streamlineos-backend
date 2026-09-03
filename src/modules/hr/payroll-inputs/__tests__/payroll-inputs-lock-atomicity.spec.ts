@@ -9,6 +9,7 @@ import { getTableName } from "drizzle-orm";
 import { hrLeaveLedger } from "../../../../db/schema/hr/leave-ledger";
 import { hrLoanRepayments } from "../../../../db/schema/hr/benefits";
 import { hrPayrollInputPeriods } from "../../../../db/schema/payroll/input-capture";
+import { PG_CHECK_VIOLATION, getPostgresErrorDetails } from "../../../../common/db/postgres-error";
 
 /**
  * Locking a payroll input period freezes the leave ledger and stamps every due
@@ -120,6 +121,15 @@ async function makeService(db: unknown): Promise<PayrollInputsService> {
   return module.get(PayrollInputsService);
 }
 
+async function rejectionOf(work: Promise<unknown>): Promise<unknown> {
+  return work.then(
+    () => {
+      throw new Error("expected a rejection, got a resolution");
+    },
+    (error: unknown) => error,
+  );
+}
+
 describe("PayrollInputsService — locking a period is one unit or none of it", () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -127,8 +137,12 @@ describe("PayrollInputsService — locking a period is one unit or none of it", 
     const recorder = makeTx(hrLoanRepayments, [{ id: 11 }, { id: 12 }]);
     const service = await makeService(makeDb(recorder, makePeriod()));
 
-    await expect(service.lockPeriod("org1", "actor1", 1)).rejects.toThrow();
+    const rejection = await rejectionOf(service.lockPeriod("org1", "actor1", 1));
 
+    expect(getPostgresErrorDetails(rejection)).toMatchObject({
+      code: PG_CHECK_VIOLATION,
+      constraint: CONSTRAINT_FAILURE,
+    });
     expect(recorder.committed).toBe(false);
     expect(audit.log).not.toHaveBeenCalled();
     expect(automation.emit).not.toHaveBeenCalled();
@@ -138,8 +152,12 @@ describe("PayrollInputsService — locking a period is one unit or none of it", 
     const recorder = makeTx(hrLeaveLedger, []);
     const service = await makeService(makeDb(recorder, makePeriod()));
 
-    await expect(service.lockPeriod("org1", "actor1", 1)).rejects.toThrow();
+    const rejection = await rejectionOf(service.lockPeriod("org1", "actor1", 1));
 
+    expect(getPostgresErrorDetails(rejection)).toMatchObject({
+      code: PG_CHECK_VIOLATION,
+      constraint: CONSTRAINT_FAILURE,
+    });
     expect(recorder.committed).toBe(false);
     expect(audit.log).not.toHaveBeenCalled();
     expect(automation.emit).not.toHaveBeenCalled();
@@ -167,8 +185,12 @@ describe("PayrollInputsService — locking a period is one unit or none of it", 
     const recorder = makeTx(hrLeaveLedger, []);
     const service = await makeService(makeDb(recorder, makePeriod({ status: "locked" })));
 
-    await expect(service.unlockPeriod("org1", "actor1", 1)).rejects.toThrow();
+    const rejection = await rejectionOf(service.unlockPeriod("org1", "actor1", 1));
 
+    expect(getPostgresErrorDetails(rejection)).toMatchObject({
+      code: PG_CHECK_VIOLATION,
+      constraint: CONSTRAINT_FAILURE,
+    });
     expect(recorder.committed).toBe(false);
     expect(audit.log).not.toHaveBeenCalled();
   });

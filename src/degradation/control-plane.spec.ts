@@ -62,8 +62,8 @@ describe("Control plane degraded — lookup throws", () => {
       },
     );
 
-    await expect(registry.regionForOrg("org-1")).rejects.toThrow();
-    await expect(registry.regionForOrg("org-1")).rejects.toThrow();
+    await expect(registry.regionForOrg("org-1")).rejects.toThrow(ControlPlaneUnavailableError);
+    await expect(registry.regionForOrg("org-1")).rejects.toThrow(ControlPlaneUnavailableError);
 
     expect(calls).toBe(2);
   });

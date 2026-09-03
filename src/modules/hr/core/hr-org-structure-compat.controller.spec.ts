@@ -1,5 +1,6 @@
 import { Reflector } from "@nestjs/core";
 import type { ExecutionContext } from "@nestjs/common";
+import { ModuleDisabledException } from "../../../common/http/api-exceptions";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { REQUIRE_MODULE } from "../../../common/rbac/require-module.decorator";
 import { HrOrgStructureCompatController } from "./hr-org-structure-compat.controller";
@@ -70,7 +71,7 @@ describe("HrOrgStructureCompatController — settings namespace, no module gate"
         getClass: () => fakeClass,
         switchToHttp: () => ({ getRequest: () => ({ user: orgAdminUser }) }),
       } as unknown as ExecutionContext;
-      await expect(gatedGuard.canActivate(ctx)).rejects.toThrow();
+      await expect(gatedGuard.canActivate(ctx)).rejects.toThrow(ModuleDisabledException);
     });
   });
 });

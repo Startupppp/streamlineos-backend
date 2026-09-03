@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
@@ -216,7 +217,7 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     expect(() =>
       assertPermissionsGrantable(actor, crmSample, target, permMeta),
-    ).toThrow();
+    ).toThrow(ForbiddenException);
   });
 
   it("throws when a Module Admin tries to grant permissions from another module", () => {
@@ -234,7 +235,7 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     expect(() =>
       assertPermissionsGrantable(actor, crossModuleKeys, target, permMeta),
-    ).toThrow();
+    ).toThrow(ForbiddenException);
   });
 
   it("throws when actor tries to elevate above their own rank (no target.rank check exemption)", () => {
@@ -253,6 +254,6 @@ describe("assertPermissionsGrantable — Module Admin rank boundary", () => {
 
     expect(() =>
       assertPermissionsGrantable(actor, requestedKeys, target, permMeta),
-    ).toThrow();
+    ).toThrow(ForbiddenException);
   });
 });

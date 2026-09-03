@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { PeriodReconciliationService } from "./period-reconciliation.service";
 import { TaxAdminService } from "./tax-admin.service";
@@ -93,14 +94,14 @@ describe("TaxAdminService — cross-tenant isolation", () => {
   it("scopes approve to attacker org (cross-tenant isolation — approve checks orgId)", async () => {
     const { db, where, findFirst, findMany, updateWhere } = makeDb([]);
     const svc = new TaxAdminService(db);
-    await expect(svc.approve(ATTACKER, "verifier-1", 999)).rejects.toThrow();
+    await expect(svc.approve(ATTACKER, "verifier-1", 999)).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany, updateWhere)).toContain(ATTACKER);
   });
 
   it("scopes reject to attacker org (cross-tenant isolation — reject checks orgId)", async () => {
     const { db, where, findFirst, findMany, updateWhere } = makeDb([]);
     const svc = new TaxAdminService(db);
-    await expect(svc.reject(ATTACKER, 999, "not eligible")).rejects.toThrow();
+    await expect(svc.reject(ATTACKER, 999, "not eligible")).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany, updateWhere)).toContain(ATTACKER);
   });
 });

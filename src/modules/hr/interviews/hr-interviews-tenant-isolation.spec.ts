@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { HrInterviewsService } from "./hr-interviews.service";
 import { HrHiringFlowsService } from "./hr-hiring-flows.service";
@@ -82,7 +83,7 @@ describe("HrHiringFlowsService — cross-tenant isolation", () => {
     const { db, where, findMany, findFirst } = makeDb([]);
     const mockCache = { cachedVersioned: jest.fn().mockImplementation((_ns: string, _key: string, fn: () => unknown) => fn()), invalidateNamespace: jest.fn() };
     const svc = new HrHiringFlowsService(db, mockCache as never);
-    await expect(svc.getFlow(ATTACKER, 999)).rejects.toThrow();
+    await expect(svc.getFlow(ATTACKER, 999)).rejects.toThrow(NotFoundException);
     expect(sqlValues(isolationArg(where, findMany, findFirst))).toContain(ATTACKER);
   });
 

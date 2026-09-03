@@ -137,7 +137,7 @@ describe("HrEmploymentsService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrEmploymentsService(db, mockAudit as never);
-    await expect(svc.getOne(ATTACKER, "actor-1", 999, "all")).rejects.toThrow();
+    await expect(svc.getOne(ATTACKER, "actor-1", 999, "all")).rejects.toThrow(NotFoundException);
   });
 
   it("returns employment for owning org (control)", async () => {
@@ -179,7 +179,7 @@ describe("HrPeopleService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrPeopleService(db, mockAudit as never);
-    await expect(svc.getOne(ATTACKER, "actor-1", 999, "all")).rejects.toThrow();
+    await expect(svc.getOne(ATTACKER, "actor-1", 999, "all")).rejects.toThrow(NotFoundException);
   });
 
   it("returns person for owning org (control)", async () => {

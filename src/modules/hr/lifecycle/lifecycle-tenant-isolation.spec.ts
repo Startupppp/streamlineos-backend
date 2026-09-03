@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { AlumniService } from "./alumni.service";
 import { ExitService } from "./exit.service";
@@ -359,7 +360,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
         db,
         {} as never, {} as never, {} as never,
       );
-      await expect(svc.getLetter(ATTACKER, 1)).rejects.toThrow();
+      await expect(svc.getLetter(ATTACKER, 1)).rejects.toThrow(NotFoundException);
       expect(findFirst).toHaveBeenCalled();
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
@@ -388,7 +389,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(ATTACKER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow();
+      await expect(svc.create(ATTACKER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow(NotFoundException);
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(ATTACKER);
@@ -397,7 +398,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the owning org (CONTROL)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(OWNER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow();
+      await expect(svc.create(OWNER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow(NotFoundException);
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(OWNER);

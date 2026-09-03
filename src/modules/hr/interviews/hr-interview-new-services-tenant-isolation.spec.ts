@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { HrInterviewBookingService } from "./hr-interview-booking.service";
 import { HrInterviewResultsService } from "./hr-interview-results.service";
@@ -70,7 +70,7 @@ describe("HrInterviewBookingService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const mockEmail = { sendEmail: jest.fn() };
     const svc = new HrInterviewBookingService(db, mockEmail as never);
-    await expect(svc.book("nonexistent-token", { slotStart: new Date().toISOString() } as never)).rejects.toThrow();
+    await expect(svc.book("nonexistent-token", { slotStart: new Date().toISOString() } as never)).rejects.toThrow(NotFoundException);
   });
 
   it("scopes booking link lookup to orgId from token (control — token provides org context)", async () => {
@@ -78,7 +78,7 @@ describe("HrInterviewBookingService — cross-tenant isolation", () => {
     const { db, findFirst } = makeDb([linkRow]);
     const mockEmail = { sendEmail: jest.fn() };
     const svc = new HrInterviewBookingService(db, mockEmail as never);
-    await expect(svc.book("valid-token", { slotStart: new Date(Date.now() + 3600_000).toISOString() } as never)).rejects.toThrow();
+    await expect(svc.book("valid-token", { slotStart: new Date(Date.now() + 3600_000).toISOString() } as never)).rejects.toThrow(BadRequestException);
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
     );
@@ -96,7 +96,7 @@ describe("HrInterviewResultsService — cross-tenant isolation", () => {
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
     const mockEmail = { sendEmail: jest.fn() };
     const svc = new HrInterviewResultsService(db, mockAutomation as never, mockEmail as never);
-    await expect(svc.updateInterview(ATTACKER, 999, {})).rejects.toThrow();
+    await expect(svc.updateInterview(ATTACKER, 999, {})).rejects.toThrow(NotFoundException);
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
     );
@@ -155,7 +155,7 @@ describe("HrInterviewResultsService — cross-tenant isolation", () => {
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
     const mockEmail = { sendEmail: jest.fn() };
     const svc = new HrInterviewResultsService(db, mockAutomation as never, mockEmail as never);
-    await expect(svc.getScorecard(ATTACKER, "user-1", 1, 999)).rejects.toThrow();
+    await expect(svc.getScorecard(ATTACKER, "user-1", 1, 999)).rejects.toThrow(NotFoundException);
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
     );
@@ -176,7 +176,7 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
     const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never);
     const input = { candidateId: 1, jobPostingId: 1, scheduledAt: new Date(Date.now() + 86400_000).toISOString(), durationMinutes: 60, format: "VIDEO" as const, interviewers: ["i1"], createMeet: false, notifyChannels: { email: false, whatsapp: false } };
-    await expect(svc.scheduleInterview(ATTACKER, "actor-1", input)).rejects.toThrow();
+    await expect(svc.scheduleInterview(ATTACKER, "actor-1", input)).rejects.toThrow(NotFoundException);
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
     );

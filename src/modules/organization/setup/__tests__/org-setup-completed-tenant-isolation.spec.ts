@@ -164,9 +164,9 @@ describe("OrgSetupCompletedConsumerService — cross-tenant isolation", () => {
   it("names neither organization in any write when the two disagree", async () => {
     const mocks = await build();
 
-    await expect(
-      mocks.svc.handle(event(ORG_A, payloadFor(ORG_B))),
-    ).rejects.toThrow();
+    await expect(mocks.svc.handle(event(ORG_A, payloadFor(ORG_B)))).rejects.toThrow(
+      /payload orgId does not match the event's organization/,
+    );
 
     const everyArgument = JSON.stringify([
       seedSystemRolesForOrg.mock.calls,
@@ -182,9 +182,9 @@ describe("OrgSetupCompletedConsumerService — cross-tenant isolation", () => {
   it("records the refusal durably on the inbox row rather than failing silently", async () => {
     const mocks = await build();
 
-    await expect(
-      mocks.svc.handle(event(ORG_A, payloadFor(ORG_B))),
-    ).rejects.toThrow();
+    await expect(mocks.svc.handle(event(ORG_A, payloadFor(ORG_B)))).rejects.toThrow(
+      /payload orgId does not match the event's organization/,
+    );
 
     expect(markProcessed).toHaveBeenCalledTimes(1);
     const [, , status, reason] = markProcessed.mock.calls[0] ?? [];
@@ -203,9 +203,9 @@ describe("OrgSetupCompletedConsumerService — cross-tenant isolation", () => {
   it("never reads the subject when it refuses — no cross-tenant identity lookup happens", async () => {
     const mocks = await build();
 
-    await expect(
-      mocks.svc.handle(event(ORG_A, payloadFor(ORG_B))),
-    ).rejects.toThrow();
+    await expect(mocks.svc.handle(event(ORG_A, payloadFor(ORG_B)))).rejects.toThrow(
+      /payload orgId does not match the event's organization/,
+    );
 
     expect(mocks.findFirst).not.toHaveBeenCalled();
   });

@@ -115,15 +115,21 @@ describe("permissionOf helper", () => {
   });
 
   it("throws for an unknown section key", () => {
-    expect(() => permissionOf("nonexistent-section")).toThrow();
+    expect(() => permissionOf("nonexistent-section")).toThrow(
+      "Dashboard registry: 'nonexistent-section' is not a permission section",
+    );
   });
 
   it("throws for a universal section key (not a permission section)", () => {
-    expect(() => permissionOf("announcements")).toThrow();
+    expect(() => permissionOf("announcements")).toThrow(
+      "Dashboard registry: 'announcements' is not a permission section",
+    );
   });
 
   it("throws for a module section key (not a permission section)", () => {
-    expect(() => permissionOf("my-tasks")).toThrow();
+    expect(() => permissionOf("my-tasks")).toThrow(
+      "Dashboard registry: 'my-tasks' is not a permission section",
+    );
   });
 });
 

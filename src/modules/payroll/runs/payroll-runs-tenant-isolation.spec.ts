@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 jest.mock("../../../common/tenant", () => ({
   withTenant: (_db: unknown, _opts: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
   runWithTenantContext: (_ctx: unknown, fn: () => Promise<unknown>) => fn(),
@@ -72,7 +73,7 @@ describe("PayrollRunLockService — cross-tenant isolation", () => {
   it("scopes lock acquire to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findFirst, findMany, updateWhere } = makeDb([]);
     const svc = new PayrollRunLockService(db);
-    await expect(svc.acquire(ATTACKER, 999)).rejects.toThrow();
+    await expect(svc.acquire(ATTACKER, 999)).rejects.toThrow(ConflictException);
     expect(allArgs(where, findFirst, findMany, updateWhere)).toContain(ATTACKER);
   });
 

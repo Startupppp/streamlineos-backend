@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { PolicyMutationService } from "./policy-mutation.service";
 import { PolicyQueryService } from "./policy-query.service";
@@ -87,7 +88,7 @@ describe("PolicyMutationService — cross-tenant isolation", () => {
     const mockAudit = { log: jest.fn().mockResolvedValue(undefined) };
     const svc = new PolicyMutationService(db, mockTemplates as never, mockAudit as never);
     const actor = { orgId: ATTACKER, userId: "u1", isOrgOwner: false };
-    await expect(svc.update(actor as never, 999, { name: "hacked" } as never)).rejects.toThrow();
+    await expect(svc.update(actor as never, 999, { name: "hacked" } as never)).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 });
@@ -116,7 +117,7 @@ describe("PolicyQueryService — cross-tenant isolation", () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const mockTemplates = { getById: jest.fn().mockResolvedValue(null), list: jest.fn().mockResolvedValue([]) };
     const svc = new PolicyQueryService(db, mockTemplates as never);
-    await expect(svc.listVersions(ATTACKER, 999)).rejects.toThrow();
+    await expect(svc.listVersions(ATTACKER, 999)).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 });
@@ -143,14 +144,14 @@ describe("PayslipTemplatesService — cross-tenant isolation", () => {
   it("scopes template update to org (cross-tenant isolation — update checks orgId + templateId)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayslipTemplatesService(db);
-    await expect(svc.update(ATTACKER, 999, { name: "hacked" } as never)).rejects.toThrow();
+    await expect(svc.update(ATTACKER, 999, { name: "hacked" } as never)).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
   it("scopes template delete to org (cross-tenant isolation — delete checks orgId + templateId)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayslipTemplatesService(db);
-    await expect(svc.delete(ATTACKER, 999)).rejects.toThrow();
+    await expect(svc.delete(ATTACKER, 999)).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 });
@@ -177,7 +178,7 @@ describe("PayrollComponentsService — cross-tenant isolation", () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollComponentsService(db);
     const actor = { orgId: ATTACKER, userId: "u1", isOrgOwner: false };
-    await expect(svc.update(actor as never, 999, { name: "hacked" } as never)).rejects.toThrow();
+    await expect(svc.update(actor as never, 999, { name: "hacked" } as never)).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 });
@@ -203,14 +204,14 @@ describe("PayrollTemplatesService — cross-tenant isolation", () => {
   it("scopes getById to org (cross-tenant isolation — getById uses orgId in predicate)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollTemplatesService(db);
-    await expect(svc.getById(ATTACKER, 999)).rejects.toThrow();
+    await expect(svc.getById(ATTACKER, 999)).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
   it("scopes duplicate to org (cross-tenant isolation — duplicate checks orgId)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollTemplatesService(db);
-    await expect(svc.duplicate(ATTACKER, 999, { name: "copy" } as never)).rejects.toThrow();
+    await expect(svc.duplicate(ATTACKER, 999, { name: "copy" } as never)).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 });

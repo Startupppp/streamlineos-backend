@@ -70,7 +70,7 @@ describe("AdmissionGuard — refusal carries retry information", () => {
     svc.tryAdmit("ordinary-write", "org-fill");
     const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc, makeModuleRef());
     const { ctx, res } = makeContext({ workClass: "ordinary-write", orgId: "org-b" });
-    expect(() => guard.canActivate(ctx)).toThrow();
+    expect(() => guard.canActivate(ctx)).toThrow(ServiceUnavailableException);
     expect(res.set).toHaveBeenCalledWith("Retry-After", expect.any(String));
     const retryAfter = Number(res.set.mock.calls[0]?.[1]);
     expect(retryAfter).toBeGreaterThan(0);

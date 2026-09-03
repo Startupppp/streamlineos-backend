@@ -1,4 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
+import { ProjectsNotFoundException } from "../../../common/http/api-exceptions";
 import { ProjectsQueryService } from "./projects-query.service";
 
 describe("ProjectsQueryService — cross-tenant isolation", () => {
@@ -15,7 +16,7 @@ describe("ProjectsQueryService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new ProjectsQueryService(db, cache, audit, access);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
-    await expect(svc.getProject(u, 99)).rejects.toThrow();
+    await expect(svc.getProject(u, 99)).rejects.toThrow(ProjectsNotFoundException);
   });
 
   it("returns project for the owning org (same-tenant control)", async () => {

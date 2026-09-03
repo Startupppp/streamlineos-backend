@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { ReconciliationService } from "./reconciliation.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -58,7 +59,7 @@ describe("ignoring a bank transaction invalidates the reconciliation workspace i
 
     await expect(
       service.ignoreTransaction(user, BANK_ACCOUNT_ID, { transactionId: TRANSACTION_ID } as never),
-    ).rejects.toThrow();
+    ).rejects.toThrow(BadRequestException);
 
     expect(invalidate).not.toHaveBeenCalled();
   });

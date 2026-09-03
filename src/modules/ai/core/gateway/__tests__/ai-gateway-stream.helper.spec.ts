@@ -2,6 +2,7 @@ import { streamText } from "ai";
 import { AiGatewayStreamHelper } from "../ai-gateway-stream.helper";
 import { AiConcurrencyLimiter } from "../ai-concurrency-limiter";
 import { AiUsageService } from "../../services/ai-usage.service";
+import { AiProviderUnavailableException } from "../../services/ai-service-exceptions";
 import { AiRequestCancelledException } from "../../services/ai-service-exceptions";
 import { computeTokenCharge } from "../../billing/ai-model-pricing.constants";
 import { resolveChatModelId } from "../../services/chat-assistant-model";
@@ -235,7 +236,7 @@ describe("AiGatewayStreamHelper — a streamed turn bills like a buffered one", 
     const breaker = helper.breakerFor("stream");
     for (let i = 0; i < 5; i += 1) breaker.recordFailure();
 
-    await expect(helper.run(opts())).rejects.toThrow();
+    await expect(helper.run(opts())).rejects.toThrow(AiProviderUnavailableException);
     expect(ledger.reserve).not.toHaveBeenCalled();
     expect(calls).toHaveLength(0);
   });

@@ -377,7 +377,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
     it("returns NotFoundException when template belongs to a different org (DENY — cross-tenant isolation)", async () => {
       const { db, findFirst } = makeDb([]);
       const svc = new LettersService(db);
-      await expect(svc.renderLetter(ATTACKER, { templateId: 99 })).rejects.toThrow();
+      await expect(svc.renderLetter(ATTACKER, { templateId: 99 })).rejects.toThrow(NotFoundException);
       expect(findFirst).toHaveBeenCalled();
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);

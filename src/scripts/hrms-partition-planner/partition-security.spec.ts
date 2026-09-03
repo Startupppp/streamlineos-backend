@@ -31,11 +31,11 @@ describe("partition relation security gate", () => {
   });
 
   it.each([
-    ["public_access_denied", false],
-    ["application_access_denied", false],
-    ["acl_matches_owner_default", false],
-    ["sequence_access_valid", false],
-  ])("rejects a drifted %s gate", (field, value) => {
+    ["public_access_denied", false, "attendance_events has forbidden public or column grants"],
+    ["application_access_denied", false, "attendance_events exposes access to the generic app role"],
+    ["acl_matches_owner_default", false, "attendance_events ACL differs from the approved owner-only ACL"],
+    ["sequence_access_valid", false, "attendance_events has an unsafe owned sequence ACL"],
+  ])("rejects a drifted %s gate", (field, value, message) => {
     const row = { ...safeRow, [field]: value };
     expect(() =>
       assertRelationSecurityRow(
@@ -44,7 +44,7 @@ describe("partition relation security gate", () => {
         true,
         "base-owner-only-v1",
       ),
-    ).toThrow();
+    ).toThrow(message as string);
   });
 
   it("rejects a non-owner execution role", () => {

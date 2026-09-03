@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { GitConnectionsService } from "./git-connections.service";
 
@@ -62,7 +63,7 @@ describe("GitConnectionsService — cross-tenant isolation", () => {
 
     await expect(
       service.updateConnection(ATTACKER, 1, { isActive: false }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(NotFoundException);
 
     const values = wheres.flatMap((clause) => sqlValues(clause));
     expect(values).toContain(ATTACKER);
@@ -73,7 +74,7 @@ describe("GitConnectionsService — cross-tenant isolation", () => {
     const wheres: unknown[] = [];
     const service = new GitConnectionsService(makeDb(wheres));
 
-    await expect(service.deleteConnection(ATTACKER, 1)).rejects.toThrow();
+    await expect(service.deleteConnection(ATTACKER, 1)).rejects.toThrow(NotFoundException);
 
     const values = wheres.flatMap((clause) => sqlValues(clause));
     expect(values).toContain(ATTACKER);

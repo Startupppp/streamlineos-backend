@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import { SupportTicketsService } from "./support-tickets.service";
 import type { Db } from "../../../db/drizzle.module";
 
@@ -107,7 +108,7 @@ describe("support tickets do not ship the whole organization_members row", () =>
 
     await expect(
       service.getTicket(ORG, 7, { userId: "user-me", scope: "all" }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(NotFoundException);
 
     expect(seen).toHaveLength(1);
     const options = seen[0];

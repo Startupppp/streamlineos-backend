@@ -7,6 +7,7 @@ jest.mock("./chat-assistant-model", () => ({
 
 import { ServiceUnavailableException } from "@nestjs/common";
 import { streamText } from "ai";
+import { AiProviderUnavailableException } from "./ai-service-exceptions";
 import { KbRagService } from "./kb-rag.service";
 import { AI_STREAM_BREAKER_FAILURE_THRESHOLD } from "../streaming/ai-stream-breaker";
 import type { KbAnswerSource } from "./kb-rag-retrieval.service";
@@ -106,7 +107,7 @@ describe("KbRagService — the public KB stream has a breaker and it trips", () 
     ledger.reserve.mockClear();
     limiter.acquire.mockClear();
 
-    await expect(service.streamAnswer({ orgId: ORG_ID, question: QUESTION })).rejects.toThrow();
+    await expect(service.streamAnswer({ orgId: ORG_ID, question: QUESTION })).rejects.toThrow(AiProviderUnavailableException);
 
     expect(retrieval.hasPublishedPublicArticles).not.toHaveBeenCalled();
     expect(retrieval.retrieveContext).not.toHaveBeenCalled();
