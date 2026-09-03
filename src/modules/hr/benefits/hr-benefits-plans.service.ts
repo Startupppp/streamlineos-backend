@@ -22,6 +22,7 @@ import type {
 } from "./dto/benefits.schemas";
 import { boundHrReadLimit } from "../hr-read-limits";
 import { hasPatchValues } from "../../../common/db/patch-values";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 
 type BenefitPlansCursorScope = {
   orgId: string;
@@ -146,12 +147,20 @@ export class HrBenefitsPlansService {
   }
 
   async deletePlan(orgId: string, planId: number) {
-    const [deleted] = await this.db
-      .delete(hrBenefitPlans)
-      .where(and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)))
-      .returning();
-    if (!deleted) throw new NotFoundException("Benefit plan not found");
-    return { ok: true };
+    try {
+      const [deleted] = await this.db
+        .delete(hrBenefitPlans)
+        .where(and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)))
+        .returning();
+      if (!deleted) throw new NotFoundException("Benefit plan not found");
+      return { ok: true };
+    } catch (error) {
+      if (getPostgresErrorCode(error) === "23503")
+        throw new ConflictException(
+          "This benefit plan still has enrollments or claims and cannot be deleted",
+        );
+      throw error;
+    }
   }
 
   async listWindows(orgId: string) {

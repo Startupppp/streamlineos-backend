@@ -12,6 +12,7 @@ import {
   keysetBeforeId,
   keysetBeforeValue,
 } from "../../../common/pagination/keyset";
+import { logger } from "../../../common/logger/logger.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrPayrollInputPeriods, hrPayrollInputSnapshots, hrPayrollAdjustments } from "../../../db/schema/payroll/input-capture";
@@ -154,10 +155,18 @@ export class PayrollInputsService {
 
       return built;
     } catch (err) {
-      await this.db
-        .update(hrPayrollInputPeriods)
-        .set({ status: "open", updatedAt: new Date() })
-        .where(and(eq(hrPayrollInputPeriods.id, periodId), eq(hrPayrollInputPeriods.orgId, orgId)));
+      try {
+        await this.db
+          .update(hrPayrollInputPeriods)
+          .set({ status: "open", updatedAt: new Date() })
+          .where(and(eq(hrPayrollInputPeriods.id, periodId), eq(hrPayrollInputPeriods.orgId, orgId)));
+      } catch (compensation) {
+        logger.error("Could not reopen a payroll input period after a failed build", {
+          orgId,
+          periodId,
+          error: compensation instanceof Error ? compensation.message : String(compensation),
+        });
+      }
       throw err;
     }
   }

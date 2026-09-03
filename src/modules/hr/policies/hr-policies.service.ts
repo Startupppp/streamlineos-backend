@@ -153,6 +153,7 @@ export class HrPoliciesService {
         ...(input.effectiveTo !== undefined && { effectiveTo: input.effectiveTo }),
         ...(input.priority !== undefined && { priority: input.priority }),
         ...(validatedRules !== undefined && { rules: validatedRules }),
+        updatedAt: new Date(),
       })
       .where(and(eq(hrPolicies.id, policyId), eq(hrPolicies.orgId, orgId)));
 
