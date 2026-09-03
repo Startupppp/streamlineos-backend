@@ -12,6 +12,7 @@ import postgres from "postgres";
 import { createTenantAwareDb, type DbWithClient } from "../common/tenant/tenant-db";
 import { DB_POOL_CONFIG, DRIZZLE, DRIZZLE_REPLICA, REPLICA_ROUTER } from "./drizzle.constants";
 import { poolTelemetry } from "./pool-telemetry";
+import { configurePoolAdmission, poolAdmission } from "./pool-admission";
 import { instrumentPostgresClient } from "./query-telemetry";
 import { resolvePoolConfig, type ResolvedPoolConfig } from "./pool.config";
 import { ReplicaRouter, type PoolHandle } from "./replica-router";
@@ -31,6 +32,12 @@ export type { Db } from "./drizzle.types";
       inject: [DB_POOL_CONFIG],
       useFactory: (config: ResolvedPoolConfig): DbWithClient => {
         poolTelemetry.configure({ max: config.max, slowAcquireMs: config.slowAcquireMs });
+        if (config.admission.enabled)
+          configurePoolAdmission({
+            maxConcurrent: config.max,
+            maxQueueDepth: config.admission.queueDepth,
+            acquireTimeoutMs: config.admission.acquireTimeoutMs,
+          });
         const client = instrumentPostgresClient(postgres(config.connectionString, config.options));
         return createTenantAwareDb(Object.assign(drizzle(client, { schema }), { __client: client }));
       },
@@ -97,6 +104,13 @@ export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutd
       `Transaction guards — statement ${guard(config.guards.statementTimeoutMs)} · ` +
         `idle-in-transaction ${guard(config.guards.idleInTransactionMs)} · ` +
         `lock ${guard(config.guards.lockTimeoutMs)}`,
+    );
+    const admission = poolAdmission.snapshot();
+    this.logger.log(
+      admission.configured
+        ? `Pool backpressure — shed above ${String(admission.maxConcurrent)} concurrent borrows ` +
+            `with ${String(admission.maxQueueDepth)} queued, ${String(admission.acquireTimeoutMs)}ms acquire deadline`
+        : "Pool backpressure DISABLED — waiters queue in the driver with no timeout (DB_POOL_ADMISSION_ENABLED=false)",
     );
     for (const warning of config.warnings) this.logger.warn(warning);
   }

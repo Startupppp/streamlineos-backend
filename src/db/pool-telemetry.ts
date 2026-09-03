@@ -2,6 +2,7 @@ import { startSpan } from "../common/observability/tracing";
 import { SEAM_BUDGETS } from "../common/observability/seam-budgets";
 import { logger } from "../common/logger/logger.service";
 import { BoundedReservoir, RESERVOIR_CAP } from "./query-telemetry";
+import { poolAdmission } from "./pool-admission";
 import {
   createBorrowScope,
   exitBorrowScope,
@@ -232,17 +233,27 @@ class PoolTelemetry {
 
 export const poolTelemetry = new PoolTelemetry();
 
+/**
+ * `lane` names the connection pool this borrow will come from, because a
+ * multi-region deployment opens one pool per region and a single counter would
+ * describe none of them. Admission is taken *before* `run`, so a shed caller
+ * never reaches postgres-js and therefore never executes a statement.
+ */
 export function withPoolBorrow<T>(
   run: (borrow: PoolBorrow) => Promise<T>,
+  lane = "primary",
 ): Promise<T> {
   if (getBorrowScope()) return run(NOOP_BORROW);
 
   const borrow = poolTelemetry.begin();
   return runInBorrowScope(createBorrowScope(Date.now()), async () => {
+    let releaseSlot: (() => void) | null = null;
     try {
+      releaseSlot = await poolAdmission.acquire(lane);
       return await run(borrow);
     } finally {
       borrow.release();
+      releaseSlot?.();
     }
   });
 }

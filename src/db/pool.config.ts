@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type postgres from "postgres";
 import { SEAM_BUDGETS } from "../common/observability/seam-budgets";
+import { DEFAULT_ACQUIRE_TIMEOUT_MS, DEFAULT_QUEUE_DEPTH_FACTOR } from "./pool-admission";
 
 export type PoolOptions = NonNullable<Parameters<typeof postgres>[1]>;
 
@@ -19,6 +20,17 @@ const emptyToUndefined = (value: unknown) =>
 const optionalInt = (min: number) =>
   z.preprocess(emptyToUndefined, z.coerce.number().int().min(min).optional());
 
+const optionalBool = () =>
+  z.preprocess(
+    (v) => {
+      if (v === undefined || v === "") return undefined;
+      if (v === "true" || v === "1") return true;
+      if (v === "false" || v === "0") return false;
+      return v;
+    },
+    z.boolean().optional(),
+  );
+
 export const poolEnvShape = {
   DB_POOL_MAX: optionalInt(1),
   DB_POOL_IDLE_TIMEOUT: optionalInt(1),
@@ -29,6 +41,9 @@ export const poolEnvShape = {
   DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: optionalInt(0),
   DB_LOCK_TIMEOUT_MS: optionalInt(0),
   DB_SLOW_ACQUIRE_MS: optionalInt(1),
+  DB_POOL_QUEUE_DEPTH: optionalInt(0),
+  DB_POOL_ACQUIRE_TIMEOUT_MS: optionalInt(1),
+  DB_POOL_ADMISSION_ENABLED: optionalBool(),
   DB_APPLICATION_NAME: z.preprocess(
     emptyToUndefined,
     z.string().trim().min(1).max(63).optional(),
@@ -60,7 +75,20 @@ export interface ResolvedPoolConfig {
   slowAcquireMs: number;
   shutdownTimeoutSeconds: number;
   options: PoolOptions;
+  admission: PoolAdmissionTuning;
   warnings: string[];
+}
+
+/**
+ * postgres-js has no acquire or queue timeout to set, so the bound lives in
+ * front of the driver instead (`db/pool-admission.ts`). These are its numbers.
+ * `enabled: false` restores the previous behaviour — an unbounded wait — and is
+ * a deliberate line in a deployment config, never a default.
+ */
+export interface PoolAdmissionTuning {
+  enabled: boolean;
+  queueDepth: number;
+  acquireTimeoutMs: number;
 }
 
 export function normalizeDatabaseUrl(url: string): string {
@@ -188,6 +216,11 @@ export function resolvePoolConfig(
       guards,
       utcOffsetMinutes: runtime.utcOffsetMinutes,
     }),
+    admission: {
+      enabled: tuning.DB_POOL_ADMISSION_ENABLED ?? true,
+      queueDepth: tuning.DB_POOL_QUEUE_DEPTH ?? max * DEFAULT_QUEUE_DEPTH_FACTOR,
+      acquireTimeoutMs: tuning.DB_POOL_ACQUIRE_TIMEOUT_MS ?? DEFAULT_ACQUIRE_TIMEOUT_MS,
+    },
     role: env.APP_DATABASE_URL ? "application" : "owner",
     slowAcquireMs: tuning.DB_SLOW_ACQUIRE_MS ?? DEFAULT_SLOW_ACQUIRE_MS,
     shutdownTimeoutSeconds:

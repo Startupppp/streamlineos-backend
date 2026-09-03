@@ -151,5 +151,6 @@ export async function withTenant<T>(
         await recordTargetRequest(tx, context.orgId, String(cellId));
       return fn(tx);
     }),
+    placement?.region ?? "primary",
   );
 }
