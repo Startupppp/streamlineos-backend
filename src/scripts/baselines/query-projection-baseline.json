@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "measuredAt": "2026-09-03",
+  "files": 3575,
+  "note": "Ratchets for ticket 20's projection box. countPathsAllowed is the CLOSED clause and must stay at 0; the three population ceilings hold the BLOCKED clause from growing while the product decision is outstanding. All four may only go DOWN.",
+  "countPathsAllowed": 0,
+  "findMany": 294,
+  "findFirst": 547,
+  "bareSelect": 600
+}
