@@ -40,12 +40,27 @@
 --     announced (RAISE NOTICE "EMBEDDED …"), so the residue is a number on the
 --     deploy log instead of an invisible remainder.
 --
+--   * NOT rewritten, and REPORTED SEPARATELY: a whole URL sitting in a column
+--     that participates in a primary key, unique constraint or foreign key, or
+--     that is generated or an identity. Those cannot be assigned here — two
+--     spellings of one URL ("%20" and a space) would collapse onto the same key
+--     and the unique violation would abort the whole deploy. They are counted as
+--     CONSTRAINT-HELD, never as EMBEDDED: the remediation is completely
+--     different (the script rewrites them; an <img src> needs a human decision
+--     about the render), and calling one the other sends the operator looking
+--     for rich text that is not there. This is not hypothetical —
+--     termination_supporting_documents.legacy_url is text NOT NULL under
+--     unique(organization_id, termination_id, legacy_url) in the head schema.
+--
+-- A base configured WITH a trailing slash minted "<base>//<key>", because the
+-- deleted publicUrlFor concatenated "${publicBase}/${key}" and env.validation.ts
+-- accepts a trailing slash. Leading slashes are stripped from the extracted key:
+-- leaving them would point the row at an object that does not exist, which the
+-- deliberately-no-op down file cannot reverse.
+--
 -- Discovery is catalog-driven — every text/varchar/bpchar column of every
 -- ordinary table in every application schema — so a column added after this was
--- written is still swept. Columns that participate in a primary key, unique
--- constraint or foreign key are skipped: rewriting an identifying value would
--- break the reference, and no such column has ever held an object URL.
--- Generated and identity columns are skipped because they cannot be assigned.
+-- written is still swept.
 --
 -- Idempotent: after it runs, no value matches the pattern any more, so a second
 -- run rewrites 0. Safe to re-run.
@@ -55,6 +70,26 @@
 -- indistinguishable from a clean table. This aborts with an exception naming
 -- those tables rather than reporting a clean pass over rows it never saw. That
 -- distinction is the single most misread thing on this ticket.
+--
+-- ⚠ THAT ABORT IS REACHABLE ON THIS SCHEMA, AND IT FAILS THE DEPLOY. Measured
+-- on a scratch database: 981 tables at head have RLS enabled and exactly ONE —
+-- public.external_effect_ledger, set by migrations/0474_external_effect_ledger
+-- .sql:27 — also has FORCE ROW LEVEL SECURITY. FORCE means even the table's
+-- OWNER is filtered, so row_security_active() is true for a migration role that
+-- merely owns the database. Reproduced as a NOSUPERUSER NOBYPASSRLS owner: the
+-- exception fires, the transaction rolls back, and 1047 rewrites nothing.
+-- Only a superuser or a BYPASSRLS role gets through. RUN THIS AS THE MIGRATION
+-- ROLE BEFORE DEPLOYING to find out which way it will go — an empty result
+-- means 1047 will proceed:
+--   SELECT n.nspname, c.relname
+--   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+--   WHERE c.relkind = 'r' AND c.relrowsecurity AND row_security_active(c.oid);
+-- The abort is deliberately NOT downgraded to a warning: a warning would put
+-- "nothing to do" and "could not see it" back on the same line, which is the
+-- failure this whole ticket exists to prevent. And FORCE is deliberately NOT
+-- toggled off around the scan: a migration that turns off a security control
+-- and depends on its own rollback to turn it back on is a worse defect than
+-- the one it fixes.
 --
 -- THIS MIGRATION DOES NOT MAKE THE OBJECTS UNREACHABLE. Rewriting the database
 -- stops the application handing out a permanent URL; every object already at a
@@ -104,6 +139,16 @@ BEGIN
 
   tail := regexp_replace(value, '^https?://pub-[0-9a-f]{32}\.r2\.dev/', '');
   tail := split_part(split_part(tail, '?', 1), '#', 1);
+
+  -- A base configured WITH a trailing slash minted "<base>//<key>", because the
+  -- deleted publicUrlFor concatenated "${publicBase}/${key}" without stripping
+  -- one. Nothing rejects that: env.validation.ts accepts a trailing slash. The
+  -- leading slashes are part of the URL, never part of the object key, and
+  -- leaving them turns the rewrite into a pointer at an object that does not
+  -- exist — a worse outcome than the leak, and one the no-op down file cannot
+  -- reverse.
+  tail := regexp_replace(tail, '^/+', '');
+
   IF tail = '' THEN RETURN value; END IF;
 
   IF position('%' in tail) > 0 THEN
@@ -127,14 +172,19 @@ DECLARE
   contains_expr    text;
   where_expr       text;
   set_expr         text;
+  blocked_expr     text;
   found_before     bigint;
   found_after      bigint;
+  blocked_after    bigint;
+  embedded_after   bigint;
   rewritten        bigint;
   total_before     bigint := 0;
   total_rewritten  bigint := 0;
   total_embedded   bigint := 0;
+  total_blocked    bigint := 0;
   tables_scanned   int := 0;
   rls_blocked      text[] := ARRAY[]::text[];
+  constraint_held  text[] := ARRAY[]::text[];
 BEGIN
   FOR tbl IN
     SELECT n.nspname AS s,
@@ -173,7 +223,34 @@ BEGIN
                    AND k.contype IN ('p','u','f')
                    AND a.attnum = ANY(k.conkey)
                )
-           ) AS where_sql
+           ) AS where_sql,
+           -- The MIRROR of where_sql: a column whose whole value can BE a public
+           -- URL but which this migration may not assign — it participates in a
+           -- primary key, unique constraint or foreign key, or it is generated or
+           -- an identity. Skipping it is correct (rewriting two spellings of one
+           -- URL to the same key would collide and abort the deploy), but before
+           -- this aggregate existed such a row was counted and announced as
+           -- EMBEDDED, which told the operator to go looking for an <img src>
+           -- inside rich text. It is not embedded; it is a bare, whole, leaked
+           -- URL that needs a hand or the script. termination_supporting_documents
+           -- .legacy_url is a live column of exactly this shape: text NOT NULL,
+           -- under unique(org_id, termination_id, legacy_url).
+           string_agg(
+             DISTINCT format('%I ~ %L', a.attname, whole_pat),
+             ' OR '
+           ) FILTER (
+             WHERE ty.typname IN ('text','varchar','bpchar')
+               AND (
+                 a.attgenerated <> ''
+                 OR a.attidentity <> ''
+                 OR EXISTS (
+                   SELECT 1 FROM pg_constraint k
+                   WHERE k.conrelid = c.oid
+                     AND k.contype IN ('p','u','f')
+                     AND a.attnum = ANY(k.conkey)
+                 )
+               )
+           ) AS blocked_sql
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
@@ -212,20 +289,48 @@ BEGIN
 
     EXECUTE format('SELECT count(*) FROM %I.%I WHERE %s', tbl.s, tbl.t, contains_expr)
       INTO found_after;
-    total_embedded := total_embedded + found_after;
 
-    RAISE NOTICE '1047 % .% : held=% rewritten=% EMBEDDED-REMAINING=%',
-      tbl.s, tbl.t, found_before, rewritten, found_after;
+    blocked_expr := tbl.blocked_sql;
+    blocked_after := 0;
+    IF blocked_expr IS NOT NULL THEN
+      EXECUTE format('SELECT count(*) FROM %I.%I WHERE %s', tbl.s, tbl.t, blocked_expr)
+        INTO blocked_after;
+    END IF;
+
+    -- A row can hold both, so the two classes are counted so they never overlap:
+    -- CONSTRAINT-HELD wins, and EMBEDDED is what is left over.
+    IF blocked_expr IS NULL THEN
+      embedded_after := found_after;
+    ELSE
+      EXECUTE format(
+        'SELECT count(*) FROM %I.%I WHERE (%s) AND NOT COALESCE(%s, false)',
+        tbl.s, tbl.t, contains_expr, blocked_expr
+      ) INTO embedded_after;
+    END IF;
+
+    total_embedded := total_embedded + embedded_after;
+    total_blocked := total_blocked + blocked_after;
+    IF blocked_after > 0 THEN
+      constraint_held := constraint_held || format('%I.%I (%s row(s))', tbl.s, tbl.t, blocked_after);
+    END IF;
+
+    RAISE NOTICE '1047 % .% : held=% rewritten=% CONSTRAINT-HELD=% EMBEDDED-REMAINING=%',
+      tbl.s, tbl.t, found_before, rewritten, blocked_after, embedded_after;
   END LOOP;
 
   IF array_length(rls_blocked, 1) > 0 THEN
     RAISE EXCEPTION
-      '1047 aborted: % table(s) are read through a row-level security policy this role does not bypass, so a rewrite of 0 would be indistinguishable from a clean table: %. Re-run as the database owner.',
+      '1047 aborted: % table(s) are read through a row-level security policy this role does not bypass, so a rewrite of 0 would be indistinguishable from a clean table: %. Re-run as a role that BYPASSES row-level security (superuser, or a role with the BYPASSRLS attribute). BEING THE TABLE OWNER IS NOT ENOUGH when the table carries FORCE ROW LEVEL SECURITY — public.external_effect_ledger does, set by migrations/0474_external_effect_ledger.sql, and it is the one table at head that does. Before deploying, run this as the migration role to see which way it will go: SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = ''r'' AND c.relrowsecurity AND row_security_active(c.oid);',
       array_length(rls_blocked, 1), array_to_string(rls_blocked, ', ');
   END IF;
 
-  RAISE NOTICE '1047 SUMMARY tables_scanned=% rows_holding_a_public_url=% rows_rewritten=% rows_with_an_EMBEDDED_public_url_remaining=%',
-    tables_scanned, total_before, total_rewritten, total_embedded;
+  RAISE NOTICE '1047 SUMMARY tables_scanned=% rows_holding_a_public_url=% rows_rewritten=% rows_CONSTRAINT_HELD=% rows_with_an_EMBEDDED_public_url_remaining=%',
+    tables_scanned, total_before, total_rewritten, total_blocked, total_embedded;
+
+  IF total_blocked > 0 THEN
+    RAISE WARNING '1047: % row(s) hold a WHOLE public object URL in a column this migration may not assign (it participates in a primary key, unique constraint or foreign key, or is generated/identity): %. These are NOT embedded in rich text and need no rendering decision — rewrite them with scripts/backfill-public-object-urls.mjs --apply, which does assign such columns, and be ready for a unique violation if two spellings of one URL collapse onto the same key.',
+      total_blocked, array_to_string(constraint_held, ', ');
+  END IF;
 
   IF total_embedded > 0 THEN
     RAISE WARNING '1047: % row(s) still carry a public object URL EMBEDDED inside a larger value (rich text, jsonb or an array). Those are NOT rewritten here — see the header — and remain a leak until the buckets are made private.',

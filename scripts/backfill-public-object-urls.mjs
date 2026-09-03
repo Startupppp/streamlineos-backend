@@ -166,26 +166,34 @@ console.log("");
 
 const sql = postgres(dsn, { prepare: false, max: 1 });
 
+/**
+ * A base configured WITH a trailing slash minted "<base>//<key>": the deleted
+ * publicUrlFor concatenated `${publicBase}/${key}` without stripping one, and
+ * env.validation.ts accepts a trailing slash, so nothing rejected it. Leading
+ * slashes belong to the URL, never to the object key — leaving them turns the
+ * rewrite into a pointer at an object that does not exist, which is worse than
+ * the leak and is not reversible from the rewritten value.
+ */
+function tailToKey(tail) {
+  const path = (tail.split(/[?#]/, 1)[0] ?? "").replace(/^\/+/, "");
+  if (path.length === 0) return null;
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
+
 function keyFromUrl(value) {
   const intrinsic = new RegExp(`^${R2_PUBLIC_DEV_URL_SOURCE}`).exec(value);
   if (intrinsic !== null) {
-    const tail = value.slice(intrinsic[0].length).split(/[?#]/, 1)[0] ?? "";
-    if (tail.length > 0) {
-      try {
-        return decodeURIComponent(tail);
-      } catch {
-        return tail;
-      }
-    }
+    const key = tailToKey(value.slice(intrinsic[0].length));
+    if (key !== null) return key;
   }
   for (const base of uniqueBases) {
     if (!value.startsWith(`${base}/`)) continue;
-    const tail = value.slice(base.length + 1).split(/[?#]/, 1)[0] ?? "";
-    try {
-      return decodeURIComponent(tail);
-    } catch {
-      return tail;
-    }
+    const key = tailToKey(value.slice(base.length + 1));
+    if (key !== null) return key;
   }
   return null;
 }
