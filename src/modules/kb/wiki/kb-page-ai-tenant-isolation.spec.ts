@@ -38,19 +38,32 @@ describe("KbPageAiService — cross-tenant isolation", () => {
       chain.leftJoin = jest.fn().mockReturnValue(chain);
       return chain;
     };
+    /**
+     * `summarize` reads through `loadPage`, which opens a SHORT tenant
+     * transaction that COMMITS before `invokeTextWithUsage` — the fix for a
+     * pooled connection held across the provider round trip. The double
+     * therefore needs a `transaction` seam and the `execute` that `withTenant`'s
+     * placement-fence probe issues; without them the isolation assertions below
+     * never reach the query at all.
+     */
+    const surface = {
+      query: {
+        kbPages: {
+          findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
+            wheres.push(opts.where);
+            return Promise.resolve(pageRow);
+          }),
+        },
+      },
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockReturnValue(makeJoinChain()),
+      })),
+      execute: jest.fn().mockResolvedValue([{ placement_fence_held: 1 }]),
+    };
     return {
       db: {
-        query: {
-          kbPages: {
-            findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
-              wheres.push(opts.where);
-              return Promise.resolve(pageRow);
-            }),
-          },
-        },
-        select: jest.fn().mockImplementation(() => ({
-          from: jest.fn().mockReturnValue(makeJoinChain()),
-        })),
+        ...surface,
+        transaction: <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(surface),
       } as unknown as Db,
       wheres,
     };

@@ -8,6 +8,7 @@ import {
   Req,
   Res,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { z } from "zod";
 import type { Request, Response } from "express";
@@ -21,7 +22,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
-import { respondWithAiTextStream } from "../../ai/core/streaming";
+import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../../ai/core/streaming";
 import { KbPageAiService } from "./kb-page-ai.service";
 import { kbAiAskBodySchema, type KbDocAiAction } from "../retrieval/dto/kb-ai.schemas";
 
@@ -30,6 +31,7 @@ const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).st
 @Controller("kb/pages/:pageId/ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
 @UseRateLimit("ai:invoke")
+@UseInterceptors(AiRequestAbortInterceptor)
 export class KbPageAiController {
   constructor(private readonly svc: KbPageAiService) {}
 
@@ -64,9 +66,32 @@ export class KbPageAiController {
     );
   }
 
+  /**
+   * The four buffered actions carry `@NoTenantTransaction()` for the SAME reason
+   * their streamed siblings do, and it took longer to notice because nothing
+   * about the shape looks long-running: `KbPageAiService.run` awaits
+   * `gateway.invokeTextWithUsage`, a network round trip to an AI provider, and
+   * with the request transaction open that pooled connection is idle in
+   * transaction for the whole of it. `withTenant` sets
+   * `idle_in_transaction_session_timeout` to 60s, so a slow provider does not
+   * just make one request slow — the server kills the transaction while the
+   * borrow is still outstanding, which under pool pressure is a tenant-wide
+   * failure shape.
+   *
+   * `check:placement-bypass` was blind to this: it enumerated the DECORATOR, so
+   * the four handlers that released the connection were the ones it flagged and
+   * the four that held it were invisible. Its `provider-in-transaction` rule now
+   * looks for the shape instead.
+   *
+   * The decorator also removes the tenant context's disconnect signal, which is
+   * where `getAmbientAiAbortSignal` was reading cancellation from — hence
+   * `@UseInterceptors(AiRequestAbortInterceptor)` on the class, the AI module's
+   * own convention for a metered route outside a request transaction.
+   */
   @Post("summarize")
   @BodylessAction()
   @HttpCode(200)
+  @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
   async summarize(
@@ -92,6 +117,7 @@ export class KbPageAiController {
 
   @Post("ask")
   @HttpCode(200)
+  @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams, body: kbAiAskBodySchema })
   async ask(
@@ -119,6 +145,7 @@ export class KbPageAiController {
   @Post("improve")
   @BodylessAction()
   @HttpCode(200)
+  @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
   async improve(
@@ -145,6 +172,7 @@ export class KbPageAiController {
   @Post("suggest-related")
   @BodylessAction()
   @HttpCode(200)
+  @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
   async suggestRelated(

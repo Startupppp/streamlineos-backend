@@ -85,6 +85,25 @@ export class KbArticleAiService {
     return { spec, prompt: { system: spec.system, user: spec.user(doc.title, doc.content, question) } };
   }
 
+  /**
+   * The single place either representation of an action reads the article, and
+   * the reason it is a method rather than two call sites: the tenant-scoped read
+   * and `assertCanViewArticle` must run in a transaction that COMMITS before the
+   * provider call, on the buffered path exactly as on the streamed one.
+   *
+   * This only releases the connection because the route carries
+   * `@NoTenantTransaction()`. `runInTenantTransaction` reuses an ambient request
+   * transaction rather than opening a short one, so on a route that keeps the
+   * request transaction this wrapper is a no-op and the pooled connection stays
+   * pinned for the whole provider round trip regardless — which is what the four
+   * buffered handlers did until they were given the decorator.
+   */
+  private loadArticle(user: CurrentUserContext, articleId: number) {
+    return runInTenantTransaction(this.db, () => this.assertArticle(user, articleId), {
+      orgId: user.orgId,
+    });
+  }
+
   private auditAction(user: CurrentUserContext, articleId: number, action: KbDocAiAction): void {
     this.audit.log({
       action: `ai.kb.article-${action}`,
@@ -95,13 +114,22 @@ export class KbArticleAiService {
     });
   }
 
+  /**
+   * The buffered representation. It reads through `loadArticle` for the same
+   * reason `stream` does: `invokeTextWithUsage` is a provider round trip, and a
+   * pooled connection held open across it is idle-in-transaction for the whole
+   * of it. `withTenant` sets `idle_in_transaction_session_timeout` to 60s, so a
+   * slow provider does not merely make one request slow — the server kills the
+   * transaction while the borrow is still outstanding, which under pool pressure
+   * is a tenant-wide failure shape rather than a latency one.
+   */
   private async run(
     user: CurrentUserContext,
     articleId: number,
     action: KbDocAiAction,
     question?: string,
   ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const doc = await this.assertArticle(user, articleId);
+    const doc = await this.loadArticle(user, articleId);
     const { spec, prompt } = this.prompt(action, doc, question);
 
     const result = await this.gateway.invokeTextWithUsage({
@@ -123,13 +151,14 @@ export class KbArticleAiService {
    * centre panel opens. Same gateway, same feature key as the buffered sibling,
    * so the two cannot start metering differently.
    *
-   * The visibility check opens its own short tenant transaction and that
-   * transaction COMMITS BEFORE the provider call, which is the whole point: the
-   * route carries `@NoTenantTransaction()` because `respondWithAiTextStream`
-   * awaits the pipe, so the request-scoped transaction would otherwise stay open
-   * and idle for the entire stream — up to the 60s stream deadline, which is the
-   * same 60s as the `idle_in_transaction_session_timeout` `withTenant` sets —
-   * pinning a pooled connection to the provider for its duration.
+   * The visibility check goes through the same `loadArticle` as the buffered
+   * sibling, so its short tenant transaction COMMITS BEFORE the provider call,
+   * which is the whole point: the route carries `@NoTenantTransaction()` because
+   * `respondWithAiTextStream` awaits the pipe, so the request-scoped transaction
+   * would otherwise stay open and idle for the entire stream — up to the 60s
+   * stream deadline, which is the same 60s as the
+   * `idle_in_transaction_session_timeout` `withTenant` sets — pinning a pooled
+   * connection to the provider for its duration.
    */
   async stream(
     user: CurrentUserContext,
@@ -138,11 +167,7 @@ export class KbArticleAiService {
     question?: string,
     signal?: AbortSignal,
   ): Promise<AiTextStream> {
-    const doc = await runInTenantTransaction(
-      this.db,
-      () => this.assertArticle(user, articleId),
-      { orgId: user.orgId },
-    );
+    const doc = await this.loadArticle(user, articleId);
     const { spec, prompt } = this.prompt(action, doc, question);
 
     const stream = await this.gateway.streamTextWithUsage({
