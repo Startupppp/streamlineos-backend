@@ -21159,10 +21159,6 @@
                   "phone": {
                     "type": "string",
                     "maxLength": 32
-                  },
-                  "plan": {
-                    "type": "string",
-                    "maxLength": 50
                   }
                 },
                 "required": [
@@ -29981,9 +29977,6 @@
                       "URGENT"
                     ]
                   },
-                  "assigneeId": {
-                    "type": "string"
-                  },
                   "startDate": {
                     "type": "string"
                   },
@@ -36736,9 +36729,6 @@
                       "high",
                       "urgent"
                     ]
-                  },
-                  "assigneeId": {
-                    "type": "string"
                   },
                   "description": {
                     "type": "string"
@@ -139843,9 +139833,6 @@
                         "weight"
                       ]
                     }
-                  },
-                  "isBlindMode": {
-                    "type": "boolean"
                   }
                 },
                 "required": [
