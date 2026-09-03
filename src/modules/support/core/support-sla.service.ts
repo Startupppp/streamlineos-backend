@@ -316,7 +316,7 @@ export class SupportSlaService {
         slaEscalationLevel: true,
       },
       with: {
-        assigneeMembership: { with: { user: { columns: { id: true } } } },
+        assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
       },
     });
 

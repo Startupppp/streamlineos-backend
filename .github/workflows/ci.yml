@@ -569,10 +569,11 @@ jobs:
       # check" above: a checkout of Startupppp/streamlineos-frontend beside this
       # one. The whole gate is a comparison against the frontend corpus, so a
       # backend-only half proves nothing and it exits 2 (INCONCLUSIVE) rather
-      # than 0. MEASURED 2026-09-03 in a two-repo layout: exit 0, 3,580 backend
-      # files, 5,327 frontend files, 111 distinct `with:` keys over 539 sites,
-      # 15 unknown to the frontend and all 15 triaged. Of the 17 the sweep that
-      # built this found, 5 were real user-visible bugs. Allow-failure so the
+      # than 0. MEASURED 2026-09-03 in a two-repo layout: exit 0, 3,581 backend
+      # files, 4,992 frontend files (tests excluded, comments and strings masked
+      # — both were found clearing a key falsely), 111 distinct `with:` keys over
+      # 539 sites, 15 unknown to the frontend and all 15 triaged. Of the 17 the
+      # sweep that built this found, 5 were real user-visible bugs. Allow-failure so the
       # INCONCLUSIVE is visible without skipping the steps below it; to make it
       # blocking, add a frontend checkout and set STREAMLINE_FRONTEND_ROOT.
       - name: Relation keys reach the frontend

@@ -179,7 +179,7 @@ export class SupportMacrosService {
       this.db.query.supportTickets.findFirst({
         where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
         columns: { id: true, requesterName: true },
-        with: { creatorMembership: { with: { user: { columns: { name: true } } } } },
+        with: { creatorMembership: { columns: { id: true }, with: { user: { columns: { name: true } } } } },
       }),
       this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } }),
       this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId), columns: { name: true } }),

@@ -122,8 +122,8 @@ export class SupportTicketsService {
             offset,
             with: {
               client: { columns: { id: true, name: true } },
-              assigneeMembership: { with: { user: { columns: { id: true, name: true, image: true } } } },
-              creatorMembership: { with: { user: { columns: { id: true, name: true } } } },
+              assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
+              creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
             },
           }),
           this.db
@@ -258,8 +258,8 @@ export class SupportTicketsService {
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       with: {
         client: { columns: { id: true, name: true } },
-        assigneeMembership: { with: { user: { columns: { id: true, name: true, image: true } } } },
-        creatorMembership: { with: { user: { columns: { id: true, name: true } } } },
+        assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
+        creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
         messages: {
           with: { author: { columns: { id: true, name: true, image: true } } },
           orderBy: [asc(supportTicketMessages.createdAt)],
@@ -278,8 +278,8 @@ export class SupportTicketsService {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       with: {
-        assigneeMembership: { with: { user: { columns: { id: true } } } },
-        creatorMembership: { with: { user: { columns: { id: true } } } },
+        assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
+        creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
       },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");

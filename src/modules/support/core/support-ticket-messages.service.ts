@@ -91,8 +91,8 @@ export class SupportTicketMessagesService {
         category: true,
       },
       with: {
-        creatorMembership: { with: { user: { columns: { id: true } } } },
-        assigneeMembership: { with: { user: { columns: { id: true } } } },
+        creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
+        assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
       },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");

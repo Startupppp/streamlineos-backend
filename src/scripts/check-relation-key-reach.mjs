@@ -71,7 +71,7 @@ const BACKEND_SRC = join(SCRIPT_DIR, "..");
 
 /** A broken scan must read as broken, never as green. */
 const MIN_BACKEND_FILES = 2000;
-const MIN_FRONTEND_FILES = 3000;
+const MIN_FRONTEND_FILES = 2500;
 const MIN_RELATION_KEYS = 80;
 
 /**
@@ -222,9 +222,29 @@ const EMPTY_COLUMNS_BASELINE = new Map([
   ],
 ]);
 
-const TEST_FILE_RE = /(\.spec\.ts|e2e-spec\.ts)$/;
+const BACKEND_TEST_RE = /(\.spec\.ts|e2e-spec\.ts)$/;
 
-function sourceFiles(dir, re, skipTests, out = []) {
+/**
+ * A key that appears ONLY in a frontend test does not clear, and neither does one
+ * that appears only in a COMMENT or a string literal — the corpus is masked with
+ * `maskNonCode` before it is searched.
+ *
+ * Found twice by this gate biting its own author. The wire-shape BITE tests for
+ * `check:response-contracts` name `senderMembership` and `startedByMembership` in
+ * their "the payload that actually shipped" fixtures; then the doc comment on
+ * `hooks/api/chat-schema.ts` named `senderMembership` while explaining the
+ * defect. Both cleared the key as "known to the frontend". A fixture and a
+ * comment that exist precisely to record that the name is WRONG are the last
+ * things that should clear it.
+ *
+ * The cost is a name the frontend reads only through a string literal
+ * (`row["orgDepartment"]`); it would flag. That is a triageable false positive,
+ * and the trade is right: a false positive is read once, a false clear is never
+ * read at all.
+ */
+const FRONTEND_TEST_RE = /\.(test|spec)\.tsx?$/;
+
+function sourceFiles(dir, re, testRe, out = []) {
   let entries;
   try {
     entries = readdirSync(dir);
@@ -233,14 +253,14 @@ function sourceFiles(dir, re, skipTests, out = []) {
   }
   for (const entry of entries) {
     if (entry === "node_modules" || entry === ".next" || entry === ".git") continue;
-    if (skipTests && entry === "__tests__") continue;
+    if (entry === "__tests__" || entry === "__mocks__") continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
-      sourceFiles(full, re, skipTests, out);
+      sourceFiles(full, re, testRe, out);
       continue;
     }
     if (!re.test(entry)) continue;
-    if (skipTests && TEST_FILE_RE.test(entry)) continue;
+    if (testRe.test(entry)) continue;
     out.push(full);
   }
   return out;
@@ -663,6 +683,34 @@ function selfTest() {
     0,
   );
 
+  // (g2) BITE — the two false clears this gate found in its own author's work.
+  //      A name mentioned only in a comment, or only in a test fixture asserting
+  //      that the name is WRONG, must not clear the key.
+  assert(
+    "a name that appears only in a comment does not clear",
+    evaluate(
+      padKeys([{ key: "senderMembership", file: "modules/chat/timeline.service.ts", line: 9 }]),
+      [],
+      maskNonCode(`${padCorpus}\n// the backend ships senderMembership here, which is the defect`),
+      counts,
+      new Map(),
+      new Map(),
+    ).failures.length,
+    1,
+  );
+  assert(
+    "the same name in real code does clear",
+    evaluate(
+      padKeys([{ key: "senderMembership", file: "modules/chat/timeline.service.ts", line: 9 }]),
+      [],
+      maskNonCode(`${padCorpus}\nconst id = row.senderMembership.userId;`),
+      counts,
+      new Map(),
+      new Map(),
+    ).failures.length,
+    0,
+  );
+
   // (h) a baseline entry whose key is gone fails as stale.
   assert(
     "a stale baseline key fails",
@@ -733,7 +781,7 @@ function main() {
       frontendUnreachableReason(),
     );
 
-  const backendFiles = sourceFiles(BACKEND_SRC, /\.ts$/, true);
+  const backendFiles = sourceFiles(BACKEND_SRC, /\.ts$/, BACKEND_TEST_RE);
   const relationKeys = [];
   const emptyColumns = [];
   for (const file of backendFiles) {
@@ -743,8 +791,10 @@ function main() {
     emptyColumns.push(...scan.emptyColumns);
   }
 
-  const frontendFiles = sourceFiles(FRONTEND_ROOT, /\.tsx?$/, false);
-  const corpus = frontendFiles.map((f) => readFileSync(f, "utf8")).join("\n");
+  const frontendFiles = sourceFiles(FRONTEND_ROOT, /\.tsx?$/, FRONTEND_TEST_RE);
+  const corpus = frontendFiles
+    .map((f) => maskNonCode(readFileSync(f, "utf8")))
+    .join("\n");
 
   const result = evaluate(relationKeys, emptyColumns, corpus, {
     backendFiles: backendFiles.length,
