@@ -422,7 +422,8 @@
     "roots": [
       "<rootDir>/src",
       "<rootDir>/evals",
-      "<rootDir>/test/security"
+      "<rootDir>/test/security",
+      "<rootDir>/test/perf"
     ],
     "testRegex": ".*\\.spec\\.ts$",
     "testPathIgnorePatterns": [
