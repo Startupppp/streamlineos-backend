@@ -23,7 +23,7 @@ describe("OrganizationSettingsService — custom domains refuse a foreign id wit
   const USER = "user-1";
 
   const audit = { log: jest.fn() } as unknown as AuditService;
-  const cache = { del: jest.fn(), delByPrefix: jest.fn() } as unknown as CacheService;
+  const cache = { del: jest.fn() } as unknown as CacheService;
   const mfaPolicy = {} as MfaPolicyService;
 
   afterEach(() => jest.resetAllMocks());
