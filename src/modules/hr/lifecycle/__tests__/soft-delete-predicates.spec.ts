@@ -39,9 +39,7 @@ describe("HrDashboardReportsService.timeToFill — org-scoped dept name lookup",
     const svc = new HrDashboardReportsService(db, makeCallthrough());
 
     const result = await svc.timeToFill(ORG);
-    if (result === null || !result) {
-      return;
-    }
+    expect(result).toBeTruthy();
     const byDept = (result as { byDepartment: { department: string }[] }).byDepartment;
     const deptEntry = byDept.find((d) => d.department.includes(DEPT_ID) || d.department.startsWith("Dept "));
     expect(deptEntry).toBeDefined();

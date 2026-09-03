@@ -169,7 +169,7 @@ describe("the schema keeps the audit row alive", () => {
   });
 
   it("keeps the document reference tenant-scoped when it is declared as a composite", () => {
-    if (!documentForeignKey) return;
+    expect(documentForeignKey).toBeDefined();
     expect(documentForeignKey).toContain("table.orgId");
     expect(documentForeignKey).toContain("candidateDocumentsVault.orgId");
   });

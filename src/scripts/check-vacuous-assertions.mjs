@@ -42,6 +42,21 @@
  *                   mis-shaped the guard is false and the test asserts nothing.
  *                   THIS IS THE HIGHEST-YIELD CLASS: it is indistinguishable
  *                   from a passing test in every report.
+ *   EARLY_RETURN    COND_ASSERT's other syntax, and the one this gate was blind
+ *                   to until 2026-09-03: `it("...", () => { if (!x) return; ...
+ *                   expect(...) })`. Every assertion below the guard is
+ *                   conditional on it, exactly as if it were nested inside an
+ *                   `if`, but the AST shape is different so the COND_ASSERT
+ *                   detector never saw it. Four sites were live when the class
+ *                   was added and one of them mattered:
+ *                   recruitment-candidate-vault.spec.ts's "keeps the document
+ *                   reference tenant-scoped" guarded on a SOURCE-TEXT scan
+ *                   (`lines.find(l => l.includes("foreignKey(") && ...)`), so
+ *                   removing the tenant column from that composite foreign key
+ *                   and letting Prettier wrap the declaration left the test
+ *                   GREEN — measured, not argued.
+ *                   Only a guard ABOVE every assertion in the body counts: a
+ *                   `return` after the assertions have run cannot silence them.
  *   FLOATING_ASSERT `expect(p).resolves/.rejects.<matcher>(...)` that is neither
  *                   awaited nor returned. The assertion settles after the test
  *                   has already passed.
@@ -110,7 +125,14 @@ const MIN_SPEC_FILES = 1500;
 const MIN_TEST_CALLBACKS = 8000;
 const MIN_EXPECTS = 20000;
 
-const CLASSES = ["NO_ASSERTION", "TAUTOLOGY", "COND_ASSERT", "FLOATING_ASSERT", "FOCUSED"];
+const CLASSES = [
+  "NO_ASSERTION",
+  "TAUTOLOGY",
+  "COND_ASSERT",
+  "EARLY_RETURN",
+  "FLOATING_ASSERT",
+  "FOCUSED",
+];
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage"]);
 const SPEC_RE = /(\.|-)(spec|test)\.(ts|tsx|mts|js|jsx)$/;
@@ -278,7 +300,38 @@ function analyseBody(fn, sf, counters) {
     ts.forEachChild(node, visit);
   };
   visit(fn.body ?? fn);
-  return { expectCount, hasOtherAssertion, tautologies, floating, conditional };
+
+  // EARLY_RETURN: a bare `if (guard) return;` at the top level of the body,
+  // with no else, standing ABOVE every assertion. Scanned over the body's own
+  // statement list rather than the whole subtree, so a guard inside a nested
+  // helper or a loop is not counted.
+  const earlyReturns = [];
+  if (fn.body && ts.isBlock(fn.body)) {
+    let sawAssertion = false;
+    for (const st of fn.body.statements) {
+      if (!sawAssertion && ts.isIfStatement(st) && !st.elseStatement) {
+        const t = st.thenStatement;
+        const bare =
+          (ts.isReturnStatement(t) && !t.expression) ||
+          (ts.isBlock(t) &&
+            t.statements.length === 1 &&
+            ts.isReturnStatement(t.statements[0]) &&
+            !t.statements[0].expression);
+        if (bare)
+          earlyReturns.push({
+            node: st,
+            detail: `if (${st.expression.getText(sf).slice(0, 70)}) return;`,
+          });
+      }
+      const text = st.getText(sf);
+      if (/\bexpect\s*\(/.test(text) || /\bthrow\b/.test(text)) sawAssertion = true;
+    }
+    // A guard that silences nothing is not a defect: require at least one
+    // assertion somewhere below it.
+    if (!/\bexpect\s*\(/.test(fn.getText(sf))) earlyReturns.length = 0;
+  }
+
+  return { expectCount, hasOtherAssertion, tautologies, floating, conditional, earlyReturns };
 }
 
 function scanFile(file, rel, counters, findings) {
@@ -323,6 +376,7 @@ function scanFile(file, rel, counters, findings) {
             push("NO_ASSERTION", node, node, "no expect(), no throw, no assert helper");
           for (const t of s.tautologies) push("TAUTOLOGY", t.node, node, t.detail);
           for (const t of s.conditional) push("COND_ASSERT", t.node, node, t.detail);
+          for (const t of s.earlyReturns) push("EARLY_RETURN", t.node, node, t.detail);
           for (const t of s.floating) push("FLOATING_ASSERT", t.node, node, t.detail);
         }
       }
@@ -356,6 +410,11 @@ describe("caught", () => {
     if (spy.mock.calls.length > 0) { expect(spy.mock.calls[0]).toBe(1); }
   });
   it("E floating rejects", () => { expect(Promise.reject(new Error())).rejects.toThrow(TypeError); });
+  it("N early return above the assertions", () => {
+    const found = ["a"].find((x) => x === "b");
+    if (!found) return;
+    expect(found).toContain("b");
+  });
   it.only("F focused", () => { expect(1).toBe(2); });
 });
 `,
@@ -377,6 +436,18 @@ describe("not caught", () => {
   it.skip("L skipped holding assertions", () => { expect(true).toBe(true); });
   it("M awaited rejects is fine", async () => {
     await expect(Promise.reject(new Error("z"))).rejects.toThrow(TypeError);
+  });
+  it("O a return BELOW the assertions silences nothing", () => {
+    expect(1).toBe(1);
+    if (!ready) return;
+    expect(2).toBe(2);
+  });
+  it("P an early return with an else branch is a real two-way test", () => {
+    if (!found) { expect(fallback).toBe(1); } else { expect(found).toBe(2); }
+  });
+  it("Q a guard with no assertion anywhere below it is not this class", () => {
+    if (!found) return;
+    doSomething();
   });
 });
 `,
@@ -427,6 +498,19 @@ function selfTest() {
     [
       "M an awaited rejects is NOT FLOATING_ASSERT",
       !at("not-caught.spec.ts", "M awaited rejects is fine", "FLOATING_ASSERT"),
+    ],
+    ["N is EARLY_RETURN", at("caught.spec.ts", "N early return above the assertions", "EARLY_RETURN")],
+    [
+      "O a return BELOW the assertions is NOT EARLY_RETURN",
+      !at("not-caught.spec.ts", "O a return BELOW the assertions silences nothing", "EARLY_RETURN"),
+    ],
+    [
+      "P an if/else is NOT EARLY_RETURN",
+      !at("not-caught.spec.ts", "P an early return with an else branch is a real two-way test", "EARLY_RETURN"),
+    ],
+    [
+      "Q a guard with nothing to silence is NOT EARLY_RETURN",
+      !at("not-caught.spec.ts", "Q a guard with no assertion anywhere below it is not this class", "EARLY_RETURN"),
     ],
     ["the fixture tree produced findings at all", findings.length > 0],
     [
