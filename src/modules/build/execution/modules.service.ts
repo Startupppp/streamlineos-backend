@@ -137,9 +137,11 @@ export class ModulesService {
         .update(tickets)
         .set({ moduleId: null })
         .where(and(eq(tickets.moduleId, moduleId), eq(tickets.orgId, orgId)));
-      await tx
+      const removed = await tx
         .delete(modules)
-        .where(and(eq(modules.id, moduleId), eq(modules.orgId, orgId)));
+        .where(and(eq(modules.id, moduleId), eq(modules.orgId, orgId)))
+        .returning({ id: modules.id });
+      if (removed.length === 0) throw new NotFoundException("Module not found");
     });
     return { success: true };
   }

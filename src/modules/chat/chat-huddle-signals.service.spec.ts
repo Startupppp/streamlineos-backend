@@ -1,5 +1,5 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
@@ -64,10 +64,21 @@ describe("ChatHuddleSignalsService", () => {
   });
 
   describe("heartbeat", () => {
-    it("returns ok:true even when caller has no membership", async () => {
+    it("throws NotFoundException when the huddle is not in the caller's org", async () => {
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue(null);
+      await expect(service.heartbeat(1, "user1", "org1")).rejects.toThrow(NotFoundException);
+    });
+
+    it("throws ForbiddenException when the huddle exists but the caller has no membership", async () => {
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
       mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
-      const result = await service.heartbeat(1, "user1", "org1");
-      expect(result).toEqual({ ok: true });
+      await expect(service.heartbeat(1, "user1", "org1")).rejects.toThrow(ForbiddenException);
+    });
+
+    it("returns ok:true for a huddle in the caller's org (control)", async () => {
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 5 });
+      await expect(service.heartbeat(1, "user1", "org1")).resolves.toEqual({ ok: true });
     });
   });
 

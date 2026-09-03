@@ -221,9 +221,11 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
     expect(sqlValues(q?.where)).not.toContain(OWNER_ORG);
   });
 
-  it("DENY: heartbeat binds update to actor orgId — cross-org participant cannot be kept alive", async () => {
+  it("DENY: heartbeat resolves the huddle in the actor org and 404s a cross-org id without updating", async () => {
+    const huddleFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = {
       query: {
+        chatHuddles: { findFirst: huddleFindFirst },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
       },
       update: jest.fn().mockReturnValue({
@@ -240,18 +242,19 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
     }).compile();
     const service = module.get(ChatHuddleSignalsService);
 
-    await service.heartbeat(42, "user-x", ATTACKER_ORG);
+    await expect(service.heartbeat(42, "user-x", ATTACKER_ORG)).rejects.toThrow(NotFoundException);
 
-    const whereCall = (db.update as jest.Mock).mock.results[0]?.value.set.mock.results[0]?.value.where;
-    const [predicate] = (whereCall as jest.Mock).mock.calls[0] ?? [];
-    expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
-    expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
+    expect(db.update).not.toHaveBeenCalled();
+    const [opts] = huddleFindFirst.mock.calls[0] ?? [];
+    expect(sqlValues(opts?.where)).toContain(ATTACKER_ORG);
+    expect(sqlValues(opts?.where)).not.toContain(OWNER_ORG);
   });
 
   it("CONTROL: heartbeat with matching orgId updates the participant row", async () => {
     const whereMock = jest.fn().mockResolvedValue(undefined);
     const db = {
       query: {
+        chatHuddles: { findFirst: jest.fn().mockResolvedValue({ id: 42 }) },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 5 }) },
       },
       update: jest.fn().mockReturnValue({

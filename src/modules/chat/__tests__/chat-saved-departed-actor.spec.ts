@@ -35,7 +35,7 @@ function makeDb(overrides: Partial<{ savedRows: unknown[]; message: unknown; cha
     values: jest.fn().mockReturnThis(),
     onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
     delete: jest.fn().mockReturnThis(),
-    where: jest.fn().mockResolvedValue(undefined),
+    where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ messageId: 42 }]) }),
   };
 }
 

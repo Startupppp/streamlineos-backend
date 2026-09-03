@@ -56,7 +56,8 @@ export class ChatChannelsService {
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
       columns: { id: true, name: true, entityType: true, entityId: true },
     });
-    if (!channel || !channel.entityType || !channel.entityId) return;
+    if (!channel) throw new NotFoundException("Channel not found");
+    if (!channel.entityType || !channel.entityId) return;
     await this.ensureEntityChannelDisplayName(channel, actor);
   }
 

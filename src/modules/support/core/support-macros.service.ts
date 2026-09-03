@@ -386,9 +386,11 @@ export class SupportMacrosService {
   }
 
   async removeVipClient(orgId: string, clientId: number) {
-    await this.db
+    const removed = await this.db
       .delete(supportVipClients)
-      .where(and(eq(supportVipClients.orgId, orgId), eq(supportVipClients.clientId, clientId)));
+      .where(and(eq(supportVipClients.orgId, orgId), eq(supportVipClients.clientId, clientId)))
+      .returning({ clientId: supportVipClients.clientId });
+    if (removed.length === 0) throw new NotFoundException("VIP client not found");
     return { success: true };
   }
 

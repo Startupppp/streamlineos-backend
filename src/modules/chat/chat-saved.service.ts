@@ -85,14 +85,16 @@ export class ChatSavedService {
 
   async unsave(actor: EntityActor, messageId: number) {
     const membershipId = actor.membershipId;
-    if (!membershipId) return { ok: true };
-    await this.db
+    if (!membershipId) throw new NotFoundException("Saved message not found");
+    const removed = await this.db
       .delete(chatSavedMessages)
       .where(and(
         eq(chatSavedMessages.orgId, actor.orgId),
         eq(chatSavedMessages.membershipId, membershipId),
         eq(chatSavedMessages.messageId, messageId),
-      ));
+      ))
+      .returning({ messageId: chatSavedMessages.messageId });
+    if (removed.length === 0) throw new NotFoundException("Saved message not found");
     return { ok: true };
   }
 

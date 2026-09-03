@@ -324,7 +324,7 @@ describe("ChatSavedService — the saved list is keyed on membership, never on u
     const findManySaved = jest.fn().mockResolvedValue([]);
     const findFirstMsg = jest.fn().mockResolvedValue({ id: MSG_ID, channelId: CHANNEL_ID, orgId: ORG_OWNER });
     const findFirstChanMember = jest.fn().mockResolvedValue({ role: "MEMBER" });
-    const deleteWhere = jest.fn().mockResolvedValue(undefined);
+    const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ messageId: MSG_ID }]) });
     const deleteFn = jest.fn().mockReturnValue({ where: deleteWhere });
     const insertValues = jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockResolvedValue(undefined) });
     const insertFn = jest.fn().mockReturnValue({ values: insertValues });

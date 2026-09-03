@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   kbPages,
@@ -142,7 +142,7 @@ export class KbPageVisitsService {
   ): Promise<{ success: boolean }> {
     const orgId = user.orgId;
     const membershipId = await this.activeMembershipId(user);
-    await this.db
+    const removed = await this.db
       .delete(kbPageFavorites)
       .where(
         and(
@@ -151,7 +151,9 @@ export class KbPageVisitsService {
           eq(kbPageFavorites.orgId, orgId),
           eq(kbPageFavorites.membershipId, membershipId),
         ),
-      );
+      )
+      .returning({ pageId: kbPageFavorites.pageId });
+    if (removed.length === 0) throw new NotFoundException("Favorite not found");
     return { success: true };
   }
 

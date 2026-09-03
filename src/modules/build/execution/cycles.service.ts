@@ -129,7 +129,11 @@ export class CyclesService {
   async deleteCycle(orgId: string, cycleId: number) {
     await this.db.transaction(async (tx) => {
       await tx.update(tickets).set({ cycleId: null }).where(and(eq(tickets.cycleId, cycleId), eq(tickets.orgId, orgId)));
-      await tx.delete(cycles).where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)));
+      const removed = await tx
+        .delete(cycles)
+        .where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)))
+        .returning({ id: cycles.id });
+      if (removed.length === 0) throw new NotFoundException("Cycle not found");
     });
     return { success: true };
   }

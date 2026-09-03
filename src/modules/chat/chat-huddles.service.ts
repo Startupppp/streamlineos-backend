@@ -47,6 +47,11 @@ export class ChatHuddlesService {
       columns: { id: true },
     });
     if (!activeMembership) throw new ForbiddenException("Your membership is no longer active");
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
+      columns: { isArchived: true },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
     const member = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
@@ -55,11 +60,7 @@ export class ChatHuddlesService {
       ),
     });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
-    const channel = await this.db.query.chatChannels.findFirst({
-      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
-      columns: { isArchived: true },
-    });
-    if (channel?.isArchived) throw new ForbiddenException("Channel is archived");
+    if (channel.isArchived) throw new ForbiddenException("Channel is archived");
     return activeMembership.id;
   }
 

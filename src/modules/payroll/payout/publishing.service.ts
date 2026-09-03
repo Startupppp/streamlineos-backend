@@ -78,6 +78,11 @@ export class PublishingService {
   }
 
   async retryFailed(orgId: string, runId: number, actorId: string) {
+    const run = await this.db.query.payrollRuns.findFirst({
+      where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!run) throw new NotFoundException("Payroll run not found");
     const failed = await this.db.query.payslipPublications.findMany({
       where: and(
         eq(payslipPublications.runId, runId),

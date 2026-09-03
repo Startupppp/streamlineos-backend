@@ -29,6 +29,11 @@ export class ChatHuddleSignalsService {
       columns: { id: true },
     });
     if (!activeMembership) throw new ForbiddenException("Your membership is no longer active");
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
+      columns: { isArchived: true },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
     const member = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
@@ -37,11 +42,7 @@ export class ChatHuddleSignalsService {
       ),
     });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
-    const channel = await this.db.query.chatChannels.findFirst({
-      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
-      columns: { isArchived: true },
-    });
-    if (channel?.isArchived) throw new ForbiddenException("Channel is archived");
+    if (channel.isArchived) throw new ForbiddenException("Channel is archived");
     return activeMembership.id;
   }
 
@@ -126,11 +127,16 @@ export class ChatHuddleSignalsService {
   }
 
   async heartbeat(huddleId: number, userId: string, orgId: string): Promise<{ ok: boolean }> {
+    const huddle = await this.db.query.chatHuddles.findFirst({
+      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!huddle) throw new NotFoundException("Huddle not found");
     const callerMembership = await this.db.query.organizationMembers.findFirst({
       where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
       columns: { id: true },
     });
-    if (!callerMembership) return { ok: true };
+    if (!callerMembership) throw new ForbiddenException("Your membership is no longer active");
     await this.db
       .update(chatHuddleParticipants)
       .set({ lastSeenAt: sql`now()` })

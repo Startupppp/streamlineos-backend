@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-} from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import {
   organizationMembers,
@@ -163,7 +158,7 @@ export class ProjectsWorkspaceMembersService {
       .from(organizationMembers)
       .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
       .limit(1);
-    if (!orgMember) return;
+    if (!orgMember) throw new NotFoundException("Workspace member not found");
     await this.db.transaction(async (tx) => {
       await tx
         .delete(projectWorkspaceMembers)
