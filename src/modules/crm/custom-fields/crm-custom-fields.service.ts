@@ -1,16 +1,16 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { customFieldDefinitions } from "../../db/schema";
-import { DRIZZLE } from "../../db/drizzle.constants";
-import type { Db } from "../../db/drizzle.module";
-import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
-import { keysetAfterIntValue } from "../../common/pagination/keyset";
-import { CRM_CUSTOM_FIELD_ENTITY_TYPES } from "./dto/settings.schemas";
+import { customFieldDefinitions } from "../../../db/schema";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { Db } from "../../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfterIntValue } from "../../../common/pagination/keyset";
+import { CRM_CUSTOM_FIELD_ENTITY_TYPES } from "./dto/crm-custom-fields.schemas";
 import type {
   CreateCustomFieldInput,
   CustomFieldsListInput,
   UpdateCustomFieldInput,
-} from "./dto/settings.schemas";
+} from "./dto/crm-custom-fields.schemas";
 
 /**
  * The rows this route may reach at all.
@@ -18,7 +18,7 @@ import type {
  * `custom_field_definitions` is one table serving four modules. The create
  * payload has always been CRM-only, but `updateCustomField` and
  * `deleteCustomField` took a bare `fieldId` and keyed on `(id, org_id)` — so a
- * holder of `settings:custom-fields:manage`, a key no module rung carries,
+ * holder of the old global settings key, which no module rung carried,
  * could rename or drop a Support ticket field or an HR employee field through a
  * global settings path that never mentions those modules. Naming the owned
  * entity types in the predicate makes a foreign row indistinguishable from a
@@ -55,7 +55,7 @@ const CUSTOM_FIELD_PROJECTION = {
 } as const;
 
 @Injectable()
-export class SettingsCustomFieldsService {
+export class CrmCustomFieldsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listCustomFields(orgId: string, params: CustomFieldsListInput) {

@@ -1,7 +1,6 @@
 import {
   createApiKeySchema,
   createAutomationSchema,
-  customFieldsListSchema,
   featureFlagSchema,
   listAutomationsQuerySchema,
   updateAutomationSchema,
@@ -16,7 +15,6 @@ const notifyAction = {
 describe("settings request schemas reject unknown keys", () => {
   it.each([
     ["createApiKeySchema", createApiKeySchema, { name: "key" }],
-    ["customFieldsListSchema", customFieldsListSchema, { entityType: "lead" }],
     ["featureFlagSchema", featureFlagSchema, { flag: "aiChat", enabled: true }],
     [
       "createAutomationSchema",

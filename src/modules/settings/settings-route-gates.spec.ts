@@ -13,6 +13,7 @@ import {
 } from "../../common/deprecation/deprecated.decorator";
 import { ALL_PERMISSION_NAMES } from "../rbac/permissions";
 import { AiUsageController } from "../ai/usage/ai-usage.controller";
+import { CrmCustomFieldsController } from "../crm/custom-fields/crm-custom-fields.controller";
 import { SettingsController } from "./settings.controller";
 import { SettingsDeprecatedRoutesController } from "./settings-deprecated-routes.controller";
 import { SETTINGS_ALIAS_SUNSET } from "./settings-route-deprecation";
@@ -33,20 +34,43 @@ const catalog = new Set(ALL_PERMISSION_NAMES);
 const settings = SettingsController.prototype;
 const aliases = SettingsDeprecatedRoutesController.prototype;
 
-describe("custom fields have a read rung, not only a manage rung", () => {
-  it("carries both keys in the catalogue, so the read rung is grantable", () => {
+const customFields = CrmCustomFieldsController.prototype;
+
+describe("custom fields are served by the module that owns them", () => {
+  it("carries both CRM keys in the catalogue, so a module rung can hold them", () => {
+    expect(catalog.has("crm:custom-fields:view")).toBe(true);
+    expect(catalog.has("crm:custom-fields:manage")).toBe(true);
+  });
+
+  it("gates the canonical list on the CRM view key, not on organisation administration", () => {
+    expect(gateOf(customFields.listCustomFields)).toBe("crm:custom-fields:view");
+  });
+
+  it("still gates every canonical write on manage, so the rung is a read rung and not a hole", () => {
+    expect(gateOf(customFields.createCustomField)).toBe("crm:custom-fields:manage");
+    expect(gateOf(customFields.updateCustomField)).toBe("crm:custom-fields:manage");
+    expect(gateOf(customFields.deleteCustomField)).toBe("crm:custom-fields:manage");
+  });
+
+  /*
+   * The alias deliberately keeps the OLD keys. ORG_ADMIN and OWNER are the only
+   * standings that hold `settings:custom-fields:*` today; re-gating the alias on
+   * the CRM pair would take the screen away from the roles that can reach it now.
+   */
+  it("keeps the global path on the old keys so no standing loses the screen mid-release", () => {
     expect(catalog.has("settings:custom-fields:view")).toBe(true);
     expect(catalog.has("settings:custom-fields:manage")).toBe(true);
+    expect(gateOf(aliases.listCustomFields)).toBe("settings:custom-fields:view");
+    expect(gateOf(aliases.createCustomField)).toBe("settings:custom-fields:manage");
+    expect(gateOf(aliases.updateCustomField)).toBe("settings:custom-fields:manage");
+    expect(gateOf(aliases.deleteCustomField)).toBe("settings:custom-fields:manage");
   });
 
-  it("gates the list on the view key — a reader needs no authority to change definitions", () => {
-    expect(gateOf(settings.listCustomFields)).toBe("settings:custom-fields:view");
-  });
-
-  it("still gates every write on manage, so the rung is a read rung and not a hole", () => {
-    expect(gateOf(settings.createCustomField)).toBe("settings:custom-fields:manage");
-    expect(gateOf(settings.updateCustomField)).toBe("settings:custom-fields:manage");
-    expect(gateOf(settings.deleteCustomField)).toBe("settings:custom-fields:manage");
+  it("leaves nothing custom-field shaped on the primary settings controller", () => {
+    const left = Object.getOwnPropertyNames(settings).filter((name) =>
+      name.toLowerCase().includes("customfield"),
+    );
+    expect(left).toEqual([]);
   });
 });
 
@@ -222,27 +246,51 @@ const GATED_ROUTES = [
     key: "integrations:git:manage",
   },
   {
+    route: "GET /crm/settings/custom-fields",
+    controller: CrmCustomFieldsController,
+    handler: customFields.listCustomFields,
+    key: "crm:custom-fields:view",
+  },
+  {
+    route: "POST /crm/settings/custom-fields",
+    controller: CrmCustomFieldsController,
+    handler: customFields.createCustomField,
+    key: "crm:custom-fields:manage",
+  },
+  {
+    route: "PATCH /crm/settings/custom-fields/*",
+    controller: CrmCustomFieldsController,
+    handler: customFields.updateCustomField,
+    key: "crm:custom-fields:manage",
+  },
+  {
+    route: "DELETE /crm/settings/custom-fields/*",
+    controller: CrmCustomFieldsController,
+    handler: customFields.deleteCustomField,
+    key: "crm:custom-fields:manage",
+  },
+  {
     route: "GET /settings/custom-fields",
-    controller: SettingsController,
-    handler: settings.listCustomFields,
+    controller: SettingsDeprecatedRoutesController,
+    handler: aliases.listCustomFields,
     key: "settings:custom-fields:view",
   },
   {
     route: "POST /settings/custom-fields",
-    controller: SettingsController,
-    handler: settings.createCustomField,
+    controller: SettingsDeprecatedRoutesController,
+    handler: aliases.createCustomField,
     key: "settings:custom-fields:manage",
   },
   {
     route: "PATCH /settings/custom-fields/*",
-    controller: SettingsController,
-    handler: settings.updateCustomField,
+    controller: SettingsDeprecatedRoutesController,
+    handler: aliases.updateCustomField,
     key: "settings:custom-fields:manage",
   },
   {
     route: "DELETE /settings/custom-fields/*",
-    controller: SettingsController,
-    handler: settings.deleteCustomField,
+    controller: SettingsDeprecatedRoutesController,
+    handler: aliases.deleteCustomField,
     key: "settings:custom-fields:manage",
   },
 ] as const;
@@ -266,21 +314,42 @@ describe("every route that moved denies a caller who holds no key", () => {
 });
 
 describe("the custom-fields read rung is a rung, not a hole", () => {
-  const readOnly = ["settings:custom-fields:view"];
+  const readOnly = ["crm:custom-fields:view"];
 
   it("lets the reader list definitions", async () => {
     await expect(
-      canActivate(SettingsController, settings.listCustomFields, readOnly),
+      canActivate(CrmCustomFieldsController, customFields.listCustomFields, readOnly),
     ).resolves.toBe(true);
   });
 
   it.each([
-    ["createCustomField", settings.createCustomField],
-    ["updateCustomField", settings.updateCustomField],
-    ["deleteCustomField", settings.deleteCustomField],
+    ["createCustomField", customFields.createCustomField],
+    ["updateCustomField", customFields.updateCustomField],
+    ["deleteCustomField", customFields.deleteCustomField],
   ])("refuses the reader %s", async (_name, handler) => {
     await expect(
-      canActivate(SettingsController, handler as Handler, readOnly),
+      canActivate(CrmCustomFieldsController, handler as Handler, readOnly),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  /*
+   * The move must not become a lateral hole: the organisation-administration key
+   * has no authority on the module's own path, and the module key has none on
+   * the alias. Either direction would make the two surfaces one surface again.
+   */
+  it("refuses the canonical route to a holder of the old global key alone", async () => {
+    await expect(
+      canActivate(CrmCustomFieldsController, customFields.listCustomFields, [
+        "settings:custom-fields:manage",
+      ]),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it("refuses the alias to a holder of the CRM key alone", async () => {
+    await expect(
+      canActivate(SettingsDeprecatedRoutesController, aliases.listCustomFields, [
+        "crm:custom-fields:manage",
+      ]),
     ).rejects.toThrow(ForbiddenException);
   });
 });

@@ -1,8 +1,8 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import type { Db } from "../../db/drizzle.module";
-import { SettingsCustomFieldsService } from "./settings-custom-fields.service";
-import { CRM_CUSTOM_FIELD_ENTITY_TYPES } from "./dto/settings.schemas";
-import type { CustomFieldsListInput } from "./dto/settings.schemas";
+import type { Db } from "../../../db/drizzle.module";
+import { CrmCustomFieldsService } from "./crm-custom-fields.service";
+import { CRM_CUSTOM_FIELD_ENTITY_TYPES } from "./dto/crm-custom-fields.schemas";
+import type { CustomFieldsListInput } from "./dto/crm-custom-fields.schemas";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -13,7 +13,7 @@ function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
-describe("SettingsCustomFieldsService — cross-tenant isolation", () => {
+describe("CrmCustomFieldsService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
 
@@ -38,7 +38,7 @@ describe("SettingsCustomFieldsService — cross-tenant isolation", () => {
 
   it("scopes custom field list to the requesting org (tenant isolation)", async () => {
     const wheres: unknown[] = [];
-    const svc = new SettingsCustomFieldsService(makeDb(wheres));
+    const svc = new CrmCustomFieldsService(makeDb(wheres));
 
     await svc.listCustomFields(ATTACKER, LIST);
 
@@ -50,7 +50,7 @@ describe("SettingsCustomFieldsService — cross-tenant isolation", () => {
 
   it("returns custom fields for the owning org (same-tenant control)", async () => {
     const wheres: unknown[] = [];
-    const svc = new SettingsCustomFieldsService(makeDb(wheres));
+    const svc = new CrmCustomFieldsService(makeDb(wheres));
 
     const result = await svc.listCustomFields(OWNER, LIST);
 
@@ -71,7 +71,7 @@ describe("SettingsCustomFieldsService — cross-tenant isolation", () => {
  * inside their own tenant. Same-tenant, wrong module — which no cross-tenant
  * test can see.
  */
-describe("SettingsCustomFieldsService — cross-module containment", () => {
+describe("CrmCustomFieldsService — cross-module containment", () => {
   const ORG = "org-1";
   const FOREIGN_ENTITY_TYPES = ["ticket", "employee", "project"];
 
@@ -93,7 +93,7 @@ describe("SettingsCustomFieldsService — cross-module containment", () => {
 
   it("names the owned entity types on an update, and no foreign one", async () => {
     const wheres: unknown[] = [];
-    const svc = new SettingsCustomFieldsService(recordingDb(wheres));
+    const svc = new CrmCustomFieldsService(recordingDb(wheres));
 
     await expect(svc.updateCustomField(ORG, 7, { label: "x" })).rejects.toThrow(
       NotFoundException,
@@ -106,7 +106,7 @@ describe("SettingsCustomFieldsService — cross-module containment", () => {
 
   it("names the owned entity types on a delete", async () => {
     const wheres: unknown[] = [];
-    const svc = new SettingsCustomFieldsService(recordingDb(wheres));
+    const svc = new CrmCustomFieldsService(recordingDb(wheres));
 
     await expect(svc.deleteCustomField(ORG, 7)).rejects.toThrow(NotFoundException);
 
@@ -116,7 +116,7 @@ describe("SettingsCustomFieldsService — cross-module containment", () => {
 
   it("bounds the unfiltered list to the owned entity types too", async () => {
     const wheres: unknown[] = [];
-    const svc = new SettingsCustomFieldsService(recordingDb(wheres));
+    const svc = new CrmCustomFieldsService(recordingDb(wheres));
 
     await svc.listCustomFields(ORG, { limit: 50 });
 
@@ -125,7 +125,7 @@ describe("SettingsCustomFieldsService — cross-module containment", () => {
   });
 
   it("a foreign definition is a 404, never a 403 — the id must not be confirmable", async () => {
-    const svc = new SettingsCustomFieldsService(recordingDb([]));
+    const svc = new CrmCustomFieldsService(recordingDb([]));
 
     await expect(svc.updateCustomField(ORG, 7, { label: "x" })).rejects.toThrow(
       NotFoundException,

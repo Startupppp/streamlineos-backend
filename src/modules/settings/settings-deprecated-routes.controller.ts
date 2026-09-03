@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
@@ -23,12 +24,21 @@ import { SETTINGS_ALIAS_SUNSET } from "./settings-route-deprecation";
 import { SettingsService } from "./settings.service";
 import { AiUsageService } from "../ai/usage/ai-usage.service";
 import { GitConnectionsService } from "../integrations/git/git-connections.service";
+import { CrmCustomFieldsService } from "../crm/custom-fields/crm-custom-fields.service";
 import {
   createGitConnectionSchema,
   updateGitConnectionSchema,
   type CreateGitConnectionInput,
   type UpdateGitConnectionInput,
 } from "../integrations/git/dto/git-connections.schemas";
+import {
+  createCustomFieldSchema,
+  customFieldsListSchema,
+  updateCustomFieldSchema,
+  type CreateCustomFieldInput,
+  type CustomFieldsListInput,
+  type UpdateCustomFieldInput,
+} from "../crm/custom-fields/dto/crm-custom-fields.schemas";
 import {
   updateUserRoleSchema,
   type UpdateUserRoleInput,
@@ -38,6 +48,7 @@ const connectionIdParams = z
   .object({ connectionId: z.coerce.number().int().positive() })
   .strict();
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
+const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
 
 /** The alias answers with a bare array, as it always has; the cap is the platform page cap. */
 const GIT_CONNECTION_ALIAS_PAGE_SIZE = 100;
@@ -63,6 +74,7 @@ export class SettingsDeprecatedRoutesController {
     private readonly settings: SettingsService,
     private readonly aiUsage: AiUsageService,
     private readonly gitConnections: GitConnectionsService,
+    private readonly customFields: CrmCustomFieldsService,
   ) {}
 
   @RequirePermission("ai:usage:view")
@@ -135,5 +147,67 @@ export class SettingsDeprecatedRoutesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateUserRole(u, userId, body.role);
+  }
+
+  /*
+   * The four custom-field routes keep the OLD keys, not the new `crm:*` pair.
+   * `settings:custom-fields:*` is what ORG_ADMIN and OWNER actually hold today,
+   * and re-gating the alias on a key only a CRM rung carries would take the
+   * screen away from the very roles that can reach it now — a regression dressed
+   * as a move. The canonical `/crm/settings/custom-fields` routes carry
+   * `crm:custom-fields:*`, so a `CRM_MODULE_ADMIN` gains the surface without
+   * anyone losing it.
+   */
+  @Get("custom-fields")
+  @RequirePermission("settings:custom-fields:view")
+  @Deprecated({ sunset: SETTINGS_ALIAS_SUNSET, link: "/crm/settings/custom-fields" })
+  @Validate({ query: customFieldsListSchema })
+  listCustomFields(
+    @Query() query: CustomFieldsListInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.customFields.listCustomFields(u.orgId, query);
+  }
+
+  @Post("custom-fields")
+  @HttpCode(201)
+  @Idempotent("settings.customField.create")
+  @RequirePermission("settings:custom-fields:manage")
+  @Deprecated({ sunset: SETTINGS_ALIAS_SUNSET, link: "/crm/settings/custom-fields" })
+  @Validate({ body: createCustomFieldSchema })
+  createCustomField(
+    @Body() body: CreateCustomFieldInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.customFields.createCustomField(u.orgId, u.userId, body);
+  }
+
+  @Patch("custom-fields/:fieldId")
+  @RequirePermission("settings:custom-fields:manage")
+  @Deprecated({
+    sunset: SETTINGS_ALIAS_SUNSET,
+    link: "/crm/settings/custom-fields/:fieldId",
+  })
+  @Validate({ params: fieldIdParams, body: updateCustomFieldSchema })
+  updateCustomField(
+    @Param("fieldId", ParseIntPipe) fieldId: number,
+    @Body() body: UpdateCustomFieldInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.customFields.updateCustomField(u.orgId, fieldId, body);
+  }
+
+  @Delete("custom-fields/:fieldId")
+  @RequirePermission("settings:custom-fields:manage")
+  @Deprecated({
+    sunset: SETTINGS_ALIAS_SUNSET,
+    link: "/crm/settings/custom-fields/:fieldId",
+  })
+  @Validate({ params: fieldIdParams })
+  deleteCustomField(
+    @Param("fieldId", ParseIntPipe) fieldId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.customFields.deleteCustomField(u.orgId, fieldId);
   }
 }

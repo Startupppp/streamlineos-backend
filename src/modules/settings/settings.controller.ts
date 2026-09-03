@@ -18,24 +18,17 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { SettingsService } from "./settings.service";
 import { SettingsAutomationsService } from "./settings-automations.service";
-import { SettingsCustomFieldsService } from "./settings-custom-fields.service";
 import {
   createApiKeySchema,
   createAutomationSchema,
-  createCustomFieldSchema,
-  customFieldsListSchema,
   featureFlagSchema,
   updateAutomationSchema,
-  updateCustomFieldSchema,
   listAutomationsQuerySchema,
   type CreateApiKeyInput,
   type CreateAutomationInput,
-  type CreateCustomFieldInput,
-  type CustomFieldsListInput,
   type FeatureFlagInput,
   type ListAutomationsQueryInput,
   type UpdateAutomationInput,
-  type UpdateCustomFieldInput,
   settingsProvenanceQuerySchema,
   type SettingsProvenanceQuery,
 } from "./dto/settings.schemas";
@@ -45,7 +38,6 @@ import { z } from "zod";
 
 const keyIdParams = z.object({ keyId: z.string().min(1) }).strict();
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
-const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
 
 @Controller("settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -53,7 +45,6 @@ export class SettingsController {
   constructor(
     private readonly settings: SettingsService,
     private readonly automations: SettingsAutomationsService,
-    private readonly customFields: SettingsCustomFieldsService,
   ) {}
 
   @RequirePermission("settings:view")
@@ -161,49 +152,6 @@ export class SettingsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.listAutomationRuns(u.orgId, ruleId);
-  }
-
-  @Get("custom-fields")
-  @RequirePermission("settings:custom-fields:view")
-  @Validate({ query: customFieldsListSchema })
-  listCustomFields(
-    @Query() query: CustomFieldsListInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customFields.listCustomFields(u.orgId, query);
-  }
-
-  @Post("custom-fields")
-  @HttpCode(201)
-  @Idempotent("settings.customField.create")
-  @RequirePermission("settings:custom-fields:manage")
-  @Validate({ body: createCustomFieldSchema })
-  createCustomField(
-    @Body() body: CreateCustomFieldInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customFields.createCustomField(u.orgId, u.userId, body);
-  }
-
-  @Patch("custom-fields/:fieldId")
-  @RequirePermission("settings:custom-fields:manage")
-  @Validate({ params: fieldIdParams, body: updateCustomFieldSchema })
-  updateCustomField(
-    @Param("fieldId", ParseIntPipe) fieldId: number,
-    @Body() body: UpdateCustomFieldInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customFields.updateCustomField(u.orgId, fieldId, body);
-  }
-
-  @Delete("custom-fields/:fieldId")
-  @RequirePermission("settings:custom-fields:manage")
-  @Validate({ params: fieldIdParams })
-  deleteCustomField(
-    @Param("fieldId", ParseIntPipe) fieldId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customFields.deleteCustomField(u.orgId, fieldId);
   }
 
   @RequirePermission("settings:view")
