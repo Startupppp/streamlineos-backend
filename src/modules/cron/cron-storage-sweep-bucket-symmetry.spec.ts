@@ -202,4 +202,46 @@ describe("CronStorageSweepService — a row is confirmed only against the bucket
     expect(pendingPurge.markFailed).not.toHaveBeenCalled();
     expect(pendingPurge.markConfirmed).not.toHaveBeenCalled();
   });
+  /*
+   * The organization purge writes one purpose, "org-purge", over keys drawn from
+   * every file-key column in the schema — three of which name KB-bucket objects.
+   * So the purpose cannot resolve the bucket for any of them, and a row of that
+   * purpose predating the `bucket` column has nothing left to ask: the row
+   * outlives the table its key came from. It is left untouched. Resolving it to
+   * "default" would delete nothing, answer SUCCESS, and confirm away the last
+   * pointer to a surviving KB object.
+   */
+  it("bites: an org-purge row with no recorded bucket is unresolvable, not 'default'", async () => {
+    const sent = captureS3();
+    const { svc, pendingPurge } = build([
+      { id: "pp-legacy", storageKey: "org-1/kb-media/legacy.png", purpose: "org-purge", bucket: null },
+    ]);
+
+    const result = await svc.sweep();
+
+    expect(sent.filter((s) => s.command === "DeleteObjectCommand")).toHaveLength(0);
+    expect(pendingPurge.markConfirmed).not.toHaveBeenCalled();
+    expect(pendingPurge.markFailed).not.toHaveBeenCalled();
+    expect(result.pendingPurgeSkipped).toBe(1);
+  });
+
+  it("deletes an org-purge row recorded as kb from the KB bucket, not the default one", async () => {
+    const sent = captureS3();
+    const { svc, store, pendingPurge } = build([]);
+    const uploaded = await store.uploadFile(
+      ORG, Buffer.from("kb bytes"), "kb-media", "d.txt", "text/plain", KB_BUCKET,
+    );
+    (pendingPurge.listForRetry as jest.Mock).mockResolvedValue([
+      { id: "pp-org-kb", storageKey: uploaded.key, purpose: "org-purge", bucket: "kb" },
+    ]);
+
+    await svc.sweep();
+
+    const put = only(sent, "PutObjectCommand");
+    const del = only(sent, "DeleteObjectCommand");
+    expect(put.bucket).toBe(KB_BUCKET);
+    expect(del.bucket).toBe(put.bucket);
+    expect(del.key).toBe(uploaded.key);
+    expect(pendingPurge.markConfirmed).toHaveBeenCalledWith(ORG, "pp-org-kb");
+  });
 });
