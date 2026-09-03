@@ -208,7 +208,7 @@ export class KbPageTreeService {
       );
 
       const [restoredPage] = await tx
-        .select()
+        .select(KB_PAGE_COLUMNS)
         .from(kbPages)
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)));
       if (!restoredPage) throw new NotFoundException("Page not found after restore");

@@ -113,7 +113,7 @@ export class KbPageDuplicateService {
 
       const newRootId = idMapping.get(pageId);
       if (!newRootId) throw new Error("Duplication root lost");
-      const [newRoot] = await tx.select().from(kbPages).where(eq(kbPages.id, newRootId));
+      const [newRoot] = await tx.select(KB_PAGE_COLUMNS).from(kbPages).where(eq(kbPages.id, newRootId));
       if (!newRoot) throw new NotFoundException("Duplicated page not found");
       return newRoot;
     });
@@ -140,7 +140,7 @@ export class KbPageDuplicateService {
     const ids = (idRows as Array<Record<string, unknown>>).map((row) => Number(row.id));
     if (ids.length === 0) return new Map();
     const pages = await tx
-      .select()
+      .select(KB_PAGE_COLUMNS)
       .from(kbPages)
       .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids), isNull(kbPages.deletedAt)));
     return new Map(pages.map((p) => [p.id, p]));

@@ -189,6 +189,7 @@ export class SupportKbService {
   async getArticle(orgId: string, articleId: number) {
     const article = await this.db.query.kbArticles.findFirst({
       where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+      columns: { fts: false },
       with: { category: { columns: { id: true, name: true, slug: true } } },
     });
     if (!article) throw new NotFoundException("Article not found");
