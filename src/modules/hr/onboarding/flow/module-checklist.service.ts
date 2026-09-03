@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
+import { bulkUpdateFromValues, type BulkUpdateRow } from "../../../../common/db/bulk-update";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { moduleSetupChecklistItems, moduleSetupChecklists } from "../../../../db/schema";
@@ -208,6 +209,7 @@ export class ModuleChecklistService {
     if (!seeds) return;
     const seedByKey = new Map(seeds.map((s, index) => [s.itemKey, { ...s, sortOrder: index }]));
 
+    const staleByOrg = new Map<string, BulkUpdateRow[]>();
     for (const item of items) {
       const seed = seedByKey.get(item.itemKey);
       if (!seed) continue;
@@ -219,17 +221,34 @@ export class ModuleChecklistService {
         item.sortOrder !== seed.sortOrder;
       if (!stale) continue;
 
-      await this.db
-        .update(moduleSetupChecklistItems)
-        .set({
-          title: seed.title,
-          description: seed.description ?? null,
-          actionHref: seed.actionHref ?? null,
-          required: seed.required,
-          sortOrder: seed.sortOrder,
-        })
-        .where(eq(moduleSetupChecklistItems.id, item.id));
+      const rows = staleByOrg.get(item.orgId) ?? [];
+      rows.push({
+        key: item.id,
+        values: [
+          seed.title,
+          seed.description ?? null,
+          seed.actionHref ?? null,
+          seed.required,
+          seed.sortOrder,
+        ],
+      });
+      staleByOrg.set(item.orgId, rows);
     }
+
+    for (const [orgId, rows] of staleByOrg)
+      await bulkUpdateFromValues(this.db, {
+        table: moduleSetupChecklistItems,
+        orgId,
+        key: { column: "id", type: "integer" },
+        columns: [
+          { column: "title", type: "text" },
+          { column: "description", type: "text" },
+          { column: "action_href", type: "text" },
+          { column: "required", type: "boolean" },
+          { column: "sort_order", type: "integer" },
+        ],
+        rows,
+      });
   }
 
   /**

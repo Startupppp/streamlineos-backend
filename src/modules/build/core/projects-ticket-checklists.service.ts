@@ -147,7 +147,7 @@ export class ProjectsTicketChecklistsService {
     const [item] = await this.db
       .update(ticketChecklistItems)
       .set(data)
-      .where(eq(ticketChecklistItems.id, itemId))
+      .where(and(eq(ticketChecklistItems.orgId, orgId), eq(ticketChecklistItems.id, itemId)))
       .returning();
     if (!item) throw new NotFoundException("Checklist item not found");
     return item;
@@ -164,7 +164,7 @@ export class ProjectsTicketChecklistsService {
 
     const [deleted] = await this.db
       .delete(ticketChecklistItems)
-      .where(eq(ticketChecklistItems.id, itemId))
+      .where(and(eq(ticketChecklistItems.orgId, orgId), eq(ticketChecklistItems.id, itemId)))
       .returning();
     if (!deleted) throw new NotFoundException("Checklist item not found");
     return { success: true };

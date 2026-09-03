@@ -338,7 +338,7 @@ export class HrInterviewersService {
     await this.db
       .update(interviewBookingLinks)
       .set({ status: "cancelled", updatedAt: new Date() })
-      .where(eq(interviewBookingLinks.id, linkId));
+      .where(and(eq(interviewBookingLinks.orgId, orgId), eq(interviewBookingLinks.id, linkId)));
 
     return { success: true };
   }

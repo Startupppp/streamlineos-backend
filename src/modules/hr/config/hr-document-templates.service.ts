@@ -89,7 +89,7 @@ export class HrDocumentTemplatesService {
       const [row] = await tx
         .update(documentTemplates)
         .set({ isDefault, updatedAt: new Date() })
-        .where(eq(documentTemplates.id, existing.id))
+        .where(and(eq(documentTemplates.orgId, existing.orgId), eq(documentTemplates.id, existing.id)))
         .returning();
       return row;
     });
@@ -147,7 +147,7 @@ export class HrDocumentTemplatesService {
           version: existing.version + 1,
           updatedAt: new Date(),
         })
-        .where(eq(documentTemplates.id, existing.id))
+        .where(and(eq(documentTemplates.orgId, existing.orgId), eq(documentTemplates.id, existing.id)))
         .returning();
       return row;
     });
