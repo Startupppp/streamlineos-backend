@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-03T07:21:50.531Z",
+  "generatedAt": "2026-09-03T07:23:34.694Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -41593,8 +41593,13 @@
       "sunsetEvidence": null,
       "deprecation": null,
       "knownParameters": [],
-      "idempotency": null,
-      "contractEvidence": null
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": "externalEventId + providerUpdatedAt, against the stored event",
+        "replay": "A sequential redelivery is refused twice over: handleScoped discards when the stored calendar_events.updatedAt is already >= the delivered providerUpdatedAt, and again when a PENDING or IN_FLIGHT row already exists in calendar_provider_sync_queue for that event. Neither guard fences CONCURRENT deliveries: the pending-queue SELECT and the queue INSERT run in two separate runInNewTenantTransaction calls and calendar_provider_sync_queue carries no unique constraint (only two non-unique indexes), so two deliveries racing past the same watermark each enqueue a sync row. The shared-secret header authenticates the caller; it is not a replay fence.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/calendar/calendar-provider-webhook.service.ts (handleScoped); table src/db/schema/common/calendar-events.ts"
     },
     "POST /webhooks/email/{provider}": {
       "classification": "published",
