@@ -1,71 +1,17 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-
-const SYNC_EXPORT_CAP = 500;
-import { and, eq, isNull } from "drizzle-orm";
-import {
-  auditLogs,
-  hrDataRequests,
-  hrEmployments,
-  hrLegalHolds,
-  hrPeople,
-  organizationMembers,
-  users,
-} from "../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { hrDataRequests, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { DataScope } from "../access/access.types";
-
-export interface SubjectExportResult {
-  exportedAt: string;
-  subject: {
-    userId: string;
-    email: string;
-    name: string | null;
-  };
-  memberships: Array<{
-    orgId: string;
-    role: string;
-    status: string;
-    joinedAt: Date | null;
-  }>;
-  employment: Array<{
-    orgId: string;
-    lifecycleStatus: string;
-    departmentId: string | null;
-    designation: string | null;
-    joiningDate: string | null;
-    lastWorkingDay: string | null;
-  }>;
-  dataRequests: Array<{
-    id: number;
-    orgId: string;
-    type: string;
-    status: string;
-    reason: string | null;
-    createdAt: Date;
-  }>;
-  legalHolds: Array<{
-    id: number;
-    orgId: string;
-    reason: string;
-    status: string;
-    placedAt: Date;
-    releasedAt: Date | null;
-  }>;
-  auditEntries: Array<{
-    id: number;
-    action: string;
-    targetId: string | null;
-    targetType: string | null;
-    actorUserId: string | null;
-    resourceType: string | null;
-    resourceId: string | null;
-    metadata: Record<string, unknown> | null;
-    createdAt: Date;
-  }>;
-  auditEntriesPresent: boolean;
-  exportIncomplete: string[];
-}
+import {
+  SYNC_EXPORT_CAP,
+  fetchSyncAuditEntries,
+  fetchSyncDataRequests,
+  fetchSyncEmployment,
+  fetchSyncLegalHolds,
+  type SubjectExportResult,
+} from "./gdpr-sync-export-fetchers";
 
 @Injectable()
 export class GdprService {
@@ -120,120 +66,33 @@ export class GdprService {
       "chat_messages, mail_message_metadata, notifications, documents, expenses and payroll sources are included only in the async export",
     ];
 
-    const hrPersonRowsRaw = await this.db
-      .select({
-        orgId: hrPeople.orgId,
-        hrPersonId: hrPeople.id,
-      })
-      .from(hrPeople)
-      .where(
-        and(
-          eq(hrPeople.userId, subjectUserId),
-          eq(hrPeople.orgId, callerOrgId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .limit(SYNC_EXPORT_CAP + 1);
-    if (hrPersonRowsRaw.length > SYNC_EXPORT_CAP)
-      exportIncomplete.push(`hr_people: truncated at ${SYNC_EXPORT_CAP} records — use async export for full extract`);
-    const hrPersonRows = hrPersonRowsRaw.slice(0, SYNC_EXPORT_CAP);
+    const employment = await fetchSyncEmployment(
+      this.db,
+      subjectUserId,
+      callerOrgId,
+      exportIncomplete,
+    );
 
-    const employment: SubjectExportResult["employment"] = [];
-    for (const person of hrPersonRows) {
-      const rows = await this.db
-        .select({
-          orgId: hrPeople.orgId,
-          lifecycleStatus: hrEmployments.lifecycleStatus,
-          departmentId: hrEmployments.departmentId,
-          designation: hrEmployments.designation,
-          joiningDate: hrEmployments.joiningDate,
-          lastWorkingDay: hrEmployments.lastWorkingDay,
-        })
-        .from(hrEmployments)
-        .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
-        .where(
-          and(
-            eq(hrEmployments.personId, person.hrPersonId),
-            eq(hrPeople.orgId, callerOrgId),
-            isNull(hrEmployments.deletedAt),
-          ),
-        )
-        .limit(SYNC_EXPORT_CAP + 1);
-      if (rows.length > SYNC_EXPORT_CAP)
-        exportIncomplete.push(`hr_employments: truncated at ${SYNC_EXPORT_CAP} records for person ${person.hrPersonId} — use async export for full extract`);
-      for (const r of rows.slice(0, SYNC_EXPORT_CAP))
-        employment.push({
-          orgId: r.orgId,
-          lifecycleStatus: r.lifecycleStatus,
-          departmentId: r.departmentId ?? null,
-          designation: r.designation ?? null,
-          joiningDate: r.joiningDate ?? null,
-          lastWorkingDay: r.lastWorkingDay ?? null,
-        });
-    }
+    const dataRequests = await fetchSyncDataRequests(
+      this.db,
+      subjectUserId,
+      callerOrgId,
+      exportIncomplete,
+    );
 
-    const dataRequestsRaw = await this.db
-      .select({
-        id: hrDataRequests.id,
-        orgId: hrDataRequests.orgId,
-        type: hrDataRequests.type,
-        status: hrDataRequests.status,
-        reason: hrDataRequests.reason,
-        createdAt: hrDataRequests.createdAt,
-      })
-      .from(hrDataRequests)
-      .where(
-        and(
-          eq(hrDataRequests.subjectUserId, subjectUserId),
-          eq(hrDataRequests.orgId, callerOrgId),
-          isNull(hrDataRequests.deletedAt),
-        ),
-      )
-      .limit(SYNC_EXPORT_CAP + 1);
-    if (dataRequestsRaw.length > SYNC_EXPORT_CAP)
-      exportIncomplete.push(`hr_data_requests: truncated at ${SYNC_EXPORT_CAP} records — use async export for full extract`);
-    const dataRequests = dataRequestsRaw.slice(0, SYNC_EXPORT_CAP);
+    const legalHoldsRows = await fetchSyncLegalHolds(
+      this.db,
+      subjectUserId,
+      callerOrgId,
+      exportIncomplete,
+    );
 
-    const legalHoldsRaw = await this.db
-      .select({
-        id: hrLegalHolds.id,
-        orgId: hrLegalHolds.orgId,
-        reason: hrLegalHolds.reason,
-        status: hrLegalHolds.status,
-        placedAt: hrLegalHolds.placedAt,
-        releasedAt: hrLegalHolds.releasedAt,
-      })
-      .from(hrLegalHolds)
-      .where(
-        and(
-          eq(hrLegalHolds.subjectUserId, subjectUserId),
-          eq(hrLegalHolds.orgId, callerOrgId),
-          isNull(hrLegalHolds.deletedAt),
-        ),
-      )
-      .limit(SYNC_EXPORT_CAP + 1);
-    if (legalHoldsRaw.length > SYNC_EXPORT_CAP)
-      exportIncomplete.push(`hr_legal_holds: truncated at ${SYNC_EXPORT_CAP} records — use async export for full extract`);
-    const legalHoldsRows = legalHoldsRaw.slice(0, SYNC_EXPORT_CAP);
-
-    const auditEntriesRaw = await this.db
-      .select({
-        id: auditLogs.id,
-        action: auditLogs.action,
-        targetId: auditLogs.targetId,
-        targetType: auditLogs.targetType,
-        actorUserId: auditLogs.actorUserId,
-        resourceType: auditLogs.resourceType,
-        resourceId: auditLogs.resourceId,
-        metadata: auditLogs.metadata,
-        createdAt: auditLogs.createdAt,
-      })
-      .from(auditLogs)
-      .where(and(eq(auditLogs.userId, subjectUserId), eq(auditLogs.orgId, callerOrgId)))
-      .limit(SYNC_EXPORT_CAP + 1);
-    if (auditEntriesRaw.length > SYNC_EXPORT_CAP)
-      exportIncomplete.push(`audit_logs: truncated at ${SYNC_EXPORT_CAP} records — use async export for full extract`);
-    const auditEntries = auditEntriesRaw.slice(0, SYNC_EXPORT_CAP);
+    const auditEntries = await fetchSyncAuditEntries(
+      this.db,
+      subjectUserId,
+      callerOrgId,
+      exportIncomplete,
+    );
 
     return {
       exportedAt: new Date().toISOString(),

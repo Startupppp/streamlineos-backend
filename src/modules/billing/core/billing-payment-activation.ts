@@ -4,22 +4,15 @@ import {
   Logger,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   accountingSettings,
-  couponRedemptions,
-  coupons,
   subscriptionPayments,
   subscriptions,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
-import { type DbOrTx } from "../../../common/rbac/access-invalidate";
 import { AuditService } from "../../../common/audit/audit.service";
-import { logger } from "../../../common/logger/logger.service";
-import {
-  ExternalEffectLedger,
-  ExternalEffectLeaseBusyError,
-} from "../../../common/outbox/external-effect-ledger";
+import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { BillingCoupons } from "./billing-coupons";
@@ -30,7 +23,12 @@ import { ProrationLedgerService } from "./proration-ledger.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { classifyPlanChange } from "./revenue-events";
 import { VersionedCatalogService } from "./versioned-catalog.service";
-import { applyDiscount, couponDiscountPaise } from "./coupon-pricing";
+import { applyDiscount } from "./coupon-pricing";
+import {
+  grantPlanCredits,
+  recordCouponRedemption,
+  recordProrationForPlanChange,
+} from "./billing-activation-recorders";
 import { isUniqueViolation, isUniqueViolationOn } from "../../../common/db/postgres-error";
 
 export interface BillingPaymentActivationDeps {
@@ -132,7 +130,7 @@ export class BillingPaymentActivation {
         );
         let subscriptionId: number;
         if (existing) {
-          await this.recordProrationForPlanChange(tx, orgId, existing, input.plan, now);
+          await recordProrationForPlanChange(this.deps, this.logger, tx, orgId, existing, input.plan, now);
           await tx.update(subscriptions).set({
             plan: input.plan,
             status: "ACTIVE",
@@ -162,7 +160,7 @@ export class BillingPaymentActivation {
           status: "captured",
           paidAt: now,
         });
-        await this.recordCouponRedemption(tx, orgId, userId, input.couponId, amount);
+        await recordCouponRedemption(tx, orgId, userId, input.couponId, amount);
         if (revenue) {
           await this.deps.revenueAnalytics.emit(tx, {
             type: revenue.type,
@@ -193,7 +191,7 @@ export class BillingPaymentActivation {
       targetType: "subscription",
       metadata: { plan: input.plan, paymentId: input.paymentId },
     });
-    await this.grantPlanCredits(orgId, userId, input);
+    await grantPlanCredits(this.deps, orgId, userId, input);
     return { success: true, plan: input.plan, status: "ACTIVE" };
   }
 
@@ -208,102 +206,4 @@ export class BillingPaymentActivation {
       currency,
     };
   }
-
-  private async recordProrationForPlanChange(
-    tx: DbOrTx,
-    orgId: string,
-    existing: { id: number; plan: Plan; currentPeriodStart: Date | null; currentPeriodEnd: Date | null },
-    newPlan: Plan,
-    effectiveFrom: Date,
-  ): Promise<void> {
-    if (existing.plan === newPlan) return;
-    const { currentPeriodStart, currentPeriodEnd } = existing;
-    if (!currentPeriodStart || !currentPeriodEnd) return;
-    if (effectiveFrom < currentPeriodStart || effectiveFrom > currentPeriodEnd) return;
-    const [oldPrice, newPrice] = await Promise.all([
-      this.deps.catalog.getActivePriceForPlanTier(existing.plan),
-      this.deps.catalog.getActivePriceForPlanTier(newPlan),
-    ]);
-    if (!oldPrice || !newPrice) {
-      this.logger.error("Plan change recorded no proration line: no active price version for this tier", {
-        orgId,
-        subscriptionId: existing.id,
-        from: existing.plan,
-        to: newPlan,
-        missing: !oldPrice ? existing.plan : newPlan,
-      });
-      return;
-    }
-    await this.deps.prorationLedger.recordPlanChange({
-      orgId,
-      subscriptionId: existing.id,
-      idempotencyKey: `sub:${existing.id}:${newPrice.id}:${effectiveFrom.toISOString()}`,
-      oldPriceVersionId: oldPrice.id,
-      newPriceVersionId: newPrice.id,
-      oldQuantity: 1,
-      newQuantity: 1,
-      periodStart: currentPeriodStart,
-      periodEnd: currentPeriodEnd,
-      effectiveFrom,
-    }, tx);
-  }
-
-  private async recordCouponRedemption(
-    tx: DbOrTx,
-    orgId: string,
-    userId: string,
-    couponId: number | undefined,
-    amount: number,
-  ): Promise<void> {
-    if (couponId === undefined) return;
-    const [lockedCoupon] = await tx.select({
-      id: coupons.id,
-      type: coupons.type,
-      value: coupons.value,
-      maxUses: coupons.maxUses,
-      usedCount: coupons.usedCount,
-    }).from(coupons).where(and(eq(coupons.orgId, orgId), eq(coupons.id, couponId), eq(coupons.isActive, true))).for("update").limit(1);
-    if (!lockedCoupon) return;
-    if (lockedCoupon.maxUses !== null && lockedCoupon.usedCount >= lockedCoupon.maxUses) {
-      throw new BadRequestException("This coupon has reached its usage limit");
-    }
-    await tx.update(coupons).set({ usedCount: sql`${coupons.usedCount} + 1` }).where(and(eq(coupons.orgId, orgId), eq(coupons.id, couponId)));
-    const discountPaise = couponDiscountPaise({
-      id: lockedCoupon.id,
-      type: lockedCoupon.type,
-      value: lockedCoupon.value,
-      maxUses: lockedCoupon.maxUses,
-      usedCount: lockedCoupon.usedCount,
-      applicablePlans: null,
-      expiresAt: null,
-    }, amount);
-    await tx.insert(couponRedemptions).values({
-      couponId,
-      orgId,
-      userId,
-      amountPaise: discountPaise,
-    });
-  }
-
-  private async grantPlanCredits(orgId: string, userId: string, input: ConfirmCheckoutInput): Promise<void> {
-    try {
-      await this.deps.externalEffectLedger.execute({
-        organizationId: orgId,
-        producerEventId: input.paymentId,
-        effectKey: `${input.paymentId}:plan-credit-grant`,
-        effectType: "billing.plan-credit-grant",
-        providerIdempotency: "NONE",
-      }, () => this.deps.aiCredits.grantPlanCredits(orgId, input.plan, userId, input.paymentId));
-    } catch (err: unknown) {
-      if (err instanceof ExternalEffectLeaseBusyError) {
-        logger.warn("[billing] plan credit grant already in flight", { orgId, plan: input.plan });
-        return;
-      }
-      logger.error("[billing] plan credit grant failed", { orgId, plan: input.plan, err });
-      throw new ServiceUnavailableException(
-        "Payment recorded but credits could not be granted. The system will retry automatically.",
-      );
-    }
-  }
 }
-

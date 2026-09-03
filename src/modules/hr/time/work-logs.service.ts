@@ -16,6 +16,7 @@ import type {
   PostWorkLogInput,
 } from "./dto/work-logs.schemas";
 import { resolveWorkLogsScope, WORKLOGS_PERMISSION } from "./worklogs-scope";
+import { exportWorkLogsCsv } from "./work-logs-export";
 
 @Injectable()
 export class WorkLogsService {
@@ -240,72 +241,6 @@ export class WorkLogsService {
   }
 
   async exportCsv(u: CurrentUserContext, query: ExportWorkLogsQuery): Promise<string> {
-    const scope = await resolveWorkLogsScope(this.access, u);
-
-    const conditions: SQL[] = [eq(timesheets.orgId, u.orgId)];
-
-    if (scope !== "all") {
-      const [selfMember] = await this.db
-        .select({ id: organizationMembers.id })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
-        .limit(1);
-      if (selfMember) conditions.push(eq(timesheets.userMembershipId, selfMember.id));
-    } else if (query.userId) {
-      const [qMember] = await this.db
-        .select({ id: organizationMembers.id })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, query.userId)))
-        .limit(1);
-      if (qMember) conditions.push(eq(timesheets.userMembershipId, qMember.id));
-    }
-
-    if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
-    if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
-
-    const exportMember = alias(organizationMembers, "export_member");
-    const data = await this.db
-      .select({
-        date: timesheets.date,
-        hours: timesheets.hours,
-        description: timesheets.description,
-        status: timesheets.status,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(timesheets)
-      .leftJoin(exportMember, and(eq(timesheets.orgId, exportMember.orgId), eq(timesheets.userMembershipId, exportMember.id)))
-      .leftJoin(users, eq(exportMember.userId, users.id))
-      .where(and(...conditions))
-      .orderBy(timesheets.date)
-      .limit(5000);
-
-    const headers = ["Date", "Employee", "Email", "Hours", "Description", "Status"];
-    const rows = data.map((r) => [
-      r.date,
-      r.userName || "",
-      r.userEmail || "",
-      r.hours || "0",
-      r.description || "",
-      r.status || "PENDING",
-    ]);
-
-    const csv = [headers, ...rows]
-      .map((row) => row.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-
-    await this.audit.logCritical({
-      action: "worklog.exported",
-      userId: u.userId,
-      orgId: u.orgId,
-      metadata: {
-        format: "csv",
-        recordCount: rows.length,
-        startDate: query.startDate ?? null,
-        endDate: query.endDate ?? null,
-      },
-    });
-
-    return csv;
+    return exportWorkLogsCsv(this.db, this.access, this.audit, u, query);
   }
 }

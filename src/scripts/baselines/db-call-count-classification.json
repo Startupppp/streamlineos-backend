@@ -283,7 +283,7 @@
       "verdict": "N+1-FIXED",
       "note": "instantiate: bulk insert documents (single VALUES), bulk insert recipients (filtered flatMap), bulk insert fields (filtered flatMap)"
     },
-    "/email/email-outbox.service.ts": {
+    "/email/email-outbox-retry.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "each iteration is one message's own provider send and its own terminal status; the batch is claim-bounded and the work is not a repeated lookup"
     },
@@ -335,7 +335,7 @@
       "verdict": "FALSE-POSITIVE",
       "note": "chunked multi-key delete — the loop steps by ERASURE_ID_PAGE and each iteration deletes a whole page with inArray, returning its file keys. Read and classified by ticket 21; the file itself belongs to the GDPR erasure lane and was not edited"
     },
-    "/gdpr/gdpr.service.ts": {
+    "/gdpr/gdpr-sync-export-fetchers.ts": {
       "verdict": "ACTIONABLE",
       "note": "one employment SELECT per hr_people row on the subject export. Read all of them with a single inArray over the person ids and group in memory"
     },
@@ -416,6 +416,10 @@
       "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
     },
     "/inventory/purchase-orders/grn.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/quality/quality-disposition.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
     },

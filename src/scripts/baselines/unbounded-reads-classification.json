@@ -1977,6 +1977,10 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/inventory/quality/quality-disposition.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+    },
     "/inventory/quality/quality-inspections.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"

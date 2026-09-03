@@ -23,10 +23,8 @@ import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import { API_VERSION_CURRENT } from "src/common/http/api-version";
-import {
-  COMMAND_FENCE_STORE,
-  InMemoryCommandFenceStore,
-} from "src/common/idempotency/command-fence-store";
+import { COMMAND_FENCE_STORE } from "src/common/idempotency/command-fence-store";
+import { InMemoryCommandFenceStore } from "src/common/idempotency/command-fence-store-memory";
 import { PayrollJobsWorkerService } from "src/modules/payroll/jobs/payroll-jobs-worker.service";
 import { PayrollCalendarReminderScheduler } from "src/modules/payroll/insights/payroll-calendar-reminder.scheduler";
 import { NotificationDeliveryWorker } from "src/modules/notifications/notification-delivery-worker.service";

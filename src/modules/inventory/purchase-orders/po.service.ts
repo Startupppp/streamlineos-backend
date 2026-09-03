@@ -5,7 +5,6 @@ import type { DataScope } from "../../access/access.types";
 import {
   invPurchaseOrders,
   invPoLines,
-  invGrns,
   invLocations,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -15,6 +14,13 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
+import {
+  approvePo as runApprovePo,
+  cancelPo as runCancelPo,
+  closePo as runClosePo,
+  sendPo as runSendPo,
+  type PoLifecycleDeps,
+} from "./po-lifecycle";
 import type { ListPoInput, CreatePoInput, UpdatePoInput } from "./dto/inv-purchase-orders.schemas";
 
 function computePoTotals(lines: Array<{ quantity: number; unitCost: string; taxRate: string }>) {
@@ -206,100 +212,22 @@ export class PoService {
   }
 
   async approvePo(orgId: string, poId: number, userId: string) {
-    const settings = await this.settingsService.get(orgId);
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-    });
-    if (!po) throw new NotFoundException("Purchase order not found");
-    if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be approved");
-
-    if (!settings.requirePoApproval) {
-      throw new BadRequestException(
-        "Purchase order approval is not required for this organisation; send the PO directly",
-      );
-    }
-
-    const [updated] = await this.db.update(invPurchaseOrders)
-      .set({
-        status: "SENT",
-        approvedBy: userId,
-        approvedAt: new Date(),
-        sentAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
-      .returning();
-
-    await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
-    return updated;
+    return runApprovePo(this.lifecycleDeps(), orgId, poId, userId);
   }
 
   async sendPo(orgId: string, poId: number) {
-    const settings = await this.settingsService.get(orgId);
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-    });
-    if (!po) throw new NotFoundException("Purchase order not found");
-    if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be sent");
-
-    if (settings.requirePoApproval && !po.approvedBy) {
-      throw new BadRequestException("This purchase order requires approval before sending");
-    }
-
-    const [sent] = await this.db.update(invPurchaseOrders)
-      .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
-      .returning();
-
-    await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
-    return sent;
+    return runSendPo(this.lifecycleDeps(), orgId, poId);
   }
 
   async closePo(orgId: string, poId: number) {
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-    });
-    if (!po) throw new NotFoundException("Purchase order not found");
-    if (po.status !== "RECEIVED" && po.status !== "PARTIAL") {
-      throw new BadRequestException("Only RECEIVED or PARTIAL purchase orders can be closed");
-    }
-
-    const [closed] = await this.db.update(invPurchaseOrders)
-      .set({ status: "CLOSED", updatedAt: new Date() })
-      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
-      .returning();
-
-    await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
-    return closed;
+    return runClosePo(this.lifecycleDeps(), orgId, poId);
   }
 
   async cancelPo(orgId: string, poId: number) {
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-    });
-    if (!po) throw new NotFoundException("Purchase order not found");
-    if (po.status !== "DRAFT" && po.status !== "SENT") {
-      throw new BadRequestException("Only DRAFT or SENT purchase orders can be cancelled");
-    }
+    return runCancelPo(this.lifecycleDeps(), orgId, poId);
+  }
 
-    const grnCount = await this.db.select({ cnt: sql<number>`count(*)::int` })
-      .from(invGrns)
-      .where(and(eq(invGrns.poId, poId), eq(invGrns.orgId, orgId)));
-
-    if ((grnCount[0]?.cnt ?? 0) > 0) {
-      throw new BadRequestException("Cannot cancel a purchase order that has already received goods");
-    }
-
-    const [cancelled] = await this.db.update(invPurchaseOrders)
-      .set({ status: "CANCELLED", updatedAt: new Date() })
-      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
-      .returning();
-
-    await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
-    return cancelled;
+  private lifecycleDeps(): PoLifecycleDeps {
+    return { db: this.db, cache: this.cache, settingsService: this.settingsService };
   }
 }

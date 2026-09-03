@@ -3,9 +3,6 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   invQualityInspections,
   invQualityInspectionLines,
-  invStockLevels,
-  invVendorReturns,
-  invVendorReturnLines,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -15,6 +12,7 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { StockMovement } from "../stock-engine/stock-engine.types";
+import { batchFetchStockLevels, disposeInspection, stockLevelKey } from "./quality-disposition";
 import type {
   ListInspectionsQueryInput,
   CreateInspectionInput,
@@ -130,9 +128,9 @@ export class InspectionsService {
       throw new ConflictException("Invalid state");
     }
     const movements: StockMovement[] = [];
-    const stockLevelMap = await this.batchFetchStockLevels(orgId, inspection.lines);
+    const stockLevelMap = await batchFetchStockLevels(this.db, orgId, inspection.lines);
     for (const line of inspection.lines) {
-      const levelKey = this.stockLevelKey(line.productVariantId, line.lotId, line.serialId);
+      const levelKey = stockLevelKey(line.productVariantId, line.lotId, line.serialId);
       const level = stockLevelMap.get(levelKey);
       if (level && parseFloat(level.qualityHoldQty ?? "0") > 0) {
         movements.push(
@@ -179,87 +177,15 @@ export class InspectionsService {
   async dispose(orgId: string, userId: string, id: number, input: DisposeInspectionInput, idempotencyKey: string) {
     const inspection = await this.findOne(orgId, id);
     if (inspection.status !== "DISPOSITION_REQUIRED") throw new ConflictException("Invalid state");
-
-    const quarantineMoves: StockMovement[] = [];
-    const scrapMoves: StockMovement[] = [];
-    const releaseMoves: StockMovement[] = [];
-    type RtvEntry = { vendorId: number; lineId: number; productVariantId: number; lotId: number | null; serialId: number | null; quantity: string };
-    const rtvEntries: RtvEntry[] = [];
-
-    const stockLevelMap = await this.batchFetchStockLevels(orgId, inspection.lines);
-
-    for (const dl of input.lines) {
-      const line = inspection.lines.find(l => l.id === dl.lineId);
-      if (!line) throw new BadRequestException(`Line ${dl.lineId} not found`);
-      const levelKey = this.stockLevelKey(line.productVariantId, line.lotId, line.serialId);
-      const cachedLevel = stockLevelMap.get(levelKey);
-      const locId = dl.locationId ?? cachedLevel?.locationId;
-      if (!locId && dl.disposition !== "RETURN_TO_VENDOR") throw new BadRequestException(`No location found for line ${dl.lineId}`);
-      const base = { productVariantId: line.productVariantId, locationId: locId ?? 0, lotId: line.lotId ?? undefined, serialId: line.serialId ?? undefined };
-      if (dl.disposition === "QUARANTINE") {
-        quarantineMoves.push({ transactionType: "QUARANTINE_IN", ...base, quantityDelta: line.quantity, qualityBucket: "BLOCKED" });
-      } else if (dl.disposition === "SCRAP") {
-        scrapMoves.push({ transactionType: "SCRAP", ...base, quantityDelta: "-" + line.quantity });
-      } else if (dl.disposition === "RELEASE_TO_AVAILABLE") {
-        if (cachedLevel && parseFloat(cachedLevel.qualityHoldQty ?? "0") > 0) {
-          releaseMoves.push(
-            { transactionType: "QUARANTINE_OUT", ...base, quantityDelta: "-" + line.quantity, qualityBucket: "QUALITY_HOLD" },
-            { transactionType: "ADJUSTMENT_IN", ...base, quantityDelta: line.quantity, qualityBucket: "ON_HAND" },
-          );
-        }
-      } else if (dl.disposition === "RETURN_TO_VENDOR") {
-        const vendorId = dl.vendorId;
-        if (vendorId === undefined) throw new BadRequestException("vendorId required for RETURN_TO_VENDOR");
-        rtvEntries.push({ vendorId, lineId: dl.lineId, productVariantId: line.productVariantId, lotId: line.lotId ?? null, serialId: line.serialId ?? null, quantity: line.quantity });
-      }
-    }
-
-    if (quarantineMoves.length > 0) {
-      await this.engine.execute(orgId, userId, { idempotencyKey: `${idempotencyKey}:Q`, sourceType: "INSPECTION_DISPOSE", sourceId: String(id), movements: quarantineMoves });
-    }
-    if (scrapMoves.length > 0) {
-      await this.engine.execute(orgId, userId, { idempotencyKey: `${idempotencyKey}:S`, sourceType: "INSPECTION_DISPOSE", sourceId: String(id), movements: scrapMoves });
-    }
-    if (releaseMoves.length > 0) {
-      await this.engine.execute(orgId, userId, { idempotencyKey: `${idempotencyKey}:R`, sourceType: "INSPECTION_DISPOSE", sourceId: String(id), movements: releaseMoves });
-    }
-
-    if (rtvEntries.length > 0) {
-      const byVendor = new Map<number, RtvEntry[]>();
-      for (const e of rtvEntries) {
-        const arr = byVendor.get(e.vendorId) ?? [];
-        arr.push(e);
-        byVendor.set(e.vendorId, arr);
-      }
-      for (const [vendorId, entries] of byVendor) {
-        await this.db.transaction(async (tx) => {
-          const returnNumber = await this.numSeq.next(orgId, "VENDOR_RETURN", tx);
-          const [ret] = await tx.insert(invVendorReturns).values({
-            orgId, returnNumber, vendorId, status: "DRAFT", createdBy: userId,
-          }).returning();
-          if (!ret) throw new Error("Insert vendor return failed");
-          await tx.insert(invVendorReturnLines).values(
-            entries.map(e => ({
-              returnId: ret.id,
-              productVariantId: e.productVariantId,
-              lotId: e.lotId,
-              serialId: e.serialId,
-              quantity: e.quantity,
-              reason: "QUALITY_REJECTED" as const,
-            })),
-          );
-        });
-      }
-    }
-
-    await this.db.update(invQualityInspections)
-      .set({ status: "COMPLETED", completedAt: new Date() })
-      .where(and(eq(invQualityInspections.id, id), eq(invQualityInspections.orgId, orgId)));
-    await this.audit.insert(this.db, {
-      orgId, actorUserId: userId, action: "quality_inspection.disposed",
-      resourceType: "inspection", resourceId: String(id),
-    });
-    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityInspectionsNamespace(orgId));
+    await disposeInspection(
+      { db: this.db, cache: this.cache, engine: this.engine, numSeq: this.numSeq, audit: this.audit },
+      orgId,
+      userId,
+      id,
+      inspection.lines,
+      input,
+      idempotencyKey,
+    );
     return this.findOne(orgId, id);
   }
 
@@ -277,33 +203,5 @@ export class InspectionsService {
     });
     await this.cache.invalidateNamespace(CACHE_KEYS.invQualityInspectionsNamespace(orgId));
     return this.findOne(orgId, id);
-  }
-
-  private stockLevelKey(productVariantId: number, lotId: number | null | undefined, serialId: number | null | undefined): string {
-    return `${productVariantId}:${lotId ?? "null"}:${serialId ?? "null"}`;
-  }
-
-  private async batchFetchStockLevels(
-    orgId: string,
-    lines: Array<{ productVariantId: number; lotId: number | null | undefined; serialId: number | null | undefined }>,
-  ): Promise<Map<string, typeof invStockLevels.$inferSelect>> {
-    if (lines.length === 0) return new Map();
-
-    const productVariantIds = [...new Set(lines.map(l => l.productVariantId))];
-
-    const rows = await this.db
-      .select()
-      .from(invStockLevels)
-      .where(and(
-        eq(invStockLevels.orgId, orgId),
-        inArray(invStockLevels.productVariantId, productVariantIds),
-      ));
-
-    const map = new Map<string, typeof invStockLevels.$inferSelect>();
-    for (const row of rows) {
-      const key = this.stockLevelKey(row.productVariantId, row.lotId, row.serialId);
-      map.set(key, row);
-    }
-    return map;
   }
 }

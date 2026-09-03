@@ -17,6 +17,7 @@ import { EntriesService } from "./entries.service";
 import { formatDateOnly } from "./lib/period.helpers";
 import type { StartTimerInput, ConvertTimerInput } from "./dto/timer.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import * as transitions from "./timer-transitions";
 
 function elapsedSeconds(session: {
   accumulatedSeconds: number;
@@ -182,88 +183,28 @@ export class TimerService {
   }
 
   async pauseTimer(u: CurrentUserContext, timerId: number) {
-    const membershipId = actingMembershipId(u.principal);
-    const session = await this.db.query.timerSessions.findFirst({
-      where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
-    });
-    if (!session) throw new NotFoundException("Timer not found");
-    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
-    if (session.status !== "RUNNING") throw new ConflictException("Timer is not running");
-
-    const sinceResume = session.lastResumedAt
-      ? Math.floor((Date.now() - session.lastResumedAt.getTime()) / 1000)
-      : 0;
-    const newAccumulated = session.accumulatedSeconds + sinceResume;
-
-    await this.db
-      .update(timerSessions)
-      .set({ status: "PAUSED", accumulatedSeconds: newAccumulated, updatedAt: new Date() })
-      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
-
+    await transitions.pauseTimer(this.db, u, timerId);
     const row = await this.fetchTimerWithRelations(u.orgId, timerId);
     if (!row) throw new InternalServerErrorException("Timer not found after update");
     return buildTimerShape(row);
   }
 
   async resumeTimer(u: CurrentUserContext, timerId: number) {
-    const membershipId = actingMembershipId(u.principal);
-    const session = await this.db.query.timerSessions.findFirst({
-      where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
-    });
-    if (!session) throw new NotFoundException("Timer not found");
-    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
-    if (session.status !== "PAUSED") throw new ConflictException("Timer is not paused");
-
-    await this.db
-      .update(timerSessions)
-      .set({ status: "RUNNING", lastResumedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
-
+    await transitions.resumeTimer(this.db, u, timerId);
     const row = await this.fetchTimerWithRelations(u.orgId, timerId);
     if (!row) throw new InternalServerErrorException("Timer not found after update");
     return buildTimerShape(row);
   }
 
   async stopTimer(u: CurrentUserContext, timerId: number) {
-    const membershipId = actingMembershipId(u.principal);
-    const session = await this.db.query.timerSessions.findFirst({
-      where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
-    });
-    if (!session) throw new NotFoundException("Timer not found");
-    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
-    if (!["RUNNING", "PAUSED"].includes(session.status)) {
-      throw new ConflictException("Timer is not active");
-    }
-
-    let newAccumulated = session.accumulatedSeconds;
-    if (session.status === "RUNNING" && session.lastResumedAt) {
-      newAccumulated += Math.floor((Date.now() - session.lastResumedAt.getTime()) / 1000);
-    }
-
-    await this.db
-      .update(timerSessions)
-      .set({ status: "STOPPED", accumulatedSeconds: newAccumulated, updatedAt: new Date() })
-      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
-
+    await transitions.stopTimer(this.db, u, timerId);
     const row = await this.fetchTimerWithRelations(u.orgId, timerId);
     if (!row) throw new InternalServerErrorException("Timer not found after update");
     return buildTimerShape(row);
   }
 
   async discardTimer(u: CurrentUserContext, timerId: number) {
-    const membershipId = actingMembershipId(u.principal);
-    const session = await this.db.query.timerSessions.findFirst({
-      where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
-    });
-    if (!session) throw new NotFoundException("Timer not found");
-    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
-
-    await this.db
-      .update(timerSessions)
-      .set({ status: "DISCARDED", updatedAt: new Date() })
-      .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
-
-    return { success: true };
+    return transitions.discardTimer(this.db, u, timerId);
   }
 
   async convertTimer(u: CurrentUserContext, timerId: number, input: ConvertTimerInput) {
