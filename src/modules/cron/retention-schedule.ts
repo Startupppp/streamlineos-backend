@@ -9,10 +9,19 @@
  * correct and dead.
  *
  * Most entries are retention drains, which is where the name comes from. It is no
- * longer only that: `ai-reservations-sweep` is a **compensator**, not a drain, and it
- * is here because being unscheduled costs a customer money rather than disk. Anything
- * whose absence has a consequence belongs on this list; the name is now narrower than
- * the contract and renaming it is a follow-up, not a licence to start a second list.
+ * longer only that. `ai-reservations-sweep` is a **compensator**, `monthly-plan-grants`
+ * is an **allocation customers are owed**, and `trial-expiry` is a **lifecycle
+ * transition** — all three were unscheduled, and all three cost money in one direction
+ * or the other rather than disk. Anything whose absence has a consequence belongs on
+ * this list; the name is now narrower than the contract and renaming it is a follow-up,
+ * not a licence to start a second list.
+ *
+ * A job only joins this list once its own idempotency is established, because the
+ * scheduler is not the guard: `CronLeaseService.withLease` runs **without dedup** when
+ * Redis is absent or erroring (`cron-lease.service.ts:41,54`), and `isDue()` returns
+ * true with no Redis. The lease reduces duplicate runs; only the job's own natural key
+ * prevents a duplicate effect. `UNSCHEDULED_BILLING_JOBS` below records the ones that
+ * failed that test.
  */
 
 export interface RetentionJobDeclaration {
@@ -131,6 +140,51 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
   },
   {
     /*
+     * Not retention — the monthly credit allocation paying customers are owed.
+     *
+     * `processMonthlyPlanGrants` was reachable only as `POST /cron/monthly-plan-grants`,
+     * which nothing in either repository sends, so **no organisation had ever received a
+     * monthly plan grant from this path**. That is money owed to customers, not disk.
+     *
+     * Daily rather than monthly on purpose. The grant is idempotent per calendar month at
+     * three layers — `getMonthlyGrantedOrgIds` skips an org that already has a PLAN_GRANT
+     * this month, `grantPlanCredits` re-checks the `${plan}-monthly-YYYY-MM` reference
+     * inside its own transaction, and `uq_ai_credit_txns_plan_grant_ref`
+     * (UNIQUE (org_id, reference_id) WHERE type='PLAN_GRANT') refuses a duplicate in the
+     * database — so a daily cadence grants once and skips for the rest of the month, and
+     * self-heals if the process was down on the 1st. A monthly cadence would make a single
+     * missed run cost a customer a month of credits.
+     */
+    jobKey: "monthly-plan-grants",
+    sweepName: "billing-monthly-grants",
+    leaseSeconds: 300,
+    intervalMs: DAY_MS,
+    maxAgeMs: DAILY_MAX_AGE_MS,
+    label: "Monthly plan credit grants (one PLAN_GRANT per organisation per calendar month)",
+  },
+  {
+    /*
+     * Not retention — trial lifecycle, and the opposite direction of the same defect.
+     *
+     * `processTrialExpiry` was reachable only as `POST /cron/trial-expiry`, which nothing
+     * sends, so **no trial had ever ended and no expiry reminder had ever been sent**.
+     *
+     * Idempotent by construction: the expiry is one conditional UPDATE
+     * (`status='TRIAL' AND trial_ends_at < now` -> `EXPIRED` ... RETURNING), so a second
+     * run matches no rows and emits no second churn event; the reminders carry
+     * `dedupeKey = trial-expiry:<date>:<days>` against
+     * `uniq_notification_outbox_dedupe (org_id, dedupe_key)`, so a second run the same day
+     * inserts nothing.
+     */
+    jobKey: "trial-expiry",
+    sweepName: "billing-trial-expiry",
+    leaseSeconds: 300,
+    intervalMs: DAY_MS,
+    maxAgeMs: DAILY_MAX_AGE_MS,
+    label: "Trial expiry and expiry reminders (TRIAL -> EXPIRED, 7/3/1-day notices)",
+  },
+  {
+    /*
      * Not retention — the compensator for AI credit reservations.
      *
      * `reserve` debits the wallet by the catalogue ceiling up front and writes a
@@ -173,6 +227,55 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
  * organisation deletion, and the other three drain lifecycle state that the policy
  * document has never classified.
  */
+/**
+ * Leased `/cron/*` billing jobs that are deliberately NOT on the schedule above.
+ *
+ * All six routes on `CronBillingController` were unscheduled — nothing in either
+ * repository sends any of them. Three are now scheduled. These are the ones where being
+ * unscheduled is not the biggest problem, and switching them on would ship a worse one.
+ * Each entry names the single specific thing that would have to change first, so this is
+ * a reviewable decision rather than an omission.
+ */
+export const UNSCHEDULED_BILLING_JOBS: readonly { jobKey: string; reason: string }[] = [
+  {
+    jobKey: "auto-topup-flush",
+    reason:
+      "the payment leg does not exist: purchaseCreditsDirectly(orgId, null, packId, true) credits " +
+      "the wallet and writes a PURCHASE transaction, and nothing in ai-credits.service.ts calls a " +
+      "payment provider — so putting this on a timer issues credit packs for free to every org " +
+      "under its auto-top-up threshold. Its double-run protection is actually sound " +
+      "(reference `auto-<packId>-<UTC date>` under uq_ai_credit_txns_purchase_ref), so this is not " +
+      "an idempotency gap; it is a missing charge. Needs a product decision, not a cadence.",
+  },
+  {
+    jobKey: "ai-jobs-flush",
+    reason:
+      "it cannot run at all as the application role. AiJobsService.claimBatch is a cross-tenant " +
+      "UPDATE ai_jobs with no org_id predicate, issued outside any tenant transaction, and ai_jobs " +
+      "carries RLS `org_id = app.current_org_id()`. Running that exact statement as streamline_app " +
+      "against a schema-head database raises 42501 'no tenant context' on the first statement, so " +
+      "scheduling it would register a job that fails silently forever. releaseStaleLocks has the " +
+      "same shape. Move the claim inside forEachOrg / runInNewTenantTransaction first. A second " +
+      "defect would then bite on the first successful tick: `crm.stale-pipeline` is enqueued but no " +
+      "handler registers that type, and the no-handler branch writes status='DEAD' with " +
+      "attempts=maxAttempts while enqueue returns the existing row whatever its status — so the " +
+      "first run permanently poisons that idempotency key for every organisation.",
+  },
+  {
+    jobKey: "provider-webhook-redrive",
+    reason:
+      "it double-counts revenue on an overlapping run. BillingWebhookEffects.apply pushes the " +
+      "addon_purchase revenue entry after externalEffectLedger.execute without reading its outcome, " +
+      "so an ALREADY_SUCCEEDED grant still emits a second revenue event, and the payment.status === " +
+      "'refunded' branch pushes a refund entry with no ledger guard at all. revenue_events has no " +
+      "natural key and RevenueAnalyticsService mints a fresh randomUUID per emit, so neither the " +
+      "outbox dedupe nor the database can catch it. The credit grant itself is safe " +
+      "(uq_ai_credit_txns_purchase_ref plus the effect ledger's token-fenced CAS); only the revenue " +
+      "emit is unguarded. Skip the revenue push on ALREADY_SUCCEEDED, or give revenue_events a " +
+      "(org_id, payment_id, type) natural key, and then a 5-minute cadence matches REDRIVE_MIN_AGE_MS.",
+  },
+];
+
 export const UNSCHEDULED_PURGE_JOBS: readonly { jobKey: string; reason: string }[] = [
   {
     jobKey: "org-purge-worker",

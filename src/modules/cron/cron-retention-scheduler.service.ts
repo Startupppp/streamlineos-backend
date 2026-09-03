@@ -94,6 +94,8 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
       ["gdpr-export-artifact-retention", () => gdprExportRetention.sweep()],
       ["notifications-retention-detach", () => partitionRetention.sweep()],
       ["ai-reservations-sweep", () => billing.sweepAiReservations()],
+      ["monthly-plan-grants", () => billing.processMonthlyPlanGrants()],
+      ["trial-expiry", () => billing.processTrialExpiry()],
     ]);
   }
 

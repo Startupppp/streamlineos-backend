@@ -97,11 +97,23 @@ now runs all of them in process, on the cadence declared in
 `src/modules/cron/retention-schedule.ts`, taking the same `CronLeaseService` lease the HTTP
 route takes.
 
-The list is no longer only retention. `ai-reservations-sweep` is a **compensator**: AI
-credit `reserve` debits the wallet by the catalogue ceiling up front, so a lost or failed
-settle leaves the organisation over-charged with no transaction row to explain it, and this
-sweep is what gives the money back. It had the same defect the retention drains had — a
-correct sweep behind a route nothing called — with a customer-visible cost.
+The list is no longer only retention. Three entries are billing jobs that had the same
+defect the retention drains had — correct code behind a route nothing called — with a
+customer-visible cost in both directions:
+
+- `ai-reservations-sweep` is a **compensator**: AI credit `reserve` debits the wallet by
+  the catalogue ceiling up front, so a lost or failed settle leaves the organisation
+  over-charged with no transaction row to explain it, and this sweep gives the money back.
+- `monthly-plan-grants` is **money owed to customers**: no organisation had ever received
+  a monthly plan allocation from this path.
+- `trial-expiry` is **revenue never collected**: no trial had ever ended.
+
+Each was added only after its own idempotency was established in the database — the
+scheduler's lease is not the guard. `CronLeaseService.withLease` runs *without dedup* when
+Redis is absent or erroring, so a job joins this list only when a natural key or a
+conditional write makes a second run a no-op. The billing jobs that failed that test are
+listed in `UNSCHEDULED_BILLING_JOBS` in `src/modules/cron/retention-schedule.ts` with the
+specific thing that would have to change first.
 
 | Sweep | Manual trigger | Cadence | Lease |
 | --- | --- | --- | --- |
@@ -119,6 +131,8 @@ correct sweep behind a route nothing called — with a customer-visible cost.
 | Notification partition detach/drop | `POST /cron/notifications-retention-detach` | daily | 300s |
 | GDPR subject-export artifact retention | `POST /cron/gdpr-export-artifact-retention` | hourly | 900s |
 | AI credit reservation compensator (expired reservations refunded) | `POST /cron/ai-reservations-sweep` | every 15 minutes | 120s |
+| Monthly plan credit grants | `POST /cron/monthly-plan-grants` | daily | 300s |
+| Trial expiry and expiry reminders | `POST /cron/trial-expiry` | daily | 300s |
 
 The two mechanisms compose rather than compete. Due-ness is read from the same
 `cron:heartbeat:<jobKey>` key the lease writes on every successful run, so an external

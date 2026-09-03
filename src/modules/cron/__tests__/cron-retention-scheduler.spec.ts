@@ -24,6 +24,8 @@ function stub(): Stub & Record<string, jest.Mock> {
     pruneStaleChunks: fn,
     pruneWebhookDeliveries: fn,
     sweepAiReservations: fn,
+    processMonthlyPlanGrants: fn,
+    processTrialExpiry: fn,
   };
 }
 
@@ -91,7 +93,7 @@ describe("CronRetentionSchedulerService — every declared sweep actually runs",
 
     const outcome = await service.tick();
 
-    expect(RETENTION_JOBS.length).toBe(14);
+    expect(RETENTION_JOBS.length).toBe(16);
     expect(outcome.considered).toBe(RETENTION_JOBS.length);
     expect(outcome.ran).toHaveLength(RETENTION_JOBS.length);
     expect(outcome.failed).toEqual([]);

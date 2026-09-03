@@ -90,6 +90,19 @@ export const MONITORED_SWEEPS = [
     maxAgeMs: 26 * 3_600_000,
   },
   {
+    // Not retention. A silent death here means paying customers stop receiving the monthly
+    // credit allocation they are owed, and nothing else in the system notices.
+    jobKey: "monthly-plan-grants",
+    label: "Monthly plan credit grants (one PLAN_GRANT per organisation per calendar month)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    // Not retention. A silent death here means trials never end — revenue never collected.
+    jobKey: "trial-expiry",
+    label: "Trial expiry and expiry reminders (TRIAL -> EXPIRED, 7/3/1-day notices)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
     // Not retention. A silent death here means organisations stay charged the reservation
     // ceiling for calls that never settled, so the window is an hour, not a day.
     jobKey: "ai-reservations-sweep",
