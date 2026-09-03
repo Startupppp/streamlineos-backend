@@ -128,6 +128,9 @@ export class KbAttachmentIndexingService {
 
     let text: string;
     try {
+      // No KB bucket override, deliberately: kb_article_attachments rows carry a fileKey
+      // the client obtained from POST /storage/upload, which writes to the DEFAULT bucket
+      // with no override. Adding one here would 404 the read wherever the buckets differ.
       const { body } = await this.storage.getFileStream(orgId, attachment.fileKey);
       const buffer = await streamToBuffer(body);
       text = await extractAttachmentText(buffer, attachment.mimeType);
