@@ -96,6 +96,7 @@ export class MailService {
 
     const allMessages: ReturnType<typeof mergeMessagesByDate> = [];
     const accountErrors: MailListResponse["accountErrors"] = [];
+    const reauthAccountIds: number[] = [];
     const accountFetches: Array<{
       accId: number;
       provider: string;
@@ -122,11 +123,14 @@ export class MailService {
         const err = outcome.reason;
         const message = err instanceof Error ? err.message : "Failed to load messages";
         accountErrors.push({ accountId: acc.id, accountEmail: acc.accountEmail, message });
-        if (err instanceof ComposioToolError && err.isAuthError) {
-          void this.accounts.markNeedsReauth(acc.id, orgId);
-        }
+        if (err instanceof ComposioToolError && err.isAuthError) reauthAccountIds.push(acc.id);
       }
     });
+
+    // One UPDATE for every mailbox whose grant just failed, and awaited: the previous
+    // per-account `void markNeedsReauth(...)` both issued a write per row and dropped its
+    // rejection, so a failed flag left the mailbox reading `active` with nothing logged.
+    if (reauthAccountIds.length > 0) await this.accounts.markNeedsReauthMany(reauthAccountIds, orgId);
 
     const merged = mergeMessagesByDate(allMessages).slice(0, limit);
     const mergedIds = new Set(merged.map((m) => `${m.accountId}:${m.id}`));
@@ -311,7 +315,8 @@ export class MailService {
       if (acc.provider === "gmail") return await this.gmail.getMessage(userId, conn, messageId);
       return await this.outlook.getMessage(userId, conn, messageId);
     } catch (err) {
-      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id, orgId);
+      if (err instanceof ComposioToolError && err.isAuthError)
+        await this.accounts.markNeedsReauth(acc.id, orgId);
       throw err;
     }
   }
@@ -330,7 +335,8 @@ export class MailService {
         : await this.outlook.getThread(userId, conn, threadId);
       return sortThreadChronologically(messages);
     } catch (err) {
-      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id, orgId);
+      if (err instanceof ComposioToolError && err.isAuthError)
+        await this.accounts.markNeedsReauth(acc.id, orgId);
       throw err;
     }
   }

@@ -18,6 +18,9 @@ import type { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
  * BITE PROOF: Remove either of the two `if (err instanceof ComposioToolError && err.isAuthError)`
  * arms from MailService and the "marks needs_reauth" assertions below will fail with
  * "Expected markNeedsReauth to have been called" (received 0 calls).
+ *
+ * The list fan-out flags every failing mailbox through `markNeedsReauthMany` in ONE awaited
+ * write; the single-message paths still flag one account each through `markNeedsReauth`.
  */
 
 const ORG_ID = "org-revoke";
@@ -46,12 +49,14 @@ function buildService(overrides: {
   getMessage?: jest.Mock;
   getThread?: jest.Mock;
   accounts?: Partial<MailAccountsService>;
-}): { service: MailService; markNeedsReauth: jest.Mock } {
+}): { service: MailService; markNeedsReauth: jest.Mock; markNeedsReauthMany: jest.Mock } {
   const markNeedsReauth = jest.fn().mockResolvedValue(undefined);
+  const markNeedsReauthMany = jest.fn().mockResolvedValue(undefined);
 
   const accounts = {
     listAccounts: jest.fn().mockResolvedValue([ACTIVE_ACCOUNT]),
     markNeedsReauth,
+    markNeedsReauthMany,
     assertOwnedConnection: jest.fn().mockResolvedValue(ACTIVE_ACCOUNT),
     ...overrides.accounts,
   } as unknown as MailAccountsService;
@@ -78,7 +83,7 @@ function buildService(overrides: {
   } as unknown as MailSyncCheckpointService;
 
   const service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints);
-  return { service, markNeedsReauth };
+  return { service, markNeedsReauth, markNeedsReauthMany };
 }
 
 beforeAll(() => {
@@ -87,37 +92,38 @@ beforeAll(() => {
 
 describe("MailService auth-error → markNeedsReauth (listMessages)", () => {
   it("marks the account needs_reauth when Gmail throws an auth error", async () => {
-    const { service, markNeedsReauth } = buildService({
+    const { service, markNeedsReauthMany } = buildService({
       listMessages: jest.fn().mockRejectedValue(makeAuthError()),
     });
 
     const result = await service.listMessages(ORG_ID, USER_ID, null, "inbox", "all", 10);
 
-    expect(markNeedsReauth).toHaveBeenCalledTimes(1);
-    expect(markNeedsReauth).toHaveBeenCalledWith(ACTIVE_ACCOUNT.id, ORG_ID);
+    expect(markNeedsReauthMany).toHaveBeenCalledTimes(1);
+    expect(markNeedsReauthMany).toHaveBeenCalledWith([ACTIVE_ACCOUNT.id], ORG_ID);
     expect(result.accountErrors).toHaveLength(1);
     expect(result.accountErrors[0]?.accountId).toBe(ACTIVE_ACCOUNT.id);
     expect(result.messages).toHaveLength(0);
   });
 
   it("does NOT mark needs_reauth for a non-auth error from the provider", async () => {
-    const { service, markNeedsReauth } = buildService({
+    const { service, markNeedsReauth, markNeedsReauthMany } = buildService({
       listMessages: jest.fn().mockRejectedValue(makeNonAuthError()),
     });
 
     const result = await service.listMessages(ORG_ID, USER_ID, null, "inbox", "all", 10);
 
     expect(markNeedsReauth).not.toHaveBeenCalled();
+    expect(markNeedsReauthMany).not.toHaveBeenCalled();
     expect(result.accountErrors).toHaveLength(1);
   });
 
   it("still returns messages from healthy accounts when one account has an auth error", async () => {
     const HEALTHY: MailAccount = { ...ACTIVE_ACCOUNT, id: 8, accountEmail: "other@gmail.com", composioConnectedAccountId: "conn-healthy" };
-    const markNeedsReauth = jest.fn().mockResolvedValue(undefined);
+    const markNeedsReauthMany = jest.fn().mockResolvedValue(undefined);
 
     const accounts = {
       listAccounts: jest.fn().mockResolvedValue([ACTIVE_ACCOUNT, HEALTHY]),
-      markNeedsReauth,
+      markNeedsReauthMany,
     } as unknown as MailAccountsService;
 
     let callCount = 0;
@@ -144,7 +150,7 @@ describe("MailService auth-error → markNeedsReauth (listMessages)", () => {
     const service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints);
     const result = await service.listMessages(ORG_ID, USER_ID, null, "inbox", "all", 10);
 
-    expect(markNeedsReauth).toHaveBeenCalledWith(ACTIVE_ACCOUNT.id, ORG_ID);
+    expect(markNeedsReauthMany).toHaveBeenCalledWith([ACTIVE_ACCOUNT.id], ORG_ID);
     expect(result.messages).toHaveLength(1);
     expect(result.messages[0]?.id).toBe("ok-1");
     expect(result.accountErrors).toHaveLength(1);
