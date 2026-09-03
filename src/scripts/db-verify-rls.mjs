@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
@@ -26,6 +27,10 @@ const PROBE_TABLE_NULLABLE = "rls_probe_nullable";
 
 const sql = postgres(adminUrl, { prepare: false, max: 1, onnotice: () => {} });
 let failures = 0;
+let behaviouralFailureCount = 0;
+let behaviouralProbeCount = 0;
+let driftReason = null;
+let checksRun = 0;
 
 // Scope classification. CRM and Inventory are out of this release's scope
 // (PRD-IN-SCOPE.md). They are excluded BY NAME into their own reported bucket, never
@@ -61,6 +66,7 @@ function classifyTable(tbl) {
 }
 
 const check = (label, ok, detail = "") => {
+  checksRun++;
   if (!ok) failures++;
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  — ${detail}` : ""}`);
 };
@@ -269,6 +275,39 @@ try {
     failures++;
     console.error(`teardown incomplete: role=${roleLeft} table=${tableLeft}`);
   }
+  // Everything above this line is a self-contained behavioural probe on tables this
+  // script created, and is valid against any target. Everything below compares the LIVE
+  // catalogue against the declared schema, and is only evidence about THIS commit if the
+  // target is at THIS commit's journal head. check:tenant-relationships shipped the
+  // counter-example: 627 "violations" that were entirely a target sitting at 573 of 667.
+  // A catalogue finding on a drifted target is a fact about that database, not about the
+  // release -- so it is printed in full and the run answers "cannot determine" (exit 2)
+  // rather than either failing or, worse, passing.
+  behaviouralFailureCount = failures;
+  behaviouralProbeCount = checksRun;
+  const journalLength = JSON.parse(
+    readFileSync(new URL("../../migrations/meta/_journal.json", import.meta.url), "utf8"),
+  ).entries.length;
+  let appliedCount = null;
+  let ledgerError = null;
+  try {
+    const [row] = await sql`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`;
+    appliedCount = row?.n ?? null;
+  } catch (err) {
+    ledgerError = err instanceof Error ? err.message : String(err);
+  }
+  const drift =
+    ledgerError !== null
+      ? `the migration ledger could not be read (${ledgerError})`
+      : appliedCount === null
+        ? "the migration ledger returned no row"
+        : appliedCount < journalLength
+          ? `the target is at ${appliedCount} of ${journalLength} journal entries — ${journalLength - appliedCount} migration(s) pending`
+          : null;
+  driftReason = drift;
+  if (drift !== null)
+    console.log(`\nTARGET DRIFT — ${drift}.\nThe catalogue section below describes THAT database, not this commit.`);
+
   const [coverage] = await sql`
     SELECT
       (SELECT count(DISTINCT c.oid)::int FROM pg_class c
@@ -467,6 +506,29 @@ BUCKET SUMMARY  (${coverage.tenant_columns} tenant-scoped tables scanned)` +
   }
 
   await sql.end();
+}
+
+// A behavioural probe runs against tables this script created, so it is valid on any
+// target and no amount of drift explains a failure. Those always exit 1.
+if (behaviouralFailureCount > 0) {
+  console.log(`\nRESULT: ${failures} CHECK(S) FAILED`);
+  process.exit(1);
+}
+
+// A green catalogue sweep on a drifted target is the "a gate that did not run is not a
+// gate that passed" trap, and a red one is a fact about that database rather than about
+// this commit. Both answer "cannot determine", never PASS and never FAIL.
+if (driftReason !== null) {
+  console.log(
+    `\nPREREQUISITE UNMET — cannot determine. All ${behaviouralProbeCount} behavioural probe(s) passed;` +
+      `\nthe catalogue sweep produced ${failures} finding(s) but ran against a target that is not at` +
+      `\nthis commit: ${driftReason}.` +
+      `\nA finding there is real for that database and is listed above, but it is NOT release evidence` +
+      `\nfor this commit -- a pending migration can both create an unprotected table and protect it,` +
+      `\nand a clean sweep proves nothing about tables that target has not created yet.` +
+      `\nRe-run against a target at journal head (\`node src/scripts/db-bootstrap.mjs\`) for a verdict.`,
+  );
+  process.exit(2);
 }
 
 console.log(failures === 0 ? "\nRESULT: RLS VERIFIED" : `\nRESULT: ${failures} CHECK(S) FAILED`);
