@@ -127,6 +127,57 @@ describe("AiGatewayStreamHelper — a streamed turn bills like a buffered one", 
     expect(release).toHaveBeenCalledWith("org_1");
   });
 
+  /**
+   * Answers the question the missing `idempotencyKey` raises: none of the five
+   * `reserve` call sites passes one, so a retried stream cannot be deduplicated
+   * by key. It does not need to be. Every failure path releases, and `settle`
+   * debits measured tokens rather than the reserve ceiling, so the abandoned
+   * turn costs nothing and only the turn that actually ran is billed.
+   */
+  it("a retried turn reserves again and the abandoned one is refunded, so no turn is charged twice", async () => {
+    const ledger = makeLedger();
+    const { helper } = makeHelper(ledger, makeUsage());
+
+    captureStream(Promise.reject(new Error("provider gone")));
+    await helper.run(opts());
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const retry = captureStream(Promise.resolve("stop"));
+    await helper.run(opts());
+    await retry[0]?.onFinish?.({ usage: { inputTokens: 30, outputTokens: 10 } });
+
+    expect(ledger.reserve).toHaveBeenCalledTimes(2);
+    expect(ledger.release).toHaveBeenCalledTimes(1);
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.settle).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({
+        actualMilli: computeTokenCharge(resolveChatModelId(), 30, 10).milliCredits,
+      }),
+    );
+  });
+
+  /**
+   * The residual, recorded rather than claimed: a settle that fails is logged and
+   * the reservation is left RESERVED, so the expiry sweep refunds a turn that did
+   * consume tokens. That under-charges; releasing here instead would refund it
+   * immediately, which is the same leak sooner. Neither is a double charge.
+   */
+  it("a settle that fails leaves the reservation for the sweep instead of crashing the stream", async () => {
+    const calls = captureStream(Promise.resolve("stop"));
+    const ledger = makeLedger();
+    ledger.settle.mockRejectedValue(new Error("ledger unavailable"));
+    const { helper } = makeHelper(ledger, makeUsage());
+
+    await helper.run(opts());
+    await expect(
+      calls[0]?.onFinish?.({ usage: { inputTokens: 10, outputTokens: 5 } }),
+    ).resolves.toBeUndefined();
+
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
+  });
+
   it("settles once even if onFinish is invoked twice", async () => {
     const calls = captureStream(Promise.resolve("stop"));
     const ledger = makeLedger();
