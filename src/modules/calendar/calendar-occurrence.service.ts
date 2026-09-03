@@ -1,4 +1,5 @@
 import { RRule } from "rrule";
+import { toWallClockUtc, fromWallClockUtc } from "../../common/date/zoned-wall-clock";
 
 
 export interface CalendarEventLike {
@@ -36,52 +37,10 @@ const MAX_OCCURRENCES_PER_WINDOW = 500;
 /**
  * `rrule` reads a `dtstart`'s UTC getters as the wall clock, so an expansion in
  * a named zone must hand it a Date whose UTC fields ARE that zone's wall clock.
- * `date-fns-tz`'s `toZonedTime`/`fromZonedTime` build the other representation —
- * one whose *system-local* getters read as the wall clock — so the two agree
- * only when the process runs at UTC. Off UTC the whole expansion is rotated by
- * the host's own offset before `BYDAY`/`BYMONTHDAY` are applied, which moves an
- * occurrence onto the wrong day.
- *
- * `getTimezoneOffset` is not the fix either: it resolves an offset per calendar
- * DAY, so it answers -04:00 for every instant of 2024-03-10 including the ones
- * before the 07:00Z transition. Only `Intl` is accurate to the instant.
+ * That conversion is shared — `common/date/zoned-wall-clock` — because the cron
+ * scheduler needs exactly the same thing and had exactly the same defect.
  */
-const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
-
-function zoneFormatter(timeZone: string): Intl.DateTimeFormat {
-  const cached = zoneFormatters.get(timeZone);
-  if (cached) return cached;
-  const created = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  zoneFormatters.set(timeZone, created);
-  return created;
-}
-
-export function toWallClockUtc(instant: Date, timeZone: string): Date {
-  const parts = zoneFormatter(timeZone).formatToParts(instant);
-  const field = (type: string): number =>
-    Number(parts.find((part) => part.type === type)?.value ?? 0);
-  const hour = field("hour") % 24;
-  const wall = new Date(0);
-  wall.setUTCFullYear(field("year"), field("month") - 1, field("day"));
-  wall.setUTCHours(hour, field("minute"), field("second"), instant.getUTCMilliseconds());
-  return wall;
-}
-
-export function fromWallClockUtc(wallClock: Date, timeZone: string): Date {
-  const seedOffset = toWallClockUtc(wallClock, timeZone).getTime() - wallClock.getTime();
-  const seedInstant = new Date(wallClock.getTime() - seedOffset);
-  const offset = toWallClockUtc(seedInstant, timeZone).getTime() - seedInstant.getTime();
-  return new Date(wallClock.getTime() - offset);
-}
+export { toWallClockUtc, fromWallClockUtc };
 
 export function eventOverlapsWindow(
   startDate: Date,

@@ -1,4 +1,4 @@
-import { fromZonedTime, toZonedTime } from "date-fns-tz";
+import { fromWallClockUtc, toWallClockUtc } from "../../../common/date/zoned-wall-clock";
 
 function parseCronField(field: string, min: number, max: number): Set<number> {
   const values = new Set<number>();
@@ -73,6 +73,13 @@ const MAX_ITERATIONS = 2_102_400;
  *
  * Missed-window policy: always advance from `after`, never from a prior `nextRunAt`. If the worker
  * was down for N intervals, the first tick after recovery fires once and skips the backlog.
+ *
+ * The candidate walk runs on UTC FIELDS, which have no transitions. `toZonedTime` builds a Date
+ * whose system-local fields read as the target zone's wall clock, so the walk's `setHours` and
+ * `setDate` used to land on the HOST's clock: on the host's own spring-forward day 02:00 does not
+ * exist locally, JavaScript normalised it to 03:00, and a `30 2 * * *` schedule in ANY tenant zone
+ * was skipped for a whole day. Measured on a host at America/New_York: the next run of
+ * `30 2 * * *` in Asia/Kolkata after 2024-03-10 01:00 IST came back as 2024-03-11 02:30 IST.
  */
 export function computeNextCronDate(
   expr: string,
@@ -82,22 +89,21 @@ export function computeNextCronDate(
   const parsed = parseCron(expr);
   if (!parsed || parsed.minutes.size === 0 || parsed.hours.size === 0) return null;
 
-  const zoned = toZonedTime(after, timezone);
-  const candidate = new Date(zoned);
-  candidate.setSeconds(0, 0);
-  candidate.setMinutes(candidate.getMinutes() + 1);
+  const candidate = toWallClockUtc(after, timezone);
+  candidate.setUTCSeconds(0, 0);
+  candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const month = candidate.getMonth() + 1;
-    const dom = candidate.getDate();
-    const dow = candidate.getDay();
-    const hour = candidate.getHours();
-    const minute = candidate.getMinutes();
+    const month = candidate.getUTCMonth() + 1;
+    const dom = candidate.getUTCDate();
+    const dow = candidate.getUTCDay();
+    const hour = candidate.getUTCHours();
+    const minute = candidate.getUTCMinutes();
 
     if (!parsed.months.has(month)) {
-      candidate.setDate(1);
-      candidate.setMonth(candidate.getMonth() + 1);
-      candidate.setHours(0, 0, 0, 0);
+      candidate.setUTCDate(1);
+      candidate.setUTCMonth(candidate.getUTCMonth() + 1);
+      candidate.setUTCHours(0, 0, 0, 0);
       continue;
     }
 
@@ -115,22 +121,22 @@ export function computeNextCronDate(
     }
 
     if (!dayMatches) {
-      candidate.setDate(candidate.getDate() + 1);
-      candidate.setHours(0, 0, 0, 0);
+      candidate.setUTCDate(candidate.getUTCDate() + 1);
+      candidate.setUTCHours(0, 0, 0, 0);
       continue;
     }
 
     if (!parsed.hours.has(hour)) {
-      candidate.setHours(candidate.getHours() + 1, 0, 0, 0);
+      candidate.setUTCHours(candidate.getUTCHours() + 1, 0, 0, 0);
       continue;
     }
 
     if (!parsed.minutes.has(minute)) {
-      candidate.setMinutes(candidate.getMinutes() + 1, 0, 0);
+      candidate.setUTCMinutes(candidate.getUTCMinutes() + 1, 0, 0);
       continue;
     }
 
-    return fromZonedTime(candidate, timezone);
+    return fromWallClockUtc(candidate, timezone);
   }
 
   return null;
