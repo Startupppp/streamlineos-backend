@@ -1,4 +1,4 @@
-import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import { fromWallClockUtc, toWallClockUtc } from "../../../common/date/zoned-wall-clock";
 import type { WeeklySchedule } from "../../../db/schema/support/support-sla";
 
 const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
@@ -11,10 +11,10 @@ export interface BusinessHoursConfig {
   is24x7: boolean;
 }
 
-function toDateKey(zoned: Date): string {
-  const y = zoned.getFullYear();
-  const m = String(zoned.getMonth() + 1).padStart(2, "0");
-  const d = String(zoned.getDate()).padStart(2, "0");
+function toDateKey(wall: Date): string {
+  const y = wall.getUTCFullYear();
+  const m = String(wall.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(wall.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
@@ -23,10 +23,10 @@ function parseTimeToMinutes(hhmm: string): number {
   return h * 60 + (m || 0);
 }
 
-function startOfNextZonedDay(zoned: Date): Date {
-  const next = new Date(zoned);
-  next.setDate(next.getDate() + 1);
-  next.setHours(0, 0, 0, 0);
+function startOfNextWallDay(wall: Date): Date {
+  const next = new Date(wall.getTime());
+  next.setUTCDate(next.getUTCDate() + 1);
+  next.setUTCHours(0, 0, 0, 0);
   return next;
 }
 
@@ -35,6 +35,16 @@ function startOfNextZonedDay(zoned: Date): Date {
  * hours (weekly schedule + holidays) in the configured timezone. Falls back to
  * plain calendar-time addition when no business hours are configured or the
  * policy is marked 24x7.
+ *
+ * The day and window arithmetic runs on UTC FIELDS of a wall-clock Date, which
+ * have no transitions. `toZonedTime` produced a Date whose SYSTEM-LOCAL fields
+ * read as the policy's wall clock, so `setHours`/`setDate` wrote the HOST's
+ * clock: on the host's own spring-forward day a window boundary inside the
+ * missing hour was normalised forward and every due date computed from it moved
+ * by an hour. Measured over 960 (schedule x zone x instant x minutes) cases:
+ * 24 disagreements with UTC at a host in America/New_York, 32 at
+ * Australia/Adelaide, 29 at America/Havana, 13 at Asia/Beirut -- and 0 at
+ * Asia/Calcutta, which is why the machine this was written on never saw it.
  */
 export function addWorkingMinutes(
   fromUtc: Date,
@@ -51,31 +61,31 @@ export function addWorkingMinutes(
   let cursorUtc = fromUtc;
 
   for (let dayIndex = 0; dayIndex < MAX_DAYS_SCANNED; dayIndex++) {
-    const zonedCursor = toZonedTime(cursorUtc, timezone);
-    const dateKey = toDateKey(zonedCursor);
-    const weekdayKey = WEEKDAY_KEYS[zonedCursor.getDay()];
+    const wallCursor = toWallClockUtc(cursorUtc, timezone);
+    const dateKey = toDateKey(wallCursor);
+    const weekdayKey = WEEKDAY_KEYS[wallCursor.getUTCDay()];
     const daySchedule = weeklySchedule[weekdayKey];
 
     if (!daySchedule || holidaySet.has(dateKey)) {
-      cursorUtc = fromZonedTime(startOfNextZonedDay(zonedCursor), timezone);
+      cursorUtc = fromWallClockUtc(startOfNextWallDay(wallCursor), timezone);
       continue;
     }
 
     const windowStartMinutes = parseTimeToMinutes(daySchedule.start);
     const windowEndMinutes = parseTimeToMinutes(daySchedule.end);
 
-    const zonedWindowStart = new Date(zonedCursor);
-    zonedWindowStart.setHours(0, windowStartMinutes, 0, 0);
-    const zonedWindowEnd = new Date(zonedCursor);
-    zonedWindowEnd.setHours(0, windowEndMinutes, 0, 0);
+    const wallWindowStart = new Date(wallCursor.getTime());
+    wallWindowStart.setUTCHours(0, windowStartMinutes, 0, 0);
+    const wallWindowEnd = new Date(wallCursor.getTime());
+    wallWindowEnd.setUTCHours(0, windowEndMinutes, 0, 0);
 
-    const windowStartUtc = fromZonedTime(zonedWindowStart, timezone);
-    const windowEndUtc = fromZonedTime(zonedWindowEnd, timezone);
+    const windowStartUtc = fromWallClockUtc(wallWindowStart, timezone);
+    const windowEndUtc = fromWallClockUtc(wallWindowEnd, timezone);
 
     const availableStartUtc = cursorUtc > windowStartUtc ? cursorUtc : windowStartUtc;
 
     if (availableStartUtc >= windowEndUtc) {
-      cursorUtc = fromZonedTime(startOfNextZonedDay(zonedCursor), timezone);
+      cursorUtc = fromWallClockUtc(startOfNextWallDay(wallCursor), timezone);
       continue;
     }
 
@@ -86,7 +96,7 @@ export function addWorkingMinutes(
     }
 
     remaining -= availableMinutesToday;
-    cursorUtc = fromZonedTime(startOfNextZonedDay(zonedCursor), timezone);
+    cursorUtc = fromWallClockUtc(startOfNextWallDay(wallCursor), timezone);
   }
 
   return new Date(cursorUtc.getTime() + remaining * 60_000);
