@@ -42,7 +42,10 @@ export class DashboardPersonalService {
 
   async getPersonalDashboard(u: CurrentUserContext) {
     const { orgId, userId } = u;
-    const modules = await resolvePersonalDashboardModules(this.access, u);
+    const [modules, selfMember] = await Promise.all([
+      resolvePersonalDashboardModules(this.access, u),
+      this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)), columns: { id: true, status: true } }),
+    ]);
     const now = new Date();
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - now.getDay() + 1);
@@ -52,7 +55,6 @@ export class DashboardPersonalService {
     weekEnd.setHours(23, 59, 59, 999);
 
     const degraded: string[] = [];
-    const selfMember = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)), columns: { id: true, status: true } });
     const attendeeMembershipId = selfMember?.status === "ACTIVE" ? selfMember.id : 0;
     const settle = async <T>(
       source: string,
@@ -81,7 +83,7 @@ export class DashboardPersonalService {
       modules.build
         ? settle(
             "myTasks",
-            () => this.projectService.getMyIssues(orgId, userId, ACTIVE_TICKET_STATUSES),
+            () => this.projectService.getMyIssues(orgId, userId, ACTIVE_TICKET_STATUSES, selfMember?.id ?? null),
             [],
           )
         : [],

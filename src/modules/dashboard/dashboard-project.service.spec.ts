@@ -222,3 +222,63 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
     }
   });
 });
+
+describe("DashboardProjectService — getMyIssues reuses a membership the caller already resolved", () => {
+  function makeDb(ticketWhereSink: { value: unknown }) {
+    let membershipReads = 0;
+    const db = {
+      query: {
+        organizationMembers: {
+          findFirst: async () => {
+            membershipReads += 1;
+            return { id: 77 };
+          },
+        },
+        tickets: {
+          findMany: async (args: { where: unknown }) => {
+            ticketWhereSink.value = args.where;
+            return [];
+          },
+        },
+      },
+    };
+    return { db, membershipReads: () => membershipReads };
+  }
+
+  it("issues NO organizationMembers read when handed a resolved membership id", async () => {
+    const sink = { value: undefined as unknown };
+    const { db, membershipReads } = makeDb(sink);
+    const service = new DashboardProjectService(db as never, makeAccess("all"));
+
+    await service.getMyIssues(ORG, USER, ["TODO"], 4242);
+
+    expect(membershipReads()).toBe(0);
+    const { sql: sqlStr, params } = dialect.sqlToQuery(sink.value as SQL);
+    expect(sqlStr).toContain('"assignee_membership_id"');
+    expect(params).toContain(4242);
+  });
+
+  it("returns [] without touching tickets when the caller resolved no membership (null)", async () => {
+    const sink = { value: undefined as unknown };
+    const { db, membershipReads } = makeDb(sink);
+    const service = new DashboardProjectService(db as never, makeAccess("all"));
+
+    const result = await service.getMyIssues(ORG, USER, ["TODO"], null);
+
+    expect(result).toEqual([]);
+    expect(membershipReads()).toBe(0);
+    expect(sink.value).toBeUndefined();
+  });
+
+  it("still resolves the membership itself when the argument is omitted", async () => {
+    const sink = { value: undefined as unknown };
+    const { db, membershipReads } = makeDb(sink);
+    const service = new DashboardProjectService(db as never, makeAccess("all"));
+
+    await service.getMyIssues(ORG, USER);
+
+    expect(membershipReads()).toBe(1);
+    const { params } = dialect.sqlToQuery(sink.value as SQL);
+    expect(params).toContain(77);
+  });
+});

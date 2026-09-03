@@ -449,7 +449,7 @@ describe("DashboardPersonalService — membership once + section bypass preventi
     expect(findFirstMock).toHaveBeenCalledTimes(1);
     expect(selectCallCount).toBeLessThanOrEqual(4);
     expect(projectSvc.getMyIssues).toHaveBeenCalledTimes(1);
-    expect(projectSvc.getMyIssues).toHaveBeenCalledWith(ORG, USER, expect.any(Array));
+    expect(projectSvc.getMyIssues).toHaveBeenCalledWith(ORG, USER, expect.any(Array), "member-iso-1");
   });
 
   it("REGRESSION (8a): valid selfMember does not activate a module-disabled section", async () => {
