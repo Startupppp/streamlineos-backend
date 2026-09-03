@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { HrAnalyticsPlusService } from "src/modules/hr/analytics-plus/hr-analytics-plus.service";
+import { HrCommandCenterAnalyticsService } from "src/modules/hr/analytics-plus/hr-command-center-analytics.service";
 import type { CacheService } from "src/common/cache/cache.service";
 import type { Db } from "src/db/drizzle.module";
 
@@ -56,7 +57,17 @@ function serviceMatching(rows: Array<Record<string, unknown>>): {
     }),
   } as unknown as Db;
   const cache = { cachedVersioned: jest.fn(), invalidateNamespace: jest.fn() } as unknown as CacheService;
-  return { service: new HrAnalyticsPlusService(db, cache), updateWhere };
+  /**
+   * `41cdc386` ("split hr-analytics-plus.service by responsibility") moved the command-centre roll-up
+   * into its own collaborator and gave `HrAnalyticsPlusService` a third constructor argument. This
+   * spec still passed two, so `this.commandCenter` was `undefined` at runtime — harmless only because
+   * `updateHeadcountPlan` never reaches it, and invisible because `test/` was in no typecheck.
+   * Building the REAL collaborator over the same database double keeps that honest: if this path ever
+   * grows a command-centre read, it hits a double that implements nothing but `update` and throws,
+   * rather than silently working against an `undefined` that was never wired.
+   */
+  const commandCenter = new HrCommandCenterAnalyticsService(db, cache);
+  return { service: new HrAnalyticsPlusService(db, cache, commandCenter), updateWhere };
 }
 
 describe("BOLA probe — PATCH /hr/analytics-plus/workforce/plans/:planId", () => {
