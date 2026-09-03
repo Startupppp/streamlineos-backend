@@ -233,15 +233,28 @@ export const PARAM_ALIASES: Readonly<Record<string, readonly string[]>> = {
   appId: ["marketplace_apps", "apps"],
 };
 
-export function candidateTableNames(route: HandlerRoute, param: string): string[] {
-  const out: string[] = [];
-  const push = (name: string): void => {
-    if (name.length > 0 && !out.includes(name)) out.push(name);
+/**
+ * A table name worth trying, and whether it came from the curated alias table.
+ *
+ * The distinction is load-bearing: an alias is measured knowledge about one parameter, while the
+ * two structural signals are guesses that a module prefix can send badly wrong — `:jobId` on
+ * `/hr/recruitment/jobs/:jobId` matches `public.hr_export_jobs` on both the `hr` path hint and the
+ * `jobs` stem, and neither signal can see that the route means `job_requisitions`.
+ */
+export interface CandidateName {
+  readonly name: string;
+  readonly alias: boolean;
+}
+
+export function candidateTableNames(route: HandlerRoute, param: string): CandidateName[] {
+  const out: CandidateName[] = [];
+  const push = (name: string, alias: boolean): void => {
+    if (name.length > 0 && !out.some((entry) => entry.name === name)) out.push({ name, alias });
   };
-  for (const alias of PARAM_ALIASES[param] ?? []) push(alias);
+  for (const alias of PARAM_ALIASES[param] ?? []) push(alias, true);
   const segment = precedingSegment(route.path, param);
-  if (segment !== null) for (const candidate of pluralCandidates(segment)) push(candidate);
-  for (const candidate of pluralCandidates(paramStem(param))) push(candidate);
+  if (segment !== null) for (const candidate of pluralCandidates(segment)) push(candidate, false);
+  for (const candidate of pluralCandidates(paramStem(param))) push(candidate, false);
   return out;
 }
 
@@ -264,67 +277,114 @@ export function pathHints(path: string): string[] {
  * Ranks the tables a candidate name matched.
  *
  * `surveys` matches `nps_surveys`, `csat_surveys` and `pulse_surveys`; nothing in the parameter
- * name says which. Three signals decide, in order:
+ * name says which. Four signals decide, in order:
  *
- *   populated   a table with no row for the source tenant can never produce a probe, so a
- *               populated match is always preferred over an empty one;
+ *   alias       a name from `PARAM_ALIASES` is measured, curated knowledge about this parameter and
+ *               outranks anything the two structural heuristics produce;
  *   hint        how many of the route's own literal segments appear in the table's name, so
  *               `/build/:projectId/whiteboards/:id` prefers `build.project_whiteboards`;
+ *   populated   a table with no row for the source tenant cannot produce a probe on its own, so a
+ *               populated match outranks an empty one at equal hint strength;
  *   length      the shortest remaining name, which is the least-qualified and usually the base
  *               entity rather than a join or history table.
  *
- * A wrong guess is not a false pass: the sweep's own-tenant control has to answer 2xx before any
- * cross-tenant answer is scored, so a mis-resolved table produces an UNPROBEABLE route with a
- * recorded reason.
+ * ⚠ **The hint used to sit BELOW `populated`, and that ordering produced wrong bindings the sweep
+ * could not recover from.** `populated` scored 10,000 and a hint 100, so a table holding one
+ * unrelated row beat a table the route's own path names: `GET /csat/:surveyId` bound
+ * `public.pulse_surveys` because `public.csat_surveys` was empty, `/tasks/:taskId` bound
+ * `public.lead_tasks` and `/crm/automations/:ruleId` bound `build.project_automations`. Measured on
+ * the previous full run, 252 of the 355 own-tenant control-404s addressed a table holding exactly
+ * ONE row for the tenant — the signature of a table chosen because it had a row rather than because
+ * it was the right one. Emptiness is now recovered differently (`resolveTables` returns
+ * alternatives, the sweep tries the next one, and `fixture-seeder.ts` can create the missing
+ * object), so `populated` no longer needs to dominate.
  */
-function rank(
-  matches: readonly TableRef[],
-  populated: ReadonlySet<string>,
-  hints: readonly string[],
-): TableRef | null {
-  let best: TableRef | null = null;
-  let bestScore = Number.NEGATIVE_INFINITY;
-  for (const table of matches) {
-    const full = `${table.schema}_${table.name}`;
-    let score = populated.has(`${table.schema}.${table.name}`) ? 10_000 : 0;
-    for (const hint of hints) if (full.includes(hint)) score += 100;
-    score -= table.name.length;
-    if (score > bestScore) {
-      bestScore = score;
-      best = table;
-    }
-  }
-  return best;
+type MatchKind = "exact" | "suffix" | "prefix";
+
+const MATCH_BONUS: Readonly<Record<MatchKind, number>> = { exact: 60, suffix: 40, prefix: 20 };
+
+interface Match {
+  readonly table: TableRef;
+  readonly candidate: CandidateName;
+  readonly order: number;
+  readonly kind: MatchKind;
 }
 
-/**
- * Resolves each candidate name against the tables that actually exist, trying every module prefix
- * and then any table whose name ENDS with the candidate. `known` is keyed `schema.table`.
- *
- * The suffix pass is what reaches `build.project_whiteboards` from `:whiteboardId` and
- * `public.job_requisitions` from `:requisitionId` — names no prefix list can enumerate, because the
- * qualifier belongs to the entity rather than to a module namespace.
- */
+function scoreMatch(match: Match, populated: ReadonlySet<string>, hints: readonly string[]): number {
+  const full = `${match.table.schema}_${match.table.name}`;
+  let score = match.candidate.alias ? 5_000 : 0;
+  for (const hint of hints) if (full.includes(hint)) score += 1_000;
+  if (populated.has(`${match.table.schema}.${match.table.name}`)) score += 500;
+  score += match.order * 10;
+  score += MATCH_BONUS[match.kind];
+  return score - match.table.name.length;
+}
+
 export function resolveTable(
-  candidates: readonly string[],
+  candidates: readonly (string | CandidateName)[],
   known: ReadonlyMap<string, TableRef>,
   populated: ReadonlySet<string> = new Set<string>(),
   hints: readonly string[] = [],
 ): TableRef | null {
-  for (const candidate of candidates) {
-    const exact: TableRef[] = [];
+  return resolveTables(candidates, known, populated, hints)[0] ?? null;
+}
+
+/**
+ * How many tables one parameter may be tried against before the route is filed unprobeable.
+ *
+ * A single answer is what the sweep used to take, and a wrong one is unrecoverable: the control
+ * answers 404 and the route is filed as unreachable with no record that the table was the problem.
+ * Four is enough for every ambiguity measured here (`surveys` matches three tables, `jobs` several,
+ * `templates` five) and is bounded, so the attempt schedule cannot blow up.
+ */
+export const MAX_TABLE_CANDIDATES = 4;
+
+/**
+ * Every table a parameter might address, best first.
+ *
+ * The sweep tries them in order and stops at the first whose own-tenant control answers 2xx, so an
+ * ambiguous parameter name costs extra requests rather than costing the route. The list is still
+ * only a set of candidates — the owner control decides, exactly as it did when this returned one.
+ *
+ * Three passes find the matches, and all three are ranked TOGETHER rather than in sequence: a
+ * module prefix in front of the name (`inv_products` for `products`), the name as a suffix
+ * (`build.project_whiteboards` for `whiteboards`) and the name as a prefix (`job_requisitions` for
+ * `job`). The third exists because the qualifier often follows the entity rather than preceding it,
+ * and no prefix list can enumerate that direction.
+ */
+export function resolveTables(
+  candidates: readonly (string | CandidateName)[],
+  known: ReadonlyMap<string, TableRef>,
+  populated: ReadonlySet<string> = new Set<string>(),
+  hints: readonly string[] = [],
+  limit: number = MAX_TABLE_CANDIDATES,
+): TableRef[] {
+  const normalized: CandidateName[] = candidates.map((candidate) =>
+    typeof candidate === "string" ? { name: candidate, alias: false } : candidate,
+  );
+  const matches: Match[] = [];
+  const seen = new Set<string>();
+  const collect = (table: TableRef, candidate: CandidateName, order: number, kind: MatchKind): void => {
+    const key = `${table.schema}.${table.name}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    matches.push({ table, candidate, order, kind });
+  };
+  normalized.forEach((candidate, index) => {
+    const order = normalized.length - index;
     for (const prefix of TABLE_PREFIXES)
       for (const schema of ["public", "build"]) {
-        const hit = known.get(`${schema}.${prefix}${candidate}`);
-        if (hit) exact.push(hit);
+        const hit = known.get(`${schema}.${prefix}${candidate.name}`);
+        if (hit) collect(hit, candidate, order, "exact");
       }
-    const chosen = rank(exact, populated, hints);
-    if (chosen) return chosen;
-
-    const suffix: TableRef[] = [];
-    for (const table of known.values()) if (table.name.endsWith(`_${candidate}`)) suffix.push(table);
-    const bySuffix = rank(suffix, populated, hints);
-    if (bySuffix) return bySuffix;
-  }
-  return null;
+    for (const table of known.values()) {
+      if (table.name.endsWith(`_${candidate.name}`)) collect(table, candidate, order, "suffix");
+      else if (table.name.startsWith(`${candidate.name}_`)) collect(table, candidate, order, "prefix");
+    }
+  });
+  return matches
+    .map((match) => ({ match, score: scoreMatch(match, populated, hints) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((entry) => entry.match.table);
 }

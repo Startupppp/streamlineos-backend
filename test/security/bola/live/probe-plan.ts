@@ -1,5 +1,5 @@
 import type { HandlerRoute } from "../route-surface";
-import { candidateTableNames, objectAddressableRoutes, pathHints, resolveTable, type TableRef } from "./param-tables";
+import { candidateTableNames, objectAddressableRoutes, pathHints, resolveTables, type TableRef } from "./param-tables";
 
 /**
  * The plan a live cross-tenant sweep executes, and the rule that reads its answers.
@@ -64,7 +64,22 @@ export function isNonObjectParam(param: string): boolean {
 }
 
 export type ParamBinding =
-  | { readonly kind: "table"; readonly param: string; readonly table: TableRef }
+  | {
+      readonly kind: "table";
+      readonly param: string;
+      /** The best guess. Kept so existing readers of a binding do not have to change. */
+      readonly table: TableRef;
+      /**
+       * Every table this parameter might address, best first, `table` included as the head.
+       *
+       * A single answer is what this used to carry, and a wrong one was unrecoverable — the control
+       * answered 404 and the route was filed unreachable with nothing in the artifact saying the
+       * TABLE was the problem. 252 of the previous run's 355 own-tenant control-404s addressed a
+       * table holding exactly one row for the tenant, which is the signature of a table picked
+       * because it had a row rather than because it was the right one.
+       */
+      readonly tables: readonly TableRef[];
+    }
   | { readonly kind: "org"; readonly param: string }
   | { readonly kind: "user"; readonly param: string }
   | { readonly kind: "unbindable"; readonly param: string; readonly reason: string };
@@ -96,20 +111,25 @@ export function bindParam(
   if (isNonObjectParam(param))
     return { kind: "unbindable", param, reason: `":${param}" does not address an object` };
   const candidates = candidateTableNames(route, param);
-  const table = resolveTable(candidates, known, populated, pathHints(route.path));
-  if (!table)
+  const tables = resolveTables(candidates, known, populated, pathHints(route.path));
+  const head = tables[0];
+  if (!head)
     return {
       kind: "unbindable",
       param,
-      reason: `no table resolves ":${param}" (tried ${candidates.slice(0, 4).join(", ")})`,
+      reason: `no table resolves ":${param}" (tried ${candidates.slice(0, 4).map((c) => c.name).join(", ")})`,
     };
-  if (!populated.has(`${table.schema}.${table.name}`))
+  const usable = tables.filter((table) => populated.has(`${table.schema}.${table.name}`));
+  const best = usable[0];
+  if (!best)
     return {
       kind: "unbindable",
       param,
-      reason: `${table.schema}.${table.name} holds no row for the source tenant`,
+      reason:
+        `${head.schema}.${head.name} holds no row for the source tenant` +
+        (tables.length > 1 ? ` (nor do ${tables.slice(1).map((t) => `${t.schema}.${t.name}`).join(", ")})` : ""),
     };
-  return { kind: "table", param, table };
+  return { kind: "table", param, table: best, tables: usable };
 }
 
 export function planRoutes(
@@ -131,6 +151,33 @@ export function planRoutes(
       unprobeable: blocked.length === 0 ? null : blocked.map((b) => b.reason).join("; "),
     };
   });
+}
+
+/**
+ * The tables a route needs and the tenant does not hold — the seeder's work list, best guess first.
+ *
+ * Returned as `schema.table` -> how many object-addressable routes are blocked on it, so a run can
+ * spend its fixture budget where it buys the most coverage. In the previous full run 242 routes were
+ * blocked on 64 such tables and the top five accounted for 106 of them.
+ */
+export function unpopulatedTargets(
+  known: ReadonlyMap<string, TableRef>,
+  populated: ReadonlySet<string>,
+  routes: readonly HandlerRoute[] = objectAddressableRoutes(),
+): Map<string, { readonly table: TableRef; readonly routes: number }> {
+  const out = new Map<string, { table: TableRef; routes: number }>();
+  for (const route of routes)
+    for (const param of route.pathParams) {
+      const binding = bindParam(route, param, known, populated);
+      if (binding.kind !== "unbindable" || !binding.reason.includes("holds no row")) continue;
+      const table = resolveTables(candidateTableNames(route, param), known, populated, pathHints(route.path))[0];
+      if (!table) continue;
+      const key = `${table.schema}.${table.name}`;
+      const seen = out.get(key);
+      if (seen) seen.routes += 1;
+      else out.set(key, { table, routes: 1 });
+    }
+  return out;
 }
 
 export function buildPath(path: string, values: ReadonlyMap<string, string>): string {

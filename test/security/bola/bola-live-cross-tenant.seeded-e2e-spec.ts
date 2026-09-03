@@ -6,6 +6,9 @@ import request from "supertest";
 import postgres from "postgres";
 import { createSeededE2eApp, signSeededToken, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { DEFAULT_IDS_PER_TABLE, loadCatalog, type Catalog } from "test/security/bola/live/fixture-catalog";
+import { BorrowPool } from "test/security/bola/live/borrow-pool";
+import { FixtureSeeder } from "test/security/bola/live/fixture-seeder";
+import type { TableRef } from "test/security/bola/live/param-tables";
 import {
   buildPath,
   disambiguate,
@@ -13,6 +16,7 @@ import {
   isFinding,
   planRoutes,
   score,
+  unpopulatedTargets,
   type PlannedRoute,
   type Verdict,
 } from "test/security/bola/live/probe-plan";
@@ -93,6 +97,30 @@ const MIN_SCORED = Number(process.env.BOLA_LIVE_MIN_SCORED ?? "200");
  * refused status as though the route could not be reached at all.
  */
 const ID_ATTEMPTS = Math.max(1, Number(process.env.BOLA_LIVE_ID_ATTEMPTS ?? "4"));
+/**
+ * How many of the tables a parameter might address are tried before the route is filed unprobeable.
+ *
+ * MEASURED, and it is the single biggest reason a route could not be asked. `resolveTables` ranks
+ * candidates; the sweep used to take the first and had no way back from a wrong one. 252 of the
+ * previous run's 355 own-tenant control-404s addressed a table holding exactly ONE row for the
+ * tenant — `GET /csat/:surveyId` bound `public.pulse_surveys`, `/hr/recruitment/jobs/:jobId` bound
+ * `public.ai_jobs`, `/tasks/:taskId` bound `public.lead_tasks`. The next table is tried only when
+ * the control's refusal says the OBJECT was not resolved (404, or a 400 rejecting the id's shape);
+ * a 403/409/500 means the handler did resolve it, so another table cannot help and the sweep stops
+ * paying for one.
+ */
+const TABLE_ATTEMPTS = Math.max(1, Number(process.env.BOLA_LIVE_TABLE_ATTEMPTS ?? "3"));
+/** Ceiling on control+probe pairs for one route, so an ambiguous parameter cannot blow up the run. */
+const MAX_ATTEMPTS = Math.max(1, Number(process.env.BOLA_LIVE_MAX_ATTEMPTS ?? "8"));
+/**
+ * Whether the sweep may CREATE one object of a type the tenant does not hold.
+ *
+ * 242 routes in the previous full run addressed a table that is empty across all eight seeded
+ * organisations — 45 of them `public.candidates`, 21 `public.sign_envelopes` — so there was nothing
+ * to borrow and nothing to copy, and the question was never asked. See `live/fixture-seeder.ts` for
+ * why a synthesised row cannot turn into a false pass.
+ */
+const SEED_FIXTURES = (process.env.BOLA_LIVE_SEED_FIXTURES ?? "1") !== "0";
 /** Ids held per table in the borrow pool. Raised from 24 because DELETE controls consume them. */
 const POOL_PER_TABLE = Math.max(1, Number(process.env.BOLA_LIVE_POOL ?? String(DEFAULT_IDS_PER_TABLE)));
 const REQUEST_TIMEOUT_MS = Number(process.env.BOLA_LIVE_TIMEOUT_MS ?? "15000");
@@ -138,6 +166,12 @@ interface Outcome {
   readonly requiredQueryKeys?: readonly string[];
   /** How many of the source tenant's own ids were tried before the control answered 2xx. */
   readonly idAttempts?: number;
+  /** Which table each object parameter was finally borrowed from, so a binding cannot be guessed at. */
+  readonly boundTables?: readonly string[];
+  /** How many candidate tables were tried. >1 means the first ranked table could not serve its owner. */
+  readonly tableAttempts?: number;
+  /** Set when the object the control used was created by the sweep rather than found in the seed. */
+  readonly fixtureSeeded?: boolean;
 }
 
 interface Sent {
@@ -193,6 +227,8 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
   let owner: ReturnType<typeof postgres>;
   let baseUrl = "";
   let sourceCatalog: Catalog;
+  let pool: BorrowPool;
+  const seededTables = new Set<string>();
   let sourceUser = "";
   let proberUser = "";
   let sourceToken = "";
@@ -286,32 +322,68 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
   const absentId = (pool: readonly string[]): string =>
     pool.every((id) => /^\d+$/.test(id)) ? "2147483001" : randomUUID();
 
-  /** The url for one planned route, or null when an id is missing. `take` picks from the pool. */
-  const urlFor = (planned: PlannedRoute, take: (key: string, pool: readonly string[]) => string | null): string | null => {
+  /** Which table a parameter uses on a given attempt. Beyond its list length it stays on the last. */
+  const tableAt = (binding: Extract<PlannedRoute["bindings"][number], { kind: "table" }>, index: number): TableRef => {
+    const options = binding.tables.length > 0 ? binding.tables : [binding.table];
+    return options[Math.min(index, options.length - 1)] ?? binding.table;
+  };
+
+  /** How many distinct candidate tables this route can be re-tried against. */
+  const tableChoices = (planned: PlannedRoute): number => {
+    let most = 1;
+    for (const binding of planned.bindings)
+      if (binding.kind === "table") most = Math.max(most, Math.min(binding.tables.length, TABLE_ATTEMPTS));
+    return most;
+  };
+
+  interface Borrowed {
+    readonly url: string;
+    readonly tables: readonly string[];
+    readonly seeded: boolean;
+  }
+
+  /**
+   * The url for one planned route on one attempt, or null when no id can be bound.
+   *
+   * Every id comes from `BorrowPool`, which re-reads the table at the moment of the borrow — so a
+   * row an earlier route deleted is never offered, a row an earlier route created is available at
+   * once, soft-deleted rows are excluded, and rows the calling USER owns come first.
+   */
+  const urlFor = async (
+    planned: PlannedRoute,
+    tableIndex: number,
+    idIndex: number,
+  ): Promise<Borrowed | null> => {
+    const values = new Map<string, string>();
+    const tables: string[] = [];
+    let seeded = false;
+    for (const binding of planned.bindings) {
+      if (binding.kind === "org") values.set(binding.param, SOURCE_ORG);
+      else if (binding.kind === "user") values.set(binding.param, sourceUser);
+      else if (binding.kind === "table") {
+        const table = tableAt(binding, tableIndex);
+        const key = `${table.schema}.${table.name}`;
+        const id = await pool.borrow(table, idIndex, planned.verb === "DELETE");
+        if (id === null) return null;
+        tables.push(key);
+        if (seededTables.has(key)) seeded = true;
+        values.set(binding.param, id);
+      } else return null;
+    }
+    return { url: buildPath(planned.path, values), tables, seeded };
+  };
+
+  /** The same url with every object parameter replaced by an id that exists in no organization. */
+  const absentUrlFor = async (planned: PlannedRoute, tableIndex: number): Promise<string | null> => {
     const values = new Map<string, string>();
     for (const binding of planned.bindings) {
       if (binding.kind === "org") values.set(binding.param, SOURCE_ORG);
       else if (binding.kind === "user") values.set(binding.param, sourceUser);
       else if (binding.kind === "table") {
-        const tableKey = `${binding.table.schema}.${binding.table.name}`;
-        const pool = sourceCatalog.ids.get(tableKey) ?? [];
-        const id = take(tableKey, pool);
-        if (id === null) return null;
-        values.set(binding.param, id);
+        const table = tableAt(binding, tableIndex);
+        const sample = await pool.borrow(table, 0, false);
+        values.set(binding.param, absentId(sample === null ? [] : [sample]));
       } else return null;
-    }
-    return buildPath(planned.path, values);
-  };
-
-  /** The same url with every object parameter replaced by an id that exists in no organization. */
-  const absentUrlFor = (planned: PlannedRoute): string | null => {
-    const values = new Map<string, string>();
-    for (const binding of planned.bindings) {
-      if (binding.kind === "org") values.set(binding.param, SOURCE_ORG);
-      else if (binding.kind === "user") values.set(binding.param, sourceUser);
-      else if (binding.kind === "table")
-        values.set(binding.param, absentId(sourceCatalog.ids.get(`${binding.table.schema}.${binding.table.name}`) ?? []));
-      else return null;
     }
     return buildPath(planned.path, values);
   };
@@ -329,6 +401,35 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     sourceCatalog = await loadCatalog(owner, SOURCE_ORG, POOL_PER_TABLE);
     sourceUser = await resolveOwnerUser(SOURCE_ORG);
     proberUser = PROBER_USER.length > 0 ? PROBER_USER : await resolveOwnerUser(PROBER_ORG);
+
+    /**
+     * The tenant is given one object of every type its routes address and it does not hold.
+     *
+     * Without this the question is simply never asked: 242 routes in the previous full run were
+     * filed unprobeable because their table is empty across ALL eight seeded organisations, so
+     * there was nothing to borrow and nothing to clone. The catalog is re-read afterwards, because
+     * `planRoutes` decides whether a parameter can be bound from `populated`.
+     */
+    if (SEED_FIXTURES) {
+      const seeder = new FixtureSeeder(owner, SOURCE_ORG, sourceUser);
+      await seeder.load();
+      const targets = [...unpopulatedTargets(sourceCatalog.tables, sourceCatalog.populated).entries()].sort(
+        (a, b) => b[1].routes - a[1].routes,
+      );
+      for (const [, target] of targets) await seeder.seed(target.table);
+      const outcome = seeder.result();
+      for (const key of outcome.created.keys()) seededTables.add(key);
+      harnessProofs.fixtureSeeding = {
+        tablesNeeded: targets.length,
+        routesBlocked: targets.reduce((total, [, target]) => total + target.routes, 0),
+        tablesCreated: outcome.created.size,
+        refused: [...outcome.refused.entries()].map(([table, why]) => `${table}: ${why}`),
+      };
+      sourceCatalog = await loadCatalog(owner, SOURCE_ORG, POOL_PER_TABLE);
+    }
+
+    pool = new BorrowPool(owner, SOURCE_ORG, sourceUser);
+    harnessProofs.borrowPoolColumns = await pool.loadColumns();
     await refreshTokens();
   });
 
@@ -393,9 +494,9 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     const checked: string[] = [];
     for (const planned of plan) {
       if (leaks.length >= 12) break;
-      const url = urlFor(planned, (_k, pool) => pool[0] ?? null);
-      if (url === null) continue;
-      const control = await send(planned.verb, url, sourceToken);
+      const borrowed = await urlFor(planned, 0, 0);
+      if (borrowed === null) continue;
+      const control = await send(planned.verb, borrowed.url, sourceToken);
       if (control.status < 200 || control.status >= 300) continue;
       checked.push(planned.key);
       const scored = score(control.status, control.status);
@@ -468,7 +569,6 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       .filter((p) => ONLY.length === 0 || p.key.includes(ONLY))
       .filter((p) => ONLY_SET.size === 0 || ONLY_SET.has(`${p.verb} ${p.path}`))
       .sort((a, b) => order(a.verb) - order(b.verb) || a.key.localeCompare(b.key));
-    const cursors = new Map<string, number>();
     let done = 0;
     let bodiesSynthesized = 0;
 
@@ -549,35 +649,54 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       let probeResult: Sent | null = null;
       let requestUrl = "";
       let idAttempts = 0;
+      let tableAttempts = 0;
+      let boundTables: readonly string[] = [];
+      let fixtureSeeded = false;
       let poolEmpty = false;
-      for (let attempt = 0; attempt < ID_ATTEMPTS; attempt += 1) {
-        const candidate = urlFor(planned, (key, pool) => {
-          if (planned.verb !== "DELETE") return pool[attempt] ?? null;
-          const used = cursors.get(key) ?? 0;
-          cursors.set(key, used + 1);
-          const index = pool.length - 1 - used;
-          return index >= 0 ? (pool[index] ?? null) : null;
-        });
-        if (candidate === null) {
-          poolEmpty = attempt === 0;
-          break;
+      let spent = 0;
+      const choices = tableChoices(planned);
+      outer: for (let tableIndex = 0; tableIndex < choices; tableIndex += 1) {
+        // The first candidate table gets the full id budget; a fallback gets two, so an ambiguous
+        // parameter costs a bounded number of extra requests rather than a multiple of the run.
+        const idBudget = tableIndex === 0 ? ID_ATTEMPTS : 2;
+        let boundAnyId = false;
+        for (let attempt = 0; attempt < idBudget && spent < MAX_ATTEMPTS; attempt += 1) {
+          const candidate = await urlFor(planned, tableIndex, attempt);
+          if (candidate === null) {
+            poolEmpty = poolEmpty || (tableIndex === 0 && attempt === 0);
+            break;
+          }
+          boundAnyId = true;
+          await refreshTokens();
+          const tryUrl = withQuery(candidate.url, synthesized.query);
+          let attemptControl: Sent;
+          let attemptProbe: Sent;
+          if (MUTATING.has(planned.verb)) {
+            attemptProbe = await sendAs("prober", planned.verb, tryUrl, bodyFor());
+            attemptControl = await sendAs("source", planned.verb, tryUrl, bodyFor());
+          } else {
+            attemptControl = await sendAs("source", planned.verb, tryUrl, bodyFor());
+            attemptProbe = await sendAs("prober", planned.verb, tryUrl, bodyFor());
+          }
+          spent += 1;
+          control = attemptControl;
+          probeResult = attemptProbe;
+          requestUrl = tryUrl;
+          boundTables = candidate.tables;
+          fixtureSeeded = candidate.seeded;
+          idAttempts = attempt + 1;
+          tableAttempts = tableIndex + 1;
+          if (attemptControl.status >= 200 && attemptControl.status < 300) break outer;
         }
-        await refreshTokens();
-        const tryUrl = withQuery(candidate, synthesized.query);
-        let attemptControl: Sent;
-        let attemptProbe: Sent;
-        if (MUTATING.has(planned.verb)) {
-          attemptProbe = await sendAs("prober", planned.verb, tryUrl, bodyFor());
-          attemptControl = await sendAs("source", planned.verb, tryUrl, bodyFor());
-        } else {
-          attemptControl = await sendAs("source", planned.verb, tryUrl, bodyFor());
-          attemptProbe = await sendAs("prober", planned.verb, tryUrl, bodyFor());
-        }
-        control = attemptControl;
-        probeResult = attemptProbe;
-        requestUrl = tryUrl;
-        idAttempts = attempt + 1;
-        if (attemptControl.status >= 200 && attemptControl.status < 300) break;
+        /**
+         * Another table is only worth trying while the refusal says the OBJECT was not resolved.
+         * A 404 means the handler looked and found nothing; a 400 usually means the id's SHAPE was
+         * wrong for this route, which is what a wrong table looks like. A 403, 409 or 500 means the
+         * handler did resolve an object and refused for its own reasons, so a different table
+         * cannot help and the sweep stops paying for one.
+         */
+        const status = control?.status ?? 0;
+        if (boundAnyId && status !== 404 && status !== 400 && status !== 0) break;
       }
       if (control === null || probeResult === null) {
         outcomes.push({
@@ -607,7 +726,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       let absentStatus: number | null = null;
       let scored = raw;
       if (isDisclosure(raw.verdict)) {
-        const absentUrl = absentUrlFor(planned);
+        const absentUrl = await absentUrlFor(planned, Math.max(0, tableAttempts - 1));
         if (absentUrl !== null) {
           const absent = await sendAs("prober", planned.verb, withQuery(absentUrl, synthesized.query), bodyFor());
           absentStatus = absent.status === 0 ? null : absent.status;
@@ -627,6 +746,9 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
         bodySource: synthesized.source,
         requiredQueryKeys: Object.keys(synthesized.query),
         idAttempts,
+        boundTables,
+        tableAttempts,
+        fixtureSeeded,
       });
       if (outcomes.length - lastFlush >= 25) writeArtifact();
     }
@@ -640,6 +762,11 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     harnessProofs.tokenRetries = {
       retried: tokenRetries,
       controlsStill401: outcomes.filter((o) => o.controlStatus === 401).length,
+    };
+    harnessProofs.borrowPool = {
+      ...pool.stats(),
+      routesServedByAFallbackTable: outcomes.filter((o) => (o.tableAttempts ?? 0) > 1).length,
+      routesServedBySeededFixture: outcomes.filter((o) => o.fixtureSeeded === true).length,
     };
     process.stderr.write(
       `[bola-live] ${String(outcomes.length)} routes attempted: ${[...tally.entries()]
@@ -668,9 +795,9 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       if (emptyRejected >= 8) break;
       const synthesized = synthesizeRequest(planned.verb, planned.path);
       if (synthesized.body === null || Object.keys(synthesized.body).length === 0) continue;
-      const url = urlFor(planned, (_k, pool) => pool[0] ?? null);
-      if (url === null) continue;
-      const requestUrl = withQuery(url, synthesized.query);
+      const borrowed = await urlFor(planned, 0, 0);
+      if (borrowed === null) continue;
+      const requestUrl = withQuery(borrowed.url, synthesized.query);
       const empty = await send(planned.verb, requestUrl, sourceToken);
       if (empty.status !== 400) continue;
       emptyRejected += 1;

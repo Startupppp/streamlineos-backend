@@ -1,5 +1,22 @@
-import { objectAddressableRoutes, paramStem, pluralCandidates, precedingSegment, resolveTable, type TableRef } from "./live/param-tables";
-import { bindParam, buildPath, disambiguate, isDisclosure, isFinding, planRoutes, score } from "./live/probe-plan";
+import {
+  objectAddressableRoutes,
+  paramStem,
+  pluralCandidates,
+  precedingSegment,
+  resolveTable,
+  resolveTables,
+  type TableRef,
+} from "./live/param-tables";
+import {
+  bindParam,
+  buildPath,
+  disambiguate,
+  isDisclosure,
+  isFinding,
+  planRoutes,
+  score,
+  unpopulatedTargets,
+} from "./live/probe-plan";
 
 /**
  * The rule the live sweep grades by, tested where it can be tested cheaply.
@@ -127,7 +144,57 @@ describe("BOLA live probe — binding a path parameter to a real object", () => 
 
   it("binds a parameter whose table holds rows for the source tenant", () => {
     const binding = bindParam(route("/build/:projectId", ["projectId"]), "projectId", KNOWN, POPULATED);
-    expect(binding).toEqual({ kind: "table", param: "projectId", table: KNOWN.get("build.projects") });
+    expect(binding.kind).toBe("table");
+    if (binding.kind === "table") {
+      expect(binding.table).toEqual(KNOWN.get("build.projects"));
+      expect(binding.tables[0]).toEqual(KNOWN.get("build.projects"));
+    }
+  });
+
+  /**
+   * THE MIS-BINDING THIS RANKING EXISTS TO STOP, pinned as a test rather than as a comment.
+   *
+   * `populated` used to score 10,000 against a hint's 100, so one unrelated row in the wrong table
+   * beat the table the route's own path names. Measured on the previous full run, that is what 252
+   * of 355 own-tenant control-404s looked like: `GET /csat/:surveyId` bound `public.pulse_surveys`
+   * because `public.csat_surveys` was empty. With the hint dominant the empty-but-named table is
+   * offered FIRST and the populated-but-unnamed one becomes the fallback — the sweep tries both.
+   */
+  it("prefers the table the route's own path names over one that merely holds a row", () => {
+    const surveys = new Map<string, TableRef>([
+      ["public.csat_surveys", { schema: "public", name: "csat_surveys", pk: "id", orgColumn: "org_id" }],
+      ["public.pulse_surveys", { schema: "public", name: "pulse_surveys", pk: "id", orgColumn: "org_id" }],
+    ]);
+    const onlyPulseHasRows = new Set(["public.pulse_surveys"]);
+    const ranked = resolveTables(["surveys"], surveys, onlyPulseHasRows, ["csat"]);
+    expect(ranked.map((t) => t.name)).toEqual(["csat_surveys", "pulse_surveys"]);
+    expect(resolveTable(["surveys"], surveys, onlyPulseHasRows, ["csat"])?.name).toBe("csat_surveys");
+  });
+
+  it("offers a populated fallback table so a wrong first guess is recoverable", () => {
+    const jobs = new Map<string, TableRef>([
+      ["public.ai_jobs", { schema: "public", name: "ai_jobs", pk: "id", orgColumn: "org_id" }],
+      ["public.job_requisitions", { schema: "public", name: "job_requisitions", pk: "id", orgColumn: "org_id" }],
+    ]);
+    const both = new Set(["public.ai_jobs", "public.job_requisitions"]);
+    const binding = bindParam(
+      route("/hr/recruitment/jobs/:jobId", ["jobId"]),
+      "jobId",
+      jobs,
+      both,
+    );
+    expect(binding.kind).toBe("table");
+    if (binding.kind === "table") expect(binding.tables.length).toBeGreaterThan(1);
+  });
+
+  it("names the tables a fixture would have to create before the route can be asked", () => {
+    const targets = unpopulatedTargets(KNOWN, new Set(["build.projects"]), [
+      route("/kb/articles/:articleId", ["articleId"]),
+      route("/kb/articles/:articleId/x", ["articleId"]),
+      route("/build/:projectId", ["projectId"]),
+    ]);
+    expect(targets.get("public.kb_articles")?.routes).toBe(2);
+    expect(targets.has("build.projects")).toBe(false);
   });
 
   it("refuses to bind a parameter whose table is empty, and says so", () => {
