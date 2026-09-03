@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { HrCoreModule } from "../core/hr-core.module";
 import { HrPoliciesModule } from "../policies/hr-policies.module";
+import { HrWorkflowsModule } from "../workflows/hr-workflows.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { AccommodationsController } from "./accommodations/accommodations.controller";
 import { EmergencyController } from "./emergency/emergency.controller";
@@ -14,7 +15,7 @@ import { SimulatorService } from "./simulator/simulator.service";
 import { EventStreamService } from "./event-stream/event-stream.service";
 
 @Module({
-  imports: [HrCoreModule, HrPoliciesModule, NotificationsModule],
+  imports: [HrCoreModule, HrPoliciesModule, NotificationsModule, HrWorkflowsModule],
   controllers: [
     AccommodationsController,
     EmergencyController,

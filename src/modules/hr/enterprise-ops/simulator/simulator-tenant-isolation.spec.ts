@@ -48,7 +48,7 @@ describe("SimulatorService — cross-tenant isolation", () => {
   it("hides simulation history from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const mockPolicyEval = { evaluatePolicy: jest.fn().mockResolvedValue({ result: {} }) };
-    const svc = new SimulatorService(db, mockPolicyEval as never);
+    const svc = new SimulatorService(db, mockPolicyEval as never, { resolveApprovers: jest.fn() } as never);
     await svc.listHistory(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
@@ -56,7 +56,7 @@ describe("SimulatorService — cross-tenant isolation", () => {
   it("returns simulation history for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockPolicyEval = { evaluatePolicy: jest.fn().mockResolvedValue({ result: {} }) };
-    const svc = new SimulatorService(db, mockPolicyEval as never);
+    const svc = new SimulatorService(db, mockPolicyEval as never, { resolveApprovers: jest.fn() } as never);
     await svc.listHistory(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
@@ -66,6 +66,7 @@ describe("SimulatorService — cross-tenant isolation", () => {
     const svc = new SimulatorService(
       db,
       { evaluatePolicy: jest.fn() } as never,
+      { resolveApprovers: jest.fn() } as never,
     );
     await expect(
       svc.listHistory(OWNER, { limit: 10, cursor: "malformed" }),

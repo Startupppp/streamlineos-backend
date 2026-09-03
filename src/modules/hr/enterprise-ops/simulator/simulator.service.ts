@@ -1,9 +1,18 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrSimulations } from "../../../../db/schema/hr/enterprise-ops";
+import {
+  hrWorkflowDefinitions,
+  hrWorkflowObjectTypeEnum,
+  hrWorkflowSteps,
+  organizationMembers,
+  users,
+} from "../../../../db/schema";
 import { HrPolicyEvaluationService } from "../../policies/hr-policy-evaluation.service";
+import { HrWorkflowApproverService } from "../../workflows/hr-workflow-approver.service";
+import type { HrWorkflowObjectType } from "../../workflows/hr-workflow-engine.types";
 import type {
   SimulatePolicyInput,
   SimulateLeaveBalanceInput,
@@ -17,11 +26,18 @@ import { keysetBeforeUuid } from "../../../../common/pagination/keyset";
 
 const SIM_LABEL = "Simulation — no records changed";
 
+const HR_WORKFLOW_OBJECT_TYPES: readonly string[] = hrWorkflowObjectTypeEnum.enumValues;
+
+function isHrWorkflowObjectType(value: string): value is HrWorkflowObjectType {
+  return HR_WORKFLOW_OBJECT_TYPES.includes(value);
+}
+
 @Injectable()
 export class SimulatorService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly policyEval: HrPolicyEvaluationService,
+    private readonly approvers: HrWorkflowApproverService,
   ) {}
 
   private async persist<
@@ -103,29 +119,80 @@ export class SimulatorService {
     actorId: string,
     input: SimulateApprovalRoutingInput,
   ) {
-    const rows = await this.db.execute(
-      sql`SELECT wd.id, wd.name, ws.id as step_id, ws.step_order, ws.approver_type, ws.approver_value as approver_ref
-          FROM hr_workflow_definitions wd
-          INNER JOIN hr_workflow_steps ws ON ws.definition_id = wd.id
-          WHERE wd.org_id = ${orgId} AND wd.object_type = ${input.objectType} AND wd.status = 'active'
-          ORDER BY ws.step_order ASC`,
+    const [subject] = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.employeeId)))
+      .limit(1);
+    if (!subject) throw new NotFoundException("Employee not found");
+
+    const definition = isHrWorkflowObjectType(input.objectType)
+      ? (await this.db
+          .select({
+            id: hrWorkflowDefinitions.id,
+            name: hrWorkflowDefinitions.name,
+            version: hrWorkflowDefinitions.version,
+          })
+          .from(hrWorkflowDefinitions)
+          .where(
+            and(
+              eq(hrWorkflowDefinitions.orgId, orgId),
+              eq(hrWorkflowDefinitions.objectType, input.objectType),
+              eq(hrWorkflowDefinitions.status, "active"),
+              eq(hrWorkflowDefinitions.isDefault, true),
+              isNull(hrWorkflowDefinitions.deletedAt),
+            ),
+          )
+          .limit(1))[0] ?? null
+      : null;
+
+    const steps = definition
+      ? await this.db
+          .select()
+          .from(hrWorkflowSteps)
+          .where(and(eq(hrWorkflowSteps.orgId, orgId), eq(hrWorkflowSteps.definitionId, definition.id)))
+          .orderBy(asc(hrWorkflowSteps.stepOrder))
+          .limit(20)
+      : [];
+
+    const approverIdsPerStep = await Promise.all(
+      steps.map((step) => this.approvers.resolveApprovers(step, input.employeeId, orgId)),
     );
 
-    const steps = rows.map((r) => {
-      const row = r as Record<string, unknown>;
-      return {
-        stepId: String(row["step_id"] ?? ""),
-        stepOrder: Number(row["step_order"] ?? 0),
-        approverType: String(row["approver_type"] ?? ""),
-        approverRef: row["approver_ref"],
-        workflowName: String(row["name"] ?? ""),
-      };
-    });
+    const allApproverIds = [...new Set(approverIdsPerStep.flat())];
+    const approverRows = allApproverIds.length > 0
+      ? await this.db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, allApproverIds))
+          .limit(allApproverIds.length)
+      : [];
+    const approverById = new Map(approverRows.map((row) => [row.id, row]));
+
+    const resolvedSteps = steps.map((step, index) => ({
+      stepId: String(step.id),
+      stepOrder: step.stepOrder,
+      stepName: step.name,
+      approverType: step.approverType,
+      approverRef: step.approverValue,
+      mode: step.mode,
+      workflowName: definition?.name ?? "",
+      approvers: (approverIdsPerStep[index] ?? []).map((userId) => ({
+        userId,
+        name: approverById.get(userId)?.name ?? null,
+        email: approverById.get(userId)?.email ?? null,
+      })),
+    }));
 
     const result = {
       simulation: SIM_LABEL,
       objectType: input.objectType,
-      resolvedSteps: steps,
+      employeeId: input.employeeId,
+      matchedWorkflow: definition
+        ? { id: definition.id, name: definition.name, version: definition.version }
+        : null,
+      resolvedSteps,
+      unresolvedSteps: resolvedSteps.filter((step) => step.approvers.length === 0).map((step) => step.stepOrder),
       hypotheticalContext: input.hypotheticalContext,
     };
 
