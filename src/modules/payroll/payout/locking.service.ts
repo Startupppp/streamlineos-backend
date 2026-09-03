@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   assertOrganizationActor,
@@ -34,6 +34,8 @@ import {
 import { PAYROLL_RUN_POSTING_INTENT_EVENT } from "./payroll-posting-intent.consumer";
 
 export type PayrollLockTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+type TdsLedgerInsert = typeof payrollTdsYtdLedger.$inferInsert;
 
 export interface LockCommitRun {
   month: string;
@@ -200,8 +202,14 @@ export class LockingService {
   }
 
   /**
-   * Persist per-employee TDS YTD ledger rows from locked calculation snapshots.
-   * Safe / idempotent via unique (org, user, fy, periodKey).
+   * Persist per-employee TDS YTD ledger rows from locked calculation snapshots as two
+   * bulk upserts — one per subject kind — instead of one round trip per run employee.
+   * Both unique indexes are PARTIAL (`WHERE user_id IS NOT NULL` / `WHERE worker_id IS
+   * NOT NULL`, migration 0393), so the arbiter is only inferable with a matching
+   * `targetWhere`; without it Postgres raises 42P10 and the lock fails outright. The
+   * per-subject Maps collapse duplicates in the run before they reach the statement,
+   * because a multi-row `ON CONFLICT DO UPDATE` raises 21000 on an intra-statement
+   * duplicate rather than keeping the last one the way the per-row loop did.
    */
   private async writeTdsYtdLedger(
     tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
@@ -229,6 +237,9 @@ export class LockingService {
       "write TDS ledger",
     );
 
+    const byUser = new Map<string, TdsLedgerInsert>();
+    const byWorker = new Map<string, TdsLedgerInsert>();
+
     for (const emp of emps) {
       if (!emp.userId && !emp.workerId) continue;
       const snap = emp.calculationSnapshot as CalculationSnapshot | null;
@@ -236,77 +247,66 @@ export class LockingService {
         (l) =>
           l.code === "TDS" || l.code === "INCOME_TAX" || l.category === "TAX",
       );
-      const tdsPaise = tdsLine ? toPaise(tdsLine.amount) : 0;
-      const taxablePaise = toPaise(emp.gross ?? "0");
+      const base = {
+        orgId,
+        fiscalYear: fy,
+        periodKey: month,
+        runId,
+        taxableIncomePaise: toPaise(emp.gross ?? "0"),
+        tdsPaise: tdsLine ? toPaise(tdsLine.amount) : 0,
+        previousEmployerIncomePaise: 0,
+        previousEmployerTdsPaise: 0,
+        perquisitesPaise: 0,
+        surchargePaise: 0,
+        rebatePaise: 0,
+      };
 
       if (emp.userId) {
-        await tx
-          .insert(payrollTdsYtdLedger)
-          .values({
-            orgId,
-            userId: emp.userId,
-            workerId: emp.workerId,
-            fiscalYear: fy,
-            periodKey: month,
-            runId,
-            taxableIncomePaise: taxablePaise,
-            tdsPaise,
-            previousEmployerIncomePaise: 0,
-            previousEmployerTdsPaise: 0,
-            perquisitesPaise: 0,
-            surchargePaise: 0,
-            rebatePaise: 0,
-          })
-          .onConflictDoUpdate({
-            target: [
-              payrollTdsYtdLedger.orgId,
-              payrollTdsYtdLedger.userId,
-              payrollTdsYtdLedger.fiscalYear,
-              payrollTdsYtdLedger.periodKey,
-            ],
-            set: {
-              runId,
-              taxableIncomePaise: taxablePaise,
-              tdsPaise,
-              workerId: emp.workerId,
-            },
-          });
+        byUser.set(emp.userId, { ...base, userId: emp.userId, workerId: emp.workerId });
         continue;
       }
-
-      if (emp.workerId) {
-        await tx
-          .insert(payrollTdsYtdLedger)
-          .values({
-            orgId,
-            userId: null,
-            workerId: emp.workerId,
-            fiscalYear: fy,
-            periodKey: month,
-            runId,
-            taxableIncomePaise: taxablePaise,
-            tdsPaise,
-            previousEmployerIncomePaise: 0,
-            previousEmployerTdsPaise: 0,
-            perquisitesPaise: 0,
-            surchargePaise: 0,
-            rebatePaise: 0,
-          })
-          .onConflictDoUpdate({
-            target: [
-              payrollTdsYtdLedger.orgId,
-              payrollTdsYtdLedger.workerId,
-              payrollTdsYtdLedger.fiscalYear,
-              payrollTdsYtdLedger.periodKey,
-            ],
-            set: {
-              runId,
-              taxableIncomePaise: taxablePaise,
-              tdsPaise,
-            },
-          });
-      }
+      if (emp.workerId)
+        byWorker.set(emp.workerId, { ...base, userId: null, workerId: emp.workerId });
     }
+
+    if (byUser.size > 0)
+      await tx
+        .insert(payrollTdsYtdLedger)
+        .values([...byUser.values()])
+        .onConflictDoUpdate({
+          target: [
+            payrollTdsYtdLedger.orgId,
+            payrollTdsYtdLedger.userId,
+            payrollTdsYtdLedger.fiscalYear,
+            payrollTdsYtdLedger.periodKey,
+          ],
+          targetWhere: sql`${payrollTdsYtdLedger.userId} is not null`,
+          set: {
+            runId: sql`excluded.run_id`,
+            taxableIncomePaise: sql`excluded.taxable_income_paise`,
+            tdsPaise: sql`excluded.tds_paise`,
+            workerId: sql`excluded.worker_id`,
+          },
+        });
+
+    if (byWorker.size > 0)
+      await tx
+        .insert(payrollTdsYtdLedger)
+        .values([...byWorker.values()])
+        .onConflictDoUpdate({
+          target: [
+            payrollTdsYtdLedger.orgId,
+            payrollTdsYtdLedger.workerId,
+            payrollTdsYtdLedger.fiscalYear,
+            payrollTdsYtdLedger.periodKey,
+          ],
+          targetWhere: sql`${payrollTdsYtdLedger.workerId} is not null`,
+          set: {
+            runId: sql`excluded.run_id`,
+            taxableIncomePaise: sql`excluded.taxable_income_paise`,
+            tdsPaise: sql`excluded.tds_paise`,
+          },
+        });
   }
 
   async reopen(orgId: string, userId: string, runId: number, reason: string) {
