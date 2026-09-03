@@ -26,6 +26,17 @@ export class HrDashboardReportsService {
     return this.cache.cached(`hr:dashboard:headcount-trends:${orgId}`, () => this.buildHeadcountTrends(orgId), CACHE_TTL.LONG);
   }
 
+  /**
+   * The 12-month headcount series, over the SAME population the dashboard's headcount tile counts.
+   *
+   * The tile (`hr-dashboard.service.ts`) and every other headcount read in this folder count
+   * `organization_members ⨝ users WHERE users.is_active`, and this read counted the join with no
+   * predicate at all, so a deactivated or soft-deleted user — `users.service.ts` sets
+   * `is_active = false`, `user_status = 'deleted'` and `deleted_at` together — kept contributing to
+   * the trend forever and the last point of the series could exceed the tile beside it. The
+   * predicate was only ever implicit: it lived on the attendance read that shared this file until
+   * that read moved to `hr-dashboard-attendance.ts`.
+   */
   private async buildHeadcountTrends(orgId: string) {
     const now = new Date();
 
@@ -45,7 +56,14 @@ export class HrDashboardReportsService {
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
       .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployments.joiningDate), lte(hrEmployments.joiningDate, windowEnd)))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(users.isActive, true),
+          isNotNull(hrEmployments.joiningDate),
+          lte(hrEmployments.joiningDate, windowEnd),
+        ),
+      )
       .limit(10_000);
 
     const countByMonthEnd = new Map<string, number>();

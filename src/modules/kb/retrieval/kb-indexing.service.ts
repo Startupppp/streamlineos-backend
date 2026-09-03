@@ -157,13 +157,18 @@ export class KbIndexingService {
    * organisation alike. Measured live by the cross-tenant sweep. Nothing crossed (every statement
    * inside is org-bound) but the caller is told a page was reindexed that does not exist, and the
    * 404 the contract requires is absent.
+   *
+   * A page in the trash is "not found" for this route too: `deleted_at` is set, `isPageIndexable`
+   * refuses it, and `KbPageTreeService.softDelete` already deleted its chunks inside the same
+   * transaction as the `deleted_at` write. Resolving a soft-deleted page here answered 200
+   * `{"reindexed":true}` for a page the caller can no longer see or index.
    */
   async reindexPageOnRequest(orgId: string, pageId: number): Promise<number> {
     const page = await runInTenantTransaction(
       this.db,
       async (tx) =>
         tx.query.kbPages.findFirst({
-          where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+          where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
           columns: { id: true },
         }),
       { orgId },

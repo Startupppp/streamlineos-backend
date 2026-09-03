@@ -303,7 +303,11 @@ export class HrAutomationEngineService {
     if (ruleId !== undefined) {
       const rule = await this.db.query.hrAutomationRules.findFirst({
         columns: { id: true },
-        where: and(eq(hrAutomationRules.orgId, orgId), eq(hrAutomationRules.id, ruleId)),
+        where: and(
+          eq(hrAutomationRules.orgId, orgId),
+          eq(hrAutomationRules.id, ruleId),
+          isNull(hrAutomationRules.deletedAt),
+        ),
       });
       if (!rule) throw new NotFoundException("Automation rule not found");
     }

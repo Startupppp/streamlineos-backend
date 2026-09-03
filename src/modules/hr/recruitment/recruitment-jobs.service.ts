@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   candidateApplications,
   candidateSources,
@@ -387,7 +387,15 @@ export class RecruitmentJobsService {
       .from(jobPostings)
       .leftJoin(
         orgUnits,
-        and(eq(orgUnits.orgId, jobPostings.orgId), eq(orgUnits.id, jobPostings.orgDepartmentId)),
+        and(
+          eq(orgUnits.orgId, jobPostings.orgId),
+          eq(orgUnits.id, jobPostings.orgDepartmentId),
+          // Soft-deleting an org unit does not fire the posting's cascade, so `org_department_id`
+          // outlives the department it names. Without this the badge rendered a deleted
+          // department; with it the LEFT JOIN yields a null name and the mapping below already
+          // collapses that to `department: null`, which is what the client's guard expects.
+          isNull(orgUnits.deletedAt),
+        ),
       )
       .where(
         and(eq(jobPostings.orgId, orgId), eq(jobPostings.isInternal, true), eq(jobPostings.status, "OPEN")),
