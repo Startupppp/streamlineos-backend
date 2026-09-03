@@ -101,19 +101,26 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
    * (/crm|/support|/accounting|/hr .../settings/automations); it is only the
    * backend path and the settings:automations:* key that are global.
    *
-   * MEASURED 2026-09-03 — report 19b's recommended Option 2 ("derive the module
-   * from triggerEvent and gate per row") is NOT adoptable today, and this is a
-   * new prerequisite no earlier pass recorded. Option 2 needs a trigger->module
-   * map that fails CLOSED. One already exists in the frontend
-   * (components/automations/automation-trigger-data.ts, getModuleForTrigger) and
-   * it fails OPEN: it ends `?? "hr"`. Counted, three ways: the engine enum
-   * AUTOMATION_TRIGGERS is 55, the write schema automationTriggerSchema is 48,
-   * and the frontend map covers 33. So 15 triggers the write API accepts resolve
-   * to "hr" by default, 11 of them CRM/Support/Finance ones (lead.status_changed,
-   * lead.assigned, lead.score_updated, deal.created, deal.won, deal.lost,
-   * ticket.assigned, ticket.status_changed, ticket.escalated, invoice.paid,
-   * expense.approved). Gating rows on that map would gate them on the wrong
-   * module. Fix the map first; only then is Option 2 a mechanical change.
+   * MEASURED 2026-09-03 — Option 2's prerequisite is CLOSED. It needed a
+   * trigger->module map that fails closed; the one that existed was in the
+   * frontend and ended `?? "hr"`, with the vocabulary written out three times
+   * and disagreeing (engine 55, write schema 48, frontend map 33), so 19 of the
+   * 48 the write API accepted did not resolve to their owning module.
+   * AUTOMATION_TRIGGER_MODULE (modules/automation/automation-trigger-modules.ts)
+   * is now Record<AutomationTriggerEvent, AutomationTriggerModule> — total by
+   * construction, so a trigger without an owner does not compile — and
+   * automationTriggerSchema is z.enum(AUTOMATION_TRIGGERS), so the write API
+   * accepts exactly what the engine dispatches. Gates:
+   * automation-trigger-vocabulary.spec.ts here and
+   * frontend lib/automations/__tests__/automation-trigger-mirror.test.ts.
+   *
+   * What is still a product decision is the RUNG, and one input to it: five
+   * triggers have a contested owner, listed with their evidence in
+   * AUTOMATION_TRIGGER_OWNERSHIP_DECISIONS. The measured owners are crm 8,
+   * support 7, finance 2, hr 31, sign 7 — note finance 2, not the 6 report 19b's
+   * name-family grouping assumed: expense.* dispatches from modules/expenses,
+   * which mounts at hr/expenses on hr:expenses:*, and reimbursement.* from
+   * payroll/hr-payroll on hr:payroll:view.
    */
   "GET /settings/automations": {
     verdict: "PENDING-MOVE",
