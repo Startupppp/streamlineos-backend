@@ -53,7 +53,7 @@ const BUDGETS_PATH = join(BACKEND_ROOT, "contracts", "route-budgets.json");
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
 const REQUIRED_BUDGET_FIELDS = ["maxDbCalls", "maxDownstreamCalls", "maxResponseBytes", "maxLatencyP95Ms", "maxMemoryMb"];
-const OPTIONAL_INT_FIELDS = ["maxBufferBlocks", "maxBatchSize", "maxDurationMs"];
+const OPTIONAL_INT_FIELDS = ["maxBufferBlocks", "maxBatchSize", "maxDurationMs", "maxDownstreamCallsPerOrg", "measuredOrgsSwept"];
 const OPTIONAL_NUMBER_FIELDS = ["maxReadPathP95Ms"];
 
 const MEASURED_PAIRS = [
@@ -158,6 +158,41 @@ function indexReadCost(readCostBudgets) {
   return new Map((readCostBudgets ?? []).map((b) => [b.id, b]));
 }
 
+/**
+ * The per-ORGANISATION allowance — the only unit that can describe an all-tenant sweep.
+ *
+ * `GET /cron/storage-sweep` measured 8 outbound calls against a declared `maxDownstreamCalls: 0`,
+ * all eight to the one object store it exists to reconcile, one per organisation over the 8 in the
+ * seed. `0` is not the wrong MAGNITUDE there, it is the wrong UNIT: `forEachOrg` makes the count
+ * O(organisations swept), so no fixed per-request integer describes the route on any deployment
+ * other than the one it was measured on. Writing `8` would make the gate green on this seed and
+ * meaningless in production, which is the exact defect this whole gate exists to prevent.
+ *
+ * So an entry may declare `maxDownstreamCallsPerOrg` beside `maxDownstreamCalls`, and the two
+ * compose as a line rather than replacing one another:
+ *
+ *     effective ceiling = maxDownstreamCalls + maxDownstreamCallsPerOrg * measuredOrgsSwept
+ *
+ * `maxDownstreamCalls` keeps its meaning — the FIXED, organisation-independent component — so the
+ * declared `0` is not raised and the invariant it encodes for the other eleven worker batches
+ * ("a worker batch does not leave the process") is untouched.
+ *
+ * IT FAILS CLOSED. The allowance applies ONLY when the harness has recorded a positive integer
+ * `measuredOrgsSwept` on that entry. Absent it, the ceiling is the absolute one and the entry stays
+ * red — a per-unit allowance with no measured unit count is an unbounded escape hatch, and one
+ * `maxDownstreamCallsPerOrg` typed into a contract must never be able to silence a route on its own.
+ */
+export function effectiveDownstreamCeiling(entry, absoluteMax) {
+  const perOrg = entry.maxDownstreamCallsPerOrg;
+  const orgs = entry.measuredOrgsSwept;
+  if (typeof perOrg !== "number" || !Number.isInteger(perOrg) || perOrg < 0) return { max: absoluteMax, derivation: null };
+  if (typeof orgs !== "number" || !Number.isInteger(orgs) || orgs <= 0) return { max: absoluteMax, derivation: null };
+  return {
+    max: absoluteMax + perOrg * orgs,
+    derivation: `${String(absoluteMax)} fixed + ${String(perOrg)}/org x ${String(orgs)} organisations swept`,
+  };
+}
+
 export function findExceededBudgets(manifest, readCostBudgets = []) {
   const violations = [];
   const defaults = manifest.defaults ?? {};
@@ -167,10 +202,24 @@ export function findExceededBudgets(manifest, readCostBudgets = []) {
     for (const [measuredField, maxField] of MEASURED_PAIRS) {
       const measured = entry[measuredField];
       if (measured === null || measured === undefined) continue;
-      const max = resolveCeiling(entry, maxField, defaults, readCostIndex);
+      let max = resolveCeiling(entry, maxField, defaults, readCostIndex);
       if (typeof measured !== "number" || typeof max !== "number") continue;
+      let derivation = null;
+      if (maxField === "maxDownstreamCalls") {
+        const scaled = effectiveDownstreamCeiling(entry, max);
+        max = scaled.max;
+        derivation = scaled.derivation;
+      }
       if (measured > max) {
-        violations.push({ key, measuredField, measured, max, issue: `${measuredField}=${String(measured)} exceeds ${maxField}=${String(max)}` });
+        violations.push({
+          key,
+          measuredField,
+          measured,
+          max,
+          issue:
+            `${measuredField}=${String(measured)} exceeds ${maxField}=${String(max)}` +
+            (derivation === null ? "" : ` (${derivation})`),
+        });
       }
     }
   }
@@ -332,6 +381,41 @@ if (SELF_TEST) {
   const batchExceeded = findExceededBudgets({ defaults: {}, budgets: { "GET /cron/x": { maxBatchSize: 500, measuredBatchSize: 900 } } });
   if (batchExceeded.length !== 1) fail("batch-exceeded-bites", `expected 1 batch violation, got ${JSON.stringify(batchExceeded)}`);
   else pass("batch-exceeded-bites — a worker batch over maxBatchSize is detected");
+
+  // The per-organisation allowance. Five cases, and the first two are the ones that matter: the
+  // allowance must not exist at all without a measured organisation count, and it must not silence
+  // a route that is over it.
+  const sweep = { maxDownstreamCalls: 0, measuredDownstreamCalls: 8 };
+
+  const noOrgCount = findExceededBudgets({ defaults: {}, budgets: { "GET /cron/s": { ...sweep, maxDownstreamCallsPerOrg: 1 } } });
+  if (noOrgCount.length !== 1)
+    fail("per-org-fails-closed", `a per-org allowance with no measuredOrgsSwept must NOT apply; got ${JSON.stringify(noOrgCount)}`);
+  else pass("per-org-fails-closed — maxDownstreamCallsPerOrg with no measured org count leaves the absolute ceiling in force");
+
+  const zeroOrgCount = findExceededBudgets({ defaults: {}, budgets: { "GET /cron/s": { ...sweep, maxDownstreamCallsPerOrg: 1, measuredOrgsSwept: 0 } } });
+  if (zeroOrgCount.length !== 1)
+    fail("per-org-zero-orgs", `measuredOrgsSwept=0 must NOT grant an allowance; got ${JSON.stringify(zeroOrgCount)}`);
+  else pass("per-org-zero-orgs — an org count of 0 grants no allowance");
+
+  const atBoundary = findExceededBudgets({ defaults: {}, budgets: { "GET /cron/s": { ...sweep, maxDownstreamCallsPerOrg: 1, measuredOrgsSwept: 8 } } });
+  if (atBoundary.length !== 0)
+    fail("per-org-boundary", `8 calls over 8 organisations at 1/org is exactly the ceiling; got ${JSON.stringify(atBoundary)}`);
+  else pass("per-org-boundary — 0 fixed + 1/org x 8 organisations admits exactly 8 downstream calls");
+
+  const overPerOrg = findExceededBudgets({ defaults: {}, budgets: { "GET /cron/s": { ...sweep, measuredDownstreamCalls: 9, maxDownstreamCallsPerOrg: 1, measuredOrgsSwept: 8 } } });
+  if (overPerOrg.length !== 1 || !overPerOrg[0].issue.includes("1/org x 8 organisations"))
+    fail("per-org-bites", `a ninth call over 8 organisations must fire and name the derivation; got ${JSON.stringify(overPerOrg)}`);
+  else pass("per-org-bites — one call above the per-organisation allowance fires, and the issue names the derivation");
+
+  const fixedPlusPerOrg = findExceededBudgets({ defaults: {}, budgets: { "GET /cron/s": { maxDownstreamCalls: 2, measuredDownstreamCalls: 10, maxDownstreamCallsPerOrg: 1, measuredOrgsSwept: 8 } } });
+  if (fixedPlusPerOrg.length !== 0)
+    fail("per-org-composes", `the fixed term must ADD to the per-org term, not be replaced by it; got ${JSON.stringify(fixedPlusPerOrg)}`);
+  else pass("per-org-composes — maxDownstreamCalls stays the fixed component and the allowance adds to it");
+
+  const badPerOrg = findMalformedBudgetEntries({ budgets: { "GET /cron/s": { ...OK_ENTRY, maxDownstreamCallsPerOrg: -1 } } });
+  if (!badPerOrg.some((v) => v.field === "maxDownstreamCallsPerOrg"))
+    fail("per-org-validated", `a negative maxDownstreamCallsPerOrg must be malformed; got ${JSON.stringify(badPerOrg)}`);
+  else pass("per-org-validated — maxDownstreamCallsPerOrg must be a non-negative integer");
 
   const halfMeasured = measurementCoverage({
     defaults: {},
