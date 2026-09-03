@@ -419,3 +419,30 @@ export function decodeCursor(encoded: string, userId: string): OpaqueCursor {
 export function mergeMessagesByDate(messages: MailMessageSummary[]): MailMessageSummary[] {
   return [...messages].sort((a, b) => b.date.localeCompare(a.date));
 }
+
+/**
+ * A conversation is ordered oldest-first, and the ORDER IS THE SERVICE'S, not
+ * the provider's. Gmail's thread fetch applies no sort at all while Outlook
+ * pushes `receivedDateTime asc` to Graph, so the same conversation read through
+ * two accounts came back in two different orders.
+ *
+ * Compares parsed instants rather than the raw strings `mergeMessagesByDate`
+ * uses: Gmail normalises to `toISOString()` but Outlook passes Graph's
+ * `receivedDateTime` through untouched, and Graph emits both `...:30Z` and
+ * `...:30.0000000Z`, which sort against each other backwards as text ('.' is
+ * below 'Z'). An unparseable date sorts last instead of returning NaN, which
+ * would make the whole comparator — and therefore the whole order — undefined.
+ */
+export function sortThreadChronologically<T extends { date: string; id: string }>(
+  messages: readonly T[],
+): T[] {
+  const instantOf = (value: string): number => {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+  };
+  return [...messages].sort((a, b) => {
+    const delta = instantOf(a.date) - instantOf(b.date);
+    if (delta !== 0) return delta;
+    return a.id.localeCompare(b.id);
+  });
+}

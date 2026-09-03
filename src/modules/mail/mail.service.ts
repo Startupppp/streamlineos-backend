@@ -8,6 +8,7 @@ import {
   encodeCursor,
   isPartialGmailCursor,
   mergeMessagesByDate,
+  sortThreadChronologically,
   type AccountCursorValue,
   type NormalizerConnectionMeta,
   type OpaqueCursor,
@@ -324,8 +325,10 @@ export class MailService {
     const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
     const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     try {
-      if (acc.provider === "gmail") return await this.gmail.getThread(userId, conn, threadId);
-      return await this.outlook.getThread(userId, conn, threadId);
+      const messages = acc.provider === "gmail"
+        ? await this.gmail.getThread(userId, conn, threadId)
+        : await this.outlook.getThread(userId, conn, threadId);
+      return sortThreadChronologically(messages);
     } catch (err) {
       if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id, orgId);
       throw err;
