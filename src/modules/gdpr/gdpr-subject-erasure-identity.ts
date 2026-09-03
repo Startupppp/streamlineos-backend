@@ -7,6 +7,7 @@ import {
   hrPeople,
   organizationMembers,
   organizationPeople,
+  organizations,
   users,
 } from "../../db/schema";
 import type { Db, TenantTx } from "../../db/drizzle.types";
@@ -194,10 +195,31 @@ export function subjectHasSurvivingMembership(
       const [survivor] = await tx
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
+        .innerJoin(
+          organizations,
+          eq(organizations.id, organizationMembers.orgId),
+        )
         .where(
           and(
             eq(organizationMembers.userId, subjectUserId),
             ne(organizationMembers.orgId, orgId),
+            // A membership only keeps the shared identity alive if the person is
+            // still IN that organization. `membership_status` is
+            // INVITED | ACTIVE | SUSPENDED | LEFT, and leaving is a tombstone
+            // UPDATE rather than a delete, so an unfiltered count answers "yes"
+            // for someone who left every other org years ago — their global
+            // email and name then survive an erasure permanently. Worse, it is
+            // symmetric: if two orgs each erase the subject, each sees the
+            // other's tombstone and NEITHER redacts, so `users` is never
+            // redacted by anyone.
+            //
+            // SUSPENDED counts as surviving on purpose. Suspension is reversible
+            // and the person still belongs to that org, so redacting the shared
+            // row would destroy an identity its own organization can restore.
+            // INVITED does not: the invitation was never accepted.
+            inArray(organizationMembers.status, ["ACTIVE", "SUSPENDED"]),
+            eq(organizations.status, "ACTIVE"),
+            isNull(organizations.deletedAt),
           ),
         )
         .limit(1);

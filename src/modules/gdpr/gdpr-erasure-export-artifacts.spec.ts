@@ -23,7 +23,16 @@ jest.mock("../../common/tenant/with-identity", () => ({
   withIdentity: jest.fn((_db: unknown, _userId: string, fn: (tx: unknown) => unknown) =>
     fn({
       select: () => ({
-        from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+        from: () => {
+          // The surviving-membership guard joins organizations to exclude deleted ones;
+          // this double models a builder, so it walks the same links the query does.
+          const chain: Record<string, unknown> = {
+            innerJoin: () => chain,
+            where: () => chain,
+            limit: () => Promise.resolve([]),
+          };
+          return chain;
+        },
       }),
     }),
   ),
@@ -105,6 +114,9 @@ function makeDb(store: Store) {
         table = t;
         return chain;
       },
+      // The surviving-membership guard joins organizations to exclude deleted orgs;
+      // the double models a builder, so it needs the link the query now walks.
+      innerJoin: () => chain,
       where: () => chain,
       orderBy: () => chain,
       limit: () => Promise.resolve(resolve()),
@@ -117,6 +129,9 @@ function makeDb(store: Store) {
   const txSelectChain = () => {
     const chain = {
       from: () => chain,
+      // The surviving-membership guard joins organizations to exclude deleted orgs;
+      // the double models a builder, so it needs the link the query now walks.
+      innerJoin: () => chain,
       where: () => chain,
       orderBy: () => chain,
       limit: () => Promise.resolve([]),
@@ -141,6 +156,9 @@ function makeDb(store: Store) {
         values = v;
         return chain;
       },
+      // The surviving-membership guard joins organizations to exclude deleted orgs;
+      // the double models a builder, so it needs the link the query now walks.
+      innerJoin: () => chain,
       where: () => chain,
       returning: () => Promise.resolve(apply()),
       then: (onOk: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>
@@ -151,6 +169,9 @@ function makeDb(store: Store) {
 
   const emptyChain = () => {
     const chain = {
+      // The surviving-membership guard joins organizations to exclude deleted orgs;
+      // the double models a builder, so it needs the link the query now walks.
+      innerJoin: () => chain,
       where: () => chain,
       returning: () => Promise.resolve([]),
       then: (onOk: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>

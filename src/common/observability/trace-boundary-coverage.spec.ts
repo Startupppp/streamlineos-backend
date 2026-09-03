@@ -133,7 +133,12 @@ describe("the join key survives the projection that reads the row back", () => {
     const text = source("src/common/workflow/workflow-store.ts");
     const returning = /RETURNING ([^\n]*)/.exec(text)?.[1] ?? "";
     expect(returning).toContain("correlation_id");
-    expect(text).toContain("correlationId: record.correlation_id");
+    // A regex, not a literal: the claim is "the projection reads `correlation_id`
+    // back onto `correlationId`", and that survives being narrowed or reformatted.
+    // Pinning one exact spelling made the assertion fail the moment the value was
+    // narrowed with a `typeof` guard instead of forced with `as string | null` —
+    // a strictly better read, rejected by the test that exists to protect it.
+    expect(text).toMatch(/correlationId:[\s\S]{0,120}record\.correlation_id/);
   });
 
   it("selects outbox_events.correlation_id in the relay's projection", () => {

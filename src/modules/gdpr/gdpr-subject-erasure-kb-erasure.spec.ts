@@ -24,7 +24,16 @@ jest.mock("../../common/tenant/with-identity", () => ({
   withIdentity: jest.fn((_db: unknown, _userId: string, fn: (tx: unknown) => unknown) =>
     fn({
       select: () => ({
-        from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+        from: () => {
+          // `innerJoin` because the surviving-membership guard joins organizations to
+          // exclude deleted ones; the double models a builder, so it walks the same links.
+          const chain: Record<string, unknown> = {
+            innerJoin: () => chain,
+            where: () => chain,
+            limit: () => Promise.resolve([]),
+          };
+          return chain;
+        },
       }),
     }),
   ),

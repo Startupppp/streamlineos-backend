@@ -83,37 +83,43 @@ describeDb("HR dashboard attendance analytics — session grain", () => {
   });
 
   it("counts one person-day per employee per day, however many sessions they clock", async () => {
-    if (days.length < 2) {
-      // Runs on the 1st/2nd of a month that starts at a weekend; nothing to prove.
-      return;
-    }
-    const [dayA, dayB] = days as [string, string];
+    // No early return. This used to `return` when the month was too young to have
+    // two elapsed weekdays — on the 1st or 2nd of a month starting at a weekend the
+    // test silently passed having asserted nothing, which is the one outcome a
+    // regression net must never have. The numbers below are derived from
+    // `days.length` instead, so the same invariant is proved with one day or two.
+    expect(days.length).toBeGreaterThan(0);
 
     await sql`DELETE FROM attendance WHERE org_id = ${ORG_ID} AND user_id = ${userId}`;
-    // Four rows across two days — a morning session and an after-lunch session
-    // on each, which is exactly what clockIn/clockOut/clockIn produces.
-    await sql`
-      INSERT INTO attendance (org_id, user_id, date, check_in, check_out, status) VALUES
-        (${ORG_ID}, ${userId}, ${dayA}, ${dayA + " 10:00:00"}, ${dayA + " 13:00:00"}, 'PRESENT'),
-        (${ORG_ID}, ${userId}, ${dayA}, ${dayA + " 14:00:00"}, ${dayA + " 18:00:00"}, 'PRESENT'),
-        (${ORG_ID}, ${userId}, ${dayB}, ${dayB + " 08:00:00"}, ${dayB + " 13:00:00"}, 'PRESENT'),
-        (${ORG_ID}, ${userId}, ${dayB}, ${dayB + " 14:00:00"}, ${dayB + " 18:00:00"}, 'PRESENT')
-    `;
+    // Two sessions per day — a morning and an after-lunch block, exactly what
+    // clockIn/clockOut/clockIn produces. Day A starts late (10:00) and day B on
+    // time (08:00), so across two days three ROWS trip the 09:30 threshold while
+    // only two PERSON-DAYS do. That gap is the whole point of the test, and it is
+    // still present with one day (two late rows, one late person-day).
+    for (const [i, day] of days.entries()) {
+      const firstIn = i === 1 ? "08:00:00" : "10:00:00";
+      await sql`
+        INSERT INTO attendance (org_id, user_id, date, check_in, check_out, status) VALUES
+          (${ORG_ID}, ${userId}, ${day}, ${day + " " + firstIn}, ${day + " 13:00:00"}, 'PRESENT'),
+          (${ORG_ID}, ${userId}, ${day}, ${day + " 14:00:00"}, ${day + " 18:00:00"}, 'PRESENT')
+      `;
+    }
 
     const [{ count: rowCount }] = await sql<{ count: number }[]>`
       SELECT count(*)::int AS count FROM attendance
        WHERE org_id = ${ORG_ID} AND user_id = ${userId}
     `;
-    expect(rowCount).toBe(4);
+    const personDays = days.length;
+    expect(rowCount).toBe(personDays * 2);
 
     const result = await buildAttendanceAnalytics(db, ORG_ID);
 
     expect(result.totalEmployees).toBe(1);
     const denominator = result.totalEmployees * result.workingDaysSoFar;
 
-    // 2 person-days, not the 4 rows that are actually in the table.
-    const fromPersonDays = Math.round((2 / denominator) * 100);
-    const fromRows = Math.round((4 / denominator) * 100);
+    // person-days, not the rows that are actually in the table.
+    const fromPersonDays = Math.round((personDays / denominator) * 100);
+    const fromRows = Math.round((rowCount / denominator) * 100);
     expect(fromPersonDays).not.toBe(fromRows); // the test can tell them apart
     expect(result.attendancePct).toBe(fromPersonDays);
 
@@ -123,11 +129,19 @@ describeDb("HR dashboard attendance analytics — session grain", () => {
     expect(result.absenteeismPct).toBe(100 - fromPersonDays);
     expect(result.absenteeismPct).toBeGreaterThan(0);
 
-    // Late arrivals are person-days too: day A has two post-threshold check-ins
-    // (10:00 and the 14:00 return from lunch) but the employee arrived late
-    // once; day B's 08:00 start is on time and only its 14:00 return trips the
-    // 09:30 threshold. Three qualifying ROWS, two qualifying person-days.
-    expect(result.lateArrivals).toBe(2);
+    // Late arrivals are person-days too: day A's 10:00 start and its 14:00 return
+    // from lunch are two post-threshold check-ins but one late day.
+    expect(result.lateArrivals).toBe(personDays);
+
+    // And the gap is real rather than incidental: strictly more ROWS trip the
+    // threshold than person-days do, which is what a row-grained count would
+    // have reported instead.
+    const [{ count: lateRows }] = await sql<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM attendance
+       WHERE org_id = ${ORG_ID} AND user_id = ${userId}
+         AND check_in::time > '09:30:00'
+    `;
+    expect(lateRows).toBeGreaterThan(result.lateArrivals);
   });
 
   it("reports a rate of zero, not a phantom day, for an org with no attendance", async () => {

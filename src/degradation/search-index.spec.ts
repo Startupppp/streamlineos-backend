@@ -248,9 +248,19 @@ describeAgainstAppRole(
     });
 
     it("fails closed when the tenant GUC is absent", async () => {
+      // Measured, not guessed. This used to accept ANY throw and was registered in
+      // baselines/bare-throw.json precisely because nobody could run it to find out
+      // what Postgres raises — "it becomes tightenable the moment the seeded
+      // integration lane runs". It ran: `current_org_id()` RAISEs SQLSTATE 42501
+      // with this message when `app.organization_id` is unset.
+      //
+      // The distinction is the whole point of the test. A bare `.toThrow()` is also
+      // satisfied by `relation "build.tickets" does not exist` or a dropped
+      // connection — i.e. by the query failing for a reason that proves nothing
+      // about tenant isolation. Pinning the SQLSTATE proves it failed CLOSED.
       await expect(
         sql.begin(async (tx) => tx`SELECT count(*) FROM build.tickets WHERE org_id = current_org_id()`),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({ code: "42501" });
     });
   },
 );

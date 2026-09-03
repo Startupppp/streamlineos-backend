@@ -207,6 +207,10 @@ export const CONTEXT_EXIT_ALLOWLIST = new Map([
     "placement is a control-plane read that runs before any tenant is known and must not be tied to a caller's tenant connection in a multi-region deployment",
   ],
   [
+    "src/modules/gdpr/gdpr-subject-erasure-identity.ts",
+    "audited 2026-09-04: the exit IS the correctness requirement, not a shortcut around it. Before redacting the shared `users` row, erasure must answer 'does this subject still belong to any OTHER organisation?' — and the erasing org's tenant transaction is structurally unable to see another org's membership, so asking on it returns zero rows and the answer is always 'no'. That is the P0 this fixed: a two-org subject erased by one controller lost their global identity, and with it their access to the other. The question is asked under `withIdentity` scoped to the SUBJECT, which is the narrowest principal that can see their own memberships, and it reads nothing but `organization_members` joined to `organizations` — no tenant data crosses. It is deliberately asked BEFORE the erasure takes row locks on the subject's PII, so the wait for a pool slot does not happen while those locks are held. Covered by gdpr-subject-erasure-global-identity.db.spec.ts, which measures as a non-BYPASSRLS role and proves both directions: erasing from org A leaves the org B membership and the identity intact, and erasing from the LAST org still redacts",
+  ],
+  [
     "src/common/region/cell-admission.ts",
     "chooses the cell a NEW organisation is placed into by reading cell_capacity_measurements, which necessarily runs before that organisation and therefore any tenant context exists; same class as the placement lookup above",
   ],
@@ -244,6 +248,10 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
   [
     "src/modules/users/users.service.ts",
     "pre-tenant: membership count for plan enforcement during sign-in; org context is not yet established",
+  ],
+  [
+    "src/modules/gdpr/gdpr-subject-erasure-identity.ts",
+    "cross-tenant by necessity, scoped to the subject: erasure may only redact the shared `users` row once NO other organisation still holds this person, and the erasing org's own tenant transaction cannot see another org's membership. `withIdentity` on the subject is the narrowest principal that can answer it. Reads only organization_members joined to organizations, filtered to ACTIVE/SUSPENDED memberships in live orgs — see the entry in CONTEXT_EXIT_ALLOWLIST for the full audit",
   ],
   [
     "src/modules/auth/auth-membership-resolver.service.ts",

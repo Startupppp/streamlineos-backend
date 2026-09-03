@@ -198,6 +198,14 @@
         "direction": "floor"
       }
     },
+    "check-envelope-consistency.mjs": {
+      "MAX_HOPS": {
+        "value": 8,
+        "direction": "ratchet",
+        "owner": "api/platform owner",
+        "reason": "New constant, not a rename — registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe — it only turns resolved handlers back into honestly-unresolved ones."
+      }
+    },
     "check-drop-column-safety.mjs": {
       "MIN_MIGRATION_FILES": {
         "value": 100,

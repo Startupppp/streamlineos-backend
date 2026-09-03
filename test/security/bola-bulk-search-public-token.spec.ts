@@ -104,8 +104,14 @@ describe("KbSearchService — ACL enforced as SQL predicate before model context
   const kbCandidateSrc = src("src/modules/kb/retrieval/kb-candidate.service.ts");
 
   it("getAccessibleSpaceIds is called before any article query — ACL gates the candidate pool", () => {
-    const accessCallPos = kbSearchSrc.indexOf("getAccessibleSpaceIds(user)");
-    const dbSelectPos = kbSearchSrc.indexOf("this.db.select(");
+    // Both probes are regexes, not `indexOf` on a literal. The db probe used to read
+    // `indexOf("this.db.select(")` and went to -1 the moment the query was reformatted to
+    // `await this.db` / `.select({…})` across two lines — a whitespace change silently
+    // turned a security assertion into a failing one, and the reverse (a formatting
+    // change hiding a real regression) is the same defect pointing the other way.
+    // The property being asserted is unchanged: the ACL resolves before the first read.
+    const accessCallPos = kbSearchSrc.search(/getAccessibleSpaceIds\s*\(\s*user\s*\)/);
+    const dbSelectPos = kbSearchSrc.search(/this\.db\s*\.\s*select\s*\(/);
     expect(accessCallPos).toBeGreaterThan(-1);
     expect(dbSelectPos).toBeGreaterThan(-1);
     expect(accessCallPos).toBeLessThan(dbSelectPos);

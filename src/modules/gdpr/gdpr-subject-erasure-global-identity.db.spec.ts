@@ -311,6 +311,52 @@ describeDb("GDPR erasure — a multi-org subject keeps their global identity", (
     expect(sighted).toHaveLength(1);
   });
 
+  /**
+   * The under-erasure half. Stopping the over-erasure is only half a compliance duty:
+   * a predicate that counts ANY row in another org answers "still a member" for someone
+   * who left that org years ago, so their shared email and name survive an erasure
+   * permanently. It is also symmetric — if both orgs erase the subject, each sees the
+   * other's tombstone and NEITHER redacts, so `users` is never redacted by anyone.
+   *
+   * `membership_status` is INVITED | ACTIVE | SUSPENDED | LEFT and leaving is a
+   * tombstone UPDATE, not a delete, so every one of these is reachable in production.
+   */
+  describe.each([
+    ["LEFT", "LEFT", false, "they left that org — a tombstone, not a membership"],
+    ["INVITED", "INVITED", false, "the invitation was never accepted"],
+    ["SUSPENDED", "SUSPENDED", true, "suspension is reversible and that org can restore them"],
+  ])("a subject whose only other membership is %s", (_label, status, survives, why) => {
+    beforeEach(async () => {
+      await owner`
+        UPDATE organization_members SET status = ${status}::membership_status
+         WHERE user_id = ${MULTI} AND org_id = ${ORG_B}`;
+    });
+    afterEach(async () => {
+      await owner`
+        UPDATE organization_members SET status = 'ACTIVE'::membership_status
+         WHERE user_id = ${MULTI} AND org_id = ${ORG_B}`;
+    });
+
+    it(`${survives ? "keeps" : "does not keep"} the global identity alive, because they ${why}`, async () => {
+      const held = await inAbortedTenantRequest(ORG_A, () =>
+        subjectHasSurvivingMembership(appDb, { orgId: ORG_A, subjectUserId: MULTI }),
+      );
+      expect(held).toBe(survives);
+    });
+  });
+
+  it("does not count a membership in a soft-deleted organization", async () => {
+    await owner`UPDATE organizations SET deleted_at = now() WHERE id = ${ORG_B}`;
+    try {
+      const held = await inAbortedTenantRequest(ORG_A, () =>
+        subjectHasSurvivingMembership(appDb, { orgId: ORG_A, subjectUserId: MULTI }),
+      );
+      expect(held).toBe(false);
+    } finally {
+      await owner`UPDATE organizations SET deleted_at = NULL WHERE id = ${ORG_B}`;
+    }
+  });
+
   it("erasing from org A leaves the org B membership and the global identity intact", async () => {
     const { result, identity, person } = await eraseAndObserve(MULTI);
 

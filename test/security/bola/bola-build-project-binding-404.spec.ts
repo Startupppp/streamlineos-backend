@@ -57,7 +57,16 @@ function dbSeeing(row: { id: number; managerMembershipId?: number | null } | und
       return { values: () => ({ returning: () => Promise.resolve([{ id: 1 }]) }) };
     }),
     select: jest.fn().mockImplementation(() => ({
-      from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+      from: () => {
+          // The surviving-membership guard joins organizations to exclude deleted ones;
+          // this double models a builder, so it walks the same links the query does.
+          const chain: Record<string, unknown> = {
+            innerJoin: () => chain,
+            where: () => chain,
+            limit: () => Promise.resolve([]),
+          };
+          return chain;
+        },
     })),
   } as unknown as Db;
   return { db, writes: () => state.writes, lookups: () => state.lookups };

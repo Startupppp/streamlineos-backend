@@ -42,10 +42,13 @@ export interface QueueRunResult {
   dead: number;
 }
 
-type ClaimedJob = { id: number; deliveryId: number; orgId: string };
-type DeliveryRow = typeof notificationDeliveries.$inferSelect;
-type Provider = NonNullable<ReturnType<NotificationProviderRegistry["get"]>>;
-type Preflight = { delivery: DeliveryRow; sandbox: boolean; caps: ProviderCaps; attempt: number; provider: Provider };
+import type {
+  ClaimedJob,
+  DeliveryRow,
+  Preflight,
+  Provider,
+} from "./notification-delivery-types";
+import { resolveDeliveryPreflight } from "./notification-delivery-preflight";
 
 @Injectable()
 export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy {
@@ -223,116 +226,18 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
   }
 
   private async deliverJob(job: ClaimedJob, now: Date, result: QueueRunResult): Promise<void> {
-    const preflight = await this.inTenant(job.orgId, async (): Promise<Preflight | null> => {
-      const delivery = await this.db.query.notificationDeliveries.findFirst({
-        where: and(
-          eq(notificationDeliveries.id, job.deliveryId),
-          eq(notificationDeliveries.orgId, job.orgId),
-        ),
-      });
-
-      if (!delivery) {
-        await this.db
-          .update(notificationQueue)
-          .set({ status: "DONE", lastError: "delivery missing" })
-          .where(eq(notificationQueue.id, job.id));
-        return null;
-      }
-
-      // PIPE-012: a stale notification is worse than none — on recovery from a
-      // backlog it arrives as a flood of things that stopped mattering hours ago.
-      // CANCELLED, not DEAD: nothing failed, it simply expired.
-      if (delivery.expiresAt && delivery.expiresAt.getTime() <= Date.now()) {
-        await this.db
-          .update(notificationDeliveries)
-          .set({ status: "CANCELLED", failureCode: "EXPIRED", updatedAt: new Date() })
-          .where(eq(notificationDeliveries.id, delivery.id));
-        await this.db
-          .update(notificationQueue)
-          .set({ status: "DONE", lastError: "delivery expired before it was sent" })
-          .where(eq(notificationQueue.id, job.id));
-        return null;
-      }
-
-      // PIPE-015: a delivery can sit in the queue across a deactivation, a suspension
-      // or a removal — and under queue lag that window widens exactly when the system
-      // is busiest. Membership was checked at enqueue; re-check it here, immediately
-      // before handing the payload to a provider. CANCELLED, not DEAD: nothing failed,
-      // the recipient simply stopped being entitled to it.
-      //
-      // Dual-read: when delivery.membershipId is set (post-backfill rows), check that
-      // specific membership row directly — a user removed and re-invited gets a new
-      // membershipId, so the old delivery references a membership that is now INACTIVE.
-      // Legacy rows (membershipId IS NULL) fall back to the userId predicate so
-      // nothing is lost while the backfill settles.
-      let recipientStillActive: boolean;
-      if (typeof delivery.membershipId === "number") {
-        const memberRow = await this.db
-          .select({ id: organizationMembers.id })
-          .from(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.orgId, job.orgId),
-              eq(organizationMembers.id, delivery.membershipId),
-              eq(organizationMembers.status, "ACTIVE"),
-            ),
-          )
-          .limit(1);
-        recipientStillActive = memberRow.length === 1;
-      } else {
-        const active = await filterOrgMemberIds(this.db, job.orgId, [delivery.userId]);
-        recipientStillActive = active.length > 0;
-      }
-      if (!recipientStillActive) {
-        await this.db
-          .update(notificationDeliveries)
-          .set({ status: "CANCELLED", failureCode: "MEMBERSHIP_INACTIVE", updatedAt: new Date() })
-          .where(eq(notificationDeliveries.id, delivery.id));
-        await this.db
-          .update(notificationQueue)
-          .set({ status: "DONE", lastError: "recipient is no longer an active member" })
-          .where(eq(notificationQueue.id, job.id));
-        return null;
-      }
-
-      const provider = this.registry.get(delivery.channel);
-      if (!provider) {
-        await this.markDead(job.id, delivery.id, "NO_PROVIDER", `No provider for ${delivery.channel}`);
-        result.dead += 1;
-        return null;
-      }
-
-      const sandboxRows = await this.db
-        .select({
-          sandboxMode: notificationProviderAccounts.sandboxMode,
-          // Read here rather than in a second query: this row is already being
-          // fetched, and until now nothing anywhere read either column.
-          dailySendLimit: notificationProviderAccounts.dailySendLimit,
-          monthlyCostLimit: notificationProviderAccounts.monthlyCostLimit,
-        })
-        .from(notificationProviderAccounts)
-        .where(
-          and(
-            eq(notificationProviderAccounts.orgId, job.orgId),
-            eq(notificationProviderAccounts.channel, delivery.channel),
-            eq(notificationProviderAccounts.enabled, true),
-          ),
-        )
-        .limit(1);
-      const sandbox = sandboxRows[0]?.sandboxMode ?? process.env.NODE_ENV !== "production";
-      const caps: ProviderCaps = {
-        dailySendLimit: sandboxRows[0]?.dailySendLimit ?? null,
-        monthlyCostLimit: sandboxRows[0]?.monthlyCostLimit ?? null,
-      };
-      const attempt = delivery.attemptCount + 1;
-
-      await this.db
-        .update(notificationDeliveries)
-        .set({ status: "SENDING", attemptCount: attempt })
-        .where(eq(notificationDeliveries.id, delivery.id));
-
-      return { delivery, sandbox, caps, attempt, provider };
-    });
+    const preflight = await this.inTenant(job.orgId, () =>
+      resolveDeliveryPreflight(
+        {
+          db: this.db,
+          registry: this.registry,
+          markDead: (q, d, c, m) => this.markDead(q, d, c, m),
+          logger: this.logger,
+        },
+        job,
+        result,
+      ),
+    );
 
     if (!preflight) return;
 
