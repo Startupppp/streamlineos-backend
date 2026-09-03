@@ -45,7 +45,33 @@
  * tokens. A comment, a commented-out step, a step under a `if: false`, a `name:` that merely
  * mentions the gate, and an unparseable file all fail — the last of them loudly, by file and
  * parse error, because that is how an entire CI file went dead unnoticed.
+ *
+ * ---------------------------------------------------------------------------------------------
+ * 2026-09-03 (later the same day) — PARSING IS NOT ENOUGH EITHER. THE WORKFLOW MUST BE REACHABLE.
+ *
+ * Fourth instance of the same class, and the one this section exists for. `db-gates.yml` parsed
+ * perfectly, named its gates in real `run:` steps, and this gate reported all of them wired —
+ * while the file carried `on: { schedule, workflow_dispatch }` and nothing else, so no push and
+ * no pull request has ever run a single one of them. Its own header said so in prose. Measured:
+ * its entire GitHub Actions history was ONE scheduled run, `33733281657`, and all three jobs
+ * FAILED at the first database step. A gate whose only trigger is a nightly nobody reads is a
+ * gate in name only, and a gate whose only trigger is `workflow_dispatch` is not even that.
+ *
+ * So `run:` membership is now necessary and not sufficient. A workflow contributes its steps to
+ * the wired set only when GitHub will start it WITHOUT a human:
+ *
+ *   - no `on:` at all, or an empty one                       -> UNREACHABLE
+ *   - only `workflow_dispatch` / `repository_dispatch`       -> UNREACHABLE (a human must click)
+ *   - `schedule:` with no `cron:` entry                      -> that event cannot fire
+ *   - `push:`/`pull_request:` whose `branches:` filter matches no branch this repository
+ *     has                                                    -> that event cannot fire
+ *   - a job pinned `if: false` (or `if: ${{ false }}`)       -> DEAD JOB, its steps do not count
+ *
+ * An unreachable workflow and a dead job each fail this gate by name, exactly like an unwired
+ * gate, and their run steps leave the corpus — so a gate that lived only there also reports
+ * UNWIRED rather than quietly passing.
  */
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,12 +86,12 @@ const HELPER = /:(self-test|fix|emit|list|baseline|write|report|verify|build)$/;
 
 /** gate -> the reason it is deliberately not in a workflow. Must be specific. */
 const UNWIRED_BY_DESIGN = Object.freeze({
-  "check:declaration-column-drift":
-    "reads pg_attribute on a live database at journal head; the hermetic `gates` job has none. " +
-    "Runs in db-gates.yml when a bootstrapped target exists. Owner: gate-wiring.",
-  "check:declaration-constraint-drift":
-    "same — compares getTableConfig against pg_constraint/pg_index on a live database. " +
-    "Owner: gate-wiring.",
+  // `check:declaration-column-drift` and `check:declaration-constraint-drift` used to sit here.
+  // Their reasons claimed "runs in db-gates.yml when a bootstrapped target exists"; neither name
+  // appeared anywhere in db-gates.yml, so both were plainly unwired under a reason that read as a
+  // deliberate choice. Both now have real steps in db-gates.yml's `bootstrapped` job, measured
+  // exit 0 against a database at journal head 672/672. FALSE EXCEPTION REASON below is the check
+  // that makes this class of entry impossible to write again.
 
   // Widened 2026-09-03 to `verify:*` and `db:check-*`. All eight below query a live database at
   // journal head, which the hermetic `gates` job has none of. Recorded rather than left silent:
@@ -93,13 +119,188 @@ const UNWIRED_BY_DESIGN = Object.freeze({
 
 /**
  * Anti-vacuity floors. A matcher that suddenly resolves nothing must FAIL, not congratulate
- * itself on zero unwired gates. Measured at head: 98 gates, 14 jobs, 148 run steps across the
- * 7 workflow files. The floors sit roughly 25% below each, so a legitimate deletion does not
- * trip them but a matcher that stops resolving does.
+ * itself on zero unwired gates. Re-measured 2026-09-03 after db-gates.yml was repaired and
+ * wired onto push and pull_request: 98 gates, 15 jobs, 158 run steps across the 7 workflow
+ * files, all 7 reachable. The floors sit roughly 25% below each, so a legitimate deletion does
+ * not trip them but a matcher that stops resolving does — including the new way of resolving
+ * nothing, which is every workflow being ruled unreachable.
  */
 const MIN_GATES = 90;
-const MIN_JOBS = 10;
-const MIN_RUN_STEPS = 110;
+const MIN_JOBS = 11;
+const MIN_RUN_STEPS = 118;
+
+/**
+ * Events GitHub starts on its own. `workflow_dispatch` and `repository_dispatch` are
+ * deliberately absent: they need a human (or an external caller) to press the button, and a
+ * gate nobody presses is not a gate. `workflow_call` is absent for the same reason at one
+ * remove — the caller decides, and the caller is checked on its own terms.
+ */
+const AUTOMATIC_EVENTS = new Set([
+  "push",
+  "pull_request",
+  "pull_request_target",
+  "schedule",
+  "merge_group",
+  "release",
+  "issue_comment",
+  "issues",
+  "check_run",
+  "check_suite",
+  "create",
+  "delete",
+  "deployment",
+  "deployment_status",
+  "fork",
+  "label",
+  "milestone",
+  "page_build",
+  "project",
+  "project_card",
+  "project_column",
+  "public",
+  "pull_request_review",
+  "pull_request_review_comment",
+  "registry_package",
+  "status",
+  "watch",
+  "workflow_run",
+]);
+
+/** Events whose `branches:` / `branches-ignore:` filter decides whether they can ever fire. */
+const BRANCH_FILTERED = new Set(["push", "pull_request", "pull_request_target"]);
+
+/**
+ * This repository's branch names, used to answer "can this `branches:` filter ever match?".
+ * The default branch is always in the set; git supplies the rest when it can. A filter that
+ * matches nothing here is reported, so the set erring wide is the safe direction.
+ */
+export function knownBranchNames(repo) {
+  const names = new Set(["main"]);
+  for (const v of [process.env.GITHUB_REF_NAME, process.env.GITHUB_BASE_REF, process.env.GITHUB_HEAD_REF])
+    if (typeof v === "string" && v) names.add(v);
+  try {
+    const out = execFileSync(
+      "git",
+      ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"],
+      { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    for (const raw of out.split("\n")) {
+      const name = raw.trim();
+      if (!name || name.endsWith("/HEAD")) continue;
+      names.add(name);
+      const slash = name.indexOf("/");
+      if (slash > 0) names.add(name.slice(slash + 1));
+    }
+  } catch {
+    // No git, or no refs. The default branch alone still answers the common filters.
+  }
+  return names;
+}
+
+/** GitHub filter-pattern match: `**` crosses `/`, `*` and `?` do not. */
+export function matchesFilterPattern(pattern, name) {
+  let re = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === "*") {
+      if (pattern[i + 1] === "*") {
+        re += ".*";
+        i++;
+      } else re += "[^/]*";
+    } else if (c === "?") re += "[^/]";
+    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`).test(name);
+}
+
+/** True when a `branches:` / `branches-ignore:` list lets at least one known branch through. */
+export function branchFilterCanMatch(list, knownBranches, isIgnore) {
+  if (list === undefined || list === null) return true;
+  const patterns = (Array.isArray(list) ? list : [list]).filter((p) => typeof p === "string");
+  if (patterns.length === 0) return false;
+  for (const branch of knownBranches) {
+    let allowed = isIgnore;
+    for (const pattern of patterns) {
+      const negated = pattern.startsWith("!");
+      const body = negated ? pattern.slice(1) : pattern;
+      if (!matchesFilterPattern(body, branch)) continue;
+      allowed = isIgnore ? negated : !negated;
+    }
+    if (allowed) return true;
+  }
+  return false;
+}
+
+/** Can this one event ever start the workflow by itself? Returns null when it can. */
+export function eventCannotFire(event, config, knownBranches) {
+  if (!AUTOMATIC_EVENTS.has(event)) return `${event} needs a human or an external caller`;
+  if (config === null || config === undefined) return null;
+  if (typeof config !== "object" || Array.isArray(config)) return null;
+
+  if (event === "schedule") return "schedule carries no cron entry";
+
+  if (Array.isArray(config.types) && config.types.length === 0)
+    return `${event} declares an empty types: list`;
+
+  if (BRANCH_FILTERED.has(event)) {
+    if (!branchFilterCanMatch(config.branches, knownBranches, false))
+      return `${event} branches: ${JSON.stringify(config.branches)} matches no branch in this repository`;
+    if (!branchFilterCanMatch(config["branches-ignore"], knownBranches, true))
+      return `${event} branches-ignore: ${JSON.stringify(config["branches-ignore"])} excludes every branch in this repository`;
+  }
+  return null;
+}
+
+/**
+ * Why, or whether, GitHub will ever start this workflow without a human.
+ * Returns `{ fires: true }` or `{ fires: false, reason }`.
+ */
+export function workflowReachability(wf, knownBranches) {
+  const triggers = wf.on !== undefined ? wf.on : wf.true;
+  if (triggers === null || triggers === undefined)
+    return { fires: false, reason: "declares no `on:` triggers, so GitHub never starts it" };
+
+  let entries;
+  if (typeof triggers === "string") entries = [[triggers, null]];
+  else if (Array.isArray(triggers)) entries = triggers.map((e) => [String(e), null]);
+  else if (typeof triggers === "object") entries = Object.entries(triggers);
+  else return { fires: false, reason: `\`on:\` is ${typeof triggers}, which declares no trigger` };
+
+  if (entries.length === 0)
+    return { fires: false, reason: "declares an empty `on:` block, so GitHub never starts it" };
+
+  const blocked = [];
+  for (const [event, config] of entries) {
+    const scheduleWithCron =
+      event === "schedule" &&
+      Array.isArray(config) &&
+      config.some((e) => e !== null && typeof e === "object" && typeof e.cron === "string" && e.cron.trim());
+    if (scheduleWithCron) return { fires: true };
+    const why = eventCannotFire(event, config, knownBranches);
+    if (why === null) return { fires: true };
+    blocked.push(why);
+  }
+  return {
+    fires: false,
+    reason: `no trigger can fire automatically — ${blocked.join("; ")}`,
+  };
+}
+
+/**
+ * A job or step pinned off. `if: false` parses as a boolean; `if: ${{ false }}` does not, and
+ * that spelling is how a step stays in the file while never executing.
+ */
+export function isAlwaysFalse(value) {
+  if (value === false) return true;
+  if (typeof value !== "string") return false;
+  const inner = value
+    .trim()
+    .replace(/^\$\{\{/, "")
+    .replace(/\}\}$/, "")
+    .trim()
+    .toLowerCase();
+  return inner === "false";
+}
 
 /**
  * Step names whose plain scalar contains ": ". Kept only to EXPLAIN a parse failure — the
@@ -131,10 +332,13 @@ export function shellTokens(run) {
  * Walk parsed workflows and return every executable `run:` step, plus every reason a file
  * could not be walked. A file that does not parse yields an error, never an empty success.
  */
-export function collectRunSteps(files) {
+export function collectRunSteps(files, knownBranches = new Set(["main"])) {
   const runs = [];
+  const declaredRuns = [];
   const errors = [];
   const jobIds = [];
+  const unreachable = [];
+  const deadJobs = [];
 
   for (const { file, text } of files) {
     const doc = parseDocument(text, { prettyErrors: true });
@@ -166,7 +370,31 @@ export function collectRunSteps(files) {
       continue;
     }
 
+    // A file GitHub never starts contributes nothing, however well it parses. Its steps leave
+    // the corpus, so a gate that lived only there reports UNWIRED instead of passing on paper.
+    const reach = workflowReachability(wf, knownBranches);
+
+    // Recorded for every parsed file, reachable or not: it is the evidence an exception's
+    // stated reason is checked against, and a claim about a dead file must still be testable.
     for (const [jobId, job] of Object.entries(wf.jobs)) {
+      if (job === null || typeof job !== "object" || Array.isArray(job)) continue;
+      if (!Array.isArray(job.steps)) continue;
+      for (const step of job.steps) {
+        if (step === null || typeof step !== "object" || Array.isArray(step)) continue;
+        if (typeof step.run === "string") declaredRuns.push({ file, job: jobId, run: step.run });
+      }
+    }
+
+    if (!reach.fires) {
+      unreachable.push({ file, reason: reach.reason });
+      continue;
+    }
+
+    for (const [jobId, job] of Object.entries(wf.jobs)) {
+      if (job !== null && typeof job === "object" && !Array.isArray(job) && isAlwaysFalse(job.if)) {
+        deadJobs.push({ file, job: jobId });
+        continue;
+      }
       jobIds.push(`${file}:${jobId}`);
       if (job === null || typeof job !== "object" || Array.isArray(job)) continue;
       // A `uses:` job calls a reusable workflow and has no steps of its own; that is not an error.
@@ -175,13 +403,13 @@ export function collectRunSteps(files) {
         if (step === null || typeof step !== "object" || Array.isArray(step)) continue;
         if (typeof step.run !== "string") continue;
         // `if: false` is a step pinned off. It is in the file and it never executes.
-        if (step.if === false) continue;
+        if (isAlwaysFalse(step.if)) continue;
         runs.push({ file, job: jobId, name: typeof step.name === "string" ? step.name : "(unnamed)", run: step.run });
       }
     }
   }
 
-  return { runs, errors, jobIds };
+  return { runs, declaredRuns, errors, jobIds, unreachable, deadJobs };
 }
 
 function main() {
@@ -197,7 +425,11 @@ function main() {
     .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
     .map((f) => ({ file: f, text: readFileSync(join(WORKFLOWS, f), "utf8") }));
 
-  const { runs, errors, jobIds } = collectRunSteps(files);
+  const knownBranches = knownBranchNames(REPO);
+  const { runs, declaredRuns, errors, jobIds, unreachable, deadJobs } = collectRunSteps(
+    files,
+    knownBranches,
+  );
 
   if (errors.length > 0) {
     for (const e of errors) {
@@ -230,28 +462,74 @@ function main() {
   const invoked = new Set();
   for (const step of runs) for (const token of shellTokens(step.run)) invoked.add(token);
 
+  // Whole tokens per file, across every parsed workflow including the unreachable ones. An
+  // exception that names a workflow is checked against this, not against prose.
+  const tokensByFile = new Map();
+  for (const step of declaredRuns) {
+    let set = tokensByFile.get(step.file);
+    if (!set) tokensByFile.set(step.file, (set = new Set()));
+    for (const token of shellTokens(step.run)) set.add(token);
+  }
+
   const unwired = gates.filter((g) => !invoked.has(g) && !(g in UNWIRED_BY_DESIGN));
   const staleExceptions = Object.keys(UNWIRED_BY_DESIGN).filter(
     (g) => !gates.includes(g) || invoked.has(g),
   );
 
+  // A reason that says "runs in <file>.yml" is a factual claim. Both entries this check was
+  // written for — `check:declaration-column-drift` and `check:declaration-constraint-drift` —
+  // claimed db-gates.yml ran them and db-gates.yml never named either. An UNWIRED_BY_DESIGN
+  // reason that is not true is worse than no exception: it launders a dead gate as a choice.
+  //
+  // A named workflow satisfies the claim if any run: step there invokes the gate OR one of its
+  // sub-commands (`check:alert-ack` is legitimately described by "ci.yml names the self-test
+  // only"). What it may not do is name a file that has never heard of the gate at all.
+  const falseReasons = [];
+  for (const [gate, reason] of Object.entries(UNWIRED_BY_DESIGN)) {
+    for (const named of new Set(reason.match(/[A-Za-z0-9._-]+\.ya?ml/g) ?? [])) {
+      const tokens = tokensByFile.get(named);
+      if (tokens === undefined) {
+        falseReasons.push(`${gate} — its reason names ${named}, which is not a workflow file here`);
+        continue;
+      }
+      const mentioned = [...tokens].some((t) => t === gate || t.startsWith(`${gate}:`));
+      if (!mentioned)
+        falseReasons.push(
+          `${gate} — its reason points at ${named}, and no run: step there names the gate in any form`,
+        );
+    }
+  }
+
+  for (const w of unreachable)
+    console.error(
+      `  UNREACHABLE WORKFLOW: .github/workflows/${w.file} — ${w.reason}.\n` +
+        "    Every gate named only here is dead, whatever the file says.",
+    );
+  for (const j of deadJobs)
+    console.error(
+      `  DEAD JOB: .github/workflows/${j.file}:${j.job} — pinned \`if: false\`, so it never runs.`,
+    );
+  for (const f of falseReasons) console.error(`  FALSE EXCEPTION REASON: ${f}.`);
   for (const g of staleExceptions)
     console.error(`  STALE EXCEPTION: ${g} — it is wired now, or no longer exists. Remove the entry.`);
   for (const g of unwired)
-    console.error(`  UNWIRED: ${g} — no run: step of any job invokes it, so it can never run.`);
+    console.error(`  UNWIRED: ${g} — no run: step of any reachable job invokes it, so it can never run.`);
 
-  if (unwired.length || staleExceptions.length) {
+  if (unwired.length || staleExceptions.length || unreachable.length || deadJobs.length || falseReasons.length) {
     console.error(
-      `\ncheck-gate-wiring: ${unwired.length} unwired, ${staleExceptions.length} stale ` +
+      `\ncheck-gate-wiring: ${unwired.length} unwired, ${staleExceptions.length} stale, ` +
+        `${falseReasons.length} false reason(s), ${unreachable.length} unreachable workflow(s), ` +
+        `${deadJobs.length} dead job(s) ` +
         `(searched ${runs.length} run steps across ${jobIds.length} jobs in ${files.length} workflow files).\n` +
-        `Wire it into a run: step in .github/workflows/, or add it to UNWIRED_BY_DESIGN with the reason.`,
+        `Wire it into a run: step of a workflow GitHub starts on its own, or add it to ` +
+        `UNWIRED_BY_DESIGN with a reason that is true.`,
     );
     process.exit(1);
   }
   console.log(
-    `check-gate-wiring: ${gates.length} gates, all invoked by a run: step ` +
+    `check-gate-wiring: ${gates.length} gates, all invoked by a run: step of a reachable job ` +
       `(${runs.length} run steps across ${jobIds.length} jobs in ${files.length} workflow files, ` +
-      `${Object.keys(UNWIRED_BY_DESIGN).length} deliberate exceptions).`,
+      `all ${files.length} reachable, ${Object.keys(UNWIRED_BY_DESIGN).length} deliberate exceptions).`,
   );
 }
 
