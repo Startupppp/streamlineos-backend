@@ -74,6 +74,16 @@ export class DownstreamCounter {
   private count = 0;
   private saved: Saved | null = null;
   private selfPorts = new Set<string>();
+  /**
+   * WHERE the calls went, not just how many.
+   *
+   * A count with no destination cannot be reconciled against a declared ceiling: `8 downstream
+   * calls against a declared 0` is a finding nobody can act on until someone knows whether those
+   * eight are an object store the route exists to reconcile or a provider it should never have
+   * reached. Only the origin is kept — scheme, host and port — so a path, a query string or a
+   * pre-signed credential can never reach an artifact.
+   */
+  private targets = new Map<string, number>();
 
   excludeLoopbackPort(port: number): void {
     this.selfPorts.add(String(port));
@@ -83,6 +93,24 @@ export class DownstreamCounter {
     if (!/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]|::1)/i.test(target)) return false;
     for (const port of this.selfPorts) if (target.includes(`:${port}`)) return true;
     return false;
+  }
+
+  /**
+   * Scheme + host + port, and nothing else.
+   *
+   * A pre-signed object-store URL carries its credential in the query string, so anything past the
+   * origin is dropped before it can be recorded.
+   */
+  private origin(target: string): string {
+    const raw = target.trim();
+    if (raw.length === 0) return "unknown";
+    try {
+      const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+      return `${url.protocol}//${url.host}`;
+    } catch {
+      const hostOnly = raw.split("/")[0] ?? raw;
+      return hostOnly.split("?")[0] ?? "unknown";
+    }
   }
 
   private describe(arg: unknown): string {
@@ -109,7 +137,8 @@ export class DownstreamCounter {
 
     const wrapNode = (original: NodeRequest): NodeRequest =>
       ((...args: Parameters<NodeRequest>) => {
-        if (!this.isSelf(this.describe(args[0]))) this.count += 1;
+        const target = this.describe(args[0]);
+        if (!this.isSelf(target)) this.record(target);
         return original(...args);
       }) as NodeRequest;
 
@@ -121,7 +150,8 @@ export class DownstreamCounter {
     const originalFetch = this.saved.fetch;
     if (originalFetch)
       (globalThis as { fetch?: FetchLike }).fetch = async (input: unknown, init?: unknown) => {
-        if (!this.isSelf(this.describe(input))) this.count += 1;
+        const target = this.describe(input);
+        if (!this.isSelf(target)) this.record(target);
         return originalFetch(input, init);
       };
   }
@@ -136,12 +166,24 @@ export class DownstreamCounter {
     this.saved = null;
   }
 
+  private record(target: string): void {
+    this.count += 1;
+    const origin = this.origin(target);
+    this.targets.set(origin, (this.targets.get(origin) ?? 0) + 1);
+  }
+
   reset(): void {
     this.count = 0;
+    this.targets.clear();
   }
 
   read(): number {
     return this.count;
+  }
+
+  /** Origins in descending call order, so the artifact names what a route talked to. */
+  readTargets(): Record<string, number> {
+    return Object.fromEntries([...this.targets.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
   }
 }
 
