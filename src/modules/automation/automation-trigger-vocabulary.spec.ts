@@ -4,6 +4,7 @@ import { AUTOMATION_TRIGGERS, type AutomationTriggerEvent } from "../../db/schem
 import {
   AUTOMATION_TRIGGER_MODULE,
   AUTOMATION_TRIGGER_MODULES,
+  AUTOMATION_TRIGGER_OWNERSHIP_DECISIONS,
   automationTriggersForModule,
   moduleForAutomationTrigger,
 } from "./automation-trigger-modules";
@@ -130,6 +131,18 @@ describe("automation trigger vocabulary", () => {
       (site) => !(AUTOMATION_TRIGGERS as readonly string[]).includes(site.trigger),
     );
     expect(unknown.map((site) => `${site.trigger} (${site.file})`)).toEqual([]);
+  });
+
+  it("keeps every contested owner a real, still-open decision", () => {
+    for (const decision of AUTOMATION_TRIGGER_OWNERSHIP_DECISIONS) {
+      expect(AUTOMATION_TRIGGERS).toContain(decision.trigger);
+      expect(AUTOMATION_TRIGGER_MODULES).toContain(decision.alternative);
+      expect(decision.alternative).not.toBe(moduleForAutomationTrigger(decision.trigger));
+      expect(decision.evidence.length).toBeGreaterThan(40);
+    }
+
+    const listed = AUTOMATION_TRIGGER_OWNERSHIP_DECISIONS.map((decision) => decision.trigger);
+    expect(new Set(listed).size).toBe(listed.length);
   });
 
   it("keeps the owning module resolvable for every trigger a dispatch site names", () => {

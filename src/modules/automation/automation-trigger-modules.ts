@@ -62,6 +62,44 @@ export const AUTOMATION_TRIGGER_MODULE: Record<AutomationTriggerEvent, Automatio
   "sign.bulk_send.completed": "sign",
 };
 
+export interface AutomationTriggerOwnershipDecision {
+  readonly trigger: AutomationTriggerEvent;
+  readonly alternative: AutomationTriggerModule;
+  readonly evidence: string;
+}
+
+export const AUTOMATION_TRIGGER_OWNERSHIP_DECISIONS: readonly AutomationTriggerOwnershipDecision[] = [
+  {
+    trigger: "sla.breached",
+    alternative: "hr",
+    evidence:
+      "Nothing dispatches it. Support owns the only live SLA breach engine (support-sla.service.ts, /support/settings/sla), but the frontend labels it 'Recruitment SLA breached' and HR recruitment runs its own separate engine whose trigger enum already carries SLA_BREACHED (hr/recruitment/dto/automation.schemas.ts).",
+  },
+  {
+    trigger: "expense.submitted",
+    alternative: "finance",
+    evidence:
+      "Dispatched from modules/expenses, whose controllers mount at hr/expenses and gate on hr:expenses:*. The frontend's /accounting/expenses page calls those same hr/expenses routes, so there is one expense surface and its keys are HR's. Report 19b grouped it under Accounting by name family.",
+  },
+  {
+    trigger: "expense.approved",
+    alternative: "finance",
+    evidence:
+      "Never dispatched to this engine; expense.approved appears only as an audit action string. Follows expense.submitted.",
+  },
+  {
+    trigger: "reimbursement.approved",
+    alternative: "finance",
+    evidence:
+      "Dispatched from payroll/hr-payroll/reimbursements.service.ts, reached through PATCH /hr/reimbursements/:id on hr:payroll:view. /accounting/reimbursements is a different entity (reimbursement batches on accounting:reimbursements:*) and dispatches nothing.",
+  },
+  {
+    trigger: "reimbursement.rejected",
+    alternative: "finance",
+    evidence: "Same dispatch site and gate as reimbursement.approved.",
+  },
+];
+
 export function moduleForAutomationTrigger(trigger: AutomationTriggerEvent): AutomationTriggerModule {
   return AUTOMATION_TRIGGER_MODULE[trigger];
 }
