@@ -644,6 +644,87 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:route-budgets:self-test && pnpm check:route-budgets
 
+      # ------------------------------------------------------------------
+      # Ticket 23 — the benchmark manifest and its regression gates.
+      #
+      # MEASURED 2026-09-03, before this block existed:
+      #   grep -c 'benchmark\|perf:' streamlineos-backend/.github/workflows/*.yml  -> 0
+      #   grep -c 'benchmark\|perf:' streamlineos-frontend/.github/workflows/*.yml -> 0
+      # `check:benchmark-manifest`, the regression policy and the three perf
+      # self-tests were all wired in package.json and named by NO workflow step
+      # in EITHER repository. 35b moved the gates out from under a red Lint and
+      # ticket 35 stopped one red step skipping its successors; this is the third
+      # shape of the same defect — a gate that exists, passes locally, and is
+      # never invoked. Every step below carries `if: ${{ !cancelled() }}` for the
+      # reason stated at the top of this job: without it one red step turns every
+      # gate after it into "-".
+      #
+      # All four steps are HERMETIC. They read committed artifacts
+      # (contracts/benchmark-manifest.json, contracts/route-budgets.json) and
+      # source; no database, no network, no secret. Verified by running them in a
+      # shell with DATABASE_URL and APP_DATABASE_URL unset.
+      # ------------------------------------------------------------------
+
+      # The decision logic behind the manifest: which metrics ratchet (buffers,
+      # rows, statement counts, planning buffers) and which are DISARMED because
+      # the replicate study measured unchanged code moving further than the band
+      # (wall-clock p95 moved up to 270% at zero buffer movement). A regression
+      # gate whose thresholds are unproven is a coin flip, so its proofs run
+      # first. Measured at head: 47/47 and 25/25, both exit 0.
+      - name: Benchmark manifest and regression policy self-tests
+        if: ${{ !cancelled() }}
+        run: pnpm check:benchmark-manifest:self-test && pnpm check:benchmark-regression:self-test
+
+      # BLOCKING, and MEASURED RED at head: exit 1, "STATUS: FAIL — 154/280
+      # (55.0%) of statement ceilings measured, 136/164 (82.9%) of request-level
+      # slots measured", failing on figures the contract already declares:
+      #   GET /cron/storage-sweep@reference and @minority — 8 downstream calls
+      #   against a declared ceiling of 0. Deliberately NOT raised: forEachOrg
+      #   makes the count O(organisations swept), so no fixed per-request integer
+      #   describes the route anywhere but on this seed. Ticket 23 box 7.
+      # It is wired blocking rather than allow-failure for the same reason
+      # "Route budgets" below it is: a gate exiting 1 on a real measured breach
+      # is a gate working, and muting it is how the breach becomes permanent.
+      - name: Benchmark manifest
+        if: ${{ !cancelled() }}
+        run: pnpm check:benchmark-manifest
+
+      # The three self-tests belonging to the perf harness that PRODUCES the
+      # numbers the two gates above read. They assert the harness's own honesty
+      # properties: that a capture whose control probe failed contributes no
+      # routes, that a BYPASSRLS role is refused, that a capture off journal head
+      # is refused, that a route which stopped being measurable has its stale
+      # number cleared rather than carried forward, and that the seed-preparation
+      # writer is idempotent and fences its leases. Measured at head, all exit 0:
+      #   check:benchmark-http:self-test        19/19
+      #   perf:prepare-http-seed:self-test      10/10
+      #   check:route-budgets-http:self-test    27/27
+      - name: Perf capture harness self-tests
+        if: ${{ !cancelled() }}
+        run: |
+          pnpm check:benchmark-http:self-test
+          pnpm perf:prepare-http-seed:self-test
+          pnpm check:route-budgets-http:self-test
+
+      # The merged contract must still agree with the capture it was merged from.
+      # This is the check half of `perf:merge-route-budgets`: it recomputes what
+      # the merge would write and fails if contracts/route-budgets.json has drifted
+      # from contracts/benchmark-manifest.json — a hand-edited `measured*` value,
+      # or a ceiling moved after the capture without a re-measure. Measured at
+      # head: exit 0, "69/82 budgets carry an HTTP measurement (0 values written,
+      # 0 stale values cleared) ... contracts/route-budgets.json agrees with the
+      # capture".
+      - name: Route budgets agree with the HTTP capture they were merged from
+        if: ${{ !cancelled() }}
+        run: pnpm check:route-budgets-http
+
+      # NOTE — the perf harness's own 20-case unit spec
+      # (test/perf/route-budget-http-harness.spec.ts) is NOT named here on
+      # purpose. `test/perf` was added to jest's `roots` on 2026-09-03, so the
+      # unfiltered `pnpm test` in the `tests` job above collects it (jest
+      # --listTests 1873 -> 1874, delta exactly that file). Naming it twice would
+      # make the `tests` job look filtered.
+
   # Tenant isolation, against a real database as the real application role.
   #
   # Its own job because it needs credentials CI cannot fabricate, and because a
@@ -692,6 +773,69 @@ jobs:
         run: pnpm check:audit-log-privileges:self-test && pnpm check:audit-log-privileges
         env:
           APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
+
+      # ------------------------------------------------------------------
+      # Ticket 23 — the perf HTTP capture. This is the instrument that PRODUCES
+      # every request-level number in contracts/benchmark-manifest.json, and
+      # therefore the four `measured*` fields in contracts/route-budgets.json.
+      # It belongs here, not in `gates`, because it boots the real Nest app
+      # against a seeded database as the non-owner role.
+      #
+      # CANNOT RUN IN CI TODAY — named prerequisites, all four required:
+      #   DATABASE_URL / APP_DATABASE_URL   owner + NON-OWNER roles on the SAME
+      #                                     production-shaped seeded database.
+      #                                     Owner-only would pass every case
+      #                                     while BYPASSRLS removed the RLS
+      #                                     predicate that costs the most.
+      #   SEED_ORG_ID / SEED_MINORITY_ORG_ID  two tenants at opposite ends of the
+      #                                     seed's skew; the same query picks
+      #                                     different plans per tenant here.
+      #   AUTH_SIGNING_KEYS                 a LOCAL PLACEHOLDER Ed25519 keyring.
+      #   --expose-gc                       heap is sampled after a forced GC;
+      #                                     the harness REFUSES to record memory
+      #                                     without it, which is why this step
+      #                                     does not reuse `pnpm test:e2e:seeded`
+      #                                     (that script has no --expose-gc).
+      # Absent any of them the suite prints "[route-budget-http] SKIPPED — this
+      # suite proves nothing while skipped" and describe.skip's itself, so the
+      # `Seeded isolation suite` step above already COLLECTS this file (its
+      # config matches test/**/*.seeded-e2e-spec.ts) and has always skipped it.
+      # That is why it is named separately here: a skip folded into another job's
+      # green tick is indistinguishable from a pass.
+      #
+      # MEASURED 2026-09-03 locally with all four present, against
+      # scratch_t23_http at journal head 667/667 as streamline_app
+      # (rolbypassrls = false), Redis off: exit 0, 9/9, both control probes held
+      # on both tenants, subject hash STABLE.
+      #
+      # Allow-failure until the secrets exist: a step that cannot reach its
+      # prerequisite must be visibly inconclusive, not silently red.
+      - name: Route-budget HTTP capture (perf) — needs a seeded database
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          node --expose-gc --max-old-space-size=12288 ./node_modules/jest/bin/jest.js \
+            --config ./jest-e2e-seeded.json --runInBand --forceExit \
+            --testPathPattern=route-budget-http
+        env:
+          DATABASE_URL: ${{ secrets.CI_PERF_SEED_DATABASE_URL }}
+          APP_DATABASE_URL: ${{ secrets.CI_PERF_SEED_APP_DATABASE_URL }}
+          SEED_ORG_ID: ${{ secrets.CI_PERF_SEED_ORG_ID }}
+          SEED_MINORITY_ORG_ID: ${{ secrets.CI_PERF_SEED_MINORITY_ORG_ID }}
+          AUTH_SIGNING_KEYS: ${{ secrets.CI_PERF_AUTH_SIGNING_KEYS }}
+          ROUTE_BUDGET_HTTP_ARTIFACT: route-budget-http-capture.json
+          # Off unless the seed is a disposable copy: the plan's POST entries
+          # insert, and several reports quote this seed's row counts to the unit.
+          ROUTE_BUDGET_HTTP_SKIP_WRITES: "1"
+
+      - name: Upload the perf capture
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-budget-http-capture
+          path: route-budget-http-capture.json
+          if-no-files-found: ignore
 
   # Separate job so a provider outage or a credit limit fails visibly on its own
   # rather than looking like a broken build.
