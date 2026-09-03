@@ -129,7 +129,16 @@ describe("[seeded-e2e] CRM import round trip", () => {
         imports.preview({ organizationId: orgId, userId, headers: HEADERS, rows }),
       );
 
-      expect(preview.summary).toMatchObject({ create: 2, update: 0, skip: 2, total: 4 });
+      // Row 3 repeats row 1 and is folded into it: `merge` is its own outcome now,
+      // and counting it as a skip would say the file wrote nothing for that row.
+      expect(preview.summary).toMatchObject({
+        create: 2,
+        update: 0,
+        merge: 1,
+        skip: 1,
+        review: 0,
+        total: 4,
+      });
       expect(preview.needsConfirmation).toHaveLength(0);
 
       // ── The committed result matches the preview ────────────────────────
