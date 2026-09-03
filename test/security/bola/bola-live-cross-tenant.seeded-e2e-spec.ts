@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import request from "supertest";
 import postgres from "postgres";
 import { createSeededE2eApp, signSeededToken, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
-import { loadCatalog, type Catalog } from "test/security/bola/live/fixture-catalog";
+import { DEFAULT_IDS_PER_TABLE, loadCatalog, type Catalog } from "test/security/bola/live/fixture-catalog";
 import {
   buildPath,
   disambiguate,
@@ -87,6 +87,14 @@ const ONLY_SET: ReadonlySet<string> =
 const PROBER_USER = process.env.BOLA_PROBER_USER_ID ?? "";
 const LIMIT = Number(process.env.BOLA_LIVE_LIMIT ?? "0");
 const MIN_SCORED = Number(process.env.BOLA_LIVE_MIN_SCORED ?? "200");
+/**
+ * How many of the source tenant's OWN ids a route may be offered before it is filed unprobeable.
+ * One is the old behaviour and files a route whose first id happens to be soft-deleted or in a
+ * refused status as though the route could not be reached at all.
+ */
+const ID_ATTEMPTS = Math.max(1, Number(process.env.BOLA_LIVE_ID_ATTEMPTS ?? "4"));
+/** Ids held per table in the borrow pool. Raised from 24 because DELETE controls consume them. */
+const POOL_PER_TABLE = Math.max(1, Number(process.env.BOLA_LIVE_POOL ?? String(DEFAULT_IDS_PER_TABLE)));
 const REQUEST_TIMEOUT_MS = Number(process.env.BOLA_LIVE_TIMEOUT_MS ?? "15000");
 
 const USABLE =
@@ -128,6 +136,8 @@ interface Outcome {
   /** Which request the route was actually asked with. An outcome that cannot say is not evidence. */
   readonly bodySource: SynthesizedRequest["source"] | "not-applicable";
   readonly requiredQueryKeys?: readonly string[];
+  /** How many of the source tenant's own ids were tried before the control answered 2xx. */
+  readonly idAttempts?: number;
 }
 
 interface Sent {
@@ -305,7 +315,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     baseUrl = `http://127.0.0.1:${String(port)}`;
 
     owner = postgres(OWNER_URL, { max: 2, prepare: false, ssl: false, onnotice: () => {} });
-    sourceCatalog = await loadCatalog(owner, SOURCE_ORG);
+    sourceCatalog = await loadCatalog(owner, SOURCE_ORG, POOL_PER_TABLE);
     sourceUser = await resolveOwnerUser(SOURCE_ORG);
     proberUser = PROBER_USER.length > 0 ? PROBER_USER : await resolveOwnerUser(PROBER_ORG);
     await refreshTokens();
@@ -477,38 +487,13 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
         });
         continue;
       }
-      await refreshTokens();
-
-      // A DELETE control consumes its object, so every DELETE route takes a fresh id from the back
-      // of the pool. Reads and updates share the first id, which keeps the pool intact for them.
-      const url = urlFor(planned, (key, pool) => {
-        if (planned.verb !== "DELETE") return pool[0] ?? null;
-        const used = cursors.get(key) ?? 0;
-        cursors.set(key, used + 1);
-        const index = pool.length - 1 - used;
-        return index >= 0 ? (pool[index] ?? null) : null;
-      });
-      if (url === null) {
-        outcomes.push({
-          ...base,
-          requestPath: "",
-          controlStatus: null,
-          probeStatus: null,
-          absentStatus: null,
-          verdict: "UNPROBEABLE",
-          detail: "the source tenant has no remaining object of this type",
-          bodySource: "not-applicable",
-        });
-        continue;
-      }
-
       // The contract decides what this route needs; a schema it cannot satisfy is reported, never
       // guessed at, so the route stays unprobeable with its own reason attached.
       const synthesized = synthesizeRequest(planned.verb, planned.path);
       if (synthesized.source === "unsatisfiable") {
         outcomes.push({
           ...base,
-          requestPath: url,
+          requestPath: "",
           controlStatus: null,
           probeStatus: null,
           absentStatus: null,
@@ -518,7 +503,6 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
         });
         continue;
       }
-      const requestUrl = withQuery(url, synthesized.query);
       bodiesSynthesized += synthesized.body === null ? 0 : 1;
       /**
        * Each of the three requests gets its own body, distinct only in the values the schema
@@ -530,14 +514,75 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       const bodyFor = (): Record<string, unknown> | null =>
         synthesized.body === null ? null : synthesizeRequest(planned.verb, planned.path, randomUUID().slice(0, 8)).body;
 
-      let control: Sent;
-      let probeResult: Sent;
-      if (MUTATING.has(planned.verb)) {
-        probeResult = await sendAs("prober", planned.verb, requestUrl, bodyFor());
-        control = await sendAs("source", planned.verb, requestUrl, bodyFor());
-      } else {
-        control = await sendAs("source", planned.verb, requestUrl, bodyFor());
-        probeResult = await sendAs("prober", planned.verb, requestUrl, bodyFor());
+      /**
+       * THE FIRST ID IN THE POOL IS NOT ALWAYS ONE THE ROUTE CAN SERVE ITS OWN OWNER.
+       *
+       * The pool is "the first N primary keys this tenant owns in the table the parameter names",
+       * which is a weaker statement than "an object this route accepts": the row may be
+       * soft-deleted, in a status the handler refuses (`Only pending entries can be edited`), or
+       * missing the sibling row the handler joins. The control then answers 404/409 and the route
+       * was filed UNPROBEABLE — 135 control-404s and 24 control-409s in the previous full run,
+       * indistinguishable in the artifact from a route that genuinely cannot be reached.
+       *
+       * So the id is a candidate, not a given: up to `ID_ATTEMPTS` of the tenant's own ids are
+       * tried and the first whose control answers 2xx is the one scored. The probe is re-sent with
+       * the SAME url on every attempt — control and probe must never differ by anything but the
+       * caller's organization, or the comparison means nothing. A route that exhausts its
+       * candidates keeps the LAST attempt's status in the artifact, so the reason it could not be
+       * asked is still recorded rather than replaced by "no id".
+       *
+       * A DELETE control consumes its object, so each attempt takes a fresh id from the back of
+       * the pool and the cursor advances per attempt, not per route.
+       */
+      let control: Sent | null = null;
+      let probeResult: Sent | null = null;
+      let requestUrl = "";
+      let idAttempts = 0;
+      let poolEmpty = false;
+      for (let attempt = 0; attempt < ID_ATTEMPTS; attempt += 1) {
+        const candidate = urlFor(planned, (key, pool) => {
+          if (planned.verb !== "DELETE") return pool[attempt] ?? null;
+          const used = cursors.get(key) ?? 0;
+          cursors.set(key, used + 1);
+          const index = pool.length - 1 - used;
+          return index >= 0 ? (pool[index] ?? null) : null;
+        });
+        if (candidate === null) {
+          poolEmpty = attempt === 0;
+          break;
+        }
+        await refreshTokens();
+        const tryUrl = withQuery(candidate, synthesized.query);
+        let attemptControl: Sent;
+        let attemptProbe: Sent;
+        if (MUTATING.has(planned.verb)) {
+          attemptProbe = await sendAs("prober", planned.verb, tryUrl, bodyFor());
+          attemptControl = await sendAs("source", planned.verb, tryUrl, bodyFor());
+        } else {
+          attemptControl = await sendAs("source", planned.verb, tryUrl, bodyFor());
+          attemptProbe = await sendAs("prober", planned.verb, tryUrl, bodyFor());
+        }
+        control = attemptControl;
+        probeResult = attemptProbe;
+        requestUrl = tryUrl;
+        idAttempts = attempt + 1;
+        if (attemptControl.status >= 200 && attemptControl.status < 300) break;
+      }
+      if (control === null || probeResult === null) {
+        outcomes.push({
+          ...base,
+          requestPath: "",
+          controlStatus: null,
+          probeStatus: null,
+          absentStatus: null,
+          verdict: "UNPROBEABLE",
+          detail: poolEmpty
+            ? "the source tenant has no remaining object of this type"
+            : "no candidate id could be bound for this route",
+          bodySource: synthesized.source,
+          idAttempts,
+        });
+        continue;
       }
 
       const raw = score(
@@ -570,6 +615,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
         probeBody: isFinding(scored.verdict) ? probeResult.body : undefined,
         bodySource: synthesized.source,
         requiredQueryKeys: Object.keys(synthesized.query),
+        idAttempts,
       });
       if (outcomes.length - lastFlush >= 25) writeArtifact();
     }

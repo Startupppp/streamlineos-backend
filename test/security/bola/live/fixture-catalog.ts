@@ -61,10 +61,23 @@ function quoted(table: TableRef): string {
  * There are ~850 org-scoped tables here; a statement each is ~850 round trips per tenant and the
  * catalog read starts to dominate the sweep it exists to feed.
  */
+/**
+ * How many ids per table the pool holds.
+ *
+ * MEASURED, and it cost 83 routes: a control DELETE consumes its object, so each DELETE route
+ * takes a fresh id from the back of its table's pool. At 24 the pool ran dry for every table
+ * addressed by more than 24 DELETE routes, and those routes were filed UNPROBEABLE with
+ * "the source tenant has no remaining object of this type" — which reads as a seed gap and was
+ * a pool-size constant. 311 of the object-addressable routes are DELETEs; 200 covers the
+ * busiest table with room to spare and costs one extra `LIMIT` per table on a read that already
+ * runs once per sweep.
+ */
+export const DEFAULT_IDS_PER_TABLE = 200;
+
 export async function loadCatalog(
   sql: ReturnType<typeof postgres>,
   orgId: string,
-  perTable = 24,
+  perTable = DEFAULT_IDS_PER_TABLE,
   batchSize = 60,
 ): Promise<Catalog> {
   const rows = await sql.unsafe<{ schema: string; name: string; pk: string; org_column: string }[]>(
