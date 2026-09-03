@@ -1,11 +1,21 @@
 import { logger } from "../../../common/logger/logger.service";
 import type { RoutableTicket, RoutingOutcome } from "./support-macros-routing";
+import { ticketPrioritySchema } from "./dto/support-tickets.schemas";
 import type { CreateTicketInput, TicketPriority } from "./dto/support.schemas";
 
-const TICKET_PRIORITIES: readonly TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
-
+/**
+ * `RoutingOutcome.setPriority` is a bare `string` — it is whatever a stored
+ * routing rule was configured with, so it is untrusted input rather than a
+ * value the type system already knows.
+ *
+ * Narrowed by parsing it with the same Zod enum every ticket DTO uses. The
+ * previous form kept a second, hand-written list of the four priorities and
+ * widened it back to `readonly string[]` to call `.includes` — two sources of
+ * truth, and the assertion is what let them disagree: adding a priority to the
+ * schema would have left this list short and silently dropped the new value.
+ */
 export function isTicketPriority(value: string): value is TicketPriority {
-  return (TICKET_PRIORITIES as readonly string[]).includes(value);
+  return ticketPrioritySchema.safeParse(value).success;
 }
 
 /**

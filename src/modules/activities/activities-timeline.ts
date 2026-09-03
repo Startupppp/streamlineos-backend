@@ -5,7 +5,6 @@ import { activities, users } from "../../db/schema";
 import {
   buildTimelinePage,
   decodeTimelineCursor,
-  type TimelineEntry,
   type TimelinePage,
 } from "./activity-timeline";
 import type { TimelineQuery } from "./dto/activity.schemas";
@@ -63,5 +62,12 @@ export async function queryTimeline(
     .orderBy(desc(activities.occurredAt), desc(activities.activityId))
     .limit(query.limit + 1);
 
-  return buildTimelinePage(rows as TimelineEntry[], query.limit);
+  // No cast. The projection above already produces `TimelineEntry` — every
+  // column is `notNull` or declared nullable to match, `kind` and `actorKind`
+  // carry their `$type<>` unions, and `actorName` is the left-joined
+  // `users.name`. Passing the rows straight in makes the compiler PROVE that,
+  // where `rows as TimelineEntry[]` only asserted it: drop a column from the
+  // select, or widen one in the schema, and this line stops compiling instead
+  // of shipping a timeline entry whose field is silently `undefined`.
+  return buildTimelinePage(rows, query.limit);
 }

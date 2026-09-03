@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../../common/pagination/keyset";
@@ -52,9 +52,16 @@ export async function createLaborCase(db: Db, audit: HrAuditService, orgId: stri
     })
     .returning();
 
-  await audit.log({ orgId, actorId, entityType: "hr_labor_case", entityId: String(row!.id), action: "labor_case.created", after: { subject: input.subject, unionName: input.unionName }, ipAddress });
+  // A single-row `INSERT ... RETURNING` yields exactly one row, but that is a
+  // property of the statement and not something an array index type can carry.
+  // Narrowed with a real check rather than `!`: an empty RETURNING now fails
+  // here instead of writing an audit entry that names `undefined.id` and
+  // handing the caller a labor case that does not exist.
+  if (!row) throw new InternalServerErrorException("Failed to create labor case");
 
-  return row!;
+  await audit.log({ orgId, actorId, entityType: "hr_labor_case", entityId: String(row.id), action: "labor_case.created", after: { subject: input.subject, unionName: input.unionName }, ipAddress });
+
+  return row;
 }
 
 export async function updateLaborCase(db: Db, audit: HrAuditService, orgId: string, caseId: number, actorId: string, input: UpdateLaborCaseInput, ipAddress?: string) {
@@ -72,9 +79,15 @@ export async function updateLaborCase(db: Db, audit: HrAuditService, orgId: stri
     .where(and(eq(hrLaborCases.orgId, orgId), eq(hrLaborCases.id, caseId)))
     .returning();
 
+  // `getLaborCaseById` proved this row existed a moment ago, so an empty
+  // RETURNING means it was soft-deleted or moved between the read and the
+  // write. The honest answer is the 404 the read would give now — not an audit
+  // entry recording an update that never landed, followed by `undefined`.
+  if (!updated) throw new NotFoundException("Labor case not found");
+
   await audit.log({ orgId, actorId, entityType: "hr_labor_case", entityId: String(caseId), action: "labor_case.updated", before: { status: existing.status }, after: input, ipAddress });
 
-  return updated!;
+  return updated;
 }
 
 export async function deleteLaborCase(db: Db, audit: HrAuditService, orgId: string, caseId: number, actorId: string, ipAddress?: string) {

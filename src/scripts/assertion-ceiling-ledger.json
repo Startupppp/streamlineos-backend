@@ -157,10 +157,6 @@
       "as": 0,
       "nonNull": 6
     },
-    "src/modules/activities/activities.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/ai/confirmation/ai-confirmation.service.ts": {
       "as": 2,
       "nonNull": 0
@@ -694,7 +690,7 @@
       "nonNull": 0
     },
     "src/modules/e-sign/sign-integrations.service.ts": {
-      "as": 3,
+      "as": 1,
       "nonNull": 0
     },
     "src/modules/e-sign/sign-public.service.ts": {
@@ -706,7 +702,7 @@
       "nonNull": 0
     },
     "src/modules/e-sign/sign-templates.service.ts": {
-      "as": 10,
+      "as": 5,
       "nonNull": 0
     },
     "src/modules/email/dispatch/twilio.gateway.ts": {
@@ -903,7 +899,7 @@
     },
     "src/modules/hr/governance/labor/labor.service.ts": {
       "as": 0,
-      "nonNull": 9
+      "nonNull": 6
     },
     "src/modules/hr/governance/legal-holds/legal-holds.service.ts": {
       "as": 0,
@@ -1106,7 +1102,7 @@
       "nonNull": 0
     },
     "src/modules/hr/workflows/hr-workflow-engine.service.ts": {
-      "as": 4,
+      "as": 3,
       "nonNull": 1
     },
     "src/modules/hr/workflows/hr-workflow-instances.service.ts": {
@@ -1722,8 +1718,8 @@
       "nonNull": 0
     },
     "src/modules/support/core/support-tickets.service.ts": {
-      "as": 6,
-      "nonNull": 2
+      "as": 2,
+      "nonNull": 0
     },
     "src/modules/support/kb-gap/support-kb-gap-detection.service.ts": {
       "as": 1,
