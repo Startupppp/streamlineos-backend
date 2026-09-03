@@ -92,7 +92,15 @@ function isPgClassDuplicate(e) {
   );
 }
 
+// Migration 0431 pins `search_path` on the role `neondb_owner`, so the 152 unqualified
+// `current_org_id()` references in 0619/0620/0655/0666/0677/0678/0701/0988 resolve only for a
+// connection whose role happens to carry that name. `db-bootstrap.mjs` sets it per session for
+// exactly this reason; this runner did not, so a cold proof under any other role — CI's `ci`
+// role included — died at 0619 with `42883 function current_org_id() does not exist`.
+const MIGRATION_SEARCH_PATH = '"$user", public, build_events, app';
+
 async function ensureInfrastructure(sql) {
+  await sql.unsafe(`SET search_path = ${MIGRATION_SEARCH_PATH}`);
   for (const ext of ["vector", "pg_trgm", "btree_gist", "pgcrypto", '"uuid-ossp"'])
     await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS ${ext}`);
   await sql.unsafe("CREATE SCHEMA IF NOT EXISTS drizzle");
