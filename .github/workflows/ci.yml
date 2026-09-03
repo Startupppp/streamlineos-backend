@@ -160,6 +160,28 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:dead-code:self-test && pnpm check:dead-code
 
+      # 2026-09-03 — these three existed in package.json and were referenced by NO workflow, so
+      # they could never run. `check:tenant-isolation:run` is the gate that actually EXECUTES the
+      # cross-tenant isolation suites (its neighbour `check:tenant-isolation` only scans for
+      # coverage), and `check:test-typecheck` is the gate that closed the whole `test/**`
+      # typecheck hole at a hard zero the same morning. A gate that cannot run is
+      # indistinguishable from a gate that passes. `check:gate-wiring` below prevents recurrence.
+      - name: No database or cache call in a growing loop
+        if: ${{ !cancelled() }}
+        run: pnpm check:n1-growing-loops:self-test && pnpm check:n1-growing-loops
+
+      - name: test/** typechecks
+        if: ${{ !cancelled() }}
+        run: pnpm check:test-typecheck:self-test && pnpm check:test-typecheck
+
+      - name: Run the tenant-isolation suites
+        if: ${{ !cancelled() }}
+        run: pnpm check:tenant-isolation:run
+
+      - name: Every check:* script is wired into a workflow
+        if: ${{ !cancelled() }}
+        run: pnpm check:gate-wiring
+
       # Hard zero for `as any` / `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`
       # in application code, and a zero-GROWTH ledger for `as unknown as` where
       # every file carries its count, its seam kind and a written invariant. A

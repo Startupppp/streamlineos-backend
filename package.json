@@ -358,7 +358,8 @@
     "check:namespace-coverage": "node src/scripts/check-namespace-coverage.mjs",
     "check:namespace-coverage:self-test": "node src/scripts/check-namespace-coverage.mjs --self-test",
     "check:replay-ledger": "node --env-file-if-exists=.env src/scripts/check-replay-ledger.mjs",
-    "check:replay-ledger:self-test": "node src/scripts/check-replay-ledger.mjs --self-test"
+    "check:replay-ledger:self-test": "node src/scripts/check-replay-ledger.mjs --self-test",
+    "check:gate-wiring": "node src/scripts/check-gate-wiring.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",
