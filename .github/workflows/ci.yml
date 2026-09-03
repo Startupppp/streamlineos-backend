@@ -116,7 +116,22 @@ jobs:
 
       # The FE half of this pair has been wired since 35b; the BE copy's self-test
       # was the only gate script in this repo that no workflow named at all.
+      #
+      # 2026-09-03 (ticket 35) — MEASURED: this step exited 1 in a backend-only
+      # checkout ("5 failed, 4 passed"), and as the second step of this job it
+      # would have skipped all 74 gate steps below it. 35b moved the gates out
+      # from under a red Lint; this was the same masking defect one step lower.
+      # Five of its nine assertions need the frontend/workspace repository
+      # checked out beside this one, which CI deliberately does not do. Those
+      # five are now reported NOT RUN and the run ends INCONCLUSIVE (exit 2);
+      # the opt-in below downgrades that to a labelled PARTIAL (exit 0).
+      # The step stays BLOCKING because the opt-in does not mask a defect —
+      # bite-proved in a hermetic tree: planting `frontendPath` composing onto a
+      # null root, or an unfindable marker resolving to the search directory,
+      # exits 1 with the opt-in set and names the failing assertion.
       - name: Repo path resolvers still resolve
+        env:
+          STREAMLINE_ALLOW_PARTIAL_GATES: "1"
         run: pnpm check:repo-paths:self-test
 
       # Ticket 36. Both scripts landed in 0587da30; the step below was held back
@@ -141,7 +156,19 @@ jobs:
       - name: Type assertions stay at a proven seam
         run: pnpm check:type-assertions:self-test && pnpm check:type-assertions
 
+      # CANNOT RUN IN CI — named prerequisite: a checkout of
+      # Startupppp/streamlineos-frontend beside this repository. The gate
+      # compares this repo's catalog against the frontend PermissionKey union
+      # (root CLAUDE.md §5: a frontend-only key fails `useCan` forever, a
+      # backend-only key cannot be gated), so a frontend-only half proves
+      # nothing. MEASURED 2026-09-03 in a backend-only checkout: exit 2,
+      # "INCONCLUSIVE — the frontend PermissionKey union comparison could not
+      # run"; in a two-repo layout at the same commit: exit 0. Allow-failure so
+      # the INCONCLUSIVE is visible without skipping the 70 gates below it.
+      # To make this blocking, add a checkout of the frontend repository and set
+      # STREAMLINE_FRONTEND_ROOT to it.
       - name: Permission key catalog check
+        continue-on-error: true
         run: pnpm check:permission-keys
 
       # Absence of a declaration is the defect, so this gates every commit now
@@ -150,7 +177,12 @@ jobs:
       - name: Route classification
         run: pnpm check:route-classification
 
+      # CANNOT RUN IN CI — same named prerequisite as "Permission key catalog
+      # check" above: it reads the frontend navigation manifest. MEASURED
+      # 2026-09-03: backend-only checkout exit 2 (INCONCLUSIVE), two-repo layout
+      # exit 0.
       - name: Navigation gates name the route's permission
+        continue-on-error: true
         run: pnpm check:navigation-permissions
 
       - name: OpenAPI contract is current
@@ -417,10 +449,22 @@ jobs:
       - name: Import direction inside src/common
         run: pnpm check:import-direction:self-test && pnpm check:import-direction
 
+      # CANNOT RUN IN CI — named prerequisite: the evidence tree, which lives in
+      # the FRONTEND repository (marker architecture-refactor/final-refactor/issues)
+      # and is not checked out here. MEASURED 2026-09-03: backend-only checkout
+      # exit 2, "INCONCLUSIVE — the evidence tree could not be located, so no
+      # seal was verified"; two-repo layout exit 0. Allow-failure so the
+      # INCONCLUSIVE is visible rather than skipping every step below it. To
+      # make this blocking, check the frontend repository out and set
+      # STREAMLINE_WORKSPACE_ROOT to it.
       - name: Evidence seals hold
+        continue-on-error: true
         run: pnpm check:evidence-seal:self-test && pnpm check:evidence-seal
 
+      # CANNOT RUN IN CI — same prerequisite and same measurement as "Evidence
+      # seals hold" above: the S05 artifacts live in the workspace tree.
       - name: S05 approval and evidence artifact contract
+        continue-on-error: true
         run: pnpm check:s05-artifact-contract
 
       - name: Offset, unbounded and unordered reads do not increase
@@ -455,6 +499,18 @@ jobs:
       # during this run under another ticket's edits. It stays allow-failure
       # because it is red right now and a gate wired to fail gets muted; the
       # split is one file and the continue-on-error goes with it.
+      #
+      # 2026-09-03 (ticket 35) — RE-MEASURED at head in a hermetic two-repo
+      # layout: the GATE is rc=0 ("3574 files scanned — all within 500 lines,
+      # 7 exceptions registered") and the file named above is back under 500.
+      # The continue-on-error stays for a DIFFERENT, newly measured reason: in a
+      # backend-only checkout the SELF-TEST exits 1 — "the §7 exception registry
+      # is reachable in this checkout / the real registry parses to at least one
+      # exception and no row errors / counts a trailing-newline file without an
+      # off-by-one", 3 failed / 36 passed — because the registry lives in the
+      # frontend repository. So this step reports allow-failure red in CI while
+      # being green locally, and the gate half never executes there. Named
+      # prerequisite: a frontend checkout, same as the four steps above.
       - name: Files over 500 lines
         continue-on-error: true
         run: pnpm check:file-sizes:self-test && pnpm check:file-sizes
