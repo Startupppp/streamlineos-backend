@@ -26,6 +26,11 @@ import { randomUUID } from "node:crypto";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { REALTIME_TOKEN_REVOCATION_EVENT } from "../realtime/realtime-token-revocation";
+import {
+  CHANNEL_MEMBER_COLUMNS,
+  CHANNEL_MEMBER_MEMBERSHIP_WITH,
+  flattenChannelMember,
+} from "./chat-channel-member-shape";
 
 @Injectable()
 export class ChatChannelMembersImplementation {
@@ -92,17 +97,14 @@ export class ChatChannelMembersImplementation {
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
       with: {
         members: {
-          with: {
-            membership: {
-              columns: { id: true, userId: true },
-              with: { user: { columns: { id: true, name: true, image: true, email: true } } },
-            },
-          },
+          columns: CHANNEL_MEMBER_COLUMNS,
+          with: { membership: CHANNEL_MEMBER_MEMBERSHIP_WITH },
         },
       },
     });
 
-    return channel ?? null;
+    if (!channel) return null;
+    return { ...channel, members: channel.members.map(flattenChannelMember) };
   }
 
   async listMembers(channelId: number, userId: string, orgId: string, cursor?: number, limit?: number) {
@@ -118,18 +120,14 @@ export class ChatChannelMembersImplementation {
       ),
       orderBy: [asc(chatChannelMembers.id)],
       limit: PAGE_SIZE + 1,
-      with: {
-        membership: {
-          columns: { id: true, userId: true },
-          with: { user: { columns: { id: true, name: true, image: true, email: true } } },
-        },
-      },
+      columns: CHANNEL_MEMBER_COLUMNS,
+      with: { membership: CHANNEL_MEMBER_MEMBERSHIP_WITH },
     });
 
     const hasMore = rows.length > PAGE_SIZE;
     const pageSlice = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
     const nextCursor = hasMore ? pageSlice[pageSlice.length - 1]?.id : undefined;
-    return { members: pageSlice, nextCursor };
+    return { members: pageSlice.map(flattenChannelMember), nextCursor };
   }
 
   async addMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) {

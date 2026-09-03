@@ -255,13 +255,22 @@ describe("ChatChannelMembersService — tenant isolation", () => {
   });
 
   it("CONTROL: listMembers returns members when the caller is a valid channel member", async () => {
-    const member = { id: 1, channelId: 7, userId: "u1", role: "MEMBER", user: { id: "u1", name: "Alice", image: null, email: "a@t.com" } };
-    const { service } = makeService({ id: 7 }, member, [member]);
+    // The driver answers `with: { membership: { with: { user } } }` NESTED. This fixture used to be
+    // written flat, which is the shape the client declares and the shape nothing ever sent — so the
+    // assertion below passed while `member.userId` was undefined on every real response.
+    const row = {
+      id: 1,
+      channelId: 7,
+      role: "MEMBER",
+      membership: { userId: "u1", user: { id: "u1", name: "Alice", image: null, email: "a@t.com" } },
+    };
+    const { service } = makeService({ id: 7 }, { role: "MEMBER" }, [row]);
 
     const { members } = await service.listMembers(7, "u1", OWNER_ORG);
 
     expect(members).toHaveLength(1);
-    expect(members[0]).toMatchObject({ userId: "u1" });
+    expect(members[0]).toMatchObject({ userId: "u1", user: { id: "u1", name: "Alice" } });
+    expect(members[0]).not.toHaveProperty("membership");
   });
 });
 

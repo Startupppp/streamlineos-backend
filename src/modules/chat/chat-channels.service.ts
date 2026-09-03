@@ -10,6 +10,11 @@ import { assertUsersInOrg } from "../../common/tenant/org-membership";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { ChatChannelListService } from "./chat-channel-list.service";
+import {
+  CHANNEL_MEMBER_COLUMNS,
+  CHANNEL_MEMBER_MEMBERSHIP_WITH,
+  flattenChannelMember,
+} from "./chat-channel-member-shape";
 
 export { entityChannelFallbackName } from "./chat-channel-list.service";
 
@@ -212,12 +217,16 @@ export class ChatChannelsService {
       ),
       with: {
         members: {
-          with: { membership: { columns: { id: true, userId: true }, with: { user: { columns: { id: true, name: true, image: true } } } } },
+          columns: CHANNEL_MEMBER_COLUMNS,
+          with: { membership: CHANNEL_MEMBER_MEMBERSHIP_WITH },
         },
       },
     });
 
-    if (existing) return this.listService.resolveEntityChannelDisplayName(existing, actor);
+    if (existing) {
+      const named = await this.listService.resolveEntityChannelDisplayName(existing, actor);
+      return { ...named, members: named.members.map(flattenChannelMember) };
+    }
 
     const actorMembershipId = actor.membershipId;
     if (!actorMembershipId) throw new ForbiddenException("Membership required to create a channel");

@@ -1,6 +1,7 @@
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { chatChannelMembers, organizationMembers, users } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
+import type { ChannelMemberWire } from "./chat-channel-member-shape";
 
 /**
  * How many member rows one channel may put into the CHANNEL LIST.
@@ -41,22 +42,12 @@ export const CHANNEL_LIST_COLUMNS = {
   updatedAt: true,
 } as const;
 
-export interface ChannelMemberPreview {
-  id: number;
-  channelId: number;
-  role: string;
-  lastReadAt: Date | null;
-  joinedAt: Date | null;
-  mutedUntil: Date | null;
-  archivedAt: Date | null;
-  isFavorite: boolean;
-  notificationPreference: string;
-  membership: {
-    id: number;
-    userId: string | null;
-    user: { id: string; name: string | null; image: string | null } | null;
-  };
-}
+/**
+ * The preview row is the same wire shape the detail route emits, minus `user.email` — eight rows of
+ * an address per channel across a 50-channel page is exactly the payload this preview exists to cut,
+ * and no list surface renders one.
+ */
+export type ChannelMemberPreview = ChannelMemberWire;
 
 export interface ChannelMemberPreviewPage {
   members: ChannelMemberPreview[];
@@ -99,7 +90,6 @@ export async function loadChannelMemberPreview(
       // name, so `chat_channel_members.id`, `organization_members.id` and `users.id` all arrive as
       // "id" and the outer SELECT is ambiguous — the query fails at the database with the three
       // duplicates plainly visible in the SQL, which is how this was caught.
-      membershipId: sql<number>`${organizationMembers.id}`.as("member_membership_id"),
       membershipUserId: sql<string | null>`${organizationMembers.userId}`.as("member_user_id"),
       userId: sql<string | null>`${users.id}`.as("user_row_id"),
       userName: sql<string | null>`${users.name}`.as("user_row_name"),
@@ -135,11 +125,8 @@ export async function loadChannelMemberPreview(
       archivedAt: row.archivedAt,
       isFavorite: row.isFavorite,
       notificationPreference: row.notificationPreference,
-      membership: {
-        id: row.membershipId,
-        userId: row.membershipUserId,
-        user: row.userId === null ? null : { id: row.userId, name: row.userName, image: row.userImage },
-      },
+      userId: row.membershipUserId,
+      user: row.userId === null ? null : { id: row.userId, name: row.userName, image: row.userImage },
     });
     result.set(row.channelId, page);
   }

@@ -26,7 +26,6 @@ interface RankedRow {
   archivedAt: Date | null;
   isFavorite: boolean;
   notificationPreference: string;
-  membershipId: number;
   membershipUserId: string | null;
   userId: string | null;
   userName: string | null;
@@ -44,7 +43,6 @@ function rankedRow(over: Partial<RankedRow> & { id: number; channelId: number; m
     archivedAt: null,
     isFavorite: false,
     notificationPreference: "DEFAULT",
-    membershipId: over.id,
     membershipUserId: `user-${String(over.id)}`,
     userId: `user-${String(over.id)}`,
     userName: `Member ${String(over.id)}`,
@@ -151,7 +149,7 @@ describe("chat channel list — the member payload is bounded", () => {
     expect(page?.members).toHaveLength(2);
   });
 
-  it("keeps the shape each member row already had, so the preview is fewer rows and not a new contract", async () => {
+  it("emits the one member wire shape, so the preview is fewer rows and not a second contract", async () => {
     const { db } = makeDb([rankedRow({ id: 5, channelId: 7, memberRank: 1, memberCount: 3, isFavorite: true, role: "ADMIN" })]);
     const member = (await loadChannelMemberPreview(db, "org-1", [7], 5)).get(7)?.members[0];
     expect(member).toMatchObject({
@@ -160,17 +158,19 @@ describe("chat channel list — the member payload is bounded", () => {
       role: "ADMIN",
       isFavorite: true,
       notificationPreference: "DEFAULT",
-      membership: { id: 5, userId: "user-5", user: { id: "user-5", name: "Member 5", image: null } },
+      userId: "user-5",
+      user: { id: "user-5", name: "Member 5", image: null },
     });
+    expect(member).not.toHaveProperty("membership");
   });
 
-  it("reports a member whose user row is gone as membership.user = null, never as a half-built user", async () => {
+  it("reports a member whose user row is gone as user = null, never as a half-built user", async () => {
     const { db } = makeDb([
       rankedRow({ id: 5, channelId: 7, memberRank: 1, memberCount: 1, userId: null, userName: null, membershipUserId: null }),
     ]);
     const member = (await loadChannelMemberPreview(db, "org-1", [7], 5)).get(7)?.members[0];
-    expect(member?.membership.user).toBeNull();
-    expect(member?.membership.userId).toBeNull();
+    expect(member?.user).toBeNull();
+    expect(member?.userId).toBeNull();
   });
 
   it("issues no statement at all for an empty page", async () => {
