@@ -38,7 +38,7 @@ export const setModuleRolePermissionsSchema = z.object({
       z.object({
         permissionKey: z.string().min(1).max(120),
         scope: dataScopeSchema.default("all"),
-      }),
+      }).strict(),
     )
     .max(300),
 }).strict();

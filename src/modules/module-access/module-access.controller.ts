@@ -181,6 +181,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
+  @Idempotent("module-access.group.create")
   @Validate({ params: moduleKeyParamSchema, body: createModuleGroupSchema })
   createGroup(
     @Param() params: ModuleKeyParam,
