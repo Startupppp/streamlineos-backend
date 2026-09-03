@@ -100,6 +100,20 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
    * The frontend pages ALREADY live in module trees
    * (/crm|/support|/accounting|/hr .../settings/automations); it is only the
    * backend path and the settings:automations:* key that are global.
+   *
+   * MEASURED 2026-09-03 — report 19b's recommended Option 2 ("derive the module
+   * from triggerEvent and gate per row") is NOT adoptable today, and this is a
+   * new prerequisite no earlier pass recorded. Option 2 needs a trigger->module
+   * map that fails CLOSED. One already exists in the frontend
+   * (components/automations/automation-trigger-data.ts, getModuleForTrigger) and
+   * it fails OPEN: it ends `?? "hr"`. Counted, three ways: the engine enum
+   * AUTOMATION_TRIGGERS is 55, the write schema automationTriggerSchema is 48,
+   * and the frontend map covers 33. So 15 triggers the write API accepts resolve
+   * to "hr" by default, 11 of them CRM/Support/Finance ones (lead.status_changed,
+   * lead.assigned, lead.score_updated, deal.created, deal.won, deal.lost,
+   * ticket.assigned, ticket.status_changed, ticket.escalated, invoice.paid,
+   * expense.approved). Gating rows on that map would gate them on the wrong
+   * module. Fix the map first; only then is Option 2 a mechanical change.
    */
   "GET /settings/automations": {
     verdict: "PENDING-MOVE",
@@ -131,28 +145,45 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
   },
 
   /*
-   * Owner: the email module. Both fail (a): the subject is the platform's
-   * transactional templates, not this organisation. POST .../test also fails
-   * (b) — sending a message is work.
+   * Both fail (a): the subject is the PLATFORM's own transactional email
+   * vocabulary, not this organisation. POST .../test also fails (b) - sending a
+   * message is work, not policy.
    *
-   * The abuse hole recorded here is CLOSED. The handler took a body and nothing
-   * else, so any holder of settings:email-templates:manage — a key the shipped
-   * HR_ADMIN template carries — could aim the platform's sender at an arbitrary
-   * address, unlimited and unaudited. It now takes @CurrentUser, sends only to
-   * the caller's own account address, stamps the caller's org on the outbox row,
-   * carries a registered rate-limit tier and audits the send
-   * (email-template-test-scoping.spec.ts). No tenant data ever crossed — the
-   * templates are static — so this was an abusable send, not a BOLA.
+   * CORRECTED 2026-09-03. An earlier version of this entry said "owner: the
+   * email module", which reads as a mechanical hand-off. It is not one, and the
+   * next agent should not go looking for the move. Measured: TEMPLATE_MAP is 65
+   * templates across 12 categories - Auth, Organization, HR Leave, HR Expense,
+   * Projects, CRM, Recruitment, Interviews, Payroll, Platform, Reports and
+   * Notifications - assembled from 12 registry files. `getTemplatePreviews()`
+   * takes no orgId and renders static entries, so nothing here is organisation
+   * configuration and no product module owns the rows. `modules/email` is where
+   * the code lives, not a module that owns a surface.
    *
-   * What remains for these two routes is the PLACEMENT question only.
+   * So this pair has R-12's shape, not custom-fields' shape: OWNERSHIP does not
+   * resolve it, because the catalogue is genuinely cross-module. The difference
+   * from R-12 is that its subject is not the organisation AT ALL, so the answer
+   * is unlikely to be a module rung either - it is platform administration.
+   * Recorded rather than acted on, because inventing a platform-admin rung is
+   * the same class of product decision R-12 is.
+   *
+   * The exposure that makes it more than tidiness: settings:email-templates:manage
+   * is carried by the shipped BRANCH_HR role template
+   * (role-templates-crm-hr.constants.ts:221, inside BRANCH_HR which spans
+   * 175-279), so an org HR role can read the platform's whole email vocabulary,
+   * Auth and Payroll templates included. No tenant data crosses - the templates
+   * are static - and the unscoped-send hole is separately closed
+   * (email-template-test-scoping.spec.ts). Neither route has any frontend
+   * caller; CRM and HR each have their own template surfaces on their own module
+   * keys (crm:email-templates:manage, hr:email-templates:manage), so this is a
+   * third, API-only door beside two module-owned ones.
    */
   "GET /settings/email-templates/preview": {
     verdict: "PENDING-MOVE",
-    why: "owner: modules/email — platform transactional templates are not organisation configuration",
+    why: "platform-wide static template catalogue — 65 templates, 12 categories, no orgId — so it is not organisation configuration and no product module owns it",
   },
   "POST /settings/email-templates/test": {
     verdict: "PENDING-MOVE",
-    why: "owner: modules/email — operational, not configuration; the unscoped-send hole is fixed, the placement question is not",
+    why: "operational, not configuration — sending is work; the unscoped-send hole is fixed, the placement question is not, and it is a platform-admin question rather than a module rung",
   },
 
   "GET /settings/ai-usage": {
@@ -331,6 +362,29 @@ describe("the box's remaining debt is exactly what the ticket says it is", () =>
     expect(
       new Set(automations.map((route) => route.file)).size,
     ).toBeGreaterThan(1);
+  });
+
+  it("the email-template catalogue is cross-module, so OWNERSHIP cannot resolve that pair", () => {
+    const registry = resolve(SRC_ROOT, "modules", "email", "templates", "registry");
+    const categories = new Set<string>();
+    let templates = 0;
+    for (const file of readdirSync(registry)) {
+      if (!file.endsWith(".ts")) continue;
+      for (const match of readFileSync(join(registry, file), "utf8").matchAll(
+        /category: "([^"]+)"/g,
+      )) {
+        categories.add(match[1]);
+        templates += 1;
+      }
+    }
+    /*
+     * If this ever collapses to one category the pair becomes a mechanical
+     * OWNERSHIP move like custom fields and git connections were, and this
+     * assertion is what should tell you so. While it holds, "hand it to
+     * modules/email" is not an action anybody can take.
+     */
+    expect(templates).toBeGreaterThanOrEqual(60);
+    expect(categories.size).toBeGreaterThan(1);
   });
 
   it("every automations route is on the one global key, so the rung question is one question", () => {
