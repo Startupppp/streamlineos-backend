@@ -107,16 +107,14 @@ function makeDb(grantRows: GrantRow[]): { db: Db; grantPageCalls: () => number }
 }
 
 function makeResolver(db: Db): AccessPermissionResolver {
-  const safeRead = async <Result>(
-    read: () => PromiseLike<Result>,
-    fallback: Result,
-  ): Promise<Result> => {
-    try {
-      return await read();
-    } catch {
-      return fallback;
-    }
-  };
+  /**
+   * A pass-through, not a swallow. This helper used to catch and return the
+   * fallback, which is how a mock chain missing `.orderBy` silently dropped
+   * every role grant and still went green (findings register #48). The
+   * production reader takes no fallback any more, so neither does this one.
+   */
+  const safeRead = <Result>(read: () => PromiseLike<Result>): Promise<Result> =>
+    Promise.resolve(read());
   return new AccessPermissionResolver(
     () => db,
     safeRead,

@@ -3,9 +3,13 @@ import type { Db } from "../../db/drizzle.module";
 import { rolePermissionGrants, userPermissionGrants } from "../../db/schema";
 import type { DataScope } from "./access.types";
 
-export type SafeAccessTableRead = <Result>(
+/**
+ * A read of an RBAC table. It takes no fallback on purpose: see
+ * `AccessService.readAccessTable` for why a permissions read that fails must
+ * throw rather than resolve to an empty set.
+ */
+export type ReadAccessTable = <Result>(
   read: () => PromiseLike<Result>,
-  fallback: Result,
 ) => Promise<Result>;
 
 /** One page of a grant drain. Pages, never a cap: see the two functions below. */
@@ -37,14 +41,14 @@ export interface DrainedUserGrant {
  */
 export async function drainRolePermissionGrants(
   db: Db,
-  safeAccessTableRead: SafeAccessTableRead,
+  readAccessTable: ReadAccessTable,
   orgId: string,
   roleIdList: readonly number[],
 ): Promise<DrainedRoleGrant[]> {
   const drained: DrainedRoleGrant[] = [];
   let afterId = 0;
   for (;;) {
-    const page = await safeAccessTableRead(
+    const page = await readAccessTable(
       () =>
         db
           .select({
@@ -63,12 +67,6 @@ export async function drainRolePermissionGrants(
           )
           .orderBy(asc(rolePermissionGrants.id))
           .limit(GRANT_PAGE_SIZE),
-      [] as {
-        id: number;
-        roleId: number;
-        permissionKey: string;
-        scope: DataScope;
-      }[],
     );
     for (const row of page)
       drained.push({
@@ -93,14 +91,14 @@ export async function drainRolePermissionGrants(
  */
 export async function drainUserPermissionGrants(
   db: Db,
-  safeAccessTableRead: SafeAccessTableRead,
+  readAccessTable: ReadAccessTable,
   orgId: string,
   membershipId: number,
 ): Promise<DrainedUserGrant[]> {
   const drained: DrainedUserGrant[] = [];
   let afterId = UUID_ZERO;
   for (;;) {
-    const page = await safeAccessTableRead(
+    const page = await readAccessTable(
       () =>
         db
           .select({
@@ -118,7 +116,6 @@ export async function drainUserPermissionGrants(
           )
           .orderBy(asc(userPermissionGrants.id))
           .limit(GRANT_PAGE_SIZE),
-      [] as { id: string; permissionKey: string; scope: DataScope }[],
     );
     for (const row of page)
       drained.push({ permissionKey: row.permissionKey, scope: row.scope });

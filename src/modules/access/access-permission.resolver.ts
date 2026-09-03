@@ -37,10 +37,10 @@ import {
 import {
   drainRolePermissionGrants,
   drainUserPermissionGrants,
-  type SafeAccessTableRead,
+  type ReadAccessTable,
 } from "./access-grant-drains";
 
-export type { SafeAccessTableRead };
+export type { ReadAccessTable };
 
 export interface ResolvedPermissions {
   perms: Record<string, DataScope>;
@@ -82,7 +82,7 @@ function earliestAfter(
 export class AccessPermissionResolver {
   constructor(
     private readonly getDatabase: () => Db,
-    private readonly safeAccessTableRead: SafeAccessTableRead,
+    private readonly readAccessTable: ReadAccessTable,
     private readonly warnedUnknownKeys: Set<string>,
     private readonly membershipAccessCache: Map<string, MembershipAccessState>,
     private readonly deniedModulesTtlMs: number,
@@ -132,7 +132,7 @@ export class AccessPermissionResolver {
 
     const [assignmentRows, groupMemberRows, ownershipRows, personalGrantRows] =
       await Promise.all([
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .select({
@@ -151,9 +151,8 @@ export class AccessPermissionResolver {
               ),
             )
             .limit(500),
-        [] as { roleId: number; expiresAt: Date | null }[],
       ),
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .select({
@@ -170,9 +169,8 @@ export class AccessPermissionResolver {
               ),
             )
             .limit(500),
-        [] as { principalGroupId: string }[],
       ),
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .select({ moduleKey: moduleOwnerships.moduleKey })
@@ -184,11 +182,10 @@ export class AccessPermissionResolver {
               ),
             )
             .limit(100),
-        [] as { moduleKey: string }[],
       ),
       drainUserPermissionGrants(
         this.db,
-        this.safeAccessTableRead,
+        this.readAccessTable,
         orgId,
         membershipId,
       ),
@@ -199,7 +196,7 @@ export class AccessPermissionResolver {
     const groupIds = groupMemberRows.map((row) => row.principalGroupId);
 
     if (groupIds.length > 0) {
-      const groupRoleRows = await this.safeAccessTableRead(
+      const groupRoleRows = await this.readAccessTable(
         () =>
           this.db
             .select({ roleId: groupRoleAssignments.roleId })
@@ -211,7 +208,6 @@ export class AccessPermissionResolver {
               ),
             )
             .limit(500),
-        [] as { roleId: number }[],
       );
       for (const row of groupRoleRows) roleIds.add(row.roleId);
     }
@@ -278,7 +274,7 @@ export class AccessPermissionResolver {
 
       const grantRows = await drainRolePermissionGrants(
         this.db,
-        this.safeAccessTableRead,
+        this.readAccessTable,
         orgId,
         roleIdList,
       );
@@ -307,7 +303,7 @@ export class AccessPermissionResolver {
       }
     }
 
-    const delegatedPermissionRows = await this.safeAccessTableRead(
+    const delegatedPermissionRows = await this.readAccessTable(
       () =>
         this.db
           .select({
@@ -332,7 +328,6 @@ export class AccessPermissionResolver {
             ),
           )
           .limit(500),
-      [] as { permissionKey: string; startsAt: Date; endsAt: Date }[],
     );
     for (const row of delegatedPermissionRows) {
       if (row.startsAt.getTime() > now.getTime()) continue;

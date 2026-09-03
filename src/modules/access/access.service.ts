@@ -11,7 +11,6 @@ import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
-import { logger } from "../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
 import { accessVersionChannel } from "../../common/rbac/access-version-channel";
@@ -30,7 +29,6 @@ import {
   moduleOf,
   stripDeniedModules,
 } from "./access-policy";
-import { isMissingRelationError } from "./access-error-utils";
 import {
   moduleAvailability,
   type ModuleAvailabilityResolver,
@@ -73,7 +71,6 @@ const MEMBERSHIP_CACHE_TTL_MS = 15_000;
 
 @Injectable()
 export class AccessService implements OnModuleInit, OnModuleDestroy {
-  private missingAccessTablesLogged = false;
   private readonly versionCache = new Map<string, VersionEntry>();
   private readonly permsCache = new Map<string, PermsEntry>();
   private readonly membershipAccessCache = new Map<string, MembershipAccessState>();
@@ -92,13 +89,12 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     private readonly entitlements: EntitlementsService,
     private readonly mfaPolicy: MfaPolicyService,
   ) {
-    const safeAccessTableRead = <Result>(
+    const readAccessTable = <Result>(
       read: () => PromiseLike<Result>,
-      fallback: Result,
-    ): Promise<Result> => this.safeAccessTableRead(read, fallback);
+    ): Promise<Result> => this.readAccessTable(read);
     this.permissionResolver = new AccessPermissionResolver(
       () => this.db,
-      safeAccessTableRead,
+      readAccessTable,
       this.warnedUnknownKeys,
       this.membershipAccessCache,
       MEMBERSHIP_CACHE_TTL_MS,
@@ -106,14 +102,14 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     );
     this.deniedModulesResolver = new DeniedModulesResolver(
       () => this.db,
-      safeAccessTableRead,
+      readAccessTable,
       (orgId) => this.getPermissionsVersion(orgId),
       (moduleKey) => this.entitlements.isCoreModule(moduleKey),
     );
     this.permissionMembersResolver = new AccessPermissionMembersResolver(
       db,
       cache,
-      safeAccessTableRead,
+      readAccessTable,
       (organizationId) => this.getPermissionsVersion(organizationId),
       (organizationId, moduleKey) =>
         this.isModuleEnabled(organizationId, moduleKey),
@@ -168,38 +164,42 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private noteMissingAccessTables(error: unknown): void {
-    if (this.missingAccessTablesLogged) return;
-    this.missingAccessTablesLogged = true;
-    logger.warn("access: rbac tables missing, returning empty permission set", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  private async safeAccessTableRead<T>(
-    read: () => PromiseLike<T>,
-    fallback: T,
-  ): Promise<T> {
-    try {
-      return await read();
-    } catch (error: unknown) {
-      if (!isMissingRelationError(error)) throw error;
-      this.noteMissingAccessTables(error);
-      return fallback;
-    }
+  /**
+   * Every RBAC read goes through here, and every failure THROWS.
+   *
+   * It used to swallow anything `isMissingRelationError` matched and return the
+   * caller's empty fallback. That predicate is a substring test for
+   * "does not exist", so it also caught `column ... does not exist` (schema drift
+   * mid-deploy), `role ... does not exist` and `database ... does not exist` — and
+   * the resolver reads an empty grants list as "this user holds no permissions".
+   * The empty result is then cached for the snapshot's validity window, so one
+   * transient failure degrades a user to zero permissions for seconds, with a
+   * `warn` fired at most once per process and no error the user can see.
+   * On `DeniedModulesResolver` the same fallback is worse than silent: an empty
+   * denied-modules list fails OPEN, restoring modules the org took away.
+   *
+   * Failing closed loudly is the repository's stated policy for exactly this
+   * class — `env.validation.ts` forbids `RBAC_MIGRATION_MODE=degrade` in
+   * production "because missing entitlement tables must fail closed". A throw
+   * reaches `PermissionGuard`, which logs the error with the permission key and
+   * denies; nothing is cached, so the next request re-reads. No caller wants the
+   * empty array for its own sake: every one of them wants rows, and the fallback
+   * parameter is gone so the silent path cannot be reintroduced by passing one.
+   */
+  private async readAccessTable<T>(read: () => PromiseLike<T>): Promise<T> {
+    return read();
   }
 
   private async loadDurablePermissionsVersion(orgId: string): Promise<number> {
     const row = await runInTenantTransaction(
       this.db,
       () =>
-        this.safeAccessTableRead(
+        this.readAccessTable(
           () =>
             this.db.query.accessVersions.findFirst({
               where: eq(accessVersions.orgId, orgId),
               columns: { permissionsVersion: true },
             }),
-          undefined,
         ),
       { orgId },
     );

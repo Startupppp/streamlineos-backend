@@ -11,20 +11,17 @@ import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { logger } from "../../common/logger/logger.service";
 import {
   ADMINISTRABLE_MODULES,
 } from "../../common/rbac/module-vocabulary";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { EntitlementsService } from "./entitlements.service";
 import { MANAGEABLE_MODULE_SET } from "./access-policy";
-import { isMissingRelationError } from "./access-error-utils";
 
 const DENIED_MODULES_TTL_MS = 15_000;
 
 @Injectable()
 export class UserModuleAccessService {
-  private missingTablesLogged = false;
   private readonly deniedModulesCache = new Map<
     string,
     { modules: Set<string>; expiresAt: number }
@@ -43,54 +40,41 @@ export class UserModuleAccessService {
     }
   }
 
-  private async safeRead<T>(read: () => PromiseLike<T>, fallback: T): Promise<T> {
-    try {
-      return await read();
-    } catch (error: unknown) {
-      if (!isMissingRelationError(error)) throw error;
-      if (!this.missingTablesLogged) {
-        this.missingTablesLogged = true;
-        logger.warn("user-module-access: tables missing, returning empty set", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-      return fallback;
-    }
-  }
-
   async getUserDeniedModules(orgId: string, userId: string): Promise<Set<string>> {
     const cacheKey = `${orgId}:${userId}`;
     const cached = this.deniedModulesCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.modules;
 
+    /**
+     * No error fallback: an unreadable denial list must not resolve to "nothing
+     * is denied". That empty set fails OPEN — it restores every module the org
+     * took away from this user — and it was then cached for the TTL. Findings
+     * register #48, same defect as `AccessService.readAccessTable`.
+     */
     const rows = await runInTenantTransaction(
       this.db,
       () =>
-        this.safeRead(
-          () =>
-            this.db
-              .select({ moduleKey: userModuleAccess.moduleKey })
-              .from(userModuleAccess)
-              .innerJoin(
-                organizationMembers,
-                and(
-                  eq(organizationMembers.orgId, userModuleAccess.orgId),
-                  eq(
-                    organizationMembers.id,
-                    userModuleAccess.organizationMembershipId,
-                  ),
-                ),
-              )
-              .where(
-                and(
-                  eq(userModuleAccess.orgId, orgId),
-                  eq(organizationMembers.userId, userId),
-                  eq(userModuleAccess.enabled, false),
-                ),
-              )
-              .limit(100),
-          [] as { moduleKey: string }[],
-        ),
+        this.db
+          .select({ moduleKey: userModuleAccess.moduleKey })
+          .from(userModuleAccess)
+          .innerJoin(
+            organizationMembers,
+            and(
+              eq(organizationMembers.orgId, userModuleAccess.orgId),
+              eq(
+                organizationMembers.id,
+                userModuleAccess.organizationMembershipId,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(userModuleAccess.orgId, orgId),
+              eq(organizationMembers.userId, userId),
+              eq(userModuleAccess.enabled, false),
+            ),
+          )
+          .limit(100),
       { orgId },
     );
 

@@ -14,7 +14,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions";
 import { isPlanGatedModule, moduleOf } from "./access-policy";
-import type { SafeAccessTableRead } from "./access-permission.resolver";
+import type { ReadAccessTable } from "./access-permission.resolver";
 
 const MEMBERS_WITH_PERMISSION_PAGE_SIZE = 100;
 
@@ -33,7 +33,7 @@ export class AccessPermissionMembersResolver {
   constructor(
     private readonly db: Db,
     private readonly cache: CacheService,
-    private readonly safeAccessTableRead: SafeAccessTableRead,
+    private readonly readAccessTable: ReadAccessTable,
     private readonly getPermissionsVersion: (orgId: string) => Promise<number>,
     private readonly isModuleEnabled: (
       orgId: string,
@@ -99,7 +99,7 @@ export class AccessPermissionMembersResolver {
       slugMatchingRoleRows,
       ownershipRows,
     ] = await Promise.all([
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .select({
@@ -117,10 +117,9 @@ export class AccessPermissionMembersResolver {
             )
             .orderBy(asc(organizationMembers.id))
             .limit(limit),
-        [] as { userId: string; membershipId: number }[],
       ),
 
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .selectDistinct({ roleId: rolePermissionGrants.roleId })
@@ -132,21 +131,19 @@ export class AccessPermissionMembersResolver {
               ),
             )
             .limit(500),
-        [] as { roleId: number }[],
       ),
 
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .selectDistinct({ roleId: rolePermissionGrants.roleId })
             .from(rolePermissionGrants)
             .where(eq(rolePermissionGrants.orgId, orgId))
             .limit(500),
-        [] as { roleId: number }[],
       ),
 
       slugsWithPermInDefaults.length > 0
-        ? this.safeAccessTableRead(
+        ? this.readAccessTable(
             () =>
               this.db
                 .select({ roleId: roles.id })
@@ -158,11 +155,10 @@ export class AccessPermissionMembersResolver {
                   ),
                 )
                 .limit(500),
-            [] as { roleId: number }[],
           )
         : Promise.resolve([] as { roleId: number }[]),
 
-      this.safeAccessTableRead(
+      this.readAccessTable(
         () =>
           this.db
             .selectDistinct({
@@ -187,7 +183,6 @@ export class AccessPermissionMembersResolver {
             )
             .orderBy(asc(organizationMembers.id))
             .limit(limit),
-        [] as { userId: string; membershipId: number }[],
       ),
     ]);
 
@@ -205,7 +200,7 @@ export class AccessPermissionMembersResolver {
     const [directRoleRows, groupRoleRows] =
       allGrantingRoleIds.length > 0
         ? await Promise.all([
-            this.safeAccessTableRead(
+            this.readAccessTable(
               () =>
                 this.db
                   .selectDistinct({
@@ -237,10 +232,9 @@ export class AccessPermissionMembersResolver {
                   )
                   .orderBy(asc(organizationMembers.id))
                   .limit(limit),
-              [] as { userId: string; membershipId: number }[],
             ),
 
-            this.safeAccessTableRead(
+            this.readAccessTable(
               () =>
                 this.db
                   .selectDistinct({
@@ -278,7 +272,6 @@ export class AccessPermissionMembersResolver {
                   )
                   .orderBy(asc(organizationMembers.id))
                   .limit(limit),
-              [] as { userId: string; membershipId: number }[],
             ),
           ])
         : [[], []];
@@ -317,7 +310,7 @@ export class AccessPermissionMembersResolver {
       return { data: candidates, nextCursor: scanThrough, exhausted };
     }
 
-    const deniedRows = await this.safeAccessTableRead(
+    const deniedRows = await this.readAccessTable(
       () =>
         this.db
           .select({ userId: organizationMembers.userId })
@@ -344,7 +337,6 @@ export class AccessPermissionMembersResolver {
             ),
           )
           .limit(candidates.length),
-      [] as { userId: string }[],
     );
 
     if (deniedRows.length === 0) {
