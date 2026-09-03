@@ -2,6 +2,68 @@
   "note": "Every top-level integer constant in every backend gate script, with the direction it may move. check:baseline-integrity fails on an unregistered constant (which is what a rename looks like), a stale registration (the other half of a rename), and any move in the unsafe direction. ratchet = may only decrease. floor = may only increase; lowering a floor is how a gate goes blind while printing OK. pinned = may not change without re-registering, used where the safe direction is genuinely not obvious.",
   "measured": "2026-09-03",
   "entries": {
+    "baselines/authz-deny.json": {
+      "uncoveredRatchet": {
+        "value": 2441,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Authorization-gated handlers with no deny test. Set at the measured committed number 2453 by 204aca63 and LOWERED to 2443 then 2441 as deny specs landed; never raised."
+      }
+    },
+    "baselines/bare-throw.json": {
+      "ratchet": {
+        "value": 2,
+        "direction": "ratchet",
+        "owner": "degradation/platform DB and CRM/inventory release owner",
+        "reason": "search-index.spec.ts:231 (inside the APP_DATABASE_URL-gated describe, the one site of 220 execution triage could not reach) and inv-engine-misc-isolation-stock.spec.ts:194 (inventory, accepted residual R-9)."
+      }
+    },
+    "baselines/query-projection-baseline.json": {
+      "countPathsAllowed": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "existencePathsAllowed": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "existenceDeferredAllowed": {
+        "value": 7,
+        "direction": "ratchet",
+        "owner": "perf/db owner",
+        "reason": "Existence checks deferred rather than projected. A hard zero on the other three paths; this one carries the remaining seven."
+      },
+      "heavyColumnReadsAllowed": {
+        "value": 0,
+        "direction": "ratchet"
+      }
+    },
+    "baselines/vacuous-assertions.json": {
+      "ratchets.NO_ASSERTION": {
+        "value": 1,
+        "direction": "ratchet",
+        "owner": "CRM/inventory release owner",
+        "reason": "inv-engine-misc-isolation-ai.spec.ts:133 \u2014 inventory, accepted residual R-9, review 2026-12-01."
+      },
+      "ratchets.TAUTOLOGY": {
+        "value": 2,
+        "direction": "ratchet",
+        "owner": "payroll/RBAC and security owner",
+        "reason": "prd-e2e-journey.spec.ts:153 (needs the access layer's role fixtures) and operator-access.spec.ts:77 (deliberate: no operator-access mechanism exists to test, and the spec keeps the absence visible)."
+      },
+      "ratchets.COND_ASSERT": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "ratchets.FLOATING_ASSERT": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "ratchets.FOCUSED": {
+        "value": 0,
+        "direction": "ratchet"
+      }
+    },
     "check-ai-charge-declared.mjs": {
       "ANTI_VACUITY_MIN": {
         "value": 80,
@@ -43,6 +105,14 @@
       },
       "MIN_CONSTANTS": {
         "value": 100,
+        "direction": "floor"
+      },
+      "MIN_BASELINE_JSON_FILES": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "MIN_JSON_RATCHETS": {
+        "value": 5,
         "direction": "floor"
       }
     },
@@ -302,10 +372,10 @@
     },
     "check-n1-growing-loops.mjs": {
       "MAX_GROWING_SITES": {
-        "value": 106,
+        "value": 102,
         "direction": "ratchet",
         "owner": "perf/db owner",
-        "reason": "Growing-collection loop sites. Never raised."
+        "reason": "Growing-collection loop sites. Never raised; lowered 106 -> 102 while this registry was being written, which is how the shared working tree moves under a measurement \u2014 the value here is HEAD's, not the tree's."
       },
       "MIN_LOOP_NODES": {
         "value": 4800,

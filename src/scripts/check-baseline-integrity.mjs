@@ -64,10 +64,26 @@ const REGISTRY_PATH = path.join(HERE, "baselines", "ratchets.json");
 
 const MIN_GATE_SCRIPTS = 40;
 const MIN_CONSTANTS = 100;
+const MIN_BASELINE_JSON_FILES = 5;
+const MIN_JSON_RATCHETS = 5;
 
 const GATE_RE = /^check-.*\.(mjs|ts)$/;
 const CONST_RE = /^const\s+([A-Z][A-Z0-9_]*)\s*=\s*(-?\d+)\s*;/gm;
 const DIRECTIONS = new Set(["ratchet", "floor", "pinned"]);
+
+/**
+ * A baseline JSON file mixes RATCHETS with recorded MEASUREMENTS, and no
+ * mechanical rule separates them by value — `authz-deny.json` holds
+ * `uncovered: 2453` (a measurement, which moves freely) beside
+ * `uncoveredRatchet: 2441` (the number CI enforces). So the rule is by KEY
+ * NAME, stated here rather than inferred: a numeric field is a ratchet when
+ * some key on its path is named for one. `cap` deliberately requires a word
+ * boundary — a bare /cap$/ matched the path segment `cron-weekly-recap` and
+ * would have registered a per-file read count as a ratchet.
+ */
+const JSON_RATCHET_KEY =
+  /^(ratchets?|.*Ratchet|.*[Bb]aseline|.*[Aa]llowed|.*[Cc]eiling|max|.*Max|cap|.*Cap|limit|.*Limit)$/;
+const REGISTRY_BASENAME = "ratchets.json";
 
 function readConstants(dir) {
   const out = [];
@@ -84,6 +100,39 @@ function readConstants(dir) {
 
 function keyOf(entry) {
   return `${entry.file}::${entry.name}`;
+}
+
+function jsonRatchets(dir) {
+  const out = [];
+  let files = 0;
+  let baselineDir;
+  try {
+    baselineDir = fs.readdirSync(dir).sort();
+  } catch {
+    return { constants: out, files };
+  }
+  for (const name of baselineDir) {
+    if (!name.endsWith(".json") || name === REGISTRY_BASENAME) continue;
+    files += 1;
+    let parsed;
+    try {
+      parsed = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"));
+    } catch {
+      continue;
+    }
+    const visit = (node, trail) => {
+      if (node === null || typeof node !== "object" || Array.isArray(node)) return;
+      for (const [key, value] of Object.entries(node)) {
+        const next = [...trail, key];
+        if (typeof value === "number" && Number.isInteger(value)) {
+          if (next.some((segment) => JSON_RATCHET_KEY.test(segment)))
+            out.push({ file: `baselines/${name}`, name: next.join("."), value });
+        } else visit(value, next);
+      }
+    };
+    visit(parsed, []);
+  }
+  return { constants: out, files };
 }
 
 function violates(direction, registered, current) {
@@ -111,6 +160,24 @@ function selfTest() {
   const has = (n) => constants.some((c) => c.name === n);
   const valueOf = (n) => constants.find((c) => c.name === n)?.value;
 
+  const bdir = path.join(dir, "baselines");
+  fs.mkdirSync(bdir, { recursive: true });
+  fs.writeFileSync(
+    path.join(bdir, "sample.json"),
+    JSON.stringify({
+      covered: 767,
+      uncovered: 2453,
+      uncoveredRatchet: 2441,
+      ratchets: { NO_ASSERTION: 1 },
+      unbounded: { "/cron/cron-weekly-recap.service.ts": 2 },
+      version: 1,
+      files: 3587,
+    }),
+  );
+  fs.writeFileSync(path.join(bdir, REGISTRY_BASENAME), JSON.stringify({ entries: { "x.mjs": { BASELINE: { value: 9 } } } }));
+  const js = jsonRatchets(bdir);
+  const jhas = (n) => js.constants.some((c) => c.name === n);
+
   const checks = [
     ["a .mjs gate script is read", has("TIER2_RATCHET")],
     ["a .ts gate script is read", has("MAX_SITES")],
@@ -132,6 +199,23 @@ function selfTest() {
     ["the gate-script floor would reject this fixture dir", scripts < MIN_GATE_SCRIPTS],
     ["the constant floor would reject this fixture dir", constants.length < MIN_CONSTANTS],
     ["every known direction is handled", [...DIRECTIONS].every((d) => typeof violates(d, 1, 1) === "boolean")],
+    ["a json ratchet field is read", jhas("uncoveredRatchet")],
+    ["a nested ratchets.<class> field is read", jhas("ratchets.NO_ASSERTION")],
+    ["a recorded MEASUREMENT is not read as a ratchet", !jhas("covered") && !jhas("uncovered")],
+    ["`version` and `files` are not read as ratchets", !jhas("version") && !jhas("files")],
+    [
+      "the cap rule does not match the path segment `cron-weekly-recap`",
+      !js.constants.some((c) => c.name.includes("recap")),
+    ],
+    [
+      "the registry file itself is not scanned as a baseline file",
+      !js.constants.some((c) => c.name.includes("BASELINE")) && js.files === 1,
+    ],
+    ["the baseline-json floor would reject this fixture dir", js.files < MIN_BASELINE_JSON_FILES],
+    [
+      "the json-ratchet floor would reject this fixture dir",
+      js.constants.length < MIN_JSON_RATCHETS,
+    ],
   ];
 
   fs.rmSync(dir, { recursive: true, force: true });
@@ -167,7 +251,10 @@ function emit(constants) {
 function main() {
   if (process.argv.includes("--self-test")) process.exit(selfTest());
 
-  const { constants, scripts } = readConstants(HERE);
+  const fromScripts = readConstants(HERE);
+  const fromJson = jsonRatchets(path.join(HERE, "baselines"));
+  const constants = [...fromScripts.constants, ...fromJson.constants];
+  const scripts = fromScripts.scripts;
 
   if (process.argv.includes("--emit")) {
     emit(constants);
@@ -183,6 +270,18 @@ function main() {
   if (constants.length < MIN_CONSTANTS) {
     console.error(
       `INCONCLUSIVE — read ${constants.length} baseline constants, below the floor of ${MIN_CONSTANTS}. The constant parser measured nothing.`,
+    );
+    process.exit(2);
+  }
+  if (fromJson.files < MIN_BASELINE_JSON_FILES) {
+    console.error(
+      `INCONCLUSIVE — read ${fromJson.files} baseline JSON file(s), below the floor of ${MIN_BASELINE_JSON_FILES}. The JSON walk measured nothing, so a ratchet living in a .json rather than a const would be unguarded.`,
+    );
+    process.exit(2);
+  }
+  if (fromJson.constants.length < MIN_JSON_RATCHETS) {
+    console.error(
+      `INCONCLUSIVE — matched ${fromJson.constants.length} ratchet field(s) in baselines/*.json, below the floor of ${MIN_JSON_RATCHETS}. The key-name rule matched nothing.`,
     );
     process.exit(2);
   }
@@ -223,18 +322,19 @@ function main() {
     }
 
   // Net movement per gate script, which is what a rename hides.
+  // Summed over the UNION of registered and current, not over the survivors:
+  // a rename removes one name and adds another, so summing only the names still
+  // present would report the vanished side as 0 and understate the net move.
   const netByFile = new Map();
-  for (const c of constants) {
-    const e = registered.get(keyOf(c));
-    const prev = e ? e.value : 0;
-    const n = netByFile.get(c.file) ?? { registered: 0, current: 0 };
-    n.registered += prev;
-    n.current += c.value;
-    netByFile.set(c.file, n);
-  }
+  const bump = (file) => {
+    if (!netByFile.has(file)) netByFile.set(file, { registered: 0, current: 0 });
+    return netByFile.get(file);
+  };
+  for (const e of registered.values()) bump(e.file).registered += e.value;
+  for (const c of constants) bump(c.file).current += c.value;
 
   console.log(
-    `Gate scripts ${scripts}  ·  baseline constants ${constants.length}  ·  registered ${registered.size}`,
+    `Gate scripts ${scripts}  ·  constants ${fromScripts.constants.length}  ·  json ratchets ${fromJson.constants.length} in ${fromJson.files} baseline file(s)  ·  registered ${registered.size}`,
   );
   const dirCounts = { ratchet: 0, floor: 0, pinned: 0 };
   for (const e of registered.values()) if (e.direction in dirCounts) dirCounts[e.direction] += 1;
