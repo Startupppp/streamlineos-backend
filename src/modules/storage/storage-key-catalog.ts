@@ -101,17 +101,21 @@ export async function collectOrgFileKeys(
     sql`SELECT ${sql.raw(`"${column}"`)} AS k, ${sql.raw(BUCKET_ROLE_LITERAL[bucketRoleForColumn(table, column)])} AS bucket FROM ${sql.raw(table)} WHERE org_id = ${orgId} AND ${sql.raw(`"${column}"`)} IS NOT NULL`,
   );
   const roles = new Map<string, StorageBucketRole>();
-  try {
-    const rows = await db.execute(sql.join(parts, sql` UNION ALL `));
-    for (const row of rows) {
-      const k = row["k"];
-      if (typeof k !== "string" || k.length === 0) continue;
-      // `kb` wins a tie: it is a positive assertion that a KB uploader wrote the
-      // object, where `default` is only the absence of one.
-      if (row["bucket"] === "kb") roles.set(k, "kb");
-      else if (!roles.has(k)) roles.set(k, "default");
-    }
-  } catch {
+  // Deliberately unguarded. Both call sites in organization-purge-adapters.ts
+  // already answer a throw with state FAILED — one for the enumeration, one for
+  // the post-delete verification. Swallowing here returned [] instead, which
+  // those call sites read as "no keys", so a failed enumeration reported
+  // "No object-storage keys found for this org; nothing to delete" and a failed
+  // verification reported "deleted and verified absent", both CONFIRMED, while
+  // every object survived in the bucket.
+  const rows = await db.execute(sql.join(parts, sql` UNION ALL `));
+  for (const row of rows) {
+    const k = row["k"];
+    if (typeof k !== "string" || k.length === 0) continue;
+    // `kb` wins a tie: it is a positive assertion that a KB uploader wrote the
+    // object, where `default` is only the absence of one.
+    if (row["bucket"] === "kb") roles.set(k, "kb");
+    else if (!roles.has(k)) roles.set(k, "default");
   }
   return [...roles].map(([key, bucket]) => ({ key, bucket }));
 }
@@ -135,13 +139,12 @@ export async function collectUserFileKeys(
   }
   if (parts.length === 0) return [];
   const keys = new Set<string>();
-  try {
-    const rows = await db.execute(sql.join(parts, sql` UNION ALL `));
-    for (const row of rows) {
-      const k = row["k"];
-      if (typeof k === "string" && k.length > 0) keys.add(k);
-    }
-  } catch {
+  // Deliberately unguarded, for the same reason as collectOrgFileKeys above: an
+  // empty result and a failed query must not be the same answer on an erasure path.
+  const rows = await db.execute(sql.join(parts, sql` UNION ALL `));
+  for (const row of rows) {
+    const k = row["k"];
+    if (typeof k === "string" && k.length > 0) keys.add(k);
   }
   return [...keys];
 }

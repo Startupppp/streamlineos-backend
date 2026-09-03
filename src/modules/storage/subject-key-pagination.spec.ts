@@ -61,6 +61,45 @@ describe("collectOrgFileKeys — parameterized SQL (S5)", () => {
   });
 });
 
+describe("a failed key enumeration must not be indistinguishable from an empty one", () => {
+  /*
+   * Both functions used to wrap their db.execute in `try { … } catch { }` and
+   * return an empty collection on any failure. organization-purge-adapters.ts
+   * calls collectOrgFileKeys twice and answers a throw with state FAILED at both
+   * sites — "Failed to collect org file keys" and "Could not verify post-delete
+   * state" — so neither handler could ever run. An empty result instead reached
+   * `if (keys.length === 0) return { state: "CONFIRMED", detail: "No
+   * object-storage keys found for this org; nothing to delete" }` on the
+   * enumeration, and `remaining.length === 0` -> "deleted and verified absent"
+   * on the verification. A timed-out query therefore reported a completed purge
+   * while every customer object stayed in the bucket.
+   */
+  const DB_FAILURE = "57014: canceling statement due to statement timeout";
+
+  it("collectOrgFileKeys propagates a database failure rather than reporting no keys", async () => {
+    const db = {
+      execute: jest.fn().mockRejectedValue(new Error(DB_FAILURE)),
+    } as unknown as Db;
+
+    await expect(collectOrgFileKeys(db, "org-1", COLUMNS)).rejects.toThrow(/57014/);
+  });
+
+  it("collectUserFileKeys propagates a database failure rather than reporting no keys", async () => {
+    let call = 0;
+    const db = {
+      execute: jest.fn(() => {
+        call += 1;
+        // The first execute is FK discovery; the user-key UNION is the second.
+        if (call === 1) return Promise.resolve([{ table: "public.docs", col: "user_id" }]);
+        return Promise.reject(new Error(DB_FAILURE));
+      }),
+    } as unknown as Db;
+
+    await expect(collectUserFileKeys(db, USER, COLUMNS)).rejects.toThrow(/57014/);
+    expect(call).toBeGreaterThan(1);
+  });
+});
+
 describe("collectUserFileKeys — parameterized SQL (S5)", () => {
   it("uses a $1 placeholder for userId rather than inlining it — injection-safe", async () => {
     const dialect = new PgDialect();
