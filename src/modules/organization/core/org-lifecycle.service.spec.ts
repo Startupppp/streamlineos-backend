@@ -37,6 +37,7 @@ function updateResult() {
 
 describe("OrgLifecycleService", () => {
   const cacheInvalidate = jest.fn().mockResolvedValue(undefined);
+  const cacheInvalidateMany = jest.fn().mockResolvedValue(undefined);
   const cacheInvalidateNamespace = jest.fn().mockResolvedValue(undefined);
   const revokeOrgScopedAccess = jest.fn().mockResolvedValue(undefined);
   const revokeAllPending = jest.fn().mockResolvedValue(undefined);
@@ -87,6 +88,8 @@ describe("OrgLifecycleService", () => {
           useValue: {
             invalidate: cacheInvalidate,
             invalidateNamespace: cacheInvalidateNamespace,
+            invalidateMany: cacheInvalidateMany,
+            invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -124,7 +127,11 @@ describe("OrgLifecycleService", () => {
     expect(db.transaction).toHaveBeenCalledTimes(4);
     expect(revokeAllPending).toHaveBeenCalledWith("org-1", db);
     expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1", "removed");
-    expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
+    // The session bust is batched: one invalidateMany carrying every member's key,
+    // rather than one invalidate per member.
+    expect(cacheInvalidateMany).toHaveBeenCalledWith(
+      expect.arrayContaining([CACHE_KEYS.userSession("user-1")]),
+    );
   });
 
   it("hides another tenant's archived organization during restore", async () => {

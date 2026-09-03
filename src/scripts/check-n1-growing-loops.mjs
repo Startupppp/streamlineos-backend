@@ -404,15 +404,15 @@ function classifyForStatement(forNode, constIdx) {
 /* ----------------------------------------------------------------- ratchets */
 
 /**
- * Growing-loop call sites in release scope. MEASURED 108 on 2026-09-03, after
- * this pass fixed 16 of them (124 -> 108 across 89 -> 79 files).
+ * Growing-loop call sites in release scope. MEASURED 106 on 2026-09-03, after
+ * this pass fixed 18 of them (124 -> 106, across 89 -> 78 files).
  *
- * THIS IS A RATCHET, NOT A CLEAN BILL. 108 real sites remain; the consolidated
+ * THIS IS A RATCHET, NOT A CLEAN BILL. 106 real sites remain; the consolidated
  * read-through of the 158-candidate superset classified 70 of them as genuine
  * N+1s with a named batched form, and those are listed in the ticket-21 report.
  * The gate fails when this goes UP. Lower it as sites are fixed.
  */
-const MAX_GROWING_SITES = 108;
+const MAX_GROWING_SITES = 106;
 
 /**
  * Loop nodes the parser actually walked.

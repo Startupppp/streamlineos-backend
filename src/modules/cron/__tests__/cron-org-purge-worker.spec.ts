@@ -24,6 +24,8 @@ const mockAudit = { log: jest.fn() };
 const mockCache = {
   invalidate: jest.fn().mockResolvedValue(undefined),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+  invalidateMany: jest.fn().mockResolvedValue(undefined),
+  invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
 };
 const mockOrgMembership = {
   revokeOrgScopedAccess: jest.fn().mockResolvedValue(undefined),

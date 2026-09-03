@@ -63,6 +63,8 @@ describe("OrgPurgeService member drain", () => {
           useValue: {
             invalidate: cacheInvalidate,
             invalidateNamespace: cacheInvalidateNamespace,
+            invalidateMany: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
           },
         },
         { provide: OrgMembershipService, useValue: { revokeOrgScopedAccess } },

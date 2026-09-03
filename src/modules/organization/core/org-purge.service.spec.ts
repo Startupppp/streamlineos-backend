@@ -36,6 +36,7 @@ function updateResult() {
 
 describe("OrgPurgeService", () => {
   const cacheInvalidate = jest.fn().mockResolvedValue(undefined);
+  const cacheInvalidateMany = jest.fn().mockResolvedValue(undefined);
   const cacheInvalidateNamespace = jest.fn().mockResolvedValue(undefined);
   const revokeOrgScopedAccess = jest.fn().mockResolvedValue(undefined);
   const auditLog = jest.fn();
@@ -85,6 +86,8 @@ describe("OrgPurgeService", () => {
           useValue: {
             invalidate: cacheInvalidate,
             invalidateNamespace: cacheInvalidateNamespace,
+            invalidateMany: cacheInvalidateMany,
+            invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -128,7 +131,11 @@ describe("OrgPurgeService", () => {
     ).resolves.toEqual({ success: true, nextOrgId: "org-2" });
 
     expect(revokeOrgScopedAccess).toHaveBeenCalledWith("org-1", "user-1", "removed");
-    expect(cacheInvalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
+    // The session bust is batched: one invalidateMany carrying every member's key,
+    // rather than one invalidate per member.
+    expect(cacheInvalidateMany).toHaveBeenCalledWith(
+      expect.arrayContaining([CACHE_KEYS.userSession("user-1")]),
+    );
   });
 
   describe("saga wiring", () => {

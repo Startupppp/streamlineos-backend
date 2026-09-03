@@ -84,16 +84,19 @@ function buildMockCache(
     .fn()
     .mockImplementation((orgId: string, key: string) => invalidate(`${orgId}:${key}`));
 
+  const invalidateMany = jest.fn().mockResolvedValue(undefined);
+
   const cache: DeepPartial<CacheService> = {
     cached,
     cachedForOrg,
     invalidate,
     invalidateForOrg,
+    invalidateMany,
   };
 
   return {
     cache: cache as unknown as CacheService,
-    mocks: { cached, cachedForOrg, invalidate, invalidateForOrg },
+    mocks: { cached, cachedForOrg, invalidate, invalidateForOrg, invalidateMany },
   };
 }
 
@@ -326,14 +329,21 @@ describe("EntitlementsService", () => {
     });
 
     it("invalidates the module, list, and session caches after the transaction", async () => {
-      const { db } = buildMockDb();
+      const { db, mocks } = buildMockDb();
       const { cache, mocks: cacheMocks } = buildMockCache();
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:module:hr");
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:modules");
-      expect(cacheMocks.invalidate).toHaveBeenCalledTimes(4);
+      // Exactly the two org-scoped keys go through the single-key path. The member
+      // session busts used to make this 4; they are now one batched call, and the
+      // count is asserted on both paths so neither can quietly grow.
+      expect(cacheMocks.invalidate).toHaveBeenCalledTimes(2);
+      expect(cacheMocks.invalidateMany).toHaveBeenCalledTimes(1);
+      expect(cacheMocks.invalidateMany).toHaveBeenCalledWith(
+        mocks.activeMemberRows.map((row) => `user:session:${row.userId}`),
+      );
     });
 
     it("busts the session cache of every active member, not just the actor", async () => {
@@ -342,9 +352,14 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "actor-not-a-member");
 
+      // ONE call carrying every member's key, not one call per member: the read
+      // that feeds this is `.limit(10000)`, so a per-member bust is up to ten
+      // thousand Redis commands from a single module toggle.
+      expect(cacheMocks.invalidateMany).toHaveBeenCalledTimes(1);
+      const keys = cacheMocks.invalidateMany.mock.calls[0]?.[0] as string[];
       for (const row of mocks.activeMemberRows)
-        expect(cacheMocks.invalidate).toHaveBeenCalledWith(`user:session:${row.userId}`);
-      expect(cacheMocks.invalidate).not.toHaveBeenCalledWith("user:session:actor-not-a-member");
+        expect(keys).toContain(`user:session:${row.userId}`);
+      expect(keys).not.toContain("user:session:actor-not-a-member");
     });
 
     describe("ownership seeding", () => {

@@ -89,7 +89,13 @@ describe("removeRoleMember — no lockout barrier after structural authority cha
             select,
           },
         },
-        { provide: CacheService, useValue: { invalidate: cacheInvalidate } },
+        {
+          provide: CacheService,
+          useValue: {
+            invalidate: cacheInvalidate,
+            invalidateMany: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
           provide: NotificationDispatchService,

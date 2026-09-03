@@ -700,8 +700,8 @@
       "note": "for(;;) keyset drain over support_tickets; one query per page"
     },
     "/surveys/survey-builder.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Was N+1-FIXED, and the note only covered duplicateQuestion/replaceChoices. reorder() is untouched: one `tx.update(surveySections)` per section (165/167) and one `tx.update(surveyQuestions)` per question (171/173). Fix is a VALUES-list UPDATE ... FROM per table."
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03: reorder() issued one UPDATE per section and one per question of the request payload. Both are now a single bulkUpdateFromValues keyed on id, with the existing org_id + survey_id predicates preserved (survey_id rides in extraWhere). Duplicate ids are collapsed to the last occurrence first, because the helper refuses a repeated key and the per-row loop it replaced was last-write-wins. Pinned by three cases in src/db/__tests__/db-call-count-contract.spec.ts, bite-proved against the pre-fix service."
     },
     "/surveys/survey-forms.service.ts": {
       "verdict": "N+1-FIXED",

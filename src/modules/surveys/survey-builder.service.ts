@@ -4,6 +4,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { surveySections, surveyQuestions, surveyQuestionChoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { bulkUpdateFromValues } from "../../common/db/bulk-update";
 import { SurveyVersionService } from "./survey-version.service";
 import type { CreateQuestionInput, CreateSectionInput, PatchQuestionInput, PatchSectionInput, ReorderInput } from "./dto/survey-builder.schemas";
 
@@ -163,18 +164,38 @@ export class SurveyBuilderService {
   async reorder(orgId: string, surveyId: number, input: ReorderInput) {
     await this.versions.assertSurveyInOrg(orgId, surveyId);
     await this.db.transaction(async (tx) => {
-      for (const section of input.sections ?? []) {
-        await tx
-          .update(surveySections)
-          .set({ sortOrder: section.sortOrder, updatedAt: new Date() })
-          .where(and(eq(surveySections.id, section.id), eq(surveySections.orgId, orgId), eq(surveySections.surveyId, surveyId)));
-      }
-      for (const question of input.questions ?? []) {
-        await tx
-          .update(surveyQuestions)
-          .set({ sectionId: question.sectionId, sortOrder: question.sortOrder, updatedAt: new Date() })
-          .where(and(eq(surveyQuestions.id, question.id), eq(surveyQuestions.orgId, orgId), eq(surveyQuestions.surveyId, surveyId)));
-      }
+      // Last occurrence wins, which is what the per-row loop did. Collapsing here
+      // is not cosmetic: bulkUpdateFromValues refuses a repeated key, because a
+      // duplicate joins the target row twice and Postgres applies one arbitrary
+      // row while silently discarding the rest.
+      const sections = [...new Map((input.sections ?? []).map((s) => [s.id, s])).values()];
+      const questions = [...new Map((input.questions ?? []).map((q) => [q.id, q])).values()];
+
+      await bulkUpdateFromValues(tx, {
+        table: surveySections,
+        orgId,
+        key: { column: "id", type: "integer" },
+        columns: [{ column: "sort_order", type: "integer" }],
+        rows: sections.map((section) => ({ key: section.id, values: [section.sortOrder] })),
+        touch: ["updated_at"],
+        extraWhere: eq(surveySections.surveyId, surveyId),
+      });
+
+      await bulkUpdateFromValues(tx, {
+        table: surveyQuestions,
+        orgId,
+        key: { column: "id", type: "integer" },
+        columns: [
+          { column: "section_id", type: "integer" },
+          { column: "sort_order", type: "integer" },
+        ],
+        rows: questions.map((question) => ({
+          key: question.id,
+          values: [question.sectionId, question.sortOrder],
+        })),
+        touch: ["updated_at"],
+        extraWhere: eq(surveyQuestions.surveyId, surveyId),
+      });
     });
     return { success: true };
   }

@@ -88,7 +88,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
   beforeEach(() => jest.clearAllMocks());
 
   it("emits one kb.content.index event per restored page that has content", async () => {
-    const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
+    const emitSpy = jest.spyOn(OutboxWriter, "emitMany").mockResolvedValue(undefined);
     const { db } = makeDb([10], [RESTORED_PAGE]);
     const svc = new KbPageTreeService(
       db as never,
@@ -99,14 +99,16 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
 
     await svc.restore(makeUser(), 10);
 
+    // One statement for the whole subtree, carrying one event per page.
     expect(emitSpy).toHaveBeenCalledTimes(1);
-    const [, event] = emitSpy.mock.calls[0] as [unknown, { eventType: string; payload: Record<string, unknown> }];
-    expect(event.eventType).toBe("kb.content.index");
-    expect(event.payload).toMatchObject({ contentType: "page", contentId: 10 });
+    const events = emitSpy.mock.calls[0]?.[1] ?? [];
+    expect(events).toHaveLength(1);
+    expect(events[0]?.eventType).toBe("kb.content.index");
+    expect(events[0]?.payload).toMatchObject({ contentType: "page", contentId: 10 });
   });
 
   it("does not emit for pages with no content text", async () => {
-    const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
+    const emitSpy = jest.spyOn(OutboxWriter, "emitMany").mockResolvedValue(undefined);
     const emptyPage = { ...RESTORED_PAGE, contentText: "" };
     const { db } = makeDb([10], [emptyPage]);
     const svc = new KbPageTreeService(
@@ -118,11 +120,14 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
 
     await svc.restore(makeUser(), 10);
 
-    expect(emitSpy).not.toHaveBeenCalled();
+    // emitMany still runs for the subtree; what must be empty is the event LIST,
+    // which is the property this case exists for.
+    const events = emitSpy.mock.calls[0]?.[1] ?? [];
+    expect(events).toEqual([]);
   });
 
   it("emits events for each page in a multi-page subtree", async () => {
-    const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
+    const emitSpy = jest.spyOn(OutboxWriter, "emitMany").mockResolvedValue(undefined);
     const child = { ...RESTORED_PAGE, id: 11, contentText: "child content" };
     const { db } = makeDb([10, 11], [RESTORED_PAGE, child]);
     const svc = new KbPageTreeService(
@@ -134,14 +139,16 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
 
     await svc.restore(makeUser(), 10);
 
-    expect(emitSpy).toHaveBeenCalledTimes(2);
-    const ids = emitSpy.mock.calls.map(([, e]) => Number(e.payload['contentId']));
+    // Still ONE statement, now carrying two events.
+    expect(emitSpy).toHaveBeenCalledTimes(1);
+    const events = emitSpy.mock.calls[0]?.[1] ?? [];
+    const ids = events.map((event) => Number(event.payload["contentId"]));
     expect(ids).toContain(10);
     expect(ids).toContain(11);
   });
 
-  it("bites: removing OutboxWriter.emit from restore leaves the spy uncalled", async () => {
-    const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
+  it("bites: removing OutboxWriter.emitMany from restore leaves the spy uncalled", async () => {
+    const emitSpy = jest.spyOn(OutboxWriter, "emitMany").mockResolvedValue(undefined);
     const { db } = makeDb([10], [RESTORED_PAGE]);
     const svc = new KbPageTreeService(
       db as never,
@@ -153,5 +160,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
     await svc.restore(makeUser(), 10);
 
     expect(emitSpy).toHaveBeenCalled();
+    const events = emitSpy.mock.calls[0]?.[1] ?? [];
+    expect(events.length).toBeGreaterThan(0);
   });
 });

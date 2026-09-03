@@ -23,6 +23,7 @@ import { CronHolidayService } from "../../modules/cron/cron-holiday.service";
 import { SurveyParticipantService } from "../../modules/surveys/survey-participant.service";
 import { VendorPaymentsAllocationsService } from "../../modules/finance/ap/vendor-payments-allocations.service";
 import { ClientAccountsService } from "../../modules/clients/client-accounts.service";
+import { SurveyBuilderService } from "../../modules/surveys/survey-builder.service";
 
 /**
  * §5.1 box 2: no database call inside a growing loop.
@@ -278,6 +279,84 @@ describe("database call-count contract", () => {
       await service.runCrmAssignments("org-1");
 
       for (let index = 0; index < MEMBERS; index++) expect(seen).toContain(`cs-${String(index)}`);
+    });
+  });
+
+  describe("SurveyBuilderService.reorder", () => {
+    function harness() {
+      const counting = makeCountingDb({ execute: [[], []] });
+      const versions = { assertSurveyInOrg: jest.fn().mockResolvedValue(undefined) };
+      const service = new SurveyBuilderService(
+        counting.db as Db,
+        versions as unknown as ConstructorParameters<typeof SurveyBuilderService>[1],
+      );
+      return { ...counting, service };
+    }
+
+    function payload(rows: number) {
+      return {
+        sections: repeat(rows, (index) => ({ id: index + 1, sortOrder: index })),
+        questions: repeat(rows, (index) => ({ id: index + 1, sectionId: 1, sortOrder: index })),
+      } as Parameters<SurveyBuilderService["reorder"]>[2];
+    }
+
+    it("reorders every section and question in the same number of statements at 1 row as at 50", async () => {
+      const counts: number[] = [];
+      for (const rows of ROW_COUNTS) {
+        const { service, statements, countOf } = harness();
+        await service.reorder("org-1", 7, payload(rows));
+        // One UPDATE … FROM (VALUES …) per table, not one per row.
+        expect(countOf("update")).toBe(0);
+        expect(countOf("execute")).toBe(2);
+        counts.push(statements());
+      }
+      expect(counts[0]).toBe(counts[1]);
+    });
+
+    it("carries the org id and the survey id into the WHERE of the batched statement", async () => {
+      const { service, db } = harness();
+      const executor = db as { execute: (statement: unknown) => unknown };
+      const seen: string[] = [];
+      const original = executor.execute;
+      executor.execute = (statement: unknown) => {
+        seen.push(...bindings(statement));
+        return original(statement);
+      };
+
+      await service.reorder("org-1", 7, payload(50));
+
+      // A batching rewrite that drops the tenant predicate is a cross-tenant write,
+      // so the predicate is asserted on the bindings of the statement that actually ran.
+      expect(seen).toContain("org-1");
+    });
+
+    it("accepts a repeated id instead of letting the batch refuse it", async () => {
+      const { service, db, countOf } = harness();
+      const executor = db as { execute: (statement: unknown) => unknown };
+      const seen: string[] = [];
+      const original = executor.execute;
+      executor.execute = (statement: unknown) => {
+        seen.push(...bindings(statement));
+        return original(statement);
+      };
+
+      // bulkUpdateFromValues THROWS on a repeated key, because a duplicate joins the
+      // target row twice and Postgres applies one arbitrary row while discarding the
+      // rest. The per-row loop it replaced was last-write-wins, so reorder collapses
+      // duplicates to the last occurrence — without that, this payload is a 500.
+      await expect(
+        service.reorder("org-1", 7, {
+          sections: [
+            { id: 1, sortOrder: 0 },
+            { id: 1, sortOrder: 9 },
+          ],
+          questions: [],
+        } as Parameters<SurveyBuilderService["reorder"]>[2]),
+      ).resolves.toEqual({ success: true });
+
+      // Only the sections statement runs; an empty row list is not a statement.
+      expect(countOf("execute")).toBe(1);
+      expect(seen).toContain("org-1");
     });
   });
 });

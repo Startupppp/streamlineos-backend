@@ -55,8 +55,8 @@ const mockRegisterAfterCommit = registerAfterCommit as jest.MockedFunction<
 >;
 const mockBustMembershipStatusCache =
   bustMembershipStatusCache as jest.MockedFunction<typeof bustMembershipStatusCache>;
-const mockOutboxWriterEmit = OutboxWriter.emit as jest.MockedFunction<
-  typeof OutboxWriter.emit
+const mockOutboxWriterEmitMany = OutboxWriter.emitMany as jest.MockedFunction<
+  typeof OutboxWriter.emitMany
 >;
 
 const ORG_ID = "org-abc";
@@ -143,6 +143,8 @@ async function buildService(opts: {
         useValue: {
           invalidate: mockCacheInvalidate,
           invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+          invalidateMany: jest.fn().mockResolvedValue(undefined),
+          invalidateNamespaceMany: jest.fn().mockResolvedValue(undefined),
         },
       },
       { provide: DRIZZLE, useValue: mockDb },
@@ -177,7 +179,7 @@ async function buildService(opts: {
 describe("OrgMembershipService.revokeOrgScopedAccess", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockOutboxWriterEmit.mockResolvedValue(undefined);
+    mockOutboxWriterEmitMany.mockResolvedValue(undefined);
   });
 
   describe("removal: revokes all expected artifacts", () => {
@@ -251,15 +253,18 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
       expect(updateFn).toHaveBeenCalledWith(userIntegrationConnections);
-      expect(mockOutboxWriterEmit).toHaveBeenCalledWith(
+      // One statement carrying one event per disabled connection, not one INSERT each.
+      expect(mockOutboxWriterEmitMany).toHaveBeenCalledWith(
         tx,
-        expect.objectContaining({
-          eventType: "integration.connection.disconnected",
-          payload: expect.objectContaining({
-            composioConnectedAccountId: conn.composioConnectedAccountId,
-            cause: "removed",
+        expect.arrayContaining([
+          expect.objectContaining({
+            eventType: "integration.connection.disconnected",
+            payload: expect.objectContaining({
+              composioConnectedAccountId: conn.composioConnectedAccountId,
+              cause: "removed",
+            }),
           }),
-        }),
+        ]),
       );
     });
 
@@ -271,7 +276,7 @@ describe("OrgMembershipService.revokeOrgScopedAccess", () => {
 
       await service.revokeOrgScopedAccess(ORG_ID, USER_ID, "removed");
 
-      expect(mockOutboxWriterEmit).toHaveBeenCalled();
+      expect(mockOutboxWriterEmitMany).toHaveBeenCalled();
     });
 
     it("schedules realtime revocation post-commit via registerAfterCommit", async () => {
