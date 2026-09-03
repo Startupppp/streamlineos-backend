@@ -62,6 +62,12 @@
       "ratchets.FOCUSED": {
         "value": 0,
         "direction": "ratchet"
+      },
+      "ratchets.EARLY_RETURN": {
+        "value": 5,
+        "direction": "ratchet",
+        "owner": "platform DB \u00b7 platform \u00b7 surveys \u00b7 timesheets",
+        "reason": "A NEW CLASS, not a raise of an existing number, and this gate correctly refused it until that was said out loud: adding it read as a net raise of 5 for vacuous-assertions.json. Measured 7 sites, 2 FIXED before baselining (soft-delete-predicates and recruitment-candidate-vault), 5 registered \u2014 2 ENVIRONMENT guards (a live db handle, NODE_ENV) and 3 DOMAIN guards (it.each cases over wholly-@Public() controllers). Sized after the fixable ones were fixed, not to the breach."
       }
     },
     "check-ai-charge-declared.mjs": {
