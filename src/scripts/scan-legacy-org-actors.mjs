@@ -354,7 +354,11 @@ function selfTest(entries, allowlistSet) {
       );
   };
 
-  expectClass("hr_reporting_lines", "created_by", "organizational");
+  // hr_reporting_lines.created_by used to be the HR representative here. It was
+  // contracted (the users.id FK is gone from the Drizzle source AND from the live
+  // catalog; the column is now bare text beside created_by_membership_id), so the
+  // assertion could only ever fail. Replaced with a live HR actor FK.
+  expectClass("hr_automation_rules", "created_by", "organizational");
   expectClass("organization_members", "user_id", "bridge");
   expectClass("hr_people", "user_id", "bridge");
   expectClass("organization_people", "user_id", "bridge");
@@ -369,9 +373,28 @@ function selfTest(entries, allowlistSet) {
   expectClass("crm_commission_plans", "created_by", "organizational");
   expectClass("inv_pick_lists", "assigned_to", "organizational");
 
-  if (entries.length < 400) {
+  // One named live example per remaining module, so a parser regression that
+  // silently drops a whole schema directory is caught by name rather than by the
+  // aggregate floor below.
+  expectClass("expenses", "approver_id", "organizational");
+  expectClass("kb_page_reviews", "reviewer_id", "organizational");
+  expectClass("app_installations", "installed_by", "organizational");
+  expectClass("support_routing_rules", "created_by", "organizational");
+  expectClass("survey_forms", "owner_user_id", "organizational");
+
+  // Tripwire for a COLLAPSED parser, not a progress meter. It was 400, set when
+  // the scan found 479; contraction has since taken the source scan to 374
+  // (measured 2026-09-03), so 400 could no longer be met and the self-test could
+  // never pass. Corroborated against pg_catalog on the at-head seeded database:
+  // 449 live users.id FKs, of which 101 are invisible to any source scan because
+  // the Drizzle source already dropped the reference while the DB constraint
+  // remains. A floor pinned just under the current count is a treadmill that has
+  // to be lowered by every migration PR; the per-module expectClass assertions
+  // above are the real coverage guard, and this only has to catch a scan that
+  // maps nothing.
+  if (entries.length < 250) {
     failures.push(
-      `Suspiciously few results: ${entries.length} — scanner may be broken (expected ≥400; build schema tables may be missed)`,
+      `Suspiciously few results: ${entries.length} — scanner may be broken (expected ≥250; build schema tables may be missed)`,
     );
   }
 
@@ -406,7 +429,7 @@ function selfTest(entries, allowlistSet) {
   expectNotActionable("journal_entries", "approved_by");
   expectNotActionable("enterprise_quotes", "approver_id");
   expectNotActionable("support_ticket_activity", "user_id");
-  expectNotActionable("hr_reporting_lines", "created_by");
+  expectNotActionable("hr_automation_rules", "created_by");
 
   const staleTest = validateAllowlist(entries, new Set(["__no_such_table__.__no_such_col__"]));
   if (staleTest.length !== 1 || staleTest[0] !== "__no_such_table__.__no_such_col__") {
