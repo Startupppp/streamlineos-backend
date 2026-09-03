@@ -79,7 +79,32 @@ const BANNED_DIRECTIVES = {
 
 const DOUBLE_CAST = /\bas\s+unknown\s+as\b/g;
 
-const SKIP_DIRS = new Set(["__tests__", "__mocks__", "node_modules", "dist", "coverage"]);
+/**
+ * Skipped ANYWHERE under `src/`: these names never denote application source.
+ */
+const SKIP_DIRS = new Set(["__tests__", "__mocks__", "node_modules"]);
+
+/**
+ * Skipped ONLY at the root of the walk (`src/` itself), because these are build
+ * output *there* and could be ordinary source anywhere else.
+ *
+ * This split is a hardening, not a bug fix: there is no `src/**\/dist` or
+ * `src/**\/coverage` in the tree today, so the depth-blind form was not hiding
+ * anything at head. It was a LATENT instance of the exact failure this release
+ * keeps finding — the frontend half of this same gate matched `build` by name
+ * at any depth and silently excluded `features/build/`, 456 files and the
+ * product's largest module, from every rule while reporting a clean scan. The
+ * backend already holds `src/modules/build`, `src/modules/public` and
+ * `src/db/schema/build`; the day someone adds `src/modules/x/dist/` the
+ * depth-blind form would drop it without a word. Pinned in both directions by
+ * self-test (ak)/(al)/(am).
+ */
+const SKIP_ROOT_DIRS = new Set(["dist", "coverage"]);
+
+export function isSkippedDir(name, depth) {
+  if (SKIP_DIRS.has(name)) return true;
+  return depth === 0 && SKIP_ROOT_DIRS.has(name);
+}
 const SKIP_FILE = /(\.spec\.ts|\.e2e-spec\.ts|\.db\.spec\.ts|\.test\.ts|spec-fixtures\.ts|\.d\.ts)$/;
 
 /**
@@ -334,7 +359,7 @@ export function countPlainAssertions(fileName, source) {
   return { asX, nonNull, asConst };
 }
 
-function* walk(dir) {
+function* walk(dir, depth = 0) {
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -342,10 +367,11 @@ function* walk(dir) {
     return;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry.name)) continue;
     const full = join(dir, entry.name);
-    if (entry.isDirectory()) yield* walk(full);
-    else if (entry.name.endsWith(".ts") && !SKIP_FILE.test(entry.name)) yield full;
+    if (entry.isDirectory()) {
+      if (isSkippedDir(entry.name, depth)) continue;
+      yield* walk(full, depth + 1);
+    } else if (entry.name.endsWith(".ts") && !SKIP_FILE.test(entry.name)) yield full;
   }
 }
 
@@ -446,7 +472,7 @@ const SELF_TEST_CHECKS = new Set();
  * measured, and it is floored, so removing a check fails the self-test instead
  * of quietly shrinking it.
  */
-const MIN_SELF_TEST_CHECKS = 40;
+const MIN_SELF_TEST_CHECKS = 43;
 
 function writeCeilingLedger(map) {
   const files = {};
@@ -578,6 +604,12 @@ function runSelfTest() {
     "(ag) `satisfies` -> a check, not an assertion, not counted");
   assert(plainOf("class K { declare x!: string; }\n").nonNull === 0,
     "(ah) a definite-assignment declaration -> a declaration flag, not an expression assertion");
+  assert(isSkippedDir("dist", 0) && isSkippedDir("coverage", 0),
+    "(ak) `src/dist` and `src/coverage` -> skipped (build output at the root of the walk)");
+  assert(!isSkippedDir("dist", 1) && !isSkippedDir("coverage", 2) && !isSkippedDir("build", 1) && !isSkippedDir("public", 1),
+    "(al) a NESTED dist/coverage/build/public -> SCANNED. This is the blind spot that cost the frontend 456 files");
+  assert(isSkippedDir("node_modules", 3) && isSkippedDir("__tests__", 4) && isSkippedDir("__mocks__", 1),
+    "(am) node_modules/__tests__/__mocks__ -> skipped at ANY depth");
   assert(CEILING_LEDGER.size > 0,
     "(ai) the ceiling ledger loads — rule 4 is unenforced if the JSON is missing, and the gate must not pass without it");
   for (const [file, entry] of CEILING_LEDGER) {
@@ -637,6 +669,9 @@ function runSelfTest() {
     "  (af) the angle-bracket cast `<T>x`             -> counted",
     "  (ag) `satisfies`                               -> not counted",
     "  (ah) a definite-assignment `x!: T`             -> not counted",
+    "  (ak) root `dist`/`coverage`                    -> skipped (output)",
+    "  (al) NESTED dist/coverage/build/public         -> scanned (the frontend's blind spot)",
+    "  (am) node_modules/__tests__ at any depth       -> skipped",
     "  (ai) the ceiling ledger loads at all",
     "  (aj) every ceiling entry has a readable split",
   ]) console.log(line);
