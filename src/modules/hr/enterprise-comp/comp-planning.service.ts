@@ -214,12 +214,23 @@ export class CompPlanningService {
     return { approved: true, finalCents };
   }
 
-  async getBudgetPools(orgId: string, cycleId: number) {
+  /**
+   * The cycle named in the path, resolved under the caller's organisation.
+   *
+   * `getBudgetPools` did this and `createBudgetPool` did not, so a cross-tenant `:cycleId` reached
+   * the INSERT and the composite tenant FK refused it with an uncaught 23503 — a **500** where the
+   * contract requires 404, measured by the live cross-tenant sweep (control 201, cross-tenant 500).
+   */
+  private async assertCycleInOrg(orgId: string, cycleId: number): Promise<void> {
     const cycle = await this.db.query.hrCompCycles.findFirst({
       columns: { id: true },
       where: and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId)),
     });
     if (!cycle) throw new NotFoundException("Compensation cycle not found");
+  }
+
+  async getBudgetPools(orgId: string, cycleId: number) {
+    await this.assertCycleInOrg(orgId, cycleId);
     return this.db
       .select()
       .from(hrCompBudgetPools)
@@ -228,6 +239,7 @@ export class CompPlanningService {
   }
 
   async createBudgetPool(orgId: string, actorId: string, input: CreateBudgetPoolInput) {
+    await this.assertCycleInOrg(orgId, input.cycleId);
     const [created] = await this.db.insert(hrCompBudgetPools).values({ orgId, ...input }).returning();
     await this.audit.log({ orgId, actorId, entityType: "hr_comp_budget_pools", entityId: String(created!.id), action: "created", after: created });
     return created;
