@@ -136,7 +136,11 @@ export class RecruitmentJobsService {
   async getOne(orgId: string, jobId: number) {
     const job = await this.db.query.jobPostings.findFirst({
       where: and(eq(jobPostings.id, jobId), eq(jobPostings.orgId, orgId)),
-      with: { applications: true },
+      with: {
+        applications: {
+          columns: { trackingToken: false },
+        },
+      },
     });
     if (!job) throw new NotFoundException("Job posting not found.");
     return job;

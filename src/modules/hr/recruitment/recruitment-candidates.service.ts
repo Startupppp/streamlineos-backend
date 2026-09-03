@@ -235,8 +235,12 @@ export class RecruitmentCandidatesService {
       this.db.query.candidates.findFirst({
         where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
         with: {
-          applications: { with: { jobPosting: true } },
+          applications: {
+            columns: { trackingToken: false },
+            with: { jobPosting: true },
+          },
           interviews: {
+            columns: { calendarSyncToken: false },
             with: {
               scorecards: true,
               interviewer: { columns: { id: true, firstName: true, lastName: true, email: true, image: true } },

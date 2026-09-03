@@ -29,6 +29,7 @@ export class RecruitmentPipelineService {
             limit: STAGE_CANDIDATE_LIMIT,
             with: {
               applications: {
+                columns: { id: true },
                 with: { jobPosting: { columns: { id: true, title: true } } },
                 limit: 1,
                 orderBy: (apps, { desc: d }) => [d(apps.appliedAt)],

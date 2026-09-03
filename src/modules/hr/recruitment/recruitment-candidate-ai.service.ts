@@ -47,7 +47,7 @@ export class RecruitmentCandidateAiService {
   ): Promise<AiScoreResult> {
     const candidate = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-      with: { resume: true },
+      with: { resume: { columns: { resumeText: true } } },
     });
     if (!candidate) throw new NotFoundException("Candidate not found.");
 
@@ -56,7 +56,8 @@ export class RecruitmentCandidateAiService {
         eq(candidateApplications.candidateId, candidateId),
         eq(candidateApplications.orgId, orgId),
       ),
-      with: { jobPosting: true },
+      columns: { id: true },
+      with: { jobPosting: { columns: { title: true, requirements: true } } },
       orderBy: (t, { desc: d }) => [d(t.appliedAt)],
     });
 
@@ -146,6 +147,7 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
 
     const candidateInterviews = await this.db.query.interviews.findMany({
       limit: 100,
+      columns: { id: true, type: true, scheduledAt: true },
       where: and(
         eq(interviews.candidateId, candidateId),
         eq(interviews.orgId, orgId),
@@ -168,7 +170,8 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
         eq(candidateApplications.candidateId, candidateId),
         eq(candidateApplications.orgId, orgId),
       ),
-      with: { jobPosting: true },
+      columns: { id: true },
+      with: { jobPosting: { columns: { title: true, requirements: true } } },
       orderBy: (t, { desc: d }) => [d(t.appliedAt)],
     });
 
