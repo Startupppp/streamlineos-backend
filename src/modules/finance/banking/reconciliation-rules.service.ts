@@ -24,6 +24,16 @@ export class ReconciliationRulesService {
 
   async listRules(u: CurrentUserContext, query: RulesQuery): Promise<CursorPage<typeof finReconciliationRules.$inferSelect>> {
     const { orgId } = u;
+    /**
+     * `fin_reconciliation_rules` carries no `bank_account_id` — the rules are org-wide — so the
+     * account in the path selects nothing and used to be dropped on the floor. The route still
+     * ADDRESSES an account, and a route that never resolves the object it addresses answers
+     * another organization's bank account id exactly as it answers its own: 200, with this org's
+     * rules. Cross-tenant that discloses nothing, but the 404 the contract requires is absent, and
+     * `createRule`/`deleteRule` on the same controller already assert the account. Assert it here
+     * too, so all three verbs on `/finance/reconciliation/:bankAccountId/*` agree.
+     */
+    if (query.bankAccountId !== undefined) await this.assertAccountOwned(orgId, query.bankAccountId);
     const pos = decodeCursor(query.cursor);
 
     const conditions = [eq(finReconciliationRules.orgId, orgId)];
