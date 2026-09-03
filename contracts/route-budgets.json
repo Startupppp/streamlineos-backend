@@ -1,7 +1,7 @@
 {
   "version": "2",
   "schemaVersion": "2.0",
-  "description": "Route and worker-batch performance budgets, keyed on METHOD /path (exact OpenAPI path template). Each entry declares the maximum database-call count, downstream-call count, response bytes, application latency and memory for one operation. Measured fields are populated by src/scripts/measure-route-budgets.mjs from a real measurement and are null until then. check-route-budgets.mjs validates structure, enforces every populated measurement against its ceiling, and reports coverage as a fraction of the whole route surface — never as a bare pass.",
+  "description": "Route and worker-batch performance budgets, keyed on METHOD /path (exact OpenAPI path template). Each entry declares the maximum database-call count, downstream-call count, response bytes, application latency and memory for one operation. Measured fields are populated by src/scripts/measure-route-budgets.mjs from a real measurement and are null until then. check-route-budgets.mjs validates structure, enforces every populated measurement against its ceiling, and reports coverage as a fraction of the whole route surface \u2014 never as a bare pass.",
   "surface": {
     "source": "openapi.json",
     "totalOperations": 3613,
@@ -32,7 +32,7 @@
         "measuredMemoryMb",
         "measuredLatencyP95Ms"
       ],
-      "caveat": "Buffer blocks are environment-independent and are the number that ratchets. The millisecond percentiles are taken on loopback Postgres, so they exclude pool wait and network round trip and are a LOWER BOUND on production latency — they are never written into measuredLatencyP95Ms, which is the end-to-end application ceiling and stays unmeasured until an HTTP-level harness fills it."
+      "caveat": "Buffer blocks are environment-independent and are the number that ratchets. The millisecond percentiles are taken on loopback Postgres, so they exclude pool wait and network round trip and are a LOWER BOUND on production latency \u2014 they are never written into measuredLatencyP95Ms, which is the end-to-end application ceiling and stays unmeasured until an HTTP-level harness fills it."
     },
     "db-call-count": {
       "what": "QueryTelemetryTracker statement count around a real service/route invocation (src/db/query-telemetry.ts).",
@@ -53,7 +53,7 @@
       "maxReadPathP95Ms": 20,
       "dbCallBasis": "declared-estimate",
       "readCostBudgetId": "module-access-roster",
-      "note": "Permission resolution — called on every authenticated page load. Redis-cached but the DB path must be cheap.",
+      "note": "Permission resolution \u2014 called on every authenticated page load. Redis-cached but the DB path must be cheap.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -80,7 +80,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /notifications": {
@@ -95,7 +95,7 @@
       "maxBufferBlocks": 5000,
       "dbCallBasis": "declared-estimate",
       "readCostBudgetId": "notifications-list",
-      "note": "Notification list — called frequently from the shell; must be very fast.",
+      "note": "Notification list \u2014 called frequently from the shell; must be very fast.",
       "measuredDbCalls": 3,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -134,7 +134,7 @@
         "method": "db-call-count",
         "instrument": "QueryTelemetryTracker over instrumentPostgresClient (src/db/query-telemetry.ts)",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
-        "cache": "miss (CacheService with null Redis) — every maxDbCalls is the cache-miss ceiling"
+        "cache": "miss (CacheService with null Redis) \u2014 every maxDbCalls is the cache-miss ceiling"
       }
     },
     "GET /notifications/unread-count": {
@@ -187,7 +187,7 @@
         "method": "db-call-count",
         "instrument": "QueryTelemetryTracker over instrumentPostgresClient (src/db/query-telemetry.ts)",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
-        "cache": "miss (CacheService with null Redis) — every maxDbCalls is the cache-miss ceiling"
+        "cache": "miss (CacheService with null Redis) \u2014 every maxDbCalls is the cache-miss ceiling"
       }
     },
     "GET /chat/unread": {
@@ -200,7 +200,7 @@
       "maxMemoryMb": 32,
       "maxReadPathP95Ms": 20,
       "dbCallBasis": "counted-call-path",
-      "note": "Chat global unread count — getUnreadTotal: resolveMembershipId(1) + count-query(1) = 2; ceiling 3 covers the Redis read.",
+      "note": "Chat global unread count \u2014 getUnreadTotal: resolveMembershipId(1) + count-query(1) = 2; ceiling 3 covers the Redis read.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -223,7 +223,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "dashboard-personal-calendar-events",
-      "note": "Home/personal dashboard — cache-miss ceiling: selfMember(1) + getMyIssues(2) + timesheets(1) + leaveBalance(4) + upcomingEvents(1) + unreadCount(3) = 12. Read-cost link moved from dashboard-personal-my-tasks (4 blocks) to dashboard-personal-calendar-events, the most expensive of the six sources this route fans out to; my-tasks stays enforced directly by run-read-cost-budgets.mjs.",
+      "note": "Home/personal dashboard \u2014 cache-miss ceiling: selfMember(1) + getMyIssues(2) + timesheets(1) + leaveBalance(4) + upcomingEvents(1) + unreadCount(3) = 12. Read-cost link moved from dashboard-personal-my-tasks (4 blocks) to dashboard-personal-calendar-events, the most expensive of the six sources this route fans out to; my-tasks stays enforced directly by run-read-cost-budgets.mjs.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -250,7 +250,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /calendar/events": {
@@ -264,7 +264,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "calendar-events-visible-batch",
-      "note": "Calendar range aggregate — up to 5 parallel sources (native, build, HR leaves, HR holidays, tasks); each source 1-3 queries + moduleAvailabilityFor per source + getDisabledKeys(1). The read-cost link was dashboard-personal-calendar-events until 2026-09-03, which is DashboardPersonalService.upcomingEvents and not this route at all; the native source runs CalendarEventSourceLoader.queryVisibleEvents, now measured by calendar-events-visible-batch.",
+      "note": "Calendar range aggregate \u2014 up to 5 parallel sources (native, build, HR leaves, HR holidays, tasks); each source 1-3 queries + moduleAvailabilityFor per source + getDisabledKeys(1). The read-cost link was dashboard-personal-calendar-events until 2026-09-03, which is DashboardPersonalService.upcomingEvents and not this route at all; the native source runs CalendarEventSourceLoader.queryVisibleEvents, now measured by calendar-events-visible-batch.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -310,7 +310,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "default-ceiling",
       "readCostBudgetId": "org-members-list",
-      "note": "Organization member roster — read by member pickers across every module.",
+      "note": "Organization member roster \u2014 read by member pickers across every module.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -337,7 +337,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /directory/people": {
@@ -351,7 +351,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "default-ceiling",
       "readCostBudgetId": "org-people-list",
-      "note": "People directory — platform core under root CLAUDE.md §8, reachable by every active member.",
+      "note": "People directory \u2014 platform core under root CLAUDE.md \u00a78, reachable by every active member.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -378,7 +378,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /build/{projectId}/tickets": {
@@ -393,7 +393,7 @@
       "maxBufferBlocks": 8000,
       "dbCallBasis": "declared-estimate",
       "readCostBudgetId": "ticket-list-project",
-      "note": "Primary ticket list — high traffic, must be cheap.",
+      "note": "Primary ticket list \u2014 high traffic, must be cheap.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -438,7 +438,7 @@
       "maxMemoryMb": 32,
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "declared-estimate",
-      "note": "Sprint list — called on board load.",
+      "note": "Sprint list \u2014 called on board load.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -613,15 +613,15 @@
     "GET /dashboard/my-issues": {
       "kind": "route",
       "class": "aggregate",
-      "maxDbCalls": 10,
+      "maxDbCalls": 2,
       "maxDownstreamCalls": 0,
       "maxResponseBytes": 65536,
       "maxLatencyP95Ms": 800,
       "maxMemoryMb": 64,
       "maxReadPathP95Ms": 50,
-      "dbCallBasis": "default-ceiling",
+      "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "dashboard-my-issues",
-      "note": "Assigned-issue widget.",
+      "note": "My issues \u2014 cache-miss ceiling, counted from DashboardProjectService.getMyIssues: organizationMembers.findFirst(1) + tickets.findMany(1) = 2, the same 2 GET /dashboard/personal already charges for this source. Read from the call path, not from a live statement count.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -659,15 +659,15 @@
     "GET /dashboard/announcements": {
       "kind": "route",
       "class": "aggregate",
-      "maxDbCalls": 10,
+      "maxDbCalls": 1,
       "maxDownstreamCalls": 0,
       "maxResponseBytes": 65536,
       "maxLatencyP95Ms": 800,
       "maxMemoryMb": 64,
       "maxReadPathP95Ms": 50,
-      "dbCallBasis": "default-ceiling",
+      "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "dashboard-announcements",
-      "note": "Announcement widget.",
+      "note": "Active announcements \u2014 cache-miss ceiling, counted from DashboardAnnouncementsService.getActiveAnnouncements: one statement inside the cache wrapper = 1. The settings:manage probe is an access read, not a db call. Read from the call path, not from a live statement count.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -694,21 +694,21 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"skip\" — not a measurement"
+        "reason": "read-cost budget outcome \"skip\" \u2014 not a measurement"
       }
     },
     "GET /dashboard/stats": {
       "kind": "route",
       "class": "aggregate",
-      "maxDbCalls": 10,
+      "maxDbCalls": 4,
       "maxDownstreamCalls": 0,
       "maxResponseBytes": 65536,
       "maxLatencyP95Ms": 800,
       "maxMemoryMb": 64,
       "maxReadPathP95Ms": 50,
-      "dbCallBasis": "default-ceiling",
+      "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "dashboard-stats-attendance-count",
-      "note": "Headline stat tiles.",
+      "note": "Org stats \u2014 cache-miss ceiling, counted from DashboardStatsService.getDashboardStats: organizations.findFirst(1) + employees count(1) + active projects count(1) + present-today count(1) = 4, each behind its own cachedForOrg. Read from the call path, not from a live statement count.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -746,15 +746,15 @@
     "GET /dashboard/leaves-today": {
       "kind": "route",
       "class": "aggregate",
-      "maxDbCalls": 10,
+      "maxDbCalls": 2,
       "maxDownstreamCalls": 0,
       "maxResponseBytes": 65536,
       "maxLatencyP95Ms": 800,
       "maxMemoryMb": 64,
       "maxReadPathP95Ms": 50,
-      "dbCallBasis": "default-ceiling",
+      "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "dashboard-leaves-today",
-      "note": "Who is on leave today.",
+      "note": "Leaves today \u2014 cache-miss ceiling, counted from DashboardLeaveService.getLeavesToday: Promise.all([rows, totalRows]) = 2. Read from the call path, not from a live statement count.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -781,21 +781,21 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /dashboard/team-attendance": {
       "kind": "route",
       "class": "aggregate",
-      "maxDbCalls": 10,
+      "maxDbCalls": 2,
       "maxDownstreamCalls": 0,
       "maxResponseBytes": 65536,
       "maxLatencyP95Ms": 800,
       "maxMemoryMb": 64,
       "maxReadPathP95Ms": 50,
-      "dbCallBasis": "default-ceiling",
+      "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "dashboard-team-attendance",
-      "note": "Team attendance widget.",
+      "note": "Team attendance \u2014 cache-miss ceiling, counted from DashboardAvailabilityService.getTeamAttendance: Promise.all of two statements inside cachedForOrg = 2. Read from the call path, not from a live statement count.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -833,15 +833,15 @@
     "GET /dashboard/active-sprint": {
       "kind": "route",
       "class": "aggregate",
-      "maxDbCalls": 10,
+      "maxDbCalls": 3,
       "maxDownstreamCalls": 0,
       "maxResponseBytes": 65536,
       "maxLatencyP95Ms": 800,
       "maxMemoryMb": 64,
       "maxReadPathP95Ms": 50,
-      "dbCallBasis": "default-ceiling",
+      "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "dashboard-active-sprint",
-      "note": "Active sprint widget.",
+      "note": "Active-sprint summary \u2014 cache-miss ceiling, counted from DashboardProjectService.getActiveSprintSummary: resolveProjectIds(1, one branch each) + sprints.findFirst(1) + sprint stats aggregate(1) = 3. Access/module resolution is not counted, matching GET /dashboard/personal. Read from the call path, not from a live statement count.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -879,15 +879,15 @@
     "GET /dashboard/recent-projects": {
       "kind": "route",
       "class": "aggregate",
-      "maxDbCalls": 10,
+      "maxDbCalls": 3,
       "maxDownstreamCalls": 0,
       "maxResponseBytes": 65536,
       "maxLatencyP95Ms": 800,
       "maxMemoryMb": 64,
       "maxReadPathP95Ms": 50,
-      "dbCallBasis": "default-ceiling",
+      "dbCallBasis": "counted-call-path",
       "readCostBudgetId": "dashboard-recent-projects",
-      "note": "Recent projects widget.",
+      "note": "Recent projects \u2014 cache-miss ceiling, counted from DashboardProjectService.getRecentProjects, worst branch: managerMember(1) + memberOf(1) + projects.findMany(1) = 3. The scope=all branch is 1. Read from the call path, not from a live statement count.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -960,7 +960,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /chat/channels/{channelId}/messages": {
@@ -974,7 +974,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "default-ceiling",
       "readCostBudgetId": "chat-messages-page",
-      "note": "Message page — the hottest read in Chat.",
+      "note": "Message page \u2014 the hottest read in Chat.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -1001,7 +1001,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /chat/channels/{channelId}/members": {
@@ -1042,7 +1042,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /chat/saved": {
@@ -1124,7 +1124,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "default-ceiling",
       "readCostBudgetId": "kb-spaces-list",
-      "note": "Space list — platform core reading surface.",
+      "note": "Space list \u2014 platform core reading surface.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -1151,7 +1151,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /kb/spaces/{spaceId}": {
@@ -1257,7 +1257,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "default-ceiling",
       "readCostBudgetId": "kb-page-id-probe-sdf",
-      "note": "Page search — served by the SECURITY DEFINER id probe (backend CLAUDE.md §3).",
+      "note": "Page search \u2014 served by the SECURITY DEFINER id probe (backend CLAUDE.md \u00a73).",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -1284,7 +1284,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /hr/employees": {
@@ -1299,7 +1299,7 @@
       "maxBufferBlocks": 8000,
       "dbCallBasis": "declared-estimate",
       "readCostBudgetId": "employee-record-list-canonical",
-      "note": "HR employee list — org-scoped, paginated.",
+      "note": "HR employee list \u2014 org-scoped, paginated.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -1326,7 +1326,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /hr/people": {
@@ -1367,7 +1367,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /hr/leaves": {
@@ -1408,7 +1408,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /hr/leaves/my": {
@@ -1422,7 +1422,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "default-ceiling",
       "readCostBudgetId": "leave-requests-mine",
-      "note": "Own leave requests — platform core self-service.",
+      "note": "Own leave requests \u2014 platform core self-service.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -1449,7 +1449,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /me/attendance/history": {
@@ -1463,7 +1463,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "default-ceiling",
       "readCostBudgetId": "attendance-mine",
-      "note": "Own attendance history — platform core self-service.",
+      "note": "Own attendance history \u2014 platform core self-service.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -1536,7 +1536,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /timesheets/entries": {
@@ -1577,7 +1577,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /timesheets/approvals": {
@@ -1618,7 +1618,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "POST /timesheets/entries": {
@@ -1654,7 +1654,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "declared-estimate",
       "readCostBudgetId": "contacts-list",
-      "note": "Contact list — sales primary list view.",
+      "note": "Contact list \u2014 sales primary list view.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -1819,7 +1819,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "POST /leads": {
@@ -1904,7 +1904,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /accounting/purchase-bills": {
@@ -1945,7 +1945,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /accounting/journal": {
@@ -1986,7 +1986,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /accounting/reports/aged-receivables": {
@@ -2027,7 +2027,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /accounting/taxes/payments": {
@@ -2182,7 +2182,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /payroll/runs/{runId}/employees": {
@@ -2223,7 +2223,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"skip\" — not a measurement"
+        "reason": "read-cost budget outcome \"skip\" \u2014 not a measurement"
       }
     },
     "GET /inventory/products": {
@@ -2448,7 +2448,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /support": {
@@ -2489,7 +2489,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "POST /support": {
@@ -2525,7 +2525,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "default-ceiling",
       "readCostBudgetId": "search-tickets-sdf",
-      "note": "Global search — fans out over the SECURITY DEFINER id probes; the linked budget measures the ticket probe only.",
+      "note": "Global search \u2014 fans out over the SECURITY DEFINER id probes; the linked budget measures the ticket probe only.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2570,7 +2570,7 @@
       "maxMemoryMb": 32,
       "maxReadPathP95Ms": 20,
       "dbCallBasis": "declared-estimate",
-      "note": "Mail account list — called on every /mail page load; DB-only, no provider calls.",
+      "note": "Mail account list \u2014 called on every /mail page load; DB-only, no provider calls.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2593,7 +2593,7 @@
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "declared-estimate",
       "readCostBudgetId": "mail-inbox-cached",
-      "note": "Mail message list — calls up to 2 providers (Gmail + Outlook) in parallel; provider latency dominates; a first-page cache hit is <200 ms.",
+      "note": "Mail message list \u2014 calls up to 2 providers (Gmail + Outlook) in parallel; provider latency dominates; a first-page cache hit is <200 ms.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2620,7 +2620,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
+        "reason": "read-cost budget outcome \"unmeasured\" \u2014 not a measurement"
       }
     },
     "GET /mail/messages/{messageId}": {
@@ -2633,7 +2633,7 @@
       "maxMemoryMb": 64,
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "declared-estimate",
-      "note": "Single message detail including HTML body — provider call required; 1 MB ceiling covers rich HTML email with inline base64.",
+      "note": "Single message detail including HTML body \u2014 provider call required; 1 MB ceiling covers rich HTML email with inline base64.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2655,7 +2655,7 @@
       "maxMemoryMb": 128,
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "declared-estimate",
-      "note": "Thread hydration — returns every message in the thread; Gmail threads can be large; 2 MB ceiling.",
+      "note": "Thread hydration \u2014 returns every message in the thread; Gmail threads can be large; 2 MB ceiling.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2677,7 +2677,7 @@
       "maxMemoryMb": 32,
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "declared-estimate",
-      "note": "Send mail — single provider call; the latency ceiling is generous to cover the provider delivery queue.",
+      "note": "Send mail \u2014 single provider call; the latency ceiling is generous to cover the provider delivery queue.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2699,7 +2699,7 @@
       "maxMemoryMb": 32,
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "declared-estimate",
-      "note": "Reply to thread — single provider call; same ceiling as send.",
+      "note": "Reply to thread \u2014 single provider call; same ceiling as send.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2721,7 +2721,7 @@
       "maxMemoryMb": 32,
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "declared-estimate",
-      "note": "Label/archive/trash/star action — single provider call + cache invalidation + deferred metadata write.",
+      "note": "Label/archive/trash/star action \u2014 single provider call + cache invalidation + deferred metadata write.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2743,7 +2743,7 @@
       "maxMemoryMb": 32,
       "maxReadPathP95Ms": 50,
       "dbCallBasis": "declared-estimate",
-      "note": "Attachment download URL — returns a signed temporary URL, not the binary; small response.",
+      "note": "Attachment download URL \u2014 returns a signed temporary URL, not the binary; small response.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2767,7 +2767,7 @@
       "maxBatchSize": 500,
       "maxDurationMs": 30000,
       "dbCallBasis": "default-ceiling",
-      "note": "Notification outbox relay — the durable fanout leg.",
+      "note": "Notification outbox relay \u2014 the durable fanout leg.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2845,7 +2845,7 @@
       "maxBatchSize": 500,
       "maxDurationMs": 30000,
       "dbCallBasis": "default-ceiling",
-      "note": "Generic outbox event relay (backend CLAUDE.md §4 mechanism 2).",
+      "note": "Generic outbox event relay (backend CLAUDE.md \u00a74 mechanism 2).",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -2923,7 +2923,7 @@
       "maxBatchSize": 12,
       "maxDurationMs": 60000,
       "dbCallBasis": "default-ceiling",
-      "note": "Monthly partition DETACH — one partition per tick.",
+      "note": "Monthly partition DETACH \u2014 one partition per tick.",
       "measuredDbCalls": null,
       "measuredDownstreamCalls": null,
       "measuredResponseBytes": null,
@@ -3071,7 +3071,7 @@
   "measurement": {
     "method": "read-path-explain",
     "commit": "06b9d72579c3b58e22e5f97d0cc778ee7657c2d7",
-    "commitNote": "HEAD at the moment the numbers were taken. The commit that RECORDS them is its child, since writing the manifest is itself a change — re-run this script after any commit that alters a measured route so the recorded commit stays the one the numbers describe.",
+    "commitNote": "HEAD at the moment the numbers were taken. The commit that RECORDS them is its child, since writing the manifest is itself a change \u2014 re-run this script after any commit that alters a measured route so the recorded commit stays the one the numbers describe.",
     "takenAt": "2026-09-03T01:22:58.502Z",
     "database": "scratch_perf_seed",
     "role": "streamline_app (rolbypassrls = false, tenant GUC set)",
