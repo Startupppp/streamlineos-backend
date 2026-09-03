@@ -5,12 +5,61 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../../common/audit/audit.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { KbAccessService } from "../core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
+import type { AiTextStream } from "../../ai/core/gateway/ai-gateway-stream.helper";
 import { throwOnAiFailure } from "../../ai/core/services/gateway-result.util";
+import type { KbDocAiAction } from "../retrieval/dto/kb-ai.schemas";
 
 const MAX_ARTICLE_TEXT = 4000;
+
+interface KbArticleAiActionSpec {
+  maxTokens: number;
+  system: string;
+  user(title: string, content: string, question: string | undefined): string;
+}
+
+function body(title: string, content: string): string {
+  return `Article title: "${title}"\n\nContent:\n${content || "(no content yet)"}`;
+}
+
+/**
+ * One row per action, so the buffered and the streamed representation of an
+ * action are the same prompt, the same ceiling and the same feature key by
+ * construction rather than by two copies staying in step. The prompts are
+ * unchanged from the four methods this table replaced, and they are NOT the
+ * wiki page prompts — the two surfaces word theirs differently and a shared
+ * table would have silently rewritten eight of them.
+ */
+const ARTICLE_AI_ACTIONS: Readonly<Record<KbDocAiAction, KbArticleAiActionSpec>> = {
+  summarize: {
+    maxTokens: 512,
+    system:
+      "You are a knowledge base assistant. Summarize the provided article concisely in 3-5 bullet points covering the key points. Be factual and direct.",
+    user: (title, content) => body(title, content),
+  },
+  ask: {
+    maxTokens: 512,
+    system:
+      "You are a knowledge base assistant. Answer the user's question using ONLY the content of the article provided. If the article does not contain the answer, say so clearly. Never fabricate information.",
+    user: (title, content, question) => `${body(title, content)}\n\nQuestion: ${question ?? ""}`,
+  },
+  improve: {
+    maxTokens: 1024,
+    system:
+      "You are a technical writer. Rewrite the provided article content for clarity, conciseness, and professional quality. Fix grammar and structure. Output ONLY the improved plain text. Preserve all factual information.",
+    user: (title, content) =>
+      `Article title: "${title}"\n\nContent to improve:\n${content || "(no content yet)"}`,
+  },
+  "suggest-related": {
+    maxTokens: 384,
+    system:
+      "You are a knowledge base curator. Based on the article content, suggest 4-6 related topics or articles that would complement it. Format as a simple bullet list of topic titles. Be specific and actionable.",
+    user: (title, content) => body(title, content),
+  },
+};
 
 @Injectable()
 export class KbArticleAiService {
@@ -28,90 +77,95 @@ export class KbArticleAiService {
     });
     if (!row) throw new NotFoundException("Article not found");
     await this.access.assertCanViewArticle(user, row);
-    return row;
+    return { title: row.title, content: (row.contentText ?? "").slice(0, MAX_ARTICLE_TEXT) };
   }
 
-  async summarize(user: CurrentUserContext, articleId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const article = await this.assertArticle(user, articleId);
-    const content = (article.contentText ?? "").slice(0, MAX_ARTICLE_TEXT);
+  private prompt(action: KbDocAiAction, doc: { title: string; content: string }, question?: string) {
+    const spec = ARTICLE_AI_ACTIONS[action];
+    return { spec, prompt: { system: spec.system, user: spec.user(doc.title, doc.content, question) } };
+  }
+
+  private auditAction(user: CurrentUserContext, articleId: number, action: KbDocAiAction): void {
+    this.audit.log({
+      action: `ai.kb.article-${action}`,
+      userId: user.userId,
+      orgId: user.orgId,
+      resourceType: "kb_article",
+      resourceId: String(articleId),
+    });
+  }
+
+  private async run(
+    user: CurrentUserContext,
+    articleId: number,
+    action: KbDocAiAction,
+    question?: string,
+  ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
+    const doc = await this.assertArticle(user, articleId);
+    const { spec, prompt } = this.prompt(action, doc, question);
 
     const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
-      feature: "kb.article-summarize",
+      feature: `kb.article-${action}`,
       tier: "fast",
-      maxTokens: 512,
+      maxTokens: spec.maxTokens,
       charge: true,
-      prompt: {
-        system: "You are a knowledge base assistant. Summarize the provided article concisely in 3-5 bullet points covering the key points. Be factual and direct.",
-        user: `Article title: "${article.title}"\n\nContent:\n${content || "(no content yet)"}`,
-      },
+      prompt,
     });
 
     if (!result.ok) return throwOnAiFailure(result);
-    this.audit.log({ action: "ai.kb.article-summarize", userId: user.userId, orgId: user.orgId, resourceType: "kb_article", resourceId: String(articleId) });
+    this.auditAction(user, articleId, action);
     return { text: result.data, aiUsage: result.aiUsage };
   }
 
-  async ask(user: CurrentUserContext, articleId: number, question: string): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const article = await this.assertArticle(user, articleId);
-    const content = (article.contentText ?? "").slice(0, MAX_ARTICLE_TEXT);
+  /**
+   * The streamed representation of the same four actions, and the one the help
+   * centre panel opens. Same gateway, same feature key as the buffered sibling,
+   * so the two cannot start metering differently. The visibility check opens its
+   * own tenant transaction: a streaming route must carry `@NoTenantTransaction()`
+   * or the request-scoped transaction commits the instant the handler hands the
+   * stream off.
+   */
+  async stream(
+    user: CurrentUserContext,
+    articleId: number,
+    action: KbDocAiAction,
+    question?: string,
+    signal?: AbortSignal,
+  ): Promise<AiTextStream> {
+    const doc = await runInTenantTransaction(
+      this.db,
+      () => this.assertArticle(user, articleId),
+      { orgId: user.orgId },
+    );
+    const { spec, prompt } = this.prompt(action, doc, question);
 
-    const result = await this.gateway.invokeTextWithUsage({
+    const stream = await this.gateway.streamTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
-      feature: "kb.article-ask",
-      tier: "fast",
-      maxTokens: 512,
+      feature: `kb.article-${action}`,
+      maxTokens: spec.maxTokens,
       charge: true,
-      prompt: {
-        system: "You are a knowledge base assistant. Answer the user's question using ONLY the content of the article provided. If the article does not contain the answer, say so clearly. Never fabricate information.",
-        user: `Article title: "${article.title}"\n\nContent:\n${content || "(no content yet)"}\n\nQuestion: ${question}`,
-      },
+      prompt,
+      ...(signal !== undefined ? { signal } : {}),
     });
 
-    if (!result.ok) return throwOnAiFailure(result);
-    this.audit.log({ action: "ai.kb.article-ask", userId: user.userId, orgId: user.orgId, resourceType: "kb_article", resourceId: String(articleId) });
-    return { text: result.data, aiUsage: result.aiUsage };
+    this.auditAction(user, articleId, action);
+    return stream;
   }
 
-  async improve(user: CurrentUserContext, articleId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const article = await this.assertArticle(user, articleId);
-    const content = (article.contentText ?? "").slice(0, MAX_ARTICLE_TEXT);
-
-    const result = await this.gateway.invokeTextWithUsage({
-      actor: { orgId: user.orgId, userId: user.userId },
-      feature: "kb.article-improve",
-      tier: "fast",
-      maxTokens: 1024,
-      charge: true,
-      prompt: {
-        system: "You are a technical writer. Rewrite the provided article content for clarity, conciseness, and professional quality. Fix grammar and structure. Output ONLY the improved plain text. Preserve all factual information.",
-        user: `Article title: "${article.title}"\n\nContent to improve:\n${content || "(no content yet)"}`,
-      },
-    });
-
-    if (!result.ok) return throwOnAiFailure(result);
-    this.audit.log({ action: "ai.kb.article-improve", userId: user.userId, orgId: user.orgId, resourceType: "kb_article", resourceId: String(articleId) });
-    return { text: result.data, aiUsage: result.aiUsage };
+  summarize(user: CurrentUserContext, articleId: number) {
+    return this.run(user, articleId, "summarize");
   }
 
-  async suggestRelated(user: CurrentUserContext, articleId: number): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const article = await this.assertArticle(user, articleId);
-    const content = (article.contentText ?? "").slice(0, MAX_ARTICLE_TEXT);
+  ask(user: CurrentUserContext, articleId: number, question: string) {
+    return this.run(user, articleId, "ask", question);
+  }
 
-    const result = await this.gateway.invokeTextWithUsage({
-      actor: { orgId: user.orgId, userId: user.userId },
-      feature: "kb.article-suggest-related",
-      tier: "fast",
-      maxTokens: 384,
-      charge: true,
-      prompt: {
-        system: "You are a knowledge base curator. Based on the article content, suggest 4-6 related topics or articles that would complement it. Format as a simple bullet list of topic titles. Be specific and actionable.",
-        user: `Article title: "${article.title}"\n\nContent:\n${content || "(no content yet)"}`,
-      },
-    });
+  improve(user: CurrentUserContext, articleId: number) {
+    return this.run(user, articleId, "improve");
+  }
 
-    if (!result.ok) return throwOnAiFailure(result);
-    this.audit.log({ action: "ai.kb.article-suggest-related", userId: user.userId, orgId: user.orgId, resourceType: "kb_article", resourceId: String(articleId) });
-    return { text: result.data, aiUsage: result.aiUsage };
+  suggestRelated(user: CurrentUserContext, articleId: number) {
+    return this.run(user, articleId, "suggest-related");
   }
 }

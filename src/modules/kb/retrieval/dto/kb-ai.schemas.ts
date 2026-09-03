@@ -20,6 +20,14 @@ export const kbAiAskBodySchema = z.object({
   question: z.string().trim().min(3).max(500),
 }).strict();
 
+/**
+ * The four AI actions a KB document surface offers. Shared by the wiki page and
+ * help-centre article controllers so the buffered route, its streaming sibling
+ * and the frontend cannot drift onto different action names.
+ */
+export const kbDocAiActionSchema = z.enum(["summarize", "ask", "improve", "suggest-related"]);
+export type KbDocAiAction = z.infer<typeof kbDocAiActionSchema>;
+
 export const chatHistoryQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
   limit: pageSizeField(30, 100),

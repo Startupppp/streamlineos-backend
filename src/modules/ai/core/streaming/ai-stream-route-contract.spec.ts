@@ -1,11 +1,21 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { ROUTE_ARGS_METADATA } from "@nestjs/common/constants";
 import { RouteParamtypes } from "@nestjs/common/enums/route-paramtypes.enum";
 import { NO_TENANT_TRANSACTION } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { KbRagController } from "../controllers/kb-rag.controller";
 
 const AI_MODULE_ROOT = join(__dirname, "..", "..");
+
+/**
+ * The contract used to scan only `modules/ai`. Every streaming route lived
+ * there, so the scan looked complete — but nothing stopped the next one being
+ * added in the module that owns its data, and the gate would not have seen it.
+ * The KB document surfaces are the first that are, so the scan is the whole
+ * modules tree now and the AI-module-only assertions above it stay as the
+ * narrower checks they always were.
+ */
+const MODULES_ROOT = join(__dirname, "..", "..", "..");
 
 function listControllerFiles(dir: string): string[] {
   const out: string[] = [];
@@ -66,7 +76,7 @@ describe("streaming routes must not run inside the request-scoped tenant transac
     const offenders: string[] = [];
     let streamRoutes = 0;
 
-    for (const file of listControllerFiles(AI_MODULE_ROOT)) {
+    for (const file of listControllerFiles(MODULES_ROOT)) {
       const source = readFileSync(file, "utf8");
       const routes = source.match(/@(?:Post|Get)\("[^"]*stream[^"]*"\)/g) ?? [];
       if (routes.length === 0) continue;
@@ -77,7 +87,35 @@ describe("streaming routes must not run inside the request-scoped tenant transac
     }
 
     expect(offenders).toEqual([]);
-    expect(streamRoutes).toBeGreaterThanOrEqual(11);
+    expect(streamRoutes).toBeGreaterThanOrEqual(19);
+  });
+
+  /**
+   * A streaming handler that stays inside the request-scoped tenant transaction
+   * commits it the instant it hands the stream off, while the provider is still
+   * producing. The AI module gets this from a class-level opt-out; a streaming
+   * route added in its own module must declare it per method, and nothing but
+   * this assertion would notice that it had not.
+   */
+  it("every streaming route in the repo opts out of the tenant transaction", () => {
+    const offenders: string[] = [];
+
+    for (const file of listControllerFiles(MODULES_ROOT)) {
+      const source = readFileSync(file, "utf8");
+      if (!/@(?:Post|Get)\("[^"]*stream[^"]*"\)/.test(source)) continue;
+      if (!/@NoTenantTransaction\(\)/.test(source)) offenders.push(file);
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("the repo-wide scan reaches streaming routes outside modules/ai", () => {
+    const outside = listControllerFiles(MODULES_ROOT)
+      .filter((f) => !f.includes(`${sep}ai${sep}`))
+      .filter((f) => /@(?:Post|Get)\("[^"]*stream[^"]*"\)/.test(readFileSync(f, "utf8")));
+
+    expect(outside.some((f) => f.endsWith("kb-page-ai.controller.ts"))).toBe(true);
+    expect(outside.some((f) => f.endsWith("kb-article-ai.controller.ts"))).toBe(true);
   });
 
   it("no AI controller pipes the provider stream itself, bypassing the awaited pipe", () => {
