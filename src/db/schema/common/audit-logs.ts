@@ -38,6 +38,13 @@ export const auditLogs = pgTable(
       "chk_audit_logs_tenant_or_platform",
       sql`(${table.orgId} IS NULL) = ${table.isPlatformEvent}`,
     ),
+    // fk_audit_logs_org_actor_membership below is MATCH SIMPLE, so it does not
+    // fire at all when org_id is NULL. Without this, a platform-event row could
+    // name any organisation's membership and the composite FK would pass.
+    check(
+      "chk_audit_logs_membership_requires_org",
+      sql`${table.actorMembershipId} IS NULL OR ${table.orgId} IS NOT NULL`,
+    ),
     index("idx_audit_logs_user_id").on(table.userId),
     index("idx_audit_logs_org_actor_membership").on(table.orgId, table.actorMembershipId),
     foreignKey({
