@@ -94,19 +94,48 @@ describe("streaming routes must not run inside the request-scoped tenant transac
    * A streaming handler that stays inside the request-scoped tenant transaction
    * commits it the instant it hands the stream off, while the provider is still
    * producing. The AI module gets this from a class-level opt-out; a streaming
-   * route added in its own module must declare it per method, and nothing but
-   * this assertion would notice that it had not.
+   * route added in its own module must declare it per method.
+   *
+   * This reads the ROUTE's own decorator block, not the file. A file-level scan
+   * passes as long as any sibling route carries the decorator, so deleting it
+   * from one streaming handler in a controller that has four of them is
+   * invisible — bite-proved, and that is exactly the shape this assertion had to
+   * be rewritten out of.
    */
-  it("every streaming route in the repo opts out of the tenant transaction", () => {
+  it("every streaming route in the repo opts out of the tenant transaction, per route", () => {
     const offenders: string[] = [];
 
     for (const file of listControllerFiles(MODULES_ROOT)) {
-      const source = readFileSync(file, "utf8");
-      if (!/@(?:Post|Get)\("[^"]*stream[^"]*"\)/.test(source)) continue;
-      if (!/@NoTenantTransaction\(\)/.test(source)) offenders.push(file);
+      const lines = readFileSync(file, "utf8").split("\n");
+      const classAt = lines.findIndex((l) => /^export class /.test(l));
+      const classLevel = lines
+        .slice(0, classAt === -1 ? 0 : classAt)
+        .some((l) => /@NoTenantTransaction\(\)/.test(l));
+
+      lines.forEach((line, index) => {
+        if (!/@(?:Post|Get)\("[^"]*stream[^"]*"\)/.test(line)) return;
+        const block: string[] = [];
+        for (let i = index; i < lines.length; i += 1) {
+          const current = lines[i] ?? "";
+          if (i > index && !/^\s*@/.test(current)) break;
+          block.push(current);
+        }
+        const routeLevel = block.some((l) => /@NoTenantTransaction\(\)/.test(l));
+        if (!routeLevel && !classLevel) offenders.push(`${file}:${String(index + 1)}`);
+      });
     }
 
     expect(offenders).toEqual([]);
+  });
+
+  it("that per-route scan actually reaches every streaming route", () => {
+    let seen = 0;
+    for (const file of listControllerFiles(MODULES_ROOT)) {
+      const lines = readFileSync(file, "utf8").split("\n");
+      seen += lines.filter((l) => /@(?:Post|Get)\("[^"]*stream[^"]*"\)/.test(l)).length;
+    }
+
+    expect(seen).toBeGreaterThanOrEqual(19);
   });
 
   it("the repo-wide scan reaches streaming routes outside modules/ai", () => {
