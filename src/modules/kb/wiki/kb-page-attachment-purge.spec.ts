@@ -4,9 +4,20 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   ),
 }));
 
+interface PurgeMark {
+  status: string;
+  confirmedAt?: Date;
+  lastAttemptedAt: Date;
+  failedReason: string | null;
+}
+
+const mockPurgeMarks: PurgeMark[] = [];
 const mockInsertValues = jest.fn();
 const mockUpdateWhere = jest.fn().mockResolvedValue(undefined);
-const mockUpdateSet = jest.fn(() => ({ where: mockUpdateWhere }));
+const mockUpdateSet = jest.fn((mark: PurgeMark) => {
+  mockPurgeMarks.push(mark);
+  return { where: mockUpdateWhere };
+});
 
 const mockTenantTx = {
   insert: jest.fn(() => ({
@@ -89,7 +100,10 @@ describe("recordPageAttachmentPurge — the write-ahead record is opened before 
 });
 
 describe("attemptPageAttachmentPurge — best effort, never throwing back at the caller", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPurgeMarks.length = 0;
+  });
 
   it("deletes each object and confirms its row", async () => {
     const storage = { deleteFileIfPresent: jest.fn().mockResolvedValue(true) };
@@ -99,10 +113,7 @@ describe("attemptPageAttachmentPurge — best effort, never throwing back at the
     expect(result).toEqual({ confirmed: 2, failed: 0 });
     expect(storage.deleteFileIfPresent).toHaveBeenCalledWith(ORG, "k1");
     expect(storage.deleteFileIfPresent).toHaveBeenCalledWith(ORG, "k2");
-    const statuses = mockUpdateSet.mock.calls.map(
-      (call) => (call[0] as unknown as { status: string }).status,
-    );
-    expect(statuses).toEqual(["confirmed", "confirmed"]);
+    expect(mockPurgeMarks.map((m) => m.status)).toEqual(["confirmed", "confirmed"]);
   });
 
   it("bites: an object-store failure is recorded as failed and does not throw — the row survives for the sweep", async () => {
@@ -116,10 +127,8 @@ describe("attemptPageAttachmentPurge — best effort, never throwing back at the
     const result = await attemptPageAttachmentPurge({} as never, storage, ORG, ["k1", "k2"]);
 
     expect(result).toEqual({ confirmed: 1, failed: 1 });
-    const statuses = mockUpdateSet.mock.calls.map(
-      (call) => (call[0] as unknown as { status: string }).status,
-    );
-    expect(statuses).toEqual(["failed", "confirmed"]);
+    expect(mockPurgeMarks.map((m) => m.status)).toEqual(["failed", "confirmed"]);
+    expect(mockPurgeMarks[0]?.failedReason).toContain("R2 503");
   });
 
   it("touches the object store not at all when there is nothing to purge", async () => {
@@ -129,5 +138,6 @@ describe("attemptPageAttachmentPurge — best effort, never throwing back at the
       failed: 0,
     });
     expect(storage.deleteFileIfPresent).not.toHaveBeenCalled();
+    expect(mockPurgeMarks).toEqual([]);
   });
 });
