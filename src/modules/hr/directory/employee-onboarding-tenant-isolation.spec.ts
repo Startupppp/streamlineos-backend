@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.service";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
@@ -90,13 +91,12 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
 
   it("scopes membership check to actor org when onboarding existing user (cross-tenant isolation)", async () => {
     const existingUser = { id: "user-exist-1", email: "user@test.com" };
-    let callCount = 0;
     const where = jest.fn();
-    const findFirst = jest.fn().mockImplementation(() => {
-      callCount += 1;
-      if (callCount === 1) return Promise.resolve(existingUser);
-      return Promise.resolve(null);
-    });
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(existingUser)
+      .mockResolvedValueOnce({ userId: existingUser.id })
+      .mockResolvedValue(null);
     const findMany = jest.fn().mockResolvedValue([]);
     const builder = {
       from: jest.fn(), where, orderBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
@@ -113,14 +113,16 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
     builder.groupBy.mockReturnValue(builder);
     builder.for.mockReturnValue(builder);
     const queryProxy = new Proxy({} as Record<string, unknown>, { get: () => ({ findMany, findFirst }) });
+    const transaction = jest.fn();
     const db = {
       select: jest.fn().mockReturnValue(builder),
       query: queryProxy,
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }),
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
       execute: jest.fn().mockResolvedValue([]),
-      transaction: jest.fn().mockImplementation((fn: (tx: typeof db) => Promise<unknown>) => fn(db)),
+      transaction,
     } as unknown as Db;
+    transaction.mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn(db));
 
     const mockCache = { invalidate: jest.fn() };
     const mockAudit = { logCritical: jest.fn() };
@@ -140,24 +142,24 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
 
     const actor = { orgId: ATTACKER, userId: "actor-1", isOrgOwner: true };
     const body = { firstName: "Jane", lastName: "Doe", email: "user@test.com", designation: "Eng", whatsappSameAsPhone: true };
-    await expect(svc.onboardEmployee(actor as never, body as never)).rejects.toThrow();
+    await expect(svc.onboardEmployee(actor as never, body as never)).rejects.toThrow(ConflictException);
 
-    const allWhereArgs = where.mock.calls.flatMap((call) => sqlValues(call[0]));
-    const allFindFirstArgs = findFirst.mock.calls.flatMap((call) =>
-      sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
+    const membershipWhere = sqlValues(
+      (findFirst.mock.calls[1]?.[0] as Record<string, unknown> | undefined)?.["where"],
     );
-    expect([...allWhereArgs, ...allFindFirstArgs]).toContain(ATTACKER);
+    expect(membershipWhere).toContain(ATTACKER);
+    expect(membershipWhere).not.toContain(OWNER);
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it("uses owner org for membership scoping (control — same-tenant access works)", async () => {
     const existingUser = { id: "user-exist-2", email: "owner@test.com" };
-    let callCount = 0;
     const where = jest.fn();
-    const findFirst = jest.fn().mockImplementation(() => {
-      callCount += 1;
-      if (callCount === 1) return Promise.resolve(existingUser);
-      return Promise.resolve(null);
-    });
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(existingUser)
+      .mockResolvedValueOnce({ userId: existingUser.id })
+      .mockResolvedValue(null);
     const findMany = jest.fn().mockResolvedValue([]);
     const builder = {
       from: jest.fn(), where, orderBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
@@ -174,14 +176,16 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
     builder.groupBy.mockReturnValue(builder);
     builder.for.mockReturnValue(builder);
     const queryProxy = new Proxy({} as Record<string, unknown>, { get: () => ({ findMany, findFirst }) });
+    const transaction = jest.fn();
     const db = {
       select: jest.fn().mockReturnValue(builder),
       query: queryProxy,
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }),
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
       execute: jest.fn().mockResolvedValue([]),
-      transaction: jest.fn().mockImplementation((fn: (tx: typeof db) => Promise<unknown>) => fn(db)),
+      transaction,
     } as unknown as Db;
+    transaction.mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn(db));
 
     const mockCache = { invalidate: jest.fn() };
     const mockAudit = { logCritical: jest.fn() };
@@ -201,12 +205,13 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
 
     const actor = { orgId: OWNER, userId: "actor-2", isOrgOwner: true };
     const body = { firstName: "John", lastName: "Smith", email: "owner@test.com", designation: "PM", whatsappSameAsPhone: true };
-    await expect(svc.onboardEmployee(actor as never, body as never)).rejects.toThrow();
+    await expect(svc.onboardEmployee(actor as never, body as never)).rejects.toThrow(ConflictException);
 
-    const allWhereArgs = where.mock.calls.flatMap((call) => sqlValues(call[0]));
-    const allFindFirstArgs = findFirst.mock.calls.flatMap((call) =>
-      sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
+    const membershipWhere = sqlValues(
+      (findFirst.mock.calls[1]?.[0] as Record<string, unknown> | undefined)?.["where"],
     );
-    expect([...allWhereArgs, ...allFindFirstArgs]).toContain(OWNER);
+    expect(membershipWhere).toContain(OWNER);
+    expect(membershipWhere).not.toContain(ATTACKER);
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
