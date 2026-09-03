@@ -16,6 +16,7 @@ import {
   type PlannedRoute,
   type Verdict,
 } from "test/security/bola/live/probe-plan";
+import { synthesizeRequest, withQuery, type SynthesizedRequest } from "test/security/bola/live/body-synthesis";
 
 /**
  * Ticket 15, box 1 — the live half.
@@ -45,6 +46,17 @@ import {
  *
  * Mutating verbs run the PROBE FIRST. A control DELETE removes the object, so the reverse order
  * would probe an id that no longer exists and every DELETE route would "pass" vacuously.
+ *
+ * THE BODY THE SWEEP SENDS
+ *
+ * It used to send `{}`. A `.strict()` Zod object with any required field rejects that, so the
+ * CONTROL answered 400 and 468 routes — 41% of everything filed unprobeable, 24% of the whole
+ * surface — were never asked the question at all. Each request now carries a minimal valid body and
+ * the required query parameters, derived per route from the committed contract
+ * (`live/body-synthesis.ts`, proved offline in `bola-body-synthesis.spec.ts`). `bodySource` is
+ * recorded on every outcome, so a route probed with a synthesised body can never be confused with
+ * one probed with `{}`; a route whose schema could not be satisfied keeps its own reason and stays
+ * unprobeable rather than being sent a request that will 400 and counted as asked.
  */
 
 jest.setTimeout(4 * 60 * 60 * 1000);
@@ -96,6 +108,9 @@ interface Outcome {
   readonly verdict: Verdict;
   readonly detail: string;
   readonly probeBody?: string;
+  /** Which request the route was actually asked with. An outcome that cannot say is not evidence. */
+  readonly bodySource: SynthesizedRequest["source"] | "not-applicable";
+  readonly requiredQueryKeys?: readonly string[];
 }
 
 interface Sent {
@@ -152,6 +167,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     verb: string,
     path: string,
     token: string,
+    body: Record<string, unknown> | null = null,
   ): Promise<Sent> => {
     const agent = request(baseUrl);
     const lower = verb.toLowerCase() as "get" | "post" | "put" | "patch" | "delete";
@@ -161,7 +177,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       // failure, which would be recorded as an unprobeable route rather than a probed one.
       .set("Idempotency-Key", randomUUID())
       .timeout({ response: REQUEST_TIMEOUT_MS, deadline: REQUEST_TIMEOUT_MS + 5000 });
-    if (verb !== "GET" && verb !== "DELETE") req = req.send({});
+    if (verb !== "GET" && verb !== "DELETE") req = req.send(body ?? {});
     try {
       const res = await req;
       const text = typeof res.text === "string" ? res.text : JSON.stringify(res.body ?? null);
@@ -389,6 +405,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       .sort((a, b) => order(a.verb) - order(b.verb) || a.key.localeCompare(b.key));
     const cursors = new Map<string, number>();
     let done = 0;
+    let bodiesSynthesized = 0;
 
     for (const planned of runnable) {
       if (LIMIT > 0 && done >= LIMIT) break;
@@ -412,6 +429,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
           absentStatus: null,
           verdict: "UNPROBEABLE",
           detail: planned.unprobeable,
+          bodySource: "not-applicable",
         });
         continue;
       }
@@ -435,18 +453,39 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
           absentStatus: null,
           verdict: "UNPROBEABLE",
           detail: "the source tenant has no remaining object of this type",
+          bodySource: "not-applicable",
         });
         continue;
       }
 
+      // The contract decides what this route needs; a schema it cannot satisfy is reported, never
+      // guessed at, so the route stays unprobeable with its own reason attached.
+      const synthesized = synthesizeRequest(planned.verb, planned.path);
+      if (synthesized.source === "unsatisfiable") {
+        outcomes.push({
+          ...base,
+          requestPath: url,
+          controlStatus: null,
+          probeStatus: null,
+          absentStatus: null,
+          verdict: "UNPROBEABLE",
+          detail: `no valid request could be derived from the contract — ${synthesized.unsatisfiable.join("; ")}`,
+          bodySource: synthesized.source,
+        });
+        continue;
+      }
+      const requestUrl = withQuery(url, synthesized.query);
+      const body = synthesized.body;
+      bodiesSynthesized += body === null ? 0 : 1;
+
       let control: Sent;
       let probeResult: Sent;
       if (MUTATING.has(planned.verb)) {
-        probeResult = await send(planned.verb, url, proberToken);
-        control = await send(planned.verb, url, sourceToken);
+        probeResult = await send(planned.verb, requestUrl, proberToken, body);
+        control = await send(planned.verb, requestUrl, sourceToken, body);
       } else {
-        control = await send(planned.verb, url, sourceToken);
-        probeResult = await send(planned.verb, url, proberToken);
+        control = await send(planned.verb, requestUrl, sourceToken, body);
+        probeResult = await send(planned.verb, requestUrl, proberToken, body);
       }
 
       const raw = score(
@@ -462,7 +501,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       if (isDisclosure(raw.verdict)) {
         const absentUrl = absentUrlFor(planned);
         if (absentUrl !== null) {
-          const absent = await send(planned.verb, absentUrl, proberToken);
+          const absent = await send(planned.verb, withQuery(absentUrl, synthesized.query), proberToken, body);
           absentStatus = absent.status === 0 ? null : absent.status;
           scored = disambiguate(raw, probeResult.status, absentStatus);
         }
@@ -470,25 +509,65 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
 
       outcomes.push({
         ...base,
-        requestPath: url,
+        requestPath: requestUrl,
         controlStatus: control.status,
         probeStatus: probeResult.status,
         absentStatus,
         verdict: scored.verdict,
         detail: scored.detail,
         probeBody: isFinding(scored.verdict) ? probeResult.body : undefined,
+        bodySource: synthesized.source,
+        requiredQueryKeys: Object.keys(synthesized.query),
       });
       if (outcomes.length - lastFlush >= 25) writeArtifact();
     }
 
     const tally = new Map<Verdict, number>();
     for (const outcome of outcomes) tally.set(outcome.verdict, (tally.get(outcome.verdict) ?? 0) + 1);
+    harnessProofs.synthesizedBodies = {
+      routesGivenABody: bodiesSynthesized,
+      unsatisfiable: outcomes.filter((o) => o.bodySource === "unsatisfiable").length,
+    };
     process.stderr.write(
       `[bola-live] ${String(outcomes.length)} routes attempted: ${[...tally.entries()]
         .map(([verdict, count]) => `${verdict}=${String(count)}`)
-        .join(" ")}\n`,
+        .join(" ")}; ${String(bodiesSynthesized)} carried a contract-derived body\n`,
     );
     expect(outcomes.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * PROOF THE BODY MATTERS — the harness gap this pass exists to close, measured on a real route.
+   *
+   * A route whose control used to answer 400 on `{}` is sent both requests. The empty body must
+   * still be refused and the contract-derived one accepted; if both answered the same the
+   * synthesiser would be decoration and the 468 would still be unprobed.
+   */
+  it("a control that answered 400 to an empty body answers 2xx to the contract-derived one", async () => {
+    await refreshTokens();
+    const plan = planRoutes(sourceCatalog.tables, sourceCatalog.populated).filter(
+      (p) => p.unprobeable === null && MUTATING.has(p.verb) && p.verb !== "DELETE",
+    );
+    let emptyRejected = 0;
+    let synthesizedAccepted = 0;
+    const sample: string[] = [];
+    for (const planned of plan) {
+      if (emptyRejected >= 8) break;
+      const synthesized = synthesizeRequest(planned.verb, planned.path);
+      if (synthesized.body === null || Object.keys(synthesized.body).length === 0) continue;
+      const url = urlFor(planned, (_k, pool) => pool[0] ?? null);
+      if (url === null) continue;
+      const requestUrl = withQuery(url, synthesized.query);
+      const empty = await send(planned.verb, requestUrl, sourceToken);
+      if (empty.status !== 400) continue;
+      emptyRejected += 1;
+      const filled = await send(planned.verb, requestUrl, sourceToken, synthesized.body);
+      if (filled.status >= 200 && filled.status < 300) synthesizedAccepted += 1;
+      sample.push(`${planned.verb} ${planned.path} {}=${String(empty.status)} body=${String(filled.status)}`);
+    }
+    harnessProofs.bodyUnlocksControl = { emptyRejected, synthesizedAccepted, sample };
+    expect(emptyRejected).toBeGreaterThan(0);
+    expect(synthesizedAccepted).toBeGreaterThan(0);
   });
 
   it("scored enough routes for the run to mean anything", () => {
