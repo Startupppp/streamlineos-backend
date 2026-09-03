@@ -4,6 +4,7 @@ import {
   eq,
   exists,
   gte,
+  isNotNull,
   lt,
   ne,
   or,
@@ -51,7 +52,8 @@ export class DashboardPersonalService {
     weekEnd.setHours(23, 59, 59, 999);
 
     const degraded: string[] = [];
-    const selfMember = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)), columns: { id: true } });
+    const selfMember = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)), columns: { id: true, status: true } });
+    const attendeeMembershipId = selfMember?.status === "ACTIVE" ? selfMember.id : 0;
     const settle = async <T>(
       source: string,
       run: () => Promise<T>,
@@ -112,8 +114,21 @@ export class DashboardPersonalService {
         : [],
       settle(
         "upcomingEvents",
-        () =>
-          this.db
+        () => {
+          const attendedEvent = this.db
+            .select({ hit: sql<number>`1`.as("hit") })
+            .from(eventAttendees)
+            .where(
+              and(
+                eq(eventAttendees.orgId, orgId),
+                eq(eventAttendees.eventId, calendarEvents.id),
+                eq(eventAttendees.membershipId, attendeeMembershipId),
+                ne(eventAttendees.status, "declined"),
+              ),
+            )
+            .limit(1)
+            .as("attended_event");
+          return this.db
             .select({
               id: calendarEvents.id,
               title: calendarEvents.title,
@@ -122,6 +137,7 @@ export class DashboardPersonalService {
               category: calendarEvents.category,
             })
             .from(calendarEvents)
+            .leftJoinLateral(attendedEvent, sql`true`)
             .where(
               and(
                 eq(calendarEvents.orgId, orgId),
@@ -141,35 +157,13 @@ export class DashboardPersonalService {
                         ),
                       )
                   ),
-                  exists(
-                    this.db
-                      .select({ one: sql`1` })
-                      .from(eventAttendees)
-                      .innerJoin(
-                        organizationMembers,
-                        and(
-                          eq(eventAttendees.orgId, organizationMembers.orgId),
-                          eq(
-                            eventAttendees.membershipId,
-                            organizationMembers.id,
-                          ),
-                        ),
-                      )
-                      .where(
-                        and(
-                          eq(eventAttendees.orgId, orgId),
-                          eq(eventAttendees.eventId, calendarEvents.id),
-                          eq(organizationMembers.userId, userId),
-                          eq(organizationMembers.status, "ACTIVE"),
-                          ne(eventAttendees.status, "declined"),
-                        ),
-                      ),
-                  ),
+                  isNotNull(attendedEvent.hit),
                 ),
               ),
             )
             .orderBy(calendarEvents.startDate)
-            .limit(3),
+            .limit(3);
+        },
         [],
       ),
       settle(

@@ -1189,32 +1189,99 @@ export const BUDGETS = [
     id: "dashboard-personal-calendar-events",
     ceiling: 500,
     minRows: 1,
+    maxScanRows: 200,
     rowCountSql: `SELECT count(*)::int FROM calendar_events WHERE org_id = $1`,
-    params: (f) => (f.hasCalendarEvents && f.userId ? [f.orgId, f.userId] : null),
+    // Mirrors DashboardPersonalService.upcomingEvents, NOT `GET /calendar/events` — that route runs
+    // CalendarEventSourceLoader and has its own budget (calendar-events-visible-batch).
+    //
+    // The attendee test is a LEFT JOIN LATERAL, not an EXISTS, and that is load-bearing. With an
+    // EXISTS the planner is free to de-correlate it into a hashed SubPlan that materialises every
+    // attendee row the caller owns (39,114 on the 89.93% tenant) before LIMIT 3 can stop anything:
+    // measured 1,140 blocks. Worse, whether it does so depends on whether a non-'org' event lands
+    // in the first three rows, which moves with the wall clock — the same query on the same fixture
+    // measured 6 blocks on one run and 1,140 on the next, so the recorded number was a coin toss
+    // rather than a budget. A LATERAL is structural: it is probed once per candidate row through
+    // event_attendees_event_membership_unique and the planner cannot hash it. Measured after the
+    // fix: 18 blocks in the cheap window, 20 in the worst-case window — a stable quantity.
+    // maxScanRows bites at 39,114 if the LATERAL is ever turned back into an EXISTS.
+    params: (f) =>
+      f.hasCalendarEvents && f.userId && f.membershipId ? [f.orgId, f.userId, f.membershipId] : null,
     sql: `
-      SELECT id, title, start_date, end_date, category
+      SELECT calendar_events.id, calendar_events.title, calendar_events.start_date,
+             calendar_events.end_date, calendar_events.category
       FROM calendar_events
-      WHERE org_id = $1 AND start_date >= NOW()
+      LEFT JOIN LATERAL (
+        SELECT 1 AS hit FROM event_attendees
+        WHERE event_attendees.org_id = $1 AND event_attendees.event_id = calendar_events.id
+          AND event_attendees.membership_id = $3 AND event_attendees.status <> 'declined'
+        LIMIT 1
+      ) attended_event ON true
+      WHERE calendar_events.org_id = $1 AND calendar_events.start_date >= NOW()
         AND (
-          visibility = 'org'
+          calendar_events.visibility = 'org'
           OR EXISTS (
             SELECT 1 FROM organization_members om
-            WHERE om.org_id = $1 AND om.id = calendar_events.created_by_membership_id
+            WHERE om.org_id = calendar_events.org_id
+              AND om.id = calendar_events.created_by_membership_id
               AND om.user_id = $2 AND om.status = 'ACTIVE'
           )
-          OR EXISTS (
-            SELECT 1 FROM event_attendees ea
-            INNER JOIN organization_members om2
-              ON ea.org_id = om2.org_id AND ea.membership_id = om2.id
-            WHERE ea.org_id = $1 AND ea.event_id = calendar_events.id
-              AND om2.user_id = $2 AND om2.status = 'ACTIVE' AND ea.status != 'declined'
-          )
+          OR hit IS NOT NULL
         )
-      ORDER BY start_date ASC
+      ORDER BY calendar_events.start_date ASC
       LIMIT 3`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "calendar_events" },
     ],
+  },
+  {
+    id: "calendar-events-visible-batch",
+    ceiling: 2_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM calendar_events WHERE org_id = $1`,
+    // The query `GET /calendar/events` actually runs: CalendarEventSourceLoader.queryVisibleEvents,
+    // one keyset-paged batch of 500 over a one-month window. Until 2026-09-03 that route's budget
+    // was linked to dashboard-personal-calendar-events, so the calendar route was charged for the
+    // dashboard's statement and this one had never been measured at all.
+    //
+    // KNOWN BREACH, recorded rather than accommodated: measured 7,063 blocks on the 89.93% tenant
+    // and the ceiling is deliberately NOT set above it. calendar_events is 1,731 pages, so one
+    // batch of this route reads FOUR TIMES a full sequential scan of the whole table — the
+    // catalog's own rule is that a ceiling sits below a sequential scan, and 2,000 is both that
+    // and the cost of one honest 500-row page with its three left joins.
+    // The driver is the recurring branch: it has no lower bound on start_date, so every recurring
+    // event in the tenant's entire history is a candidate for any window (8,571 of 60,012 carry an
+    // rrule and 4,286 of those have a NULL recurrence_end), while only 77 non-recurring events fall
+    // inside the month requested. 3,610 rows are scanned to return the 500-row batch, and the loop
+    // then pages for more. Fixing it means splitting the two branches so the partial index
+    // idx_calendar_events_org_recurring_start serves the recurring one; that is
+    // src/modules/calendar/**, not this catalog.
+    params: (f) => {
+      if (!f.hasCalendarEvents || !f.membershipId) return null;
+      const now = new Date();
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+      return [f.orgId, f.membershipId, start.toISOString(), end.toISOString()];
+    },
+    sql: `
+      SELECT ce.id, ce.title, ce.description, ce.location, ce.meeting_url, ce.start_date,
+             ce.end_date, ce.all_day, ce.timezone, ce.color, ce.category, ce.entity_type,
+             ce.entity_id, ce.visibility, ce.rrule, ce.recurrence_end, u.name, cal_att.status
+      FROM calendar_events ce
+      LEFT JOIN organization_members creator_member
+        ON creator_member.org_id = ce.org_id AND creator_member.id = ce.created_by_membership_id
+      LEFT JOIN users u ON u.id = creator_member.user_id
+      LEFT JOIN event_attendees cal_att
+        ON cal_att.org_id = ce.org_id AND cal_att.event_id = ce.id AND cal_att.membership_id = $2
+      WHERE ce.org_id = $1
+        AND (
+          (ce.rrule IS NULL AND ce.start_date < $4::timestamptz AND ce.end_date > $3::timestamptz)
+          OR (ce.rrule IS NOT NULL AND ce.start_date < $4::timestamptz
+              AND (ce.recurrence_end IS NULL OR ce.recurrence_end > $3::timestamptz))
+        )
+        AND (ce.visibility = 'org' OR ce.created_by_membership_id = $2 OR cal_att.id IS NOT NULL)
+      ORDER BY ce.start_date ASC, ce.id ASC
+      LIMIT 500`,
+    planAssertions: [],
   },
   {
     id: "dashboard-personal-notifications-count",
@@ -1344,6 +1411,7 @@ export const REQUIRED_BUDGET_IDS = new Set([
   "dashboard-personal-my-tasks",
   "dashboard-my-issues",
   "dashboard-personal-calendar-events",
+  "calendar-events-visible-batch",
   "dashboard-personal-notifications-count",
   "dashboard-stats-attendance-count",
   "dashboard-announcements",
