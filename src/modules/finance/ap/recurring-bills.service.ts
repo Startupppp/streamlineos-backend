@@ -27,11 +27,23 @@ import type {
 } from "./dto/finance-ap.schemas";
 import { addFrequencyDays } from "./recurring-bills.util";
 
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
 const RECURRING_CACHE_KEY = (orgId: string) => `fin:recurring-bills:${orgId}`;
+
+/** Templates fetched by one sweep. The deactivation statement below carries at most this many ids. */
+const DUE_TEMPLATE_SCAN_LIMIT = 1000;
+
+/**
+ * Ids per deactivation `UPDATE … WHERE id = ANY($1)`. The sweep can only see
+ * {@link DUE_TEMPLATE_SCAN_LIMIT} templates, so this bounds the bind payload and the number of
+ * rows one statement locks at a time; a failed chunk deactivates only its own ids.
+ */
+const EXPIRE_TEMPLATE_CHUNK = 500;
 
 @Injectable()
 export class RecurringBillsService {
@@ -183,13 +195,16 @@ export class RecurringBillsService {
       throw new ConflictException("Template is inactive");
     }
 
-    const bill = await this.spawnBillFromTemplate(orgId, userId, template);
-
     const nextRun = addFrequencyDays(new Date(), template.frequency);
-    await this.db
-      .update(finRecurringBillTemplates)
-      .set({ lastRunDate: new Date().toISOString().slice(0, 10), nextRunDate: nextRun, updatedAt: new Date() })
-      .where(and(eq(finRecurringBillTemplates.id, templateId), eq(finRecurringBillTemplates.orgId, orgId)));
+
+    const bill = await this.db.transaction(async (tx) => {
+      const spawned = await this.spawnBillFromTemplate(orgId, userId, template, tx);
+      await tx
+        .update(finRecurringBillTemplates)
+        .set({ lastRunDate: new Date().toISOString().slice(0, 10), nextRunDate: nextRun, updatedAt: new Date() })
+        .where(and(eq(finRecurringBillTemplates.id, templateId), eq(finRecurringBillTemplates.orgId, orgId)));
+      return spawned;
+    });
 
     return { templateId, billId: bill.id, billNumber: bill.billNumber };
   }
@@ -206,36 +221,26 @@ export class RecurringBillsService {
           lte(finRecurringBillTemplates.nextRunDate, today),
         ),
       )
-      .limit(1000);
+      .limit(DUE_TEMPLATE_SCAN_LIMIT);
 
-    const expiredByOrg = new Map<string, number[]>();
+    const expiredIds: number[] = [];
+    const expiredOrgIds = new Set<string>();
     const runnable: typeof due = [];
     for (const template of due) {
       if (template.endDate && template.endDate < today) {
-        const ids = expiredByOrg.get(template.orgId);
-        if (ids) ids.push(template.id);
-        else expiredByOrg.set(template.orgId, [template.id]);
+        expiredIds.push(template.id);
+        expiredOrgIds.add(template.orgId);
       } else {
         runnable.push(template);
       }
     }
 
-    for (const [expiredOrgId, ids] of expiredByOrg) {
-      await this.db
-        .update(finRecurringBillTemplates)
-        .set({ isActive: false, updatedAt: new Date() })
-        .where(and(inArray(finRecurringBillTemplates.id, ids), eq(finRecurringBillTemplates.orgId, expiredOrgId)));
-    }
+    await this.deactivateExpired(expiredIds, [...expiredOrgIds]);
 
     for (const template of runnable) {
       try {
-        const bill = await this.spawnBillFromTemplate(template.orgId, template.createdBy, template);
-        const nextRun = addFrequencyDays(new Date(), template.frequency);
-
-        await this.db
-          .update(finRecurringBillTemplates)
-          .set({ lastRunDate: today, nextRunDate: nextRun, updatedAt: new Date() })
-          .where(and(eq(finRecurringBillTemplates.id, template.id), eq(finRecurringBillTemplates.orgId, template.orgId)));
+        const bill = await this.claimAndSpawn(template, today);
+        if (!bill) continue;
 
         await this.dispatch.emit({
           eventKey: "accounting.bill.recurring_generated",
@@ -252,10 +257,67 @@ export class RecurringBillsService {
     }
   }
 
+  /**
+   * One `UPDATE` per {@link EXPIRE_TEMPLATE_CHUNK}, not one per organisation.
+   * `fin_recurring_bill_templates.id` is a serial primary key, so the id list alone identifies the
+   * rows exactly; the organisation list rides along so the statement stays tenant-correlated.
+   */
+  private async deactivateExpired(ids: readonly number[], orgIds: readonly string[]): Promise<void> {
+    if (ids.length === 0 || orgIds.length === 0) return;
+    for (let offset = 0; offset < ids.length; offset += EXPIRE_TEMPLATE_CHUNK) {
+      const chunk = ids.slice(offset, offset + EXPIRE_TEMPLATE_CHUNK);
+      await this.db
+        .update(finRecurringBillTemplates)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(
+          and(
+            inArray(finRecurringBillTemplates.id, chunk),
+            inArray(finRecurringBillTemplates.orgId, [...orgIds]),
+          ),
+        );
+    }
+  }
+
+  /**
+   * The bill and the template advance commit together, and the advance goes FIRST as a
+   * compare-and-set on the due predicate.
+   *
+   * They were two separate round trips, so a crash between them left the bill committed with
+   * `next_run_date` unmoved — and `purchase_bills` carries no idempotency key over
+   * (template, date), so the next sweep spawned a SECOND bill against the same vendor with
+   * nothing to stop it. Claiming first also makes two concurrent sweeps safe: the loser blocks
+   * on the row lock, re-reads `next_run_date <= today` against the winner's committed row,
+   * matches nothing and spawns nothing.
+   */
+  private async claimAndSpawn(
+    template: typeof finRecurringBillTemplates.$inferSelect,
+    today: string,
+  ): Promise<{ id: number; billNumber: string } | null> {
+    const nextRun = addFrequencyDays(new Date(), template.frequency);
+    return this.db.transaction(async (tx) => {
+      const claimed = await tx
+        .update(finRecurringBillTemplates)
+        .set({ lastRunDate: today, nextRunDate: nextRun, updatedAt: new Date() })
+        .where(
+          and(
+            eq(finRecurringBillTemplates.id, template.id),
+            eq(finRecurringBillTemplates.orgId, template.orgId),
+            eq(finRecurringBillTemplates.isActive, true),
+            lte(finRecurringBillTemplates.nextRunDate, today),
+          ),
+        )
+        .returning({ id: finRecurringBillTemplates.id });
+
+      if (!claimed[0]) return null;
+      return this.spawnBillFromTemplate(template.orgId, template.createdBy, template, tx);
+    });
+  }
+
   private async spawnBillFromTemplate(
     orgId: string,
     userId: string,
     template: typeof finRecurringBillTemplates.$inferSelect,
+    tx: Tx,
   ) {
     const recurringBillPayloadSchema = z.object({
       vendorId: z.number(),
@@ -306,61 +368,59 @@ export class RecurringBillsService {
     const sgst = intra ? round2(taxPool - cgst) : 0;
     const igst = intra ? 0 : taxPool;
 
-    return this.db.transaction(async (tx) => {
-      const countRows = await tx
-        .select({ count: sql<number>`count(*)::int` })
-        .from(purchaseBills)
-        .where(eq(purchaseBills.orgId, orgId));
-      const existingCount = countRows[0]?.count ?? 0;
-      const billNumber = `BILL-${new Date().getFullYear()}-${String(existingCount + 1).padStart(4, "0")}`;
+    const countRows = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(purchaseBills)
+      .where(eq(purchaseBills.orgId, orgId));
+    const existingCount = countRows[0]?.count ?? 0;
+    const billNumber = `BILL-${new Date().getFullYear()}-${String(existingCount + 1).padStart(4, "0")}`;
 
-      const [inserted] = await tx
-        .insert(purchaseBills)
-        .values({
-          orgId,
-          vendorId: payload.vendorId,
-          billNumber,
-          vendorBillNumber: null,
-          billDate: today,
-          dueDate: payload.dueDate ?? null,
-          status: "DRAFT",
-          subtotal: subtotal.toFixed(4),
-          taxAmount: taxPool.toFixed(4),
-          cgstAmount: cgst.toFixed(4),
-          sgstAmount: sgst.toFixed(4),
-          igstAmount: igst.toFixed(4),
-          discount: discount.toFixed(4),
-          total: total.toFixed(4),
-          currency: "INR",
-          placeOfSupply: placeOfSupplyStateCode || null,
-          vendorGstin: payload.vendorGstin && payload.vendorGstin.length > 0 ? payload.vendorGstin : null,
-          supplierGstin: payload.supplierGstin && payload.supplierGstin.length > 0 ? payload.supplierGstin : null,
-          reverseCharge: payload.reverseCharge,
-          notes: payload.notes ?? null,
-          expenseAccountCode: payload.expenseAccountCode,
-          recurringTemplateId: template.id,
-          createdBy: userId,
-        })
-        .returning();
+    const [inserted] = await tx
+      .insert(purchaseBills)
+      .values({
+        orgId,
+        vendorId: payload.vendorId,
+        billNumber,
+        vendorBillNumber: null,
+        billDate: today,
+        dueDate: payload.dueDate ?? null,
+        status: "DRAFT",
+        subtotal: subtotal.toFixed(4),
+        taxAmount: taxPool.toFixed(4),
+        cgstAmount: cgst.toFixed(4),
+        sgstAmount: sgst.toFixed(4),
+        igstAmount: igst.toFixed(4),
+        discount: discount.toFixed(4),
+        total: total.toFixed(4),
+        currency: "INR",
+        placeOfSupply: placeOfSupplyStateCode || null,
+        vendorGstin: payload.vendorGstin && payload.vendorGstin.length > 0 ? payload.vendorGstin : null,
+        supplierGstin: payload.supplierGstin && payload.supplierGstin.length > 0 ? payload.supplierGstin : null,
+        reverseCharge: payload.reverseCharge,
+        notes: payload.notes ?? null,
+        expenseAccountCode: payload.expenseAccountCode,
+        recurringTemplateId: template.id,
+        createdBy: userId,
+      })
+      .returning();
 
-      if (!inserted) throw new Error("Recurring bill insert returned no rows");
+    if (!inserted) throw new Error("Recurring bill insert returned no rows");
 
-      if (itemsWithAmounts.length > 0) {
-        await tx.insert(purchaseBillItems).values(
-          itemsWithAmounts.map((it) => ({
-            billId: inserted.id,
-            description: it.description,
-            hsnSacCode: it.hsnSacCode ?? null,
-            quantity: it.quantity.toFixed(4),
-            rate: it.rate.toFixed(4),
-            gstRate: it.gstRate.toFixed(2),
-            amount: it.amount.toFixed(4),
-            lineOrder: it.lineOrder,
-          })),
-        );
-      }
+    if (itemsWithAmounts.length > 0) {
+      await tx.insert(purchaseBillItems).values(
+        itemsWithAmounts.map((it) => ({
+          billId: inserted.id,
+          description: it.description,
+          hsnSacCode: it.hsnSacCode ?? null,
+          quantity: it.quantity.toFixed(4),
+          rate: it.rate.toFixed(4),
+          gstRate: it.gstRate.toFixed(2),
+          amount: it.amount.toFixed(4),
+          lineOrder: it.lineOrder,
+        })),
+      );
+    }
 
-      return inserted;
-    });
+    return inserted;
   }
 }

@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { and, asc, desc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { randomUUID } from "node:crypto";
@@ -8,6 +14,7 @@ import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
 import type { Redis } from "@upstash/redis";
 import { isApiClientUserAgent, withClientInfo } from "../../common/http/parse-user-agent";
+import { logger } from "../../common/logger/logger.service";
 
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const REVOKED_SESSION_INDEX_KEY = "revoked:sessions:index";
@@ -108,12 +115,12 @@ export class SessionsService {
 
     if (active.length === 0) return { revokedCount: 0 };
 
-    await this.tombstone(active.map((s) => s.id));
-
     await this.db
       .update(userSessions)
       .set({ isRevoked: true })
       .where(eq(userSessions.userId, userId));
+
+    await this.tombstone(active.map((s) => s.id));
 
     return { revokedCount: active.length };
   }
@@ -128,8 +135,6 @@ export class SessionsService {
 
     if (toRevoke.length === 0) return { revokedCount: 0 };
 
-    await this.tombstone(toRevoke.map((s) => s.id));
-
     await this.db
       .update(userSessions)
       .set({ isRevoked: true })
@@ -140,6 +145,8 @@ export class SessionsService {
           ne(userSessions.id, currentSessionId),
         ),
       );
+
+    await this.tombstone(toRevoke.map((s) => s.id));
 
     return { revokedCount: toRevoke.length };
   }
@@ -208,7 +215,15 @@ export class SessionsService {
       .set({ isRevoked: true })
       .where(and(eq(userSessions.userId, userId), inArray(userSessions.id, ids)));
 
-    await this.tombstone(ids);
+    try {
+      await this.tombstone(ids);
+    } catch (err: unknown) {
+      logger.error("session cap eviction left sessions untombstoned", {
+        userId,
+        sessions: ids.length,
+        cause: describeRedisFailure(err),
+      });
+    }
   }
 
   // Tombstones carry no TTL on purpose: volatile-lru only evicts keys that have one, and an evicted tombstone silently un-revokes a session. MSET cannot carry one at all.
@@ -221,11 +236,12 @@ export class SessionsService {
     const redis = this.redis;
     const expiresAt = Date.now() + SESSION_TTL_SECONDS * 1000;
     const unique = [...new Set(sessionIds)];
+    let unwritten = 0;
     for (let i = 0; i < unique.length; i += REVOCATION_WRITE_CHUNK) {
       const chunk = unique.slice(i, i + REVOCATION_WRITE_CHUNK);
       const [head, ...rest] = chunk;
       if (head === undefined) continue;
-      await Promise.allSettled([
+      const [written, indexed] = await Promise.allSettled([
         redis.mset(Object.fromEntries(chunk.map((id) => [`revoked:session:${id}`, true]))),
         redis.zadd(
           REVOKED_SESSION_INDEX_KEY,
@@ -233,7 +249,23 @@ export class SessionsService {
           ...rest.map((id) => ({ score: expiresAt, member: id })),
         ),
       ]);
+      if (indexed?.status === "rejected")
+        logger.error("session revocation index write failed", {
+          sessions: chunk.length,
+          cause: describeRedisFailure(indexed.reason),
+        });
+      if (written?.status === "rejected") {
+        unwritten += chunk.length;
+        logger.error("session revocation tombstone write failed", {
+          sessions: chunk.length,
+          cause: describeRedisFailure(written.reason),
+        });
+      }
     }
+    if (unwritten > 0)
+      throw new ServiceUnavailableException(
+        `Could not publish ${String(unwritten)} session revocation(s)`,
+      );
   }
 
   async pruneExpiredRevocations(): Promise<{ removed: number }> {
@@ -254,4 +286,10 @@ export class SessionsService {
 
     return { removed: expired.length };
   }
+}
+
+function describeRedisFailure(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = err.cause;
+  return cause instanceof Error ? `${err.message}: ${cause.message}` : err.message;
 }

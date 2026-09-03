@@ -19,6 +19,25 @@ import { isSigningType } from "./sign-envelope-validation.service";
 import { isEnvelopeSignable } from "./sign-state";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
+/**
+ * Envelopes flipped per statement.
+ *
+ * The three writes an expiring envelope needs — its recipients, its own status
+ * and its `envelope_expired` audit row — are uniform across the batch, so they
+ * become three statements per chunk rather than three per envelope. 500 ids is
+ * ~500 bound parameters per `inArray`, two orders of magnitude under the 65,535
+ * a single Postgres statement can bind.
+ *
+ * Batching here does NOT widen a lost-audit window. `runExpirationSweep` is
+ * reachable only from `POST /sign/admin/run-expiration-sweep`, which carries no
+ * `@NoTenantTransaction`, so `TenantContextInterceptor` already wraps the whole
+ * call in one transaction and the DRIZZLE proxy routes every statement below
+ * into it: the status flips and the audit rows commit or roll back together,
+ * one envelope at a time or five hundred. What the per-envelope loop bought was
+ * not atomicity but 3N round trips inside that transaction.
+ */
+const EXPIRATION_SWEEP_CHUNK = 500;
+
 @Injectable()
 export class SignEnvelopeSweepsService {
   constructor(
@@ -190,37 +209,39 @@ export class SignEnvelopeSweepsService {
       ),
     });
 
-    for (const envelope of expiring) {
+    if (expiring.length === 0) return 0;
+
+    for (let offset = 0; offset < expiring.length; offset += EXPIRATION_SWEEP_CHUNK) {
+      const batch = expiring.slice(offset, offset + EXPIRATION_SWEEP_CHUNK);
+      const envelopeIds = batch.map((envelope) => envelope.id);
       await this.db
         .update(signRecipients)
         .set({ status: "expired", tokenRevokedAt: now })
         .where(
           and(
             eq(signRecipients.orgId, orgId),
-            eq(signRecipients.envelopeId, envelope.id),
-            notInArray(signRecipients.status, [
-              "completed",
-              "declined",
-              "delegated",
-            ]),
+            inArray(signRecipients.envelopeId, envelopeIds),
+            notInArray(signRecipients.status, ["completed", "declined", "delegated"]),
           ),
         );
       await this.db
         .update(signEnvelopes)
         .set({ status: "expired" })
-        .where(and(eq(signEnvelopes.id, envelope.id), eq(signEnvelopes.orgId, orgId)));
-      await this.audit.record({
-        orgId: envelope.orgId,
-        envelopeId: envelope.id,
-        actorType: "system",
-        eventType: "envelope_expired",
-        eventMessage: "Envelope expired automatically",
-      });
-      this.integrations.emitEnvelopeEvent(
-        { ...envelope, status: "expired" },
-        "expired",
+        .where(and(eq(signEnvelopes.orgId, orgId), inArray(signEnvelopes.id, envelopeIds)));
+      await this.audit.record(
+        batch.map((envelope) => ({
+          orgId: envelope.orgId,
+          envelopeId: envelope.id,
+          actorType: "system" as const,
+          eventType: "envelope_expired" as const,
+          eventMessage: "Envelope expired automatically",
+        })),
       );
     }
+
+    for (const envelope of expiring)
+      this.integrations.emitEnvelopeEvent({ ...envelope, status: "expired" }, "expired");
+
     return expiring.length;
   }
 }

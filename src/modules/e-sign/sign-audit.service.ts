@@ -73,6 +73,34 @@ export interface SignAuditRecordInput extends SignAuditActor {
   eventPayload?: Record<string, unknown>;
 }
 
+type SignAuditRow = typeof signAuditEvents.$inferInsert;
+
+function toRow(input: SignAuditRecordInput): SignAuditRow {
+  return {
+    orgId: input.orgId,
+    envelopeId: input.envelopeId ?? null,
+    recipientId: input.recipientId ?? null,
+    actorType: input.actorType,
+    actorUserId: input.actorUserId ?? null,
+    actorName: input.actorName ?? null,
+    actorEmail: input.actorEmail ?? null,
+    eventType: input.eventType,
+    eventMessage: input.eventMessage ?? null,
+    ipAddress: input.ipAddress ?? null,
+    userAgent: input.userAgent ?? null,
+    documentHash: input.documentHash ?? null,
+    requestId: input.requestId ?? null,
+    eventPayloadJson: input.eventPayload ?? null,
+  };
+}
+
+/**
+ * Rows per multi-row INSERT. Fourteen bound parameters per row keeps a full
+ * chunk at 7,000 placeholders, an order of magnitude under the 65,535 a single
+ * Postgres statement can bind, and one chunk is the unit that commits together.
+ */
+export const SIGN_AUDIT_INSERT_CHUNK = 500;
+
 /**
  * Append-only writer for the SignOS audit trail. No other code in this module
  * should ever UPDATE or DELETE a sign_audit_events row.
@@ -81,24 +109,23 @@ export interface SignAuditRecordInput extends SignAuditActor {
 export class SignAuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async record(input: SignAuditRecordInput, tx?: Tx): Promise<void> {
+  /**
+   * Records one event or a batch of them.
+   *
+   * A batch is one multi-row INSERT per {@link SIGN_AUDIT_INSERT_CHUNK}, not one
+   * INSERT per event: a sweep that flips N envelopes owes N audit rows, and
+   * issuing those one at a time is the per-row write shape §5.1 bans. The batch
+   * arrives through this same entry point rather than a second method so the
+   * append-only rule above still has exactly one door to guard.
+   */
+  async record(input: SignAuditRecordInput | readonly SignAuditRecordInput[], tx?: Tx): Promise<void> {
+    const inputs = Array.isArray(input) ? input : [input];
+    if (inputs.length === 0) return;
     const db = (tx ?? this.db) as Db;
-    await db.insert(signAuditEvents).values({
-      orgId: input.orgId,
-      envelopeId: input.envelopeId ?? null,
-      recipientId: input.recipientId ?? null,
-      actorType: input.actorType,
-      actorUserId: input.actorUserId ?? null,
-      actorName: input.actorName ?? null,
-      actorEmail: input.actorEmail ?? null,
-      eventType: input.eventType,
-      eventMessage: input.eventMessage ?? null,
-      ipAddress: input.ipAddress ?? null,
-      userAgent: input.userAgent ?? null,
-      documentHash: input.documentHash ?? null,
-      requestId: input.requestId ?? null,
-      eventPayloadJson: input.eventPayload ?? null,
-    });
+    for (let offset = 0; offset < inputs.length; offset += SIGN_AUDIT_INSERT_CHUNK) {
+      const chunk = inputs.slice(offset, offset + SIGN_AUDIT_INSERT_CHUNK);
+      await db.insert(signAuditEvents).values(chunk.map(toRow));
+    }
   }
 
   /**

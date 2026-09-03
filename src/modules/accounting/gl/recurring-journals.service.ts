@@ -143,21 +143,23 @@ export class RecurringJournalsService {
     if (!tmpl[0]) throw new NotFoundException("Recurring journal template not found");
     if (!tmpl[0].isActive) throw new BadRequestException("Template is inactive");
 
+    const template = tmpl[0];
     const today = todayIso();
-    const entry = await this.materializeEntry(tmpl[0], today, userId);
-    const nextRun = advanceDate(today, tmpl[0].frequency);
+    const nextRun = advanceDate(today, template.frequency);
 
-    await this.db
-      .update(finRecurringJournalTemplates)
-      .set({ lastRunDate: today, nextRunDate: nextRun })
-      .where(
-        and(
-          eq(finRecurringJournalTemplates.id, templateId),
-          eq(finRecurringJournalTemplates.orgId, orgId),
-        ),
-      );
-
-    return entry;
+    return this.db.transaction(async (tx) => {
+      const entry = await this.materializeEntry(template, today, userId, tx);
+      await tx
+        .update(finRecurringJournalTemplates)
+        .set({ lastRunDate: today, nextRunDate: nextRun })
+        .where(
+          and(
+            eq(finRecurringJournalTemplates.id, templateId),
+            eq(finRecurringJournalTemplates.orgId, orgId),
+          ),
+        );
+      return entry;
+    });
   }
 
   async runDueTemplates(orgId?: string): Promise<{ processed: number; errors: number }> {
@@ -181,18 +183,7 @@ export class RecurringJournalsService {
 
     for (const tmpl of templates) {
       try {
-        await this.materializeEntry(tmpl, today, systemUserId);
-        const nextRun = advanceDate(today, tmpl.frequency);
-        await this.db
-          .update(finRecurringJournalTemplates)
-          .set({ lastRunDate: today, nextRunDate: nextRun })
-          .where(
-            and(
-              eq(finRecurringJournalTemplates.id, tmpl.id),
-              eq(finRecurringJournalTemplates.orgId, tmpl.orgId),
-            ),
-          );
-        processed++;
+        if (await this.claimAndMaterialize(tmpl, today, systemUserId)) processed++;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         this.logger.error(`Failed to materialize recurring journal template ${tmpl.id}: ${msg}`);
@@ -203,47 +194,85 @@ export class RecurringJournalsService {
     return { processed, errors };
   }
 
+  /**
+   * The entry and the template advance commit together, and the advance goes
+   * FIRST as a compare-and-set on the due predicate.
+   *
+   * Two separate round trips lost a crash window between them: the entry
+   * committed, `nextRunDate` did not move, and the next day's sweep spawned a
+   * SECOND entry for the same template — `uniq_je_idempotency` only blocks the
+   * repeat while `sourceEvent` is still today's date, so the duplicate lands as
+   * soon as the date rolls over. Claiming first also makes two concurrent
+   * sweeps safe: the loser blocks on the row lock, re-evaluates
+   * `next_run_date <= today` against the winner's committed row, matches
+   * nothing and spawns nothing.
+   */
+  private async claimAndMaterialize(
+    tmpl: typeof finRecurringJournalTemplates.$inferSelect,
+    entryDate: string,
+    userId: string,
+  ): Promise<boolean> {
+    const nextRun = advanceDate(entryDate, tmpl.frequency);
+    return this.db.transaction(async (tx) => {
+      const claimed = await tx
+        .update(finRecurringJournalTemplates)
+        .set({ lastRunDate: entryDate, nextRunDate: nextRun })
+        .where(
+          and(
+            eq(finRecurringJournalTemplates.id, tmpl.id),
+            eq(finRecurringJournalTemplates.orgId, tmpl.orgId),
+            eq(finRecurringJournalTemplates.isActive, true),
+            lte(finRecurringJournalTemplates.nextRunDate, entryDate),
+          ),
+        )
+        .returning({ id: finRecurringJournalTemplates.id });
+
+      if (!claimed[0]) return false;
+      await this.materializeEntry(tmpl, entryDate, userId, tx);
+      return true;
+    });
+  }
+
   private async materializeEntry(
     tmpl: typeof finRecurringJournalTemplates.$inferSelect,
     entryDate: string,
     userId: string,
+    tx: Tx,
   ) {
     const lines = recurringLineArraySchema.parse(tmpl.lines);
     this.validateLines(lines);
 
-    return this.db.transaction(async (tx) => {
-      const entryNumber = await this.nextSequenceNumber(tmpl.orgId, entryDate, tx);
+    const entryNumber = await this.nextSequenceNumber(tmpl.orgId, entryDate, tx);
 
-      const [entry] = await tx
-        .insert(journalEntries)
-        .values({
-          orgId: tmpl.orgId,
-          entryNumber,
-          entryDate,
-          description: tmpl.name,
-          sourceType: "recurring_journal",
-          sourceId: String(tmpl.id),
-          sourceEvent: entryDate,
-          status: "DRAFT",
-          createdBy: userId,
-        })
-        .returning({ id: journalEntries.id, entryNumber: journalEntries.entryNumber });
-
-      if (!entry) throw new Error("Journal entry insert returned no rows");
-
-      const lineRows = lines.map((line, idx) => ({
-        entryId: entry.id,
-        accountId: line.accountId,
+    const [entry] = await tx
+      .insert(journalEntries)
+      .values({
         orgId: tmpl.orgId,
-        debit: decimalFromNumber(line.debit),
-        credit: decimalFromNumber(line.credit),
-        description: line.description ?? null,
-        lineOrder: idx,
-      }));
+        entryNumber,
+        entryDate,
+        description: tmpl.name,
+        sourceType: "recurring_journal",
+        sourceId: String(tmpl.id),
+        sourceEvent: entryDate,
+        status: "DRAFT",
+        createdBy: userId,
+      })
+      .returning({ id: journalEntries.id, entryNumber: journalEntries.entryNumber });
 
-      await tx.insert(journalLines).values(lineRows);
-      return entry;
-    });
+    if (!entry) throw new Error("Journal entry insert returned no rows");
+
+    const lineRows = lines.map((line, idx) => ({
+      entryId: entry.id,
+      accountId: line.accountId,
+      orgId: tmpl.orgId,
+      debit: decimalFromNumber(line.debit),
+      credit: decimalFromNumber(line.credit),
+      description: line.description ?? null,
+      lineOrder: idx,
+    }));
+
+    await tx.insert(journalLines).values(lineRows);
+    return entry;
   }
 
   private async nextSequenceNumber(orgId: string, entryDate: string, tx: Tx): Promise<string> {
