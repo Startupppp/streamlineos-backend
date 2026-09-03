@@ -207,7 +207,14 @@ export const BUDGETS = [
       WHERE c.org_id = $1 AND m.archived_at IS NULL AND c.is_archived = false
       ORDER BY c.last_message_at DESC
       LIMIT 50`,
-    planAssertions: [],
+    planAssertions: [
+      // The growing side of this join is chat_channel_members, not chat_channels: a tenant has
+      // tens of channels and thousands of memberships. Before this the budget asserted nothing
+      // about plan shape, so a membership Seq Scan would still have passed under an 8,000-block
+      // ceiling. Measured on scratch_perf_seed at head as streamline_app with the tenant GUC:
+      // 11 warm blocks, 2 rows scanned for 2 returned.
+      { kind: "forbid-seq-scan", relation: "chat_channel_members" },
+    ],
   },
   {
     id: "chat-messages-page",
@@ -221,7 +228,12 @@ export const BUDGETS = [
       WHERE org_id = $1 AND channel_id = $2 AND is_deleted = false
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [],
+    planAssertions: [
+      // 12,000 messages on the reference tenant. Measured: 10 warm blocks, 50 rows scanned for a
+      // 50-row page — the (org_id, channel_id, created_at DESC) access path. A Seq Scan here is
+      // O(channel history) for one screen and is the regression this asserts against.
+      { kind: "forbid-seq-scan", relation: "chat_messages" },
+    ],
   },
   {
     id: "chat-channel-members",
@@ -235,7 +247,12 @@ export const BUDGETS = [
       WHERE m.org_id = $1 AND m.channel_id = $2
       ORDER BY m.joined_at ASC
       LIMIT 100`,
-    planAssertions: [],
+    planAssertions: [
+      // Measured: 9 warm blocks, 500 rows scanned for a 100-row page. The 5x over-scan is the
+      // seed's two 500-member channels being ordered by joined_at with no matching index prefix;
+      // it is inside the ceiling and is recorded here rather than silently tolerated.
+      { kind: "forbid-seq-scan", relation: "chat_channel_members" },
+    ],
   },
   {
     id: "kb-page-id-probe-sdf",
@@ -810,7 +827,11 @@ export const BUDGETS = [
       WHERE sm.org_id = $1 AND m.is_deleted = false
       ORDER BY sm.saved_at DESC
       LIMIT 50`,
-    planAssertions: [],
+    planAssertions: [
+      // chat_messages is the growing side (12,000 rows); chat_saved_messages is the small one.
+      // Measured: 81 warm blocks, 230 rows scanned for 25 returned.
+      { kind: "forbid-seq-scan", relation: "chat_messages" },
+    ],
   },
   {
     id: "accounting-receivables-list",
@@ -1309,7 +1330,13 @@ export const BUDGETS = [
       WHERE org_id = $1 AND membership_id = $2
         AND created_at >= $3::timestamptz AND created_at < $4::timestamptz
         AND is_read = false AND deleted_at IS NULL AND archived_at IS NULL`,
-    planAssertions: [],
+    planAssertions: [
+      // 235,297 notifications on the reference tenant. Its two siblings over the same table
+      // (notifications-list, notifications-unread-count) already forbid a Seq Scan; this one did
+      // not, which is exactly how it Seq Scanned at 11,377 blocks before the 22c predicate fix and
+      // still sat inside its 3,000-block ceiling afterwards. Measured now: 16 warm blocks.
+      { kind: "forbid-seq-scan", relation: "notifications" },
+    ],
   },
   {
     id: "dashboard-stats-attendance-count",
