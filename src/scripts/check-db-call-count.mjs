@@ -132,6 +132,25 @@ function parenBalance(line) {
   return depth;
 }
 
+function bracketBalance(line) {
+  let depth = 0;
+  let inStr = false;
+  let strChar = "";
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inStr) {
+      if (ch === strChar && line[i - 1] !== "\\") inStr = false;
+    } else if (ch === '"' || ch === "'" || ch === "`") {
+      inStr = true; strChar = ch;
+    } else if (ch === "[") {
+      depth++;
+    } else if (ch === "]") {
+      depth--;
+    }
+  }
+  return depth;
+}
+
 function braceDepthChange(line) {
   let depth = 0;
   let inStr = false;
@@ -168,6 +187,31 @@ function loopParensBalanced(line) {
   return parenBalance(line) >= 0;
 }
 
+/**
+ * An opener that opened nothing — every paren, bracket and brace it opened is
+ * closed again on the same line — so there is no body below it to scan.
+ *
+ * This is the array-callback noise. `LOOP_OPENERS` includes `.map(`/`.filter(`/
+ * `.forEach(`, so a projection such as
+ * `names.map((n) => ({ n, slug: slug(n) }))` counts as a loop opener. It has a
+ * `{`, so the older `!loopBodyOpenedOnLine` skip did not fire; but its braces
+ * net to zero, so `enteredBody` never became true either, and the scanner then
+ * walked up to LOOP_BODY_LOOKFORWARD lines forward and ADOPTED THE NEXT
+ * UNRELATED BLOCK as the loop body. Measured on a fixture: a one-line `.map`
+ * followed by an `if` block holding a single `await this.db.select()` was
+ * reported as a loop-internal DB call at the `.map` line.
+ *
+ * All three delimiters are required, and the bracket half is not decorative.
+ * `for (const { contentType, id } of [` (kb/wiki/kb-spaces.service.ts:224) has
+ * balanced BRACES from its destructuring pattern, and it is a real loop with a
+ * braceless body that emits an outbox row per item. Testing braces alone would
+ * have silenced a true positive, which is the failure this repository keeps
+ * producing; its open paren and open bracket both keep it in scope.
+ */
+function openerIsSelfContained(line) {
+  return parenBalance(line) === 0 && bracketBalance(line) === 0 && braceDepthChange(line) === 0;
+}
+
 export function detectLoopDbCalls(src) {
   const lines = src.split("\n");
   const violations = [];
@@ -180,6 +224,7 @@ export function detectLoopDbCalls(src) {
     const parensClosedOnSameLine = loopParensBalanced(line);
 
     if (parensClosedOnSameLine && !opensBodyOnSameLine) continue;
+    if (openerIsSelfContained(line)) continue;
 
     let depth = 0;
     let enteredBody = false;
@@ -574,7 +619,89 @@ function runSelfTests() {
     }
   }
 
-  console.log("SELF-TEST PASS: all 12 detection/classification checks passed");
+  {
+    // The two shapes the array-callback opener produced, pinned in BOTH
+    // directions — the noise it must lose, and the true positive it must keep.
+    const arrayCallbackAdoptingNextBlock = [
+      "    const mapped = names.map((n) => ({ n, slug: slug(n) }));",
+      "    if (mapped.length) {",
+      "      const rows = await this.db",
+      "        .select()",
+      "        .from(t);",
+      "      return rows;",
+      "    }",
+    ].join("\n");
+    // Real code, kb/wiki/kb-spaces.service.ts:224. Balanced BRACES from the
+    // destructuring pattern, an OPEN paren and an OPEN bracket, a braceless
+    // body, and a per-item outbox write. Testing braces alone silences it.
+    const bracelessForOverArrayLiteral = [
+      "        for (const { contentType, id } of [",
+      "          ...articles.map((row) => ({ contentType: \"article\", id: row.id })),",
+      "        ])",
+      "          await OutboxWriter.emit(tx, {",
+      "            eventId: randomUUID(),",
+      "            payload: { contentType, contentId: id },",
+      "          });",
+    ].join("\n");
+    const wrappedChainInLoop = [
+      "    for (const id of ids) {",
+      "      const row = await this.db",
+      "        .select({ id: t.id })",
+      "        .from(t);",
+      "    }",
+    ].join("\n");
+    const templatePlaceholderOneLiner = [
+      "    const parts = ids.map((id) => sql`${id}`);",
+      "    if (parts.length) {",
+      "      const rows = await this.db",
+      "        .select()",
+      "        .from(t);",
+      "    }",
+    ].join("\n");
+    const openCallbackBodyStillScanned = [
+      "    await Promise.all(",
+      "      ids.map(async (id) => {",
+      "        const row = await this.db",
+      "          .select()",
+      "          .from(t);",
+      "        return row;",
+      "      }),",
+      "    );",
+    ].join("\n");
+
+    const cases = [
+      ["a balanced one-line array callback must not adopt the next block", arrayCallbackAdoptingNextBlock, 0],
+      ["a braceless for over an array literal is still a loop DB call", bracelessForOverArrayLiteral, 1],
+      ["a Prettier-wrapped chain inside a for-of is still a loop DB call", wrappedChainInLoop, 1],
+      ["a ${} placeholder does not make a one-liner into a body opener", templatePlaceholderOneLiner, 0],
+      ["a callback whose brace body IS left open is still scanned", openCallbackBodyStillScanned, 1],
+    ];
+    for (const [label, fixture, expected] of cases) {
+      const got = detectLoopDbCalls(fixture).length;
+      if (got !== expected) {
+        console.error(`SELF-TEST FAIL: ${label} — expected ${expected} violation(s), got ${got}`);
+        process.exit(1);
+      }
+    }
+
+    const balancedCases = [
+      ["names.map((n) => ({ n, slug: slug(n) }));", true],
+      ["for (const x of xs) {", false],
+      ["for (const { a, b } of [", false],
+      ["columns.map(({ table, column }) =>", false],
+      ["const parts = ids.map((id) => sql`${id}`);", true],
+    ];
+    for (const [line, expected] of balancedCases) {
+      if (openerIsSelfContained(line) !== expected) {
+        console.error(
+          `SELF-TEST FAIL: openerIsSelfContained(${JSON.stringify(line)}) = ${openerIsSelfContained(line)}, expected ${expected}`,
+        );
+        process.exit(1);
+      }
+    }
+  }
+
+  console.log("SELF-TEST PASS: all 22 detection/classification checks passed");
   process.exitCode = 0;
 }
 
