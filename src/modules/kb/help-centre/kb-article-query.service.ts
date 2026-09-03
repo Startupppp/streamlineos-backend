@@ -1,15 +1,18 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleVersions } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
+import { articleTsquery, resolveArticleKeywordSql } from "../core/kb-article-keyword-search";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ListArticlesInput } from "../core/dto/kb.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { actingMembershipId } from "../../../common/auth/principal";
+
+const ARTICLE_KEYWORD_ID_CAP = 500;
 
 type ArticleRow = typeof kbArticles.$inferSelect;
 
@@ -65,9 +68,10 @@ export class KbArticleQueryService {
     if (query.categoryId) conditions.push(eq(kbArticles.categoryId, query.categoryId));
     if (query.status) conditions.push(eq(kbArticles.status, query.status));
     if (query.search) {
-      const term = `%${query.search}%`;
-      const match = or(ilike(kbArticles.title, term), ilike(kbArticles.excerpt, term));
-      if (match) conditions.push(match);
+      const tsquery = articleTsquery(query.search);
+      conditions.push(
+        await resolveArticleKeywordSql(this.db, query.search, tsquery, ARTICLE_KEYWORD_ID_CAP),
+      );
     }
 
     const position = decodeCursor(query.cursor);

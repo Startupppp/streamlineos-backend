@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, sql, type SQL } from "drizzl
 import { kbArticles, kbArticleChunks, kbArticleRestrictions, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { resolveArticleKeywordSql } from "../core/kb-article-keyword-search";
 
 const RRF_CONSTANT = 60;
 const SNIPPET_LENGTH = 160;
@@ -224,12 +225,7 @@ export class KbCandidateService {
   }
 
   async resolveArticleKeywordCondition(q: string, tsquery: SQL, cap: number): Promise<SQL> {
-    const term = `%${q}%`;
-    const fallback = sql`(fts @@ ${tsquery} or (numnode(${tsquery}) = 0 and (${kbArticles.title} ilike ${term} or ${kbArticles.excerpt} ilike ${term} or ${kbArticles.contentText} ilike ${term})))`;
-    const rows = await this.db.execute(sql`SELECT app.search_kb_article_ids(${q}, ${cap + 1}) AS id`);
-    if (rows.length === 0 || rows.length > cap) return fallback;
-    const ids = rows.map((r) => Number(r["id"]));
-    return inArray(kbArticles.id, ids);
+    return resolveArticleKeywordSql(this.db, q, tsquery, cap);
   }
 
   keywordRank(tsquery: SQL): SQL<number> {
