@@ -7,7 +7,18 @@
     "totalOperations": 3613,
     "declaredBudgets": 82,
     "criticalSelection": "A route is critical when it is (a) issued on every authenticated page load, (b) the primary list or detail read of an in-scope module, (c) the primary transactional write of an in-scope module, or (d) a scheduled worker batch that iterates tenant data. Everything outside that set is declared-out-of-scope, not measured-and-passing.",
-    "honesty": "totalOperations is recomputed from openapi.json on every gate run. The value stored here is the count at the release commit; the gate prints the live number so the denominator can never go stale without being visible."
+    "honesty": "totalOperations is recomputed from openapi.json on every gate run. The value stored here is the count at the release commit; the gate prints the live number so the denominator can never go stale without being visible.",
+    "workerBatchScope": {
+      "derivedFrom": "every @Get/@Post operation on a @Controller(\"cron\") class under src/, re-read by check-route-budgets.mjs on every run — not a list stored here",
+      "why": "surface.criticalSelection names four clauses. (a), (b) and (c) are product judgements and stay asserted (R-13). (d) — \"a scheduled worker batch that iterates tenant data\" — is not a judgement: a scheduled batch in this codebase IS an operation on a cron controller, so the set is readable out of source. Deriving it turns \"82 budgets, and we believe that is the critical set\" into a countable fraction, which is the question this ticket's first box actually asks.",
+      "unit": "one budget per PATH, not per HTTP method: GET /cron/x and POST /cron/x are the same private handler behind the same withLease, so a budget on either covers the batch.",
+      "undeclaredWatermark": 53,
+      "watermarkNote": "A RATCHET, not a target. It is the count of derived cron batches carrying no budget at the commit that recorded it. The gate fails when the count RISES, so a new scheduled sweep must declare its five ceilings or be named below with a reason. Lowering it is the work; raising it to go green is the defect the ratchet exists to catch.",
+      "declaredOutOfScope": {
+        "/cron/outbox-events-metrics": "not a batch: OutboxPublisherService.metrics() -> OutboxReportService.metrics(), a read of publisher counters. It drains nothing, claims no rows and writes nothing.",
+        "/cron/outbox-events-report": "not a batch: OutboxPublisherService.report() -> OutboxReportService.report(), a read. NOTE it accumulates one object per tenant in memory (outbox-report.service.ts:71-95) and is HTTP-reachable, which is a size finding raised in ticket 23 box 7, not a budget one."
+      }
+    }
   },
   "defaults": {
     "maxDbCalls": 10,

@@ -13,6 +13,12 @@
  *    and a declared maxBufferBlocks does not disagree with that budget's own ceiling. A dangling
  *    link is a budget that looks measured and measures nothing.
  * 4. MEASURED vs DECLARED — every populated measured* field is enforced against its ceiling.
+ * 5. CRITICAL-SET COVERAGE, DERIVED — clause (d) of the critical set ("a scheduled worker batch
+ *    that iterates tenant data") is no longer asserted. Every `/cron/*` operation is read out of
+ *    the `@Controller("cron")` classes in src/, and each derived batch must either carry a budget
+ *    or be named in `surface.workerBatchScope.declaredOutOfScope` with a reason. The undeclared
+ *    remainder is RATCHETED against `surface.workerBatchScope.undeclaredWatermark`, so the gap is
+ *    a number that can only shrink — a new unbudgeted sweep fails the gate the day it lands.
  *
  * WHAT IT REPORTS, AND WHY THE REPORT IS THE POINT
  * The predecessor of this gate printed "no budgets exceeded" while every measured field was null,
@@ -38,7 +44,7 @@
  *   2 — manifest/document unreadable, or a non-OK verdict under --strict / STREAMLINE_STRICT_BUDGETS=1
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUDGETS as READ_COST_BUDGETS } from "./read-cost-budgets.mjs";
@@ -53,7 +59,8 @@ const BUDGETS_PATH = join(BACKEND_ROOT, "contracts", "route-budgets.json");
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
 const REQUIRED_BUDGET_FIELDS = ["maxDbCalls", "maxDownstreamCalls", "maxResponseBytes", "maxLatencyP95Ms", "maxMemoryMb"];
-const OPTIONAL_INT_FIELDS = ["maxBufferBlocks", "maxBatchSize", "maxDurationMs", "maxDownstreamCallsPerOrg", "measuredOrgsSwept"];
+const OPTIONAL_INT_FIELDS = ["maxBufferBlocks", "maxBatchSize", "maxDurationMs", "maxDownstreamCallsPerOrg", "maxDbCallsPerOrg", "measuredOrgsSwept"];
+const PER_ORG_FIELD = { maxDownstreamCalls: "maxDownstreamCallsPerOrg", maxDbCalls: "maxDbCallsPerOrg" };
 const OPTIONAL_NUMBER_FIELDS = ["maxReadPathP95Ms"];
 
 const MEASURED_PAIRS = [
@@ -182,8 +189,10 @@ function indexReadCost(readCostBudgets) {
  * red — a per-unit allowance with no measured unit count is an unbounded escape hatch, and one
  * `maxDownstreamCallsPerOrg` typed into a contract must never be able to silence a route on its own.
  */
-export function effectiveDownstreamCeiling(entry, absoluteMax) {
-  const perOrg = entry.maxDownstreamCallsPerOrg;
+export function effectivePerOrgCeiling(entry, maxField, absoluteMax) {
+  const perOrgField = PER_ORG_FIELD[maxField];
+  if (perOrgField === undefined) return { max: absoluteMax, derivation: null };
+  const perOrg = entry[perOrgField];
   const orgs = entry.measuredOrgsSwept;
   if (typeof perOrg !== "number" || !Number.isInteger(perOrg) || perOrg < 0) return { max: absoluteMax, derivation: null };
   if (typeof orgs !== "number" || !Number.isInteger(orgs) || orgs <= 0) return { max: absoluteMax, derivation: null };
@@ -191,6 +200,118 @@ export function effectiveDownstreamCeiling(entry, absoluteMax) {
     max: absoluteMax + perOrg * orgs,
     derivation: `${String(absoluteMax)} fixed + ${String(perOrg)}/org x ${String(orgs)} organisations swept`,
   };
+}
+
+/** Kept as the original name so existing callers and specs of the downstream-only form still resolve. */
+export function effectiveDownstreamCeiling(entry, absoluteMax) {
+  return effectivePerOrgCeiling(entry, "maxDownstreamCalls", absoluteMax);
+}
+
+/**
+ * The critical set, clause (d), DERIVED rather than asserted.
+ *
+ * `surface.criticalSelection` names four clauses. Three of them ((a) every page load, (b) the
+ * primary list/detail read, (c) the primary transactional write) are product judgements and stay
+ * asserted. The fourth — "a scheduled worker batch that iterates tenant data" — is not a judgement
+ * at all: a scheduled batch in this codebase is an operation on a `@Controller("cron")` class, and
+ * that set is readable out of source. Reading it turns "82 budgets, and we believe that is the
+ * critical set" into "N cron batches exist, M declare a budget", which is the question the ticket's
+ * first box actually asks.
+ *
+ * Pure over the sources so the parse is self-testable without a filesystem.
+ */
+export function parseCronControllerRoutes(sources) {
+  const found = [];
+  for (const { file, text } of sources) {
+    if (!/@Controller\(\s*["'`]cron["'`]\s*\)/.test(text)) continue;
+    const lines = text.split("\n");
+    lines.forEach((line, i) => {
+      const m = /@(Get|Post|Put|Patch|Delete)\(\s*["'`]([^"'`]*)["'`]\s*\)/.exec(line);
+      if (m === null) return;
+      const segment = m[2].replace(/^\/+/, "").replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+      const path = segment === "" ? "/cron" : `/cron/${segment}`;
+      found.push({ key: `${m[1].toUpperCase()} ${path}`, path, file, line: i + 1 });
+    });
+  }
+  return found;
+}
+
+export function collectCronControllerSources(rootDir) {
+  const sources = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === "dist") continue;
+        walk(full);
+      } else if (entry.name.endsWith(".controller.ts")) {
+        sources.push({ file: full, text: readFileSync(full, "utf8") });
+      }
+    }
+  };
+  if (existsSync(rootDir) && statSync(rootDir).isDirectory()) walk(rootDir);
+  return sources;
+}
+
+/**
+ * A cron operation is IN SCOPE by default and out of it only by an explicit named reason.
+ *
+ * Default-in is the whole point. A regex that tried to tell a "batch" from a "report" by its name
+ * would silently drop every sweep whose name did not match, which is the same silent truncation
+ * the coverage fraction exists to prevent. So every `/cron/*` operation counts, and an endpoint
+ * that genuinely is not a batch (a metrics read, a report read) has to be written down with the
+ * reason — reviewable, and stale-checked below.
+ */
+export function findWorkerBatchScopeViolations(manifest, derivedRoutes, liveKeys) {
+  const scope = manifest.surface?.workerBatchScope ?? null;
+  const violations = [];
+  if (scope === null) {
+    violations.push({ issue: "surface.workerBatchScope is absent — the derived worker-batch census has nowhere to record its scope or its watermark" });
+    return { violations, declared: [], outOfScope: [], undeclared: [], notInOpenApi: [], batchPaths: [] };
+  }
+  const outOfScopeMap = scope.declaredOutOfScope ?? {};
+  const budgetKeys = new Set(Object.keys(manifest.budgets ?? {}));
+
+  // One budget per BATCH, not per HTTP method: GET /cron/x and POST /cron/x are the same handler.
+  const byPath = new Map();
+  for (const r of derivedRoutes) {
+    if (!byPath.has(r.path)) byPath.set(r.path, { path: r.path, keys: [], file: r.file, line: r.line });
+    byPath.get(r.path).keys.push(r.key);
+  }
+
+  const declared = [];
+  const outOfScope = [];
+  const undeclared = [];
+  const notInOpenApi = [];
+  for (const batch of [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path))) {
+    if (!batch.keys.some((k) => liveKeys.has(k))) notInOpenApi.push(batch);
+    if (batch.keys.some((k) => budgetKeys.has(k))) declared.push(batch);
+    else if (typeof outOfScopeMap[batch.path] === "string") outOfScope.push(batch);
+    else undeclared.push(batch);
+  }
+
+  for (const path of Object.keys(outOfScopeMap))
+    if (!byPath.has(path))
+      violations.push({ issue: `declaredOutOfScope names "${path}", which no @Controller("cron") class serves — a stale exclusion reads as coverage` });
+
+  const watermark = scope.undeclaredWatermark;
+  if (typeof watermark !== "number" || !Number.isInteger(watermark) || watermark < 0)
+    violations.push({ issue: `surface.workerBatchScope.undeclaredWatermark must be a non-negative integer, got ${JSON.stringify(watermark)}` });
+  else if (undeclared.length > watermark)
+    violations.push({
+      issue:
+        `${String(undeclared.length)} cron batches declare no budget, above the recorded watermark of ${String(watermark)}. ` +
+        `A new scheduled batch must declare its five ceilings or be named in declaredOutOfScope with a reason. ` +
+        `Raising the watermark to go green is itself the defect this ratchet exists to catch.`,
+    });
+
+  return { violations, declared, outOfScope, undeclared, notInOpenApi, batchPaths: [...byPath.values()] };
 }
 
 export function findExceededBudgets(manifest, readCostBudgets = []) {
@@ -204,12 +325,9 @@ export function findExceededBudgets(manifest, readCostBudgets = []) {
       if (measured === null || measured === undefined) continue;
       let max = resolveCeiling(entry, maxField, defaults, readCostIndex);
       if (typeof measured !== "number" || typeof max !== "number") continue;
-      let derivation = null;
-      if (maxField === "maxDownstreamCalls") {
-        const scaled = effectiveDownstreamCeiling(entry, max);
-        max = scaled.max;
-        derivation = scaled.derivation;
-      }
+      const scaled = effectivePerOrgCeiling(entry, maxField, max);
+      max = scaled.max;
+      const derivation = scaled.derivation;
       if (measured > max) {
         violations.push({
           key,
@@ -451,6 +569,106 @@ if (SELF_TEST) {
     fail("buffer-ceiling-falls-back", `expected the linked read-cost ceiling to enforce an undeclared maxBufferBlocks, got ${JSON.stringify(fallbackExceeded)}`);
   else pass("buffer-ceiling-falls-back — an undeclared maxBufferBlocks is enforced from the linked read-cost budget");
 
+  // The per-organisation allowance now applies to maxDbCalls too. A forEachOrg sweep's statement
+  // count is O(organisations) by construction, so a flat integer describes only the seed it was
+  // written against — the same wrong-UNIT defect already recorded for maxDownstreamCalls.
+  const dbSweep = { maxDbCalls: 1, measuredDbCalls: 25 };
+  const dbNoOrgs = findExceededBudgets({ defaults: {}, budgets: { "GET /cron/s": { ...dbSweep, maxDbCallsPerOrg: 3 } } });
+  if (dbNoOrgs.length !== 1)
+    fail("per-org-dbcalls-fails-closed", `maxDbCallsPerOrg with no measuredOrgsSwept must NOT apply; got ${JSON.stringify(dbNoOrgs)}`);
+  else pass("per-org-dbcalls-fails-closed — maxDbCallsPerOrg with no measured org count leaves the absolute ceiling in force");
+
+  const dbAtBoundary = findExceededBudgets({ defaults: {}, budgets: { "GET /cron/s": { ...dbSweep, maxDbCallsPerOrg: 3, measuredOrgsSwept: 8 } } });
+  if (dbAtBoundary.length !== 0)
+    fail("per-org-dbcalls-boundary", `1 fixed + 3/org x 8 organisations admits 25 statements; got ${JSON.stringify(dbAtBoundary)}`);
+  else pass("per-org-dbcalls-boundary — 1 fixed + 3/org x 8 organisations admits exactly 25 database calls");
+
+  const dbOver = findExceededBudgets({ defaults: {}, budgets: { "GET /cron/s": { ...dbSweep, measuredDbCalls: 26, maxDbCallsPerOrg: 3, measuredOrgsSwept: 8 } } });
+  if (dbOver.length !== 1 || !dbOver[0].issue.includes("3/org x 8 organisations"))
+    fail("per-org-dbcalls-bites", `a 26th statement must fire and name the derivation; got ${JSON.stringify(dbOver)}`);
+  else pass("per-org-dbcalls-bites — one statement above the per-organisation allowance fires and names the derivation");
+
+  const badDbPerOrg = findMalformedBudgetEntries({ budgets: { "GET /cron/s": { ...OK_ENTRY, maxDbCallsPerOrg: 2.5 } } });
+  if (!badDbPerOrg.some((v) => v.field === "maxDbCallsPerOrg"))
+    fail("per-org-dbcalls-validated", `a non-integer maxDbCallsPerOrg must be malformed; got ${JSON.stringify(badDbPerOrg)}`);
+  else pass("per-org-dbcalls-validated — maxDbCallsPerOrg must be a non-negative integer");
+
+  const noPerOrgOnBytes = findExceededBudgets({
+    defaults: {},
+    budgets: { "GET /cron/s": { maxResponseBytes: 4096, measuredResponseBytes: 9000, maxDbCallsPerOrg: 100, measuredOrgsSwept: 8 } },
+  });
+  if (noPerOrgOnBytes.length !== 1)
+    fail("per-org-scoped-to-two-fields", `a per-org allowance must not leak onto an unrelated field; got ${JSON.stringify(noPerOrgOnBytes)}`);
+  else pass("per-org-scoped-to-two-fields — the per-organisation allowance applies only to the two fields that declare one");
+
+  // The derived worker-batch census.
+  const CRON_SRC = [
+    {
+      file: "src/modules/cron/x.controller.ts",
+      text: '@Controller("cron")\nclass X {\n  @Get("alpha-sweep")\n  a() {}\n  @Post("alpha-sweep")\n  b() {}\n  @Get("beta-report")\n  c() {}\n  @Post("gamma-sweep/:name")\n  d() {}\n}\n',
+    },
+    { file: "src/modules/other/y.controller.ts", text: '@Controller("projects")\nclass Y {\n  @Get("zeta")\n  z() {}\n}\n' },
+  ];
+  const parsed = parseCronControllerRoutes(CRON_SRC);
+  const parsedKeys = parsed.map((r) => r.key).sort();
+  const expectedKeys = ["GET /cron/alpha-sweep", "GET /cron/beta-report", "POST /cron/alpha-sweep", "POST /cron/gamma-sweep/{name}"];
+  if (JSON.stringify(parsedKeys) !== JSON.stringify(expectedKeys))
+    fail("cron-parse", `expected ${JSON.stringify(expectedKeys)}, got ${JSON.stringify(parsedKeys)}`);
+  else pass("cron-parse — cron operations are read from @Controller(\"cron\") only, and :param becomes {param}");
+
+  const cronLive = new Set(expectedKeys);
+  const scopeManifest = (scope, budgets) => ({ surface: { workerBatchScope: scope }, budgets });
+
+  const undeclaredOver = findWorkerBatchScopeViolations(
+    scopeManifest({ undeclaredWatermark: 0, declaredOutOfScope: {} }, {}),
+    parsed,
+    cronLive,
+  );
+  if (undeclaredOver.undeclared.length !== 3 || undeclaredOver.violations.length !== 1)
+    fail("batch-watermark-bites", `3 undeclared batches over a watermark of 0 must be one violation; got ${JSON.stringify(undeclaredOver)}`);
+  else pass("batch-watermark-bites — cron batches above the undeclared watermark fail the gate");
+
+  const undeclaredAt = findWorkerBatchScopeViolations(
+    scopeManifest({ undeclaredWatermark: 3, declaredOutOfScope: {} }, {}),
+    parsed,
+    cronLive,
+  );
+  if (undeclaredAt.violations.length !== 0)
+    fail("batch-watermark-holds", `exactly at the watermark must not fail; got ${JSON.stringify(undeclaredAt.violations)}`);
+  else pass("batch-watermark-holds — a census exactly at the recorded watermark passes");
+
+  const oneBudgeted = findWorkerBatchScopeViolations(
+    scopeManifest({ undeclaredWatermark: 3, declaredOutOfScope: { "/cron/beta-report": "a read, not a batch" } }, { "GET /cron/alpha-sweep": OK_ENTRY }),
+    parsed,
+    cronLive,
+  );
+  if (oneBudgeted.declared.length !== 1 || oneBudgeted.outOfScope.length !== 1 || oneBudgeted.undeclared.length !== 1)
+    fail("batch-census-classifies", `expected 1 declared / 1 out-of-scope / 1 undeclared; got ${JSON.stringify({ d: oneBudgeted.declared.length, o: oneBudgeted.outOfScope.length, u: oneBudgeted.undeclared.length })}`);
+  else pass("batch-census-classifies — a budget on either method covers the batch, and an out-of-scope reason removes it from the remainder");
+
+  const staleExclusion = findWorkerBatchScopeViolations(
+    scopeManifest({ undeclaredWatermark: 3, declaredOutOfScope: { "/cron/deleted-sweep": "gone" } }, {}),
+    parsed,
+    cronLive,
+  );
+  if (!staleExclusion.violations.some((v) => v.issue.includes("stale exclusion")))
+    fail("batch-stale-exclusion", `an exclusion naming a batch no controller serves must fire; got ${JSON.stringify(staleExclusion.violations)}`);
+  else pass("batch-stale-exclusion — an exclusion for a batch no cron controller serves is a violation");
+
+  const missingScope = findWorkerBatchScopeViolations({ budgets: {} }, parsed, cronLive);
+  if (missingScope.violations.length !== 1)
+    fail("batch-scope-required", `an absent workerBatchScope must fail; got ${JSON.stringify(missingScope.violations)}`);
+  else pass("batch-scope-required — a manifest with no workerBatchScope cannot report a derived census");
+
+  const notInDoc = findWorkerBatchScopeViolations(
+    scopeManifest({ undeclaredWatermark: 3, declaredOutOfScope: {} }, {}),
+    parsed,
+    new Set(["GET /cron/alpha-sweep", "POST /cron/alpha-sweep"]),
+  );
+  if (notInDoc.notInOpenApi.length !== 2)
+    fail("batch-not-in-openapi", `a cron batch absent from openapi.json must be reported; got ${JSON.stringify(notInDoc.notInOpenApi.map((b) => b.path))}`);
+  else pass("batch-not-in-openapi — a cron batch no OpenAPI operation describes is reported (it can never carry a budget)");
+
   const cov = readCostGuardCoverage(
     { budgets: { "GET /a": { readCostBudgetId: "x" }, "GET /b": {} } },
     [{ id: "x", ceiling: 1 }, { id: "y", ceiling: 1, excluded: "reason" }],
@@ -499,6 +717,8 @@ const brokenLinks = findBrokenReadCostLinks(manifest, READ_COST_BUDGETS);
 const exceeded = findExceededBudgets(manifest, READ_COST_BUDGETS);
 const coverage = measurementCoverage(manifest, READ_COST_BUDGETS);
 const guard = readCostGuardCoverage(manifest, READ_COST_BUDGETS, totalOperations);
+const cronRoutes = parseCronControllerRoutes(collectCronControllerSources(join(BACKEND_ROOT, "src")));
+const batchCensus = findWorkerBatchScopeViolations(manifest, cronRoutes, liveKeys);
 
 const entries = Object.entries(manifest.budgets ?? {});
 const budgetCount = entries.length;
@@ -536,6 +756,25 @@ process.stdout.write(
     `${String(basis["declared-estimate"])} declared estimate · ${String(basis["default-ceiling"])} default ceiling · ${String(basis.undeclared)} undeclared.\n`,
 );
 
+const batchTotal = batchCensus.batchPaths.length;
+process.stdout.write(
+  `  Critical set, clause (d) DERIVED from ${String(cronRoutes.length)} operations on @Controller("cron") classes: ` +
+    `${String(batchTotal)} scheduled batches — ${String(batchCensus.declared.length)} declare a budget ` +
+    `(${pct(batchCensus.declared.length, batchTotal)}%), ${String(batchCensus.outOfScope.length)} declared out of scope with a reason, ` +
+    `${String(batchCensus.undeclared.length)} UNDECLARED against a watermark of ${String(manifest.surface?.workerBatchScope?.undeclaredWatermark ?? "absent")}.\n`,
+);
+if (batchCensus.undeclared.length > 0) {
+  process.stdout.write(`  Undeclared scheduled batches (no ceiling of any kind is enforced on these):\n`);
+  for (const b of batchCensus.undeclared) process.stdout.write(`    ${b.path}\n`);
+}
+if (batchCensus.notInOpenApi.length > 0) {
+  process.stdout.write(
+    `  NOT IN OPENAPI: ${String(batchCensus.notInOpenApi.length)} cron batch(es) are served by a controller but described by no OpenAPI ` +
+      `operation, so no budget key can ever reference them:\n`,
+  );
+  for (const b of batchCensus.notInOpenApi) process.stdout.write(`    ${b.path}  (${b.file}:${String(b.line)})\n`);
+}
+
 if (stale.length > 0) {
   process.stdout.write(`  STALE BUDGETS: ${String(stale.length)} key(s) not in current OpenAPI:\n`);
   for (const k of stale) process.stdout.write(`    ${k}\n`);
@@ -553,7 +792,12 @@ if (exceeded.length > 0) {
   for (const { key, issue } of exceeded) process.stderr.write(`    ${key} — ${issue}\n`);
 }
 
-const structural = stale.length + malformed.length + brokenLinks.length;
+if (batchCensus.violations.length > 0) {
+  process.stderr.write(`  WORKER-BATCH SCOPE: ${String(batchCensus.violations.length)} violation(s):\n`);
+  for (const { issue } of batchCensus.violations) process.stderr.write(`    ${issue}\n`);
+}
+
+const structural = stale.length + malformed.length + brokenLinks.length + batchCensus.violations.length;
 if (structural > 0) {
   process.stderr.write(`check-route-budgets: FAIL — ${String(structural)} structural violation(s) in the route budget manifest.\n`);
   process.exit(1);
