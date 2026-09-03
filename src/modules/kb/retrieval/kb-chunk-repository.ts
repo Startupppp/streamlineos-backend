@@ -85,13 +85,7 @@ export async function loadPageChunkState(
         aclRevision: kbArticleChunks.aclRevision,
       })
       .from(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.orgId, orgId),
-          eq(kbArticleChunks.pageId, pageId),
-          eq(kbArticleChunks.source, "page_body"),
-        ),
-      )
+      .where(pageBodyChunks(orgId, pageId))
       .limit(1),
   { orgId });
 
