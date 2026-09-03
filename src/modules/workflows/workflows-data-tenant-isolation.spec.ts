@@ -3,6 +3,7 @@ import type { Db } from "../../db/drizzle.module";
 import { WorkflowsSchedulesService } from "./workflows-schedules.service";
 import { WorkflowsSecretsService } from "./workflows-secrets.service";
 import { WorkflowsVariablesService } from "./workflows-variables.service";
+import { WORKFLOW_PERMISSIONS } from "../rbac/permissions/workflows";
 
 const OWNER_ORG = "org-owner-uuid";
 const ATTACKER_ORG = "org-attacker-uuid";
@@ -252,6 +253,11 @@ describe("WorkflowsVariablesService — cross-tenant isolation", () => {
 
 describe("DataScope — not applicable to Workflows", () => {
   it("workflows are org-level resources with no user-scoped DataScope (own/team/all do not apply)", () => {
-    expect(true).toBe(true);
+    // Asserted expect(true).toBe(true). The claim is a property of the
+    // permission catalog: a scopable permission is exactly the one that carries
+    // own/team/all, so "DataScope does not apply" means none of these is scopable.
+    expect(WORKFLOW_PERMISSIONS.length).toBeGreaterThan(0);
+    const scopable = WORKFLOW_PERMISSIONS.filter((p) => p.scopable === true).map((p) => p.name);
+    expect(scopable).toEqual([]);
   });
 });
