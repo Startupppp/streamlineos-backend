@@ -66,11 +66,6 @@ const MIN_PARTIAL_INDEX_TARGETS = 5;
  */
 const KNOWN_OPEN: ReadonlyArray<{ file: string; signature: string; note: string }> = [
   {
-    file: "src/modules/billing/core/versioned-catalog.service.ts",
-    signature: "org_entitlement_overrides(org_id,idempotency_key)",
-    note: "uq_org_ent_overrides_idem is PARTIAL (idempotency_key IS NOT NULL). upsertOrgEntitlementOverride 42P10s on every call. Owner: billing.",
-  },
-  {
     file: "src/modules/hr/time/rosters.service.ts",
     signature: "roster_entries(roster_id,user_membership_id,date)",
     note: "No unique index in the declaration OR the catalog. upsertRosterEntry 42P10s on every call. Needs a migration, not just a predicate. Owner: hr.",

@@ -193,6 +193,7 @@ export class VersionedCatalogService {
         })
         .onConflictDoUpdate({
           target: [orgEntitlementOverrides.orgId, orgEntitlementOverrides.idempotencyKey],
+          targetWhere: sql`idempotency_key IS NOT NULL`,
           set: { limitValue, reason, effectiveFrom: now, effectiveUntil: null },
           setWhere: sql`idempotency_key IS NOT NULL`,
         });
