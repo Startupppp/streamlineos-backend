@@ -25,6 +25,7 @@ import { NoTenantTransaction } from "../../../common/tenant";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { assertOwnerOnly } from "../../../common/rbac/owner-only-operations";
+import { assertPathOrgIsCallerOrg } from "./assert-path-org";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -412,6 +413,7 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     assertOwnerOnly(u, "organization.purge.schedule");
+    assertPathOrgIsCallerOrg(orgId, u.orgId);
     const targetOrgId = u.orgId;
     return this.orgPurge.schedulePurge(
       targetOrgId,
@@ -431,6 +433,7 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     assertOwnerOnly(u, "organization.purge.cancel");
+    assertPathOrgIsCallerOrg(orgId, u.orgId);
     const targetOrgId = u.orgId;
     return this.orgPurge.cancelPurge(targetOrgId, u.userId);
   }
