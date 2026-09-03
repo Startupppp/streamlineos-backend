@@ -72,12 +72,15 @@ export class StorageVaultController {
       action: "VIEW",
     });
 
-    let signedUrl = doc.fileUrl;
-    if (doc.s3Key && this.storage.isConfigured()) {
+    const key =
+      doc.s3Key.trim().length > 0 ? doc.s3Key : this.storage.getFileKeyFromUrl(doc.fileUrl);
+
+    let signedUrl: string | null = null;
+    if (key.length > 0 && this.storage.isConfigured()) {
       try {
-        signedUrl = await this.storage.getFileUrl(u.orgId, doc.s3Key, SIGNED_URL_EXPIRY_SECONDS);
+        signedUrl = await this.storage.getFileUrl(u.orgId, key, SIGNED_URL_EXPIRY_SECONDS);
       } catch {
-        signedUrl = doc.fileUrl;
+        signedUrl = null;
       }
     }
 
