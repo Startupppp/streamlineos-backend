@@ -253,6 +253,18 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:bodyless-conflicts:self-test && pnpm check:bodyless-conflicts
 
+      # Ticket 08's request-body ratchet, added by 66b0640b and named by no
+      # workflow in either repository until now — check:gate-wiring exited 1 on
+      # exactly this at head. It reads controllers and their DTO schemas off
+      # disk, so it is hermetic and belongs in this job. MEASURED locally at
+      # head: exit 0, 1941 validated body/query slots, 1932 BOUND, 0 UNBOUND.
+      # A slot that is validated by a Zod schema but typed from something other
+      # than that schema is the defect it catches — the handler then reads a
+      # field the validator never admitted, or misses one it did.
+      - name: Every validated body/query slot is typed from its own schema
+        if: ${{ !cancelled() }}
+        run: pnpm check:body-binding
+
       - name: File-interceptor handlers declare their multipart contract
         if: ${{ !cancelled() }}
         run: pnpm check:multipart-contracts:self-test && pnpm check:multipart-contracts
