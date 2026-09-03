@@ -12,6 +12,18 @@ const VT_BASE = "https://www.virustotal.com/api/v3";
 const POLL_INTERVAL_MS = 15_000;
 const MAX_POLLS = 6;
 
+/**
+ * Node's `fetch` has no default request timeout, so a VirusTotal endpoint that
+ * accepts the connection and then stops writing holds this call — and the upload
+ * request that is waiting on it — for as long as the socket stays open. Every
+ * request here goes through `vtFetch`, which takes the deadline as a required
+ * argument, so a fourth endpoint added later cannot omit one by writing a bare
+ * `fetch`. The upload window is the widest because it streams the file body.
+ */
+const VT_REPORT_TIMEOUT_MS = 10_000;
+const VT_UPLOAD_TIMEOUT_MS = 60_000;
+const VT_ANALYSIS_TIMEOUT_MS = 10_000;
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -22,6 +34,14 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
 
   constructor(private readonly apiKey: string) {
     super();
+  }
+
+  private vtFetch(url: string, timeoutMs: number, init?: RequestInit): Promise<Response> {
+    return fetch(url, {
+      ...init,
+      headers: { "x-apikey": this.apiKey, ...init?.headers },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
   }
 
   onModuleInit(): void {
@@ -46,9 +66,7 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
   }
 
   private async lookupHash(sha256: string): Promise<AvScanResult | null> {
-    const res = await fetch(`${VT_BASE}/files/${sha256}`, {
-      headers: { "x-apikey": this.apiKey },
-    });
+    const res = await this.vtFetch(`${VT_BASE}/files/${sha256}`, VT_REPORT_TIMEOUT_MS);
     if (res.status === 404) return null;
     if (!res.ok) return null;
 
@@ -64,9 +82,8 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
     const form = new FormData();
     const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
     form.append("file", blob, filename);
-    const res = await fetch(`${VT_BASE}/files`, {
+    const res = await this.vtFetch(`${VT_BASE}/files`, VT_UPLOAD_TIMEOUT_MS, {
       method: "POST",
-      headers: { "x-apikey": this.apiKey },
       body: form,
     });
     if (!res.ok) return null;
@@ -82,9 +99,7 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
   private async pollAnalysis(analysisId: string, filename: string): Promise<AvScanResult> {
     for (let i = 0; i < MAX_POLLS; i++) {
       await sleep(POLL_INTERVAL_MS);
-      const res = await fetch(`${VT_BASE}/analyses/${analysisId}`, {
-        headers: { "x-apikey": this.apiKey },
-      });
+      const res = await this.vtFetch(`${VT_BASE}/analyses/${analysisId}`, VT_ANALYSIS_TIMEOUT_MS);
       if (!res.ok) continue;
 
       const parsed = vtAnalysisReportSchema.safeParse(await res.json());

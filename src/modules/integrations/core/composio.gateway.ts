@@ -65,12 +65,27 @@ function extractEmail(record: Record<string, unknown> | undefined): string | nul
   return typeof candidate === "string" ? candidate : null;
 }
 
+/**
+ * `ComposioConfig` (SDK 0.14.0) exposes no timeout, and the client it builds
+ * defaults to 60 s per request with `maxRetries: 2` — so one unresponsive
+ * Composio call holds a request for up to ~180 s plus backoff, well past the
+ * 30 s `statement_timeout` that bounds the transaction it usually runs inside.
+ * The per-call `ComposioRequestOptions` accepts an `AbortSignal`, which is the
+ * only lever the SDK gives; `requestOptions()` mints a fresh deadline per call
+ * and every SDK call in this file passes it.
+ */
+const COMPOSIO_REQUEST_TIMEOUT_MS = 15_000;
+
 @Injectable()
 export class ComposioGateway {
   private client: Composio | null = null;
   private readonly toolkitVersionCache = new Map<string, Promise<string>>();
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+
+  private requestOptions(): { signal: AbortSignal } {
+    return { signal: AbortSignal.timeout(COMPOSIO_REQUEST_TIMEOUT_MS) };
+  }
 
   isConfigured(): boolean {
     return Boolean(this.config.COMPOSIO_API_KEY);
@@ -114,10 +129,12 @@ export class ComposioGateway {
     if (!authConfigId) {
       throw new ServiceUnavailableException(`Composio auth config for ${toolkit} is not configured`);
     }
-    const request = await this.getClient().connectedAccounts.link(userId, authConfigId, {
-      callbackUrl,
-      allowMultiple: true,
-    });
+    const request = await this.getClient().connectedAccounts.link(
+      userId,
+      authConfigId,
+      { callbackUrl, allowMultiple: true },
+      this.requestOptions(),
+    );
     if (!request.redirectUrl) {
       throw new ServiceUnavailableException("Composio did not return a redirect URL");
     }
@@ -132,7 +149,10 @@ export class ComposioGateway {
     if (!(await this.userOwnsConnectedAccount(userId, connectedAccountId))) {
       return null;
     }
-    const raw: unknown = await client.connectedAccounts.get(connectedAccountId);
+    const raw: unknown = await client.connectedAccounts.get(
+      connectedAccountId,
+      this.requestOptions(),
+    );
     const parsed = connectedAccountSchema.parse(raw);
     return {
       id: parsed.id,
@@ -150,10 +170,10 @@ export class ComposioGateway {
     const client = this.getClient();
     let cursor: string | undefined;
     for (let page = 0; page < 5; page += 1) {
-      const raw: unknown = await client.connectedAccounts.list({
-        userIds: [userId],
-        ...(cursor ? { cursor } : {}),
-      });
+      const raw: unknown = await client.connectedAccounts.list(
+        { userIds: [userId], ...(cursor ? { cursor } : {}) },
+        this.requestOptions(),
+      );
       const parsed = connectedAccountListSchema.parse(raw);
       if (parsed.items.some((item) => item.id === connectedAccountId)) return true;
       if (!parsed.nextCursor) return false;
@@ -163,7 +183,7 @@ export class ComposioGateway {
   }
 
   async deleteConnectedAccount(connectedAccountId: string): Promise<void> {
-    await this.getClient().connectedAccounts.delete(connectedAccountId);
+    await this.getClient().connectedAccounts.delete(connectedAccountId, this.requestOptions());
   }
 
   private resolveToolkitVersion(toolkitSlug: string): Promise<string> {
@@ -176,7 +196,7 @@ export class ComposioGateway {
   }
 
   private async fetchLatestToolkitVersion(toolkitSlug: string): Promise<string> {
-    const raw: unknown = await this.getClient().toolkits.get(toolkitSlug);
+    const raw: unknown = await this.getClient().toolkits.get(toolkitSlug, this.requestOptions());
     const parsed = toolkitVersionsSchema.parse(raw);
     const version = [...parsed.meta.availableVersions].sort((a, b) => b.localeCompare(a))[0];
     if (!version) {
@@ -236,12 +256,15 @@ export class ComposioGateway {
     body?: unknown,
   ): Promise<unknown> {
     const client = this.getClient();
-    const result = await client.tools.proxyExecute({
-      connectedAccountId,
-      method,
-      endpoint,
-      ...(body !== undefined ? { body } : {}),
-    });
+    const result = await client.tools.proxyExecute(
+      {
+        connectedAccountId,
+        method,
+        endpoint,
+        ...(body !== undefined ? { body } : {}),
+      },
+      this.requestOptions(),
+    );
     if (result.status >= 400) {
       const data: unknown = result.data;
       let message = `Proxy request failed with status ${result.status}`;
@@ -262,12 +285,11 @@ export class ComposioGateway {
   ): Promise<unknown> {
     const toolkitSlug = slug.split("_")[0]?.toLowerCase() ?? "";
     const version = await this.resolveToolkitVersion(toolkitSlug);
-    const result = await this.getClient().tools.execute(slug, {
-      userId,
-      arguments: args,
-      connectedAccountId,
-      version,
-    });
+    const result = await this.getClient().tools.execute(
+      slug,
+      { userId, arguments: args, connectedAccountId, version },
+      this.requestOptions(),
+    );
     if (!result.successful) {
       const message = typeof result.error === "string" && result.error.length > 0 ? result.error : "Composio tool execution failed";
       const isAuthError = /auth|token|expired|unauthoriz|invalid_grant|reconnect/i.test(message);
