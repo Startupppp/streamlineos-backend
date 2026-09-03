@@ -393,16 +393,24 @@ describe("CalendarRecurrenceService.cancelOccurrence — reminder kill targets t
   });
 
   it("BITE PROOF: with a non-invoking transaction mock, the outbox update is never executed", async () => {
-    const updateFn = jest.fn();
+    const updateWhere = jest.fn().mockResolvedValue(undefined);
+    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
+    const updateFn = jest.fn().mockReturnValue({ set: updateSet });
+    const insertFn = jest.fn();
 
     const db = {
       ...makeOwnerDb({ id: MEMBER_ID }, { createdByMembershipId: MEMBER_ID, rrule: "FREQ=WEEKLY;BYDAY=MO" }),
-      transaction: jest.fn().mockResolvedValue(undefined),
+      insert: insertFn,
+      update: updateFn,
+      transaction: jest.fn().mockResolvedValue([]),
     };
 
     const svc = new CalendarRecurrenceService(db as unknown as Db);
-    await expect(svc.cancelOccurrence(ORG, USER, EVENT_ID, OCCURRENCE_ISO)).rejects.toThrow();
+    const result = await svc.cancelOccurrence(ORG, USER, EVENT_ID, OCCURRENCE_ISO);
 
+    expect(result).toBeUndefined();
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(insertFn).not.toHaveBeenCalled();
     expect(updateFn).not.toHaveBeenCalled();
   });
 });
