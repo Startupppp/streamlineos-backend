@@ -4,12 +4,18 @@ import { type Db } from "../../../db/drizzle.module";
 import { jobBoardPostings } from "../../../db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import type { CreateJobBoardPostingInput, UpdateJobBoardPostingInput } from "./dto/job-boards.schemas";
+import { jobPostings } from "../../../db/schema";
 
 @Injectable()
 export class RecruitmentJobBoardsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string, jobPostingId: number) {
+    const job = await this.db.query.jobPostings.findFirst({
+      columns: { id: true },
+      where: and(eq(jobPostings.id, jobPostingId), eq(jobPostings.orgId, orgId)),
+    });
+    if (!job) throw new NotFoundException("Job posting not found.");
     return this.db.select().from(jobBoardPostings)
       .where(and(eq(jobBoardPostings.orgId, orgId), eq(jobBoardPostings.jobPostingId, jobPostingId)))
       .orderBy(desc(jobBoardPostings.createdAt))

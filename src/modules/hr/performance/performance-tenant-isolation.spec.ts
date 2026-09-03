@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { FeedbackService } from "./feedback.service";
 import { KpisService } from "./kpis.service";
@@ -146,13 +147,15 @@ describe("HR Performance services — cross-tenant isolation", () => {
   });
 
   describe("CalibrationService", () => {
-    it("hides calibration entries for a different org (DENY)", async () => {
-      const { db, where } = makeDb([]);
+    it("refuses a review cycle outside the org (DENY — 404, not an empty list)", async () => {
+      const { db, where, findFirst } = makeDb([]);
       const svc = new CalibrationService(db);
-      const result = await svc.listEntries(ATTACKER, 1);
-      expect(result).toHaveLength(0);
-      expect(where).toHaveBeenCalled();
-      expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+
+      await expect(svc.listEntries(ATTACKER, 1)).rejects.toThrow(NotFoundException);
+
+      expect(where).not.toHaveBeenCalled();
+      const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+      expect(sqlValues(call?.where)).toContain(ATTACKER);
     });
 
     it("returns calibration entries for the owning org (CONTROL)", async () => {

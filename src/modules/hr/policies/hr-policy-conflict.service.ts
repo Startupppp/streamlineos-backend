@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -56,9 +56,7 @@ export class HrPolicyConflictService {
       ),
       with: { scopes: true },
     });
-    if (!policy) {
-      return { conflicts: [], canActivate: false };
-    }
+    if (!policy) throw new NotFoundException("Policy not found");
 
     const others = await this.db.query.hrPolicies.findMany({
       where: and(

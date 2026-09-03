@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { RecruitmentAutomationService } from "./recruitment-automation.service";
 import { RecruitmentCalibrationService } from "./recruitment-calibration.service";
@@ -152,13 +153,14 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   });
 
   describe("RecruitmentCalibrationService", () => {
-    it("scopes calibration to the requesting org (DENY — cross-tenant isolation)", async () => {
-      const { db, findMany } = makeDb([]);
+    it("refuses a candidate outside the requesting org (DENY — 404, not an empty list)", async () => {
+      const { db, findMany, findFirst } = makeDb([]);
       const svc = new RecruitmentCalibrationService(db);
-      const result = await svc.listCalibration(ATTACKER, 1);
-      expect(result).toHaveLength(0);
-      expect(findMany).toHaveBeenCalled();
-      const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+
+      await expect(svc.listCalibration(ATTACKER, 1)).rejects.toThrow(NotFoundException);
+
+      expect(findMany).not.toHaveBeenCalled();
+      const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
     });
 
@@ -304,14 +306,15 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   });
 
   describe("RecruitmentJobBoardsService", () => {
-    it("scopes job board postings to the requesting org (DENY — cross-tenant isolation)", async () => {
-      const { db, where } = makeDb([]);
+    it("refuses a job posting outside the requesting org (DENY — 404, not an empty list)", async () => {
+      const { db, where, findFirst } = makeDb([]);
       const svc = new RecruitmentJobBoardsService(db);
-      const result = await svc.list(ATTACKER, 1);
-      expect(result).toHaveLength(0);
-      expect(where).toHaveBeenCalled();
-      const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
-      expect(allValues).toContain(ATTACKER);
+
+      await expect(svc.list(ATTACKER, 1)).rejects.toThrow(NotFoundException);
+
+      expect(where).not.toHaveBeenCalled();
+      const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+      expect(sqlValues(call?.where)).toContain(ATTACKER);
     });
 
     it("returns job board postings for the owning org (CONTROL)", async () => {

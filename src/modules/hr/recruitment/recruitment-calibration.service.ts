@@ -22,7 +22,8 @@ const CALIBRATION_PARTICIPANT_LIMIT = 500;
 export class RecruitmentCalibrationService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listCalibration(orgId: string, candidateId: number) {
+  async listCalibration(orgId: string, candidateId: number) {
+    await this.ensureCandidate(orgId, candidateId);
     return this.db.query.calibrationSessions
       .findMany({
         limit: 100,

@@ -9,6 +9,11 @@ export class CalibrationService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listEntries(orgId: string, cycleId: number) {
+    const cycle = await this.db.query.reviewCycles.findFirst({
+      columns: { id: true },
+      where: and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)),
+    });
+    if (!cycle) throw new NotFoundException("Review cycle not found");
     return this.db
       .select()
       .from(hrCalibrationEntries)

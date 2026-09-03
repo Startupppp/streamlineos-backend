@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { feedbackCycles, feedbackCycleRequests, feedbackCycleResponses } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { organizationMembers } from "../../../db/schema";
 
 @Injectable()
 export class FeedbackService {
@@ -133,6 +134,11 @@ export class FeedbackService {
   }
 
   async getResults(orgId: string, subjectId: string) {
+    const subject = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, subjectId)),
+    });
+    if (!subject) throw new NotFoundException("Feedback subject not found in this organization");
     const requests = await this.db
       .select({ id: feedbackCycleRequests.id, relationship: feedbackCycleRequests.relationship, status: feedbackCycleRequests.status })
       .from(feedbackCycleRequests)

@@ -37,6 +37,7 @@ import type { UpdateTaskInput } from "./dto/onboarding.schemas";
 import { resolveCompatibleList } from "../../../../common/db/expand-contract-compat";
   import { loadOnboardingTaskDependencies } from "./onboarding-task-dependency-compat";
 import { readHrKeysetBatches } from "../../shared/hr-keyset-batch";
+import { organizationMembers } from "../../../../db/schema";
 
 const TASKS_VIEW_PERMISSION = "hr:onboarding:tasks:view";
 const TASKS_COMPLETE_PERMISSION = "hr:onboarding:tasks:complete";
@@ -128,6 +129,15 @@ export class OnboardingTaskService {
       access.onboardingScope,
       access.employeeManageScope,
     );
+    const subject = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(
+        eq(organizationMembers.orgId, currentUser.orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+    });
+    if (!subject) throw new NotFoundException("User not found in this organization");
+
     if (currentUser.userId !== userId && subjectScope === "none") {
       throw new ForbiddenException("Forbidden");
     }

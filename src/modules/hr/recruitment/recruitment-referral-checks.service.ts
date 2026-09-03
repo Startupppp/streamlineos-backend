@@ -18,7 +18,8 @@ import type {
 export class RecruitmentReferralChecksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listReferrals(orgId: string, candidateId: number) {
+  async listReferrals(orgId: string, candidateId: number) {
+    await this.ensureCandidate(orgId, candidateId);
     return this.db
       .select()
       .from(candidateReferrals)
