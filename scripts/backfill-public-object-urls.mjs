@@ -16,11 +16,29 @@
  * reports the column UNVERIFIABLE and exits 2 rather than counting it as clean.
  *
  * Discovery is catalog-driven, so a column added after this was written is
- * still swept: every text/varchar column in `public`, `build` and
- * `build_events` is examined, and a row is a candidate only when its value
- * literally starts with one of the configured public base URLs. A URL pointing
- * anywhere else (a customer's website, a webhook target, an external job
- * posting) never matches and is never touched.
+ * still swept: every text/varchar/bpchar column of every table in every
+ * application schema is examined, and so is every json/jsonb/xml/text[] column.
+ * A URL pointing anywhere else (a customer's website, a webhook target, an
+ * external job posting) never matches and is never touched.
+ *
+ * TWO FINDINGS, ONLY ONE OF WHICH IS REWRITTEN.
+ *   WHOLE    — the value IS a public URL and nothing else. Rewritten to the
+ *              object key it points at, percent-escapes decoded.
+ *   EMBEDDED — the value CARRIES a public URL inside something larger: an
+ *              <img src> in a rich-text body, a "url" member in a jsonb blob,
+ *              one member of a text[]. Reported and counted, never rewritten —
+ *              replacing an <img src> with a bare object key breaks the render
+ *              rather than fixing the leak, and which JSON path is an object
+ *              address is not knowable from the catalog. It exits 3 so the
+ *              residue cannot be read off a run that "succeeded".
+ *
+ * The EMBEDDED half exists because the earlier version of this script did not.
+ * It scanned only text/varchar/bpchar and matched only `LIKE '<base>/%'`, so on
+ * a fixture holding six leaked object URLs it found ONE and printed
+ * "ROWS HOLDING A PUBLIC URL: 1 … UNVERIFIABLE COLUMNS: 0" with exit 0 — which
+ * is the exact line ticket 33 names as the evidence that would close its box.
+ * Measured on a database at head: 501 of 5,996 URL-capable columns (479 jsonb,
+ * 22 text[]) were outside the old scan entirely.
  *
  * Operator action still required after this runs:
  *   Make the object-storage bucket private. Rewriting the database does not
@@ -30,8 +48,9 @@
  *
  * Safety:
  *   - Dry-run by default. `--apply` writes.
- *   - Idempotent: the WHERE clause only matches values that still start with a
- *     public base, so a re-run after an interruption skips finished rows.
+ *   - Idempotent: the WHERE clause only matches values that are still, in their
+ *     entirety, a public URL, so a re-run after an interruption skips finished
+ *     rows.
  *   - Resumable: keyset pagination on each table's single-column primary key,
  *     never OFFSET. A table without one is rewritten by ctid instead of being
  *     skipped, re-reading the first page of still-matching rows each pass.
@@ -49,7 +68,18 @@
  *
  * Environment:
  *   DATABASE_URL / APP_DATABASE_URL — connection
- *   NEXT_PUBLIC_R2_PUBLIC_URL, R2_KB_PUBLIC_URL — public bases to strip
+ *   NEXT_PUBLIC_R2_PUBLIC_URL, R2_KB_PUBLIC_URL — public bases to strip. An
+ *   UNSET one is announced, not inferred away: a run that strips one base and
+ *   silently ignores the other still exits 0 and still reads as clean.
+ *   R2's own public host shape (https://pub-<32 hex>.r2.dev/) is matched
+ *   intrinsically, so a missing env var does not blind the scan to it. A
+ *   CUSTOM public domain is not intrinsic and must be passed with --base.
+ *
+ * Exit:
+ *   0  clean — nothing left, and every column was readable by this role
+ *   1  configuration error (no base, no DSN) or an unhandled failure
+ *   2  at least one column could not be read by this role (row-level security)
+ *   3  at least one public URL survives EMBEDDED in a value this cannot rewrite
  */
 
 import postgres from "postgres";
@@ -76,15 +106,31 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === "--base") { extraBases.push(args[++i]); continue; }
 }
 
-const bases = [
-  ...extraBases,
-  process.env.NEXT_PUBLIC_R2_PUBLIC_URL,
-  process.env.R2_KB_PUBLIC_URL,
-]
+/**
+ * Every env var that has ever named a public base. Absence of ONE of them is
+ * the quiet failure: the run then strips the base it has, reports zero for the
+ * other, and exits 0 — a clean-looking scan over a base it was never told
+ * about. Missing names are announced rather than inferred away.
+ */
+const BASE_ENV_VARS = ["NEXT_PUBLIC_R2_PUBLIC_URL", "R2_KB_PUBLIC_URL"];
+const missingBaseEnvVars = BASE_ENV_VARS.filter(
+  (name) => !(typeof process.env[name] === "string" && process.env[name].trim().length > 0),
+);
+
+const bases = [...extraBases, ...BASE_ENV_VARS.map((name) => process.env[name])]
   .filter((value) => typeof value === "string" && value.trim().length > 0)
   .map((value) => value.trim().replace(/\/+$/, ""));
 
 const uniqueBases = [...new Set(bases)];
+
+/**
+ * R2 serves a public bucket at https://pub-<32 hex>.r2.dev. That shape is
+ * intrinsic to the provider, so it is matched whether or not anybody remembered
+ * to set the env var — the scan must not go blind because a deployment's shell
+ * was missing a name. A CUSTOM public domain is NOT intrinsic and still has to
+ * be supplied with --base; that is the one gap this cannot close by itself.
+ */
+const R2_PUBLIC_DEV_URL_SOURCE = "https?://pub-[0-9a-f]{32}\\.r2\\.dev/";
 
 if (uniqueBases.length === 0) {
   console.error(
@@ -107,11 +153,31 @@ try {
 } catch {
   console.log("Target: <unparseable DSN>");
 }
-console.log(`Public bases treated as leaked: ${uniqueBases.join(", ")}\n`);
+console.log(`Public bases treated as leaked: ${uniqueBases.join(", ")}`);
+console.log(`Also matched intrinsically: https://pub-<32 hex>.r2.dev/`);
+if (missingBaseEnvVars.length > 0) {
+  console.log(
+    `NOTE: ${missingBaseEnvVars.join(", ")} ${missingBaseEnvVars.length === 1 ? "is" : "are"} not set in this environment. ` +
+      "A public base served from a CUSTOM DOMAIN under a name this run was not given is NOT scanned. " +
+      "Pass it with --base <url> if one was ever configured.",
+  );
+}
+console.log("");
 
 const sql = postgres(dsn, { prepare: false, max: 1 });
 
 function keyFromUrl(value) {
+  const intrinsic = new RegExp(`^${R2_PUBLIC_DEV_URL_SOURCE}`).exec(value);
+  if (intrinsic !== null) {
+    const tail = value.slice(intrinsic[0].length).split(/[?#]/, 1)[0] ?? "";
+    if (tail.length > 0) {
+      try {
+        return decodeURIComponent(tail);
+      } catch {
+        return tail;
+      }
+    }
+  }
   for (const base of uniqueBases) {
     if (!value.startsWith(`${base}/`)) continue;
     const tail = value.slice(base.length + 1).split(/[?#]/, 1)[0] ?? "";
@@ -139,18 +205,35 @@ async function appSchemas() {
   return rows.map((r) => r.schema_name);
 }
 
+/**
+ * Types whose whole value can BE a URL, and which this can therefore rewrite.
+ */
+const REWRITABLE_TYPES = ["text", "varchar", "bpchar"];
+
+/**
+ * Types that can CARRY a URL inside a larger value: a jsonb blob, a rich-text
+ * or HTML body, an array of addresses. Restricting the scan to the rewritable
+ * three is what made an earlier version of this report unsound — it printed
+ * "ROWS HOLDING A PUBLIC URL: 0 … UNVERIFIABLE COLUMNS: 0" and exit 0, the exact
+ * line the ticket names as closing evidence, while URLs sat in jsonb it never
+ * looked at. Measured on a database at head: 501 of 5,996 URL-capable columns
+ * (479 jsonb, 22 text[]) were outside the old scan.
+ */
+const SCAN_ONLY_TYPES = ["json", "jsonb", "xml", "_text", "_varchar"];
+
 async function candidateColumns(APP_SCHEMAS) {
   return sql`
     SELECT n.nspname AS schema_name,
            c.relname AS table_name,
-           a.attname AS column_name
+           a.attname AS column_name,
+           t.typname AS type_name
     FROM   pg_class c
     JOIN   pg_namespace n ON n.oid = c.relnamespace
     JOIN   pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
     JOIN   pg_type t ON t.oid = a.atttypid
     WHERE  n.nspname = ANY(${APP_SCHEMAS})
       AND  c.relkind = 'r'
-      AND  t.typname IN ('text', 'varchar', 'bpchar')
+      AND  t.typname = ANY(${[...REWRITABLE_TYPES, ...SCAN_ONLY_TYPES]})
     ORDER  BY n.nspname, c.relname, a.attname
   `;
 }
@@ -201,11 +284,53 @@ function likePatterns() {
   return uniqueBases.map((base) => `${base}/%`);
 }
 
-async function countMatches(schema, table, column) {
+function escapeForRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * One alternation of every public base this run knows about, plus R2's
+ * intrinsic public-development host shape.
+ */
+const PREFIX_ALTERNATION = [
+  ...uniqueBases.map((base) => `${escapeForRegex(base)}/`),
+  R2_PUBLIC_DEV_URL_SOURCE,
+].join("|");
+
+/**
+ * WHOLE — the value is a public URL and nothing else, so replacing it with the
+ * object key is a faithful rewrite. `LIKE '<base>/%'` was the old test and it is
+ * both too narrow (it never saw the intrinsic r2.dev host under a missing env
+ * var) and too broad (a rich-text body that merely STARTS with a URL matched it
+ * and would have been replaced wholesale by a key).
+ */
+const WHOLE_PATTERN = `^(${PREFIX_ALTERNATION})[^[:space:]<>"']+$`;
+
+/**
+ * CONTAINS — the value carries a public URL somewhere inside it. This is the
+ * shape that hides: an <img src> in a KB page body, a "url" member in a jsonb
+ * blob, one member of a text[]. It is reported, never rewritten: replacing an
+ * <img src> with a bare object key breaks the render rather than fixing the
+ * leak, and which JSON path is an object address is not knowable from the
+ * catalog. Reporting it is the point — it turns an invisible remainder into a
+ * number and a non-zero exit.
+ */
+const CONTAINS_PATTERN = `(${PREFIX_ALTERNATION})`;
+
+async function countWhole(schema, table, column) {
   const rows = await sql`
     SELECT count(*)::bigint AS n
     FROM   ${sql(schema)}.${sql(table)}
-    WHERE  ${sql(column)} LIKE ANY(${likePatterns()})
+    WHERE  ${sql(column)} ~ ${WHOLE_PATTERN}
+  `;
+  return Number(rows[0]?.n ?? 0);
+}
+
+async function countContains(schema, table, column) {
+  const rows = await sql`
+    SELECT count(*)::bigint AS n
+    FROM   ${sql(schema)}.${sql(table)}
+    WHERE  ${sql(column)}::text ~ ${CONTAINS_PATTERN}
   `;
   return Number(rows[0]?.n ?? 0);
 }
@@ -219,14 +344,14 @@ async function rewriteColumn(schema, table, column, pkColumn) {
       ? await sql`
           SELECT ${sql(pkColumn)} AS pk, ${sql(column)} AS value
           FROM   ${sql(schema)}.${sql(table)}
-          WHERE  ${sql(column)} LIKE ANY(${likePatterns()})
+          WHERE  ${sql(column)} ~ ${WHOLE_PATTERN}
           ORDER  BY ${sql(pkColumn)} ASC
           LIMIT  ${BATCH_SIZE}
         `
       : await sql`
           SELECT ${sql(pkColumn)} AS pk, ${sql(column)} AS value
           FROM   ${sql(schema)}.${sql(table)}
-          WHERE  ${sql(column)} LIKE ANY(${likePatterns()})
+          WHERE  ${sql(column)} ~ ${WHOLE_PATTERN}
             AND  ${sql(pkColumn)} > ${after}
           ORDER  BY ${sql(pkColumn)} ASC
           LIMIT  ${BATCH_SIZE}
@@ -266,7 +391,7 @@ async function rewriteColumnWithoutPk(schema, table, column) {
     const page = await sql`
       SELECT ctid AS row_ctid, ${sql(column)} AS value
       FROM   ${sql(schema)}.${sql(table)}
-      WHERE  ${sql(column)} LIKE ANY(${likePatterns()})
+      WHERE  ${sql(column)} ~ ${WHOLE_PATTERN}
       LIMIT  ${BATCH_SIZE}
     `;
     if (page.length === 0) return rewritten;
@@ -298,10 +423,17 @@ async function main() {
   const columns = await candidateColumns(schemas);
 
   const findings = [];
+  const embedded = [];
   const unverifiable = [];
 
-  for (const { schema_name: schema, table_name: table, column_name: column } of columns) {
+  for (const {
+    schema_name: schema,
+    table_name: table,
+    column_name: column,
+    type_name: typeName,
+  } of columns) {
     const qualified = `${schema}.${table}`;
+    const rewritable = REWRITABLE_TYPES.includes(typeName);
 
     /**
      * A filtered read must never be reported as a count. Counting first and
@@ -318,9 +450,11 @@ async function main() {
       continue;
     }
 
-    let matches;
+    let contains;
+    let whole = 0;
     try {
-      matches = await countMatches(schema, table, column);
+      contains = await countContains(schema, table, column);
+      if (contains > 0 && rewritable) whole = await countWhole(schema, table, column);
     } catch (error) {
       unverifiable.push({
         target: `${qualified}.${column}`,
@@ -328,8 +462,17 @@ async function main() {
       });
       continue;
     }
-    if (matches === 0) continue;
-    findings.push({ schema, table, column, matches });
+    if (contains === 0) continue;
+    if (whole > 0) findings.push({ schema, table, column, matches: whole });
+
+    /**
+     * A row can hold a public URL inside a larger value in a column this can
+     * rewrite (a rich-text body) or in one it cannot (jsonb, an array). Both are
+     * the same finding and neither is rewritten here.
+     */
+    const carried = contains - whole;
+    if (carried > 0)
+      embedded.push({ schema, table, column, typeName, matches: carried });
   }
 
   let totalMatched = 0;
@@ -355,7 +498,23 @@ async function main() {
   }
 
   if (findings.length === 0)
-    console.log("No stored public object URLs found in any scannable column.");
+    console.log("No whole-value stored public object URLs found in any scannable column.");
+
+  let totalEmbedded = 0;
+  if (embedded.length > 0) {
+    console.log(
+      `\n${embedded.length} column(s) carry a public object URL EMBEDDED inside a larger value.` +
+        "\n  These are NOT rewritten: replacing an <img src> with a bare object key breaks the" +
+        "\n  render, and which JSON path is an object address is not knowable from the catalog." +
+        "\n  Each one needs a decision by whoever owns that column.",
+    );
+    for (const item of embedded) {
+      totalEmbedded += item.matches;
+      console.log(
+        `  ${item.schema}.${item.table}.${item.column} (${item.typeName}): ${item.matches} row(s)`,
+      );
+    }
+  }
 
   if (unverifiable.length > 0) {
     console.log(`\n${unverifiable.length} column(s) COULD NOT BE VERIFIED by this role:`);
@@ -370,6 +529,7 @@ async function main() {
   console.log(
     `\n${apply ? "APPLIED" : "DRY RUN"} — ROWS HOLDING A PUBLIC URL: ${totalMatched} ` +
       `across ${findings.length} column(s); ROWS REWRITTEN: ${totalRewritten}; ` +
+      `ROWS WITH AN EMBEDDED PUBLIC URL: ${totalEmbedded} across ${embedded.length} column(s); ` +
       `UNVERIFIABLE COLUMNS: ${unverifiable.length}`,
   );
   if (totalMatched > 0) {
@@ -380,8 +540,12 @@ async function main() {
 
   /**
    * Exit non-zero when any column could not be read, so "the backfill reported
-   * nothing" can never be mistaken for "there is nothing left".
+   * nothing" can never be mistaken for "there is nothing left" — and non-zero
+   * again when a public URL survives inside a value this cannot rewrite, so a
+   * remaining leak cannot be read off a run that "succeeded". Exit 2 outranks
+   * exit 3: a scan this role could not complete is the more serious answer.
    */
+  if (totalEmbedded > 0) process.exitCode = 3;
   if (unverifiable.length > 0) process.exitCode = 2;
 }
 
