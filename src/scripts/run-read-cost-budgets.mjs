@@ -4,6 +4,12 @@ import postgres from "postgres";
 import * as dotenv from "dotenv";
 import { BUDGETS, REQUIRED_BUDGET_IDS } from "./read-cost-budgets.mjs";
 
+export const KNOWN_ASSERTION_KINDS = new Set([
+  "require-index-only-scan",
+  "forbid-seq-scan",
+  "forbid-hashed-subplan",
+]);
+
 export function validateBudgets(budgets) {
   const errors = [];
   for (let i = 0; i < budgets.length; i++) {
@@ -28,6 +34,10 @@ export function validateBudgets(budgets) {
         const a = b.planAssertions[j];
         const atag = `${tag}.planAssertions[${j}]`;
         if (typeof a?.kind !== "string") errors.push(`${atag}: kind must be a string`);
+        else if (!KNOWN_ASSERTION_KINDS.has(a.kind))
+          errors.push(
+            `${atag}: unknown kind "${a.kind}" — known kinds are ${[...KNOWN_ASSERTION_KINDS].join(", ")}`,
+          );
         if (typeof a?.relation !== "string" || !a.relation)
           errors.push(`${atag}: relation must be a non-empty string`);
       }
@@ -49,14 +59,49 @@ export function validateBudgets(budgets) {
   return errors;
 }
 
-export function walk(node, out) {
+const QUAL_FIELDS = [
+  "Filter",
+  "Join Filter",
+  "Index Cond",
+  "Recheck Cond",
+  "Hash Cond",
+  "Merge Cond",
+  "One-Time Filter",
+  "TID Cond",
+];
+
+export function walk(node, out, subplanScope = null) {
+  const quals = QUAL_FIELDS.map((f) => node[f]).filter((v) => typeof v === "string").join(" ");
+  const scope = typeof node["Subplan Name"] === "string" ? node["Subplan Name"] : subplanScope;
   out.push({
     type: node["Node Type"],
     relation: node["Relation Name"] ?? null,
     index: node["Index Name"] ?? null,
+    quals,
+    subplanScope: scope,
   });
-  (node.Plans ?? []).forEach((child) => walk(child, out));
+  (node.Plans ?? []).forEach((child) => walk(child, out, scope));
   return out;
+}
+
+/**
+ * A hashed SubPlan is the planner de-correlating an `EXISTS`/`IN` and materialising the
+ * WHOLE inner relation before the outer qual can short-circuit. It shows up as
+ * `(hashed SubPlan N)` in the qual that references it, and the cost is O(inner relation),
+ * not O(page) — so it is invisible on a small tenant, invisible on a warm cache, and
+ * invisible in any fixture that happens not to reach the row that triggers it.
+ *
+ * That last property is why this assertion exists: `GET /calendar/events` and
+ * `GET /dashboard/personal` both carried one, and neither could be pinned by a block
+ * ceiling because whether the plan is reached depends on which rows fall in the window
+ * — the same query measured 6 blocks on one run and 1,140 on the next. The plan shape
+ * is order-independent where the number is not.
+ */
+export function hashedSubplanNames(nodes) {
+  const names = new Set();
+  for (const node of nodes)
+    for (const match of node.quals.matchAll(/hashed (SubPlan \d+|InitPlan \d+)/g)) names.add(match[1]);
+  return names;
 }
 
 export function extractScans(node, out = []) {
@@ -116,6 +161,22 @@ export function checkPlanAssertions(planAssertions, nodes, budgetId) {
         failures.push(
           `${budgetId}: ${assertion.relation} resolved by ${node.type}, not Index Only Scan — tenant-led covering index missing or unusable`,
         );
+      }
+    } else if (assertion.kind === "forbid-hashed-subplan") {
+      const hashed = hashedSubplanNames(nodes);
+      const node = nodes.find((n) => n.relation === assertion.relation);
+      if (!node) {
+        failures.push(
+          `${budgetId}: no ${assertion.relation} node — query shape changed, assertion is vacuous`,
+        );
+      } else {
+        const offender = nodes.find(
+          (n) => n.relation === assertion.relation && n.subplanScope !== null && hashed.has(n.subplanScope),
+        );
+        if (offender)
+          failures.push(
+            `${budgetId}: ${assertion.relation} is scanned inside a hashed ${offender.subplanScope} — the planner materialises the whole relation before the outer qual can short-circuit, so the cost is O(relation) and not O(page)`,
+          );
       }
     } else if (assertion.kind === "forbid-seq-scan") {
       const node = nodes.find((n) => n.relation === assertion.relation);
@@ -298,7 +359,10 @@ async function main() {
     //
     // Breach type 4: seed floor — an unreachable minRows must report seed-too-small.
     //
-    // All five must breach; if any passes or skips, the self-test is inconclusive.
+    // Breach type 6: hashed SubPlan — a de-correlated sublink that materialises the whole
+    //   inner relation. Order-independent where a block ceiling is not.
+    //
+    // All six must breach; if any passes or skips, the self-test is inconclusive.
     //
     // The first three override minRows to 1. Inheriting the base budget's minRows
     // made the seed-size check fire first and short-circuit all three, so on any
@@ -323,6 +387,24 @@ async function main() {
             maxScanRows: undefined,
             planAssertions: [],
             sql: `SELECT id FROM organization_members WHERE org_id = $1 AND 1 = 0`,
+          },
+          // Breach type 6: hashed SubPlan. `NOT IN (SELECT …)` cannot be pulled up into a
+          // semi-join, so the planner de-correlates it and materialises the inner relation
+          // — the same shape that hid a 39,114-row scan inside GET /calendar/events behind
+          // a block count that only moved when the wall clock did.
+          {
+            ...selfTestBase,
+            id: "self-test-hashed-subplan",
+            minRows: 1,
+            maxScanRows: undefined,
+            planAssertions: [{ kind: "forbid-hashed-subplan", relation: "organization_members" }],
+            sql: `
+              SELECT id, user_id, role, is_owner, status, joined_at
+              FROM organization_members
+              WHERE org_id = $1 AND status = 'ACTIVE'
+                AND id NOT IN (SELECT id FROM organization_members WHERE org_id = $1 AND status <> 'ACTIVE')
+              ORDER BY joined_at DESC
+              LIMIT 100`,
           },
         ]
       : filterIds
@@ -592,13 +674,14 @@ async function main() {
         "self-test-scan-rows",
         "self-test-seed-floor",
         "self-test-vacuous",
+        "self-test-hashed-subplan",
       ]);
       const breachedIds = new Set(
         breaches.map((b) => b.split(":")[0].trim()),
       );
       const missing = [...EXPECTED_BREACH_IDS].filter((id) => !breachedIds.has(id));
       if (missing.length === 0) {
-        console.log("SELF-TEST PASS: all 5 breach types detected — ceiling, plan-assertion, scan-rows, seed-floor, vacuous-result");
+        console.log("SELF-TEST PASS: all 6 breach types detected — ceiling, plan-assertion, scan-rows, seed-floor, vacuous-result, hashed-subplan");
         process.exitCode = 0;
       } else {
         console.error(

@@ -1231,6 +1231,7 @@ export const BUDGETS = [
       LIMIT 3`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "calendar_events" },
+      { kind: "forbid-hashed-subplan", relation: "event_attendees" },
     ],
   },
   {
@@ -1238,23 +1239,29 @@ export const BUDGETS = [
     ceiling: 2_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM calendar_events WHERE org_id = $1`,
-    // The query `GET /calendar/events` actually runs: CalendarEventSourceLoader.queryVisibleEvents,
-    // one keyset-paged batch of 500 over a one-month window. Until 2026-09-03 that route's budget
-    // was linked to dashboard-personal-calendar-events, so the calendar route was charged for the
-    // dashboard's statement and this one had never been measured at all.
+    // The dominant statement of `GET /calendar/events`: the recurring branch of
+    // CalendarEventSourceLoader's candidate page. Until 2026-09-03 that route's budget was
+    // linked to dashboard-personal-calendar-events, so the calendar route was charged for the
+    // dashboard's statement and this one had never been measured at all; when it was, it
+    // measured 7,063 blocks against this ceiling and the ceiling was deliberately left alone.
     //
-    // KNOWN BREACH, recorded rather than accommodated: measured 7,063 blocks on the 89.93% tenant
-    // and the ceiling is deliberately NOT set above it. calendar_events is 1,731 pages, so one
-    // batch of this route reads FOUR TIMES a full sequential scan of the whole table — the
-    // catalog's own rule is that a ceiling sits below a sequential scan, and 2,000 is both that
-    // and the cost of one honest 500-row page with its three left joins.
-    // The driver is the recurring branch: it has no lower bound on start_date, so every recurring
-    // event in the tenant's entire history is a candidate for any window (8,571 of 60,012 carry an
-    // rrule and 4,286 of those have a NULL recurrence_end), while only 77 non-recurring events fall
-    // inside the month requested. 3,610 rows are scanned to return the 500-row batch, and the loop
-    // then pages for more. Fixing it means splitting the two branches so the partial index
-    // idx_calendar_events_org_recurring_start serves the recurring one; that is
-    // src/modules/calendar/**, not this catalog.
+    // The 7,063 was one query: both range branches under an OR, three left joins and the
+    // 18-column projection. The recurring arm has no lower bound on start_date, so the
+    // planner walked idx_calendar_events_org_date from the tenant's first event and fetched
+    // the heap tuple for every candidate before the window filter could reject it — 3,610
+    // rows scanned to keep 517, four times a sequential scan of a 1,731-page table.
+    //
+    // The loader now issues four statements per page and this is the most expensive of them.
+    // Measured on the same database and fixture, worst statement per tenant:
+    //   89.93%  697   9.00%  700   0.90%  46
+    // and the companions are cand-nonrec 295/31/5, rsvp 501/14/21, fetch 322/136/21.
+    //
+    // The two plan assertions are the load-bearing part, because neither failure mode this
+    // budget guards is reliably visible in a block count. forbid-hashed-subplan pins that the
+    // caller's attendance stays a correlated probe: as an EXISTS the planner de-correlates it
+    // and materialises all 39,114 attendee rows of the fixture membership before the OR can
+    // short-circuit on visibility = 'org', which is O(the caller's attendance) rather than
+    // O(page) and therefore invisible on every tenant but this one.
     params: (f) => {
       if (!f.hasCalendarEvents || !f.membershipId) return null;
       const now = new Date();
@@ -1263,27 +1270,27 @@ export const BUDGETS = [
       return [f.orgId, f.membershipId, start.toISOString(), end.toISOString()];
     },
     sql: `
-      SELECT ce.id, ce.title, ce.description, ce.location, ce.meeting_url, ce.start_date,
-             ce.end_date, ce.all_day, ce.timezone, ce.color, ce.category, ce.entity_type,
-             ce.entity_id, ce.visibility, ce.rrule, ce.recurrence_end, u.name, cal_att.status
+      SELECT ce.id, ce.start_date
       FROM calendar_events ce
-      LEFT JOIN organization_members creator_member
-        ON creator_member.org_id = ce.org_id AND creator_member.id = ce.created_by_membership_id
-      LEFT JOIN users u ON u.id = creator_member.user_id
-      LEFT JOIN event_attendees cal_att
-        ON cal_att.org_id = ce.org_id AND cal_att.event_id = ce.id AND cal_att.membership_id = $2
       WHERE ce.org_id = $1
+        AND ce.rrule IS NOT NULL
+        AND ce.start_date < $4::timestamptz
+        AND (ce.recurrence_end IS NULL OR ce.recurrence_end > $3::timestamptz)
         AND (
-          (ce.rrule IS NULL AND ce.start_date < $4::timestamptz AND ce.end_date > $3::timestamptz)
-          OR (ce.rrule IS NOT NULL AND ce.start_date < $4::timestamptz
-              AND (ce.recurrence_end IS NULL OR ce.recurrence_end > $3::timestamptz))
+          ce.visibility = 'org'
+          OR ce.created_by_membership_id = $2
+          OR (SELECT ea.id FROM event_attendees ea
+              WHERE ea.org_id = ce.org_id AND ea.event_id = ce.id
+                AND ea.membership_id = $2 LIMIT 1) IS NOT NULL
         )
-        AND (ce.visibility = 'org' OR ce.created_by_membership_id = $2 OR cal_att.id IS NOT NULL)
       ORDER BY ce.start_date ASC, ce.id ASC
       LIMIT 500`,
-    planAssertions: [],
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "calendar_events" },
+      { kind: "forbid-hashed-subplan", relation: "event_attendees" },
+    ],
   },
-  {
+{
     id: "dashboard-personal-notifications-count",
     ceiling: 3_000,
     minRows: 1,
