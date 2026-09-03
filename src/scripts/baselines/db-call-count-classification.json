@@ -15,9 +15,13 @@
       "verdict": "FALSE-POSITIVE",
       "note": "`private readonly cache = new Map<...>()` — clearForOrg sweeps that Map by key prefix. Same shape as access.service.ts: an in-process Map whose identifier is `cache`."
     },
+    "/access/entitlements.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Two sites, neither a per-row round trip. (1) bustActiveMemberSessions is a for(;;) keyset drain over organization_members paged at SESSION_BUST_PAGE=500 — the loop query IS the next page — and each page busts through cache.invalidateMany, one variadic DEL per page rather than one per member. It replaced a .limit(10000) that silently never invalidated member 10,001 onward. (2) The other match is the detector reading its own warning: the doc comment above it contains the literal prose `members.map((m) => cache.invalidate(...))` describing the shape NOT used, and this gate does not mask comments the way check-relation-key-reach does. Classified 2026-09-03 by reading; the file was uncommitted and under another agent edit at the time, so re-read the drain before trusting this line."
+    },
     "/accounting/gl/recurring-journals.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "materializeEntry plus a lastRunDate/nextRunDate update per due template. The date advance is derivable in SQL; the whole set could move in one UPDATE ... FROM (VALUES ...)"
+      "verdict": "BATCHED",
+      "note": "N+1 removed 2026-09-03. The stale ACTIONABLE verdict was a FALSE NEGATIVE, not a fix: commit 2cd41f1f made the per-template work atomic by moving it behind `this.claimAndMaterialize(tmpl, ...)`, a private method with no handle in its argument list, so the detector stopped matching a loop that still issued a transaction + claim UPDATE + sequence upsert + entry INSERT + line INSERT PER DUE TEMPLATE. runDueTemplates now groups the due set by org, chunks it at RUN_BATCH=50 and posts each chunk in one transaction: the claim is at most five bounded multi-key UPDATEs (next_run_date is a function of (entryDate, frequency) alone, so the five enum values are the only distinct SET clauses a batch can need), then one sequence upsert reserving the whole block, one multi-row entry INSERT and one multi-row line INSERT. Statements go from 4N to 4 per org chunk. The three detected sites are that per-org/per-chunk transaction and the per-frequency claim — bounded, which is why this is BATCHED and stays visible to the detector rather than N+1-FIXED and invisible. Pinned by recurring-journals-run-atomicity.spec.ts, which asserts the statement labels per transaction, one claim per distinct frequency, one transaction per org, and a single consecutive entry-number block."
     },
     "/ai/core/ops-copilot-tools.ts": {
       "verdict": "N+1-FIXED",
@@ -119,9 +123,9 @@
       "verdict": "FALSE-POSITIVE",
       "note": "both sites are bounded pagination: drainByKeyset pages the attendee fan-out, and the second is a chunked multi-row outbox insert of OUTBOX_INSERT_CHUNK rows"
     },
-    "/chat/chat-huddles.service.ts": {
+    "/chat/chat-channel-member-batches.ts": {
       "verdict": "FALSE-POSITIVE",
-      "note": "both sites are for(;;) keyset drains over chat_channel_members paged at ATTENDEE_BATCH / NOTIFY_BATCH"
+      "note": "Both for(;;) sites are the ONE keyset drain over chat_channel_members that the calendar attendee backfill (ATTENDEE_BATCH=500) and the huddle-start notification (NOTIFY_BATCH=500) now share — the loop's query IS the next page, one round trip per page and never per row. Same shape and same verdict as /access/access-grant-drains.ts. This entry carries the verdict that stood at /chat/chat-huddles.service.ts until commit e8d65e64 lifted both drains into forEachChannelMemberBatch; that extraction closed over the handle instead of taking it, so the detector stopped matching the drain anywhere and the old entry went stale as a false negative rather than as a fix. The helper now takes the handle it drains, which is why the loop is visible here."
     },
     "/chat/chat-reply-reminders.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -258,6 +262,10 @@
     "/directory/worker-engagements.service.ts": {
       "verdict": "FIXED-SET",
       "note": "loop over a 5-element array literal of engagement fields; the number of statements does not grow with tenant data."
+    },
+    "/e-sign/sign-audit.service.ts": {
+      "verdict": "BATCHED",
+      "note": "record() takes one event or a batch and issues one multi-row INSERT per SIGN_AUDIT_INSERT_CHUNK=500 rows — the loop steps by the chunk size, so the round trips grow with ceil(N/500) pages and not with N events. Fourteen bound parameters per row keeps a full chunk at 7,000 placeholders, an order of magnitude under the 65,535 one statement can bind. New to the baseline because the batch entry point is new (commit 2cd41f1f); the shape it replaced was one INSERT per audited event."
     },
     "/e-sign/sign-bulk-send.service.ts": {
       "verdict": "ACTIONABLE",
@@ -539,6 +547,10 @@
       "verdict": "FALSE-POSITIVE",
       "note": "same shape — one batched updateMirroredLeads per salesperson, not per lead"
     },
+    "/mail/mail-accounts.service.ts": {
+      "verdict": "BATCHED",
+      "note": "markNeedsReauthMany dedupes the account ids and issues one `UPDATE ... WHERE id IN (chunk) AND org_id = ...` per REAUTH_MARK_CHUNK, so the loop steps by the chunk size rather than by the account. The try/catch inside the loop is deliberate and is not a per-row round trip: every caller is on an error path about to rethrow the provider's own error, so a failed flag write is logged rather than thrown or discarded — discarding it left a revoked mailbox reading `active` forever. New to the baseline because markNeedsReauth is now a one-element call into this batch path."
+    },
     "/notifications/broadcasts-audience.queries.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "for(;;) at L101 is keyset streaming, not per-recipient: gt(organizationMembers.id, cursor) + .limit(PAGE_SIZE=500), returning when rows.length < PAGE_SIZE. That is one page query per 500 members, the pattern this gate exists to encourage. The flagged sql at L168 is a scalar subquery supplying notificationCreatedAt inside .values({}) of that one insert."
@@ -632,16 +644,16 @@
       "note": "identifiersOfParty runs once per candidate duplicate. Resolve identifiers for the whole candidate set in one inArray read before fingerprinting"
     },
     "/payroll/jobs/payroll-jobs.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "the per-job UPDATE is the compare-and-set claim that makes concurrent workers safe; batching it would let two workers claim the same job"
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03 (commit e3bdd8c6). The old FALSE-POSITIVE excuse — 'the per-job UPDATE is the compare-and-set claim; batching it would let two workers claim the same job' — was wrong: the claim predicate is `status = 'PENDING'`, which does the claiming just as well over a multi-key WHERE, and a row another worker took is simply absent from RETURNING. claimPending now selects the candidate ids and issues ONE `UPDATE ... WHERE id IN (...) AND status = 'PENDING' RETURNING *`, with attempt incremented as `coalesce(attempt, 0) + 1` in SQL rather than written back from the value its own SELECT read (which is what let a concurrent worker's increment be overwritten, so fail()'s maxAttempts ceiling was unreachable for a twice-claimed job). FIFO order restored after RETURNING. No loop in the file issues a database call. Pinned by payroll-jobs-claim-batch.spec.ts."
     },
     "/payroll/payout/batch-creator.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "idempotency lookup batched via inArray into a Map, and items returned from the insert instead of re-read; the 23505 race handler is a bounded exceptional path"
     },
     "/payroll/payout/locking.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "one payroll_tds_ytd_ledger insert per employee on the payout lock path. Build the rows and write them as one multi-row INSERT (payroll territory — reported, not edited)"
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed 2026-09-03 (commit 48a44741). writeTdsYtdLedger issued one INSERT ... ON CONFLICT DO UPDATE into payroll_tds_ytd_ledger per run employee inside the lock transaction; it is now two bulk upserts, one per subject kind, each carrying the arbiter's predicate as targetWhere because both unique indexes are PARTIAL since migration 0393 and an ON CONFLICT with no matching WHERE cannot infer a partial index (each per-row statement was raising 42P10). The run's subjects are collapsed in a Map first, because a multi-row DO UPDATE raises 21000 on an intra-statement duplicate. The `for (const emp of emps)` loop that remains builds those Maps in memory and issues nothing. Pinned by locking-tds-ledger-bulk.spec.ts."
     },
     "/payroll/runs/inputs.service.ts": {
       "verdict": "N+1-FIXED",

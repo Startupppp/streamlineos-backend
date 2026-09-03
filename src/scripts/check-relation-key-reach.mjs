@@ -181,8 +181,9 @@ const RELATION_BASELINE = new Map([
   [
     "startedByMembership",
     {
-      files: ["modules/chat/chat-huddles.service.ts"],
-      reason: "lifted to a flat startedBy user id by loadHuddleWire (commit 755b45e3).",
+      files: ["modules/chat/chat-huddle-wire-shape.ts"],
+      reason:
+        "lifted to a flat startedBy user id by loadHuddleWire (commit 755b45e3). loadHuddleWire moved out of chat-huddles.service.ts into chat-huddle-wire-shape.ts in the responsibility split (commit e8d65e64) — same query, same flattening, new home; re-verified 2026-09-03 that the relation name still never reaches the wire and that the frontend's chatHuddleContract declares exactly `startedBy: string|null` + `startedByUser: {id, name|null}|null`.",
     },
   ],
   [

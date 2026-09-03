@@ -30,9 +30,10 @@ export async function collectHuddleNotifyTargets(
 ): Promise<string[]> {
   const targetUserIds: string[] = [];
   await forEachChannelMemberBatch(
+    db,
     NOTIFY_BATCH,
-    (afterMembershipId) =>
-      db
+    (handle, afterMembershipId) =>
+      handle
         .select({ userId: organizationMembers.userId, membershipId: chatChannelMembers.membershipId })
         .from(chatChannelMembers)
         .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))

@@ -48,9 +48,10 @@ export async function createHuddleCalendarEvent(
   if (!calEvent) return undefined;
 
   await forEachChannelMemberBatch(
+    tx,
     ATTENDEE_BATCH,
-    (afterMembershipId) =>
-      tx
+    (db, afterMembershipId) =>
+      db
         .select({ membershipId: chatChannelMembers.membershipId })
         .from(chatChannelMembers)
         .where(

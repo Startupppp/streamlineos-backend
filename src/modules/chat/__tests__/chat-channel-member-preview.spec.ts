@@ -55,14 +55,36 @@ function rankedRow(over: Partial<RankedRow> & { id: number; channelId: number; m
  * A db double that records the rank predicate the query was built with, so the cap can be asserted
  * as something the SQL carries rather than as something the test sliced afterwards.
  */
+/** Every Drizzle column reached from a value, by its real database column name. */
+function columnNamesIn(value: unknown, seen = new Set<unknown>()): string[] {
+  if (value === null || typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  const names: string[] = [];
+  const record = value as Record<string, unknown>;
+  if (typeof record.name === "string" && "table" in record) names.push(record.name);
+  for (const child of Object.values(record)) names.push(...columnNamesIn(child, seen));
+  return names;
+}
+
+interface JoinCall {
+  kind: "innerJoin" | "leftJoin";
+  table: unknown;
+  on: unknown;
+}
+
 function makeDb(rows: RankedRow[]) {
   const calls: { subqueries: number; outerSelects: number } = { subqueries: 0, outerSelects: 0 };
   let outerWhere: unknown = null;
+  const joins: JoinCall[] = [];
 
   const subqueryChain = () => {
     const chain: Record<string, unknown> = {};
-    for (const m of ["from", "innerJoin", "leftJoin", "where", "orderBy", "groupBy", "limit"])
-      chain[m] = jest.fn(() => chain);
+    for (const m of ["from", "where", "orderBy", "groupBy", "limit"]) chain[m] = jest.fn(() => chain);
+    for (const kind of ["innerJoin", "leftJoin"] as const)
+      chain[kind] = jest.fn((table: unknown, on: unknown) => {
+        joins.push({ kind, table, on });
+        return chain;
+      });
     chain.as = jest.fn(() => ({ memberRank: { rankColumn: true } }));
     return chain;
   };
@@ -88,7 +110,7 @@ function makeDb(rows: RankedRow[]) {
       return subqueryChain();
     }),
   };
-  return { db: db as unknown as Db, calls, whereWasSet: () => outerWhere !== null };
+  return { db: db as unknown as Db, calls, joins, whereWasSet: () => outerWhere !== null };
 }
 
 describe("chat channel list — the member payload is bounded", () => {
@@ -171,6 +193,51 @@ describe("chat channel list — the member payload is bounded", () => {
     const member = (await loadChannelMemberPreview(db, "org-1", [7], 5)).get(7)?.members[0];
     expect(member?.user).toBeNull();
     expect(member?.userId).toBeNull();
+  });
+
+  it("carries deleted_at IS NULL on the identity join, so an erased account cannot render a name", async () => {
+    const { db, joins } = makeDb([rankedRow({ id: 1, channelId: 7, memberRank: 1, memberCount: 1 })]);
+    await loadChannelMemberPreview(db, "org-1", [7], 1);
+
+    const identityJoin = joins.find((j) => columnNamesIn(j.table).includes("email"));
+    expect(identityJoin).toBeDefined();
+    expect(columnNamesIn(identityJoin?.on)).toContain("deleted_at");
+  });
+
+  it("keeps that join LEFT, so the predicate hides a name without dropping the member or lowering the count", async () => {
+    const { db, joins } = makeDb([rankedRow({ id: 1, channelId: 7, memberRank: 1, memberCount: 1 })]);
+    await loadChannelMemberPreview(db, "org-1", [7], 1);
+
+    // An innerJoin here would delete the member from the roster AND from the
+    // `count(*) over (…)` that is taken in the same statement — a soft-deleted
+    // identity would silently shrink the channel.
+    const identityJoin = joins.find((j) => columnNamesIn(j.table).includes("email"));
+    expect(identityJoin?.kind).toBe("leftJoin");
+  });
+
+  it("a member the identity predicate filtered out keeps its row and its userId, with user = null", async () => {
+    // The shape the predicate produces, which is NOT the shape of a missing
+    // membership: `users.*` aliases come back null because the LEFT join found no
+    // row, while `membershipUserId` still carries organization_members.user_id.
+    const { db } = makeDb([
+      rankedRow({
+        id: 5,
+        channelId: 7,
+        memberRank: 1,
+        memberCount: 4,
+        membershipUserId: "user-erased",
+        userId: null,
+        userName: null,
+        userImage: null,
+      }),
+    ]);
+    const page = (await loadChannelMemberPreview(db, "org-1", [7], 5)).get(7);
+
+    expect(page?.members).toHaveLength(1);
+    expect(page?.memberCount).toBe(4);
+    expect(page?.members[0]?.userId).toBe("user-erased");
+    expect(page?.members[0]?.user).toBeNull();
+    expect(page?.members[0] && "user" in page.members[0]).toBe(true);
   });
 
   it("issues no statement at all for an empty page", async () => {

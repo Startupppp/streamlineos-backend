@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, getTableColumns, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { journalEntries, journalLines, finRecurringJournalTemplates, accNumberSequences } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -15,6 +15,25 @@ import {
 import { compareDecimals, decimalFromNumber, sumDecimals } from "../core/money.util";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/** A due template whose lines already parsed and balanced, so only database work is left. */
+interface DueTemplate {
+  tmpl: typeof finRecurringJournalTemplates.$inferSelect;
+  lines: RecurringLine[];
+}
+
+/**
+ * Due templates claimed and posted in one transaction.
+ *
+ * The cap is the multi-row INSERT, not the transaction: a template carries at
+ * most 100 lines (`createRecurringJournalSchema`) and a line binds 7 columns, so
+ * 50 templates is at most 35,000 bound parameters — comfortably under the 65,535
+ * one Postgres statement can carry, with the entry insert on top. It is also the
+ * unit of failure: a database error rolls back the whole chunk and charges every
+ * template in it to `errors`, which is why the in-memory validation that used to
+ * fail one template at a time runs BEFORE the chunking.
+ */
+const RUN_BATCH = 50;
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -181,13 +200,42 @@ export class RecurringJournalsService {
     let processed = 0;
     let errors = 0;
 
+    // Parse and balance-check in memory FIRST, before anything is claimed. It is
+    // the only per-template failure that is not a database failure, so lifting it
+    // out is what lets a BATCHED run still report a per-template error count: an
+    // unbalanced or malformed template is counted and dropped, and every template
+    // around it still posts.
+    const byOrg = new Map<string, DueTemplate[]>();
     for (const tmpl of templates) {
+      let lines: RecurringLine[];
       try {
-        if (await this.claimAndMaterialize(tmpl, today, systemUserId)) processed++;
+        lines = recurringLineArraySchema.parse(tmpl.lines);
+        this.validateLines(lines);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         this.logger.error(`Failed to materialize recurring journal template ${tmpl.id}: ${msg}`);
         errors++;
+        continue;
+      }
+      const group = byOrg.get(tmpl.orgId);
+      if (group) group.push({ tmpl, lines });
+      else byOrg.set(tmpl.orgId, [{ tmpl, lines }]);
+    }
+
+    for (const [templateOrgId, due] of byOrg) {
+      for (let offset = 0; offset < due.length; offset += RUN_BATCH) {
+        const batch = due.slice(offset, offset + RUN_BATCH);
+        try {
+          processed += await this.db.transaction((tx) =>
+            this.claimAndMaterializeBatch(tx, templateOrgId, batch, today, systemUserId),
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(
+            `Failed to materialize ${batch.length} recurring journal template(s) for org ${templateOrgId}: ${msg}`,
+          );
+          errors += batch.length;
+        }
       }
     }
 
@@ -195,42 +243,110 @@ export class RecurringJournalsService {
   }
 
   /**
-   * The entry and the template advance commit together, and the advance goes
-   * FIRST as a compare-and-set on the due predicate.
+   * Claim a batch of due templates and post their entries, in four statements
+   * rather than four PER TEMPLATE.
    *
-   * Two separate round trips lost a crash window between them: the entry
+   * The atomicity this replaced is unchanged and is the reason the order below
+   * is load-bearing. The entry and the template advance still commit together,
+   * and the advance still goes FIRST as a compare-and-set on the due predicate:
+   * two separate round trips lost a crash window between them, where the entry
    * committed, `nextRunDate` did not move, and the next day's sweep spawned a
    * SECOND entry for the same template — `uniq_je_idempotency` only blocks the
    * repeat while `sourceEvent` is still today's date, so the duplicate lands as
-   * soon as the date rolls over. Claiming first also makes two concurrent
-   * sweeps safe: the loser blocks on the row lock, re-evaluates
-   * `next_run_date <= today` against the winner's committed row, matches
-   * nothing and spawns nothing.
+   * soon as the date rolls over. Claiming first also makes two concurrent sweeps
+   * safe: the loser blocks on the row lock, re-evaluates `next_run_date <= today`
+   * against the winner's committed row, matches nothing and spawns nothing.
+   * A template another sweep won is simply absent from `RETURNING`, so it is
+   * dropped from this batch rather than posted.
+   *
+   * What changed is the COUNT. The claim was one `UPDATE … RETURNING` per due
+   * template inside its own transaction, and the post was a sequence upsert, an
+   * entry insert and a line insert on top of that — four statements and a
+   * transaction per template, which is the growing-loop database call §5.1 and
+   * PRD-C072 forbid. `next_run_date` is a function of `(entryDate, frequency)`
+   * alone, so the five enum values are the only distinct SET clauses a batch can
+   * ever need: the claim is at most five bounded multi-key UPDATEs regardless of
+   * how many templates are due, and the sequence, the entries and their lines are
+   * one statement each.
    */
-  private async claimAndMaterialize(
-    tmpl: typeof finRecurringJournalTemplates.$inferSelect,
+  private async claimAndMaterializeBatch(
+    tx: Tx,
+    orgId: string,
+    batch: readonly DueTemplate[],
     entryDate: string,
     userId: string,
-  ): Promise<boolean> {
-    const nextRun = advanceDate(entryDate, tmpl.frequency);
-    return this.db.transaction(async (tx) => {
+  ): Promise<number> {
+    const byFrequency = new Map<string, number[]>();
+    for (const { tmpl } of batch) {
+      const ids = byFrequency.get(tmpl.frequency);
+      if (ids) ids.push(tmpl.id);
+      else byFrequency.set(tmpl.frequency, [tmpl.id]);
+    }
+
+    const claimedIds = new Set<number>();
+    for (const [frequency, ids] of byFrequency) {
       const claimed = await tx
         .update(finRecurringJournalTemplates)
-        .set({ lastRunDate: entryDate, nextRunDate: nextRun })
+        .set({ lastRunDate: entryDate, nextRunDate: advanceDate(entryDate, frequency) })
         .where(
           and(
-            eq(finRecurringJournalTemplates.id, tmpl.id),
-            eq(finRecurringJournalTemplates.orgId, tmpl.orgId),
+            eq(finRecurringJournalTemplates.orgId, orgId),
+            inArray(finRecurringJournalTemplates.id, ids),
             eq(finRecurringJournalTemplates.isActive, true),
             lte(finRecurringJournalTemplates.nextRunDate, entryDate),
           ),
         )
         .returning({ id: finRecurringJournalTemplates.id });
+      for (const row of claimed) claimedIds.add(row.id);
+    }
 
-      if (!claimed[0]) return false;
-      await this.materializeEntry(tmpl, entryDate, userId, tx);
-      return true;
-    });
+    const won = batch.filter(({ tmpl }) => claimedIds.has(tmpl.id));
+    if (won.length === 0) return 0;
+
+    const entryNumbers = await this.allocateSequenceNumbers(orgId, entryDate, won.length, tx);
+
+    const entries = await tx
+      .insert(journalEntries)
+      .values(
+        won.map(({ tmpl }, index) => ({
+          orgId,
+          entryNumber: entryNumbers[index],
+          entryDate,
+          description: tmpl.name,
+          sourceType: "recurring_journal",
+          sourceId: String(tmpl.id),
+          sourceEvent: entryDate,
+          status: "DRAFT" as const,
+          createdBy: userId,
+        })),
+      )
+      .returning({ id: journalEntries.id, sourceId: journalEntries.sourceId });
+
+    // Keyed on `sourceId`, not on position: `RETURNING` does not promise the
+    // order of the VALUES list, and a batch that mismatched entry to lines would
+    // post someone else's debits under this template's number.
+    const entryIdBySource = new Map(entries.map((entry) => [entry.sourceId, entry.id]));
+
+    const lineRows: (typeof journalLines.$inferInsert)[] = [];
+    for (const { tmpl, lines } of won) {
+      const entryId = entryIdBySource.get(String(tmpl.id));
+      if (entryId === undefined)
+        throw new Error(`Journal entry insert returned no row for template ${tmpl.id}`);
+      lines.forEach((line, idx) => {
+        lineRows.push({
+          entryId,
+          accountId: line.accountId,
+          orgId,
+          debit: decimalFromNumber(line.debit),
+          credit: decimalFromNumber(line.credit),
+          description: line.description ?? null,
+          lineOrder: idx,
+        });
+      });
+    }
+
+    if (lineRows.length > 0) await tx.insert(journalLines).values(lineRows);
+    return won.length;
   }
 
   private async materializeEntry(
@@ -276,21 +392,45 @@ export class RecurringJournalsService {
   }
 
   private async nextSequenceNumber(orgId: string, entryDate: string, tx: Tx): Promise<string> {
+    const [entryNumber] = await this.allocateSequenceNumbers(orgId, entryDate, 1, tx);
+    if (entryNumber === undefined) throw new Error("Sequence upsert returned no rows");
+    return entryNumber;
+  }
+
+  /**
+   * Reserve `count` consecutive journal numbers in ONE upsert.
+   *
+   * The counter moves by `count` instead of by 1, and the returned `nextNumber`
+   * is the value AFTER the bump, so the block this call owns is
+   * `[next - count, next - 1]`. At `count = 1` that is exactly the arithmetic the
+   * per-entry version did (`seq = next - 1`), which is what keeps `runNow` and
+   * the single-template path byte-identical while the batch path stops paying a
+   * round trip per entry.
+   */
+  private async allocateSequenceNumbers(
+    orgId: string,
+    entryDate: string,
+    count: number,
+    tx: Tx,
+  ): Promise<string[]> {
     const inserted = await tx
       .insert(accNumberSequences)
-      .values({ orgId, entityType: "journal", prefix: "JE", nextNumber: 2, padding: 5 })
+      .values({ orgId, entityType: "journal", prefix: "JE", nextNumber: count + 1, padding: 5 })
       .onConflictDoUpdate({
         target: [accNumberSequences.orgId, accNumberSequences.entityType],
-        set: { nextNumber: sql`${accNumberSequences.nextNumber} + 1` },
+        set: { nextNumber: sql`${accNumberSequences.nextNumber} + ${count}` },
       })
       .returning({ next: accNumberSequences.nextNumber, padding: accNumberSequences.padding });
 
     const row = inserted[0];
     if (!row) throw new Error("Sequence upsert returned no rows");
-    const seq = Number(row.next) - 1;
     const pad = Number(row.padding ?? 5);
     const period = yyyymm(entryDate);
-    return `JE-${period}-${String(seq).padStart(pad, "0")}`;
+    const first = Number(row.next) - count;
+    return Array.from(
+      { length: count },
+      (_, index) => `JE-${period}-${String(first + index).padStart(pad, "0")}`,
+    );
   }
 
   private validateLines(lines: RecurringLine[]): void {

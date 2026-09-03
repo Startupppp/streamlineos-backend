@@ -1,4 +1,4 @@
-import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import { chatChannelMembers, organizationMembers, users } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
 import type { ChannelMemberWire } from "./chat-channel-member-shape";
@@ -107,7 +107,23 @@ export async function loadChannelMemberPreview(
         eq(organizationMembers.orgId, chatChannelMembers.orgId),
       ),
     )
-    .leftJoin(users, eq(users.id, organizationMembers.userId))
+    // `deleted_at IS NULL` on the identity join, and it stays a LEFT join: a member whose user row
+    // is gone keeps its row and flattens to `user: null`, exactly as `flattenChannelMember` does
+    // for a missing membership, rather than dropping the member out of the roster and out of the
+    // `count(*) over (…)` above it.
+    //
+    // This is defence in depth, not a live repair, and the distinction is why the sibling reads do
+    // NOT carry it. `users.deleted_at` has exactly one writer — `UsersService.deleteUser` — and it
+    // calls `removeMember` FIRST, which hard-DELETEs the `organization_members` row. Every member
+    // read in chat, this one and the relational ones alike, reaches `users` only THROUGH that row,
+    // so a soft-deleted user is already unreachable from a channel roster and the two shapes cannot
+    // currently disagree about a name. The sibling reads (`chat-channels.service.ts`,
+    // `chat-channel-members-implementation.ts`) use `CHANNEL_MEMBER_MEMBERSHIP_WITH`, where `user`
+    // is a Drizzle `one` relation and `with:` takes no `where` — expressing the same predicate there
+    // means selecting `deleted_at` into the projection and suppressing it in the flattener, which
+    // buys nothing while the state is unreachable and puts a column the client contract forbids one
+    // spread away from the wire.
+    .leftJoin(users, and(eq(users.id, organizationMembers.userId), isNull(users.deletedAt)))
     .where(and(eq(chatChannelMembers.orgId, orgId), inArray(chatChannelMembers.channelId, channelIds)))
     .as("ranked_channel_members");
 
