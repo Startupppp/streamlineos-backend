@@ -543,10 +543,10 @@
       "measuredResponseBytes": 197493,
       "measuredMemoryMb": 75.766,
       "measuredLatencyP95Ms": 915.944,
-      "measuredBufferBlocks": 7072,
-      "measuredReadPathP50Ms": 1.713,
-      "measuredReadPathP95Ms": 2.501,
-      "measuredReadPathP99Ms": 3.061,
+      "measuredBufferBlocks": 709,
+      "measuredReadPathP50Ms": 0.242,
+      "measuredReadPathP95Ms": 0.279,
+      "measuredReadPathP99Ms": 0.445,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -555,21 +555,36 @@
         "profile": "reference",
         "samples": 200,
         "resultRows": 500,
-        "tenantRows": 60012,
-        "coldMs": 30.143,
-        "warmBufferBlocks": 7063,
+        "tenantRows": 60025,
+        "scanRows": 517,
+        "coldMs": 1.035,
+        "firstReadBlocks": 706,
+        "warmBufferBlocks": 697,
         "readCostCeilingBlocks": 2000,
-        "readCostOutcome": "fail"
+        "readCostOutcome": "pass",
+        "database": "scratch_perf_seed",
+        "role": "streamline_app (rolbypassrls=f, rolsuper=f) with app.organization_id set",
+        "takenAt": "2026-09-03T10:55:57.776Z",
+        "command": "APP_DATABASE_URL=<streamline_app@scratch_perf_seed> PGSSLMODE=disable SEED_ORG_ID=aaaaaaaa-1111-0000-0000-000000000001 node src/scripts/run-read-cost-budgets.mjs --ids=calendar-events-visible-batch --samples=200",
+        "supersedes": {
+          "measuredBufferBlocks": 7072,
+          "warmBufferBlocks": 7063,
+          "tenantRows": 60012,
+          "why": "The 7,063 was the SINGLE-STATEMENT candidate page: both range branches under one OR, three left joins and the 18-column projection, with no lower bound on start_date on the recurring arm. CalendarEventSourceLoader was subsequently split into four statements per page (candidatePage x2 branches, callerRsvp, fetchEvents) and read-cost-budgets.mjs was rewritten to measure the dominant one of the four — but the number in this file was never re-taken, so check:route-budgets was failing on a figure produced by SQL that no longer exists. Re-measured 2026-09-03 against the CURRENT catalogued SQL on all three seeded tenants: 89.93% 697 warm / 706 first read, 9.00% 700 / 709, 0.90% 46 / 55 — every one inside the 2,000-block ceiling, which is therefore NOT raised. This is a stale-measurement defect, not a route regression."
+        }
       },
       "minorityMeasurement": {
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "bufferBlocks": 76,
-        "readPathP50Ms": 0.226,
-        "readPathP95Ms": 0.276,
-        "readPathP99Ms": 0.347,
-        "resultRows": 97,
-        "tenantRows": 612
+        "tenantSharePct": 0.9,
+        "samples": 200,
+        "bufferBlocks": 46,
+        "firstReadBlocks": 55,
+        "readPathP50Ms": 0.05,
+        "readPathP95Ms": 0.06,
+        "readPathP99Ms": 0.082,
+        "resultRows": 84,
+        "tenantRows": 625
       },
       "httpMeasurement": {
         "status": "measured",
@@ -619,6 +634,20 @@
             "overPrdCeiling": false
           }
         }
+      },
+      "midMeasurement": {
+        "status": "measured",
+        "tenant": "aaaaaaaa-1111-0000-0000-000000000003",
+        "tenantSharePct": 9,
+        "samples": 200,
+        "bufferBlocks": 700,
+        "firstReadBlocks": 709,
+        "readPathP50Ms": 0.242,
+        "readPathP95Ms": 0.279,
+        "readPathP99Ms": 0.445,
+        "resultRows": 500,
+        "tenantRows": 6025,
+        "why": "Recorded because it is the WORST of the three, not the reference: a 9.00%-share tenant reads more blocks per returned row than the 89.93% one (549 rows scanned for 500 kept vs 517), and measuring only the reference profile would have recorded 697 as the ceiling-facing figure. measuredBufferBlocks above is this tenant's first-read total."
       }
     },
     "GET /organization/members": {
@@ -6721,8 +6750,10 @@
           }
         }
       },
-      "downstreamCallBasis": "measured-and-unreconcilable-at-this-unit",
-      "downstreamCallNote": "MEASURED 8 outbound calls, both tenants, 40 samples, all to one origin: https://streamlineos.<bucket>.r2.cloudflarestorage.com — the Cloudflare R2 bucket this sweep exists to reconcile, one call per organisation over the 8 in the seed. So the 8 are not a stray provider call, and maxDownstreamCalls=0 is not a magnitude that needs raising: it is the WRONG UNIT. forEachOrg makes this count O(organisations swept), so no fixed per-request integer describes the route on any deployment other than the one it was measured on — writing 8 here would make the gate green on this seed and meaningless in production. The ceiling is deliberately LEFT AT 0 and the gate deliberately LEFT FAILING rather than rubber-stamped. Closing it needs a per-organisation unit (a maxDownstreamCallsPerOrg pair in src/scripts/check-route-budgets.mjs, plus the harness recording the org count it swept) or a product decision that a per-request cap is the right shape for an all-tenant sweep. The other 11 worker batches genuinely measure 0, so the invariant this ceiling encodes -- a worker batch does not leave the process -- is worth keeping for them."
+      "downstreamCallBasis": "fixed-zero-plus-per-organisation-allowance",
+      "downstreamCallNote": "MEASURED 8 outbound calls, both tenant profiles, 40 samples, all to one origin: https://streamlineos.<bucket>.r2.cloudflarestorage.com — the Cloudflare R2 bucket this sweep exists to reconcile. maxDownstreamCalls=0 was never the wrong MAGNITUDE, it was the wrong UNIT: CronStorageSweepService.sweep runs forEachOrg (src/common/tenant/for-each-org.ts:149), which enumerates every ACTIVE, non-soft-deleted organisation and calls StorageMultipartService.sweepAbandonedUploads once per organisation (src/modules/storage/storage-multipart.service.ts:148-166), and that method issues exactly one ListMultipartUploadsCommand per organisation whose placement has a bucket, plus one more per pagination round trip. The count is therefore O(organisations swept) and no fixed per-request integer describes it on any deployment other than the one it was measured on. CLOSED 2026-09-03 with the per-organisation unit the gate already supports (effectivePerOrgCeiling, src/scripts/check-route-budgets.mjs:192): the fixed component stays 0, so the invariant 'a worker batch does not leave the process' is untouched for the other eleven worker batches, and the allowance is 1 outbound call per organisation. measuredOrgsSwept=8 is MEASURED, not assumed: the capture database scratch_t23_http holds exactly 8 rows in organizations with deleted_at IS NULL AND status = 'ACTIVE', which is the predicate forEachOrg enumerates (for-each-org.ts:157-161), verified by \"select count(*) from organizations where deleted_at is null and status='ACTIVE'\" = 8. Effective ceiling 0 + 1/org x 8 = 8, and the measurement sits AT the boundary, so a second outbound call per organisation still fails this gate. It fails closed: drop measuredOrgsSwept and the absolute 0 is back in force.",
+      "maxDownstreamCallsPerOrg": 1,
+      "measuredOrgsSwept": 8
     },
     "GET /cron/outbox-events-retention-sweep": {
       "kind": "worker-batch",
@@ -6754,7 +6785,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      }
     },
     "GET /cron/notification-outbox-retention-sweep": {
       "kind": "worker-batch",
@@ -6786,7 +6822,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      }
     },
     "GET /cron/announcements-retention-sweep": {
       "kind": "worker-batch",
@@ -6818,7 +6859,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      }
     },
     "GET /cron/mail-metadata-retention-sweep": {
       "kind": "worker-batch",
@@ -6850,7 +6896,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      }
     },
     "GET /cron/helpdesk-retention-sweep": {
       "kind": "worker-batch",
@@ -6882,7 +6933,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      }
     },
     "GET /cron/ai-usage-retention-sweep": {
       "kind": "worker-batch",
@@ -6913,7 +6969,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      }
     },
     "GET /cron/build-retention-prune": {
       "kind": "worker-batch",
@@ -6944,7 +7005,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      }
     },
     "GET /cron/kb-chat-history-purge": {
       "kind": "worker-batch",
@@ -6975,7 +7041,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      }
     },
     "GET /cron/kb-chunk-retention-sweep": {
       "kind": "worker-batch",
@@ -7006,7 +7077,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      }
     },
     "GET /cron/hr-policy-retention-sweep": {
       "kind": "worker-batch",
@@ -7037,7 +7113,12 @@
       "measurement": null,
       "measuredBatchSize": null,
       "measuredDurationMs": null,
-      "httpMeasurement": null,
+      "httpMeasurement": {
+        "status": "unmeasured",
+        "method": "http-harness",
+        "reason": "the capture holds no slot for this route",
+        "profiles": {}
+      },
       "downstreamCallBasis": "wrong-unit-declared-zero",
       "downstreamCallNote": "maxDownstreamCalls is declared 0 and is EXPECTED TO BE EXCEEDED once measured. CronHrRetentionService.deleteRetiredObjects (cron-hr-retention.service.ts:268-275) is a nested `for (const [orgId, keys] of retiredKeys) { for (const key of keys) { await this.storage.deleteFileIfPresent(orgId, key) } }` — one outbound object-store call PER RETIRED OBJECT KEY. That is O(objects retired), a per-item outbound call, so no fixed per-request integer describes it and neither does maxDownstreamCallsPerOrg. The 0 is kept because it is the invariant the other worker batches hold, and because writing any positive number would make the gate green on this seed and meaningless in production — the same reasoning already recorded on GET /cron/storage-sweep. CORRECTION TO THAT ENTRY'S NOTE: it says the storage sweep is 'the ONLY worker batch in this manifest that leaves the process'. That was true of the twelve; over the 67 batches the source actually declares, this is a second one."
     }
@@ -7090,9 +7171,9 @@
         "refused": 14
       }
     ],
-    "ceilingDigest": "c7078c28f035e7dc",
+    "ceilingDigest": "3accf4c93ae03485",
     "budgetsWithHttpMeasurement": 69,
-    "budgetsDeclared": 82,
+    "budgetsDeclared": 92,
     "fieldCoverage": {
       "measuredLatencyP95Ms": 69,
       "measuredDownstreamCalls": 69,

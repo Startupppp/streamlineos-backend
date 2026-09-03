@@ -20,6 +20,13 @@ import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { FileQuarantineService } from "./file-quarantine.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  quarantineDeleteResponseSchema,
+  quarantineListResponseSchema,
+  quarantineRecordSchema,
+  quarantineStatusResponseSchema,
+} from "./dto/storage-response.schemas";
 import {
   quarantineListQuerySchema,
   quarantineIdParamSchema,
@@ -38,6 +45,7 @@ export class StorageQuarantineController {
   ) {}
 
   @Get()
+  @ResponseSchema(quarantineListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("storage:quarantine:view")
   @Validate({ query: quarantineListQuerySchema })
@@ -53,6 +61,7 @@ export class StorageQuarantineController {
   }
 
   @Get(":quarantineId")
+  @ResponseSchema(quarantineRecordSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("storage:quarantine:view")
   @Validate({ params: quarantineIdParamSchema })
@@ -66,6 +75,7 @@ export class StorageQuarantineController {
   }
 
   @Post(":quarantineId/release")
+  @ResponseSchema(quarantineStatusResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("storage:quarantine:manage")
@@ -91,6 +101,7 @@ export class StorageQuarantineController {
   }
 
   @Post(":quarantineId/reject")
+  @ResponseSchema(quarantineStatusResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("storage:quarantine:manage")
   @Idempotent("storage.quarantine.reject")
@@ -117,6 +128,7 @@ export class StorageQuarantineController {
   }
 
   @Delete(":quarantineId")
+  @ResponseSchema(quarantineDeleteResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("storage:quarantine:manage")
   @Validate({ params: quarantineIdParamSchema })

@@ -41,7 +41,10 @@ export const createSlaPolicySchema = z.object({
   businessHoursId: z.number().int().positive().optional(),
   firstResponseTargetMins: z.number().int().positive(),
   resolutionTargetMins: z.number().int().positive(),
-  pauseStatuses: z.array(ticketStatusSchema).default(["WAITING"]),
+  // Capped: five distinct statuses exist, so anything above that is repetition
+  // an attacker can send unboundedly. `check:bulk-id-limits` only inspects
+  // properties named `ids`/`*Ids`, so this one was never in its scope.
+  pauseStatuses: z.array(ticketStatusSchema).max(5).default(["WAITING"]),
   isEnabled: z.boolean().default(true),
   sortOrder: z.number().int().min(0).default(0),
 }).strict();
@@ -53,7 +56,7 @@ export const updateSlaPolicySchema = z.object({
   businessHoursId: z.number().int().positive().nullable().optional(),
   firstResponseTargetMins: z.number().int().positive().optional(),
   resolutionTargetMins: z.number().int().positive().optional(),
-  pauseStatuses: z.array(ticketStatusSchema).optional(),
+  pauseStatuses: z.array(ticketStatusSchema).max(5).optional(),
   isEnabled: z.boolean().optional(),
   sortOrder: z.number().int().min(0).optional(),
 }).strict();

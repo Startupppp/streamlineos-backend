@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  Inject,
   Param,
   ParseIntPipe,
   Patch,
@@ -13,6 +14,10 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { type Db } from "../../../db/drizzle.module";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
@@ -43,12 +48,28 @@ const conversationIdParams = z.object({ conversationId: z.coerce.number().int().
 @RequireModule("kb")
 export class KbAskController {
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly ask: KbAskService,
     private readonly history: KbChatHistoryService,
   ) {}
 
+  /**
+   * `@NoTenantTransaction()` because `KbAskService.ask` awaits a provider round
+   * trip and the request transaction would otherwise pin a pooled connection
+   * idle-in-transaction for the whole of it, against the 60s
+   * `idle_in_transaction_session_timeout` `withTenant` sets. The service does
+   * its retrieval in a short transaction that commits before the call and its
+   * citation re-verification in another afterwards; the three writes this
+   * handler owns each get their own, so nothing reaches the pool without a GUC.
+   *
+   * Creating the conversation is deliberately no longer atomic with the answer.
+   * It cannot be — the provider call sits between them — and an empty
+   * conversation left behind by a failed answer is a better outcome than a
+   * connection held open across the provider.
+   */
   @Post("ask")
   @HttpCode(200)
+  @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("kb:ask")
@@ -57,26 +78,38 @@ export class KbAskController {
     const membershipId = actingMembershipId(u.principal) ?? 0;
     let conversationId = body.conversationId;
     if (conversationId === undefined) {
-      const conv = await this.history.createConversation(
-        u.orgId,
-        u.userId,
-        membershipId,
-        body.question.substring(0, 60).trim(),
+      const conv = await runInTenantTransaction(
+        this.db,
+        () =>
+          this.history.createConversation(
+            u.orgId,
+            u.userId,
+            membershipId,
+            body.question.substring(0, 60).trim(),
+          ),
+        { orgId: u.orgId },
       );
       conversationId = conv.id;
     }
 
     const result = await this.ask.ask(u, body);
+    const persistedConversationId = conversationId;
     try {
-      await this.history.appendToConversation(u.orgId, u.userId, membershipId, conversationId, "user", body.question);
-      await this.history.appendToConversation(
-        u.orgId,
-        u.userId,
-        membershipId,
-        conversationId,
-        "assistant",
-        result.answer,
-        result.citations,
+      await runInTenantTransaction(
+        this.db,
+        async () => {
+          await this.history.appendToConversation(u.orgId, u.userId, membershipId, persistedConversationId, "user", body.question);
+          await this.history.appendToConversation(
+            u.orgId,
+            u.userId,
+            membershipId,
+            persistedConversationId,
+            "assistant",
+            result.answer,
+            result.citations,
+          );
+        },
+        { orgId: u.orgId },
       );
     } catch (error) {
       logger.error("Failed to persist KB chat message", { error });

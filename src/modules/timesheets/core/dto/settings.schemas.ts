@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const updateCoreSettingsSchema = z.object({
   workWeekStart: z.number().int().min(0).max(6).optional(),
-  requiredFields: z.array(z.string()).optional(),
+  requiredFields: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
   roundingRule: z
     .enum([
       "NONE",

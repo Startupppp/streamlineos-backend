@@ -7,6 +7,7 @@ import type { Request, Response, NextFunction } from "express";
 
 import helmet from "helmet";
 import compression from "compression";
+import { httpCompressionOptions } from "./common/http/compression.config";
 import { SwaggerModule } from "@nestjs/swagger";
 import { buildOpenApiDocument } from "./common/openapi/build-openapi-document";
 
@@ -94,7 +95,9 @@ async function bootstrap(): Promise<void> {
     );
     next();
   });
-  app.use(compression());
+  // Declared, not defaulted: threshold, brotli quality, the already-compressed
+  // exclusions and the secret opt-out all live in one reviewable file.
+  app.use(compression(httpCompressionOptions()));
   app.enableShutdownHooks();
   // Ahead of routing so a request arriving after the drain has begun is refused
   // before it takes a connection, and one already running is counted so

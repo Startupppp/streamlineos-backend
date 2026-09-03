@@ -8,6 +8,7 @@ import { SignBulkSendService } from "../sign-bulk-send.service";
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "../sign-envelope-sweeps.service";
 import { SYSTEM_ENVELOPE_SCOPE } from "../sign-envelope-scope";
+import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 
 const OWNER_ORG = "org-owner";
 const ATTACKER_ORG = "org-attacker";
@@ -150,7 +151,16 @@ describe("SignAiService — cross-tenant isolation", () => {
     const mockStorage = { getFileStream: jest.fn() } as any;
     const mockGateway = { chat: jest.fn().mockResolvedValue({ content: "summary" }) } as any;
     const svc = new SignAiService(db, mockStorage, mockGateway);
-    await expect(svc.summarizeDocument(ATTACKER_ORG, 999, "user-x", SYSTEM_ENVELOPE_SCOPE)).rejects.toBeDefined();
+    // `summarizeDocument` now reads inside `runInTenantTransaction` so the
+    // connection is released before the storage fetch and the provider call.
+    // Supplying the ambient context is what that helper reuses; without one it
+    // would open a real transaction, which a mock db cannot serve.
+    await expect(
+      runWithTenantContext(
+        { orgId: ATTACKER_ORG, audience: "INTERNAL", tx: db as never },
+        () => svc.summarizeDocument(ATTACKER_ORG, 999, "user-x", SYSTEM_ENVELOPE_SCOPE),
+      ),
+    ).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
     const callArg = findFirst.mock.calls[0]?.[0];
     const vals = sqlValues(callArg?.where);
@@ -162,7 +172,12 @@ describe("SignAiService — cross-tenant isolation", () => {
     const mockStorage = { getFileStream: jest.fn() } as any;
     const mockGateway = { chat: jest.fn().mockResolvedValue({ content: "summary" }) } as any;
     const svc = new SignAiService(db, mockStorage, mockGateway);
-    await expect(svc.summarizeDocument(OWNER_ORG, 999, "user-y", SYSTEM_ENVELOPE_SCOPE)).rejects.toBeDefined();
+    await expect(
+      runWithTenantContext(
+        { orgId: OWNER_ORG, audience: "INTERNAL", tx: db as never },
+        () => svc.summarizeDocument(OWNER_ORG, 999, "user-y", SYSTEM_ENVELOPE_SCOPE),
+      ),
+    ).rejects.toBeDefined();
     const callArg = findFirst.mock.calls[0]?.[0];
     const vals = sqlValues(callArg?.where);
     expect(vals).toContain(OWNER_ORG);

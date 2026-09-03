@@ -49,6 +49,8 @@ import {
 } from "./storage-key";
 import { FileQuarantineService } from "./file-quarantine.service";
 import { MediaTransformRunner } from "./media-transform.runner";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { storageUploadResponseSchema } from "./dto/storage-response.schemas";
 import { AccessService } from "../access/access.service";
 import { AvScanner } from "../../common/security/av-scan";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -109,6 +111,7 @@ export class StorageController {
 
   @Post("upload")
   @MultipartAction({ file: "file", fields: { folder: "string" } })
+  @ResponseSchema(storageUploadResponseSchema)
   @AuthorizedInService("assertUploadAllowed")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
   async upload(

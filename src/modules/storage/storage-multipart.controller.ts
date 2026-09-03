@@ -20,6 +20,12 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { StorageService } from "./storage.service";
 import { StorageMultipartService } from "./storage-multipart.service";
 import { FileQuarantineService } from "./file-quarantine.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  multipartAbortResponseSchema,
+  multipartCompleteResponseSchema,
+  multipartInitiateResponseSchema,
+} from "./dto/storage-response.schemas";
 import { validateMagicBytes } from "./file-signatures";
 import { isForeignOrgKey } from "./storage-key";
 import {
@@ -60,6 +66,7 @@ export class StorageMultipartController {
   ) {}
 
   @Post("initiate")
+  @ResponseSchema(multipartInitiateResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("storage:files:manage")
   @Validate({ body: initiateMultipartSchema })
@@ -124,6 +131,7 @@ export class StorageMultipartController {
   }
 
   @Post("complete")
+  @ResponseSchema(multipartCompleteResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("storage:files:manage")
   @Validate({ body: completeMultipartSchema })
@@ -194,6 +202,7 @@ export class StorageMultipartController {
   }
 
   @Post("abort")
+  @ResponseSchema(multipartAbortResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("storage:files:manage")
   @Validate({ body: abortMultipartSchema })

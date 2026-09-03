@@ -22,7 +22,7 @@ const emergencyContactSchema = z.object({
   relation: z.string().min(1),
   phone: z.string().min(1),
   email: z.string().email().optional(),
-}).optional();
+}).strict().optional();
 
 export const updateUserSchema = z.object({
   firstName: z.string().min(1).optional(),

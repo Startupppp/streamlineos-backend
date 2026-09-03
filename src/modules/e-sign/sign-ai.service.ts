@@ -7,6 +7,7 @@ import { StorageService } from "../storage/storage.service";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { unwrapAiResult } from "../ai/core/services/gateway-result.util";
 import { extractAttachmentText } from "../kb/retrieval/kb-attachment-extract.util";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { mustGetVisibleEnvelope, type EnvelopeViewScope } from "./sign-envelope-scope";
 
 const SIGN_SUMMARIZE_FEATURE = "sign.summarize-document";
@@ -35,12 +36,27 @@ export class SignAiService {
     userId: string,
     scope: EnvelopeViewScope,
   ): Promise<{ summary: string }> {
-    await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Envelope not found");
-
-    const docs = await this.db.query.signDocuments.findMany({
-      where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
-      orderBy: (d, { asc }) => [asc(d.orderIndex)],
-    });
+    // Both reads happen inside ONE short tenant transaction that commits before
+    // the object-store fetch, the text extraction and the provider call below.
+    // Holding the request transaction across those pinned a pooled connection
+    // idle-in-transaction for the whole of an external round trip (PRD-C078).
+    // Passing `orgId` explicitly is what makes this open its own transaction
+    // under the handler's `@NoTenantTransaction()`; if a caller ever does have an
+    // ambient tenant context it is reused unchanged.
+    // `this.db` is the tenant-aware proxy, so inside this callback it resolves to
+    // the transaction opened here (`createTenantAwareDb`) and both statements
+    // carry the same GUC.
+    const docs = await runInTenantTransaction(
+      this.db,
+      async () => {
+        await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Envelope not found");
+        return this.db.query.signDocuments.findMany({
+          where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
+          orderBy: (d, { asc }) => [asc(d.orderIndex)],
+        });
+      },
+      { orgId },
+    );
 
     if (docs.length === 0) {
       return { summary: "No documents attached to this envelope." };

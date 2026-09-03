@@ -29,6 +29,8 @@ import { MediaTransformRunner } from "./media-transform.runner";
 import { AvScanner } from "../../common/security/av-scan";
 import { validateMagicBytes } from "./file-signatures";
 import { onboardingDocTypeSchema } from "./dto/storage.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { onboardingDocumentResponseSchema } from "./dto/storage-response.schemas";
 
 const uploadBodySchema = z.object({ type: onboardingDocTypeSchema });
 
@@ -51,6 +53,7 @@ export class OnboardingDocumentsController {
   ) {}
 
   @Post("documents")
+  @ResponseSchema(onboardingDocumentResponseSchema)
   @Universal()
   @HttpCode(201)
   @MultipartAction({ file: "file", fields: { type: "string" }, requiredFields: ["type"] })

@@ -6,6 +6,8 @@ import { type Db } from "../../db/drizzle.module";
 import { kbArticleAttachments, kbArticles } from "../../db/schema";
 import { StorageService } from "./storage.service";
 import { kbAttachmentsQuerySchema, type KbAttachmentsQueryInput } from "./dto/storage.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { kbAttachmentListResponseSchema } from "./dto/storage-response.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
@@ -27,6 +29,7 @@ export class StorageKbController {
   ) {}
 
   @Get(":slug/attachments")
+  @ResponseSchema(kbAttachmentListResponseSchema)
   @Validate({ params: slugParams, query: kbAttachmentsQuerySchema })
   async listAttachments(
     @Param("slug") slug: string,

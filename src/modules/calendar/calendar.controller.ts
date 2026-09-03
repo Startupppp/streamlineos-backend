@@ -52,7 +52,20 @@ import {
   type UpsertOccurrenceExceptionInput,
 } from "./dto/occurrence-exception.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  calendarAttendeeListResponseSchema,
+  calendarDeleteEventResponseSchema,
+  calendarEventsResponseSchema,
+  calendarRsvpResponseSchema,
+  calendarSourcePreferenceResponseSchema,
+  calendarSourcesResponseSchema,
+  externalCalendarEventsResponseSchema,
+} from "./dto/calendar-response.schemas";
+import {
+  syncRetryResponseSchema,
+  syncStatusResponseSchema,
+} from "./dto/sync-status.schemas";
 import { z } from "zod";
 
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -92,6 +105,7 @@ export class CalendarController {
   @Get("events")
   @Universal()
   @Validate({ query: listEventsSchema })
+  @ResponseSchema(calendarEventsResponseSchema)
   getEvents(
     @Query() query: ListEventsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -107,6 +121,7 @@ export class CalendarController {
   @Get("external-events")
   @Universal()
   @Validate({ query: externalEventsQuerySchema })
+  @ResponseSchema(externalCalendarEventsResponseSchema)
   getExternalEvents(
     @Query() query: ExternalEventsQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -152,6 +167,7 @@ export class CalendarController {
   @Delete("events/:eventId")
   @Universal()
   @Validate({ params: eventIdParams })
+  @ResponseSchema(calendarDeleteEventResponseSchema)
   async removeEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -165,6 +181,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(200)
   @Validate({ params: eventIdParams, body: rsvpSchema })
+  @ResponseSchema(calendarRsvpResponseSchema)
   async rsvp(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body() body: RsvpInput,
@@ -218,6 +235,7 @@ export class CalendarController {
   @Get("events/:eventId/sync-status")
   @Universal()
   @Validate({ params: eventIdParams })
+  @ResponseSchema(syncStatusResponseSchema)
   getSyncStatus(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -230,6 +248,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(200)
   @Validate({ params: eventIdParams })
+  @ResponseSchema(syncRetryResponseSchema)
   retrySync(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -241,6 +260,7 @@ export class CalendarController {
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:read")
   @Validate({ params: eventIdParams })
+  @ResponseSchema(calendarAttendeeListResponseSchema)
   async listAttendees(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -301,6 +321,7 @@ export class CalendarController {
 
   @Get("sources")
   @Universal()
+  @ResponseSchema(calendarSourcesResponseSchema)
   getSources(@CurrentUser() u: CurrentUserContext) {
     const now = new Date();
     const ctx: CalendarSourceContext = {
@@ -317,6 +338,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(200)
   @Validate({ params: sourceKeyParams, body: setSourcePreferenceSchema })
+  @ResponseSchema(calendarSourcePreferenceResponseSchema)
   async setSourcePreference(
     @Param("sourceKey") sourceKey: string,
     @Body() body: SetSourcePreferenceInput,

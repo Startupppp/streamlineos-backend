@@ -53,6 +53,8 @@ function projectionToItem(p: CalendarEventProjection): CalendarEventItem {
     myRsvpStatus: typeof p.meta["myRsvpStatus"] === "string" ? p.meta["myRsvpStatus"] : null,
     projectId: typeof p.meta["projectId"] === "number" ? p.meta["projectId"] : null,
     linkedTicket: isLinkedTicket(p.meta["linkedTicket"]) ? p.meta["linkedTicket"] : null,
+    rrule: typeof p.meta["rrule"] === "string" ? p.meta["rrule"] : null,
+    isRecurring: p.meta["isRecurring"] === true,
   };
 }
 

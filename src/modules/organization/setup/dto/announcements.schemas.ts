@@ -37,7 +37,7 @@ const announcementBodyBase = z.object({
   expiresAt: optionalDateTime,
   isPinned: z.boolean().default(false),
   attachmentUrls: z.array(z.string()).default([]),
-});
+}).strict();
 
 function refineAnnouncementDates(
   data: {

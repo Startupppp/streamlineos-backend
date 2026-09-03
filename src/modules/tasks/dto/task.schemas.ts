@@ -57,7 +57,9 @@ export const sequenceListSchema = z.object({
 export const sequenceCreateSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
-  steps: z.array(stepSchema).min(1),
+  // A sequence expands to one task row per step on every apply, so an
+  // uncapped array is an unbounded write batch behind one request.
+  steps: z.array(stepSchema).min(1).max(100),
 }).strict();
 
 export const sequenceApplySchema = z.object({

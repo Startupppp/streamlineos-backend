@@ -6,7 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { randomUUID, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lte } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -19,6 +19,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
+import { lockMembersQuota } from "../../billing/core/seat-definition";
 import {
   invitationEvents,
   invitations,
@@ -249,9 +250,7 @@ export class InvitationCreateService {
       await runInTenantTransaction(
         this.db,
         async (tx) => {
-          await tx.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-          );
+          await tx.execute(lockMembersQuota(orgId));
           await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
           await tx
             .update(invitations)

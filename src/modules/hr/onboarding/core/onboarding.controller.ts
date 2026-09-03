@@ -333,7 +333,6 @@ export class OnboardingController {
 
   @Patch("tasks/:taskId")
   @UseGuards(PermissionGuard)
-  @RequireModule("hr")
   @RequirePermission("self:onboarding-tasks")
   @Validate({ params: taskIdParams, body: updateTaskSchema })
   updateTask(
@@ -362,7 +361,6 @@ export class OnboardingController {
 
   @Get("me")
   @UseGuards(PermissionGuard)
-  @RequireModule("hr")
   @RequirePermission("self:onboarding-tasks")
   getMyTasks(@CurrentUser() u: CurrentUserContext) {
     return this.tasks.getUserTasks(u, u.userId);

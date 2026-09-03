@@ -22,6 +22,7 @@ import { bustMembershipStatusCache } from "../../../common/auth/membership-state
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
+import { lockMembersQuota } from "../../billing/core/seat-definition";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import {
   accountOrganizationIndex,
@@ -97,9 +98,7 @@ export class InvitationAcceptanceService {
   }
 
   private async assertSeatAvailable(tx: DbOrTx, orgId: string): Promise<void> {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-    );
+    await tx.execute(lockMembersQuota(orgId));
     try {
       await this.planLimits.assertWithinLimit(orgId, "members", 0, tx);
     } catch (err) {

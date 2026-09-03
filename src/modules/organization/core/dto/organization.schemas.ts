@@ -76,7 +76,7 @@ export const updateOrgSettingsSchema = z.object({
   businessHours: z
     .record(
       z.string(),
-      z.object({ open: z.string(), close: z.string(), enabled: z.boolean() }),
+      z.object({ open: z.string(), close: z.string(), enabled: z.boolean() }).strict(),
     )
     .optional(),
   companySize: z.string().min(1).nullable().optional(),

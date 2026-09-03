@@ -283,9 +283,9 @@ export const updateSignSettingsSchema = z.object({
   defaultReminderFirstAfterDays: z.number().int().min(1).max(90).optional(),
   defaultReminderRepeatDays: z.number().int().min(1).max(90).optional(),
   defaultReminderMaxCount: z.number().int().min(0).max(20).optional(),
-  allowedFileTypes: z.array(z.string()).optional(),
+  allowedFileTypes: z.array(z.string().trim().min(1).max(50)).max(50).optional(),
   maxFileSizeMb: z.number().int().min(1).max(200).optional(),
-  allowedAuthMethods: z.array(signAuthMethodSchema).optional(),
+  allowedAuthMethods: z.array(signAuthMethodSchema).max(20).optional(),
   certificateFormat: z.string().trim().max(20).optional(),
   publicFormsEnabled: z.boolean().optional(),
   bulkSendMaxRowsPerJob: z.number().int().min(1).max(10000).optional(),
@@ -312,7 +312,7 @@ export type UpdateSignSettingsInput = z.infer<typeof updateSignSettingsSchema>;
 export const watermarkPolicyInputSchema = z.object({
   scopeType: z.enum(["tenant", "template", "envelope"]),
   scopeId: z.number().int().positive().optional(),
-  appliesStates: z.array(z.string()).default([]),
+  appliesStates: z.array(z.string().trim().min(1).max(50)).max(20).default([]),
   text: z.string().trim().max(200).optional(),
   opacity: z.number().int().min(0).max(100).default(30),
   angle: z.number().int().min(-180).max(180).default(45),
@@ -320,7 +320,7 @@ export const watermarkPolicyInputSchema = z.object({
   fontSize: z.number().int().min(6).max(200).default(36),
   placement: z.string().trim().max(50).default("diagonal_tiled"),
   pages: z
-    .object({ mode: z.enum(["all", "first", "custom"]), pageNumbers: z.array(z.number().int().min(1)).optional() })
+    .object({ mode: z.enum(["all", "first", "custom"]), pageNumbers: z.array(z.number().int().min(1)).max(500).optional() })
     .default({ mode: "all" }),
   showOnFinalPdf: z.boolean().default(true),
   previewOnly: z.boolean().default(false),

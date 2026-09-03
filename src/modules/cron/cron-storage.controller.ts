@@ -12,6 +12,8 @@ import { assertCronSecret } from "./cron-secret";
 import { CronLeaseService } from "./cron-lease.service";
 import { CronStorageSweepService } from "./cron-storage-sweep.service";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { storageSweepResponseSchema } from "../storage/dto/storage-response.schemas";
 
 @Public()
 @Controller("cron")
@@ -22,11 +24,13 @@ export class CronStorageController {
   ) {}
 
   @Get("storage-sweep")
+  @ResponseSchema(storageSweepResponseSchema)
   getStorageSweep(@Headers("authorization") authorization?: string) {
     return this.runStorageSweep(authorization);
   }
 
   @Post("storage-sweep")
+  @ResponseSchema(storageSweepResponseSchema)
   @BodylessAction()
   @HttpCode(200)
   postStorageSweep(@Headers("authorization") authorization?: string) {

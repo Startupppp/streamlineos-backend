@@ -84,6 +84,8 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
             entityId: event.entityId,
             entityType: event.entityType,
             myRsvpStatus: event.rsvpStatus ?? null,
+            rrule: event.rrule,
+            isRecurring,
             linkedTicket:
               event.entityType === "ticket" && event.entityId
                 ? linkedTicketMap.get(Number(event.entityId)) ?? null
@@ -114,6 +116,8 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
               entityId: event.entityId,
               entityType: event.entityType,
               myRsvpStatus: event.rsvpStatus ?? null,
+              rrule: event.rrule,
+              isRecurring,
               linkedTicket:
                 event.entityType === "ticket" && event.entityId
                   ? linkedTicketMap.get(Number(event.entityId)) ?? null

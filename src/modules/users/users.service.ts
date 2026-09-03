@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import type { InviteActor } from "../organization/core/invitations.helpers";
 import { AccessService } from "../access/access.service";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
@@ -37,6 +37,7 @@ import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-em
 import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../billing/core/seat-ledger.service";
+import { lockMembersQuota } from "../billing/core/seat-definition";
 import { OrganizationUsersReader } from "./organization-users.reader";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 
@@ -124,9 +125,7 @@ export class UsersService {
       await runInTenantTransaction(
         this.db,
         async (tx) => {
-          await tx.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-          );
+          await tx.execute(lockMembersQuota(orgId));
           await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
           const inserted = await tx
             .insert(organizationMembers)
@@ -172,9 +171,7 @@ export class UsersService {
     await runInTenantTransaction(
       this.db,
       async (tx) => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${orgId}:members`}, 0))`,
-        );
+        await tx.execute(lockMembersQuota(orgId));
         await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
         await tx.insert(users).values({
           id: userId,

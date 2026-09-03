@@ -8,6 +8,7 @@ import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { kbArticles, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { pageVisibleTo } from "./kb-page-visibility";
 import { getAccessibleProjectIds } from "./kb-project-access.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -45,6 +46,114 @@ export class KbAskService {
     private readonly access: KbAccessService,
   ) {}
 
+  /**
+   * Phase one: everything that reads a tenant row, in ONE short transaction
+   * that COMMITS before the provider call.
+   *
+   * The route carries `@NoTenantTransaction()` because `invokeTextWithUsage` is
+   * a network round trip and a pooled connection held open across it is idle in
+   * transaction for the whole of it, against the 60s
+   * `idle_in_transaction_session_timeout` `withTenant` sets. Retrieval is the
+   * expensive part of that hold — a vector search plus attachment snippets —
+   * so it has to be gathered up front rather than interleaved with the call.
+   *
+   * The ACL filtering stays exactly where it was: every retrieval here runs
+   * under the asker's own visibility predicates (backend CLAUDE.md 4), and the
+   * citations are re-verified in phase two against the same predicates.
+   */
+  private async gatherContext(
+    user: CurrentUserContext,
+    input: AskInput,
+  ): Promise<
+    | { kind: "no-context" }
+    | {
+        kind: "context";
+        fullContext: string;
+        top: Awaited<ReturnType<KbSearchService["retrieveTopArticles"]>>;
+        sources: Awaited<ReturnType<KbSearchService["retrieveTopSources"]>>;
+      }
+  > {
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        const hasContent = await this.orgHasIndexedContent(user.orgId);
+        if (!hasContent) return { kind: "no-context" as const };
+
+        const top = await this.search.retrieveTopArticles(
+          user,
+          input.question,
+          MAX_CONTEXT_ARTICLES,
+          input.spaceId,
+        );
+        const sources = await this.search.retrieveTopSources(user, input.question, 4);
+        if (top.length === 0 && sources.length === 0) return { kind: "no-context" as const };
+
+        let totalBytes = 0;
+        const contextParts: string[] = [];
+        for (const source of top) {
+          const text = (source.contentText || "").slice(0, MAX_CONTEXT_CHARS);
+          const part = `Source — ${source.title}\n${text}`;
+          if (totalBytes + part.length > MAX_TOTAL_CONTEXT_BYTES) break;
+          contextParts.push(part);
+          totalBytes += part.length;
+        }
+        const context = contextParts.join("\n\n---\n\n");
+
+        const articleIds = top
+          .filter((source) => source.kind === "article")
+          .map((source) => source.id);
+        const pageIds = top
+          .filter((source) => source.kind === "page")
+          .map((source) => source.id);
+        const attachmentContext = await this.search.retrieveAttachmentSnippets(
+          user,
+          input.question,
+          articleIds,
+          pageIds,
+        );
+
+        const sourceContextParts: string[] = [];
+        for (const s of sources) {
+          const part = `Document — ${s.title}\n${s.snippet}`;
+          if (totalBytes + part.length > MAX_TOTAL_CONTEXT_BYTES) break;
+          sourceContextParts.push(part);
+          totalBytes += part.length;
+        }
+        const sourceContext = sourceContextParts.join("\n\n---\n\n");
+
+        let fullContext = attachmentContext
+          ? `${context}\n\n---\n\n${attachmentContext}`
+          : context;
+        if (sourceContext) fullContext = `${fullContext}\n\n---\n\n${sourceContext}`;
+
+        const userMessage = `Question: ${input.question}\n\nContext:\n${fullContext}`;
+        if (userMessage.length / 4 > MAX_PROMPT_INPUT_TOKENS) {
+          fullContext = fullContext.slice(0, MAX_PROMPT_INPUT_TOKENS * 4);
+        }
+
+        return { kind: "context" as const, fullContext, top, sources };
+      },
+      { orgId: user.orgId },
+    );
+  }
+
+  private noContextAnswer(user: CurrentUserContext, question: string) {
+    this.events
+      .record(user.orgId, "ai_answer_no_context", {
+        actorMembershipId: actingMembershipId(user.principal) ?? null,
+        query: question,
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
+      });
+    return {
+      answer:
+        "I couldn't find anything about that in the knowledge base. You may want to open a support ticket.",
+      citations: [] as AskCitation[],
+      hasContext: false as const,
+    };
+  }
+
   async ask(
     user: CurrentUserContext,
     input: AskInput,
@@ -54,86 +163,9 @@ export class KbAskService {
     hasContext: boolean;
     aiUsage?: AiUsageMeta;
   }> {
-    const hasContent = await this.orgHasIndexedContent(user.orgId);
-    if (!hasContent) {
-      this.events.record(user.orgId, "ai_answer_no_context", {
-        actorMembershipId: actingMembershipId(user.principal) ?? null,
-        query: input.question,
-      }).catch((err: unknown) => {
-        this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
-      });
-      return {
-        answer:
-          "I couldn't find anything about that in the knowledge base. You may want to open a support ticket.",
-        citations: [],
-        hasContext: false,
-      };
-    }
-
-    const top = await this.search.retrieveTopArticles(
-      user,
-      input.question,
-      MAX_CONTEXT_ARTICLES,
-      input.spaceId,
-    );
-    const sources = await this.search.retrieveTopSources(user, input.question, 4);
-    if (top.length === 0 && sources.length === 0) {
-      this.events.record(user.orgId, "ai_answer_no_context", {
-        actorMembershipId: actingMembershipId(user.principal) ?? null,
-        query: input.question,
-      }).catch((err: unknown) => {
-        this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
-      });
-      return {
-        answer:
-          "I couldn't find anything about that in the knowledge base. You may want to open a support ticket.",
-        citations: [],
-        hasContext: false,
-      };
-    }
-
-    let totalBytes = 0;
-    const contextParts: string[] = [];
-    for (const source of top) {
-      const text = (source.contentText || "").slice(0, MAX_CONTEXT_CHARS);
-      const part = `Source — ${source.title}\n${text}`;
-      if (totalBytes + part.length > MAX_TOTAL_CONTEXT_BYTES) break;
-      contextParts.push(part);
-      totalBytes += part.length;
-    }
-    const context = contextParts.join("\n\n---\n\n");
-
-    const articleIds = top
-      .filter((source) => source.kind === "article")
-      .map((source) => source.id);
-    const pageIds = top
-      .filter((source) => source.kind === "page")
-      .map((source) => source.id);
-    const attachmentContext = await this.search.retrieveAttachmentSnippets(
-      user,
-      input.question,
-      articleIds,
-      pageIds,
-    );
-
-    const sourceContextParts: string[] = [];
-    for (const s of sources) {
-      const part = `Document — ${s.title}\n${s.snippet}`;
-      if (totalBytes + part.length > MAX_TOTAL_CONTEXT_BYTES) break;
-      sourceContextParts.push(part);
-      totalBytes += part.length;
-    }
-    const sourceContext = sourceContextParts.join("\n\n---\n\n");
-
-    let fullContext = attachmentContext
-      ? `${context}\n\n---\n\n${attachmentContext}`
-      : context;
-    if (sourceContext) fullContext = `${fullContext}\n\n---\n\n${sourceContext}`;
-
-    const userMessage = `Question: ${input.question}\n\nContext:\n${fullContext}`;
-    if (userMessage.length / 4 > MAX_PROMPT_INPUT_TOKENS) {
-      fullContext = fullContext.slice(0, MAX_PROMPT_INPUT_TOKENS * 4);
-    }
+    const gathered = await this.gatherContext(user, input);
+    if (gathered.kind === "no-context") return this.noContextAnswer(user, input.question);
+    const { fullContext, top, sources } = gathered;
 
     const gatewayResult = await this.aiGateway.invokeTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
@@ -157,13 +189,18 @@ export class KbAskService {
     const answer = gatewayResult.data;
     const aiUsage = gatewayResult.aiUsage;
 
-    await this.events.record(user.orgId, "ai_answer", {
-      actorMembershipId: actingMembershipId(user.principal) ?? null,
-      query: input.question,
-      metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
-    });
-
-    const verifiedCitations = await this.resolveCitations(user, top, sources);
+    const verifiedCitations = await runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.events.record(user.orgId, "ai_answer", {
+          actorMembershipId: actingMembershipId(user.principal) ?? null,
+          query: input.question,
+          metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
+        });
+        return this.resolveCitations(user, top, sources);
+      },
+      { orgId: user.orgId },
+    );
 
     return { answer, citations: verifiedCitations, hasContext: true, aiUsage };
   }

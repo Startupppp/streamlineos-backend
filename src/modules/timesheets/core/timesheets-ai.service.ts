@@ -1,5 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { type Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { PeriodsService } from "./periods.service";
 import { BillingService } from "./billing.service";
 import { ReportsService } from "./reports.service";
@@ -29,17 +32,37 @@ const NARRATIVE_FEATURE_KEY = "timesheets.billing-narrative" as const;
 const REPORTS_FEATURE_KEY = "timesheets.reports-narrative" as const;
 const REJECTION_FEATURE_KEY = "timesheets.rejection-draft" as const;
 
+/**
+ * Every method here reads evidence from the database and then calls a provider.
+ * The two are deliberately separated: `readEvidence` opens a short tenant
+ * transaction, commits it, and only then does the gateway call go out. The
+ * controller's `@NoTenantTransaction()` means there is no ambient request
+ * transaction to hold open across that round trip (PRD-C078 / C147).
+ */
 @Injectable()
 export class TimesheetsAiService {
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
     private readonly periods: PeriodsService,
     private readonly billing: BillingService,
     private readonly reports: ReportsService,
   ) {}
 
+  /**
+   * Runs `read` in its own tenant transaction that commits before returning, so
+   * the pooled connection is back before the caller talks to the provider.
+   * `this.db` is the tenant-aware proxy, so the delegate services inside `read`
+   * pick up this transaction's GUC with no signature change. If some caller does
+   * have an ambient tenant context, `runInTenantTransaction` reuses it rather
+   * than nesting.
+   */
+  private readEvidence<T>(orgId: string, read: () => Promise<T>): Promise<T> {
+    return runInTenantTransaction(this.db, read, { orgId });
+  }
+
   async summarizePeriod(u: CurrentUserContext, periodId: number): Promise<{ narration: string; evidence: Record<string, unknown> }> {
-    const detail = await this.periods.getPeriod(u, periodId);
+    const detail = await this.readEvidence(u.orgId, () => this.periods.getPeriod(u, periodId));
     if (!detail) throw new NotFoundException("Period not found");
 
     const { period, entries } = detail;
@@ -100,7 +123,7 @@ export class TimesheetsAiService {
     periodId: number,
     input: RejectionDraftInput,
   ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const detail = await this.periods.getPeriod(u, periodId);
+    const detail = await this.readEvidence(u.orgId, () => this.periods.getPeriod(u, periodId));
     if (!detail) throw new NotFoundException("Period not found");
 
     const result = await this.gateway.invokeTextWithUsage({
@@ -128,7 +151,7 @@ export class TimesheetsAiService {
     u: CurrentUserContext,
     query: OverviewQuery,
   ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const overview = await this.reports.getOverview(u, query);
+    const overview = await this.readEvidence(u.orgId, () => this.reports.getOverview(u, query));
     if (overview.totalHours === 0) {
       throw new BadRequestException(
         "No timesheet data found for the selected range.",
@@ -164,7 +187,9 @@ export class TimesheetsAiService {
     u: CurrentUserContext,
     input: BillingNarrativeInput,
   ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const items = await this.billing.getBillableWorkForNarrative(u, input);
+    const items = await this.readEvidence(u.orgId, () =>
+      this.billing.getBillableWorkForNarrative(u, input),
+    );
     if (items.length === 0) {
       throw new BadRequestException(
         "No uninvoiced billable work found for the selected range.",

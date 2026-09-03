@@ -25,6 +25,7 @@ import {
   type CloseableRequest as StreamAbortRequest,
   type EndableResponse,
 } from "../http/stream-abort";
+import { resolveAdmissionConfig } from "../admission/admission.config";
 
 interface TenantBearingRequest {
   method?: string;
@@ -37,6 +38,38 @@ interface CloseableRequest extends TenantBearingRequest, StreamAbortRequest {}
 type WritableResponse = EndableResponse;
 
 const READ_ONLY_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * The request deadline, propagated rather than declared and dropped (PRD-C091).
+ *
+ * `createStreamAbortSignal` has always taken a `deadlineMs`, and this interceptor —
+ * the one that arms the signal every tenant-scoped request runs under — passed `null`.
+ * So of the two arms that abort a request, only `client_disconnected` was ever
+ * reachable outside `src/modules/ai`: `deadline_exceeded` existed in the type, in the
+ * timer branch and in the reason union, and nothing could produce it. A request that
+ * hung on a slow upstream ran until something else gave up.
+ *
+ * The value is `admission.maxExecutionMs`, which the admission config already declares
+ * as this deployment's per-request execution ceiling and already uses as the weight
+ * divisor for queue accounting (`admission.service.ts:80`) — so the deadline the
+ * scheduler assumes and the deadline the request enforces are now the same number
+ * instead of one assumption and one absence. It defaults to `statementTimeoutMs`
+ * (30 s) and is overridable with `ADMISSION_MAX_EXECUTION_MS`.
+ *
+ * Resolved once at module load, matching `AdmissionModule`'s own factory: the value is
+ * environment, not per-request state, and re-parsing it 200 times a second to get the
+ * same answer is worse than a snapshot.
+ *
+ * WHAT THIS DOES NOT DO. Aborting the signal does not itself cancel a running query or
+ * an in-flight provider call — only a consumer that reads the signal can do that, and
+ * today the only one is the AI gateway's ambient fallback. What it does is make the
+ * deadline REACHABLE, so a consumer that adopts it has something to adopt. Cancelling
+ * outbound provider calls on it is deliberately NOT done here: `callProvider` is used
+ * for side-effecting calls (a payment capture among them), and abandoning one
+ * mid-flight on a client disconnect turns a completed external effect into an
+ * unrecorded one. That needs a per-descriptor opt-in, and it is named in report 04.
+ */
+const REQUEST_DEADLINE_MS = resolveAdmissionConfig().maxExecutionMs;
 
 interface ResolvedTenant {
   orgId: string;
@@ -86,7 +119,7 @@ export class TenantContextInterceptor implements NestInterceptor {
     const resolved = resolveTenant(req);
     if (!resolved) return next.handle();
 
-    const abort = createStreamAbortSignal(req, res, null);
+    const abort = createStreamAbortSignal(req, res, REQUEST_DEADLINE_MS);
 
     return from(
       this.runInTenantTransaction(resolved, next, abort.signal).finally(() => {

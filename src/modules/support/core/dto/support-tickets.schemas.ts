@@ -162,7 +162,10 @@ export const assignmentModeSchema = z.enum([
 
 export const createRoutingRuleSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
-  conditions: z.array(routingConditionSchema).min(1, "At least one condition is required"),
+  // Capped for the same reason `candidateAgentIds` below is: this is an
+  // attacker-sized array that becomes per-ticket routing work on every inbound
+  // ticket. The `*Ids` sibling was capped because the gate could see its name.
+  conditions: z.array(routingConditionSchema).min(1, "At least one condition is required").max(50),
   assigneeId: z.string().trim().min(1).optional(),
   setPriority: ticketPrioritySchema.optional(),
   assignmentMode: assignmentModeSchema.default("static"),
@@ -174,7 +177,7 @@ export const createRoutingRuleSchema = z.object({
 
 export const updateRoutingRuleSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
-  conditions: z.array(routingConditionSchema).min(1).optional(),
+  conditions: z.array(routingConditionSchema).min(1).max(50).optional(),
   assigneeId: z.string().trim().min(1).nullable().optional(),
   setPriority: ticketPrioritySchema.nullable().optional(),
   assignmentMode: assignmentModeSchema.optional(),

@@ -181,6 +181,36 @@ function applyPathParams(
   if (added.length > 0) operation.parameters = [...parameters, ...added];
 }
 
+/**
+ * The published response body is the ENVELOPE, not the handler's return value.
+ *
+ * `ResponseTransformInterceptor` (registered in `main.ts`) wraps every handler return
+ * that does not already carry a `success` key as `{ success: true, data }`. Until
+ * 2026-09-03 this function published the un-enveloped shape, so the one operation in
+ * the whole document that carried a 2xx schema — `GET /calendar/admin/settings` —
+ * documented `{ sources }` while the wire actually carried
+ * `{ success: true, data: { sources } }`. An external consumer generating a client
+ * from that document would have read `sources` off the envelope and found undefined:
+ * the single response contract this API published was wrong about the field it
+ * described. `@ResponseSchema` still declares the handler's own shape, which is what a
+ * service author can see and what the browser client validates after unwrapping
+ * (`frontend/lib/api-envelope.ts` strips the envelope before applying its contract) —
+ * the wrap belongs here, once, rather than in every schema.
+ *
+ * A schema that already declares `success` is describing a handler that returns its
+ * own envelope, which the transform passes through untouched; it is published as-is.
+ */
+export function envelopeResponseSchema(schema: JsonSchema): JsonSchema {
+  const properties = asRecord(schema["properties"]);
+  if (properties && Object.hasOwn(properties, "success")) return schema;
+  return {
+    type: "object",
+    properties: { success: { type: "boolean", enum: [true] }, data: schema },
+    required: ["success", "data"],
+    additionalProperties: false,
+  };
+}
+
 function applyResponseSchema(
   method: string,
   operation: MutableOperation,
@@ -190,7 +220,7 @@ function applyResponseSchema(
   const statusCode = method === "post" ? "201" : "200";
   responses[statusCode] = {
     description: statusCode === "201" ? "Created" : "OK",
-    content: { "application/json": { schema } },
+    content: { "application/json": { schema: envelopeResponseSchema(schema) } },
   };
   operation.responses = responses;
 }
