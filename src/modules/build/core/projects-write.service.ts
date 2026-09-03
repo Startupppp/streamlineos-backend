@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { ProjectsNotFoundException } from "../../../common/http/api-exceptions";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import {
   managedProducts,
   organizationMembers,
@@ -193,21 +194,22 @@ export class ProjectsWriteService {
                   ne(tickets.status, "CANCELLED"),
                 ),
               );
-            const byNewAssignee = new Map<string | null, number[]>();
-            for (const ticket of openTickets) {
-              const newAssignee = ticket.assigneeUserId
-                ? (reassignments[ticket.assigneeUserId] ?? null)
-                : null;
-              const ids = byNewAssignee.get(newAssignee) ?? [];
-              ids.push(ticket.id);
-              byNewAssignee.set(newAssignee, ids);
-            }
-            for (const [newAssignee, ids] of byNewAssignee) {
-              await tx
-                .update(tickets)
-                .set({ assigneeMembershipId: newAssignee ? (validMembers.find((m) => m.userId === newAssignee)?.id ?? null) : null })
-                .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)));
-            }
+            const membershipIdByUserId = new Map(validMembers.map((m) => [m.userId, m.id]));
+            await bulkUpdateFromValues(tx, {
+              table: tickets,
+              orgId,
+              key: { column: "id", type: "integer" },
+              columns: [{ column: "assignee_membership_id", type: "integer" }],
+              rows: openTickets.map((ticket) => {
+                const newAssignee = ticket.assigneeUserId
+                  ? (reassignments[ticket.assigneeUserId] ?? null)
+                  : null;
+                return {
+                  key: ticket.id,
+                  values: [newAssignee ? (membershipIdByUserId.get(newAssignee) ?? null) : null],
+                };
+              }),
+            });
           } else if (removedMembers.length > 0) {
             await tx
               .update(tickets)
