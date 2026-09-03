@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../common/pagination/list-query.schema";
+import { AUTOMATION_TRIGGERS } from "../../../db/schema/automation/rules";
 
 export const createApiKeySchema = z.object({
   name: z.string().min(1).max(100),
@@ -20,56 +21,7 @@ export const featureFlagSchema = z.object({
   enabled: z.boolean(),
 }).strict();
 
-const automationTriggerSchema = z.enum([
-  "lead.created",
-  "lead.status_changed",
-  "lead.assigned",
-  "lead.score_updated",
-  "deal.created",
-  "deal.stage_changed",
-  "deal.won",
-  "deal.lost",
-  "ticket.created",
-  "ticket.assigned",
-  "ticket.status_changed",
-  "ticket.escalated",
-  "ticket.priority_changed",
-  "ticket.message_received",
-  "invoice.overdue",
-  "invoice.paid",
-  "candidate.application_created",
-  "candidate.stage_changed",
-  "candidate.bgv_status_changed",
-  "interview.scheduled",
-  "interview.completed",
-  "scorecard.submitted",
-  "offer.sent",
-  "offer.accepted",
-  "offer.rejected",
-  "sla.breached",
-  "onboarding.started",
-  "onboarding.task_overdue",
-  "onboarding.document_submitted",
-  "onboarding.completed",
-  "leave.requested",
-  "leave.approved",
-  "leave.rejected",
-  "attendance.anomaly",
-  "attendance.late",
-  "resignation.submitted",
-  "resignation.approved",
-  "employee.onboarded",
-  "employee.terminated",
-  "employee.resignation",
-  "certification.expiring",
-  "document.review_requested",
-  "performance.review_cycle_started",
-  "review.cycle_started",
-  "expense.submitted",
-  "expense.approved",
-  "reimbursement.approved",
-  "reimbursement.rejected",
-]);
+const automationTriggerSchema = z.enum(AUTOMATION_TRIGGERS);
 
 const automationConditionSchema = z.object({
   field: z.string().min(1),
