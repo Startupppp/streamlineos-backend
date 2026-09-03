@@ -125,6 +125,17 @@ export const PARAM_ALIASES: Readonly<Record<string, readonly string[]>> = {
   membershipId: ["organization_members"],
   employeeId: ["hr_employments", "hr_people"],
   personId: ["organization_people", "hr_people"],
+  /**
+   * MEASURED. Without this the preceding segment wins — `/payroll/people/:organizationPersonId`
+   * and `/directory/people/:organizationPersonId` both offer the candidate `people`, which the
+   * prefix pass resolves to the populated `hr_people` — and the sweep then borrows an `hr_people.id`
+   * for a parameter the handler resolves through `organization_people.organization_person_id`.
+   * Three of the four routes answered their OWN tenant 404 and were filed unprobeable; the fourth
+   * (`GET /payroll/people/:organizationPersonId/eligibility`) answered 200 with `unknown-person`
+   * for every id, which read as a probed route and was not one. `organization_people` is what the
+   * parameter names.
+   */
+  organizationPersonId: ["organization_people"],
   workerId: ["workers"],
   userId: ["users"],
   supportTicketId: ["support_tickets"],
