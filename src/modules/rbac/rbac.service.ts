@@ -1,10 +1,17 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import {
   organizationMembers,
+  roles,
   rolePermissionGrants,
   users,
 } from "../../db/schema";
@@ -18,6 +25,7 @@ import {
   assertPermissionsGrantable,
   buildPermissionModuleMap,
   isDelegablePermission,
+  isImmutableSystemRole,
   ORG_ADMIN_PERMISSION_KEY,
   RESERVED_PROPAGATION_KEYS,
   ROLE_RANK,
@@ -71,6 +79,35 @@ export class RbacService {
     return DISCOVERABLE_PERMISSIONS;
   }
 
+  /**
+   * Resolves the target role inside the actor's own organisation.
+   *
+   * The single-key grant paths took `roleId` straight from the body and never
+   * loaded the role, which cost three things at once. A role id from another
+   * tenant reached the insert and surfaced as a 500 from the composite
+   * `(org_id, role_id)` foreign key rather than the 404 a cross-tenant miss owes
+   * (root CLAUDE.md §4); `isImmutableSystemRole` was never consulted, so the
+   * org-level `ORG_ADMIN` and `MEMBER` rows that `setRolePermissions` refuses to
+   * touch were writable here; and with no rank or module key there was nothing
+   * to pass to `assertPermissionsGrantable`, so the two writers over the same
+   * table enforced different rules.
+   */
+  private async resolveRoleInOrg(
+    orgId: string,
+    roleId: number,
+  ): Promise<{ id: number; isSystem: boolean; rank: number; moduleKey: string | null }> {
+    const role = await this.db.query.roles.findFirst({
+      where: and(eq(roles.id, roleId), eq(roles.orgId, orgId)),
+      columns: { id: true, isSystem: true, rank: true, moduleKey: true },
+    });
+    if (!role) throw new NotFoundException("Role not found");
+    if (isImmutableSystemRole(role))
+      throw new ForbiddenException(
+        "Organization-level system roles cannot be modified",
+      );
+    return role;
+  }
+
   async assignRolePermission(
     actor: CurrentUserContext,
     input: AssignRolePermissionInput,
@@ -87,14 +124,23 @@ export class RbacService {
       );
     }
 
+    const role = await this.resolveRoleInOrg(actor.orgId, input.roleId);
+
     if (!actor.isOrgOwner) {
-      const resolved = await this.access.resolveUserPermissions(
-        actor.orgId,
-        actor.userId,
-      );
+      const [resolved, { bestRank, allowedModules }] = await Promise.all([
+        this.access.resolveUserPermissions(actor.orgId, actor.userId),
+        resolveActorRankContext(this.db, actor.orgId, actor.userId),
+      ]);
       assertPermissionsGrantable(
-        { isOrgOwner: false, grantable: toGrantableSet(resolved) },
+        {
+          isOrgOwner: false,
+          grantable: toGrantableSet(resolved),
+          bestRank,
+          allowedModules,
+        },
         [input.permissionKey],
+        { rank: role.rank, moduleKey: role.moduleKey },
+        buildPermissionModuleMap([input.permissionKey]),
       );
     }
 
@@ -134,6 +180,8 @@ export class RbacService {
         `Permission ${input.permissionKey} is included for every active member`,
       );
     }
+
+    await this.resolveRoleInOrg(actor.orgId, input.roleId);
 
     await runInTenantTransaction(this.db, async (tx) => {
       await tx
