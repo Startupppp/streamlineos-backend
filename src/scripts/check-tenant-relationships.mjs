@@ -569,6 +569,14 @@ TARGET IS MID-BOOTSTRAP — this number is not release evidence.
 ` +
         `  Point TENANT_RELATIONSHIP_DB_URL at a fully bootstrapped database, or re-run once the replay finishes.`,
       );
+      // Exit 2 (this script's existing "cannot run" code), NOT 0 or 1. Mid-bootstrap
+      // means constraints later in the chain have not been created yet, so BOTH a pass
+      // and a fail are meaningless -- the answer is "cannot determine", and saying so
+      // is the only honest option. Exiting 1 here made a stale target look identical to
+      // a real regression (627 "violations" that were entirely an artefact of the
+      // target sitting at 573 of 667), which is how a gate teaches people to ignore it.
+      // Exiting 0 would be worse: a real violation could then hide behind a stale target.
+      process.exit(2);
     }
     if (actionable.length === 0) {
       console.log("OK — zero actionable single-column tenant FKs.");
