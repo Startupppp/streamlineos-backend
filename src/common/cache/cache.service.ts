@@ -38,13 +38,50 @@ export class CacheService {
    *
    * The window is one second against a smallest declared TTL of 30 s
    * (`CACHE_TTL.SHORT`), so it can never extend an entry's life beyond what the
-   * same call site already accepts from the shared cache. Two further rules keep
-   * authorization correct: a `null` is never retained, so a denial still
+   * same call site already accepts from the shared cache. Three rules keep
+   * authorization correct: an authorization-scoped key is never retained at all
+   * (see `AUTHZ_KEY_MARKERS`); a `null` is never retained, so a denial still
    * re-queries on the next request and a fresh grant takes effect immediately;
-   * and an explicit `invalidate` drops the memo for that key at once.
+   * and an explicit `invalidate` drops the memo for that key at once, before
+   * the `!redis` early return, so it bites during the outage too.
+   *
+   * `degradation/redis.spec.ts` pinned "no stale value served" when Redis is
+   * dead. That invariant is kept where it was earned — on authorization — and
+   * narrowed, rather than overruled, everywhere else: during an outage the
+   * alternative is not a fresher answer, it is no cache at all and the whole
+   * read volume on the database.
    */
   private static readonly OUTAGE_MEMO_MS = 1_000;
   private static readonly OUTAGE_MEMO_MAX_KEYS = 2_000;
+
+  /**
+   * Substrings, not prefixes: `cachedForOrg` prepends the tenant (and a region
+   * cell prefix before that), so `access:perms:<user>:v<n>` arrives as
+   * `<cell>:<org>:access:perms:...` and a prefix test would miss every one.
+   *
+   * Two authorization paths are already immune by construction and are listed
+   * for the reader rather than relied on: `revoked:session:<id>` is read with a
+   * raw `redis.get` in `JwtAuthGuard`, never through this fill path, and the
+   * permission cache carries the access version IN its key, which is read from
+   * the database when Redis is down — so a `bumpPermissionsVersion` produces a
+   * different key and no memo can answer it.
+   */
+  static readonly AUTHZ_KEY_MARKERS: readonly string[] = [
+    "user:session:",
+    "membership:",
+    "access:",
+    "rbac:",
+    "mfa:",
+    "revoked:",
+    "perms:",
+    "permission",
+    "entitlement",
+  ];
+
+  private static isAuthorizationScoped(key: string): boolean {
+    const lower = key.toLowerCase();
+    return CacheService.AUTHZ_KEY_MARKERS.some((marker) => lower.includes(marker));
+  }
 
   private readonly memoUntil = new Map<string, number>();
   private readonly degradedFills = new Set<string>();
@@ -141,7 +178,12 @@ export class CacheService {
   private retainOrRelease(key: string, request: Promise<unknown>, value: unknown): void {
     if (this.inFlight.get(key) !== request) return;
     const degraded = this.degradedFills.delete(key);
-    if (!degraded || value === null || CacheService.OUTAGE_MEMO_MS <= 0) {
+    if (
+      !degraded ||
+      value === null ||
+      CacheService.OUTAGE_MEMO_MS <= 0 ||
+      CacheService.isAuthorizationScoped(key)
+    ) {
       this.inFlight.delete(key);
       this.memoUntil.delete(key);
       return;

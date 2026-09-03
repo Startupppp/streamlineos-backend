@@ -29,12 +29,52 @@ describe("CacheService — Redis dead (REFUSED)", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it("calls the fetcher on every miss when Redis is dead — no stale value served", async () => {
+  /**
+   * This used to assert "no stale value served" for EVERY key. That made the
+   * degraded path serve the whole read volume to the database on every request
+   * for the length of the outage — the stampede §6 forbids, arriving exactly
+   * when the database can least absorb it. The invariant is kept where it was
+   * earned, on authorization, and narrowed elsewhere: during an outage the
+   * alternative to a one-second process-local memo is not a fresher answer, it
+   * is no cache at all.
+   */
+  it("never serves an authorization answer from memory when Redis is dead", async () => {
+    const cache = new CacheService(redis);
+
+    for (const key of [
+      "user:session:user-1",
+      "cell-a:org-1:access:perms:user-1:v3",
+      "membership:account:user-1",
+      "mfa:user-totp:user-1",
+      "rbac:matrix:org-1:v2",
+    ]) {
+      const fetcher = jest.fn().mockResolvedValue("fresh");
+      await cache.cached(key, fetcher, 60);
+      await cache.cached(key, fetcher, 60);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    }
+
+    expect(cache.outageMemoServedCount).toBe(0);
+  });
+
+  it("coalesces an ordinary key for one second rather than serialising onto the database", async () => {
     const cache = new CacheService(redis);
     const fetcher = jest.fn().mockResolvedValue("fresh");
 
     await cache.cached("another-key", fetcher, 60);
     await cache.cached("another-key", fetcher, 60);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(cache.outageMemoServedCount).toBe(1);
+  });
+
+  it("an explicit invalidation still bites during the outage", async () => {
+    const cache = new CacheService(redis);
+    const fetcher = jest.fn().mockResolvedValueOnce("before").mockResolvedValue("after");
+
+    await expect(cache.cached("invalidated-during-outage", fetcher, 60)).resolves.toBe("before");
+    await cache.invalidate("invalidated-during-outage");
+    await expect(cache.cached("invalidated-during-outage", fetcher, 60)).resolves.toBe("after");
 
     expect(fetcher).toHaveBeenCalledTimes(2);
   });

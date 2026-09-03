@@ -1,5 +1,6 @@
 import type { Redis } from "@upstash/redis";
 import { CacheService } from "./cache.service";
+import { CACHE_KEYS } from "./cache-keys";
 
 /**
  * Ticket 23 box 4 — "a miss or a cache outage degrades safely without a request
@@ -260,5 +261,50 @@ describe("TTL jitter reaches every fill path", () => {
     expect(ttls).toHaveLength(30);
     for (const ttl of ttls) expect(ttl).toBeLessThanOrEqual(100);
     expect(new Set(ttls).size).toBeGreaterThan(1);
+  });
+});
+
+describe("the outage memo cannot answer an authorization question", () => {
+  /**
+   * Derived from CACHE_KEYS rather than hand-written, so a renamed key factory
+   * that stops matching a marker fails here instead of silently becoming
+   * memoisable. Each is checked in both the bare and the tenant-prefixed
+   * spelling, because cachedForOrg prepends the org (and a region cell before
+   * that) and a prefix test would miss every one.
+   */
+  const AUTHORIZATION_KEYS: readonly string[] = [
+    CACHE_KEYS.userSession("user-1"),
+    CACHE_KEYS.membershipAccount("user-1"),
+    CACHE_KEYS.accessVersion("org-1"),
+    CACHE_KEYS.accessPerms("org-1", "user-1", 3),
+    CACHE_KEYS.permissionsMatrix("org-1", 2),
+    CACHE_KEYS.mfaOrgPolicy("org-1"),
+    CACHE_KEYS.mfaUserTotp("user-1"),
+    "access:perms:user-1:v3",
+    "revoked:session:sess-1",
+  ];
+
+  it.each(AUTHORIZATION_KEYS)("%s is never memoised during an outage", async (key) => {
+    for (const spelling of [key, `org-1:${key}`, `cell-eu:org-1:${key}`]) {
+      const cache = new CacheService(brokenRedis());
+      const fetcher = jest.fn().mockResolvedValue("permitted");
+
+      await cache.cached(spelling, fetcher);
+      await cache.cached(spelling, fetcher);
+
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(cache.outageMemoServedCount).toBe(0);
+    }
+  });
+
+  it("an ordinary read is memoised, so the exclusion is not vacuous", async () => {
+    const cache = new CacheService(brokenRedis());
+    const fetcher = jest.fn().mockResolvedValue("rows");
+
+    await cache.cached(CACHE_KEYS.dashboardStats("org-1"), fetcher);
+    await cache.cached(CACHE_KEYS.dashboardStats("org-1"), fetcher);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(cache.outageMemoServedCount).toBe(1);
   });
 });
