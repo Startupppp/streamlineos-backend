@@ -122,3 +122,33 @@ describe("path matching", () => {
     expect(reservedClassForPath("/auth/../crm/deals")).toBeUndefined();
   });
 });
+
+describe("the URI version prefix does not defeat reserved classification", () => {
+  it.each([
+    ["/v1/auth/login", "authentication"],
+    ["/v2/auth/login", "authentication"],
+    ["/v1/sessions/abc-123", "authorization-revocation"],
+    ["/v1/billing/entitlements", "billing-ledger"],
+    ["/v1/payroll/runs/9/approvals", "payroll-posting"],
+    ["/V1/Auth/Login", "authentication"],
+    ["/v1/internal/audit", "audit"],
+  ])("%s resolves to %s, exactly as the unversioned spelling does", (path, expected) => {
+    expect(reservedClassForPath(path)).toBe(expected);
+  });
+
+  it("strips only versions the API declares, never a controller that starts with v", () => {
+    expect(normalisePath("/v9/auth/login")).toBe("v9/auth/login");
+    expect(normalisePath("/vendors/auth")).toBe("vendors/auth");
+    expect(normalisePath("/v1")).toBe("");
+  });
+
+  it("leaves a version segment that is not the first one alone", () => {
+    expect(normalisePath("/agent/v1/me")).toBe("agent/v1/me");
+    expect(normalisePath("/portal/v1/projects")).toBe("portal/v1/projects");
+  });
+
+  it("resolves traversal before reading the version segment", () => {
+    expect(reservedClassForPath("/v1/auth/../crm/deals")).toBeUndefined();
+    expect(reservedClassForPath("/v1/../auth/login")).toBe("authentication");
+  });
+});

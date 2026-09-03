@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { API_VERSIONS } from "../http/api-version";
 import type { WorkClass } from "./work-class";
 
 export interface ReservedRoute {
@@ -20,11 +21,40 @@ export const RESERVED_ROUTES: readonly ReservedRoute[] = [
   { prefix: "internal/audit", workClass: "audit" },
 ];
 
+const VERSION_SEGMENTS: readonly string[] = API_VERSIONS.map((version) => `v${version}`);
+
+/**
+ * `main.ts` enables `VersioningType.URI`, so every `@Controller("auth")` is
+ * mounted at `/auth/...` AND `/v1/auth/...`. Without stripping the version
+ * segment the versioned spelling classified as `ordinary-write` and shed at the
+ * ordinary ceiling instead of being protected to the reserved one — the same
+ * login, one prefix apart, with different availability.
+ *
+ * Measured 2026-09-03: the frontend does not reach this. `NEXT_PUBLIC_API_URL`
+ * carries no path segment and `lib/api-client.ts` concatenates an unversioned
+ * path, so every `/v1/` in that repo is either a literal controller prefix
+ * (`agent/v1`, `portal/v1`, which are second segments and unaffected) or
+ * Razorpay's CDN. It is still reachable by any direct API consumer, which is
+ * what the OpenAPI document advertises.
+ *
+ * Stripped after normalisation, so traversal is resolved before the segment is
+ * read, and only for versions the API actually declares — a controller whose
+ * own first segment happened to start with `v` is left alone.
+ */
 export function normalisePath(path: string): string {
   const withoutQuery = path.split("?")[0] ?? "";
   const resolved = posix.normalize(`/${withoutQuery}`);
   if (resolved.startsWith("/..")) return "";
-  return resolved.replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
+  const normalised = resolved.replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
+  return stripVersionSegment(normalised);
+}
+
+function stripVersionSegment(normalised: string): string {
+  for (const segment of VERSION_SEGMENTS) {
+    if (normalised === segment) return "";
+    if (normalised.startsWith(`${segment}/`)) return normalised.slice(segment.length + 1);
+  }
+  return normalised;
 }
 
 export function reservedClassForPath(path: string): WorkClass | undefined {
