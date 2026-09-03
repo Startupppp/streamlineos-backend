@@ -85,6 +85,8 @@ function makeTreeDb(options: {
 
 const makeAudit = () => ({ log: jest.fn() });
 const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) });
+const KB_BUCKET = "kb-files";
+const makeConfig = () => ({ R2_KB_BUCKET_NAME: KB_BUCKET });
 
 describe("KbPageTreeService — every path that cascades kb_page_attachments records the objects first", () => {
   beforeEach(() => {
@@ -95,7 +97,12 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
 
   it("emptyTrash records the purge before it deletes the pages", async () => {
     const db = makeTreeDb({ trashedIds: [10, 11] });
-    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
+    const svc = new KbPageTreeService(
+      db as never,
+      makeAudit() as never,
+      makeStorage() as never,
+      makeConfig() as never,
+    );
 
     await svc.emptyTrash(makeUser());
 
@@ -104,7 +111,12 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
 
   it("purgeExpired records the purge before it deletes each batch", async () => {
     const db = makeTreeDb({ expiredBatches: [[20, 21], []] });
-    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
+    const svc = new KbPageTreeService(
+      db as never,
+      makeAudit() as never,
+      makeStorage() as never,
+      makeConfig() as never,
+    );
 
     await svc.purgeExpired(ORG, new Date("2026-01-01"));
 
@@ -113,7 +125,12 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
 
   it("hardDelete records the purge for the whole subtree before it deletes the pages", async () => {
     const db = makeTreeDb({ subtreeIds: [10, 12, 13] });
-    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
+    const svc = new KbPageTreeService(
+      db as never,
+      makeAudit() as never,
+      makeStorage() as never,
+      makeConfig() as never,
+    );
 
     await svc.hardDelete(makeUser(), 10);
 
@@ -123,7 +140,12 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
   it("bites: when the write-ahead record fails, no page is deleted", async () => {
     mockRecordThrows = true;
     const db = makeTreeDb({ trashedIds: [10] });
-    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
+    const svc = new KbPageTreeService(
+      db as never,
+      makeAudit() as never,
+      makeStorage() as never,
+      makeConfig() as never,
+    );
 
     await expect(svc.emptyTrash(makeUser())).rejects.toThrow("write-ahead failed");
     expect(mockCalls).toEqual(["record:10"]);
@@ -131,7 +153,12 @@ describe("KbPageTreeService — every path that cascades kb_page_attachments rec
 
   it("empties nothing and records nothing when the trash is empty", async () => {
     const db = makeTreeDb({ trashedIds: [] });
-    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
+    const svc = new KbPageTreeService(
+      db as never,
+      makeAudit() as never,
+      makeStorage() as never,
+      makeConfig() as never,
+    );
 
     await expect(svc.emptyTrash(makeUser())).resolves.toEqual({ purgedCount: 0 });
     expect(mockCalls).toEqual([]);
