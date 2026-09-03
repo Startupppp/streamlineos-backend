@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { organizationMembers, signDocuments, signEnvelopes, signFields, signRecipients, signSignatureAssets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -358,16 +358,17 @@ export class SignPublicService {
         })
         .returning();
 
-      const matchingFields = await this.db.query.signFields.findMany({
-        where: and(eq(signFields.recipientId, recipient.id), eq(signFields.fieldType, input.assetType)),
-      });
-      for (const field of matchingFields) {
-        if (field.completedAt) continue;
-        await this.db
-          .update(signFields)
-          .set({ valueJson: { signatureAssetId: asset.id }, completedAt: new Date() })
-          .where(eq(signFields.id, field.id));
-      }
+      await this.db
+        .update(signFields)
+        .set({ valueJson: { signatureAssetId: asset.id }, completedAt: new Date() })
+        .where(
+          and(
+            eq(signFields.orgId, envelope.orgId),
+            eq(signFields.recipientId, recipient.id),
+            eq(signFields.fieldType, input.assetType),
+            isNull(signFields.completedAt),
+          ),
+        );
 
       await this.audit.record({
         orgId: envelope.orgId,
@@ -391,16 +392,17 @@ export class SignPublicService {
       this.assertActive(recipient, envelope);
       if (!recipient.consentAcceptedAt) throw new ForbiddenException("Please accept the electronic signature consent first");
 
-      const fields = await this.db.query.signFields.findMany({ where: eq(signFields.recipientId, recipient.id) });
-
-      for (const field of fields) {
-        if (field.fieldType === "date_signed" && !field.completedAt) {
-          await this.db
-            .update(signFields)
-            .set({ valueJson: { value: new Date().toISOString().slice(0, 10) }, completedAt: new Date() })
-            .where(eq(signFields.id, field.id));
-        }
-      }
+      await this.db
+        .update(signFields)
+        .set({ valueJson: { value: new Date().toISOString().slice(0, 10) }, completedAt: new Date() })
+        .where(
+          and(
+            eq(signFields.orgId, envelope.orgId),
+            eq(signFields.recipientId, recipient.id),
+            eq(signFields.fieldType, "date_signed"),
+            isNull(signFields.completedAt),
+          ),
+        );
 
       const refreshedFields = await this.db.query.signFields.findMany({ where: eq(signFields.recipientId, recipient.id) });
       const incomplete = refreshedFields.filter((f) => f.required && !f.completedAt);

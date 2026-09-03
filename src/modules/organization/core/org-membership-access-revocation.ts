@@ -287,8 +287,9 @@ export class OrgMembershipAccessRevocation {
             composioConnectedAccountId:
               userIntegrationConnections.composioConnectedAccountId,
           });
-        for (const connection of updatedConns) {
-          await OutboxWriter.emit(tx, {
+        await OutboxWriter.emitMany(
+          tx,
+          updatedConns.map((connection) => ({
             eventId: randomUUID(),
             organizationId: orgId,
             aggregateType: "user_integration_connection",
@@ -303,8 +304,8 @@ export class OrgMembershipAccessRevocation {
               cause,
             },
             occurredAt: now,
-          });
-        }
+          })),
+        );
       },
       { orgId },
     );

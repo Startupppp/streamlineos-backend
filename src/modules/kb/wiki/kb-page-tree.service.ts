@@ -191,19 +191,21 @@ export class KbPageTreeService {
         })
         .from(kbPages)
         .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, subtreeIds)));
-      for (const p of pagesToIndex) {
-        if (!p.contentText?.trim()) continue;
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "kb_page",
-          aggregateId: String(p.id),
-          aggregateVersion: Date.now(),
-          eventType: "kb.content.index",
-          payload: { contentType: "page", contentId: p.id, contentRevision: p.contentRevision, aclRevision: p.aclRevision },
-          occurredAt: new Date(),
-        });
-      }
+      await OutboxWriter.emitMany(
+        tx,
+        pagesToIndex
+          .filter((p) => Boolean(p.contentText?.trim()))
+          .map((p) => ({
+            eventId: randomUUID(),
+            organizationId: orgId,
+            aggregateType: "kb_page",
+            aggregateId: String(p.id),
+            aggregateVersion: Date.now(),
+            eventType: "kb.content.index",
+            payload: { contentType: "page", contentId: p.id, contentRevision: p.contentRevision, aclRevision: p.aclRevision },
+            occurredAt: new Date(),
+          })),
+      );
 
       const [restoredPage] = await tx
         .select()

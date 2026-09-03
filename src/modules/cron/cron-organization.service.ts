@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import { invitationEvents, invitations, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -51,21 +51,37 @@ export class CronOrganizationService {
         })),
       );
 
+      const inviterMembershipIds = [
+        ...new Set(
+          result
+            .map((row) => row.inviterMembershipId)
+            .filter((id): id is number => id !== null),
+        ),
+      ];
+      const inviterRows =
+        inviterMembershipIds.length === 0
+          ? []
+          : await tx
+              .select({
+                id: organizationMembers.id,
+                userId: organizationMembers.userId,
+              })
+              .from(organizationMembers)
+              .where(
+                and(
+                  eq(organizationMembers.orgId, orgId),
+                  inArray(organizationMembers.id, inviterMembershipIds),
+                ),
+              );
+      const inviterUserIdByMembership = new Map(
+        inviterRows.map((row) => [row.id, row.userId]),
+      );
+
       for (const row of result) {
-        let inviterUserId: string | null = null;
-        if (row.inviterMembershipId !== null) {
-          const inviterRows = await tx
-            .select({ userId: organizationMembers.userId })
-            .from(organizationMembers)
-            .where(
-              and(
-                eq(organizationMembers.id, row.inviterMembershipId),
-                eq(organizationMembers.orgId, orgId),
-              ),
-            )
-            .limit(1);
-          inviterUserId = inviterRows[0]?.userId ?? null;
-        }
+        const inviterUserId =
+          row.inviterMembershipId === null
+            ? null
+            : inviterUserIdByMembership.get(row.inviterMembershipId) ?? null;
         expiredRows.push({ id: row.id, orgId, email: row.email, inviterUserId });
       }
     });

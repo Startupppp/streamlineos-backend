@@ -7,7 +7,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { forEachOrg } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { resolveMembershipUserIds } from "./ownership-members.helper";
+import { resolveMembershipUserIdMap } from "./ownership-members.helper";
 
 @Injectable()
 export class OwnershipTransferExpiryService {
@@ -48,16 +48,22 @@ export class OwnershipTransferExpiryService {
           });
         if (rows.length === 0) return;
 
+        const userIdByMembership = await resolveMembershipUserIdMap(
+          tx,
+          orgId,
+          rows.flatMap((row) => [row.fromMembershipId, row.toMembershipId]),
+        );
+
         const expiredModuleKeys: string[] = [];
         for (const row of rows) {
-          expired.push({
-            orgId,
-            transferId: row.id,
-            targetUserIds: await resolveMembershipUserIds(tx, orgId, [
-              row.fromMembershipId,
-              row.toMembershipId,
-            ]),
-          });
+          const targetUserIds = Array.from(
+            new Set(
+              [row.fromMembershipId, row.toMembershipId]
+                .map((id) => userIdByMembership.get(id))
+                .filter((id): id is string => id !== undefined),
+            ),
+          );
+          expired.push({ orgId, transferId: row.id, targetUserIds });
           if (row.scope === "MODULE" && row.moduleKey !== null)
             expiredModuleKeys.push(row.moduleKey);
         }
