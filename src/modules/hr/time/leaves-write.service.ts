@@ -24,6 +24,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { AutomationService } from "../../automation/automation.service";
 import { formatDateOnly } from "../../../common/date";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -270,7 +271,12 @@ export class LeavesWriteService {
           leaveTypeName,
           requestedDays,
         );
-      }).catch(() => undefined);
+      }).catch(
+        logSideEffectFailure("leave requested side effects", {
+          orgId: currentUser.orgId,
+          leaveRequestId,
+        }),
+      );
     if (!registerAfterCommit(dispatch)) void dispatch();
   }
 
@@ -384,8 +390,11 @@ export class LeavesWriteService {
         subjectEmployeeId: currentUser.userId,
         context: { leaveRequestId, approverId },
       });
-    } catch {
-      return;
+    } catch (err: unknown) {
+      logSideEffectFailure("leave approval workflow start", {
+        orgId: currentUser.orgId,
+        leaveRequestId,
+      })(err);
     }
   }
 
@@ -426,8 +435,11 @@ export class LeavesWriteService {
         message: `${actorName ?? "Employee"} submitted a ${leaveTypeName} leave request.`,
         variables: { employeeName: actorName ?? "Employee", leaveType: leaveTypeName, startDate: formatDateOnly(new Date(body.startDate)), endDate: formatDateOnly(new Date(body.endDate)), reason: body.reason ?? "No reason provided" },
       });
-    } catch {
-      return;
+    } catch (err: unknown) {
+      logSideEffectFailure("leave requested notification", {
+        orgId: currentUser.orgId,
+        leaveRequestId,
+      })(err);
     }
   }
 
@@ -460,8 +472,11 @@ export class LeavesWriteService {
         message: `${employeeName} cancelled a ${leaveTypeName} leave request.`,
         variables: { employeeName, leaveType: leaveTypeName, startDate: existing.startDate, endDate: existing.endDate },
       });
-    } catch {
-      return;
+    } catch (err: unknown) {
+      logSideEffectFailure("leave cancellation notification", {
+        orgId: currentUser.orgId,
+        leaveId,
+      })(err);
     }
   }
 

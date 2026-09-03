@@ -8,6 +8,9 @@ import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { requireOrganizationMembershipId } from "./organization-membership";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const DEFAULT_STANDARD_DAY_HOURS = 8;
 
@@ -71,7 +74,7 @@ export class OvertimeService {
       .values({ orgId, userId, userMembershipId, ...data })
       .returning();
 
-    void this.startOvertimeWorkflow(orgId, userId, req?.id);
+    this.scheduleOvertimeWorkflow(orgId, userId, req?.id);
 
     return req;
   }
@@ -170,23 +173,21 @@ export class OvertimeService {
     }
   }
 
-  private async startOvertimeWorkflow(
-    orgId: string,
-    userId: string,
-    overtimeRequestId?: number,
-  ): Promise<void> {
+  private scheduleOvertimeWorkflow(orgId: string, userId: string, overtimeRequestId?: number): void {
     if (!this.workflowEngine || !overtimeRequestId) return;
-    try {
-      await this.workflowEngine.startWorkflow({
-        orgId,
-        objectType: "overtime_request",
-        objectId: String(overtimeRequestId),
-        requestedByUserId: userId,
-        subjectEmployeeId: userId,
-        context: { overtimeRequestId },
-      });
-    } catch {
-      return;
-    }
+    const start = () =>
+      runInNewTenantTransaction(this.db, orgId, () =>
+        this.workflowEngine.startWorkflow({
+          orgId,
+          objectType: "overtime_request",
+          objectId: String(overtimeRequestId),
+          requestedByUserId: userId,
+          subjectEmployeeId: userId,
+          context: { overtimeRequestId },
+        }),
+      ).catch(
+        logSideEffectFailure("overtime approval workflow start", { orgId, overtimeRequestId }),
+      );
+    if (!registerAfterCommit(start)) void start();
   }
 }
