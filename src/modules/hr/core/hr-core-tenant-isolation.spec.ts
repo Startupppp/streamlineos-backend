@@ -89,7 +89,7 @@ describe("HrEffectiveChangeApplierService — cross-tenant isolation", () => {
 
   it("scopes effective change lookup to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
-    const mockAudit = { log: jest.fn() };
+    const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrEffectiveChangeApplierService(db, mockAudit as never);
     await svc.applyDue(ATTACKER, null, new Date().toISOString().slice(0, 10), 100);
     const arg = isolationArg(where, findMany);
@@ -98,7 +98,7 @@ describe("HrEffectiveChangeApplierService — cross-tenant isolation", () => {
 
   it("processes effective changes for owning org (control)", async () => {
     const { db, where, findMany } = makeDb([]);
-    const mockAudit = { log: jest.fn() };
+    const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrEffectiveChangeApplierService(db, mockAudit as never);
     await svc.applyDue(OWNER, null, new Date().toISOString().slice(0, 10), 100);
     expect(db).toBeDefined();
@@ -135,14 +135,14 @@ describe("HrEmploymentsService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for cross-tenant employment access (cross-tenant isolation)", async () => {
     const { db } = makeDb([]);
-    const mockAudit = { log: jest.fn() };
+    const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrEmploymentsService(db, mockAudit as never);
     await expect(svc.getOne(ATTACKER, "actor-1", 999, "all")).rejects.toThrow();
   });
 
   it("returns employment for owning org (control)", async () => {
     const { db, where } = makeDb([ROW]);
-    const mockAudit = { log: jest.fn() };
+    const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrEmploymentsService(db, mockAudit as never);
     const result = await svc.getOne(OWNER, "actor-1", 1, "all");
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
@@ -177,14 +177,14 @@ describe("HrPeopleService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for cross-tenant person access (cross-tenant isolation)", async () => {
     const { db } = makeDb([]);
-    const mockAudit = { log: jest.fn() };
+    const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrPeopleService(db, mockAudit as never);
     await expect(svc.getOne(ATTACKER, "actor-1", 999, "all")).rejects.toThrow();
   });
 
   it("returns person for owning org (control)", async () => {
     const { db, where } = makeDb([ROW]);
-    const mockAudit = { log: jest.fn() };
+    const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new HrPeopleService(db, mockAudit as never);
     const result = await svc.getOne(OWNER, "actor-1", 1, "all");
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
@@ -219,7 +219,7 @@ describe("PersonEmploymentBackfillService — cross-tenant isolation", () => {
 
   it("scopes membership watermark query to attacker org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
-    const mockAudit = { log: jest.fn() };
+    const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new PersonEmploymentBackfillService(db, mockAudit as never, mockSync as never);
     await svc.backfillOrg(ATTACKER, null);
     const allVals = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
@@ -229,7 +229,7 @@ describe("PersonEmploymentBackfillService — cross-tenant isolation", () => {
 
   it("membership watermark query uses owning org (control)", async () => {
     const { db, where } = makeDb([]);
-    const mockAudit = { log: jest.fn() };
+    const mockAudit = { log: jest.fn(), logMany: jest.fn() };
     const svc = new PersonEmploymentBackfillService(db, mockAudit as never, mockSync as never);
     await svc.backfillOrg(OWNER, null);
     const allVals = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
