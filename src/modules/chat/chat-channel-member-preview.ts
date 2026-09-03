@@ -95,11 +95,15 @@ export async function loadChannelMemberPreview(
       archivedAt: chatChannelMembers.archivedAt,
       isFavorite: chatChannelMembers.isFavorite,
       notificationPreference: chatChannelMembers.notificationPreference,
-      membershipId: organizationMembers.id,
-      membershipUserId: organizationMembers.userId,
-      userId: users.id,
-      userName: users.name,
-      userImage: users.image,
+      // Explicit aliases, not the bare columns. A subquery projection keeps each column's own
+      // name, so `chat_channel_members.id`, `organization_members.id` and `users.id` all arrive as
+      // "id" and the outer SELECT is ambiguous — the query fails at the database with the three
+      // duplicates plainly visible in the SQL, which is how this was caught.
+      membershipId: sql<number>`${organizationMembers.id}`.as("member_membership_id"),
+      membershipUserId: sql<string | null>`${organizationMembers.userId}`.as("member_user_id"),
+      userId: sql<string | null>`${users.id}`.as("user_row_id"),
+      userName: sql<string | null>`${users.name}`.as("user_row_name"),
+      userImage: sql<string | null>`${users.image}`.as("user_row_image"),
       memberCount: sql<number>`count(*) over (partition by ${chatChannelMembers.channelId})`.as("member_count"),
       memberRank: sql<number>`row_number() over (partition by ${chatChannelMembers.channelId} order by (${chatChannelMembers.membershipId} = ${actorMembershipId}) desc, (${chatChannelMembers.role} = 'ADMIN') desc, ${chatChannelMembers.id} asc)`.as(
         "member_rank",
