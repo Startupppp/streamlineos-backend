@@ -88,25 +88,14 @@ export function reportUnreachable(gateName, whatIsSkipped, why) {
 export function runSelfTest() {
   let passed = 0;
   const failures = [];
+  const notRun = [];
   const assert = (label, condition) => {
     if (condition) passed++;
     else failures.push(label);
   };
 
-  assert("frontend root resolves in this checkout", frontendAvailable);
-  assert(
-    "frontend root actually carries the marker",
-    frontendAvailable && existsSync(join(FRONTEND_ROOT, FRONTEND_MARKER)),
-  );
-  assert("workspace root resolves in this checkout", workspaceAvailable);
-  assert(
-    "workspace root actually carries the marker",
-    workspaceAvailable && existsSync(join(WORKSPACE_ROOT, WORKSPACE_MARKER)),
-  );
-
-  const bogus = resolveRoot(FRONTEND_MARKER, FRONTEND_SIBLINGS, "STREAMLINE_SELFTEST_ABSENT_MARKER");
-  assert("a marker that exists still resolves without an override", bogus.root !== null);
-
+  // Layout-independent. These prove the RESOLVER and hold in any checkout,
+  // including a single-repository CI checkout with no sibling.
   const missing = resolveRoot(join("no", "such", "marker"), FRONTEND_SIBLINGS, "STREAMLINE_SELFTEST_NO_MARKER");
   assert("an unfindable marker resolves to null rather than a wrong directory", missing.root === null);
   assert("an unfindable marker produces a reason naming the marker", reason(missing).includes("no"));
@@ -119,11 +108,76 @@ export function runSelfTest() {
   assert("a wrong override fails loudly instead of falling back to the search", badOverride.root === null);
   assert("a wrong override is reported as an override problem", badOverride.overridden === true);
 
+  // Cross-repository. Whether the sibling is CHECKED OUT is an environment
+  // fact, not a defect in the resolver, and asserting it unconditionally made
+  // this self-test exit 1 in every single-repository checkout -- which, as the
+  // first blocking step of the `gates` job, skipped every gate below it. When
+  // the sibling is absent the ABSENCE CONTRACT is asserted instead, and the run
+  // ends INCONCLUSIVE (exit 2) rather than OK, so a partial run can never be
+  // read as a clean one.
+  if (frontendAvailable) {
+    assert("frontend root resolves in this checkout", frontendAvailable);
+    assert("frontend root actually carries the marker", existsSync(join(FRONTEND_ROOT, FRONTEND_MARKER)));
+    const bogus = resolveRoot(FRONTEND_MARKER, FRONTEND_SIBLINGS, "STREAMLINE_SELFTEST_ABSENT_MARKER");
+    assert("a marker that exists still resolves without an override", bogus.root !== null);
+  } else {
+    notRun.push("frontend root resolves in this checkout", "frontend root actually carries the marker", "a marker that exists still resolves without an override");
+    assert("an absent frontend resolves to null rather than a wrong directory", FRONTEND_ROOT === null);
+    assert(
+      "frontendPath throws and names the marker instead of composing onto a null root",
+      (() => {
+        try {
+          frontendPath("lib");
+          return false;
+        } catch (error) {
+          return String(error.message).includes(FRONTEND_MARKER);
+        }
+      })(),
+    );
+  }
+
+  if (workspaceAvailable) {
+    assert("workspace root resolves in this checkout", workspaceAvailable);
+    assert("workspace root actually carries the marker", existsSync(join(WORKSPACE_ROOT, WORKSPACE_MARKER)));
+  } else {
+    notRun.push("workspace root resolves in this checkout", "workspace root actually carries the marker");
+    assert("an absent workspace resolves to null rather than a wrong directory", WORKSPACE_ROOT === null);
+    assert(
+      "workspacePath throws and names the marker instead of composing onto a null root",
+      (() => {
+        try {
+          workspacePath("issues");
+          return false;
+        } catch (error) {
+          return String(error.message).includes(WORKSPACE_MARKER);
+        }
+      })(),
+    );
+  }
+
   if (failures.length > 0) {
     for (const f of failures) console.error(`  FAIL: ${f}`);
     console.error(`check-repo-paths self-tests: ${failures.length} failed, ${passed} passed`);
     process.exit(1);
   }
+
+  if (notRun.length > 0) {
+    const allowed = process.env.STREAMLINE_ALLOW_PARTIAL_GATES === "1";
+    const stream = allowed ? console.warn : console.error;
+    stream(
+      `${allowed ? "PARTIAL" : "INCONCLUSIVE"} — check-repo-paths: ${passed} passed, ${notRun.length} cross-repository assertion(s) NOT RUN in this checkout.`,
+    );
+    for (const label of notRun) stream(`  NOT RUN: ${label}`);
+    if (!frontendAvailable) stream(`  ${frontendUnreachableReason()}`);
+    if (!workspaceAvailable) stream(`  ${workspaceUnreachableReason()}`);
+    if (allowed) {
+      console.warn("  STREAMLINE_ALLOW_PARTIAL_GATES=1 — this run proves the resolver, and proves nothing about the sibling layout.");
+      process.exit(0);
+    }
+    console.error("  Set STREAMLINE_FRONTEND_ROOT / STREAMLINE_WORKSPACE_ROOT, or set STREAMLINE_ALLOW_PARTIAL_GATES=1 to accept a PARTIAL run.");
+    process.exit(2);
+  }
+
   console.log(`check-repo-paths self-tests: ${passed} passed`);
   process.exit(0);
 }
