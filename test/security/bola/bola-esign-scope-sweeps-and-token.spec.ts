@@ -81,7 +81,22 @@ describe("E1 · POST /sign/envelopes/:envelopeId/ai/summarize resolves the envel
 
   function makeAi(visibleEnvelopeId: number): AiHarness {
     const documentFindMany = jest.fn().mockResolvedValue([]);
-    const db = {
+    /**
+     * `transaction` is here because summarize now takes the envelope and
+     * document reads inside a short `runInTenantTransaction` that commits
+     * before the object-store fetch and the provider call. Without it the
+     * sweep dies in `withTenant` on `regional.transaction is not a function`
+     * and proves nothing about scope — the same reason the double at the
+     * public-token sweep below carries one.
+     */
+    const reads = {
+      /**
+       * `withTenant` sets its GUCs with one `tx.execute(sql\`SELECT …\`)` before
+       * it hands the transaction to the callback. No placement is resolved in a
+       * unit test, so nothing reads the result and an empty row set is the
+       * honest answer.
+       */
+      execute: jest.fn(() => Promise.resolve([])),
       query: {
         signEnvelopes: {
           findFirst: jest.fn(() =>
@@ -94,6 +109,10 @@ describe("E1 · POST /sign/envelopes/:envelopeId/ai/summarize resolves the envel
         },
         signDocuments: { findMany: documentFindMany },
       },
+    };
+    const db = {
+      ...reads,
+      transaction: (fn: (tx: unknown) => unknown) => fn(reads),
     } as unknown as Db;
     const getFileStream = jest.fn();
     const invokeText = jest.fn();

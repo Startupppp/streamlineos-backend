@@ -164,7 +164,24 @@ export function makeFakeKbDb(fixtures: FakeDbFixtures) {
     return builder;
   };
 
-  const db = {
+  /**
+   * The KB retrieval path now opens its own short tenant transaction and commits
+   * it before the provider call, so this double has to answer `transaction` or
+   * the sweep dies in `withTenant` on `regional.transaction is not a function`
+   * and stops testing scope at all — a security spec that cannot run is worse
+   * than one that fails, because it goes quiet.
+   *
+   * Same shape as every other double in this directory: run the callback against
+   * the same object, so a read inside the transaction is recorded exactly like a
+   * read outside it and the scope assertions keep seeing every query.
+   */
+  const db: {
+    select: () => unknown;
+    selectDistinct: () => unknown;
+    execute: (statement: unknown) => Promise<unknown[]>;
+    transaction: <T>(fn: (tx: typeof db) => Promise<T> | T) => Promise<T>;
+  } = {
+    transaction: async (fn) => fn(db),
     select: () => chain(),
     selectDistinct: () => chain(),
     execute: (statement: unknown) => {
