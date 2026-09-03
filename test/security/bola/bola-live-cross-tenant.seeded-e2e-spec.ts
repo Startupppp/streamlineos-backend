@@ -66,6 +66,23 @@ const SOURCE_ORG = process.env.BOLA_SOURCE_ORG_ID ?? "";
 const PROBER_ORG = process.env.BOLA_PROBER_ORG_ID ?? "";
 const ARTIFACT = process.env.BOLA_LIVE_ARTIFACT ?? "";
 const ONLY = process.env.BOLA_LIVE_ONLY ?? "";
+/**
+ * A file of `VERB /path` lines restricting the run to exactly those routes.
+ *
+ * `BOLA_LIVE_ONLY` is a single substring, which cannot express "re-run these 468". Re-probing a
+ * named set is the normal shape of follow-up work here — a bucket of the previous run's artifact
+ * comes back as a list, not as a prefix.
+ */
+const ONLY_FILE = process.env.BOLA_LIVE_ONLY_FILE ?? "";
+const ONLY_SET: ReadonlySet<string> =
+  ONLY_FILE.length > 0
+    ? new Set(
+        readFileSync(ONLY_FILE, "utf8")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0 && !line.startsWith("#")),
+      )
+    : new Set<string>();
 /** Pins the probing user. Empty means the prober organization's owner, the widest caller it has. */
 const PROBER_USER = process.env.BOLA_PROBER_USER_ID ?? "";
 const LIMIT = Number(process.env.BOLA_LIVE_LIMIT ?? "0");
@@ -402,6 +419,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     const order = (verb: string): number => (verb === "GET" ? 0 : verb === "DELETE" ? 2 : 1);
     const runnable = plan
       .filter((p) => ONLY.length === 0 || p.key.includes(ONLY))
+      .filter((p) => ONLY_SET.size === 0 || ONLY_SET.has(`${p.verb} ${p.path}`))
       .sort((a, b) => order(a.verb) - order(b.verb) || a.key.localeCompare(b.key));
     const cursors = new Map<string, number>();
     let done = 0;
