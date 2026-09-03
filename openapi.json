@@ -4904,10 +4904,6 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 300
-                  },
-                  "amount": {
-                    "type": "number",
-                    "minimum": 0
                   }
                 },
                 "required": [
@@ -10134,19 +10130,6 @@
               "type": "string",
               "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
             }
-          },
-          {
-            "name": "format",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": "json",
-              "type": "string",
-              "enum": [
-                "json",
-                "csv"
-              ]
-            }
           }
         ],
         "responses": {
@@ -10613,7 +10596,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -10658,7 +10642,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -10710,7 +10695,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -14923,6 +14909,65 @@
         }
       }
     },
+    "/ai/account-summary/stream": {
+      "post": {
+        "operationId": "CrmAiController_accountSummaryStream",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CrmAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "crm:ai:use",
+        "description": "Exposure: permission — crm:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "clientId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/ai/attrition-risk": {
       "post": {
         "operationId": "HrAiController_attritionRisk",
@@ -15052,6 +15097,77 @@
         }
       }
     },
+    "/ai/blog/posts/{postId}/improve-writing/stream": {
+      "post": {
+        "operationId": "BlogAiController_improveWritingStream",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:ai:use",
+        "description": "Exposure: permission — blog:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  }
+                },
+                "required": [
+                  "content"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/ai/blog/posts/{postId}/suggest-title": {
       "post": {
         "operationId": "BlogAiController_suggestTitle",
@@ -15111,10 +15227,73 @@
                   "content": {
                     "type": "string",
                     "maxLength": 10000
-                  },
-                  "excerpt": {
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/blog/posts/{postId}/suggest-title/stream": {
+      "post": {
+        "operationId": "BlogAiController_suggestTitleStream",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:ai:use",
+        "description": "Exposure: permission — blog:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
                     "type": "string",
-                    "maxLength": 1000
+                    "maxLength": 10000
                   }
                 }
               }
@@ -15126,6 +15305,73 @@
     "/ai/blog/posts/{postId}/summarize": {
       "post": {
         "operationId": "BlogAiController_summarize",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:ai:use",
+        "description": "Exposure: permission — blog:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "maxLength": 10000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/blog/posts/{postId}/summarize/stream": {
+      "post": {
+        "operationId": "BlogAiController_summarizeStream",
         "parameters": [
           {
             "name": "postId",
@@ -15704,6 +15950,100 @@
     "/ai/crm/meeting-follow-up": {
       "post": {
         "operationId": "CrmCopilotController_meetingFollowUp",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CrmCopilot"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "crm:ai:use",
+        "description": "Exposure: permission — crm:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "meetingTitle": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "attendeeType": {
+                    "type": "string",
+                    "enum": [
+                      "lead",
+                      "client"
+                    ]
+                  },
+                  "attendeeId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 3000
+                  },
+                  "actionItems": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "scheduledAt": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "meetingTitle",
+                  "attendeeType",
+                  "attendeeId",
+                  "outcome",
+                  "scheduledAt"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/crm/meeting-follow-up/stream": {
+      "post": {
+        "operationId": "CrmCopilotController_meetingFollowUpStream",
         "parameters": [],
         "responses": {
           "201": {
@@ -16470,6 +16810,80 @@
         }
       }
     },
+    "/ai/generate-jd/stream": {
+      "post": {
+        "operationId": "HrAiController_generateJdStream",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "HrAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "hr:interviews:manage",
+        "description": "Exposure: permission — hr:interviews:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "requirements": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "salaryMin": {
+                    "type": "number"
+                  },
+                  "salaryMax": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/ai/generate-review": {
       "post": {
         "operationId": "HrAiController_generateReview",
@@ -16951,87 +17365,6 @@
         "description": "Exposure: permission — hr:policies:view"
       }
     },
-    "/ai/meeting-prep": {
-      "post": {
-        "operationId": "CrmAiController_meetingPrep",
-        "parameters": [],
-        "responses": {
-          "201": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "CrmAi"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "crm:ai:use",
-        "description": "Exposure: permission — crm:ai:use",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "meetingTitle": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "attendeeType": {
-                    "type": "string",
-                    "enum": [
-                      "lead",
-                      "client"
-                    ]
-                  },
-                  "attendeeId": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "scheduledAt": {
-                    "type": "string"
-                  },
-                  "notes": {
-                    "type": "string",
-                    "maxLength": 2000
-                  }
-                },
-                "required": [
-                  "meetingTitle",
-                  "attendeeType",
-                  "attendeeId",
-                  "scheduledAt"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        }
-      }
-    },
     "/ai/meetings/follow-up": {
       "post": {
         "operationId": "MeetingsAiController_followUp",
@@ -17266,9 +17599,145 @@
         }
       }
     },
+    "/ai/meetings/follow-up/stream": {
+      "post": {
+        "operationId": "MeetingsAiController_followUpStream",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "MeetingsAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "calendar:ai:use",
+        "description": "Exposure: permission — calendar:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "eventId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "meetingNotes": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "actionItems": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 200
+                    }
+                  }
+                },
+                "required": [
+                  "eventId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/ai/meetings/prep": {
       "post": {
         "operationId": "MeetingsAiController_prep",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "MeetingsAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "calendar:ai:use",
+        "description": "Exposure: permission — calendar:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "eventId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "includeCrmContext": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "includeProjectContext": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "eventId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/meetings/prep/stream": {
+      "post": {
+        "operationId": "MeetingsAiController_prepStream",
         "parameters": [],
         "responses": {
           "201": {
@@ -18450,6 +18919,69 @@
         }
       }
     },
+    "/ai/report-narrator/stream": {
+      "post": {
+        "operationId": "CrmAiController_reportNarratorStream",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CrmAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "crm:ai:use",
+        "description": "Exposure: permission — crm:ai:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "data": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  },
+                  "context": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "data"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/ai/score-candidate": {
       "post": {
         "operationId": "HrAiController_scoreCandidate",
@@ -19034,6 +19566,59 @@
         "x-bodyless": true
       }
     },
+    "/ai/surveys/{surveyId}/summarize-responses/stream": {
+      "post": {
+        "operationId": "SurveyAiController_summarizeResponsesStream",
+        "parameters": [
+          {
+            "name": "surveyId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "SurveyAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "surveys:ai:use",
+        "description": "Exposure: permission — surveys:ai:use",
+        "x-bodyless": true
+      }
+    },
     "/ai/tickets/{projectId}/{ticketId}/generate-checklist": {
       "post": {
         "operationId": "ProjectsAiController_generateTicketChecklist",
@@ -19414,6 +19999,38 @@
         "x-permission": "build:ai:use",
         "description": "Exposure: permission — build:ai:use",
         "x-bodyless": true
+      }
+    },
+    "/ai/usage": {
+      "get": {
+        "operationId": "AiUsageController_getUsage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "AiUsage"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "ai:usage:view",
+        "description": "Exposure: permission — ai:usage:view"
       }
     },
     "/api-tokens": {
@@ -68845,6 +69462,348 @@
         }
       }
     },
+    "/crm/settings/custom-fields": {
+      "get": {
+        "operationId": "CrmCustomFieldsController_listCustomFields",
+        "parameters": [
+          {
+            "name": "entityType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "lead",
+                "deal",
+                "contact"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CrmCustomFields"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "crm:custom-fields:view",
+        "description": "Exposure: permission — crm:custom-fields:view"
+      },
+      "post": {
+        "operationId": "CrmCustomFieldsController_createCustomField",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CrmCustomFields"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "crm:custom-fields:manage",
+        "description": "Exposure: permission — crm:custom-fields:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entityType": {
+                    "type": "string",
+                    "enum": [
+                      "lead",
+                      "deal",
+                      "contact"
+                    ]
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "fieldType": {
+                    "default": "text",
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "number",
+                      "date",
+                      "boolean",
+                      "select"
+                    ]
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "value": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "value",
+                        "label"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "isRequired": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "sortOrder": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "entityType",
+                  "name",
+                  "label"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-idempotency-command": "crm.customField.create",
+        "x-idempotent": true
+      }
+    },
+    "/crm/settings/custom-fields/{fieldId}": {
+      "patch": {
+        "operationId": "CrmCustomFieldsController_updateCustomField",
+        "parameters": [
+          {
+            "name": "fieldId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CrmCustomFields"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "crm:custom-fields:manage",
+        "description": "Exposure: permission — crm:custom-fields:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "options": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "value",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "isRequired": {
+                    "type": "boolean"
+                  },
+                  "isActive": {
+                    "type": "boolean"
+                  },
+                  "sortOrder": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "CrmCustomFieldsController_deleteCustomField",
+        "parameters": [
+          {
+            "name": "fieldId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CrmCustomFields"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "crm:custom-fields:manage",
+        "description": "Exposure: permission — crm:custom-fields:manage"
+      }
+    },
     "/crm/sla/breached": {
       "get": {
         "operationId": "CrmSlaController_breached",
@@ -72279,6 +73238,79 @@
         },
         "tags": [
           "CronBuild"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
+      }
+    },
+    "/cron/gdpr-export-artifact-retention": {
+      "get": {
+        "operationId": "CronGdprController_getGdprExportArtifactRetention",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronGdpr"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronGdprController_postGdprExportArtifactRetention",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronGdpr"
         ],
         "x-exposure": "public",
         "description": "Exposure: public — unauthenticated",
@@ -83460,7 +84492,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -83501,7 +84535,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -103532,7 +104568,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -103575,7 +104612,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -103684,7 +104722,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -103735,7 +104774,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           },
           {
@@ -103832,7 +104872,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -103875,7 +104916,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -103963,7 +105005,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           },
           {
@@ -103972,7 +105015,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -104069,7 +105113,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           },
           {
@@ -104078,7 +105123,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -104269,7 +105315,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -104312,7 +105359,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -104391,7 +105439,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -104442,7 +105491,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -104511,7 +105561,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -104585,7 +105636,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -105073,7 +106125,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -105367,7 +106420,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -105468,7 +106522,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -107581,7 +108636,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -107626,7 +108682,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -108133,7 +109190,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -108178,7 +109236,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -117355,7 +118414,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -117400,7 +118460,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -117452,7 +118513,8 @@
             "in": "path",
             "schema": {
               "type": "string",
-              "minLength": 1
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
@@ -148130,6 +149192,292 @@
         }
       }
     },
+    "/integrations/git/connections": {
+      "get": {
+        "operationId": "GitConnectionsController_listConnections",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "GitConnections"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "integrations:git:view",
+        "description": "Exposure: permission — integrations:git:view"
+      },
+      "post": {
+        "operationId": "GitConnectionsController_createConnection",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "GitConnections"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "integrations:git:manage",
+        "description": "Exposure: permission — integrations:git:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "github",
+                      "gitlab",
+                      "bitbucket"
+                    ]
+                  },
+                  "repoUrl": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "format": "uri"
+                  },
+                  "repoName": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "repoUrl"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-idempotency-command": "integrations.gitConnection.create",
+        "x-idempotent": true
+      }
+    },
+    "/integrations/git/connections/{connectionId}": {
+      "patch": {
+        "operationId": "GitConnectionsController_updateConnection",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "GitConnections"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "integrations:git:manage",
+        "description": "Exposure: permission — integrations:git:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "isActive": {
+                    "type": "boolean"
+                  },
+                  "repoUrl": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "format": "uri"
+                  },
+                  "repoName": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "projectId": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "GitConnectionsController_deleteConnection",
+        "parameters": [
+          {
+            "name": "connectionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "GitConnections"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "integrations:git:manage",
+        "description": "Exposure: permission — integrations:git:manage"
+      }
+    },
     "/integrations/git/webhook": {
       "post": {
         "operationId": "IntegrationsGitController_webhook",
@@ -164697,6 +166045,79 @@
         }
       }
     },
+    "/kb/articles/{articleId}/ai/ask/stream": {
+      "post": {
+        "operationId": "KbArticleAiController_askStream",
+        "parameters": [
+          {
+            "name": "articleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "KbArticleAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "kb:articles:view",
+        "description": "Exposure: permission — kb:articles:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "question"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/kb/articles/{articleId}/ai/improve": {
       "post": {
         "operationId": "KbArticleAiController_improve",
@@ -164714,6 +166135,59 @@
         ],
         "responses": {
           "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "KbArticleAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "kb:articles:view",
+        "description": "Exposure: permission — kb:articles:view",
+        "x-bodyless": true
+      }
+    },
+    "/kb/articles/{articleId}/ai/improve/stream": {
+      "post": {
+        "operationId": "KbArticleAiController_improveStream",
+        "parameters": [
+          {
+            "name": "articleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "201": {
             "description": ""
           },
           "400": {
@@ -164803,6 +166277,59 @@
         "x-bodyless": true
       }
     },
+    "/kb/articles/{articleId}/ai/suggest-related/stream": {
+      "post": {
+        "operationId": "KbArticleAiController_suggestRelatedStream",
+        "parameters": [
+          {
+            "name": "articleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "KbArticleAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "kb:articles:view",
+        "description": "Exposure: permission — kb:articles:view",
+        "x-bodyless": true
+      }
+    },
     "/kb/articles/{articleId}/ai/summarize": {
       "post": {
         "operationId": "KbArticleAiController_summarize",
@@ -164820,6 +166347,59 @@
         ],
         "responses": {
           "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "KbArticleAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "kb:articles:view",
+        "description": "Exposure: permission — kb:articles:view",
+        "x-bodyless": true
+      }
+    },
+    "/kb/articles/{articleId}/ai/summarize/stream": {
+      "post": {
+        "operationId": "KbArticleAiController_summarizeStream",
+        "parameters": [
+          {
+            "name": "articleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "201": {
             "description": ""
           },
           "400": {
@@ -167760,6 +169340,79 @@
         }
       }
     },
+    "/kb/pages/{pageId}/ai/ask/stream": {
+      "post": {
+        "operationId": "KbPageAiController_askStream",
+        "parameters": [
+          {
+            "name": "pageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "KbPageAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "kb:pages:view",
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "question"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/kb/pages/{pageId}/ai/improve": {
       "post": {
         "operationId": "KbPageAiController_improve",
@@ -167777,6 +169430,59 @@
         ],
         "responses": {
           "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "KbPageAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "kb:pages:view",
+        "description": "Exposure: permission — kb:pages:view",
+        "x-bodyless": true
+      }
+    },
+    "/kb/pages/{pageId}/ai/improve/stream": {
+      "post": {
+        "operationId": "KbPageAiController_improveStream",
+        "parameters": [
+          {
+            "name": "pageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "201": {
             "description": ""
           },
           "400": {
@@ -167866,6 +169572,59 @@
         "x-bodyless": true
       }
     },
+    "/kb/pages/{pageId}/ai/suggest-related/stream": {
+      "post": {
+        "operationId": "KbPageAiController_suggestRelatedStream",
+        "parameters": [
+          {
+            "name": "pageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "KbPageAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "kb:pages:view",
+        "description": "Exposure: permission — kb:pages:view",
+        "x-bodyless": true
+      }
+    },
     "/kb/pages/{pageId}/ai/summarize": {
       "post": {
         "operationId": "KbPageAiController_summarize",
@@ -167883,6 +169642,59 @@
         ],
         "responses": {
           "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "KbPageAi"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "kb:pages:view",
+        "description": "Exposure: permission — kb:pages:view",
+        "x-bodyless": true
+      }
+    },
+    "/kb/pages/{pageId}/ai/summarize/stream": {
+      "post": {
+        "operationId": "KbPageAiController_summarizeStream",
+        "parameters": [
+          {
+            "name": "pageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "201": {
             "description": ""
           },
           "400": {
@@ -168026,6 +169838,24 @@
             "name": "pageId",
             "required": true,
             "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "afterCreatedAt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "afterId",
+            "in": "query",
+            "required": false,
             "schema": {
               "type": "integer",
               "exclusiveMinimum": 0,
@@ -176764,6 +178594,9 @@
               "maxLength": 32,
               "pattern": "^[a-z][a-z0-9_-]*$"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -176818,7 +178651,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "module-access.group.create",
+        "x-idempotent": true
       }
     },
     "/module-access/{moduleKey}/groups/{groupId}": {
@@ -177255,7 +179090,8 @@
                       },
                       "required": [
                         "permissionKey"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   }
                 },
@@ -178241,7 +180077,8 @@
                       },
                       "required": [
                         "permissionKey"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   }
                 },
@@ -195657,7 +197494,7 @@
         "operationId": "PayrollFilingsController_prepare",
         "parameters": [],
         "responses": {
-          "201": {
+          "202": {
             "description": ""
           },
           "400": {
@@ -195747,6 +197584,52 @@
             }
           }
         }
+      }
+    },
+    "/payroll/filings/export/jobs/{jobId}": {
+      "get": {
+        "operationId": "PayrollFilingsController_getExportJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PayrollFilings"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "payroll:tax:view",
+        "description": "Exposure: permission — payroll:tax:view"
       }
     },
     "/payroll/fnf": {
@@ -196030,18 +197913,6 @@
       "get": {
         "operationId": "PayrollJobsController_list",
         "parameters": [
-          {
-            "name": "failedOnly",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ]
-            }
-          },
           {
             "name": "runId",
             "in": "query",
@@ -205301,7 +207172,11 @@
       },
       "post": {
         "operationId": "PrincipalGroupsController_create",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -205354,7 +207229,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "rbac.principalGroup.create",
+        "x-idempotent": true
       }
     },
     "/principal-groups/{groupId}": {
@@ -205484,6 +207361,9 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -205541,7 +207421,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "rbac.principalGroup.addMember",
+        "x-idempotent": true
       }
     },
     "/principal-groups/{groupId}/members/{membershipId}": {
@@ -205659,6 +207541,9 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -205716,7 +207601,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "rbac.principalGroup.assignRole",
+        "x-idempotent": true
       }
     },
     "/principal-groups/{groupId}/roles/{roleId}": {
@@ -210525,7 +212412,11 @@
     "/rbac/role-permissions": {
       "post": {
         "operationId": "RbacController_assignRolePermission",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -210594,7 +212485,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "rbac.rolePermission.assign",
+        "x-idempotent": true
       },
       "delete": {
         "operationId": "RbacController_revokeRolePermission",
@@ -211253,6 +213146,9 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -211338,7 +213234,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "rbac.role.addMember",
+        "x-idempotent": true
       },
       "delete": {
         "operationId": "RolesController_removeMember",
@@ -211682,7 +213580,11 @@
     "/roles/seed-defaults": {
       "post": {
         "operationId": "RolesController_seedDefaults",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -211715,6 +213617,8 @@
         "x-exposure": "permissioned",
         "x-permission": "settings:rbac:manage",
         "description": "Exposure: permission — settings:rbac:manage",
+        "x-idempotency-command": "rbac.roles.seedDefaults",
+        "x-idempotent": true,
         "x-bodyless": true
       }
     },
@@ -211827,7 +213731,11 @@
     "/roles/templates": {
       "post": {
         "operationId": "RolesController_materializeTemplate",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -211880,7 +213788,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "rbac.role.materializeTemplate",
+        "x-idempotent": true
       },
       "get": {
         "operationId": "RolesController_templates",
@@ -213207,7 +215117,7 @@
     },
     "/settings/ai-usage": {
       "get": {
-        "operationId": "SettingsController_getAiUsage",
+        "operationId": "SettingsDeprecatedRoutesController_getAiUsage",
         "parameters": [],
         "responses": {
           "200": {
@@ -213230,11 +215140,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:manage",
-        "description": "Exposure: permission — settings:manage"
+        "x-permission": "ai:usage:view",
+        "description": "Exposure: permission — ai:usage:view",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/ai/usage"
       }
     },
     "/settings/api-keys": {
@@ -213265,12 +215178,16 @@
           "Settings"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:api-tokens:read",
-        "description": "Exposure: permission — settings:api-tokens:read"
+        "x-permission": "settings:manage",
+        "description": "Exposure: permission — settings:manage"
       },
       "post": {
         "operationId": "SettingsController_createApiKey",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -213301,8 +215218,8 @@
           "Settings"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:api-tokens:write",
-        "description": "Exposure: permission — settings:api-tokens:write",
+        "x-permission": "settings:manage",
+        "description": "Exposure: permission — settings:manage",
         "requestBody": {
           "required": true,
           "content": {
@@ -213341,7 +215258,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "settings.apiKey.create",
+        "x-idempotent": true
       }
     },
     "/settings/api-keys/{keyId}": {
@@ -213391,8 +215310,8 @@
           "Settings"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:api-tokens:write",
-        "description": "Exposure: permission — settings:api-tokens:write"
+        "x-permission": "settings:manage",
+        "description": "Exposure: permission — settings:manage"
       }
     },
     "/settings/automations": {
@@ -213448,7 +215367,11 @@
       },
       "post": {
         "operationId": "SettingsController_createAutomation",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -213589,7 +215512,8 @@
                       "required": [
                         "field",
                         "op"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "actions": {
@@ -213632,13 +215556,15 @@
                                 "roles",
                                 "title",
                                 "message"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -213665,13 +215591,15 @@
                               "required": [
                                 "title",
                                 "message"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -213701,13 +215629,15 @@
                                 "to",
                                 "subject",
                                 "body"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -213734,13 +215664,15 @@
                               },
                               "required": [
                                 "title"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -213759,13 +215691,15 @@
                               },
                               "required": [
                                 "event"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -213784,13 +215718,15 @@
                               },
                               "required": [
                                 "assigneeId"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -213809,13 +215745,15 @@
                               },
                               "required": [
                                 "priority"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -213835,13 +215773,15 @@
                               },
                               "required": [
                                 "tagId"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -213860,13 +215800,15 @@
                               },
                               "required": [
                                 "body"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         }
                       ]
                     }
@@ -213885,7 +215827,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "settings.automation.create",
+        "x-idempotent": true
       }
     },
     "/settings/automations/{ruleId}": {
@@ -214096,7 +216040,8 @@
                       "required": [
                         "field",
                         "op"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "actions": {
@@ -214139,13 +216084,15 @@
                                 "roles",
                                 "title",
                                 "message"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -214172,13 +216119,15 @@
                               "required": [
                                 "title",
                                 "message"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -214208,13 +216157,15 @@
                                 "to",
                                 "subject",
                                 "body"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -214241,13 +216192,15 @@
                               },
                               "required": [
                                 "title"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -214266,13 +216219,15 @@
                               },
                               "required": [
                                 "event"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -214291,13 +216246,15 @@
                               },
                               "required": [
                                 "assigneeId"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -214316,13 +216273,15 @@
                               },
                               "required": [
                                 "priority"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -214342,13 +216301,15 @@
                               },
                               "required": [
                                 "tagId"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         },
                         {
                           "type": "object",
@@ -214367,13 +216328,15 @@
                               },
                               "required": [
                                 "body"
-                              ]
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "type",
                             "config"
-                          ]
+                          ],
+                          "additionalProperties": false
                         }
                       ]
                     }
@@ -214560,10 +216523,34 @@
     },
     "/settings/custom-fields": {
       "get": {
-        "operationId": "SettingsController_listCustomFields",
+        "operationId": "SettingsDeprecatedRoutesController_listCustomFields",
         "parameters": [
           {
             "name": "entityType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "lead",
+                "deal",
+                "contact"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
@@ -214592,15 +216579,22 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:custom-fields:manage",
-        "description": "Exposure: permission — settings:custom-fields:manage"
+        "x-permission": "settings:custom-fields:view",
+        "description": "Exposure: permission — settings:custom-fields:view",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/crm/settings/custom-fields"
       },
       "post": {
-        "operationId": "SettingsController_createCustomField",
-        "parameters": [],
+        "operationId": "SettingsDeprecatedRoutesController_createCustomField",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -214628,11 +216622,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:custom-fields:manage",
         "description": "Exposure: permission — settings:custom-fields:manage",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/crm/settings/custom-fields",
         "requestBody": {
           "required": true,
           "content": {
@@ -214685,7 +216682,8 @@
                       "required": [
                         "value",
                         "label"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "isRequired": {
@@ -214708,12 +216706,14 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "settings.customField.create",
+        "x-idempotent": true
       }
     },
     "/settings/custom-fields/{fieldId}": {
       "patch": {
-        "operationId": "SettingsController_updateCustomField",
+        "operationId": "SettingsDeprecatedRoutesController_updateCustomField",
         "parameters": [
           {
             "name": "fieldId",
@@ -214756,11 +216756,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:custom-fields:manage",
         "description": "Exposure: permission — settings:custom-fields:manage",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/crm/settings/custom-fields/:fieldId",
         "requestBody": {
           "required": true,
           "content": {
@@ -214791,7 +216794,8 @@
                           "required": [
                             "value",
                             "label"
-                          ]
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       {
@@ -214818,7 +216822,7 @@
         }
       },
       "delete": {
-        "operationId": "SettingsController_deleteCustomField",
+        "operationId": "SettingsDeprecatedRoutesController_deleteCustomField",
         "parameters": [
           {
             "name": "fieldId",
@@ -214861,11 +216865,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:custom-fields:manage",
-        "description": "Exposure: permission — settings:custom-fields:manage"
+        "description": "Exposure: permission — settings:custom-fields:manage",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/crm/settings/custom-fields/:fieldId"
       }
     },
     "/settings/email-templates/preview": {
@@ -215071,7 +217078,7 @@
     },
     "/settings/integrations/git": {
       "get": {
-        "operationId": "SettingsController_listGitConnections",
+        "operationId": "SettingsDeprecatedRoutesController_listGitConnections",
         "parameters": [],
         "responses": {
           "200": {
@@ -215094,15 +217101,22 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:manage",
-        "description": "Exposure: permission — settings:manage"
+        "x-permission": "integrations:git:view",
+        "description": "Exposure: permission — integrations:git:view",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/integrations/git/connections"
       },
       "post": {
-        "operationId": "SettingsController_createGitConnection",
-        "parameters": [],
+        "operationId": "SettingsDeprecatedRoutesController_createGitConnection",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -215130,11 +217144,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:manage",
-        "description": "Exposure: permission — settings:manage",
+        "x-permission": "integrations:git:manage",
+        "description": "Exposure: permission — integrations:git:manage",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/integrations/git/connections",
         "requestBody": {
           "required": true,
           "content": {
@@ -215180,12 +217197,14 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "settings.gitConnection.create",
+        "x-idempotent": true
       }
     },
     "/settings/integrations/git/{connectionId}": {
       "patch": {
-        "operationId": "SettingsController_updateGitConnection",
+        "operationId": "SettingsDeprecatedRoutesController_updateGitConnection",
         "parameters": [
           {
             "name": "connectionId",
@@ -215228,11 +217247,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:manage",
-        "description": "Exposure: permission — settings:manage",
+        "x-permission": "integrations:git:manage",
+        "description": "Exposure: permission — integrations:git:manage",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/integrations/git/connections/:connectionId",
         "requestBody": {
           "required": true,
           "content": {
@@ -215279,7 +217301,7 @@
         }
       },
       "delete": {
-        "operationId": "SettingsController_deleteGitConnection",
+        "operationId": "SettingsDeprecatedRoutesController_deleteGitConnection",
         "parameters": [
           {
             "name": "connectionId",
@@ -215322,11 +217344,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:manage",
-        "description": "Exposure: permission — settings:manage"
+        "x-permission": "integrations:git:manage",
+        "description": "Exposure: permission — integrations:git:manage",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/integrations/git/connections/:connectionId"
       }
     },
     "/settings/permissions": {
@@ -215430,7 +217455,7 @@
     },
     "/settings/users/{userId}/role": {
       "post": {
-        "operationId": "SettingsController_updateUserRole",
+        "operationId": "SettingsDeprecatedRoutesController_updateUserRole",
         "parameters": [
           {
             "name": "userId",
@@ -215440,6 +217465,9 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -215472,11 +217500,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "SettingsDeprecatedRoutes"
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:rbac:manage",
         "description": "Exposure: permission — settings:rbac:manage",
+        "deprecated": true,
+        "x-sunset": "2027-03-31",
+        "x-deprecation-link": "/organization/members/:memberId",
         "requestBody": {
           "required": true,
           "content": {
@@ -215496,7 +217527,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "settings.userRole.update",
+        "x-idempotent": true
       }
     },
     "/sign/admin/run-expiration-sweep": {
@@ -219445,8 +221478,8 @@
           "Storage"
         ],
         "x-exposure": "in-service",
-        "x-authorized-in-service": "resolveFileOwner",
-        "description": "Exposure: authorized in service — resolveFileOwner"
+        "x-authorized-in-service": "assertKeyReadable",
+        "description": "Exposure: authorized in service — assertKeyReadable"
       }
     },
     "/storage/image": {
@@ -219485,8 +221518,8 @@
           "Storage"
         ],
         "x-exposure": "in-service",
-        "x-authorized-in-service": "resolveFileOwner",
-        "description": "Exposure: authorized in service — resolveFileOwner"
+        "x-authorized-in-service": "assertKeyReadable",
+        "description": "Exposure: authorized in service — assertKeyReadable"
       }
     },
     "/storage/multipart/abort": {
@@ -219702,6 +221735,11 @@
                     "minLength": 1,
                     "maxLength": 200
                   },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5368709120
+                  },
                   "partCount": {
                     "type": "integer",
                     "minimum": 1,
@@ -219712,6 +221750,7 @@
                   "folder",
                   "fileName",
                   "mimeType",
+                  "sizeBytes",
                   "partCount"
                 ],
                 "additionalProperties": false
@@ -224722,6 +226761,9 @@
                     "additionalProperties": {}
                   },
                   "isActive": {
+                    "type": "boolean"
+                  },
+                  "rotateInboundSecret": {
                     "type": "boolean"
                   }
                 },
@@ -230774,9 +232816,6 @@
                     "type": "integer",
                     "exclusiveMinimum": 0,
                     "maximum": 9007199254740991
-                  },
-                  "accessToken": {
-                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -241898,6 +243937,70 @@
         "x-bodyless": true
       }
     },
+    "/webhooks/calendar/provider": {
+      "post": {
+        "operationId": "CalendarProviderWebhookController_handle",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CalendarProviderWebhook"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "externalEventId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "providerUpdatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  }
+                },
+                "required": [
+                  "connectionId",
+                  "externalEventId",
+                  "providerUpdatedAt"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/webhooks/email/{provider}": {
       "post": {
         "operationId": "EmailWebhookController_handle",
@@ -243991,7 +246094,11 @@
     "/workspace-onboarding/generate": {
       "post": {
         "operationId": "WorkspaceOnboardingController_generateWorkspace",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -244065,7 +246172,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "organization.workspaceOnboarding.generate",
+        "x-idempotent": true
       }
     }
   },
