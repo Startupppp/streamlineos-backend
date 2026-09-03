@@ -116,17 +116,15 @@ describe("WebhooksDispatchService.dispatch — after-commit seam", () => {
     expect(reads.count).toBe(1);
   });
 
-  it("stays synchronous for the caller — the handler is never made to wait on delivery", () => {
+  it("stays synchronous for the caller — the handler is never made to wait on delivery", async () => {
     const reads = { count: 0 };
     const service = new WebhooksDispatchService(countingDb(reads));
     const afterCommit: NonNullable<TenantContext["afterCommit"]> = [];
 
-    const returned: unknown = runWithTenantContext(contextWithHooks(afterCommit), () => {
+    await runWithTenantContext(contextWithHooks(afterCommit), () => {
       const value: unknown = service.dispatch("org-after-commit", "lead.created", { id: 1 });
       expect(value).toBeUndefined();
       return Promise.resolve();
     });
-
-    return returned;
   });
 });

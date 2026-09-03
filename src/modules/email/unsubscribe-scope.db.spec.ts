@@ -64,6 +64,7 @@ import {
   organizations,
 } from "../../db/schema";
 import type { TenantTx } from "../../db/drizzle.types";
+import type { NotificationEventKey } from "../notifications/notification-events.catalog";
 import { computeRouting } from "../notifications/notification-routing-computation";
 import type {
   NotificationChannel,
@@ -80,6 +81,18 @@ const ENABLED = process.env.EMAIL_DB_TESTS === "1";
 const DB_URL = process.env.EMAIL_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
 const describeDb = ENABLED && DB_URL ? describe : describe.skip;
 
+/**
+ * The catalog key for a chat mention is `chat.message.mention`; this spec used to say
+ * `chat.mention`, which has never existed in `NOTIFICATION_EVENT_CATALOG`. A TYPE
+ * unsubscribe writes the token's `scopeKey` verbatim, so the round-trip below was
+ * pinning a rule against an event no send could ever match. Annotated with
+ * `NotificationEventKey` rather than left to widen to `string` — `eventKey` on
+ * `NotificationEventDefinition` is deliberately widened to break a circular import, so
+ * nothing else here would catch a rename — which makes a catalog rename fail the
+ * typecheck instead of quietly resurrecting a ghost event.
+ */
+const EVENT_KEY: NotificationEventKey = "chat.message.mention";
+
 class Rollback extends Error {}
 
 function sqlstateOf(error: unknown): string | undefined {
@@ -94,7 +107,7 @@ function sqlstateOf(error: unknown): string | undefined {
 
 function definition(overrides: Partial<NotificationEventDefinition>): NotificationEventDefinition {
   return {
-    eventKey: "chat.mention",
+    eventKey: EVENT_KEY,
     displayName: "You were mentioned",
     category: "CHAT",
     sourceModule: "chat",
@@ -115,7 +128,10 @@ function routeWithEmailRule(mandatory: boolean) {
     now: new Date("2026-01-05T12:00:00Z"),
     prefs: {
       channelEnabled: { IN_APP: true, EMAIL: true, PUSH: true, SMS: true, WHATSAPP: true, WEBHOOK: true },
-      quietHours: { enabled: false, start: null, end: null, weekends: false, timezone: "UTC" },
+      // `QuietHoursConfig` has no `enabled` flag: a null start/end IS the off state
+      // (`isWithinQuietHours` returns false the moment either fails to parse), which is
+      // what this fixture wants — quiet hours must not be what stops the send.
+      quietHours: { start: null, end: null, timezone: "UTC", includeWeekends: false },
       categories: {},
       modulePreferences: {},
       eventPreferences: {},
@@ -265,7 +281,7 @@ describeDb("one-click unsubscribe — real catalog and RLS", () => {
 
   it("a TYPE unsubscribe honours the token's scopeKey instead of silencing everything", async () => {
     const observed = await inTenant(async (tx) => {
-      await writeUnsubscribeRule(tx, payload({ scope: "TYPE", scopeKey: "chat.mention" }));
+      await writeUnsubscribeRule(tx, payload({ scope: "TYPE", scopeKey: EVENT_KEY }));
       return tx
         .select({
           scopeType: notificationSuppressionRules.scopeType,
@@ -275,7 +291,7 @@ describeDb("one-click unsubscribe — real catalog and RLS", () => {
         .where(eq(notificationSuppressionRules.userId, "probe-unsub-user"));
     });
 
-    expect(observed).toEqual([{ scopeType: "event", scopeKey: "chat.mention" }]);
+    expect(observed).toEqual([{ scopeType: "event", scopeKey: EVENT_KEY }]);
   });
 
   it("clicking twice is idempotent — a link scanner and a human do not stack rules", async () => {

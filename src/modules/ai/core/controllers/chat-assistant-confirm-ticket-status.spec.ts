@@ -48,7 +48,6 @@ const ACTOR: CurrentUserContext = {
   userId: "user_confirm",
   orgId: "org_confirm",
   role: "ADMIN",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "sess_confirm",
   tokenScopes: null,

@@ -91,7 +91,11 @@ describe("ai@7 resolves finishReason on an abort once a step has been recorded",
                   toolName: "probe",
                   input: "{}",
                 });
-                controller.enqueue({ type: "finish", finishReason: "tool-calls", usage });
+                controller.enqueue({
+                  type: "finish",
+                  finishReason: { unified: "tool-calls", raw: "tool-calls" },
+                  usage,
+                });
                 controller.close();
                 return;
               }
@@ -105,7 +109,11 @@ describe("ai@7 resolves finishReason on an abort once a step has been recorded",
                 controller.enqueue({ type: "text-delta", id: "t", delta: `tok${i} ` });
               }
               controller.enqueue({ type: "text-end", id: "t" });
-              controller.enqueue({ type: "finish", finishReason: "stop", usage });
+              controller.enqueue({
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage,
+              });
               controller.close();
             },
           }),
@@ -130,7 +138,11 @@ describe("ai@7 resolves finishReason on an abort once a step has been recorded",
               controller.enqueue({ type: "text-delta", id: "t", delta: `tok${i} ` });
             }
             controller.enqueue({ type: "text-end", id: "t" });
-            controller.enqueue({ type: "finish", finishReason: "stop", usage });
+            controller.enqueue({
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage,
+            });
             controller.close();
           },
         }),
@@ -225,12 +237,16 @@ import { ChatAssistantService } from "./chat-assistant.service";
 import type { AiCreditLedger } from "../gateway/credit-ledger.interface";
 import type { AiUsageService } from "./ai-usage.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
-const ACTOR = {
+// Annotated, deliberately. Without the annotation tsc never excess-property-checks
+// this literal, which is how `permissions: []` -- a shape §5 bans and
+// CurrentUserContext does not have -- survived here while the identical key was
+// caught in two sibling specs. The annotation is what keeps it caught.
+const ACTOR: CurrentUserContext = {
   userId: "user_1",
   orgId: "org_1",
   role: "ADMIN",
-  permissions: [],
   isOrgOwner: false,
   sessionId: "sess_1",
   tokenScopes: null,

@@ -53,6 +53,27 @@ function querySchemaOf(handler: unknown): z.ZodType {
   return query;
 }
 
+/**
+ * `ValidationSchemas.query` is a bare `ZodType`, whose output type parameter
+ * defaults to `unknown` — so `schema.parse(...)` is typed `unknown` and reading a
+ * field off it is not type-safe, however obvious the shape is at runtime. A route
+ * query schema always parses to an object, so narrow it with a real guard: if one
+ * ever parses to something else the test says so instead of silently indexing a
+ * primitive.
+ */
+function isQueryObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** `schema.parse(input)`, narrowed to the object every query schema returns. */
+function parseQuery(schema: z.ZodType, input: Record<string, unknown>): Record<string, unknown> {
+  const parsed = schema.parse(input);
+  if (!isQueryObject(parsed)) {
+    throw new Error(`query schema parsed to ${typeof parsed}, not an object`);
+  }
+  return parsed;
+}
+
 /** Every shape that reached Postgres and produced a 500 rather than a 400. */
 const HOSTILE_LIMITS = ["abc", "-5", "0", "NaN", "1e400", ""] as const;
 
@@ -86,7 +107,7 @@ describe("list routes that used to hand-coerce page/limit", () => {
     it("still accepts the success filter the route has always taken", () => {
       expect(schema().parse({ success: "true" })).toMatchObject({ success: true });
       expect(schema().parse({ success: "false" })).toMatchObject({ success: false });
-      expect(schema().parse({}).success).toBeUndefined();
+      expect(parseQuery(schema(), {}).success).toBeUndefined();
     });
   });
 
@@ -126,7 +147,7 @@ describe("list routes that used to hand-coerce page/limit", () => {
     });
 
     it("leaves limit absent when the caller omits it, so the service default still applies", () => {
-      expect(schema().parse({}).limit).toBeUndefined();
+      expect(parseQuery(schema(), {}).limit).toBeUndefined();
     });
 
     it("clamps an over-large limit to the platform cap", () => {

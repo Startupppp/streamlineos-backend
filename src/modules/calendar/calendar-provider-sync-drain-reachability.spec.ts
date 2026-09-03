@@ -33,11 +33,13 @@
  */
 import { METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
 import { RequestMethod } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import { CalendarModule } from "./calendar.module";
 import { CalendarProviderSyncSweepService } from "./calendar-provider-sync-sweep.service";
 import { CalendarReminderSweepService } from "./calendar-reminder-sweep.service";
 import { CronModule } from "../cron/cron.module";
 import { CronCalendarController } from "../cron/cron-calendar.controller";
+import { CronLeaseService } from "../cron/cron-lease.service";
 import { calendarProviderSyncSweepResponseSchema } from "./dto/provider-sync.schemas";
 
 type Ctor = abstract new (...args: never[]) => unknown;
@@ -79,15 +81,55 @@ function methodsFor(path: string): RequestMethod[] {
     .sort((a, b) => a - b);
 }
 
+/** The two sweep injection tokens a cron calendar handler can legitimately own. */
+type SweepToken = typeof CalendarReminderSweepService | typeof CalendarProviderSyncSweepService;
+
+/**
+ * Builds the real controller through Nest's own container with the collaborators replaced by
+ * stubs, so the doubles arrive the way the framework injects them rather than by being written
+ * over `private readonly` fields from outside the class.
+ *
+ * `liveSweep` names the token whose stub is allowed to answer; the OTHER sweep is provided as a
+ * stub that throws, so a handler reaching for the wrong collaborator fails loudly instead of
+ * quietly satisfying the assertion — the same protection the previous shape got from leaving
+ * the other dependency undefined.
+ */
+async function buildController(
+  liveSweep: SweepToken,
+  sweep: { run: () => Promise<unknown> },
+  cronLease: { withLease: (key: string, seconds: number, fn: () => Promise<unknown>) => Promise<unknown> },
+): Promise<CronCalendarController> {
+  const wrongSweep = {
+    run: async () => {
+      throw new Error("the handler drove the wrong calendar sweep");
+    },
+  };
+  const moduleRef = await Test.createTestingModule({
+    controllers: [CronCalendarController],
+    providers: [
+      {
+        provide: CalendarReminderSweepService,
+        useValue: liveSweep === CalendarReminderSweepService ? sweep : wrongSweep,
+      },
+      {
+        provide: CalendarProviderSyncSweepService,
+        useValue: liveSweep === CalendarProviderSyncSweepService ? sweep : wrongSweep,
+      },
+      { provide: CronLeaseService, useValue: cronLease },
+    ],
+  }).compile();
+  return moduleRef.get(CronCalendarController);
+}
+
 /**
  * Drives one cron handler with stub collaborators and reports the lease key it took and
- * whether the sweep it is supposed to own actually ran. `sweepKey` names the constructor
- * parameter position by property name, so the stub lands on the right dependency without
- * this spec having to know the full 15-argument constructor.
+ * whether the sweep it is supposed to own actually ran. `liveSweep` names the injection token
+ * the working stub replaces, and `call` names the routed handler as a real method reference,
+ * so a rename cannot leave this spec silently probing a handler that no longer exists.
  */
 async function invokeCronHandler(
-  handlerName: string,
-  sweepProperty: string,
+  liveSweep: SweepToken,
+  call: (controller: CronCalendarController) => Promise<unknown>,
 ): Promise<{ leaseKey: string | null; leaseSeconds: number | null; sweepRan: boolean }> {
   let leaseKey: string | null = null;
   let leaseSeconds: number | null = null;
@@ -107,17 +149,7 @@ async function invokeCronHandler(
     },
   };
 
-  // Nest injects by constructor position; this spec only needs two of the collaborators to be
-  // real stubs, so the controller is built empty and the two are assigned onto the instance.
-  const controller = Object.create(CronCalendarController.prototype) as CronCalendarController &
-    Record<string, unknown>;
-  controller.cronLease = cronLease;
-  controller[sweepProperty] = sweep;
-
-  const handler = (CronCalendarController.prototype as unknown as Record<string, unknown>)[
-    handlerName
-  ] as (this: unknown, authorization?: string) => Promise<unknown>;
-  await handler.call(controller, "Bearer test-cron-secret");
+  await call(await buildController(liveSweep, sweep, cronLease));
 
   return { leaseKey, leaseSeconds, sweepRan };
 }
@@ -155,9 +187,8 @@ describe("calendar provider-sync queue — the drain is reachable from a booted 
   });
 
   it("the handler runs the sweep under its own 120s lease, not the reminder sweep's", async () => {
-    const reminder = await invokeCronHandler(
-      "postCalendarReminderSweep",
-      "calendarReminderSweep",
+    const reminder = await invokeCronHandler(CalendarReminderSweepService, (controller) =>
+      controller.postCalendarReminderSweep("Bearer test-cron-secret"),
     );
     expect(reminder).toEqual({
       leaseKey: "calendar-reminder-sweep",
@@ -165,9 +196,8 @@ describe("calendar provider-sync queue — the drain is reachable from a booted 
       sweepRan: true,
     });
 
-    const providerSync = await invokeCronHandler(
-      "postCalendarProviderSyncSweep",
-      "calendarProviderSyncSweep",
+    const providerSync = await invokeCronHandler(CalendarProviderSyncSweepService, (controller) =>
+      controller.postCalendarProviderSyncSweep("Bearer test-cron-secret"),
     );
     expect(providerSync).toEqual({
       leaseKey: "calendar-provider-sync-sweep",
@@ -177,9 +207,8 @@ describe("calendar provider-sync queue — the drain is reachable from a booted 
   });
 
   it("the GET twin runs the same sweep, so a scheduler that only issues GET still drains", async () => {
-    const viaGet = await invokeCronHandler(
-      "getCalendarProviderSyncSweep",
-      "calendarProviderSyncSweep",
+    const viaGet = await invokeCronHandler(CalendarProviderSyncSweepService, (controller) =>
+      controller.getCalendarProviderSyncSweep("Bearer test-cron-secret"),
     );
     expect(viaGet.sweepRan).toBe(true);
     expect(viaGet.leaseKey).toBe("calendar-provider-sync-sweep");
@@ -216,13 +245,14 @@ describe("the route's declared response contract matches what the handler return
    * union are driven against the real handler rather than read.
    */
   async function runHandler(outcome: { ran: boolean; result?: unknown }) {
-    const controller = Object.create(CronCalendarController.prototype) as CronCalendarController &
-      Record<string, unknown>;
-    controller.cronLease = { withLease: async () => outcome };
-    controller.calendarProviderSyncSweep = { run: async () => outcome.result };
-    const handler = (CronCalendarController.prototype as unknown as Record<string, unknown>)
-      .postCalendarProviderSyncSweep as (this: unknown, authorization?: string) => Promise<unknown>;
-    return handler.call(controller, "Bearer test-cron-secret");
+    // The lease stub answers without running `fn`, so this drives the two return arms
+    // directly; the sweep stub is still injected so the handler resolves at all.
+    const controller = await buildController(
+      CalendarProviderSyncSweepService,
+      { run: async () => outcome.result },
+      { withLease: async () => outcome },
+    );
+    return controller.postCalendarProviderSyncSweep("Bearer test-cron-secret");
   }
 
   it("accepts the counters arm the sweep really returns", async () => {

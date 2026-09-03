@@ -20,6 +20,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import * as schema from "../../../../db/schema";
+import type { Db } from "../../../../db/drizzle.types";
 import { fetchLeaveTrends, fetchComplianceGaps } from "../hr-analytics-plus-trends";
 import { fetchDrilldownPage } from "../hr-analytics-plus-drilldown";
 import { departmentMemberFilter } from "../hr-analytics-plus-department-filter";
@@ -44,7 +45,7 @@ function connect() {
 
 describeDb("hr analytics-plus department filter — real database", () => {
   let sql_: ReturnType<typeof connect>;
-  let db: ReturnType<typeof drizzle>;
+  let db: Db;
 
   beforeAll(() => {
     sql_ = connect();

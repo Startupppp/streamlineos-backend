@@ -21,6 +21,7 @@ import dotenv from "dotenv";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "../../../../db/schema";
+import type { Db } from "../../../../db/drizzle.types";
 import { buildAttendanceAnalytics } from "../hr-dashboard-attendance";
 
 const ENABLED = process.env.HR_DB_TESTS === "1";
@@ -58,7 +59,7 @@ function elapsedWeekdaysThisMonth(count: number): string[] {
 
 describeDb("HR dashboard attendance analytics — session grain", () => {
   let sql: ReturnType<typeof connect>;
-  let db: ReturnType<typeof drizzle>;
+  let db: Db;
   let days: string[];
   let userId: string;
 

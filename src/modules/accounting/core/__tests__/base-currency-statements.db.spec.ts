@@ -102,7 +102,7 @@ describeDb("base-currency statements — real database", () => {
 
   beforeAll(async () => {
     sql = connect();
-    db = drizzle(sql, { schema }) as unknown as Db;
+    db = drizzle(sql, { schema });
     entryDate = new Date().toISOString().slice(0, 10);
 
     // organizations.owner_membership_id -> organization_members(org_id, id) is

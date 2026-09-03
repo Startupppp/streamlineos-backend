@@ -30,6 +30,12 @@ import dotenv from "dotenv";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
+// The namespace is what `drizzle(client, { schema })` needs to produce a value of type
+// `Db` — `PostgresJsDatabase<typeof schema>`, the house `.db.spec.ts` shape. Without it
+// the schema generic lands as `Record<string, unknown>`, and the `tx` the transaction
+// yields is then not the `TenantTx` `sweepOrgOutboxRetention` takes.
+import * as schema from "../../../db/schema";
+import type { Db } from "../../../db/drizzle.types";
 import {
   OUTBOX_RETENTION_DAYS,
   sweepOrgOutboxRetention,
@@ -81,7 +87,7 @@ describeDb("outbox retention sweep — real database", () => {
   });
 
   it("prunes eligible outbox_events and inbox_records for the tenant", async () => {
-    const db = drizzle(client);
+    const db: Db = drizzle(client, { schema });
     const orgId = `outbox-ret-${randomUUID().slice(0, 12)}`;
     const cutoff = new Date(Date.now() - OUTBOX_RETENTION_DAYS * 86_400_000);
     // ISO strings with an explicit cast: postgres.js infers the parameter type

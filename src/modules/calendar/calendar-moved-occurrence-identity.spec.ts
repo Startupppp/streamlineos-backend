@@ -32,6 +32,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarNativeEventSource } from "./calendar-native-event-source";
 import { CalendarEventSourceLoader } from "./calendar-event-source.loader";
+import type { CalendarSourceContext } from "./calendar-event-source";
 import {
   expandToOccurrences,
   type CalendarEventException,
@@ -262,7 +263,16 @@ function projectionsFor(window: { start: Date; end: Date }, exceptions: Calendar
 
   const source = new CalendarNativeEventSource({} as Db, { register: jest.fn() } as never);
   Object.assign(source, { loader });
-  return source.load({ orgId: ORG, userId: USER, start: window.start, end: window.end });
+  // `scope: "all"` is what both production callers pass — `calendar.controller.ts`'s
+  // `getSources` and `CalendarEventsAggregateService.getEvents`.
+  const ctx: CalendarSourceContext = {
+    orgId: ORG,
+    userId: USER,
+    start: window.start,
+    end: window.end,
+    scope: "all",
+  };
+  return source.load(ctx);
 }
 
 describe("a recurring occurrence keeps one id, whatever window asks for it and wherever it moved", () => {

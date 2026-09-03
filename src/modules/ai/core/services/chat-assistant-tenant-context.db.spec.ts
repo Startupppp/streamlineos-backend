@@ -135,7 +135,6 @@ function actorFor(orgId: string, userId: string, membershipId: number): CurrentU
     userId,
     orgId,
     role: "ADMIN",
-    permissions: [],
     isOrgOwner: false,
     sessionId: "sess_chat_guc",
     tokenScopes: null,

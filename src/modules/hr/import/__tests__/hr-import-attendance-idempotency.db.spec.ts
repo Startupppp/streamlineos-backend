@@ -22,6 +22,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import * as schema from "../../../../db/schema";
+import type { Db } from "../../../../db/drizzle.types";
 import { HrImportCommitService } from "../hr-import-commit.service";
 
 const ENABLED = process.env.HR_DB_TESTS === "1";
@@ -46,7 +47,7 @@ function connect() {
 
 describeDb("attendance import idempotency — real database", () => {
   let client: ReturnType<typeof connect>;
-  let db: ReturnType<typeof drizzle>;
+  let db: Db;
   let service: HrImportCommitService;
   let userId: string;
 

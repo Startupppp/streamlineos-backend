@@ -20,6 +20,7 @@ import { NotificationsService } from "./notifications.service";
 import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import { NotificationTemplateRenderer } from "./notification-template-renderer.service";
 import { NotificationDigestService } from "./notification-digest.service";
+import type { NotificationEventKey } from "./notification-events.catalog";
 
 jest.mock("../../common/tenant/org-membership", () => ({
   // Returns the ids that are ACTIVE members — every target here is.
@@ -36,8 +37,16 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
 const TARGETS = ["user-1", "user-2", "user-3", "user-4", "user-5"];
 const POISON = "user-3";
 
+/**
+ * The catalog key for a chat mention is `chat.message.mention`; this spec used to say
+ * `chat.mention`, which has never existed in `NOTIFICATION_EVENT_CATALOG`. Annotated
+ * with `NotificationEventKey` rather than left to widen to `string`, so a catalog
+ * rename fails the typecheck here instead of leaving the spec exercising a ghost event.
+ */
+const EVENT_KEY: NotificationEventKey = "chat.message.mention";
+
 const DEFINITION = {
-  eventKey: "chat.mention",
+  eventKey: EVENT_KEY,
   displayName: "You were mentioned",
   description: "A mention",
   category: "CHAT",
@@ -114,7 +123,7 @@ describe("notification fanout — one recipient cannot take the chunk down", () 
 
   it("materialises every healthy recipient and counts the failure instead of throwing", async () => {
     const result = await dispatch.emitNow({
-      eventKey: "chat.mention",
+      eventKey: EVENT_KEY,
       orgId: "org-1",
       targetUserIds: TARGETS,
       notifySelf: true,
@@ -128,7 +137,7 @@ describe("notification fanout — one recipient cannot take the chunk down", () 
 
   it("never swallows it — a deferred failure that logs nothing is an invisible outage", async () => {
     await dispatch.emitNow({
-      eventKey: "chat.mention",
+      eventKey: EVENT_KEY,
       orgId: "org-1",
       targetUserIds: TARGETS,
       notifySelf: true,
@@ -143,7 +152,7 @@ describe("notification fanout — one recipient cannot take the chunk down", () 
     persistForUser.mockResolvedValue({ createdInApp: true, queued: 1, suppressed: 0, deduped: false, announce: null, pushHandledByEngine: false });
 
     const result = await dispatch.emitNow({
-      eventKey: "chat.mention",
+      eventKey: EVENT_KEY,
       orgId: "org-1",
       targetUserIds: TARGETS,
       notifySelf: true,

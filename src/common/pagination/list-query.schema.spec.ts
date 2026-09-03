@@ -216,7 +216,16 @@ describe("withSortField", () => {
 });
 
 type SizeKey = "limit" | "pageSize";
-type ParseableSchema = { parse: (v: unknown) => Record<string, unknown> };
+/**
+ * The structural surface these cases exercise. `safeParse` carries Zod's own
+ * discriminated result type (`{ success: true; data } | { success: false; error }`),
+ * so a probe below narrows through `parsed.success` the way Zod intends rather
+ * than reaching into an untyped result.
+ */
+type ParseableSchema = {
+  parse: (v: unknown) => Record<string, unknown>;
+  safeParse: (v: unknown) => z.ZodSafeParseResult<Record<string, unknown>>;
+};
 
 interface SchemaCaseConfig {
   name: string;
@@ -291,7 +300,7 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
         // exposing none of the three styles fails.
         const exposes = (probe: Record<string, unknown>, key: string): boolean => {
           const parsed = schema.safeParse(probe);
-          return parsed.success && key in (parsed.data as object);
+          return parsed.success && key in parsed.data;
         };
         const exposesCursor = exposes({ cursor: "1" }, "cursor");
         const exposesIdCursor = exposes({ afterId: 1 }, "afterId");

@@ -128,7 +128,6 @@ function makeTx(store: Store) {
       innerJoin: () => chain,
       where: () => chain,
       orderBy: () => chain,
-      innerJoin: () => chain,
       limit: () => Promise.resolve(resolve()),
       then: (onOk: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>
         Promise.resolve(resolve()).then(onOk, onErr),
