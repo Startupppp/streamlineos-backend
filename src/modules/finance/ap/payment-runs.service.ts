@@ -21,6 +21,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBefore } from "../../../common/pagination/keyset";
 import { checkApprovalPolicy } from "./ap-approval.helper";
+import { toDecimal } from "../../accounting/core/money.util";
 import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
@@ -210,7 +211,7 @@ export class PaymentRunsService {
         `Payment run is in status ${run.status}; only DRAFT runs can be approved`,
       );
 
-    const total = Number(run.totalAmount ?? 0);
+    const total = toDecimal(run.totalAmount);
     const check = await checkApprovalPolicy(this.db, orgId, "VENDOR_PAYMENT", total);
 
     if (check.needsApproval && check.approverUserId && check.approverUserId !== userId) {

@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { invoices, payments } from "../../db/schema";
+import { invoiceItems, invoices, payments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -73,8 +73,14 @@ export class InvoicesService {
     );
   }
 
-  getInvoice(orgId: string, invoiceId: number) {
-    return this.db.query.invoices.findFirst({
+  /**
+   * `lineItems` carries the persisted `invoice_items` rows. It used to be absent, so the detail
+   * screen, the downloadable PDF and the edit dialog all read an empty array — the PDF shipped a
+   * total with no itemisation, and saving an edit replaced the real rows with whatever the empty
+   * dialog was given. Amounts stay decimal strings, like every other money field on this record.
+   */
+  async getInvoice(orgId: string, invoiceId: number) {
+    const invoice = await this.db.query.invoices.findFirst({
       where: and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)),
       with: {
         client: true,
@@ -84,8 +90,25 @@ export class InvoicesService {
           orderBy: [desc(payments.paymentDate)],
           with: { creator: { columns: { id: true, name: true } } },
         },
+        items: {
+          columns: {
+            id: true,
+            description: true,
+            hsnSacCode: true,
+            quantity: true,
+            rate: true,
+            gstRate: true,
+            amount: true,
+            lineOrder: true,
+          },
+          orderBy: [asc(invoiceItems.lineOrder), asc(invoiceItems.id)],
+        },
       },
     });
+    if (!invoice) return undefined;
+
+    const { items, ...rest } = invoice;
+    return { ...rest, lineItems: items };
   }
 
   async getInvoicePayments(orgId: string, invoiceId: number) {

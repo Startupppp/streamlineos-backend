@@ -2,6 +2,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { finApprovalPolicies, finApprovalRequests } from "../../../db/schema";
 import { and, eq } from "drizzle-orm";
 import type { finApprovalRecordTypeEnum } from "../../../db/schema";
+import { compareDecimals, toDecimal } from "../../accounting/core/money.util";
 
 type RecordType = (typeof finApprovalRecordTypeEnum.enumValues)[number];
 
@@ -11,11 +12,15 @@ export interface ApprovalCheckResult {
   approverUserId: string | null;
 }
 
+/**
+ * `total` is a decimal amount string, not a number: this is the separation-of-duties threshold,
+ * so the comparison against the policy minimum must be exact rather than IEEE-754.
+ */
 export async function checkApprovalPolicy(
   db: Db,
   orgId: string,
   recordType: RecordType,
-  total: number,
+  total: string,
 ): Promise<ApprovalCheckResult> {
   const policies = await db
     .select({
@@ -32,9 +37,10 @@ export async function checkApprovalPolicy(
       ),
     );
 
+  const totalDecimal = toDecimal(total);
   const applicable = policies.find((p) => {
     if (p.minAmount === null) return true;
-    return total >= Number(p.minAmount);
+    return compareDecimals(totalDecimal, toDecimal(p.minAmount)) >= 0;
   });
 
   if (!applicable) {

@@ -20,6 +20,7 @@ import {
   type RevenueEventInput,
 } from "./revenue-events";
 import { summariseMovements, type RevenueMovement } from "./revenue-metrics";
+import { deterministicEventId } from "./deterministic-event-id";
 
 const CONSUMER_NAME = "billing:revenue-event";
 
@@ -38,9 +39,14 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
     this.registry.register(this);
   }
 
-  // Each event is its own aggregate, so the inbox version fence never suppresses a sibling.
+  // Each event is its own aggregate, so the inbox version fence never suppresses a sibling. A
+  // caller carrying a dedupeKey gets a stable id instead, so re-running one movement conflicts
+  // on uniq_outbox_events_event_id rather than committing a second revenue row.
   async emit(tx: DbOrTx, input: RevenueEventInput): Promise<void> {
-    const eventId = randomUUID();
+    const eventId =
+      input.dedupeKey === undefined
+        ? randomUUID()
+        : deterministicEventId(REVENUE_EVENT_TYPE, input.orgId, input.type, input.dedupeKey);
     await OutboxWriter.emit(tx, {
       eventId,
       organizationId: input.orgId,

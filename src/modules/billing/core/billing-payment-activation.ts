@@ -170,6 +170,7 @@ export class BillingPaymentActivation {
             mrr: revenue.mrr,
             amount: revenue.mrr,
             metadata: { paymentId: input.paymentId, source: "verify-and-activate" },
+            dedupeKey: `verify-and-activate:${input.paymentId}`,
           });
         }
       });

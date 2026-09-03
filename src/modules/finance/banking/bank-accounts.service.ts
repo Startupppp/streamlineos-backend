@@ -19,6 +19,7 @@ import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterValue, keysetBeforeValue } from "../../../common/pagination/keyset";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
+import { addDecimals, isZero, toDecimal } from "../../accounting/core/money.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   CreateBankAccountInput,
@@ -128,8 +129,7 @@ export class BankAccountsService {
         .returning();
       if (!account) throw new Error("Failed to create bank account");
 
-      const openingAmount = parseFloat(input.openingBalance);
-      if (openingAmount !== 0) {
+      if (!isZero(toDecimal(input.openingBalance))) {
         const entryDate = input.openingBalanceDate ?? new Date().toISOString().slice(0, 10);
         await this.posting.postJournal(u, {
           entryDate,
@@ -266,7 +266,8 @@ export class BankAccountsService {
       );
 
     const movementSum = agg?.total ?? "0";
-    const balance = (parseFloat(account.openingBalance) + parseFloat(movementSum)).toFixed(4);
+    // The stored balance authorizes transfers, so it is exact decimal addition, never IEEE-754.
+    const balance = addDecimals(toDecimal(account.openingBalance), toDecimal(movementSum));
 
     await this.db
       .update(finBankAccounts)

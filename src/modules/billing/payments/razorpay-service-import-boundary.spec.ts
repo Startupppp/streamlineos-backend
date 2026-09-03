@@ -1,54 +1,64 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const SRC_ROOT = join(__dirname, "../../../../");
+const REPO_ROOT = join(__dirname, "../../../../");
+const SRC_ROOT = join(REPO_ROOT, "src");
 const ADAPTERS_DIR = join(__dirname, "adapters");
-const RAZORPAY_SERVICE_DEF = join(__dirname, "../core/razorpay.service.ts");
 const BILLING_SERVICE = join(__dirname, "../core/billing.service.ts");
 
+/**
+ * The composition root is allowed to name the adapter — that is where a provider
+ * implementation is bound to the provider-neutral token. Nothing else may.
+ */
+const COMPOSITION_ROOT = "src/modules/billing/payments/payments.module.ts";
+
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "coverage", ".next"]);
+
 function walkTs(dir: string): string[] {
-  const entries = readdirSync(dir);
   const files: string[] = [];
-  for (const entry of entries) {
+  for (const entry of readdirSync(dir)) {
+    if (SKIP_DIRS.has(entry)) continue;
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      files.push(...walkTs(full));
-    } else if (entry.endsWith(".ts")) {
-      files.push(full);
-    }
+    if (statSync(full).isDirectory()) files.push(...walkTs(full));
+    else if (entry.endsWith(".ts")) files.push(full);
   }
   return files;
 }
 
-function importsRazorpayService(filePath: string): boolean {
-  const content = readFileSync(filePath, "utf8");
-  return /from\s+['"][^'"]*razorpay\.service['"]/.test(content);
+function importsRazorpayAdapter(filePath: string): boolean {
+  return /from\s+['"][^'"]*razorpay\.adapter['"]/.test(readFileSync(filePath, "utf8"));
 }
 
 function isInsideAdaptersDir(filePath: string): boolean {
   return filePath.startsWith(ADAPTERS_DIR);
 }
 
-function isDefinitionFile(filePath: string): boolean {
-  return filePath === RAZORPAY_SERVICE_DEF;
-}
-
-describe("RazorpayService import boundary", () => {
+describe("Razorpay adapter import boundary", () => {
   const allFiles = walkTs(SRC_ROOT);
-  const violators = allFiles
-    .filter(importsRazorpayService)
-    .filter((f) => !isDefinitionFile(f))
-    .filter((f) => !isInsideAdaptersDir(f));
+  const importers = allFiles
+    .filter(importsRazorpayAdapter)
+    .filter((f) => !isInsideAdaptersDir(f))
+    .map((f) => relative(REPO_ROOT, f).replace(/\\/g, "/"));
 
-  const relativeViolators = violators.map((f) => relative(SRC_ROOT, f).replace(/\\/g, "/"));
-
-  it("billing.service.ts does not import RazorpayService", () => {
-    expect(relativeViolators).not.toContain("src/modules/billing/core/billing.service.ts");
+  it("scans a real population, so an empty violator list means something", () => {
+    expect(allFiles.length).toBeGreaterThan(2_000);
+    expect(allFiles).toContain(BILLING_SERVICE);
   });
 
-  it("no production file outside billing/payments/adapters/ imports RazorpayService (test files excepted)", () => {
-    const productionViolators = relativeViolators.filter((f) => !f.endsWith(".spec.ts") && !f.endsWith("-spec.ts"));
-    expect(productionViolators).toEqual([]);
+  it("names a provider adapter that exists, so the boundary has a subject", () => {
+    expect(allFiles).toContain(join(ADAPTERS_DIR, "razorpay.adapter.ts"));
+  });
+
+  it("billing.service.ts does not reach the Razorpay adapter", () => {
+    expect(importers).not.toContain("src/modules/billing/core/billing.service.ts");
+  });
+
+  it("no production file outside the adapters directory imports it, bar the composition root", () => {
+    const productionImporters = importers.filter(
+      (f) => !f.endsWith(".spec.ts") && !f.endsWith("-spec.ts"),
+    );
+
+    expect(productionImporters).toEqual([COMPOSITION_ROOT]);
   });
 
   it("keeps provider credential fields out of BillingService", () => {
@@ -58,6 +68,6 @@ describe("RazorpayService import boundary", () => {
   });
 
   it("documents every current importer so regressions are visible", () => {
-    expect(relativeViolators.sort()).toMatchSnapshot();
+    expect(importers.sort()).toMatchSnapshot();
   });
 });

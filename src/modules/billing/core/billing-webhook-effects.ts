@@ -74,6 +74,7 @@ export class BillingWebhookEffects {
           mrr: 0,
           amount: payment.amount,
           metadata: { paymentId: payment.id, packId, source: "provider-webhook" },
+          dedupeKey: `${providerKey}:${payment.id}`,
         });
       } catch (err: unknown) {
         if (err instanceof ExternalEffectLeaseBusyError)
@@ -113,6 +114,7 @@ export class BillingWebhookEffects {
         mrr: 0,
         amount: payment.amount,
         metadata: { paymentId: payment.id, source: "provider-webhook" },
+        dedupeKey: `${providerKey}:${payment.id}`,
       });
     }
 

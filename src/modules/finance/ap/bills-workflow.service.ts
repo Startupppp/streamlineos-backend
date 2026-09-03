@@ -25,6 +25,7 @@ import {
   checkApprovalPolicy,
   getApprovalRequest,
 } from "./ap-approval.helper";
+import { toDecimal } from "../../accounting/core/money.util";
 import type { BillApprovalNote, BillCancel } from "./dto/finance-ap.schemas";
 
 @Injectable()
@@ -53,7 +54,7 @@ export class BillsWorkflowService {
       throw new ConflictException(`Bill is in status ${bill.status}; only DRAFT bills can be submitted`);
     }
 
-    const total = Number(bill.total ?? 0);
+    const total = toDecimal(bill.total);
     const check = await checkApprovalPolicy(this.db, orgId, "PURCHASE_BILL", total);
 
     if (!check.needsApproval) {

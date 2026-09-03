@@ -18,6 +18,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
+import { compareDecimals, toDecimal } from "../../accounting/core/money.util";
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import { createHash } from "crypto";
@@ -100,9 +101,9 @@ export class TransfersService {
       throw new BadRequestException("Destination bank account has no linked ledger account");
     }
 
-    const currentBalance = parseFloat(fromAccount.currentBalance);
-    const transferAmount = parseFloat(input.amount);
-    if (currentBalance < transferAmount) {
+    // An authorization decision on money: exact comparison, so a representation error can
+    // neither let an overdraft through nor refuse a transfer the balance covers.
+    if (compareDecimals(toDecimal(fromAccount.currentBalance), toDecimal(input.amount)) < 0) {
       throw new BadRequestException(`Insufficient balance. Available: ${fromAccount.currentBalance}`);
     }
 

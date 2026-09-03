@@ -25,6 +25,12 @@ export interface RevenueEventInput {
   mrr: number;
   amount?: number;
   metadata?: Record<string, unknown>;
+  /**
+   * Identifies the real-world movement this event reports, so a producer that runs twice for one
+   * movement emits the same `event_id` twice and the second insert conflicts instead of adding a
+   * second row. Omit it only where the movement genuinely has no stable identity.
+   */
+  dedupeKey?: string;
 }
 
 export const revenueEventPayloadSchema = z.object({

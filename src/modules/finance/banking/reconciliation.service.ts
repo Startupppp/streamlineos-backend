@@ -24,6 +24,12 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
+import {
+  absDecimal,
+  compareDecimals,
+  subtractDecimals,
+  toDecimal,
+} from "../../accounting/core/money.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   ConfirmMatchInput,
@@ -33,6 +39,9 @@ import type {
 
 const CACHE_RECON = (orgId: string, bankAccountId: number) =>
   `fin:banking:recon:${orgId}:${bankAccountId}`;
+
+// One minor unit: below this the ledger and the bank agree, above it the tenant is told.
+const RECONCILIATION_TOLERANCE = "0.01";
 
 @Injectable()
 export class ReconciliationService {
@@ -69,12 +78,11 @@ export class ReconciliationService {
       input.matchType === "BANK_FEE" ||
       input.matchType === "MANUAL_JOURNAL"
     ) {
-      const txnAmount = Math.abs(parseFloat(txn.amount));
       const approval = await checkApprovalPolicy(
         this.db,
         orgId,
         "BANK_ADJUSTMENT",
-        txnAmount,
+        absDecimal(toDecimal(txn.amount)),
       );
 
       if (approval.needsApproval) {
@@ -130,13 +138,13 @@ export class ReconciliationService {
           lines: [
             {
               systemPurpose: "PAYMENT_FEES",
-              debit: String(Math.abs(parseFloat(txn.amount))),
+              debit: absDecimal(toDecimal(txn.amount)),
               credit: "0",
             },
             {
               accountId: account.ledgerAccountId,
               debit: "0",
-              credit: String(Math.abs(parseFloat(txn.amount))),
+              credit: absDecimal(toDecimal(txn.amount)),
             },
           ],
         });
@@ -158,8 +166,8 @@ export class ReconciliationService {
             "counterAccountId is required for MANUAL_JOURNAL match",
           );
 
-        const amount = String(Math.abs(parseFloat(txn.amount)));
-        const isDebit = parseFloat(txn.amount) > 0;
+        const amount = absDecimal(toDecimal(txn.amount));
+        const isDebit = compareDecimals(toDecimal(txn.amount), "0") > 0;
 
         const postResult = await this.posting.postJournal(u, {
           entryDate: txn.txnDate,
@@ -252,9 +260,15 @@ export class ReconciliationService {
     if (
       ledgerBalance !== null &&
       refreshedAccount &&
-      Math.abs(
-        parseFloat(ledgerBalance) - parseFloat(refreshedAccount.currentBalance),
-      ) > 0.01
+      compareDecimals(
+        absDecimal(
+          subtractDecimals(
+            toDecimal(ledgerBalance),
+            toDecimal(refreshedAccount.currentBalance),
+          ),
+        ),
+        RECONCILIATION_TOLERANCE,
+      ) > 0
     ) {
       await this.dispatch.emit({
         eventKey: "accounting.reconciliation.mismatch",

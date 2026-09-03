@@ -7,6 +7,7 @@ import {
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../common/organization/organization-actor";
+import { compareDecimals, isZero, toDecimal } from "../accounting/core/money.util";
 import type { ImportInput } from "./dto/expense-import.schemas";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -40,6 +41,23 @@ function sanitizeCell(value: string): string {
 
 function normalizeHeader(header: string): string {
   return sanitizeCell(String(header)).toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+const IMPORT_AMOUNT_SHAPE = /^\d{1,12}(\.\d{1,2})?$/;
+const MAX_IMPORT_AMOUNT = "100000000";
+
+/**
+ * `parseFloat` reads "1,234.50" as 1 and "1.2.3" as 1.2 without complaining, so a
+ * thousands-separated or malformed cell used to import as a silently wrong amount rather
+ * than a skipped row. Only a clean decimal, with the separators stripped first, is accepted.
+ */
+function parseImportAmount(raw: string): string | null {
+  const cleaned = raw.replace(/[,\s]/g, "");
+  if (!IMPORT_AMOUNT_SHAPE.test(cleaned)) return null;
+  const amount = toDecimal(cleaned);
+  if (isZero(amount)) return null;
+  if (compareDecimals(amount, MAX_IMPORT_AMOUNT) > 0) return null;
+  return amount;
 }
 
 function normalizeDate(value: string): string {
@@ -129,8 +147,8 @@ export class ExpensesImportService {
       const { rowNumber, record } = parsedRow;
       const rawCategory = sanitizeCell(record.category || "Other");
       const category = ALLOWED_CATEGORIES.has(rawCategory) ? rawCategory : "Other";
-      const amount = parseFloat(record.amount);
-      if (isNaN(amount) || amount <= 0 || amount > 100_000_000) {
+      const amount = parseImportAmount(record.amount ?? "");
+      if (amount === null) {
         skipped++;
         skippedReasons.push({
           row: rowNumber,
@@ -151,7 +169,7 @@ export class ExpensesImportService {
         orgId,
         userId,
         category,
-        amount: amount.toString(),
+        amount,
         description: description.slice(0, 500),
         merchant: merchant.slice(0, 200),
         paymentMethod: paymentMethod || null,
