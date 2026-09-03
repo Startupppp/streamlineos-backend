@@ -53,15 +53,21 @@ function buildMocks() {
     orderBy: jest.fn().mockResolvedValue([]),
   };
 
+  // Call order inside listMemberChannels: [0] the keyset page, [1] the ranked member subquery
+  // (built, never awaited — `.as()` hands it to the next `from()`), [2] the bounded member
+  // preview, [3] the unread counts. An entry per call, so a new statement shows up as a missing
+  // fixture rather than as another query's rows.
   let selectCallIdx = 0;
   const selectResults: unknown[][] = [
     [{ id: 1, lastMessageAt: null }],
+    [],
+    [],
     [],
   ];
   const makeSelectChain = () => {
     const resultIdx = selectCallIdx++;
     const chain: Record<string, unknown> = {};
-    for (const method of ["from", "where", "innerJoin", "leftJoin", "groupBy", "having", "orderBy", "limit"])
+    for (const method of ["from", "where", "innerJoin", "leftJoin", "groupBy", "having", "orderBy", "limit", "as"])
       chain[method] = jest.fn(() => chain);
     chain.then = (resolve: (v: unknown[]) => unknown) => resolve(selectResults[resultIdx] ?? []);
     return chain;

@@ -22,7 +22,7 @@ function makeDb(channels: unknown[]) {
 
   const makeChain = () => {
     const chain: Record<string, unknown> = {};
-    for (const method of ["from", "where", "innerJoin", "leftJoin", "groupBy", "orderBy", "limit"])
+    for (const method of ["from", "where", "innerJoin", "leftJoin", "groupBy", "orderBy", "limit", "as"])
       chain[method] = jest.fn(() => chain);
     chain.then = (resolve: (v: unknown[]) => unknown) => resolve(nextResult());
     return chain;

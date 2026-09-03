@@ -13,6 +13,11 @@ import { EntityReferenceService } from "../entity-reference/entity-reference.ser
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { resolvePeopleIdentities, subjectKey } from "../directory/person-seam";
 import { PAGE_SIZE_CAP } from "../../common/pagination/list-query.schema";
+import {
+  CHANNEL_LIST_COLUMNS,
+  loadChannelMemberPreview,
+  withMemberPreview,
+} from "./chat-channel-member-preview";
 
 export const CHAT_CHANNEL_PAGE_SIZE = 50;
 
@@ -212,12 +217,10 @@ export class ChatChannelListService {
 
       const channels = await this.db.query.chatChannels.findMany({
         where: and(eq(chatChannels.orgId, orgId), inArray(chatChannels.id, channelIds)),
-        with: {
-          members: {
-            with: { membership: { columns: { id: true, userId: true }, with: { user: { columns: { id: true, name: true, image: true } } } } },
-          },
-        },
+        columns: CHANNEL_LIST_COLUMNS,
       });
+
+      const memberPreview = await loadChannelMemberPreview(this.db, orgId, channelIds, actorMembershipId);
 
       const unreadRows = await this.db
         .select({ channelId: chatMessages.channelId, count: count() })
@@ -284,7 +287,7 @@ export class ChatChannelListService {
         .map((id) => enrichedChannels.find((ch) => ch.id === id))
         .filter((ch): ch is NonNullable<typeof ch> => ch !== undefined)
         .map((ch) => ({
-          ...ch,
+          ...withMemberPreview(ch, memberPreview),
           unreadCount: unreadMap.get(ch.id) ?? 0,
           lastMessage: lastMsgMap.get(ch.id) ?? null,
         }));
