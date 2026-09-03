@@ -57,12 +57,6 @@ export class SettingsController {
     return this.settings.getSectionProvenance(u.orgId, query.sections);
   }
 
-  @RequirePermission("settings:view")
-  @Get("permissions")
-  getPermissions() {
-    return this.settings.getPermissions();
-  }
-
   @RequirePermission("settings:manage")
   @Get("api-keys")
   listApiKeys(@CurrentUser() u: CurrentUserContext) {

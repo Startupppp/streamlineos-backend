@@ -44,7 +44,6 @@ const run = async () => {
     ["GET", "/dashboard/stats"],
     ["GET", "/dashboard/announcements"],
     ["POST", "/dashboard/announcements"],
-    ["GET", "/settings/permissions"],
     ["GET", "/settings/api-keys"],
     ["POST", "/settings/api-keys"],
     ["GET", "/settings/automations"],
@@ -207,8 +206,6 @@ const run = async () => {
 
   // ------------------------------------------------------------------ SETTINGS
   // Open (no @CheckAbility, no internal gate).
-  check("GET /settings/permissions owner", await req("GET", "/settings/permissions", { token: owner }), 200);
-  check("GET /settings/permissions member (open)", await req("GET", "/settings/permissions", { token: member }), 200);
   check("GET /settings/feature-flags owner", await req("GET", "/settings/feature-flags", { token: owner }), 200);
   check("GET /settings/feature-flags member (open)", await req("GET", "/settings/feature-flags", { token: member }), 200);
   // Internally gated (manage settings) though no @CheckAbility decorator.

@@ -11,7 +11,6 @@ describe("Settings auth (e2e)", () => {
 
   type Method = "get" | "post" | "patch" | "delete";
   const routes: ReadonlyArray<[Method, string]> = [
-    ["get", "/settings/permissions"],
     ["get", "/settings/ai-usage"],
     ["get", "/settings/api-keys"],
     ["post", "/settings/api-keys"],

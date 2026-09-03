@@ -70,10 +70,6 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
     verdict: "ORG-CONFIG",
     why: "who last changed each organisation-settings section, on organizations.settings",
   },
-  "GET /settings/permissions": {
-    verdict: "ACCESS-GOVERNANCE",
-    why: "the permission catalogue. DUPLICATE of GET /rbac/permissions, which returns the same PERMISSIONS constant behind settings:rbac:manage while this one sits behind the far more widely held settings:view, and no frontend calls it. Static product data, so not a tenant leak — but a second door with a weaker key",
-  },
   "GET /settings/api-keys": {
     verdict: "ORG-CONFIG",
     why: "organisation-wide machine credentials. No frontend caller: API-only surface",

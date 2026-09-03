@@ -11,7 +11,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { isStructuralOrgAdminContext } from "../../common/rbac/is-structural-org-admin";
-import { PERMISSIONS } from "../rbac/permissions";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { CacheService } from "../../common/cache/cache.service";
 import {
@@ -28,10 +27,6 @@ export class SettingsService {
     private readonly orgMembership: OrgMembershipService,
     private readonly cache: CacheService,
   ) {}
-
-  getPermissions() {
-    return PERMISSIONS;
-  }
 
   async getSectionProvenance(
     orgId: string,
