@@ -39,6 +39,13 @@ import {
 } from "./lib/policy-builders";
 import { buildActivationChecklist } from "./lib/policy-checklist";
 
+/**
+ * `components` comes from a tenant-owned template's `defaultComponents` JSON, so
+ * its length is caller-controlled. One INSERT per chunk keeps the statement
+ * payload bounded while the whole activation stays in one transaction.
+ */
+const SALARY_COMPONENT_INSERT_CHUNK = 200;
+
 @Injectable()
 export class PolicyMutationService {
   constructor(
@@ -199,30 +206,30 @@ export class PolicyMutationService {
         });
       }
 
-      for (const comp of components) {
+      const componentRows = components.map((comp) => ({
+        orgId: u.orgId,
+        code: comp.code,
+        name: comp.name,
+        type: comp.type,
+        calcMethod: comp.calcMethod,
+        amount: comp.amount ?? null,
+        percent: comp.percent ?? null,
+        formula: comp.formula ?? null,
+        taxable: comp.taxable,
+        showOnPayslip: comp.showOnPayslip,
+        includeInCtc: comp.includeInCtc,
+        isStatutory: comp.isStatutory,
+        statutoryKey: comp.statutoryKey ?? null,
+        sortOrder: comp.sortOrder,
+        isActive: true,
+      }));
+      for (let i = 0; i < componentRows.length; i += SALARY_COMPONENT_INSERT_CHUNK)
         await tx
           .insert(salaryComponents)
-          .values({
-            orgId: u.orgId,
-            code: comp.code,
-            name: comp.name,
-            type: comp.type,
-            calcMethod: comp.calcMethod,
-            amount: comp.amount ?? null,
-            percent: comp.percent ?? null,
-            formula: comp.formula ?? null,
-            taxable: comp.taxable,
-            showOnPayslip: comp.showOnPayslip,
-            includeInCtc: comp.includeInCtc,
-            isStatutory: comp.isStatutory,
-            statutoryKey: comp.statutoryKey ?? null,
-            sortOrder: comp.sortOrder,
-            isActive: true,
-          })
+          .values(componentRows.slice(i, i + SALARY_COMPONENT_INSERT_CHUNK))
           .onConflictDoNothing({
             target: [salaryComponents.orgId, salaryComponents.code],
           });
-      }
 
       const calendarInserts = calendarEventsForMonth(
         policyId,
