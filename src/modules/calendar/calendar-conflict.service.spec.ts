@@ -29,28 +29,64 @@ function makeEventRow(overrides: {
   };
 }
 
-function makeTx(eventRows: ReturnType<typeof makeEventRow>[], attendeeRows: Array<{ eventId: number; status: string }>): TenantTx {
+function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
+  if (typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
+  ];
+}
+
+interface TxProbe {
+  tx: TenantTx;
+  whereArgs: unknown[];
+  memberFindFirst: jest.Mock;
+}
+
+function makeTxProbe(
+  eventRows: ReturnType<typeof makeEventRow>[],
+  attendeeRows: Array<{ eventId: number; status: string }>,
+): TxProbe {
   let selectCallCount = 0;
-  return {
-    query: {
-      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
-    },
+  const whereArgs: unknown[] = [];
+  const memberFindFirst = jest.fn().mockResolvedValue({ id: 1 });
+  const record = (arg: unknown) => {
+    whereArgs.push(arg);
+  };
+  const tx = {
+    query: { organizationMembers: { findFirst: memberFindFirst } },
     select: jest.fn().mockImplementation(() => {
       selectCallCount += 1;
       if (selectCallCount === 1) {
-        return {
+        const chain = {
           from: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
+          where: jest.fn().mockImplementation(function (this: unknown, arg: unknown) {
+            record(arg);
+            return this;
+          }),
           orderBy: jest.fn().mockReturnThis(),
           limit: jest.fn().mockResolvedValue(eventRows),
         };
+        return chain;
       }
       return {
         from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockResolvedValue(attendeeRows),
+        where: jest.fn().mockImplementation((arg: unknown) => {
+          record(arg);
+          return Promise.resolve(attendeeRows);
+        }),
       };
     }),
   } as unknown as TenantTx;
+  return { tx, whereArgs, memberFindFirst };
+}
+
+function makeTx(eventRows: ReturnType<typeof makeEventRow>[], attendeeRows: Array<{ eventId: number; status: string }>): TenantTx {
+  return makeTxProbe(eventRows, attendeeRows).tx;
 }
 
 describe("CalendarConflictService.checkConflictsInTx", () => {
@@ -104,8 +140,27 @@ describe("CalendarConflictService.checkConflictsInTx", () => {
   });
 
   it("cross-tenant isolation: orgId is always bound (select is called with org-scoped predicates)", async () => {
-    const tx = makeTx([], []);
+    // This test asserted nothing at all: it called the service and ended. It was
+    // green whether or not a single predicate carried the org.
+    const { tx, whereArgs, memberFindFirst } = makeTxProbe(
+      [makeEventRow({ createdByMembershipId: 1 })],
+      [],
+    );
+
     await service.checkConflictsInTx(tx, "org-1", "user-1", WINDOW_START, WINDOW_END);
+
+    const memberWhere = memberFindFirst.mock.calls[0]?.[0] as { where: unknown };
+    expect(sqlValues(memberWhere.where)).toContain("org-1");
+
+    // Every predicate individually: one org-unbound predicate among org-bound
+    // siblings is invisible to a flattened check.
+    expect(whereArgs.length).toBeGreaterThan(0);
+    const unbound = whereArgs
+      .map((w, i) => ({ i, values: sqlValues(w) }))
+      .filter((e) => !e.values.includes("org-1"))
+      .map((e) => `predicate #${e.i} does not bind the org: ${JSON.stringify(e.values)}`);
+    expect(unbound).toEqual([]);
+    expect(whereArgs.flatMap((w) => sqlValues(w))).not.toContain("org-2");
   });
 
   it("includes a pending attendee (not yet responded)", async () => {

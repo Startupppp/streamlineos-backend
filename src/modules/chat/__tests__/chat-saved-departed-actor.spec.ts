@@ -3,6 +3,8 @@ import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import { ChatSavedService } from "../chat-saved.service";
+import { getTableConfig } from "drizzle-orm/pg-core";
+import { chatSavedMessages } from "../../../db/schema/chat/chat-message-tables";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v !== "object") return [v];
@@ -101,7 +103,17 @@ describe("ChatSavedService — departed-actor display", () => {
     expect(values).not.toContain("u1");
   });
 
-  it("departed-member saved items do not survive departure — cascade deletes the row (design proof)", () => {
-    expect(true).toBe(true);
+  it("departed-member saved items do not survive departure — the membership FK cascades", () => {
+    // This asserted expect(true).toBe(true) under a title claiming a design
+    // proof. The claim is checkable against the schema the migration builds.
+    const { foreignKeys } = getTableConfig(chatSavedMessages);
+    const membershipFk = foreignKeys.find(
+      (fk) => fk.getName() === "fk_chat_saved_messages_org_membership",
+    );
+    expect(membershipFk).toBeDefined();
+    expect(membershipFk?.onDelete).toBe("cascade");
+    const reference = membershipFk?.reference();
+    expect(reference?.foreignColumns.map((c) => c.name)).toEqual(["org_id", "id"]);
+    expect(reference?.columns.map((c) => c.name)).toEqual(["org_id", "membership_id"]);
   });
 });
