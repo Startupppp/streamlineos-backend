@@ -4,6 +4,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { surveyAssessmentAttempts, surveyCertificates, surveyForms } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { assertSurveyInOrg } from "./survey-tenant";
 import type { ListAttemptsInput } from "./dto/survey-assessment.schemas";
 
 interface AssessmentSettings {
@@ -18,6 +19,7 @@ export class SurveyAssessmentService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listAttempts(orgId: string, surveyId: number, filters: ListAttemptsInput) {
+    await assertSurveyInOrg(this.db, orgId, surveyId);
     const conditions = [eq(surveyAssessmentAttempts.orgId, orgId), eq(surveyAssessmentAttempts.surveyId, surveyId)];
     if (filters.status) conditions.push(eq(surveyAssessmentAttempts.status, filters.status));
     return this.db.query.surveyAssessmentAttempts.findMany({
@@ -108,7 +110,8 @@ export class SurveyAssessmentService {
     return certificate;
   }
 
-  listCertificates(orgId: string, surveyId: number) {
+  async listCertificates(orgId: string, surveyId: number) {
+    await assertSurveyInOrg(this.db, orgId, surveyId);
     return this.db.query.surveyCertificates.findMany({
       where: and(eq(surveyCertificates.orgId, orgId), eq(surveyCertificates.surveyId, surveyId)),
       orderBy: [desc(surveyCertificates.issuedAt)],

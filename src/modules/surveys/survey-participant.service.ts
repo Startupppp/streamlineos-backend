@@ -4,6 +4,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { surveyParticipants } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { assertSurveyInOrg } from "./survey-tenant";
 import type { ImportParticipantsInput, ListParticipantsInput } from "./dto/survey-participants.schemas";
 
 const PARTICIPANT_INSERT_CHUNK = 500;
@@ -17,6 +18,7 @@ export class SurveyParticipantService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string, surveyId: number, filters: ListParticipantsInput) {
+    await assertSurveyInOrg(this.db, orgId, surveyId);
     const conditions = [eq(surveyParticipants.orgId, orgId), eq(surveyParticipants.surveyId, surveyId)];
     if (filters.status) conditions.push(eq(surveyParticipants.status, filters.status));
 

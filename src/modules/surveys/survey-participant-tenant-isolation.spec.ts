@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import { SurveyParticipantService } from "./survey-participant.service";
 import type { Db } from "../../db/drizzle.module";
 
@@ -19,26 +20,28 @@ describe("SurveyParticipantService — cross-tenant isolation", () => {
 
   afterEach(() => jest.resetAllMocks());
 
-  it("returns empty participants for a different org (deny: isolation)", async () => {
+  it("refuses a survey owned by a different org (deny: isolation)", async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = {
-      query: { surveyParticipants: { findMany } },
+      query: {
+        surveyForms: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        surveyParticipants: { findMany },
+      },
     } as unknown as Db;
     const svc = new SurveyParticipantService(db);
 
-    const result = await svc.list(ATTACKER_ORG, 1, { page: 1, pageSize: 20 });
-
-    expect(result).toHaveLength(0);
-    expect(findMany).toHaveBeenCalledTimes(1);
-    const args = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(args?.where)).toContain(ATTACKER_ORG);
+    await expect(svc.list(ATTACKER_ORG, 1, { page: 1, pageSize: 20 })).rejects.toThrow(NotFoundException);
+    expect(findMany).not.toHaveBeenCalled();
   });
 
   it("returns participants for the owning org (control — same-tenant)", async () => {
     const participant = { id: 11, orgId: OWNER_ORG, surveyId: 1, email: "alice@example.com", status: "invited" };
     const findMany = jest.fn().mockResolvedValue([participant]);
     const db = {
-      query: { surveyParticipants: { findMany } },
+      query: {
+        surveyForms: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
+        surveyParticipants: { findMany },
+      },
     } as unknown as Db;
     const svc = new SurveyParticipantService(db);
 

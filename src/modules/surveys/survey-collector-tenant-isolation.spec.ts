@@ -20,26 +20,28 @@ describe("SurveyCollectorService — cross-tenant isolation", () => {
 
   afterEach(() => jest.resetAllMocks());
 
-  it("returns empty list for a different org (deny: isolation)", async () => {
+  it("refuses a survey owned by a different org (deny: isolation)", async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = {
-      query: { surveyCollectors: { findMany } },
+      query: {
+        surveyForms: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        surveyCollectors: { findMany },
+      },
     } as unknown as Db;
     const svc = new SurveyCollectorService(db);
 
-    const result = await svc.list(ATTACKER_ORG, 1);
-
-    expect(result).toHaveLength(0);
-    expect(findMany).toHaveBeenCalledTimes(1);
-    const args = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(args?.where)).toContain(ATTACKER_ORG);
+    await expect(svc.list(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
+    expect(findMany).not.toHaveBeenCalled();
   });
 
   it("returns collectors for the owning org (control — same-tenant)", async () => {
     const collector = { id: 5, orgId: OWNER_ORG, surveyId: 1, name: "Web" };
     const findMany = jest.fn().mockResolvedValue([collector]);
     const db = {
-      query: { surveyCollectors: { findMany } },
+      query: {
+        surveyForms: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
+        surveyCollectors: { findMany },
+      },
     } as unknown as Db;
     const svc = new SurveyCollectorService(db);
 

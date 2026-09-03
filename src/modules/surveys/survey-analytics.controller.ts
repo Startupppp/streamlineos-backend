@@ -39,7 +39,8 @@ export class SurveyAnalyticsController {
   @Get("analytics/overview")
   @RequirePermission("surveys:analytics:view")
   @Validate({ params: surveyIdParams })
-  overview(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
+  async overview(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.forms.get(u.orgId, surveyId);
     return this.analytics.overview(u.orgId, surveyId);
   }
 
@@ -55,11 +56,12 @@ export class SurveyAnalyticsController {
   @Get("responses")
   @RequirePermission("surveys:responses:view")
   @Validate({ params: surveyIdParams, query: listResponsesSchema })
-  listResponses(
+  async listResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Query() query: ListResponsesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    await this.forms.get(u.orgId, surveyId);
     return this.responses.listResponses(u.orgId, surveyId, query);
   }
 
@@ -83,6 +85,7 @@ export class SurveyAnalyticsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
+    await this.forms.get(u.orgId, surveyId);
     const result = await this.exports.exportResponsesCsv(u.orgId, surveyId, body);
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=responses.csv");

@@ -20,26 +20,28 @@ describe("SurveyAssessmentService — cross-tenant isolation", () => {
 
   afterEach(() => jest.resetAllMocks());
 
-  it("returns empty attempts for a different org (deny: isolation)", async () => {
+  it("refuses attempts for a survey owned by a different org (deny: isolation)", async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = {
-      query: { surveyAssessmentAttempts: { findMany } },
+      query: {
+        surveyForms: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        surveyAssessmentAttempts: { findMany },
+      },
     } as unknown as Db;
     const svc = new SurveyAssessmentService(db);
 
-    const result = await svc.listAttempts(ATTACKER_ORG, 1, { page: 1, pageSize: 20 });
-
-    expect(result).toHaveLength(0);
-    expect(findMany).toHaveBeenCalledTimes(1);
-    const args = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-    expect(sqlValues(args?.where)).toContain(ATTACKER_ORG);
+    await expect(svc.listAttempts(ATTACKER_ORG, 1, { page: 1, pageSize: 20 })).rejects.toThrow(NotFoundException);
+    expect(findMany).not.toHaveBeenCalled();
   });
 
   it("returns attempts for the owning org (control — same-tenant)", async () => {
     const attempt = { id: 1, orgId: OWNER_ORG, surveyId: 5, status: "in_progress" };
     const findMany = jest.fn().mockResolvedValue([attempt]);
     const db = {
-      query: { surveyAssessmentAttempts: { findMany } },
+      query: {
+        surveyForms: { findFirst: jest.fn().mockResolvedValue({ id: 5 }) },
+        surveyAssessmentAttempts: { findMany },
+      },
     } as unknown as Db;
     const svc = new SurveyAssessmentService(db);
 

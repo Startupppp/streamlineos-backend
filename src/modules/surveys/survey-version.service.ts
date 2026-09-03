@@ -10,6 +10,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { assertSurveyInOrg } from "./survey-tenant";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -33,12 +34,18 @@ function remapQuestionIds(node: unknown, idMap: Map<number, number>): unknown {
 export class SurveyVersionService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  async assertSurveyInOrg(orgId: string, surveyId: number) {
+    await assertSurveyInOrg(this.db, orgId, surveyId);
+  }
+
   async getDraftVersion(orgId: string, surveyId: number) {
     const existing = await this.db.query.surveyVersions.findFirst({
       where: and(eq(surveyVersions.orgId, orgId), eq(surveyVersions.surveyId, surveyId), isNull(surveyVersions.publishedAt)),
       orderBy: [desc(surveyVersions.versionNumber)],
     });
     if (existing) return existing;
+
+    await this.assertSurveyInOrg(orgId, surveyId);
 
     const [created] = await this.db
       .insert(surveyVersions)

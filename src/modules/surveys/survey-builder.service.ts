@@ -161,6 +161,7 @@ export class SurveyBuilderService {
   }
 
   async reorder(orgId: string, surveyId: number, input: ReorderInput) {
+    await this.versions.assertSurveyInOrg(orgId, surveyId);
     await this.db.transaction(async (tx) => {
       for (const section of input.sections ?? []) {
         await tx

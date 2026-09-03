@@ -4,6 +4,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { surveyCollectors } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { assertSurveyInOrg } from "./survey-tenant";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CreateCollectorInput, PatchCollectorInput } from "./dto/survey-collectors.schemas";
@@ -12,7 +13,8 @@ import type { CreateCollectorInput, PatchCollectorInput } from "./dto/survey-col
 export class SurveyCollectorService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string, surveyId: number) {
+  async list(orgId: string, surveyId: number) {
+    await assertSurveyInOrg(this.db, orgId, surveyId);
     return this.db.query.surveyCollectors.findMany({
       where: and(eq(surveyCollectors.orgId, orgId), eq(surveyCollectors.surveyId, surveyId)),
       orderBy: [desc(surveyCollectors.createdAt)],
