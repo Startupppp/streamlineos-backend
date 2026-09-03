@@ -39,6 +39,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const SRC = fileURLToPath(new URL("../", import.meta.url));
 
@@ -93,6 +94,7 @@ const SKIP_FILE = /(\.spec\.ts|\.e2e-spec\.ts|\.db\.spec\.ts|\.test\.ts|spec-fix
 const DOUBLE_CAST_LEDGER = new Map([
   // -- external: a standalone script builds a Drizzle client or a stub service --
   ["src/scripts/benchmark-access-service.ts", { count: 4, seam: "external", invariant: "a benchmark harness stands up one real Db plus three hand-built stubs (cache, entitlements, MFA policy) to time AccessService in isolation. The stubs implement only the methods the measured path calls; the cast is what lets a four-method object stand where a full service is declared. It never runs in the application." }],
+  ["src/scripts/check-declaration-column-drift.ts", { count: 4, seam: "external", invariant: "the same two seams as check-set-null-column-lists.ts, in a second reflective gate: two casts hand the Drizzle schema barrel to a walker as `Record<string, unknown>`, and two type the rows of a `sql.unsafe` catalog query, which postgres.js returns untyped by construction. A pg_catalog row has no compile-time shape. ARRIVED UNTRACKED from another lane on 2026-09-03; if that lane drops the file this entry goes stale and the gate will say so, which is the intended behaviour." }],
   ["src/scripts/check-set-null-column-lists.ts", { count: 4, seam: "external", invariant: "two casts hand the Drizzle schema barrel to a reflective walker as `Record<string, unknown>`; two more type the rows of a `sql.unsafe` catalog query, which postgres.js returns untyped by construction. Both are outside the type system by definition — a pg_catalog row has no compile-time shape." }],
   ["src/scripts/verify-cell-degraded-control-plane.ts", { count: 1, seam: "external", invariant: "`drizzle(client, { schema })` instantiates to a structurally identical but nominally different type than the app's `Db` alias. The script needs the app alias to call app services. No runtime narrowing is possible or useful." }],
   ["src/scripts/verify-cell-admission.ts", { count: 1, seam: "external", invariant: "same Drizzle instantiation seam as verify-cell-degraded-control-plane.ts." }],
@@ -113,6 +115,121 @@ const DOUBLE_CAST_LEDGER = new Map([
   ["src/modules/notifications/notification-retention.service.ts", { count: 1, seam: "narrow-me", invariant: "rows from a raw `db.execute` probe. CLAUDE.md §6 says raw rows are `Record<string, unknown>` and should be converted at the use site (`Number(row.count)`), not cast wholesale." }],
   ["src/modules/record-layouts/record-layouts.service.ts", { count: 1, seam: "narrow-me", invariant: "rows from a raw `db.execute` aggregate. Same §6 treatment as notification-retention.service.ts." }],
 ]);
+
+/**
+ * ---------------------------------------------------------------------------
+ * Rule 3: the raw-SQL row generic, `db.execute<T>(sql`...`)`.
+ * ---------------------------------------------------------------------------
+ *
+ * This is a type assertion that does not contain the word `as`, which is why
+ * neither of the two rules above has ever seen one. Drizzle declares
+ * `execute<T extends Record<string, unknown>>(): Promise<T[]>` and hands the
+ * driver rows straight back: nothing validates that the columns the caller
+ * named in `T` are the columns the query selected. Shared CLAUDE.md section 6
+ * says exactly this — raw rows are `Record<string, unknown>` and are converted
+ * at the use site — so a `<T>` here is the forced type the rule forbids,
+ * written in a syntax the ban could not detect.
+ *
+ * It is the same defect shape that shipped twice in this release on the
+ * frontend half of the same seam (`apiClient.get<Channel>`, `get<Huddle>`): the
+ * projection did not select what the declared type promised, both repositories
+ * typechecked clean, and the field arrived `undefined`.
+ *
+ * So this rule does two things, and the second is the one that bites:
+ *
+ *   (a) a per-file zero-growth ledger, same ratchet as rule 2; and
+ *   (b) for every site where the type argument is a type literal AND the query
+ *       is a `sql` template in the same call, a static cross-check that every
+ *       property the type declares is actually selected by that SQL — and that
+ *       a camelCase property is not relying on an UNQUOTED alias, which
+ *       Postgres folds to lower case and which therefore arrives under a
+ *       different key than the type says. 25 of the 28 sites are checkable
+ *       this way; the 3 that are not compose their SQL or name a type alias,
+ *       and are ledgered instead.
+ */
+const RAW_ROW_LEDGER = new Map([
+  ["src/common/db/bulk-update.ts", { count: 1, seam: "external", invariant: "a `RETURNING` clause on a generated bulk UPDATE. The driver returns untyped rows; the single declared column `key` is cross-checked against the SQL by rule 3b, so a rename of the returned column fails this gate rather than silently yielding undefined keys." }],
+  ["src/common/db/expand-contract-compat.ts", { count: 2, seam: "external", invariant: "`to_regclass(...) IS NOT NULL AS \"relationAvailable\"` — a pg_catalog probe. A catalog row has no compile-time shape. Both aliases are DOUBLE-QUOTED, which is what makes the camelCase key survive Postgres identifier folding; rule 3b asserts that quoting, so removing the quotes fails the gate." }],
+  ["src/modules/ai/core/ops-copilot-tools.ts", { count: 2, seam: "external", invariant: "two aggregate probes behind AI copilot tools; all declared keys are snake_case columns selected verbatim, cross-checked by rule 3b." }],
+  ["src/modules/ai/core/workspace-copilot-tools.ts", { count: 1, seam: "external", invariant: "a per-project rollup aggregate; snake_case keys selected verbatim, cross-checked by rule 3b." }],
+  ["src/modules/hr/core/hr-effective-change-applier.service.ts", { count: 1, seam: "external", invariant: "a recursive CTE returning `creates_cycle`, the reporting-line cycle guard. Cross-checked by rule 3b." }],
+  ["src/modules/hr/directory/employee-mutations.service.ts", { count: 1, seam: "external", invariant: "the same reporting-line cycle guard on the directory mutation path. Cross-checked by rule 3b." }],
+  ["src/modules/hr/interviews/hr-interviews.service.ts", { count: 2, seam: "external", invariant: "a paginated interview list with a window `total_count`, and an id probe. All keys snake_case and selected verbatim; cross-checked by rule 3b." }],
+  ["src/modules/inventory/counts/inv-cycle-counts.service.ts", { count: 1, seam: "external", invariant: "a stock-level snapshot for a cycle count: SELECT sl.product_variant_id, sl.location_id, sl.lot_id, sl.on_hand FROM inv_stock_levels. Every declared key is a snake_case column selected verbatim, so rule 3b proves the projection supports the type. Inventory is outside the release SCOPE but is still application code for this gate." }],
+  ["src/modules/inventory/counts/inv-physical-audits.service.ts", { count: 1, seam: "external", invariant: "the same four-column inv_stock_levels snapshot as inv-cycle-counts.service.ts, taken for a physical audit instead of a cycle count. Snake_case columns selected verbatim; cross-checked by rule 3b." }],
+  ["src/modules/inventory/purchase-orders/grn-receive.service.ts", { count: 1, seam: "external", invariant: "SELECT quantity, quantity_received FROM inv_po_lines ... FOR UPDATE — the row lock that makes goods receipt idempotent. Both declared keys are selected verbatim; cross-checked by rule 3b." }],
+  ["src/modules/inventory/stock-engine/costing-context.ts", { count: 1, seam: "external", invariant: "SELECT DISTINCT ON (product_variant_id) product_variant_id, unit_cost FROM inv_standard_costs — a DISTINCT ON that Drizzle\u2019s query builder cannot express. Both declared keys are selected verbatim; cross-checked by rule 3b." }],
+  ["src/modules/inventory/stock-engine/reservation.service.ts", { count: 4, seam: "external", invariant: "four `SELECT ... FOR UPDATE` row locks in the reservation ledger. Snake_case keys, cross-checked by rule 3b." }],
+  ["src/modules/inventory/stock-engine/stock-engine-batch.service.ts", { count: 1, seam: "external", invariant: "the type argument is the named alias `LockedRow`, so rule 3b cannot read its members and this site is ledgered rather than cross-checked. The query is a `SELECT ... FOR UPDATE` over inv_stock_levels." }],
+  ["src/modules/inventory/stock-engine/stock-engine.service.ts", { count: 1, seam: "external", invariant: "the inv_stock_levels row lock at the heart of the stock engine (id, on_hand, committed, blocked_qty, quality_hold_qty, average_cost). Numeric columns are declared `string` because the driver returns numerics as strings, which is the honest shape. Cross-checked by rule 3b." }],
+  ["src/modules/inventory/stock-engine/valuation.service.ts", { count: 2, seam: "external", invariant: "two FIFO layer reads over inv_valuation_layers (id, remaining_quantity, quantity / unit_cost), both needing FOR UPDATE ordering the query builder cannot express. All keys selected verbatim; cross-checked by rule 3b." }],
+  ["src/modules/inventory/stock/inv-stock-transfers.service.ts", { count: 1, seam: "external", invariant: "SELECT id, status, from_location_id, org_id FROM inv_stock_transfers ... FOR UPDATE — the transfer row lock, and it re-reads org_id so the tenant is confirmed under the lock rather than before it. Cross-checked by rule 3b." }],
+  ["src/modules/build/core/projects-tickets-update.service.ts", { count: 1, seam: "external", invariant: "a `WITH RECURSIVE chain(id, next_id, project_id, depth)` walk that detects a cycle in the ticket next/previous chain before a reorder commits. A recursive CTE is not expressible in the Drizzle query builder. All four declared keys are the CTE column list itself and are selected verbatim; cross-checked by rule 3b." }],
+  ["src/modules/organization/hierarchy/org-hierarchy-dependencies.service.ts", { count: 2, seam: "external", invariant: "one catalog probe (cross-checked), and one whose SQL is composed with `sql.join(this.buildQueries(...))` and whose type is the named alias `DependencyCountRow` — neither the keys nor the SQL is statically readable at the call, so it is ledgered. Its consumer reads `row.key` and `row.count` and coerces the count with Number()." }],
+  ["src/scripts/backfill-financial-actors.ts", { count: 1, seam: "external", invariant: "a one-shot backfill script; snake_case keys selected verbatim, cross-checked by rule 3b." }],
+  ["src/scripts/backfill-workflow-secrets.ts", { count: 1, seam: "external", invariant: "the type argument is the named alias `PlaintextRow`, so rule 3b cannot read its members. A one-shot backfill script that never runs in the application." }],
+]);
+
+/**
+ * Reads `<something>.execute<T>(...)` call sites out of one file. Regex is not
+ * usable here: a type argument spans lines, nests braces and contains commas,
+ * and the SQL template it must be compared against is a second argument. This
+ * is the one place in this gate where an AST is required rather than tidier.
+ */
+export function findRawRowGenerics(fileName, source) {
+  if (!source.includes("execute<")) return [];
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const found = [];
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      node.typeArguments?.length === 1 &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.getText(sf) === "execute"
+    ) {
+      const typeArg = node.typeArguments[0];
+      const keys = ts.isTypeLiteralNode(typeArg)
+        ? typeArg.members.filter(ts.isPropertySignature).map((m) => m.name.getText(sf).replace(/["']/g, ""))
+        : null;
+      const arg = node.arguments[0];
+      let sqlText = null;
+      if (arg && ts.isTaggedTemplateExpression(arg) && arg.tag.getText(sf) === "sql") {
+        const t = arg.template;
+        sqlText = ts.isNoSubstitutionTemplateLiteral(t)
+          ? t.text
+          : [t.head.text, ...t.templateSpans.map((s) => s.literal.text)].join(" ? ");
+      }
+      found.push({ line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, keys, sqlText });
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sf, visit);
+  return found;
+}
+
+/**
+ * Rule 3b. Returns the reasons this site's declared row type is not supported
+ * by the SQL beside it. Empty array = the projection matches the declaration.
+ *
+ * Two failure modes, and the second is the quiet one:
+ *   MISSING  — the type names a column the query does not select at all.
+ *   CASEFOLD — the type names a camelCase column and the SQL aliases it
+ *              UNQUOTED. Postgres folds an unquoted identifier to lower case,
+ *              so the row arrives with `relationavailable` while the type
+ *              promises `relationAvailable`, and every read of it is undefined.
+ */
+export function checkRawRowProjection(site) {
+  if (!site.keys || !site.sqlText) return [];
+  const reasons = [];
+  for (const key of site.keys) {
+    const quoted = new RegExp(`"${key}"`).test(site.sqlText);
+    const bare = new RegExp(`(^|[\\s,.(])${key}(\\s|,|$|\\))`, "i").test(site.sqlText);
+    if (!quoted && !bare) reasons.push(`MISSING: the type declares "${key}" but the SQL selects no such column`);
+    else if (!quoted && /[A-Z]/.test(key))
+      reasons.push(`CASEFOLD: "${key}" is camelCase and the SQL alias is unquoted — Postgres returns "${key.toLowerCase()}", so every read of "${key}" is undefined`);
+  }
+  return reasons;
+}
 
 function* walk(dir) {
   let entries;
@@ -144,6 +261,9 @@ export function countOutsideComments(source, pattern) {
 function scan(root) {
   const banned = new Map();
   const doubleCasts = new Map();
+  const rawRows = new Map();
+  const projectionFailures = [];
+  let checkedProjections = 0;
   let files = 0;
 
   for (const file of walk(root)) {
@@ -165,9 +285,18 @@ function scan(root) {
     }
     const casts = countOutsideComments(source, DOUBLE_CAST);
     if (casts) doubleCasts.set(`src/${rel}`, casts);
+
+    const sites = findRawRowGenerics(file, source);
+    if (sites.length) rawRows.set(`src/${rel}`, sites.length);
+    for (const site of sites) {
+      if (!site.keys || !site.sqlText) continue;
+      checkedProjections += 1;
+      for (const reason of checkRawRowProjection(site))
+        projectionFailures.push(`src/${rel}:${site.line} ${reason}`);
+    }
   }
 
-  return { banned, doubleCasts, files };
+  return { banned, doubleCasts, rawRows, projectionFailures, checkedProjections, files };
 }
 
 export function diffLedger(actual, ledger) {
@@ -248,8 +377,47 @@ function runSelfTest() {
       `(m) ${file}: every entry needs a written invariant, not a placeholder`);
   }
 
-  console.log("PASS: self-test (14 assertions + a written invariant on all "
-    + `${DOUBLE_CAST_LEDGER.size} ledger entries)\n`);
+  // ---- rule 3: the raw-SQL row generic ----------------------------------
+  const one = (src) => findRawRowGenerics("probe.ts", src);
+
+  assert(one("const r = await db.execute<{ a: number }>(sql`select 1 as a`);").length === 1,
+    "(n) a `db.execute<T>` call must be found");
+  assert(one("const r = await tx.execute<{ a: number }>(sql`select 1 as a`);").length === 1,
+    "(n1) the receiver may be a transaction, not only `db`");
+  assert(one("const r = await db.execute(sql`select 1 as a`);").length === 0,
+    "(o) an `execute` with NO type argument is not a forced type and must not be counted");
+  assert(one("// db.execute<{ a: number }>(sql`x`)\n").length === 0,
+    "(p) a commented-out call is not a call — the AST does not see comments, which is why rule 3 uses one");
+  assert(one("const r = await db.execute<{\n  a: number;\n  b: string;\n}>(sql`select 1 as a, 'x' as b`)")[0].keys.join(",") === "a,b",
+    "(q) a multi-line type literal must yield both keys — the reason this rule cannot be a regex");
+  assert(one("const r = await db.execute<LockedRow>(sql`select 1`)")[0].keys === null,
+    "(r) a NAMED type argument is not statically readable and must report keys=null so it is ledgered, not silently passed");
+  assert(one("const r = await db.execute<{ a: number }>(sql.join(parts))")[0].sqlText === null,
+    "(s) COMPOSED sql is not statically readable and must report sqlText=null, not an empty string that would match nothing");
+
+  const proj = (src) => checkRawRowProjection(one(src)[0]);
+  assert(proj("const r = await db.execute<{ a: number }>(sql`select 1 as a`)").length === 0,
+    "(t) a declared key the SQL selects is clean");
+  assert(proj("const r = await db.execute<{ missing: number }>(sql`select 1 as a`)")
+    .some((m) => m.startsWith("MISSING")),
+    "(u) a declared key the SQL does NOT select must FAIL — this is the gate biting on the huddle/channel defect shape in raw SQL");
+  assert(proj('const r = await db.execute<{ relationAvailable: boolean }>(sql`select x AS "relationAvailable"`)').length === 0,
+    "(v) a camelCase key with a DOUBLE-QUOTED alias survives Postgres folding and is clean");
+  assert(proj("const r = await db.execute<{ relationAvailable: boolean }>(sql`select x AS relationAvailable`)")
+    .some((m) => m.startsWith("CASEFOLD")),
+    "(w) the SAME key with an UNQUOTED alias must FAIL — Postgres returns `relationavailable`, so every read is undefined while the type says otherwise");
+  assert(proj("const r = await db.execute<LockedRow>(sql`select 1`)").length === 0,
+    "(x) an unreadable site reports no violation rather than a false one — it is covered by the ledger instead");
+
+  for (const [file, entry] of RAW_ROW_LEDGER) {
+    assert(entry.seam === "external" || entry.seam === "narrow-me",
+      `(y) ${file}: raw-row seam must be "external" or "narrow-me", got "${entry.seam}"`);
+    assert(typeof entry.invariant === "string" && entry.invariant.length > 40,
+      `(z) ${file}: every raw-row entry needs a written invariant, not a placeholder`);
+  }
+
+  console.log("PASS: self-test (27 assertions + a written invariant on all "
+    + `${DOUBLE_CAST_LEDGER.size + RAW_ROW_LEDGER.size} ledger entries)\n`);
   for (const line of [
     "  (a) a real double cast                        -> counted",
     "  (b) a line comment describing one             -> not counted",
@@ -267,11 +435,25 @@ function runSelfTest() {
     "  (k) an unchanged file                         -> silent",
     "  (l) every ledger entry names a seam kind",
     "  (m) every ledger entry carries a written invariant",
+    "  (n) a `db.execute<T>` call                     -> found",
+    "  (n1) `tx.execute<T>` too                       -> found",
+    "  (o) `execute` with no type argument            -> not counted",
+    "  (p) a commented-out call                       -> not counted",
+    "  (q) a multi-line type literal                  -> all keys read (why this rule is an AST)",
+    "  (r) a NAMED type argument                      -> keys=null, ledgered not passed",
+    "  (s) COMPOSED sql                               -> sqlText=null, ledgered not passed",
+    "  (t) a declared key the SQL selects             -> clean",
+    "  (u) a declared key the SQL does NOT select     -> MISSING (gate bites)",
+    "  (v) camelCase key, DOUBLE-QUOTED alias         -> clean",
+    "  (w) camelCase key, UNQUOTED alias              -> CASEFOLD (gate bites)",
+    "  (x) an unreadable site                         -> no false violation",
+    "  (y) every raw-row entry names a seam kind",
+    "  (z) every raw-row entry carries a written invariant",
   ]) console.log(line);
 }
 
 function main() {
-  const { banned, doubleCasts, files } = scan(SRC);
+  const { banned, doubleCasts, rawRows, projectionFailures, checkedProjections, files } = scan(SRC);
 
   if (files < SCAN_FLOOR_FILES) {
     console.error(`FAIL: scanned only ${files} file(s), below the floor of ${SCAN_FLOOR_FILES}. The scan is broken, not the tree clean.`);
@@ -280,9 +462,14 @@ function main() {
 
   const total = [...doubleCasts.values()].reduce((a, b) => a + b, 0);
 
+  const rawRowTotal = [...rawRows.values()].reduce((a, b) => a + b, 0);
+
   if (process.argv.includes("--list")) {
     for (const [file, count] of [...doubleCasts].sort()) console.log(`${count}\t${file}`);
     console.log(`\n${files} application files, ${doubleCasts.size} with a double cast, ${total} sites.`);
+    console.log("\n--- rule 3: db.execute<T> raw-row generics ---");
+    for (const [file, count] of [...rawRows].sort()) console.log(`${count}\t${file}`);
+    console.log(`\n${rawRows.size} file(s), ${rawRowTotal} site(s), ${checkedProjections} cross-checkable against their SQL.`);
     return;
   }
 
@@ -292,6 +479,7 @@ function main() {
   console.log(`=== application files scanned: ${files} ===`);
   console.log(`=== \`as unknown as\`: ${total} site(s) in ${doubleCasts.size} file(s) ===`);
   console.log(`=== ledger: ${external} at a proven external seam, ${narrowMe} owed a Zod parse ===`);
+  console.log(`=== \`db.execute<T>\` raw-row generics: ${rawRowTotal} site(s) in ${rawRows.size} file(s), ${checkedProjections} cross-checked against their SQL ===`);
 
   let failed = false;
 
@@ -322,8 +510,34 @@ function main() {
     failed = true;
   }
 
+  const raw = diffLedger(rawRows, RAW_ROW_LEDGER);
+  if (raw.added.length) {
+    console.error(`\nFAIL: ${raw.added.length} file(s) carry a \`db.execute<T>\` raw-row generic and are not in RAW_ROW_LEDGER. Convert at the use site per CLAUDE.md section 6, or add an entry naming the seam and the invariant:`);
+    for (const { file, count } of raw.added) console.error(`  ${file} (${count} site(s))`);
+    failed = true;
+  }
+  if (raw.grown.length) {
+    console.error(`\nFAIL: ${raw.grown.length} file(s) gained a \`db.execute<T>\` raw-row generic. The ledger does not grow:`);
+    for (const { file, was, now } of raw.grown) console.error(`  ${file}: ${was} -> ${now}`);
+    failed = true;
+  }
+  if (raw.shrunk.length || raw.gone.length) {
+    console.error(`\nFAIL: ${raw.shrunk.length + raw.gone.length} raw-row ledger entr(ies) are out of date — write the new number:`);
+    for (const { file, was, now } of raw.shrunk) console.error(`  ${file}: ledger says ${was}, tree has ${now} — lower the entry`);
+    for (const file of raw.gone) console.error(`  ${file}: no raw-row generic left — delete the entry`);
+    failed = true;
+  }
+
+  if (projectionFailures.length) {
+    console.error(`\nFAIL: ${projectionFailures.length} \`db.execute<T>\` site(s) declare a row shape the query beside them does not produce. This is the defect that shipped twice on the frontend half of this seam — the read compiles, and the field arrives undefined:`);
+    for (const reason of projectionFailures) console.error(`  ${reason}`);
+    failed = true;
+  } else {
+    console.log(`=== every one of the ${checkedProjections} cross-checkable raw-row types is supported by its SQL ===`);
+  }
+
   if (failed) process.exit(1);
-  console.log("\nPASS: no forced-typing escape in application code, and every double cast is ledgered at its recorded count.");
+  console.log("\nPASS: no forced-typing escape in application code, every double cast is ledgered at its recorded count, and every statically readable `db.execute<T>` row type matches the projection beside it.");
 }
 
 if (process.argv.includes("--self-test")) runSelfTest();
