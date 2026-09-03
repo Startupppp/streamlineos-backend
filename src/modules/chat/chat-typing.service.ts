@@ -1,7 +1,7 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
 import { and, eq } from "drizzle-orm";
-import { chatChannelMembers, organizationMembers, users } from "../../db/schema";
+import { chatChannelMembers, chatChannels, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
@@ -25,7 +25,28 @@ export class ChatTypingService {
     return `chat:typing:${channelId}`;
   }
 
+  /**
+   * The channel is resolved under the caller's organization BEFORE membership is considered.
+   *
+   * This used to go straight to `chat_channel_members`, so another organization's `channelId`
+   * produced the same `ForbiddenException` a same-org non-member gets. Measured by the live
+   * cross-tenant sweep on both `/chat/channels/:channelId/typing` verbs: cross-tenant 403 — the
+   * existence oracle backend/CLAUDE.md §4 forbids, and the one status a cross-tenant miss may
+   * never return.
+   *
+   * The order and the two refusals mirror `ChatChannelMembersService.assertMember` and
+   * `ChatReactionsService.assertChannelMember`, which the module already had right: 404 when the
+   * caller's organization holds no such channel, 404 when it is private and the caller is not in
+   * it (a private channel must not confirm its own existence), and 403 only for a genuine same-org
+   * non-member of a channel that is not private.
+   */
   private async assertChannelMember(channelId: number, orgId: string, userId: string): Promise<void> {
+    const channel = await this.db.query.chatChannels.findFirst({
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
+      columns: { id: true, isPrivate: true },
+    });
+    if (!channel) throw new NotFoundException("Channel not found");
+
     const orgMember = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.orgId, orgId),
@@ -44,7 +65,10 @@ export class ChatTypingService {
           columns: { id: true },
         })
       : null;
-    if (!membership) throw new ForbiddenException("You are not a member of this channel");
+    if (!membership) {
+      if (channel.isPrivate) throw new NotFoundException("Channel not found");
+      throw new ForbiddenException("You are not a member of this channel");
+    }
   }
 
   async setTyping(channelId: number, orgId: string, userId: string): Promise<void> {
