@@ -69,7 +69,7 @@ describe("CalendarEventItem carries the authored timezone", () => {
   it("the expansion the zone drives is unchanged: occurrences are still computed in the event's zone", () => {
     const occurrence = readFileSync(join(CALENDAR_DIR, "calendar-occurrence.service.ts"), "utf-8");
 
-    expect(occurrence).toContain("toZonedTime(event.startDate, event.timezone)");
-    expect(occurrence).toContain("fromZonedTime(localDate, event.timezone)");
+    expect(occurrence).toContain("toWallClockUtc(event.startDate, event.timezone)");
+    expect(occurrence).toContain("fromWallClockUtc(localDate, event.timezone)");
   });
 });
