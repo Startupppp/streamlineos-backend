@@ -1362,15 +1362,20 @@ export const BUDGETS = [
     ceiling: 2_000,
     minRows: 1,
     rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1`,
-    params: (f) => {
-      const today = new Date().toISOString().slice(0, 10);
-      return [f.orgId, today];
-    },
+    // The date is anchored to the seed's own latest attendance day, not to wall-clock today.
+    // DashboardStatsService reads `today`, and against a static seed that predicate matches
+    // nothing from the day after the seed was built — measured 2026-09-03 on a seed whose last
+    // attendance row is 2026-09-02, which is how this budget reached the manifest holding
+    // measuredBufferBlocks 41 while returning 0 rows. A budget that goes vacuous on a calendar
+    // boundary is a time bomb, not a budget; the anchor is an InitPlan constant, so the
+    // predicate the route issues (a.date = <one day>) is unchanged.
+    params: (f) => [f.orgId],
     sql: `
       SELECT a.user_id, u.name, u.image, a.check_in, a.check_out, a.status, a.created_at
       FROM attendance a
       INNER JOIN users u ON a.user_id = u.id
-      WHERE a.org_id = $1 AND a.date = $2`,
+      WHERE a.org_id = $1
+        AND a.date = (SELECT max(date) FROM attendance WHERE org_id = $1)`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "attendance" },
     ],
