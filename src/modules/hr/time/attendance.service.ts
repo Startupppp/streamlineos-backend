@@ -16,6 +16,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { hasPatchValues } from "../../../common/db/patch-values";
 import {
   attendance,
   hrEmployments,
@@ -366,11 +367,10 @@ export class AttendanceService {
     if (updateData.name !== undefined) {
       updateData.name = updateData.name.trim();
     }
-    const [holiday] = await this.db
-      .update(orgHolidays)
-      .set(updateData)
-      .where(and(eq(orgHolidays.id, id), eq(orgHolidays.orgId, orgId)))
-      .returning();
+    const scope = and(eq(orgHolidays.id, id), eq(orgHolidays.orgId, orgId));
+    const [holiday] = hasPatchValues(updateData)
+      ? await this.db.update(orgHolidays).set(updateData).where(scope).returning()
+      : await this.db.select().from(orgHolidays).where(scope).limit(1);
     if (!holiday) throw new NotFoundException("Holiday not found");
     return holiday;
   }

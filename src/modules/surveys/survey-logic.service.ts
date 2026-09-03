@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
+import { hasPatchValues } from "../../common/db/patch-values";
 import { surveyLogicRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -41,11 +42,10 @@ export class SurveyLogicService {
   }
 
   async patch(orgId: string, surveyId: number, ruleId: number, input: PatchLogicRuleInput) {
-    const [updated] = await this.db
-      .update(surveyLogicRules)
-      .set(input)
-      .where(and(eq(surveyLogicRules.id, ruleId), eq(surveyLogicRules.orgId, orgId), eq(surveyLogicRules.surveyId, surveyId)))
-      .returning();
+    const scope = and(eq(surveyLogicRules.id, ruleId), eq(surveyLogicRules.orgId, orgId), eq(surveyLogicRules.surveyId, surveyId));
+    const [updated] = hasPatchValues(input)
+      ? await this.db.update(surveyLogicRules).set(input).where(scope).returning()
+      : await this.db.select().from(surveyLogicRules).where(scope).limit(1);
     if (!updated) throw new NotFoundException("Logic rule not found");
     return updated;
   }

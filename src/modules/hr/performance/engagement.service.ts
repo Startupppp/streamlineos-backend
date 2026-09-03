@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, or } from "drizzle-orm";
+import { hasPatchValues } from "../../../common/db/patch-values";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
@@ -372,13 +373,15 @@ export class EngagementService {
     surveyId: number,
     input: UpdateSurveyInput,
   ) {
-    await this.db
-      .update(pulseSurveys)
-      .set({
-        ...(input.status !== undefined && { status: input.status }),
-        ...(input.title !== undefined && { title: input.title }),
-      })
-      .where(and(eq(pulseSurveys.id, surveyId), eq(pulseSurveys.orgId, orgId)));
+    const values = {
+      ...(input.status !== undefined && { status: input.status }),
+      ...(input.title !== undefined && { title: input.title }),
+    };
+    const scope = and(eq(pulseSurveys.id, surveyId), eq(pulseSurveys.orgId, orgId));
+    const [survey] = hasPatchValues(values)
+      ? await this.db.update(pulseSurveys).set(values).where(scope).returning({ id: pulseSurveys.id })
+      : await this.db.select({ id: pulseSurveys.id }).from(pulseSurveys).where(scope).limit(1);
+    if (!survey) throw new NotFoundException("Survey not found");
 
     return { success: true };
   }

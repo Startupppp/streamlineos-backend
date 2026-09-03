@@ -249,7 +249,7 @@ export class HrHelpdeskService {
 
     if (!isAdmin) throw new ForbiddenException("Only HR admins can update tickets.");
 
-    const patch: Partial<typeof helpdeskTickets.$inferInsert> = {};
+    const patch: Partial<typeof helpdeskTickets.$inferInsert> = { updatedAt: new Date() };
     if (body.status !== undefined) patch.status = body.status;
     if (body.priority !== undefined) patch.priority = body.priority;
     if (body.resolution !== undefined) patch.resolution = body.resolution ?? undefined;

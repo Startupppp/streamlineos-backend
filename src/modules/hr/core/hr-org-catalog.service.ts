@@ -85,6 +85,7 @@ export class HrOrgCatalogService {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.code !== undefined && { code: input.code }),
         ...(input.description !== undefined && { description: input.description }),
+        updatedAt: new Date(),
       })
       .where(and(eq(hrJobRoles.id, jobRoleId), eq(hrJobRoles.orgId, orgId)))
       .returning();
@@ -122,6 +123,7 @@ export class HrOrgCatalogService {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.code !== undefined && { code: input.code }),
         ...(input.description !== undefined && { description: input.description }),
+        updatedAt: new Date(),
       })
       .where(and(eq(hrJobLevels.id, jobLevelId), eq(hrJobLevels.orgId, orgId)))
       .returning();

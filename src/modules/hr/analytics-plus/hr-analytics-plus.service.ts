@@ -335,7 +335,7 @@ export class HrAnalyticsPlusService {
   ) {
     const [row] = await this.db
       .update(hrHeadcountPlans)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(
         and(
           eq(hrHeadcountPlans.id, headcountPlanId),

@@ -295,7 +295,7 @@ export class SalesService {
 
     const [updated] = await this.db
       .update(playbookEntries)
-      .set(values)
+      .set({ ...values, updatedAt: new Date() })
       .where(and(eq(playbookEntries.id, entryId), eq(playbookEntries.orgId, orgId)))
       .returning();
 

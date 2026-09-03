@@ -32,7 +32,7 @@ export class ShiftsService {
 
   async updateShift(orgId: string, id: number, data: UpdateShiftInput) {
     const [shift] = await this.db.update(shiftTemplates)
-      .set(data)
+      .set({ ...data, updatedAt: new Date() })
       .where(and(eq(shiftTemplates.id, id), eq(shiftTemplates.orgId, orgId)))
       .returning();
     if (!shift) throw new NotFoundException("Shift not found");

@@ -98,6 +98,7 @@ export class RecurringJournalsService {
         ...(input.nextRunDate !== undefined ? { nextRunDate: input.nextRunDate } : {}),
         ...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
         ...(input.lines !== undefined ? { lines: input.lines } : {}),
+        updatedAt: new Date(),
       })
       .where(and(eq(finRecurringJournalTemplates.id, templateId), eq(finRecurringJournalTemplates.orgId, orgId)))
       .returning();

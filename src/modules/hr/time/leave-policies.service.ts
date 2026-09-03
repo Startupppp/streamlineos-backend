@@ -3,6 +3,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { hrPolicies, leavePolicies, leaveTypes } from "../../../db/schema";
 import { and, desc, eq, isNull, lte, gte, or } from "drizzle-orm";
+import { hasPatchValues } from "../../../common/db/patch-values";
 
 export interface LeavePolicySummary {
   wfhMonthlyQuota: number | null;
@@ -134,11 +135,10 @@ export class LeavePoliciesService {
     if (data.leaveTypeId != null) {
       await this.assertLeaveTypeInOrg(orgId, data.leaveTypeId);
     }
-    const [policy] = await this.db
-      .update(leavePolicies)
-      .set(data)
-      .where(and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId)))
-      .returning();
+    const scope = and(eq(leavePolicies.id, id), eq(leavePolicies.orgId, orgId));
+    const [policy] = hasPatchValues(data)
+      ? await this.db.update(leavePolicies).set(data).where(scope).returning()
+      : await this.db.select().from(leavePolicies).where(scope).limit(1);
     if (!policy) throw new NotFoundException("Leave policy not found");
     return policy;
   }

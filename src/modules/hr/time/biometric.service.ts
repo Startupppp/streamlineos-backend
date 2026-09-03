@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
+import { hasPatchValues } from "../../../common/db/patch-values";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { biometricDevices, biometricLogs, hrTimeDevices } from "../../../db/schema";
@@ -55,16 +56,13 @@ export class BiometricService {
 
   updateDevice(orgId: string, biometricDeviceId: number, data: UpdateBiometricDevice) {
     return this.db.transaction(async (tx) => {
-      const [device] = await tx
-        .update(biometricDevices)
-        .set(data)
-        .where(
-          and(
-            eq(biometricDevices.id, biometricDeviceId),
-            eq(biometricDevices.orgId, orgId),
-          ),
-        )
-        .returning();
+      const scope = and(
+        eq(biometricDevices.id, biometricDeviceId),
+        eq(biometricDevices.orgId, orgId),
+      );
+      const [device] = hasPatchValues(data)
+        ? await tx.update(biometricDevices).set(data).where(scope).returning()
+        : await tx.select().from(biometricDevices).where(scope).limit(1);
       if (!device) throw new NotFoundException("Device not found");
 
       const mirror = canonicalMirror(device);

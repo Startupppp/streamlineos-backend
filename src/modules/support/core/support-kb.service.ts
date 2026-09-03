@@ -100,7 +100,7 @@ export class SupportKbService {
 
     const [updated] = await this.db
       .update(kbCategories)
-      .set(values)
+      .set({ ...values, updatedAt: new Date() })
       .where(and(eq(kbCategories.id, categoryId), eq(kbCategories.orgId, orgId)))
       .returning();
 
