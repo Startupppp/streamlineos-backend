@@ -3,7 +3,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 import { Test } from "@nestjs/testing";
-import { SQL, is } from "drizzle-orm";
+import { DrizzleQueryError, SQL, is } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AiCreditsService } from "./ai-credits.service";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
@@ -222,8 +222,30 @@ describe("AI credits — balanceAfter invariant: balanceAfter = prev_balance + a
   });
 });
 
+/**
+ * The purchase-reference index (`uq_ai_credit_txns_purchase_ref`) is what makes
+ * a retried purchase idempotent, so this recovery is the only thing standing
+ * between a duplicate webhook and a 500. It has to be provoked with the shape
+ * the driver actually throws: a `DrizzleQueryError` carrying no `code` of its
+ * own, with the `PostgresError` on `cause`. Rejecting with `{ code: "23505" }`
+ * is a shape drizzle never produces, and the assertion passed for years while
+ * the recovery it claimed to cover was unreachable.
+ */
+function duplicatePurchase(): Error {
+  return new DrizzleQueryError(
+    'insert into "ai_credit_transactions" ...',
+    [],
+    Object.assign(new Error('duplicate key value violates unique constraint "uq_ai_credit_txns_purchase_ref"'), {
+      name: "PostgresError",
+      code: "23505",
+      table_name: "ai_credit_transactions",
+      constraint_name: "uq_ai_credit_txns_purchase_ref",
+    }),
+  );
+}
+
 describe("AI credits — 23505 backstop does not double-credit the wallet", () => {
-  it("returns without re-granting when a concurrent insert causes 23505", async () => {
+  it("returns the committed balance when a concurrent purchase loses the reference index", async () => {
     let selectCallCount = 0;
     const db = {
       select: jest.fn().mockImplementation(() => {
@@ -231,12 +253,28 @@ describe("AI credits — 23505 backstop does not double-credit the wallet", () =
         if (selectCallCount === 1) return makeSelectChain([PACK]);
         return makeSelectChain([{ balance: 100_000 }]);
       }),
-      transaction: jest.fn().mockRejectedValue({ code: "23505" }),
+      transaction: jest.fn().mockRejectedValue(duplicatePurchase()),
     };
 
     const svc = await buildSvc(db);
-    await expect(svc.purchaseCreditsDirectly("org1", "user1", PACK.id)).resolves.not.toThrow();
+    const result = await svc.purchaseCreditsDirectly("org1", "user1", PACK.id);
+
+    expect(result.balance).toBe(milliToCredits(100_000));
     expect(db.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("still rethrows a violation that is not a unique-key conflict", async () => {
+    const notNull = new DrizzleQueryError('insert into "ai_credit_transactions" ...', [], Object.assign(
+      new Error("null value in column violates not-null constraint"),
+      { name: "PostgresError", code: "23502" },
+    ));
+    const db = {
+      select: jest.fn().mockImplementation(() => makeSelectChain([PACK])),
+      transaction: jest.fn().mockRejectedValue(notNull),
+    };
+
+    const svc = await buildSvc(db);
+    await expect(svc.purchaseCreditsDirectly("org1", "user1", PACK.id)).rejects.toBe(notNull);
   });
 });
 

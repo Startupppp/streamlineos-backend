@@ -8,12 +8,13 @@ import {
   orgAiCredits,
 } from "../../../db/schema";
 import { creditsToMilli, milliToCredits } from "../../ai/core/billing/ai-model-pricing.constants";
-import { TRIAL_GRANT_MILLI, planGrantMilli } from "./ai-credit-units";
+import { planGrantMilli } from "./ai-credit-units";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 import { AiCreditsPacksService } from "./ai-credits-packs.service";
 import type { AiCreditReserveInput, AiCreditSettleInput } from "../../ai/core/gateway/credit-ledger.interface";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../db/drizzle.types";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type WalletExecutor = Db | TenantTx;
 
@@ -26,41 +27,11 @@ export class AiCreditsService {
   ) {}
 
   async getWallet(orgId: string) {
-    let [wallet] = await this.db
+    const [existing] = await this.db
       .select()
       .from(orgAiCredits)
       .where(eq(orgAiCredits.orgId, orgId));
-    if (!wallet) {
-      try {
-        [wallet] = await this.db.transaction(async (tx) => {
-          const [created] = await tx
-            .insert(orgAiCredits)
-            .values({ orgId, balance: TRIAL_GRANT_MILLI, lifetimeGranted: TRIAL_GRANT_MILLI })
-            .returning();
-          await tx.insert(aiCreditTransactions).values({
-            orgId,
-            userId: null,
-            type: "PLAN_GRANT",
-            amount: TRIAL_GRANT_MILLI,
-            balanceAfter: TRIAL_GRANT_MILLI,
-            feature: "trial-grant",
-            referenceId: "trial-grant",
-          });
-          return [created];
-        });
-      } catch (err: unknown) {
-        if ((err as { code?: string }).code === "23505") {
-          const [existing] = await this.db
-            .select()
-            .from(orgAiCredits)
-            .where(eq(orgAiCredits.orgId, orgId));
-          wallet = existing;
-        } else {
-          throw err;
-        }
-      }
-    }
-    if (!wallet) throw new NotFoundException("AI credits wallet unavailable");
+    const wallet = existing ?? (await this.reservation.ensureWalletForOrg(orgId));
     const recentTransactions = await this.db
       .select({
         id: aiCreditTransactions.id,
@@ -179,7 +150,7 @@ export class AiCreditsService {
         });
       });
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         return;
       }
       throw err;
@@ -247,7 +218,7 @@ export class AiCreditsService {
 
       return { balance: milliToCredits(wallet ?? 0), creditsAdded, pack };
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         const [currentWallet] = await this.db
           .select()
           .from(orgAiCredits)
@@ -268,16 +239,11 @@ export class AiCreditsService {
     packId?: number,
     thresholdCredits?: number,
   ) {
-    let [wallet] = await this.db
+    const [existing] = await this.db
       .select()
       .from(orgAiCredits)
       .where(eq(orgAiCredits.orgId, orgId));
-    if (!wallet) {
-      [wallet] = await this.db
-        .insert(orgAiCredits)
-        .values({ orgId })
-        .returning();
-    }
+    const wallet = existing ?? (await this.reservation.ensureWalletForOrg(orgId));
     const thresholdMilli = thresholdCredits !== undefined
       ? creditsToMilli(thresholdCredits)
       : wallet.autoTopUpThreshold ?? undefined;
@@ -350,7 +316,7 @@ export class AiCreditsService {
         });
       }, { orgId });
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      if (isUniqueViolation(err)) {
         return;
       }
       throw err;

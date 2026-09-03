@@ -23,6 +23,7 @@ import type {
   AiCreditReserveInput,
   AiCreditSettleInput,
 } from "../../ai/core/gateway/credit-ledger.interface";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const SWEEP_PAGE_SIZE = 500;
 
@@ -105,6 +106,14 @@ export class AiCreditsReservationService {
    * re-reads under `FOR UPDATE`, which by then has a row to lock, and takes its
    * deduction behind the winner's.
    */
+  async ensureWalletForOrg(orgId: string): Promise<typeof orgAiCredits.$inferSelect> {
+    return runInTenantTransaction(
+      this.db,
+      (outer) => outer.transaction((tx) => this.ensureWallet(tx, orgId)),
+      { orgId },
+    );
+  }
+
   private async ensureWallet(
     tx: TenantTx,
     orgId: string,
@@ -392,20 +401,4 @@ export class AiCreditsReservationService {
     });
     return swept;
   }
-}
-
-/**
- * Drizzle wraps every driver error in a `DrizzleQueryError` that carries no
- * `code` of its own — the `PostgresError` holding `23505` sits on `cause`. A
- * check that only read the outer object was therefore false for every real
- * database error, which left the idempotency-key recovery below unreachable.
- */
-function isUniqueViolation(err: unknown): boolean {
-  let current: unknown = err;
-  for (let depth = 0; depth < 5; depth += 1) {
-    if (current === null || typeof current !== "object") return false;
-    if (Reflect.get(current, "code") === "23505") return true;
-    current = Reflect.get(current, "cause");
-  }
-  return false;
 }
