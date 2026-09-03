@@ -326,8 +326,8 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
     result: synthesizeRequest(op.verb, op.path.replace(/\{([A-Za-z0-9_]+)\}/g, ":$1")),
   }));
 
-  it("ANTI-VACUITY: the contract really does carry the 1,371 mutating bodies the gate counts", () => {
-    expect(mutating.length).toBe(1371);
+  it("ANTI-VACUITY: the contract really does carry the 1,386 mutating bodies the gate counts", () => {
+    expect(mutating.length).toBe(1386);
   });
 
   it("derives a body for every operation that declares a JSON one", () => {
@@ -402,14 +402,16 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
   });
 });
 
-const ABSENT_FROM_CONTRACT: readonly string[] = [
-  "PATCH /crm/settings/custom-fields/:fieldId",
-  "PATCH /integrations/git/connections/:connectionId",
-  "POST /ai/blog/posts/:postId/improve-writing/stream",
-  "POST /ai/blog/posts/:postId/suggest-title/stream",
-  "POST /ai/blog/posts/:postId/summarize/stream",
-  "POST /ai/surveys/:surveyId/summarize-responses/stream",
-];
+/**
+ * CLOSED 2026-09-03 — and deliberately left as an empty list rather than deleted.
+ *
+ * All six routes 15e named here were absent from `openapi.json` because the artifact had gone 31
+ * operations stale; `057adf02` regenerated it and every one is now described, so the sweep can
+ * derive a body for the whole mutating object-addressable population. The constant stays so the
+ * assertion below keeps its shape: a route that falls out of the contract again fails rather than
+ * being absorbed, and re-opening the gap means adding a line here with a reason.
+ */
+const ABSENT_FROM_CONTRACT: readonly string[] = [];
 
 describe("REACH — the object-addressable routes the sweep actually walks", () => {
   const routes = objectAddressableRoutes().filter((r) => ["POST", "PUT", "PATCH"].includes(r.verb));
@@ -435,10 +437,10 @@ describe("REACH — the object-addressable routes the sweep actually walks", () 
   });
 
   /**
-   * CROSS-TERRITORY FINDING, pinned so it is not lost: six mutating routes the guard sees do not
-   * appear in openapi.json at all, so `check:openapi-coverage` never counted them and nothing can
-   * be synthesised for them. Four are SSE `/stream` endpoints; two are ordinary PATCHes. They are
-   * pinned by name rather than tolerated by percentage — a seventh fails the assertion above.
+   * The cross-territory gap 15e pinned here is CLOSED: the six mutating routes that did not appear
+   * in `openapi.json` are all described at head. The assertion is kept, not deleted — it is the
+   * thing that would notice the gap re-opening, and an empty expectation is the strongest form it
+   * has ever been in.
    */
   it("names the routes the contract does not describe, so the gap is owned rather than rounded away", () => {
     const absent = routes

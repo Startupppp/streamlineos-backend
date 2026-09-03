@@ -124,11 +124,11 @@ describe("the detector bites", () => {
 describe("the surface, enumerated from the committed contract", () => {
   it("counts the operations and the id-shaped body and query fields", () => {
     const { counts } = enumerateIdFieldSites();
-    expect(counts.operations).toBe(3613);
-    expect(counts.bodyFields).toBe(809);
-    expect(counts.queryFields).toBe(238);
-    expect(counts.idFields).toBe(1047);
-    expect(counts.operationsWithIdFields).toBe(667);
+    expect(counts.operations).toBe(3643);
+    expect(counts.bodyFields).toBe(816);
+    expect(counts.queryFields).toBe(239);
+    expect(counts.idFields).toBe(1055);
+    expect(counts.operationsWithIdFields).toBe(674);
   });
 
   it("splits out the tenant and actor selectors rather than analysing them as object references", () => {
@@ -140,11 +140,13 @@ describe("the surface, enumerated from the committed contract", () => {
   it("resolves a handler for all but a named few — an unresolved handler is a blind spot, not a pass", () => {
     const missing = bindings.filter((b) => b.verdict === "handler-not-found").map((b) => b.operationId);
     expect(new Set(missing)).toEqual(
+      /**
+       * Three of the six named here were resolved by `057adf02`, which regenerated `openapi.json`
+       * after it had gone 31 operations stale. The set is TIGHTENED rather than left wide: a
+       * blind spot that closed must shrink the allowance, or the next one to open is absorbed.
+       */
       new Set([
         "FinanceAuditController_export",
-        "CrmAiController_meetingPrep",
-        "SettingsController_createGitConnection",
-        "SettingsController_updateGitConnection",
         "SurveyParticipantsController_import",
         "TimesheetBillingController_export",
       ]),
@@ -158,14 +160,43 @@ describe("the surface, enumerated from the committed contract", () => {
  * A new one fails this suite; a repaired one lowers the number and is reported
  * so the baseline moves down deliberately rather than drifting up quietly.
  */
-const WRITTEN_UNRESOLVED_BASELINE = 209;
-const UNRESOLVED_BASELINE = 174;
+/**
+ * RAISED 209 -> 211 and 174 -> 179 on 2026-09-03, and the reason is visibility, not regression.
+ *
+ * `057adf02` regenerated `openapi.json`, which had been 31 operations stale. Six mutating
+ * object-addressable routes that 15e recorded as **absent from the contract** are now described,
+ * so their body ids are enumerated for the first time. Both added `written-unresolved` sites are
+ * the SAME field on the same handler reached through two routes — `projectId` on
+ * `POST /integrations/git/connections` and its deprecated `/settings/integrations/git` alias — and
+ * `git_connections` carries `fk_git_connections_org_project (org_id, project_id) ->
+ * build.projects(org_id, id)`, a composite tenant foreign key, so another organisation's project
+ * id **cannot land**. Measured in `pg_constraint` on `scratch_t15`, not inferred.
+ *
+ * They are pinned by name below, so raising the number does not hide them.
+ */
+const WRITTEN_UNRESOLVED_BASELINE = 211;
+const UNRESOLVED_BASELINE = 179;
+
+/** The two sites the regenerated contract made visible. Named so the ratchet cannot absorb them. */
+const NEWLY_VISIBLE_WRITTEN_UNRESOLVED: readonly string[] = [
+  "GitConnectionsController_createConnection|projectId",
+  "SettingsDeprecatedRoutesController_createGitConnection|projectId",
+];
 
 describe("findings", () => {
   it("does not add an unresolved body or query id", () => {
     const counts = summarize(bindings);
     expect(counts["written-unresolved"]).toBeLessThanOrEqual(WRITTEN_UNRESOLVED_BASELINE);
     expect(counts.unresolved).toBeLessThanOrEqual(UNRESOLVED_BASELINE);
+  });
+
+  it("still holds the two sites the regenerated contract made visible, refused by a composite tenant FK", () => {
+    const present = new Set(
+      bindings
+        .filter((b) => b.verdict === "written-unresolved")
+        .map((b) => `${b.operationId}|${b.field}`),
+    );
+    for (const site of NEWLY_VISIBLE_WRITTEN_UNRESOLVED) expect(present.has(site)).toBe(true);
   });
 
   it("keeps a majority of the surface resolved, so the ratchet is measuring a real remainder", () => {
