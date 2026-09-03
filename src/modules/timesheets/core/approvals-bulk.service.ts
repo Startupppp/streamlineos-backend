@@ -164,10 +164,22 @@ export class ApprovalsBulkService {
         ),
       );
 
+    const actorMembershipIdForDelegation = actingMembershipId(u.principal);
+    const delegations =
+      actorMembershipIdForDelegation === null
+        ? new Set<number>()
+        : await this.approvals.activeDelegationsToActor(
+            u.orgId,
+            actorMembershipIdForDelegation,
+            candidates
+              .map((p) => p.currentApproverMembershipId)
+              .filter((id): id is number => id !== null),
+          );
+
     const periods = [];
     for (const p of candidates) {
       try {
-        await this.approvals.assertCanActOnPeriod(u, p);
+        await this.approvals.assertCanActOnPeriod(u, p, delegations);
         periods.push(p);
       } catch (err) {
         if (!(err instanceof ForbiddenException)) {

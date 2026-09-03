@@ -65,31 +65,40 @@ export class ApprovalsService {
     return s;
   }
 
-  private async hasActiveDelegation(
+  /**
+   * The delegators who have an active delegation to this actor, out of a bounded
+   * set of approvers. A bulk endpoint resolves the whole page in one indexed
+   * multi-key read instead of one probe per period.
+   */
+  async activeDelegationsToActor(
     orgId: string,
-    approverMembershipId: number,
     actorMembershipId: number,
-  ): Promise<boolean> {
-    const [row] = await this.db
-      .select({ id: userDelegations.id })
+    approverMembershipIds: readonly number[],
+  ): Promise<ReadonlySet<number>> {
+    const wanted = [...new Set(approverMembershipIds)];
+    if (wanted.length === 0) return new Set<number>();
+    const now = new Date();
+    const rows = await this.db
+      .select({ delegatorMembershipId: userDelegations.delegatorMembershipId })
       .from(userDelegations)
       .where(
         and(
           eq(userDelegations.orgId, orgId),
-          eq(userDelegations.delegatorMembershipId, approverMembershipId),
+          inArray(userDelegations.delegatorMembershipId, wanted),
           eq(userDelegations.delegateeMembershipId, actorMembershipId),
           eq(userDelegations.status, "ACTIVE"),
-          lte(userDelegations.startsAt, new Date()),
-          gt(userDelegations.endsAt, new Date()),
+          lte(userDelegations.startsAt, now),
+          gt(userDelegations.endsAt, now),
         ),
       )
-      .limit(1);
-    return !!row;
+      .limit(wanted.length);
+    return new Set(rows.map((row) => row.delegatorMembershipId));
   }
 
   async assertCanActOnPeriod(
     u: CurrentUserContext,
     period: { userMembershipId: number | null; currentApproverMembershipId: number | null },
+    resolvedDelegations?: ReadonlySet<number>,
   ): Promise<void> {
     const membershipId = actingMembershipId(u.principal);
     const actor = {
@@ -104,11 +113,14 @@ export class ApprovalsService {
       period.userMembershipId !== membershipId &&
       membershipId !== null
     ) {
-      delegateeOfApprover = await this.hasActiveDelegation(
-        u.orgId,
-        period.currentApproverMembershipId,
-        membershipId,
-      );
+      delegateeOfApprover =
+        resolvedDelegations !== undefined
+          ? resolvedDelegations.has(period.currentApproverMembershipId)
+          : (
+              await this.activeDelegationsToActor(u.orgId, membershipId, [
+                period.currentApproverMembershipId,
+              ])
+            ).has(period.currentApproverMembershipId);
     }
 
     const decision = canActOnPeriod(actor, period, { delegateeOfApprover });

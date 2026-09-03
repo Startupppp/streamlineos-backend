@@ -120,20 +120,20 @@ export class HrEffectiveChangeApplierService {
           throw new ConflictException("The effective change was already processed.");
       }
 
-      for (const change of due) {
-        await this.audit.log(
-          {
-            orgId,
-            actorId,
+      await this.audit.logMany(
+        {
+          orgId,
+          actorId,
+          entries: due.map((change) => ({
             entityType: "hr_effective_dated_changes",
             entityId: String(change.id),
             action: "applied",
             before: change.oldValue,
             after: change.newValue,
-          },
-          tx,
-        );
-      }
+          })),
+        },
+        tx,
+      );
 
       return { applied: due.length, hasMore: due.length === limit };
     });

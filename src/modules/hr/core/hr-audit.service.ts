@@ -12,6 +12,16 @@ import {
 
 type AuditLogRow = typeof hrAuditLogs.$inferSelect;
 
+export const HR_AUDIT_LOG_CHUNK = 500;
+
+export interface HrAuditEntry {
+  entityType: string;
+  entityId: string;
+  action: string;
+  before?: unknown;
+  after?: unknown;
+}
+
 type AuditLogPage = {
   data: AuditLogRow[];
   pageInfo: {
@@ -71,6 +81,45 @@ export class HrAuditService {
       ipAddress: params.ipAddress ?? null,
       userAgent: params.userAgent ?? null,
     });
+  }
+
+  /**
+   * One multi-row INSERT for a batch that shares an organisation and an actor,
+   * which is the shape every sweep produces. `log` in a loop cost one INSERT per
+   * entry plus one membership lookup per entry for the same actor; this resolves
+   * the membership once and writes the batch under {@link HR_AUDIT_LOG_CHUNK}.
+   */
+  async logMany(
+    params: {
+      orgId: string;
+      actorId: string | null;
+      actorMembershipId?: number | null;
+      ipAddress?: string;
+      userAgent?: string;
+      entries: readonly HrAuditEntry[];
+    },
+    tx?: Db,
+  ): Promise<void> {
+    if (params.entries.length === 0) return;
+    const db = tx ?? this.db;
+    let membershipId = params.actorMembershipId ?? null;
+    if (membershipId === null && params.actorId !== null)
+      membershipId = await this.resolveMembershipId(db, params.orgId, params.actorId);
+
+    const rows = params.entries.map((entry) => ({
+      orgId: params.orgId,
+      actorMembershipId: membershipId,
+      entityType: entry.entityType,
+      entityId: entry.entityId,
+      action: entry.action,
+      before: (entry.before ?? null) as Record<string, unknown> | null,
+      after: (entry.after ?? null) as Record<string, unknown> | null,
+      ipAddress: params.ipAddress ?? null,
+      userAgent: params.userAgent ?? null,
+    }));
+
+    for (let offset = 0; offset < rows.length; offset += HR_AUDIT_LOG_CHUNK)
+      await db.insert(hrAuditLogs).values(rows.slice(offset, offset + HR_AUDIT_LOG_CHUNK));
   }
 
   async list(orgId: string, input: ListAuditLogsInput): Promise<AuditLogPage> {

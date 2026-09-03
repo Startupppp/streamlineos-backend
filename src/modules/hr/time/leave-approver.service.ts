@@ -4,12 +4,24 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { organizationMembers, users } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 const LEAVE_APPROVE_PERMISSION = "hr:leaves:approve";
 const APPROVER_CANDIDATE_LIMIT = 100;
+
+/**
+ * Only an `all` scope reaches a member other than the holder. `own` and `none`
+ * exclude a different subject by definition, and `team` was resolved by a probe
+ * that passed no team column, so `applyScope` degraded to `member.user_id =
+ * candidate` and the surrounding WHERE already pinned `member.user_id = subject`
+ * — a contradiction for every candidate the caller does not skip, and therefore
+ * one guaranteed-empty round trip per candidate. Deciding what `team` should mean
+ * for leave approval is a product question; running the query is not an answer.
+ */
+function coversAnotherMember(scope: DataScope): boolean {
+  return scope === "all";
+}
 
 export interface LeaveApprover {
   id: string;
@@ -87,8 +99,7 @@ export class LeaveApproverService {
     for (const candidateId of uniqueCandidateIds) {
       if (candidateId === subjectUserId) continue;
       const permissions = await this.access.resolveUserPermissions(orgId, candidateId);
-      const scope = permissions.get(LEAVE_APPROVE_PERMISSION) ?? "none";
-      if (!(await this.includesSubject(scope, orgId, candidateId, subjectUserId))) continue;
+      if (!coversAnotherMember(permissions.get(LEAVE_APPROVE_PERMISSION) ?? "none")) continue;
 
       const candidate = candidateById.get(candidateId);
       if (candidate) {
@@ -98,31 +109,5 @@ export class LeaveApproverService {
     }
 
     return null;
-  }
-
-  private async includesSubject(
-    scope: DataScope,
-    orgId: string,
-    candidateId: string,
-    subjectUserId: string,
-  ): Promise<boolean> {
-    if (scope === "all") return true;
-    if (scope === "none" || scope === "own") return false;
-
-    const [visible] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, subjectUserId),
-          eq(organizationMembers.status, "ACTIVE"),
-          applyScope(scope, orgId, candidateId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      )
-      .limit(1);
-    return Boolean(visible);
   }
 }
