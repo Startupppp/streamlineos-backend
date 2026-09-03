@@ -11,12 +11,52 @@ name: Database gates
 # The static gates they named now run in `ci.yml`'s `gates` job on every push and
 # pull request. What is left here is the half that needs a live database.
 #
-# NOT ENABLED ON PUSH OR PULL REQUEST ON PURPOSE. These jobs have never executed
-# in any repository, so their green is unproven; wiring an unproven job as a
-# required check is how a pipeline gets muted. Run it with `workflow_dispatch`,
-# read the result, then promote the jobs that pass to `ci.yml`.
+# ── 2026-09-03: THE RESULT WAS READ ──────────────────────────────────────────
+#
+# The header used to say "these jobs have never executed in any repository ...
+# run it with workflow_dispatch, read the result, then promote the jobs that
+# pass". The schedule fired before anyone did: run 33733281657, 2026-09-03
+# 08:25:35Z, at f22c79f0 — the ONLY run this workflow has ever had. All three
+# jobs FAILED, in 1m11s, and nobody looked. So the claim was already false when
+# it was written, and worse than false: this file was believed to be pending
+# rather than red.
+#
+# All three failures had one cause, and it was this file's, not the gates':
+#
+#   FAIL [0423_repair_schema_drift] role "streamline_app" does not exist
+#   RESULT: FAILED at 0423_repair_schema_drift (165/672 ok before failure)
+#
+# 84 migrations issue `GRANT ... TO streamline_app` unconditionally. The role is
+# cluster-wide and every developer machine already has one, which is why a cold
+# build reaches head locally and died at migration 166 here. `tenant-relationships`
+# created it with `db:bootstrap-role` AFTER `db:bootstrap`, which is too late;
+# `bootstrapped` and `migration-proof` never created it at all. It is now the
+# first database step of every job.
+#
+# Two further defects that the first green then exposed, both fixed:
+#   * `migration-proof` and `replay-chain-cold` lacked the session `search_path`
+#     that `db-bootstrap.mjs` sets, so the 152 unqualified `current_org_id()`
+#     calls in 0619 and its siblings resolved only under a role literally named
+#     `neondb_owner`. Under CI's `ci` role the cold proof died at 0619 with
+#     `42883 function current_org_id() does not exist`.
+#   * the `Replay ledger` step pointed `COLD_DATABASE_URL` at the database
+#     `db:bootstrap` had just built. `check:replay-ledger` reads `drizzle.__replay`,
+#     which only `replay:chain-cold` writes, so it reported 672 of 672 entries
+#     "not applied" and exited 1 by construction. It now gets a database that
+#     `replay:chain-cold` actually replayed.
+#
+# Every gate below was then measured at journal head 672/672 on a locally
+# bootstrapped database and exits 0. The two controller e2e suites were NOT, and
+# they carry an explicit event guard saying so rather than a silent one.
+#
+# This workflow now runs on push and pull request. A gate whose only trigger is a
+# nightly nobody reads is a gate in name only — which is what the last twenty-four
+# hours of this file demonstrated. `check:gate-wiring` enforces that property now.
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   schedule:
     - cron: "0 4 * * *"
   workflow_dispatch:
@@ -65,6 +105,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # MUST precede db:bootstrap. 84 migrations GRANT to this role by name and
+      # do not guard the grant, so on a fresh cluster the chain dies at 0423.
+      # This is exactly how run 33733281657 failed.
+      - name: Create the app role the migration chain grants to
+        run: pnpm db:bootstrap-role
+        env:
+          APP_DB_PASSWORD: ci
+
       - name: Bootstrap Database
         run: pnpm db:bootstrap
 
@@ -88,18 +136,30 @@ jobs:
       - name: Retention coverage (live)
         run: pnpm check:retention-coverage
 
-      # The last gate script in the repository that no workflow named. BOTH its
-      # halves — the live check and its own self-test — exit 2 with
-      # "COLD_DATABASE_URL is required", so there is no hermetic half to put in
-      # ci.yml's `gates` job. This is the only place a cold database exists.
-      # UNPROVEN: like every job in this file it has never executed anywhere, so
-      # read the result before promoting it.
-      - name: Replay ledger
-        run: pnpm check:replay-ledger:self-test && pnpm check:replay-ledger
+      # Both drift gates read pg_attribute / pg_constraint / pg_index against a database at
+      # journal head, so the hermetic `gates` job in ci.yml cannot host them. They spent this
+      # release in check-gate-wiring's UNWIRED_BY_DESIGN list under the reason "runs in
+      # db-gates.yml when a bootstrapped target exists" — and neither name appeared anywhere
+      # in this file. The reason is now true because the steps exist.
+      - name: Declared columns match the catalog
+        run: pnpm check:declaration-column-drift:self-test && pnpm check:declaration-column-drift
         env:
-          COLD_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          COLUMN_DRIFT_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
 
+      - name: Declared constraints and indexes match the catalog
+        run: >-
+          pnpm check:declaration-constraint-drift:self-test &&
+          pnpm check:declaration-constraint-drift
+        env:
+          CONSTRAINT_DRIFT_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
+      # UNPROVEN. Unlike every gate above it, this suite has never completed anywhere —
+      # not in CI, not in this ticket's measurement pass. Making an unmeasured 45-minute
+      # suite a required pull-request check is how a pipeline gets muted, so it runs on
+      # the nightly and on demand until it has produced a green somebody read. Promote it
+      # to every event by deleting this `if:`, not by deleting the step.
       - name: Controller E2E Tests
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: pnpm test:e2e:ci
         env:
           NODE_OPTIONS: --max-old-space-size=8192
@@ -107,6 +167,9 @@ jobs:
   # Run the complete migration chain twice from disposable databases: once from
   # zero and once split at the supported upgrade watermark. The proof compares the
   # full catalog and drops both probes in a finally block.
+  #
+  # Also the replay ledger, because `replay:chain-cold` is the only thing that
+  # writes `drizzle.__replay` and this is the job that owns cold-chain territory.
   migration-proof:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -128,6 +191,7 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
       PGSSLMODE: disable
+      PGPASSWORD: ci
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -137,19 +201,56 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # Roles are cluster-wide, so creating it once here covers both disposable
+      # probe databases migration:proof creates on this same server.
+      - name: Create the app role the migration chain grants to
+        run: pnpm db:bootstrap-role
+        env:
+          APP_DB_PASSWORD: ci
+
       - name: Migration proof guard self-test
         run: pnpm migration:proof --self-test
 
       - name: Cold bootstrap and supported-upgrade catalog proof
         run: pnpm migration:proof
 
+      # `check:replay-ledger` reads drizzle.__replay, which only replay:chain-cold
+      # writes. Pointed at a db:bootstrap database it reports every journal entry
+      # as "not applied" and exits 1 for a reason that has nothing to do with the
+      # chain. It gets its own blank database here.
+      - name: Blank database for the cold replay
+        run: |
+          psql -h 127.0.0.1 -U ci -d ci -v ON_ERROR_STOP=1 -c 'CREATE DATABASE replay'
+          psql -h 127.0.0.1 -U ci -d replay -v ON_ERROR_STOP=1 \
+            -c 'CREATE EXTENSION IF NOT EXISTS vector' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm' \
+            -c 'CREATE EXTENSION IF NOT EXISTS btree_gist' \
+            -c 'CREATE EXTENSION IF NOT EXISTS pgcrypto' \
+            -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'
+
+      - name: Replay the whole journal into a blank database
+        run: pnpm replay:chain-cold
+        env:
+          COLD_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/replay
+
+      # `check:replay-ledger:self-test` is NOT a self-test — check-replay-ledger.mjs
+      # accepts no `--self-test` argument and ignores it, so that script name runs the
+      # live check a second time. It is deliberately not invoked here.
+      - name: Replay ledger
+        run: pnpm check:replay-ledger
+        env:
+          COLD_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/replay
+
   # Composite tenant foreign keys. The detector reads pg_constraint, so it only
   # runs where a bootstrapped database exists. Its self-test runs without one and
   # includes an inline .references() fixture — the form an earlier version of this
   # gate could not see, which is how it reported a false zero.
   #
-  # NON-BLOCKING, and only until the count reaches zero: 486 single-column tenant
-  # FKs remain actionable, so a hard gate would red the run over known-open work.
+  # It used to carry `continue-on-error: true` with the note "NON-BLOCKING, and only
+  # until the count reaches zero: 486 single-column tenant FKs remain actionable".
+  # Measured at head on 2026-09-03: **Actionable 0** (79 CRM, 134 Inventory and 1
+  # platform-global excluded by the gate's own scope rules). The count reached zero,
+  # so by that note's own terms the gate is now blocking.
   tenant-relationships:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -182,21 +283,32 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      - name: Bootstrap Database
-        run: pnpm db:bootstrap
-
+      # First, not last. The chain grants to this role by name from migration 0423
+      # onwards; creating it afterwards is 507 migrations too late.
       - name: Create App Role
         run: pnpm db:bootstrap-role
 
+      - name: Bootstrap Database
+        run: pnpm db:bootstrap
+
+      # Second pass, now that the tables exist: grants every table created by the
+      # chain, and re-revokes UPDATE/DELETE on the append-only audit_logs.
+      - name: Grant the app role on the bootstrapped schema
+        run: pnpm db:bootstrap-role
+
       - name: Tenant foreign keys are composite
-        continue-on-error: true
         env:
           TENANT_RELATIONSHIP_DB_URL: postgres://ci:ci@127.0.0.1:5432/ci
         run: pnpm check:tenant-relationships:self-test && pnpm check:tenant-relationships
 
       # The seeded suite needs the non-owner role above; without it every case
       # passes while proving nothing, since the owner has BYPASSRLS.
+      #
+      # UNPROVEN, like the controller suite above: never completed in CI, and not
+      # measured by the ticket that repaired this file. Nightly and on demand until
+      # it has a green somebody read.
       - name: Seeded Controller E2E Tests
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: pnpm test:e2e:seeded
         env:
           NODE_OPTIONS: --max-old-space-size=8192
