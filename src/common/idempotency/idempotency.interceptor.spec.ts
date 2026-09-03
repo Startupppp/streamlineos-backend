@@ -3,25 +3,36 @@ import {
   CallHandler,
   ConflictException,
   ExecutionContext,
+  InternalServerErrorException,
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { createHash } from "node:crypto";
 import { firstValueFrom, of, throwError } from "rxjs";
 import { IdempotencyInterceptor } from "./idempotency.interceptor";
-import type { ClaimResult, CommandFenceStore } from "./command-fence-store";
+import type { ClaimParams, ClaimResult, CommandFenceStore } from "./command-fence-store";
 
 const COMMAND = "portal.createGrant";
 const BODY = { partyContactId: "c1" };
-const MATCHING_HASH = createHash("sha256")
+/** The pre-widening hash, which the interceptor still emits as `legacyRequestHash`. */
+const LEGACY_HASH = createHash("sha256")
   .update(JSON.stringify({ commandName: COMMAND, body: BODY }))
   .digest("hex");
 
-function makeStore(claimResult: ClaimResult): { store: CommandFenceStore; completeCalls: unknown[]; failCalls: number[] } {
+function makeStore(claimResult: ClaimResult): {
+  store: CommandFenceStore;
+  completeCalls: unknown[];
+  failCalls: number[];
+  claimParams: ClaimParams[];
+} {
   const completeCalls: unknown[] = [];
   const failCalls: number[] = [];
+  const claimParams: ClaimParams[] = [];
   const store: CommandFenceStore = {
-    claim: jest.fn().mockResolvedValue(claimResult),
+    claim: jest.fn().mockImplementation((params: ClaimParams) => {
+      claimParams.push(params);
+      return Promise.resolve(claimResult);
+    }),
     complete: jest.fn().mockImplementation((_id: number, _status: number, _data: unknown) => {
       completeCalls.push(_data);
       return Promise.resolve();
@@ -31,7 +42,7 @@ function makeStore(claimResult: ClaimResult): { store: CommandFenceStore; comple
       return Promise.resolve();
     }),
   };
-  return { store, completeCalls, failCalls };
+  return { store, completeCalls, failCalls, claimParams };
 }
 
 function makeReflector(commandName: string | undefined): Reflector {
@@ -82,15 +93,42 @@ describe("IdempotencyInterceptor", () => {
     expect(store.claim).not.toHaveBeenCalled();
   });
 
-  it("skips the fence when there is no tenant context", async () => {
+  it("fails closed when a fenced command carries no organisation context", async () => {
     const { store } = makeStore({ kind: "proceed", fenceId: 1 });
     const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
     const req = makeReq({ user: { userId: "u1", sessionId: "s" } });
     const handler = makeHandler("ok");
-    const result$ = await interceptor.intercept(makeCtx(req, {}), handler);
-    expect(await firstValueFrom(result$)).toBe("ok");
-    expect(handler.handle).toHaveBeenCalled();
+    await expect(
+      interceptor.intercept(makeCtx(req, {}), handler),
+    ).rejects.toBeInstanceOf(InternalServerErrorException);
+    expect(handler.handle).not.toHaveBeenCalled();
     expect(store.claim).not.toHaveBeenCalled();
+  });
+
+  it("hashes the path params, method and query, not only the body", async () => {
+    const { store, claimParams } = makeStore({ kind: "proceed", fenceId: 1 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
+    const a = makeReq({ method: "POST", params: { creditNoteId: "a" }, query: {} });
+    const b = makeReq({ method: "POST", params: { creditNoteId: "b" }, query: {} });
+    await firstValueFrom(await interceptor.intercept(makeCtx(a, {}), makeHandler("ok")));
+    await firstValueFrom(await interceptor.intercept(makeCtx(b, {}), makeHandler("ok")));
+
+    expect(claimParams).toHaveLength(2);
+    expect(claimParams[0]?.requestHash).not.toBe(claimParams[1]?.requestHash);
+    // The body is identical, so the pre-widening hash cannot tell them apart at all.
+    expect(claimParams[0]?.legacyRequestHash).toBe(LEGACY_HASH);
+    expect(claimParams[1]?.legacyRequestHash).toBe(LEGACY_HASH);
+  });
+
+  it("orders query and param keys, so ?a=1&b=2 and ?b=2&a=1 are one command", async () => {
+    const { store, claimParams } = makeStore({ kind: "proceed", fenceId: 1 });
+    const interceptor = new IdempotencyInterceptor(makeReflector(COMMAND), store);
+    const a = makeReq({ method: "POST", params: {}, query: { a: "1", b: "2" } });
+    const b = makeReq({ method: "POST", params: {}, query: { b: "2", a: "1" } });
+    await firstValueFrom(await interceptor.intercept(makeCtx(a, {}), makeHandler("ok")));
+    await firstValueFrom(await interceptor.intercept(makeCtx(b, {}), makeHandler("ok")));
+    expect(claimParams[0]?.requestHash).toBe(claimParams[1]?.requestHash);
+    expect(store.claim).toHaveBeenCalledTimes(2);
   });
 
   it("executes a fresh command and marks the fence completed", async () => {
@@ -100,7 +138,6 @@ describe("IdempotencyInterceptor", () => {
     const res = { statusCode: 201, status: jest.fn() };
     const result$ = await interceptor.intercept(makeCtx(makeReq(), res), handler);
     expect(await firstValueFrom(result$)).toEqual({ created: true });
-    await Promise.resolve();
     expect(handler.handle).toHaveBeenCalled();
     expect(store.complete).toHaveBeenCalledWith(7, 201, { created: true });
     expect(completeCalls).toHaveLength(1);
