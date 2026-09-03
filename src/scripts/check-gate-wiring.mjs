@@ -234,10 +234,12 @@ export function branchFilterCanMatch(list, knownBranches, isIgnore) {
 /** Can this one event ever start the workflow by itself? Returns null when it can. */
 export function eventCannotFire(event, config, knownBranches) {
   if (!AUTOMATIC_EVENTS.has(event)) return `${event} needs a human or an external caller`;
+  // `schedule:` is the one event whose bare form fires nothing: it is a list of crons, so an
+  // absent or empty list is a trigger that can never come round. Checked before the null guard
+  // below, which is otherwise correct — `pull_request:` with no body fires on every PR.
+  if (event === "schedule") return "schedule carries no cron entry";
   if (config === null || config === undefined) return null;
   if (typeof config !== "object" || Array.isArray(config)) return null;
-
-  if (event === "schedule") return "schedule carries no cron entry";
 
   if (Array.isArray(config.types) && config.types.length === 0)
     return `${event} declares an empty types: list`;
