@@ -223,6 +223,47 @@ function testBody(callNode) {
 
 const OTHER_ASSERT = /^(assert|ok|strictEqual|deepStrictEqual|fail|throws|doesNotThrow)$/;
 
+const SENTINEL_CACHE = new WeakMap();
+
+/**
+ * Identifiers this file asserts on OUTSIDE the given test body. "Outside" is
+ * load-bearing: a guard's own identifier almost always appears in the
+ * assertions it guards, so crediting those would exempt every early return
+ * including the real ones.
+ */
+function sentinelAsserted(sf, exclude) {
+  let byFile = SENTINEL_CACHE.get(sf);
+  if (!byFile) {
+    byFile = [];
+    const visit = (node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "expect"
+      ) {
+        const names = new Set();
+        const collect = (n) => {
+          if (ts.isIdentifier(n)) names.add(n.text);
+          ts.forEachChild(n, collect);
+        };
+        for (const arg of node.arguments) collect(arg);
+        byFile.push({ start: node.getStart(sf), end: node.getEnd(), names });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    SENTINEL_CACHE.set(sf, byFile);
+  }
+  const lo = exclude.getStart(sf);
+  const hi = exclude.getEnd();
+  const out = new Set();
+  for (const e of byFile) {
+    if (e.start >= lo && e.end <= hi) continue;
+    for (const n of e.names) out.add(n);
+  }
+  return out;
+}
+
 function analyseBody(fn, sf, counters) {
   let expectCount = 0;
   let hasOtherAssertion = false;
@@ -329,6 +370,27 @@ function analyseBody(fn, sf, counters) {
     // A guard that silences nothing is not a defect: require at least one
     // assertion somewhere below it.
     if (!/\bexpect\s*\(/.test(fn.getText(sf))) earlyReturns.length = 0;
+
+    // SENTINEL EXEMPTION. A guard whose own identifier is asserted by a sibling
+    // test in the same file is not an escape hatch: the file goes red when the
+    // guard is false, so the guarded tests cannot pass while asserting nothing.
+    // This is not hypothetical — it is why this class reports 0 here and not 11.
+    // The frontend's two cross-repo permission-catalog suites guard 11 tests on
+    // `if (!backendAvailable) return;` and each carries
+    //   it("can reach the backend catalog — the cross-repo checks below assert
+    //      nothing without it", () => { expect({ backendAvailable, ... })
+    //        .toEqual({ backendAvailable: true, ... }); });
+    // Flagging those would have banked 11 sites of detector noise as debt.
+    for (let i = earlyReturns.length - 1; i >= 0; i -= 1) {
+      const ids = [];
+      const collect = (n) => {
+        if (ts.isIdentifier(n)) ids.push(n.text);
+        ts.forEachChild(n, collect);
+      };
+      collect(earlyReturns[i].node.expression);
+      const outside = sentinelAsserted(sf, fn);
+      if (ids.some((id) => outside.has(id))) earlyReturns.splice(i, 1);
+    }
   }
 
   return { expectCount, hasOtherAssertion, tautologies, floating, conditional, earlyReturns };
@@ -420,6 +482,13 @@ describe("caught", () => {
 `,
   "not-caught.spec.ts": `
 describe("not caught", () => {
+  it("U sentinel: the guard itself is asserted by this sibling", () => {
+    expect({ backendAvailable }).toEqual({ backendAvailable: true });
+  });
+  it("V sentinel-protected guard is NOT an escape hatch", () => {
+    if (!backendAvailable) return;
+    expect(catalog).toContain("x");
+  });
   it("G supertest expect is an assertion", async () => {
     await request(app.getHttpServer()).get("/x").expect(403);
   });
@@ -461,6 +530,7 @@ function selfTest() {
     fs.writeFileSync(path.join(specDir, name), body);
 
   const { findings } = scanTree(dir, ["src"]);
+  const none = (title, cls) => !findings.some((f) => f.title === title && f.cls === cls);
   const at = (file, title, cls) =>
     findings.some((f) => f.file.endsWith(file) && f.title === title && f.cls === cls);
 
@@ -498,6 +568,10 @@ function selfTest() {
     [
       "M an awaited rejects is NOT FLOATING_ASSERT",
       !at("not-caught.spec.ts", "M awaited rejects is fine", "FLOATING_ASSERT"),
+    ],
+    [
+      "V a guard asserted by a SIBLING test is NOT EARLY_RETURN (sentinel)",
+      none("V sentinel-protected guard is NOT an escape hatch", "EARLY_RETURN"),
     ],
     ["N is EARLY_RETURN", at("caught.spec.ts", "N early return above the assertions", "EARLY_RETURN")],
     [
