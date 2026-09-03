@@ -95,10 +95,6 @@
       "verdict": "FALSE-POSITIVE",
       "note": "both sites are bounded pagination: drainByKeyset pages the attendee fan-out, and the second is a chunked multi-row outbox insert of OUTBOX_INSERT_CHUNK rows"
     },
-    "/calendar/calendar.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "detector artifact — the `.map` at 365 is the argument to a single bulk `.values()`, and the delete at 370 sits at method level inside `if (anyRemoved)`, not in any callback"
-    },
     "/chat/chat-huddles.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "both sites are for(;;) keyset drains over chat_channel_members paged at ATTENDEE_BATCH / NOTIFY_BATCH"
@@ -543,17 +539,9 @@
       "verdict": "FALSE-POSITIVE",
       "note": "the loop walks a merge chain bounded by MAX_MERGE_HOPS with an explicit cycle guard; it is a chain walk, not a per-row fan-out"
     },
-    "/party/party-legacy-writer.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "the loop is over groupByPayload — one UPDATE per distinct payload shape, with an inArray over every party sharing it"
-    },
     "/party/party-roles.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "identifiersOfParty runs once per candidate duplicate. Resolve identifiers for the whole candidate set in one inArray read before fingerprinting"
-    },
-    "/payroll/insights/reports-read.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "detector artifact — the `.filter`/`.map` at 346 are single-line array callbacks and the SELECT at 352 sits at function level, already guarded by `currUserIds.length > 0` and batched with inArray"
     },
     "/payroll/jobs/payroll-jobs.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -614,14 +602,6 @@
     "/storage/storage-key-catalog.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "collectOrgFileKeys and collectUserFileKeys each became one UNION ALL, with user FK columns discovered from pg_constraint; the loops still detected are bounded cursor drains in drainPages"
-    },
-    "/support/core/support-custom-fields.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "the flagged sql is excluded.value inside an onConflictDoUpdate set clause — a column reference, not an executed query"
-    },
-    "/support/core/support-kb.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Was N+1-FIXED. All three reported sites are detector artifacts: the 'loop' lines 284/285/291 are single-line .map/.filter/.values(...map(...)) callbacks, and the insert they are matched against (302) sits at method top level inside `if (tagRows.length > 0)`, not inside any callback. syncArticleTags issues 4 statements total regardless of tag count."
     },
     "/support/core/support-macros.service.ts": {
       "verdict": "FALSE-POSITIVE",
