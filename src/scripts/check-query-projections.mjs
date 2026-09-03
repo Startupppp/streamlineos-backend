@@ -34,6 +34,7 @@
 
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, extname } from "node:path";
+import { scanExistencePaths, OUT_OF_RELEASE_SCOPE } from "./existence-paths.mjs";
 
 const ROOT = new URL("../", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 const BASELINE_FILE = new URL(
@@ -269,13 +270,85 @@ function runSelfTests() {
     process.exit(1);
   }
 
+  /* --- the AST existence rule: it must draw the distinction the regex cannot --- */
+  const ex = (label, fixture, expected) => {
+    const got = scanExistencePaths("src/modules/x/y.service.ts", fixture).length;
+    if (got !== expected) {
+      console.error(`SELF-TEST FAIL: ${label} — expected ${expected}, got ${got}`);
+      process.exit(1);
+    }
+  };
+
+  ex(
+    "an unprojected findFirst used only as a null guard IS a finding",
+    `const row = await this.db.query.signRecipients.findFirst({ where: w });
+     if (!row) throw new BadRequestException("nope");`,
+    1,
+  );
+  ex(
+    "the same read, projected, is not a finding",
+    `const row = await this.db.query.signRecipients.findFirst({ columns: { id: true }, where: w });
+     if (!row) throw new BadRequestException("nope");`,
+    0,
+  );
+  // This is the case the sibling gate's regex cannot separate from the one above,
+  // and why it measured 211 findings where a hand-scan found 4.
+  ex(
+    "a returned row is NOT an existence path even though the guard looks identical",
+    `const row = await this.db.query.signRecipients.findFirst({ where: w });
+     if (!row) throw new BadRequestException("nope");
+     return row;`,
+    0,
+  );
+  ex(
+    "reading one property off the row disqualifies the site",
+    `const row = await this.db.query.signRecipients.findFirst({ where: w });
+     if (!row) throw new BadRequestException("nope");
+     this.log(row.email);`,
+    0,
+  );
+  ex(
+    "a bare .select() consumed only as .length IS a finding",
+    `const existing = await this.db.select().from(t).where(w).limit(1);
+     if (existing.length === 0) throw new NotFoundException("gone");`,
+    1,
+  );
+  // The shape /\.select\s*\(\s*\)/ cannot see at all.
+  ex(
+    ".select(getTableColumns(t)) is a full-row read, not a projection",
+    `const existing = await this.db.select(getTableColumns(t)).from(t).where(w);
+     if (!existing) throw new NotFoundException("gone");`,
+    1,
+  );
+  ex(
+    "a genuinely projected .select() is not a finding",
+    `const existing = await this.db.select({ id: t.id }).from(t).where(w).limit(1);
+     if (existing.length === 0) throw new NotFoundException("gone");`,
+    0,
+  );
+  ex(
+    "a row nobody references at all is not reported here",
+    `const row = await this.db.query.signRecipients.findFirst({ where: w });
+     return 1;`,
+    0,
+  );
+
+  if (!OUT_OF_RELEASE_SCOPE.test("src/modules/inventory/replenishment/inv.service.ts")) {
+    console.error("SELF-TEST FAIL: inventory not recognised as out of release scope");
+    process.exit(1);
+  }
+  if (OUT_OF_RELEASE_SCOPE.test("src/modules/hr/directory/assets.service.ts")) {
+    console.error("SELF-TEST FAIL: hr wrongly treated as out of release scope");
+    process.exit(1);
+  }
+
   const files = collectSourceFiles(ROOT);
   if (files.length < MIN_FILES) {
     console.error(`SELF-TEST FAIL: discovered only ${files.length} source files (expected >= ${MIN_FILES}) — ROOT is wrong: ${ROOT}`);
     process.exit(1);
   }
 
-  console.log("SELF-TEST PASS: all 10 projection checks passed");
+  console.log("SELF-TEST PASS: all 20 projection checks passed");
 }
 
 function main() {
@@ -290,6 +363,8 @@ function main() {
 
   const totals = { findMany: 0, findFirst: 0, bareSelect: 0 };
   const countPaths = [];
+  const existenceInScope = [];
+  const existenceDeferred = [];
   for (const file of files) {
     let src;
     try { src = readFileSync(file, "utf8"); } catch { continue; }
@@ -300,6 +375,10 @@ function main() {
     const rel = file.slice(ROOT.length - 1);
     for (const c of r.countPathsUnprojected)
       countPaths.push(`${rel}:${c.line} (${c.kind} on ${c.table}, consumed only as ${c.binding}.length)`);
+    for (const e of scanExistencePaths(rel, src))
+      (OUT_OF_RELEASE_SCOPE.test(rel) ? existenceDeferred : existenceInScope).push(
+        `${e.file}:${e.line} (${e.shape} on ${e.subject}, ${e.binding} only ${e.kind}-tested)`,
+      );
   }
 
   if (process.argv.includes("--emit")) {
@@ -307,8 +386,12 @@ function main() {
       BASELINE_FILE,
       JSON.stringify(
         { version: 1, measuredAt: new Date().toISOString().slice(0, 10), files: files.length,
-          note: "Ratchets for ticket 20's projection box. countPathsAllowed is the CLOSED clause and must stay at 0; the three population ceilings hold the BLOCKED clause from growing while the product decision is outstanding. All four may only go DOWN.",
-          countPathsAllowed: countPaths.length, ...totals },
+          note: "Ratchets for ticket 20's projection box. countPathsAllowed and existencePathsAllowed are the CLOSED clauses and must stay at 0; the three population ceilings hold the BLOCKED clause from growing while the product decision is outstanding. existenceDeferredAllowed covers the modules excluded from this release (crm/leads/deals/contacts/inventory) — enforced as a ratchet so they cannot grow before the exclusion lifts. All may only go DOWN.",
+          countPathsAllowed: countPaths.length,
+          existencePathsAllowed: existenceInScope.length,
+          existenceDeferredAllowed: existenceDeferred.length, ...totals,
+          measuredAgainst:
+            "git archive HEAD src — NOT the working tree. Measured on the dirty tree first and it read 294/547/600 against HEAD's 295/547/599, because two concurrent lanes held uncommitted edits in opposite directions (one projecting chat/chat-channel-list.service.ts, one adding a bare .select()). A ceiling taken from a shared dirty tree is not the number the gate will see." },
         null, 2,
       ) + "\n",
     );
@@ -325,9 +408,39 @@ function main() {
 
   console.log(`Scanned ${files.length} source files.`);
   console.log(`Unprojected reads — findMany ${totals.findMany} · findFirst ${totals.findFirst} · bare .select() ${totals.bareSelect} = ${totals.findMany + totals.findFirst + totals.bareSelect} (ceiling ${baseline.findMany + baseline.findFirst + baseline.bareSelect}, enforced on the total).`);
-  console.log(`Unprojected COUNT/EXISTENCE paths: ${countPaths.length} (allowed ${baseline.countPathsAllowed}).`);
+  console.log(`Unprojected COUNT paths (.length only): ${countPaths.length} (allowed ${baseline.countPathsAllowed}).`);
+  console.log(`Unprojected EXISTENCE/COUNT paths, AST: ${existenceInScope.length} in scope (allowed ${baseline.existencePathsAllowed ?? 0}) · ${existenceDeferred.length} deferred to crm/inventory (ratchet ${baseline.existenceDeferredAllowed ?? 0}).`);
 
   let failed = false;
+
+  /**
+   * The existence half of this box's own clause, which nothing enforced until
+   * this rule existed. The line above used to read "COUNT/EXISTENCE" while the
+   * rule below it fired only on `.length` — so a read hydrating 34 columns of
+   * `sign_recipients`, `otp_code_hash` and `signing_token_hash` among them, to
+   * decide whether a recipient exists, passed a gate that claimed to cover it.
+   *
+   * Enforced at zero because an existence check has no response DTO: the value
+   * is never returned, read or passed, which is what makes it a finding. There
+   * is no product decision here and never was.
+   */
+  const existenceAllowed = baseline.existencePathsAllowed ?? 0;
+  if (existenceInScope.length > existenceAllowed) {
+    console.error(
+      `\n${existenceInScope.length} read(s) hydrate a whole row to answer a yes/no question, against an allowance of ${existenceAllowed}. Narrowing one changes no response DTO — the result is only ever tested for null, truthiness or length. Add a \`columns:\` naming what the guard reads:`,
+    );
+    for (const e of existenceInScope) console.error(`  UNPROJECTED-EXISTENCE  ${e}`);
+    failed = true;
+  }
+
+  const deferredAllowed = baseline.existenceDeferredAllowed ?? 0;
+  if (existenceDeferred.length > deferredAllowed) {
+    console.error(
+      `\nRATCHET BREACH: existence paths in modules excluded from this release rose ${deferredAllowed} -> ${existenceDeferred.length}. They are not fixed here because crm/leads/deals/contacts/inventory are out of release scope, but they may not grow while that exclusion stands:`,
+    );
+    for (const e of existenceDeferred) console.error(`  DEFERRED-EXISTENCE  ${e}`);
+    failed = true;
+  }
 
   if (countPaths.length > baseline.countPathsAllowed) {
     console.error(

@@ -683,6 +683,24 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:db-call-count:self-test && pnpm check:db-call-count
 
+      # BLOCKING. Ticket 20's projection ratchet. Two clauses are at an allowance
+      # of ZERO because neither needs a product decision: a read whose result is
+      # only counted, and a read whose result is only tested for existence. The
+      # second was added 2026-09-03 after 54 sites were measured hydrating 827
+      # columns to answer a yes/no question — sign_recipients shipped 34 columns,
+      # otp_code_hash and signing_token_hash among them, to decide whether a
+      # recipient exists. The population total is a RATCHET, not a pass:
+      # narrowing the rest changes a response DTO, which is the product decision
+      # ticket 20 box 1 is blocked on.
+      #
+      # This step is why check-gate-wiring now strips YAML comments before
+      # matching. Until 2026-09-03 this gate existed, passed, and ran NOWHERE:
+      # it was named only inside the comment below, and a substring search over
+      # raw YAML counted that as wiring.
+      - name: Reads declare the columns they consume
+        if: ${{ !cancelled() }}
+        run: pnpm check:query-projections:self-test && pnpm check:query-projections
+
       # BLOCKING. check:query-projections reads only the TOP-LEVEL keys of a
       # relational query — by design, it tracks brace depth so a `columns:` nested
       # inside a `with:` does NOT count as a projection. That leaves the relation
@@ -698,7 +716,7 @@ jobs:
       # GET /public/application-status/:token. The population total is a RATCHET,
       # not a pass: narrowing most of it changes a response DTO, which is the
       # product decision ticket 20 box 1 is blocked on.
-      - name: A with: block does not ship a whole related row
+      - name: "A with: block does not ship a whole related row"
         if: ${{ !cancelled() }}
         run: pnpm check:relation-hydration:self-test && pnpm check:relation-hydration
 
