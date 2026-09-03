@@ -89,6 +89,66 @@ jobs:
       - name: Test
         run: pnpm test
         env:
+          TZ: UTC
+          NODE_OPTIONS: --max-old-space-size=8192
+
+  # The same unfiltered suite, at zones that are NOT UTC.
+  #
+  # 2026-09-03 -- nothing pins TZ for the test run: not `src/test/jest-setup.ts`,
+  # not the `jest` block in package.json, and a GitHub runner is UTC. So every
+  # date assertion in this repository had only ever been checked against ONE
+  # zone, and a whole class of defect could not fail CI. d01b3c41 is what that
+  # cost: `expandRecurring` handed rrule a dtstart rotated by the HOST's offset,
+  # so at +05:30 a weekly all-day Monday series expanded onto TUESDAY and
+  # `BYMONTHDAY=1` onto the 2nd -- while 43 suites / 406 tests stayed green.
+  # Two more of the same shape were found the same day by running this suite at
+  # America/New_York: leave requests persisted a day early, and every date-only
+  # column rendered a day early in the web client.
+  #
+  # Pinning `TZ: UTC` everywhere would have CEMENTED that blind spot while
+  # looking like a fix. `TZ: UTC` above is the other half of a deliberate pair,
+  # not the fix on its own.
+  #
+  # Unfiltered for exactly the reason the `tests` job is: `--testPathPattern`
+  # reports green while every suite outside the filter is red. It would also
+  # need a maintained list of "date-sensitive" suites, and that list is wrong
+  # the moment someone adds a `new Date()` to a suite nobody classified --
+  # which is how this class hides in the first place.
+  #
+  # Three zones, three independent axes, and nothing redundant: a NEGATIVE
+  # offset with northern DST, a large POSITIVE offset with southern DST, and a
+  # HALF-HOUR offset (the case d01b3c41's own proof called out, and the one that
+  # breaks integer-hour arithmetic). `fail-fast: false` so one red zone still
+  # reports the other two -- a matrix that stops at the first failure reports on
+  # a prefix, which is the same masking defect ticket 35 fixed at job level.
+  tests-non-utc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        tz:
+          - America/New_York
+          - Pacific/Auckland
+          - Australia/Adelaide
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Test at ${{ matrix.tz }}
+        run: pnpm test
+        env:
+          TZ: ${{ matrix.tz }}
           NODE_OPTIONS: --max-old-space-size=8192
 
   # Every static gate in the repository. Hermetic: no database, no network
