@@ -82,6 +82,12 @@ const TIERS: Record<string, Tier> = {
   "sign:public-complete": { limit: 10, windowSecs: 60 },
   "sign:public-form-submit": { limit: 10, windowSecs: 3600 },
   "sign:bulk-send-create": { limit: 5, windowSecs: 3600 },
+  // A "send me a test" button on a template preview. It used to take an
+  // arbitrary destination with no limiter, so one holder of
+  // settings:email-templates:manage could aim the platform sender anywhere,
+  // repeatedly. The destination is now the caller's own address; 5/hour is
+  // ample for a person checking a template and useless for a flood.
+  "settings:email-template-test": { limit: 5, windowSecs: 3600 },
   "mail:send": { limit: 30, windowSecs: 60 },
   "mail:reply": { limit: 30, windowSecs: 60 },
   "hr:attendance-report": { limit: 5, windowSecs: 3600 },

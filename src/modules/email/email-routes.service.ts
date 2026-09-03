@@ -1,7 +1,19 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from "@nestjs/common";
+import { eq } from "drizzle-orm";
 import { EmailService } from "./email.service";
 import { TwilioGateway } from "./dispatch/twilio.gateway";
+import { canonicalEmail } from "./email-suppression.service";
 import { TEMPLATE_MAP } from "./templates/registry";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import { users } from "../../db/schema";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DispatchInput } from "./dto/email.schemas";
 
 export interface ChannelResult {
@@ -14,6 +26,7 @@ export interface ChannelResult {
 @Injectable()
 export class EmailRoutesService {
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly email: EmailService,
     private readonly twilio: TwilioGateway,
   ) {}
@@ -96,13 +109,29 @@ export class EmailRoutesService {
     });
   }
 
+  /**
+   * Sends only to the caller's own account address. The destination used to be
+   * whatever the body asked for, which pointed the platform's sending identity
+   * and its deliverability reputation at any address a holder of
+   * settings:email-templates:manage cared to name.
+   */
   async sendTemplateTest(
+    actor: CurrentUserContext,
     templateId: string,
     testEmail: string,
     locale: string,
   ): Promise<{ sent: true; to: string; templateId: string; locale: string; version: number }> {
     const entry = TEMPLATE_MAP[templateId];
     if (!entry) throw new NotFoundException(`Unknown template ID: ${templateId}`);
+
+    const account = await this.db.query.users.findFirst({
+      where: eq(users.id, actor.userId),
+      columns: { email: true },
+    });
+    if (!account || canonicalEmail(account.email) !== canonicalEmail(testEmail))
+      throw new ForbiddenException(
+        "A template test can only be sent to your own account email address",
+      );
 
     let rendered: ReturnType<typeof entry.render>;
     try {
@@ -114,14 +143,16 @@ export class EmailRoutesService {
     }
 
     await this.email.sendEmail({
-      to: testEmail,
+      to: account.email,
       subject: `[TEST] ${rendered.subject}`,
       html: rendered.html,
+      organizationId: actor.orgId,
+      recipientUserId: actor.userId,
     });
 
     return {
       sent: true,
-      to: testEmail,
+      to: account.email,
       templateId,
       locale: rendered.locale,
       version: rendered.version,

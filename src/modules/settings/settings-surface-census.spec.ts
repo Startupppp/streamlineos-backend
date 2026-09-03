@@ -137,12 +137,18 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
   /*
    * Owner: the email module. Both fail (a): the subject is the platform's
    * transactional templates, not this organisation. POST .../test also fails
-   * (b) — sending a message is work — and takes NO orgId and NO @CurrentUser,
-   * so it renders a platform template and sends it to an arbitrary address from
-   * the platform's sender with no tenant scoping, no rate limit and no audit.
-   * settings:email-templates:manage is carried by the HR_ADMIN role template,
-   * so this is reachable by a seeded rung. No tenant data crosses (the
-   * templates are static), so it is an abusable send, not a BOLA.
+   * (b) — sending a message is work.
+   *
+   * The abuse hole recorded here is CLOSED. The handler took a body and nothing
+   * else, so any holder of settings:email-templates:manage — a key the shipped
+   * HR_ADMIN template carries — could aim the platform's sender at an arbitrary
+   * address, unlimited and unaudited. It now takes @CurrentUser, sends only to
+   * the caller's own account address, stamps the caller's org on the outbox row,
+   * carries a registered rate-limit tier and audits the send
+   * (email-template-test-scoping.spec.ts). No tenant data ever crossed — the
+   * templates are static — so this was an abusable send, not a BOLA.
+   *
+   * What remains for these two routes is the PLACEMENT question only.
    */
   "GET /settings/email-templates/preview": {
     verdict: "PENDING-MOVE",
@@ -150,7 +156,7 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
   },
   "POST /settings/email-templates/test": {
     verdict: "PENDING-MOVE",
-    why: "owner: modules/email — unscoped send: no orgId, no @CurrentUser, no rate limit; operational, not configuration",
+    why: "owner: modules/email — operational, not configuration; the unscoped-send hole is fixed, the placement question is not",
   },
 
   "GET /settings/ai-usage": {
