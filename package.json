@@ -377,7 +377,8 @@
     "check:baseline-integrity:self-test": "node src/scripts/check-baseline-integrity.mjs --self-test",
     "check:baseline-integrity:emit": "node src/scripts/check-baseline-integrity.mjs --emit",
     "check:gate-wiring": "node src/scripts/check-gate-wiring.mjs",
-    "check:gate-wiring:self-test": "node src/scripts/check-gate-wiring.mjs --self-test"
+    "check:gate-wiring:self-test": "node src/scripts/check-gate-wiring.mjs --self-test",
+    "test:db-specs": "node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --runInBand --forceExit --testPathPattern='\\\\.db\\\\.spec\\\\.ts$'"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

@@ -6,6 +6,13 @@ import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import { actingMembershipId } from "../../common/auth/principal";
 import { MailService } from "../mail/mail.service";
+import {
+  ACTOR_COLUMNS,
+  KIND_ORDER,
+  NOTIF_COLUMNS,
+  deduplicate,
+  stableSortItems,
+} from "./unified-inbox-projections";
 import { BroadcastsService } from "./broadcasts.service";
 import { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -38,56 +45,6 @@ function assertNever(x: never): never {
   throw new Error(`Unhandled union member: ${String(x)}`);
 }
 
-const KIND_ORDER: Record<InboxKind, number> = {
-  notification: 0,
-  broadcast: 1,
-  mail: 2,
-  build_approval: 3,
-};
-
-function stableSortItems(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
-  return [...items].sort((a, b) => {
-    const tDiff = b.timestamp.localeCompare(a.timestamp);
-    if (tDiff !== 0) return tDiff;
-    const kDiff = (KIND_ORDER[a.kind] ?? 99) - (KIND_ORDER[b.kind] ?? 99);
-    if (kDiff !== 0) return kDiff;
-    return String(b.id).localeCompare(String(a.id));
-  });
-}
-
-function deduplicate(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
-  const seen = new Set<string>();
-  const out: UnifiedInboxItem[] = [];
-  for (const item of items) {
-    if (!seen.has(item.dedupKey)) {
-      seen.add(item.dedupKey);
-      out.push(item);
-    }
-  }
-  return out;
-}
-
-const NOTIF_COLUMNS = {
-  id: notifications.id,
-  type: notifications.type,
-  priority: notifications.priority,
-  category: notifications.category,
-  sourceModule: notifications.sourceModule,
-  eventKey: notifications.eventKey,
-  title: notifications.title,
-  message: notifications.message,
-  link: notifications.link,
-  isRead: notifications.isRead,
-  pinned: notifications.pinned,
-  createdAt: notifications.createdAt,
-  actorUserId: notifications.actorUserId,
-} as const;
-
-const ACTOR_COLUMNS = {
-  actorId: users.id,
-  actorName: users.name,
-  actorImage: users.image,
-} as const;
 
 @Injectable()
 export class UnifiedInboxService {
