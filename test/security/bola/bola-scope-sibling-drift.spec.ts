@@ -1,5 +1,11 @@
-import { findScopeSiblingDrift, isCollectionShaped, resolvesScope } from "./scope-sibling-drift";
+import {
+  findScopeSiblingDrift,
+  handlerScopeEvidence,
+  isCollectionShaped,
+  resolvesScope,
+} from "./scope-sibling-drift";
 import { loadRouteSurface } from "./route-surface";
+import { buildSourceIndex } from "./tenant-binding";
 
 /**
  * `GET /deals/export` once ignored DataScope while `GET /deals` applied it, so
@@ -53,7 +59,7 @@ const DRIFTING_KEYS: readonly string[] = [
   "self:payroll",
   "settings:rbac:manage",
   "settings:view",
-  "sign:envelope:view",
+  "sign:audit:view",
   "support:reports:view",
   "support:tickets:view",
   "tasks:read",
@@ -62,7 +68,7 @@ const DRIFTING_KEYS: readonly string[] = [
   "timesheets:payroll:view",
 ];
 
-const UNSCOPED_ROUTE_BASELINE = 329;
+const UNSCOPED_ROUTE_BASELINE = 328;
 
 /**
  * Hand-verified disclosures — the unscoped route returned the same entity's rows
@@ -130,15 +136,50 @@ describe("BOLA sweep — export and search apply their sibling list's DataScope"
     expect(deals?.unscoped).not.toContain("GET /deals/export");
   });
 
+  /**
+   * Asked of the detector directly rather than of `findings`, because a key drops
+   * out of `findings` entirely once EVERY one of its reads scopes — which is the
+   * best outcome, and which the previous form of this test read as a failure.
+   * `sign:envelope:view` reached that state when the fields and recipients lists
+   * were bound, so requiring the key to still be drifting would now punish the fix.
+   */
   it("FIXED: every hand-verified disclosure now resolves a scope, like its sibling", () => {
+    const index = buildSourceIndex();
+    const surface = loadRouteSurface();
     const stillDrifting: string[] = [];
-    for (const [route, { key, sibling }] of FIXED_DISCLOSURES) {
-      const finding = findings.find((f) => f.permissionKey === key);
-      const scoped = finding?.scoped ?? [];
-      expect(scoped).toContain(sibling);
-      if (!scoped.includes(route)) stillDrifting.push(`${route} (${key})`);
+    for (const [route, { sibling }] of FIXED_DISCLOSURES) {
+      for (const target of [route, sibling]) {
+        const [verb, path] = target.split(" ");
+        const handler = surface.find((r) => r.verb === verb && r.path === path);
+        expect(handler).toBeDefined();
+        if (handler && !handlerScopeEvidence(handler, index)) stillDrifting.push(target);
+      }
     }
     expect(stillDrifting).toEqual([]);
+  });
+
+  /**
+   * `sign:envelope:view` was on the drifting list because
+   * `GET /sign/envelopes/:envelopeId/fields` and `.../recipients` returned their
+   * rows under `(orgId, envelopeId)` alone. Both now resolve the envelope through
+   * `mustGetVisibleEnvelope`, so the key has no unscoped read left and has left
+   * the finding set — asserted here so its removal from DRIFTING_KEYS is a
+   * measured fact rather than an unexplained deletion.
+   */
+  it("FIXED: sign:envelope:view has no unscoped read left at all", () => {
+    expect(findings.map((f) => f.permissionKey)).not.toContain("sign:envelope:view");
+    const index = buildSourceIndex();
+    const surface = loadRouteSurface();
+    for (const path of [
+      "/sign/envelopes/:envelopeId/fields",
+      "/sign/envelopes/:envelopeId/recipients",
+      "/sign/envelopes/:envelopeId/documents",
+      "/sign/documents/:documentId/preview",
+    ]) {
+      const handler = surface.find((r) => r.verb === "GET" && r.path === path);
+      expect(handler).toBeDefined();
+      expect(handler && handlerScopeEvidence(handler, index)).toBe(true);
+    }
   });
 
   /**
@@ -157,5 +198,16 @@ describe("BOLA sweep — export and search apply their sibling list's DataScope"
     const billing = findings.find((f) => f.permissionKey === "timesheets:billing:view");
     expect(billing?.scoped).toContain("GET /timesheets/billing/rate-preview");
     expect(billing?.unscoped).toEqual(["GET /timesheets/billing/uninvoiced"]);
+
+    /**
+     * Same shape, from the certificate/audit fix: `GET /sign/envelopes/:envelopeId/audit`
+     * started resolving `sign:envelope:view`, which made `sign:audit:view` visible.
+     * There is no escalation behind it — `sign:audit:view` is NOT scopable, so every
+     * holder resolves "all" for it and `GET /sign/reports/summary` is the org-wide
+     * analytics aggregate that key exists to authorise.
+     */
+    const signAudit = findings.find((f) => f.permissionKey === "sign:audit:view");
+    expect(signAudit?.scoped).toContain("GET /sign/envelopes/:envelopeId/audit");
+    expect(signAudit?.unscoped).toEqual(["GET /sign/reports/summary"]);
   });
 });
