@@ -12,8 +12,28 @@ import { WorkflowRunnerService } from "./workflow-runner.service";
 import { claimDueRuns, startRun } from "./workflow-store";
 
 const mockRunInNewTenantTransaction = jest.fn();
+
+/**
+ * The runtime reads and writes inside a tenant transaction now, so these doubles
+ * hand the test's own `db` back as the transaction. That keeps every double in
+ * this file describing the query it always described, while the code under test
+ * takes the per-organisation path that row-level security requires — the
+ * cross-tenant form it used to take was denied outright as the application role.
+ */
+jest.mock("../tenant", () => ({
+  forEachOrg: async (
+    db: unknown,
+    _sweep: string,
+    fn: (tx: unknown, orgId: string) => Promise<void>,
+  ) => {
+    await fn(db, "org-1");
+    return { organizations: 1, succeeded: 1, failed: 0 };
+  },
+}));
+
 jest.mock("../tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: (...args: unknown[]) => mockRunInNewTenantTransaction(...args),
+  runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
 }));
 
 /** The id the request was served under. Uuid-shaped, because the outbox column is one. */

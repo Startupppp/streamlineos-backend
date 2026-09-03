@@ -79,8 +79,8 @@ export class ImportPump {
         const outcome = await executeRun({
           run,
           registry: this.registry,
-          steps: createStepStore(this.db),
-          lifecycle: createLifecycleStore(this.db),
+          steps: createStepStore(this.db, run.organizationId),
+          lifecycle: createLifecycleStore(this.db, run.organizationId),
           withinStep: (stepName, fn) =>
             runInNewTenantTransaction(this.db, run.organizationId, () => {
               this.logger.debug(`${run.workflowName}/${stepName} — org ${run.organizationId}`);

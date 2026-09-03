@@ -1,7 +1,14 @@
 import type { Db } from "../../db/drizzle.types";
+import type { TenantTx } from "../tenant";
 import { WorkflowRegistry } from "./workflow-registry";
 import { WorkflowOutboxRelayService } from "./workflow-outbox-relay.service";
 import type { WorkflowRunnerService } from "./workflow-runner.service";
+
+const mockForEachOrg = jest.fn();
+
+jest.mock("../tenant", () => ({
+  forEachOrg: (...args: unknown[]) => mockForEachOrg(...args),
+}));
 
 interface EventRow {
   outboxEventId: number;
@@ -12,16 +19,49 @@ interface EventRow {
   correlationId: string | null;
 }
 
+/**
+ * Drives the relay one batch per `relay()` call, through `forEachOrg`.
+ *
+ * The relay no longer issues one cross-tenant select — that form is denied under
+ * RLS, which is the defect these tests now sit on top of. It sweeps
+ * organisations and reads each one's outbox inside that organisation's
+ * transaction, so the double has to do the same: group the batch by
+ * organisation and hand each group to the callback under its own org id.
+ */
 function dbReturning(batches: EventRow[][]): Db {
   const queue = [...batches];
-  const chain = {
-    from: () => chain,
-    where: () => chain,
-    orderBy: () => chain,
-    limit: async () => queue.shift() ?? [],
-  };
-  return { select: () => chain } as unknown as Db;
+
+  mockForEachOrg.mockImplementation(
+    async (_db: unknown, _sweep: string, fn: (tx: TenantTx, orgId: string) => Promise<void>) => {
+      const batch = queue.shift() ?? [];
+      const byOrg = new Map<string, EventRow[]>();
+      for (const row of batch) {
+        const rows = byOrg.get(row.organizationId) ?? [];
+        rows.push(row);
+        byOrg.set(row.organizationId, rows);
+      }
+      // An organisation is swept even with nothing to read, exactly as the real one is.
+      if (byOrg.size === 0) byOrg.set("org-1", []);
+
+      for (const [orgId, rows] of byOrg) {
+        const chain = {
+          from: () => chain,
+          where: () => chain,
+          orderBy: () => chain,
+          limit: async () => rows,
+        };
+        await fn({ select: () => chain } as unknown as TenantTx, orgId);
+      }
+      return { organizations: byOrg.size, succeeded: byOrg.size, failed: 0 };
+    },
+  );
+
+  return { select: () => undefined } as unknown as Db;
 }
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
 
 function runnerSpy(behaviour?: (name: string) => Promise<string | null>) {
   const started: { workflowName: string; causationEventId?: string | null }[] = [];

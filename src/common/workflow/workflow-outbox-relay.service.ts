@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { outboxEvents } from "../../db/schema";
 import { reportError, runInRestoredContext } from "../observability";
+import { forEachOrg } from "../tenant";
 import { WorkflowRegistry } from "./workflow-registry";
 import { WorkflowRunnerService } from "./workflow-runner.service";
 
@@ -12,6 +13,16 @@ export const RELAY_BATCH_SIZE = 50;
 export interface RelayResult {
   scanned: number;
   started: number;
+}
+
+/** One outbox row, projected to what starting a run needs. */
+interface RelayEvent {
+  outboxEventId: number;
+  eventId: string;
+  organizationId: string;
+  eventType: string;
+  payload: unknown;
+  correlationId: string | null;
 }
 
 /**
@@ -58,8 +69,20 @@ export class WorkflowOutboxRelayService {
    */
   private static readonly CURSOR_LAG = 1000;
 
-  /** Trails the highest event seen by `CURSOR_LAG`, so a late commit is not skipped. */
-  private cursor = 0;
+  /**
+   * Where the relay has read up to, **per organisation**.
+   *
+   * One shared cursor across every tenant was wrong twice over. It was denied
+   * outright under RLS (see `relay`), and even as the owner it was lossy: the
+   * ids come from one global sequence, so a busy tenant's events advance the
+   * cursor past a quiet tenant's lower-numbered ones, which are then never read.
+   * A quiet tenant's workflows simply never started, in proportion to how noisy
+   * its neighbours were.
+   *
+   * Keyed by organisation id, each entry still trails that organisation's
+   * highest seen event by `CURSOR_LAG`.
+   */
+  private readonly cursors = new Map<string, number>();
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -67,28 +90,64 @@ export class WorkflowOutboxRelayService {
     private readonly runner: WorkflowRunnerService,
   ) {}
 
+  /**
+   * Reads each organisation's outbox inside that organisation's transaction.
+   *
+   * The previous form issued one cross-tenant select with no ambient tenant
+   * context. `outbox_events` carries `organization_id = app.current_org_id()`
+   * and that function RAISEs when the GUC is unset, so as the application role
+   * the statement threw rather than returning nothing — and because
+   * `CronWorkflowService.tick()` calls this before `drain()` and does not guard
+   * it, the throw took out the whole tick. `POST /cron/workflow-tick` answered
+   * 500 and *nothing durable advanced*. As the database owner it appeared to
+   * work, because BYPASSRLS makes the policy inert; that is why it survived CI.
+   *
+   * `forEachOrg` is the pattern the sibling outbox publisher already uses for
+   * the identical problem: enumerate organisations (which carry no policy of
+   * their own), then do the tenant-scoped read inside each one's transaction.
+   * One organisation failing is isolated there and does not abort the sweep, so
+   * a single malformed tenant can no longer stop every other tenant's workflows.
+   *
+   * Events are collected under the sweep and the runs are started after it, so
+   * no tenant transaction stays open across the work of starting runs.
+   */
   async relay(limit: number = RELAY_BATCH_SIZE): Promise<RelayResult> {
-    const events = await this.db
-      .select({
-        outboxEventId: outboxEvents.outboxEventId,
-        eventId: outboxEvents.eventId,
-        organizationId: outboxEvents.organizationId,
-        eventType: outboxEvents.eventType,
-        payload: outboxEvents.payload,
-        correlationId: outboxEvents.correlationId,
-      })
-      .from(outboxEvents)
-      .where(
-        and(
-          gt(outboxEvents.outboxEventId, this.cursor),
-          eq(outboxEvents.lifecycleState, "ACTIVE"),
-        ),
-      )
-      .orderBy(asc(outboxEvents.outboxEventId))
-      .limit(limit);
+    const events: RelayEvent[] = [];
+
+    await forEachOrg(
+      this.db,
+      "workflow-outbox-relay",
+      async (tx, orgId) => {
+        const remaining = limit - events.length;
+        if (remaining <= 0) return;
+
+        const rows = await tx
+          .select({
+            outboxEventId: outboxEvents.outboxEventId,
+            eventId: outboxEvents.eventId,
+            organizationId: outboxEvents.organizationId,
+            eventType: outboxEvents.eventType,
+            payload: outboxEvents.payload,
+            correlationId: outboxEvents.correlationId,
+          })
+          .from(outboxEvents)
+          .where(
+            and(
+              eq(outboxEvents.organizationId, orgId),
+              gt(outboxEvents.outboxEventId, this.cursors.get(orgId) ?? 0),
+              eq(outboxEvents.lifecycleState, "ACTIVE"),
+            ),
+          )
+          .orderBy(asc(outboxEvents.outboxEventId))
+          .limit(remaining);
+
+        events.push(...rows);
+      },
+      "read",
+    );
 
     let started = 0;
-    let highest = 0;
+    const highestPerOrg = new Map<string, number>();
 
     for (const event of events) {
       /**
@@ -134,11 +193,20 @@ export class WorkflowOutboxRelayService {
         },
       );
 
-      highest = Math.max(highest, event.outboxEventId);
+      highestPerOrg.set(
+        event.organizationId,
+        Math.max(highestPerOrg.get(event.organizationId) ?? 0, event.outboxEventId),
+      );
     }
 
-    if (highest > 0)
-      this.cursor = Math.max(this.cursor, highest - WorkflowOutboxRelayService.CURSOR_LAG);
+    for (const [orgId, highest] of highestPerOrg)
+      this.cursors.set(
+        orgId,
+        Math.max(
+          this.cursors.get(orgId) ?? 0,
+          highest - WorkflowOutboxRelayService.CURSOR_LAG,
+        ),
+      );
 
     if (started > 0) this.logger.log(`Relay started ${String(started)} workflow run(s)`);
 
@@ -146,17 +214,35 @@ export class WorkflowOutboxRelayService {
   }
 
   /**
-   * Where the relay has read up to.
+   * Where the relay has read up to for one organisation.
    *
    * In-process, so a restart re-reads recent events. That is safe because
    * starting a run is keyed on the event id, and it is preferable to persisting
    * a cursor that could advance past an event whose run failed to start.
    */
-  get position(): number {
-    return this.cursor;
+  positionFor(organizationId: string): number {
+    return this.cursors.get(organizationId) ?? 0;
   }
 
-  resetPosition(to = 0): void {
-    this.cursor = to;
+  /**
+   * The furthest any organisation has been read to.
+   *
+   * Kept because callers used it as a single number, but it is a summary of many
+   * cursors now and no longer identifies a position the relay would resume from.
+   */
+  get position(): number {
+    let furthest = 0;
+    for (const cursor of this.cursors.values()) furthest = Math.max(furthest, cursor);
+    return furthest;
+  }
+
+  /** Resets every organisation's cursor, or one organisation's when named. */
+  resetPosition(to = 0, organizationId?: string): void {
+    if (organizationId === undefined) {
+      this.cursors.clear();
+      if (to !== 0) throw new Error("resetPosition: a non-zero reset must name an organisation");
+      return;
+    }
+    this.cursors.set(organizationId, to);
   }
 }

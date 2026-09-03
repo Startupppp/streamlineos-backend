@@ -100,8 +100,8 @@ export class WorkflowRunnerService {
     return executeRun({
       run,
       registry: this.registry,
-      steps: createStepStore(this.db),
-      lifecycle: createLifecycleStore(this.db),
+      steps: createStepStore(this.db, run.organizationId),
+      lifecycle: createLifecycleStore(this.db, run.organizationId),
 
       /**
        * Each step gets its own tenant transaction.
