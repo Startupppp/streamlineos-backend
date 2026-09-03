@@ -197,8 +197,7 @@ export class PayrollInputsService {
             gte(hrLeaveLedger.effectiveDate, start),
             lte(hrLeaveLedger.effectiveDate, end),
           ),
-        )
-        .catch(() => undefined);
+        );
 
       const dueRepaymentIds = await tx
         .select({ id: hrLoanRepayments.id })
@@ -217,8 +216,7 @@ export class PayrollInputsService {
         await tx
           .update(hrLoanRepayments)
           .set({ status: "deducted", payrollPeriodKey: period.periodKey, updatedAt: new Date() })
-          .where(inArray(hrLoanRepayments.id, dueRepaymentIds.map((r) => r.id)))
-          .catch(() => undefined);
+          .where(inArray(hrLoanRepayments.id, dueRepaymentIds.map((r) => r.id)));
       }
 
       return result;
@@ -303,8 +301,7 @@ export class PayrollInputsService {
             gte(hrLeaveLedger.effectiveDate, start),
             lte(hrLeaveLedger.effectiveDate, end),
           ),
-        )
-        .catch(() => undefined);
+        );
 
       return result;
     });
