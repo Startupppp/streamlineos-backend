@@ -348,8 +348,8 @@ export class ExitWriteService {
    * Runs an exit-lifecycle side effect after the request transaction commits, and reports it
    * when it fails.
    *
-   * These were `void (async () => …)().catch(() => undefined)`. Two things were wrong with
-   * that. The work ran on `this.db` while the request transaction was still open, so under
+   * These were discarded async IIFEs whose rejection handler returned undefined. Two things
+   * were wrong with that. The work ran on `this.db` while the request transaction was open, so under
    * `TenantContextInterceptor` it read a handle whose tenant GUC was about to disappear
    * (CLAUDE.md §4); and the rejection went nowhere, so a notification that never reached the
    * employee, an automation that never fired, or an exit checklist that was never seeded left

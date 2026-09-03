@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
@@ -17,6 +17,7 @@ import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AutomationService } from "../../automation/automation.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { RecruitmentHandoffService } from "./recruitment-handoff.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import type {
   CreateOfferInput,
   CreateOfferNegotiationInput,
@@ -29,6 +30,7 @@ const COMP_FIELDS = ["offeredSalary", "offeredDesignation", "joiningDate", "vali
 
 @Injectable()
 export class RecruitmentOffersService {
+  private readonly logger = new Logger(RecruitmentOffersService.name);
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly automation: AutomationService,
@@ -351,16 +353,19 @@ export class RecruitmentOffersService {
       .where(and(eq(candidateOffers.id, offerId), eq(candidateOffers.orgId, orgId)))
       .returning();
 
+    const dispatchedStatus = input.offerStatus;
     if (
-      input.offerStatus === "SENT" ||
-      input.offerStatus === "ACCEPTED" ||
-      input.offerStatus === "DECLINED"
+      dispatchedStatus === "SENT" ||
+      dispatchedStatus === "ACCEPTED" ||
+      dispatchedStatus === "DECLINED"
     ) {
-      void this.dispatchOfferAutomation(orgId, candidateId, offerId, input.offerStatus, existing.offerStatus, {
-        offeredSalary: updated.offeredSalary,
-        joiningDate: updated.joiningDate,
-        validUntil: updated.validUntil,
-      }).catch(() => undefined);
+      this.deferAfterCommit("offer automation dispatch", orgId, () =>
+        this.dispatchOfferAutomation(orgId, candidateId, offerId, dispatchedStatus, existing.offerStatus, {
+          offeredSalary: updated.offeredSalary,
+          joiningDate: updated.joiningDate,
+          validUntil: updated.validUntil,
+        }),
+      );
     }
 
     return updated;
@@ -389,6 +394,28 @@ export class RecruitmentOffersService {
       notes: existing.notes,
       changeReason: reason,
       changedBy: userId,
+    });
+  }
+
+  /**
+   * Runs an offer side effect after the request transaction commits, and reports it when it
+   * fails.
+   *
+   * The dispatch was a discarded promise with a rejection handler that returned undefined, and
+   * `handleOfferAccepted` — which creates the employment records an accepted offer turns into —
+   * was a second one nested inside it. An accepted offer whose handoff threw therefore left no
+   * employee record and no trace that anything had gone wrong; the candidate showed as hired
+   * and nothing downstream existed. The handoff is now awaited inside the dispatch so its
+   * failure reaches this reporter, and the whole thing is deferred through
+   * `registerAfterCommit` so it runs in its own tenant transaction after the offer row commits
+   * (CLAUDE.md §4) rather than on a handle whose tenant GUC is about to be gone.
+   */
+  private deferAfterCommit(label: string, orgId: string, work: () => Promise<unknown>): void {
+    if (registerAfterCommit(work)) return;
+    void work().catch((error: unknown) => {
+      this.logger.error(
+        `${label} failed for org ${orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      );
     });
   }
 
@@ -443,7 +470,7 @@ export class RecruitmentOffersService {
         decision: "ACCEPTED",
         respondedAt,
       });
-      void this.handoff.handleOfferAccepted(orgId, candidateId, offerId).catch(() => undefined);
+      await this.handoff.handleOfferAccepted(orgId, candidateId, offerId);
       return;
     }
 
