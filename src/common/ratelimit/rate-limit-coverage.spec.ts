@@ -48,6 +48,19 @@ function declaredTiers(): string[] {
 }
 
 interface Handler {
+  /**
+   * STABLE IDENTITY — `<file>:<VERB> <route path>`, deliberately NOT a line
+   * number. The registry below was keyed on `<file>:<line>` and that made an
+   * unrelated edit red this suite: `09c01de8` added one import to
+   * internal-audit.controller.ts, the `@Post("audit")` handler moved from line
+   * 12 to 13, and both set-equality assertions failed while the rate-limit gap
+   * itself was completely unchanged. The only way to green it was to edit the
+   * registry — which is indistinguishable from editing a baseline to make a
+   * regression go away, and this is a security registry to be teaching that
+   * reflex on. Route verb + path is unique per handler (check:route-duplicates
+   * enforces that) and survives every edit that does not move the route.
+   */
+  id: string;
   location: string;
   decorators: string;
   body: string;
@@ -79,8 +92,14 @@ function publicWriteHandlers(): Handler[] {
       const decorators = lines.slice(top, signature).join("\n");
       if (!decorators.includes("@Public()")) continue;
 
+      const rel = relative(CONTROLLER_ROOT, file);
+      const routeLine = lines[route] ?? "";
+      const verb = /@(Post|Put|Patch|Delete)\(/.exec(routeLine)?.[1] ?? "";
+      const routePath = /@\w+\(\s*["'`]([^"'`]*)["'`]/.exec(routeLine)?.[1] ?? "";
+
       handlers.push({
-        location: `${relative(CONTROLLER_ROOT, file)}:${String(route + 1)}`,
+        id: `${rel}:${verb} ${routePath}`,
+        location: `${rel}:${String(route + 1)}`,
         decorators,
         body: lines.slice(signature, end).join("\n"),
       });
@@ -96,13 +115,13 @@ function publicWriteHandlers(): Handler[] {
  * silently, and each names the owner who has to close it.
  */
 const UNLIMITED_PUBLIC_WRITES: Readonly<Record<string, string>> = {
-  "common/audit/internal-audit.controller.ts:12":
+  "common/audit/internal-audit.controller.ts:Post audit":
     "POST /internal/audit — the FOURTH INTERNAL_API_SECRET route. The TIERS table records that the other three (auth:google, auth:session-exchange, auth:session-data) were limited precisely because a leaked shared secret was otherwise unbounded; this one was missed, so a leaked secret floods the audit log. Owner: audit/platform owner.",
-  "modules/careers/careers.controller.ts:25":
+  "modules/careers/careers.controller.ts:Post apply":
     'POST /careers/apply — TIERS already declares "public:job-apply" at 3/hour and no route references it, so the limit exists and is not wired. Owner: careers owner.',
-  "modules/csat/csat.controller.ts:117":
+  "modules/csat/csat.controller.ts:Post :surveyId/responses":
     'POST /csat/:surveyId/responses — the sibling surface (support-csat.controller.ts) is limited by "support:csat-submit" at 5/hour; this second CSAT controller is not. Owner: csat owner.',
-  "modules/ingress/adapters/crm-mailbox.controller.ts:28":
+  "modules/ingress/adapters/crm-mailbox.controller.ts:Post push":
     'POST /crm/mailboxes/push — an HMAC-signed inbound webhook. Every comparable one is limited ("webhook:email" 600/60, "billing:webhook" 600/60, "support:inbound-email" 120/60). Owner: crm ingress owner.',
 };
 
@@ -125,6 +144,8 @@ describe("rate limiting is targeted, not ambient — and the targeting is enforc
   it("finds enough handlers that a broken scan cannot pass vacuously", () => {
     expect(tiers.length).toBeGreaterThan(90);
     expect(handlers.length).toBeGreaterThan(20);
+    expect(handlers.every((handler) => /^.+:(Post|Put|Patch|Delete) /.test(handler.id))).toBe(true);
+    expect(new Set(handlers.map((handler) => handler.id)).size).toBe(handlers.length);
   });
 
   it("RateLimitGuard is deliberately not an APP_GUARD, and admission is the ambient layer", () => {
@@ -147,16 +168,16 @@ describe("rate limiting is targeted, not ambient — and the targeting is enforc
       const decorated = handler.decorators.includes("@UseRateLimit(");
       const inline = tiers.some((tier) => handler.body.includes(`"${tier}"`));
       if (decorated || inline) continue;
-      unlimited.push(handler.location);
+      unlimited.push(handler.id);
     }
 
     expect(unlimited.sort()).toEqual(Object.keys(UNLIMITED_PUBLIC_WRITES).sort());
   });
 
   it("names no gap that has since been closed or moved", () => {
-    const locations = new Set(handlers.map((handler) => handler.location));
+    const identities = new Set(handlers.map((handler) => handler.id));
     for (const declared of Object.keys(UNLIMITED_PUBLIC_WRITES))
-      expect(locations.has(declared)).toBe(true);
+      expect(identities.has(declared)).toBe(true);
   });
 
   it("declares no tier that no route can reach, beyond the recorded ones", () => {
