@@ -13,10 +13,17 @@ export interface ModuleSection {
   readonly routePath?: string;
 }
 
+/**
+ * `module` is separate from `kind`. Seven Home routes carry BOTH `@RequireModule`
+ * and `@RequirePermission`, and a registry that could only say "permission"
+ * described the permission and silently dropped the module gate — so the registry
+ * disagreed with the generated Home manifest, which reads both off the controller.
+ */
 export interface PermissionSection {
   readonly key: string;
   readonly kind: "permission";
   readonly permission: string;
+  readonly module?: string;
   readonly cacheScope: "org" | "scoped";
   readonly cacheNs: string;
   readonly routePath?: string;
@@ -56,10 +63,14 @@ export const DASHBOARD_HOME_SECTIONS: readonly DashboardSection[] = [
   { key: "stats-employees",   kind: "permission",  permission: "hr:employees:view",    cacheScope: "org",    cacheNs: "stats-employees" },
   { key: "stats-attendance",  kind: "permission",  permission: "hr:attendance:manage", cacheScope: "org",    cacheNs: "stats-attendance" },
   { key: "stats-projects",    kind: "permission",  permission: "build:tickets:view",   cacheScope: "org",    cacheNs: "stats-projects" },
-  { key: "team-availability", kind: "permission",  permission: "hr:attendance:view",   cacheScope: "scoped", cacheNs: "availability",      routePath: "team-availability" },
-  { key: "team-attendance",   kind: "permission",  permission: "hr:attendance:view",   cacheScope: "scoped", cacheNs: "attendance",        routePath: "team-attendance" },
-  { key: "leaves-today",      kind: "permission",  permission: "hr:leaves:view",       cacheScope: "scoped", cacheNs: "leaves-today",      routePath: "leaves-today" },
-  { key: "pending-approvals", kind: "permission",  permission: "hr:leaves:approve",    cacheScope: "scoped", cacheNs: "pending-approvals", routePath: "pending-approvals" },
-  { key: "crm-executive",     kind: "permission",  permission: "hr:analytics:read",    cacheScope: "org",    cacheNs: "crm-executive",     routePath: "executive" },
-  { key: "recent-projects",   kind: "permission",  permission: "build:tickets:view",   cacheScope: "scoped", cacheNs: "recent-projects",   routePath: "recent-projects" },
+  { key: "team-availability", kind: "permission",  permission: "hr:attendance:view",   module: "hr",    cacheScope: "scoped", cacheNs: "availability",      routePath: "team-availability" },
+  { key: "team-attendance",   kind: "permission",  permission: "hr:attendance:view",   module: "hr",    cacheScope: "scoped", cacheNs: "attendance",        routePath: "team-attendance" },
+  { key: "leaves-today",      kind: "permission",  permission: "hr:leaves:view",       module: "hr",    cacheScope: "scoped", cacheNs: "leaves-today",      routePath: "leaves-today" },
+  { key: "pending-approvals", kind: "permission",  permission: "hr:leaves:approve",    module: "hr",    cacheScope: "scoped", cacheNs: "pending-approvals", routePath: "pending-approvals" },
+  { key: "crm-executive",     kind: "permission",  permission: "hr:analytics:read",                     cacheScope: "org",    cacheNs: "crm-executive",     routePath: "executive" },
+  { key: "recent-projects",   kind: "permission",  permission: "build:tickets:view",   module: "build", cacheScope: "scoped", cacheNs: "recent-projects",   routePath: "recent-projects" },
+  { key: "recent-activity",   kind: "permission",  permission: "build:tickets:view",   module: "build", cacheScope: "scoped", cacheNs: "recent-activity",   routePath: "recent-activity" },
+  { key: "today-activities",  kind: "permission",  permission: "crm:leads:view",       module: "crm",   cacheScope: "org",    cacheNs: "today-activities",  routePath: "today-activities" },
+  { key: "personal",          kind: "universal",   cacheNs: "personal",  routePath: "personal" },
+  { key: "stats",             kind: "universal",   cacheNs: "stats",     routePath: "stats" },
 ];

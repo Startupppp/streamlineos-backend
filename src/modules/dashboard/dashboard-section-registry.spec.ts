@@ -215,4 +215,36 @@ describe("registry ↔ controller cross-check", () => {
     const routeMap = buildRouteMap();
     expect(routeMap.size).toBeGreaterThan(0);
   });
+
+  /**
+   * This assertion used to be `routeMap.size > 0`, which is true of any
+   * controller and therefore never bit. Two live Home routes — recent-activity
+   * and today-activities — had no registry entry at all, so neither had a
+   * declared kind or cache namespace and nothing noticed.
+   */
+  it("FAIL-CLOSED: every GET route on DashboardController has a registry entry", () => {
+    const routed = new Set(
+      (DASHBOARD_HOME_SECTIONS as DashboardSection[])
+        .map((s) => ("routePath" in s ? s.routePath : undefined))
+        .filter((p): p is string => p !== undefined),
+    );
+    const missing = [...buildRouteMap().keys()].filter((path) => !routed.has(path));
+    expect(missing).toEqual([]);
+  });
+
+  it("FAIL-CLOSED: a permission section declares the module gate its controller route carries", () => {
+    const routeMap = buildRouteMap();
+    const mismatches: string[] = [];
+    for (const section of DASHBOARD_HOME_SECTIONS as DashboardSection[]) {
+      if (section.kind !== "permission") continue;
+      if (!("routePath" in section) || section.routePath === undefined) continue;
+      const meta = routeMap.get(section.routePath);
+      const declared = (section as PermissionSection).module;
+      if (meta?.module !== declared)
+        mismatches.push(
+          `${section.key}: registry module='${declared ?? "none"}' controller module='${meta?.module ?? "none"}'`,
+        );
+    }
+    expect(mismatches).toEqual([]);
+  });
 });

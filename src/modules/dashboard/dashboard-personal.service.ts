@@ -25,6 +25,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { DashboardLeaveService } from "./dashboard-leave.service";
 import { DashboardProjectService } from "./dashboard-project.service";
 import { resolvePersonalDashboardModules } from "./dashboard-scope";
+import { settleSection } from "./dashboard-section-settle";
 
 const ACTIVE_TICKET_STATUSES = ["TODO", "IN_PROGRESS", "IN_REVIEW"];
 
@@ -56,22 +57,15 @@ export class DashboardPersonalService {
 
     const degraded: string[] = [];
     const attendeeMembershipId = selfMember?.status === "ACTIVE" ? selfMember.id : 0;
-    const settle = async <T>(
-      source: string,
-      run: () => Promise<T>,
-      fallback: T,
-    ): Promise<T> => {
-      try {
-        return await run();
-      } catch (error: unknown) {
-        degraded.push(source);
-        this.logger.error(
-          `Personal dashboard source "${source}" failed for org ${orgId}`,
-          error instanceof Error ? error.stack : String(error),
-        );
-        return fallback;
-      }
-    };
+    const settle = <T>(source: string, run: () => Promise<T>, fallback: T): Promise<T> =>
+      settleSection({
+        name: source,
+        run,
+        fallback,
+        logger: this.logger,
+        context: `org ${orgId}`,
+        onDegraded: (name) => degraded.push(name),
+      });
 
     const [
       myTasks,

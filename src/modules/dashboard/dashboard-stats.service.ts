@@ -15,6 +15,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { resolveDashboardStatsFlags } from "./dashboard-scope";
 import { buildOrgDashboardCacheKey } from "./dashboard-cache-key";
+import { settleSection } from "./dashboard-section-settle";
 
 @Injectable()
 export class DashboardStatsService {
@@ -27,25 +28,18 @@ export class DashboardStatsService {
   ) {}
 
   async getDashboardStats(orgId: string, u: CurrentUserContext) {
-    const flags = await resolveDashboardStatsFlags(this.access, u);
+    const settle = <T>(name: string, run: () => Promise<T>, fallback: T): Promise<T> =>
+      settleSection({ name, run, fallback, logger: this.logger, context: `org ${orgId}` });
 
-    const settle = async <T>(name: string, run: () => Promise<T>, fallback: T): Promise<T> => {
-      try {
-        return await run();
-      } catch (error: unknown) {
-        this.logger.error(
-          `Stats section "${name}" failed for org ${orgId}`,
-          error instanceof Error ? error.stack : String(error),
-        );
-        return fallback;
-      }
-    };
+    const flagsPromise = resolveDashboardStatsFlags(this.access, u);
+    const employeesKeyPromise = buildOrgDashboardCacheKey(this.access, orgId, "stats-employees");
+    const projectsKeyPromise = buildOrgDashboardCacheKey(this.access, orgId, "stats-projects");
 
-    const orgKey = await buildOrgDashboardCacheKey(this.access, orgId, "stats-org");
-    const orgData = await settle(
+    const orgDataPromise = settle(
       "org",
-      () =>
-        this.cache.cachedForOrg(
+      async () => {
+        const orgKey = await buildOrgDashboardCacheKey(this.access, orgId, "stats-org");
+        return this.cache.cachedForOrg(
           orgId,
           orgKey,
           async () => {
@@ -60,27 +54,22 @@ export class DashboardStatsService {
             };
           },
           CACHE_TTL.SHORT,
-        ),
+        );
+      },
       { orgName: "Organization", orgSlug: orgId.slice(0, 8), orgTz: "UTC" },
     );
 
-    const orgTz = orgData?.orgTz ?? "UTC";
-    const localDate = formatInTimeZone(new Date(), orgTz, "yyyy-MM-dd");
+    const flags = await flagsPromise;
 
-    const [employeesKey, projectsKey, attendanceKey] = await Promise.all([
-      buildOrgDashboardCacheKey(this.access, orgId, "stats-employees"),
-      buildOrgDashboardCacheKey(this.access, orgId, "stats-projects"),
-      buildOrgDashboardCacheKey(this.access, orgId, "stats-attendance", `${orgTz}:${localDate}`),
-    ]);
-
-    const [totalEmployees, activeProjects, presentToday] = await Promise.all([
+    const [orgData, totalEmployees, activeProjects, presentToday] = await Promise.all([
+      orgDataPromise,
       flags.employees
         ? settle(
             "employees",
-            () =>
+            async () =>
               this.cache.cachedForOrg(
                 orgId,
-                employeesKey,
+                await employeesKeyPromise,
                 async () => {
                   const [r] = await this.db
                     .select({ cnt: count() })
@@ -101,10 +90,10 @@ export class DashboardStatsService {
       flags.projects
         ? settle(
             "projects",
-            () =>
+            async () =>
               this.cache.cachedForOrg(
                 orgId,
-                projectsKey,
+                await projectsKeyPromise,
                 async () => {
                   const [r] = await this.db
                     .select({ cnt: count() })
@@ -120,8 +109,16 @@ export class DashboardStatsService {
       flags.attendance
         ? settle(
             "attendance",
-            () =>
-              this.cache.cachedForOrg(
+            async () => {
+              const orgTz = (await orgDataPromise).orgTz;
+              const localDate = formatInTimeZone(new Date(), orgTz, "yyyy-MM-dd");
+              const attendanceKey = await buildOrgDashboardCacheKey(
+                this.access,
+                orgId,
+                "stats-attendance",
+                `${orgTz}:${localDate}`,
+              );
+              return this.cache.cachedForOrg(
                 orgId,
                 attendanceKey,
                 async () => {
@@ -132,7 +129,8 @@ export class DashboardStatsService {
                   return Number(r?.cnt ?? 0);
                 },
                 CACHE_TTL.SHORT,
-              ),
+              );
+            },
             null,
           )
         : Promise.resolve(null),
