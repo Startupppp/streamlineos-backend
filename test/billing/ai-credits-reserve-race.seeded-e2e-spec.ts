@@ -262,6 +262,49 @@ describe("AiCreditsReservationService — concurrent first use of an organisatio
     expect(counts.balance).toBe(TRIAL_GRANT_MILLI - RESERVE_MILLI);
   });
 
+  it("refuses to settle into a wallet that is not there rather than writing a ledger row for it", async () => {
+    const { reservationId } = await svc.reserve({
+      orgId: ORG_ID,
+      userId: OWNER_ID,
+      feature: "race-probe",
+      credits: RESERVE_MILLI,
+    });
+    await client`DELETE FROM org_ai_credits WHERE org_id = ${ORG_ID}`;
+
+    await expect(svc.settle(reservationId, { orgId: ORG_ID, actualMilli: 400 })).rejects.toThrow(
+      /wallet for organisation .* is missing/,
+    );
+
+    const usage = await client<{ n: string }[]>`
+      SELECT count(*)::text AS n FROM ai_credit_transactions
+      WHERE org_id = ${ORG_ID} AND type = 'USAGE'`;
+    const stillReserved = await client<{ n: string }[]>`
+      SELECT count(*)::text AS n FROM ai_credit_reservations
+      WHERE id = ${reservationId} AND status = 'RESERVED'`;
+
+    expect(Number(usage[0]?.n ?? -1)).toBe(0);
+    expect(Number(stillReserved[0]?.n ?? -1)).toBe(1);
+  });
+
+  it("refuses to refund into a wallet that is not there rather than dropping the credits", async () => {
+    const { reservationId } = await svc.reserve({
+      orgId: ORG_ID,
+      userId: OWNER_ID,
+      feature: "race-probe",
+      credits: RESERVE_MILLI,
+    });
+    await client`DELETE FROM org_ai_credits WHERE org_id = ${ORG_ID}`;
+
+    await expect(svc.release(reservationId, "probe", ORG_ID)).rejects.toThrow(
+      /wallet for organisation .* is missing/,
+    );
+
+    const stillReserved = await client<{ n: string }[]>`
+      SELECT count(*)::text AS n FROM ai_credit_reservations
+      WHERE id = ${reservationId} AND status = 'RESERVED'`;
+    expect(Number(stillReserved[0]?.n ?? -1)).toBe(1);
+  });
+
   it("leaves no orphan reservation rows behind after a settle", async () => {
     const { reservationId } = await svc.reserve({
       orgId: ORG_ID,

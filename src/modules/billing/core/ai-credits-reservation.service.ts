@@ -214,8 +214,13 @@ export class AiCreditsReservationService {
           .where(eq(orgAiCredits.orgId, reservation.orgId))
           .for("update");
 
-        const currentBalance = wallet?.balance ?? 0;
-        const newBalance = currentBalance + delta;
+        if (!wallet)
+          throw new ConflictException(
+            `AI credit wallet for organisation ${reservation.orgId} is missing; ` +
+              `refusing to settle reservation ${reservationId} against a balance that does not exist`,
+          );
+
+        const newBalance = wallet.balance + delta;
 
         await tx
           .update(orgAiCredits)
@@ -293,8 +298,13 @@ export class AiCreditsReservationService {
           .where(eq(orgAiCredits.orgId, reservation.orgId))
           .for("update");
 
-        const currentBalance = wallet?.balance ?? 0;
-        const newBalance = currentBalance + reservation.credits;
+        if (!wallet)
+          throw new ConflictException(
+            `AI credit wallet for organisation ${reservation.orgId} is missing; ` +
+              `refusing to refund reservation ${reservationId} into a balance that does not exist`,
+          );
+
+        const newBalance = wallet.balance + reservation.credits;
 
         await tx
           .update(orgAiCredits)
