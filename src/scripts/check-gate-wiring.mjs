@@ -25,7 +25,7 @@ const REPO = ROOT;
 const WORKFLOWS = join(REPO, ".github", "workflows");
 
 /** Sub-commands that assert nothing on their own — they emit, list or self-test. */
-const HELPER = /:(self-test|fix|emit|list|baseline|write|report)$/;
+const HELPER = /:(self-test|fix|emit|list|baseline|write|report|verify|build)$/;
 
 /** gate -> the reason it is deliberately not in a workflow. Must be specific. */
 const UNWIRED_BY_DESIGN = Object.freeze({
@@ -35,13 +35,30 @@ const UNWIRED_BY_DESIGN = Object.freeze({
   "check:declaration-constraint-drift":
     "same — compares getTableConfig against pg_constraint/pg_index on a live database. " +
     "Owner: gate-wiring.",
+
+  // Widened 2026-09-03 to `verify:*` and `db:check-*`. All eight below query a live database at
+  // journal head, which the hermetic `gates` job has none of. Recorded rather than left silent:
+  // before this, nothing said they do not run.
+  "verify:permissions": "queries a live database to resolve permissions. Owner: gate-wiring.",
+  "verify:chat-mentions": "queries live chat rows. Owner: gate-wiring.",
+  "verify:multi-org-employment": "queries live employment rows across orgs. Owner: gate-wiring.",
+  "verify:membership-revocation": "queries live membership rows. Owner: gate-wiring.",
+  "db:check-build-reads": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
+  "db:check-hr-reads": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
+  "db:check-read-budgets": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
+  "db:check-request-txn": "needs a booted app plus a live database. Owner: gate-wiring.",
 });
 
 const MIN_GATES = 60; // anti-vacuity: a run that resolves nothing must fail, not pass.
 
 function main() {
   const scripts = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).scripts ?? {};
-  const gates = Object.keys(scripts).filter((n) => n.startsWith("check:") && !HELPER.test(n));
+  // `check:*` is not the whole gate surface: `verify:*` and `db:check-*` assert too, and eight of
+  // them were unwired when this was widened. `db:push`/`db:studio`/`db:migrate` are tools, not
+  // gates, so the prefix test is deliberately narrow.
+  const isGate = (n) =>
+    !HELPER.test(n) && (n.startsWith("check:") || n.startsWith("verify:") || n.startsWith("db:check-"));
+  const gates = Object.keys(scripts).filter(isGate);
 
   let workflows = "";
   for (const f of readdirSync(WORKFLOWS)) {
