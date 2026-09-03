@@ -344,7 +344,11 @@ export class ProjectsTicketsUpdateService {
       })
       .catch((error) => logger.error("Failed to log ticket activity", { error }));
 
-    void this.transfer
+    // Awaited, not fired: `notifyNewAssignees` reaches `NotificationDispatchService.emit`,
+    // which inserts the outbox row on the AMBIENT transaction. Left floating it raced this
+    // request's COMMIT, and a chunk that resumed afterwards wrote to a committed handle —
+    // the assignee was simply never told. The ambient transaction is still open here.
+    await this.transfer
       .notifyNewAssignees(orgId, ticketId, actingUserId, input)
       .catch((error) =>
         logger.error("Failed to notify ticket assignees", { error }),
