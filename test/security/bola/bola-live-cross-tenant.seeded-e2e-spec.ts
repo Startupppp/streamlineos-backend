@@ -207,13 +207,39 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     }
   };
 
-  const refreshTokens = async (): Promise<void> => {
-    // The keyring signs a 10-minute token; a sweep of this size outlives one, and an expired token
-    // turns every remaining control into a 401 that would be filed as "route not probeable".
-    if (Date.now() - tokensMintedAt < 4 * 60 * 1000) return;
+  /**
+   * MEASURED, and it cost 97 routes before it was: at a 4-minute interval the tokens stopped
+   * verifying part-way through a run and every subsequent control answered 401 — first the
+   * prober's, then the source's two routes later, which is the signature of both tokens ageing out
+   * together rather than of anything the routes did. A 401 control is filed UNPROBEABLE, so the
+   * failure is silent: it reads as "these routes could not be probed", not "the sweep lost its
+   * credentials". Signing is local and free, so the interval is now 45 seconds and any 401 is
+   * retried once behind a forced re-mint. The root cause is NOT established; this is a
+   * belt-and-braces repair, and `harnessProofs.tokenRetries` counts how often it fires so the
+   * problem cannot hide again.
+   */
+  const refreshTokens = async (force = false): Promise<void> => {
+    if (!force && Date.now() - tokensMintedAt < 45 * 1000) return;
     sourceToken = await signSeededToken(seeded, sourceUser, SOURCE_ORG);
     proberToken = await signSeededToken(seeded, proberUser, PROBER_ORG);
     tokensMintedAt = Date.now();
+  };
+
+  let tokenRetries = 0;
+
+  /** Sends as the named principal, re-minting once if the credential is refused. */
+  const sendAs = async (
+    who: "source" | "prober",
+    verb: string,
+    path: string,
+    body: Record<string, unknown> | null = null,
+  ): Promise<Sent> => {
+    const token = (): string => (who === "source" ? sourceToken : proberToken);
+    const first = await send(verb, path, token(), body);
+    if (first.status !== 401) return first;
+    tokenRetries += 1;
+    await refreshTokens(true);
+    return send(verb, path, token(), body);
   };
 
   const resolveOwnerUser = async (orgId: string): Promise<string> => {
@@ -507,11 +533,11 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       let control: Sent;
       let probeResult: Sent;
       if (MUTATING.has(planned.verb)) {
-        probeResult = await send(planned.verb, requestUrl, proberToken, bodyFor());
-        control = await send(planned.verb, requestUrl, sourceToken, bodyFor());
+        probeResult = await sendAs("prober", planned.verb, requestUrl, bodyFor());
+        control = await sendAs("source", planned.verb, requestUrl, bodyFor());
       } else {
-        control = await send(planned.verb, requestUrl, sourceToken, bodyFor());
-        probeResult = await send(planned.verb, requestUrl, proberToken, bodyFor());
+        control = await sendAs("source", planned.verb, requestUrl, bodyFor());
+        probeResult = await sendAs("prober", planned.verb, requestUrl, bodyFor());
       }
 
       const raw = score(
@@ -527,7 +553,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       if (isDisclosure(raw.verdict)) {
         const absentUrl = absentUrlFor(planned);
         if (absentUrl !== null) {
-          const absent = await send(planned.verb, withQuery(absentUrl, synthesized.query), proberToken, bodyFor());
+          const absent = await sendAs("prober", planned.verb, withQuery(absentUrl, synthesized.query), bodyFor());
           absentStatus = absent.status === 0 ? null : absent.status;
           scored = disambiguate(raw, probeResult.status, absentStatus);
         }
@@ -553,6 +579,10 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     harnessProofs.synthesizedBodies = {
       routesGivenABody: bodiesSynthesized,
       unsatisfiable: outcomes.filter((o) => o.bodySource === "unsatisfiable").length,
+    };
+    harnessProofs.tokenRetries = {
+      retried: tokenRetries,
+      controlsStill401: outcomes.filter((o) => o.controlStatus === 401).length,
     };
     process.stderr.write(
       `[bola-live] ${String(outcomes.length)} routes attempted: ${[...tally.entries()]
