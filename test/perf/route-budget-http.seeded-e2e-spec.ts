@@ -676,7 +676,12 @@ async function measureRoute(
     const heap: RequestSample[] = [];
     for (let i = 0; i < HEAP_SAMPLES; i++) heap.push(await measureOnce(shaped, downstream, { measureHeap: true }));
 
-    return summarise(latency, heap, lastBody.slice(0, 300));
+    // Read AFTER the last sample: `measureOnce` resets the counter per request, so this is one
+    // request's destinations rather than an accumulated total. A downstream count with no origin
+    // cannot be reconciled against a declared ceiling.
+    const measured = summarise(latency, heap, lastBody.slice(0, 300));
+    const targets = downstream.readTargets();
+    return Object.keys(targets).length > 0 ? { ...measured, downstreamTargets: targets } : measured;
   } catch (error) {
     return unmeasured(error instanceof Error ? error.message : String(error), "failed");
   }

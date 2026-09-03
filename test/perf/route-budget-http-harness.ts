@@ -290,6 +290,8 @@ export interface RouteMeasurement {
   readonly responseBytes: number | null;
   readonly memoryMb: number | null;
   readonly bodyPreview?: string;
+  /** Origins the LAST measured request reached, so a non-zero count says where it went. */
+  readonly downstreamTargets?: Record<string, number>;
 }
 
 /**
