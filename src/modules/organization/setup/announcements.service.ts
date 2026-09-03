@@ -96,8 +96,10 @@ export class AnnouncementsService {
   }
 
   async remove(orgId: string, id: number) {
-    await this.db.delete(announcements)
-      .where(and(eq(announcements.id, id), eq(announcements.orgId, orgId)));
+    const removed = await this.db.delete(announcements)
+      .where(and(eq(announcements.id, id), eq(announcements.orgId, orgId)))
+      .returning({ id: announcements.id });
+    if (removed.length === 0) throw new NotFoundException("Announcement not found");
   }
 
   async markRead(orgId: string, announcementId: number, userId: string) {

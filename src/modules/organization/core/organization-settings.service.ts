@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -363,7 +363,7 @@ export class OrganizationSettingsService {
     const record = await this.db.query.orgCustomDomains.findFirst({
       where: and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)),
     });
-    if (!record) throw new BadRequestException("Domain not found");
+    if (!record) throw new NotFoundException("Domain not found");
     this.audit.log({
       action: "org.domain.verified",
       userId,
@@ -374,14 +374,16 @@ export class OrganizationSettingsService {
     await this.db
       .update(orgCustomDomains)
       .set({ verifiedAt: new Date() })
-      .where(eq(orgCustomDomains.id, domainId));
+      .where(and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)));
     return { success: true, verified: true };
   }
 
   async removeCustomDomain(orgId: string, userId: string, domainId: string) {
-    await this.db
+    const removed = await this.db
       .delete(orgCustomDomains)
-      .where(and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)));
+      .where(and(eq(orgCustomDomains.id, domainId), eq(orgCustomDomains.orgId, orgId)))
+      .returning({ id: orgCustomDomains.id });
+    if (removed.length === 0) throw new NotFoundException("Domain not found");
     this.audit.log({
       action: "org.domain.removed",
       userId,
