@@ -10,7 +10,9 @@ import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { AccessService } from "../access/access.service";
 import { SignAiService } from "./sign-ai.service";
+import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
@@ -21,15 +23,19 @@ const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive
 @RequirePermission("sign:envelope:view")
 @UseRateLimit("ai:invoke")
 export class SignAiController {
-  constructor(private readonly signAi: SignAiService) {}
+  constructor(
+    private readonly signAi: SignAiService,
+    private readonly access: AccessService,
+  ) {}
 
   @Post("summarize")
   @BodylessAction()
   @Validate({ params: envelopeIdParams })
-  summarize(
+  async summarize(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.signAi.summarizeDocument(u.orgId, envelopeId, u.userId);
+    const scope = await resolveEnvelopeViewScope(this.access, u);
+    return this.signAi.summarizeDocument(u.orgId, envelopeId, u.userId, scope);
   }
 }

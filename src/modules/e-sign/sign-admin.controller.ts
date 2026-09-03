@@ -88,16 +88,16 @@ export class SignAdminController {
   @Post("run-reminder-sweep")
   @BodylessAction()
   @RequirePermission("sign:admin:manage")
-  async runReminderSweep() {
-    const remindedCount = await this.envelopes.runReminderSweep();
+  async runReminderSweep(@CurrentUser() u: CurrentUserContext) {
+    const remindedCount = await this.envelopes.runReminderSweep(u.orgId);
     return { remindedCount };
   }
 
   @Post("run-expiration-sweep")
   @BodylessAction()
   @RequirePermission("sign:admin:manage")
-  async runExpirationSweep() {
-    const expiredCount = await this.envelopes.runExpirationSweep();
+  async runExpirationSweep(@CurrentUser() u: CurrentUserContext) {
+    const expiredCount = await this.envelopes.runExpirationSweep(u.orgId);
     return { expiredCount };
   }
 }

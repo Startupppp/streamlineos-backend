@@ -169,9 +169,18 @@ class Parser {
 
   private comparison(): boolean {
     const left = this.operand();
-    const operator = this.text();
+    let operator = this.text();
     if (operator === null) throw new Error("sql-predicate: expected an operator");
     this.index += 1;
+    // `notInArray` renders as `col not in (…)`, which the keyword split hands
+    // over as two tokens. Without this the parser reads `not` as the operator
+    // and then fails on `in` as an operand.
+    let negated = false;
+    if (operator === "not" && this.text() === "in") {
+      negated = true;
+      operator = "in";
+      this.index += 1;
+    }
     if (operator === "is null") return left === null || left === undefined;
     if (operator === "is not null") return left !== null && left !== undefined;
     if (operator === "ilike") {
@@ -195,8 +204,10 @@ class Parser {
         while (this.peek()?.kind === "value") values.push(this.operand());
         if (values.length === 0) throw new Error("sql-predicate: expected in (");
       }
-      return values.includes(left);
+      const present = values.includes(left);
+      return negated ? !present : present;
     }
+    if (negated) throw new Error("sql-predicate: `not` is only supported before `in`");
     return compare(operator, left, this.operand());
   }
 }

@@ -75,7 +75,7 @@ export class SignEnvelopeSweepsService {
       await this.db
         .update(signRecipients)
         .set({ signingTokenHash: this.tokens.hash(rawToken) })
-        .where(eq(signRecipients.id, r.id));
+        .where(and(eq(signRecipients.id, r.id), eq(signRecipients.orgId, envelope.orgId)));
       const signingUrl = this.tokens.buildSigningUrl(rawToken);
       const daysRemaining = envelope.expiresAt
         ? Math.max(
@@ -112,7 +112,7 @@ export class SignEnvelopeSweepsService {
           reminderSentCount: sql`${signEnvelopes.reminderSentCount} + 1`,
           lastReminderAt: now,
         })
-        .where(eq(signEnvelopes.id, envelope.id));
+        .where(and(eq(signEnvelopes.id, envelope.id), eq(signEnvelopes.orgId, envelope.orgId)));
     }
     return remindedCount;
   }
@@ -136,10 +136,21 @@ export class SignEnvelopeSweepsService {
     return { remindedCount };
   }
 
-  async runReminderSweep(): Promise<number> {
+  /**
+   * The sweeps are reached from `POST /sign/admin/run-*-sweep`, so they run for
+   * one organisation — the caller's. `orgId` is REQUIRED rather than optional:
+   * an optional tenant filter with an all-organisations default is the
+   * fail-open shape, and without the predicate these queries selected every
+   * organisation's envelopes and were confined only by whatever tenant GUC the
+   * ambient transaction happened to carry. A holder of `sign:admin:manage`
+   * would otherwise expire another tenant's envelopes and mail that tenant's
+   * signers a freshly minted signing link.
+   */
+  async runReminderSweep(orgId: string): Promise<number> {
     const now = new Date();
     const candidates = await this.db.query.signEnvelopes.findMany({
       where: and(
+        eq(signEnvelopes.orgId, orgId),
         inArray(signEnvelopes.status, [
           "sent",
           "delivered",
@@ -165,10 +176,11 @@ export class SignEnvelopeSweepsService {
     return sentCount;
   }
 
-  async runExpirationSweep(): Promise<number> {
+  async runExpirationSweep(orgId: string): Promise<number> {
     const now = new Date();
     const expiring = await this.db.query.signEnvelopes.findMany({
       where: and(
+        eq(signEnvelopes.orgId, orgId),
         inArray(signEnvelopes.status, [
           "sent",
           "delivered",
@@ -184,6 +196,7 @@ export class SignEnvelopeSweepsService {
         .set({ status: "expired", tokenRevokedAt: now })
         .where(
           and(
+            eq(signRecipients.orgId, orgId),
             eq(signRecipients.envelopeId, envelope.id),
             notInArray(signRecipients.status, [
               "completed",
@@ -195,7 +208,7 @@ export class SignEnvelopeSweepsService {
       await this.db
         .update(signEnvelopes)
         .set({ status: "expired" })
-        .where(eq(signEnvelopes.id, envelope.id));
+        .where(and(eq(signEnvelopes.id, envelope.id), eq(signEnvelopes.orgId, orgId)));
       await this.audit.record({
         orgId: envelope.orgId,
         envelopeId: envelope.id,

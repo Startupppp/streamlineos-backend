@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
   signDocuments,
@@ -21,6 +21,7 @@ import type {
   CreateEnvelopeFromTemplateInput,
   PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
+import { isUniqueViolationOn } from "../../common/db/postgres-error";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
 export interface TemplateRole {
@@ -431,25 +432,7 @@ export class SignTemplatesService {
     const template = await this.get(orgId, templateId);
     if (template.status !== "published") throw new ForbiddenException("Only published templates can be turned into a public form");
 
-    const existingSlug = await this.db.query.signPublicForms.findFirst({ where: eq(signPublicForms.slug, input.slug) });
-    if (existingSlug) throw new BadRequestException("This slug is already in use");
-
-    const [form] = await this.db
-      .insert(signPublicForms)
-      .values({
-        orgId,
-        templateId,
-        slug: input.slug,
-        status: "published",
-        accessCodeHash: input.accessCode ? this.tokens.hash(input.accessCode) : null,
-        maxSubmissions: input.maxSubmissions,
-        expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
-        completionRedirectUrl: input.completionRedirectUrl,
-        webhookUrl: input.webhookUrl,
-        embedAllowed: input.embedAllowed,
-        createdByMembershipId,
-      })
-      .returning();
+    const form = await this.insertPublicForm(orgId, createdByMembershipId, templateId, input);
 
     await this.audit.record({
       orgId,
@@ -460,6 +443,48 @@ export class SignTemplatesService {
     });
 
     return form;
+  }
+
+  /**
+   * `uniq_sign_public_forms_slug` is a GLOBAL unique index, because the slug is a
+   * public URL and the namespace is the platform's, not the tenant's. The
+   * pre-flight `findFirst` cannot see another organisation's row — RLS on
+   * `sign_public_forms` admits `org_id = current_org_id() OR slug =
+   * current_public_token()`, and an authenticated request sets no public token —
+   * so a slug taken by another tenant used to pass the check and then break the
+   * index, and the 23505 escaped as a 500. The insert is the only authority, and
+   * both cases now answer the same 409 so the reply cannot separate "yours" from
+   * "someone else's".
+   */
+  private async insertPublicForm(
+    orgId: string,
+    createdByMembershipId: number | null,
+    templateId: number,
+    input: PublishPublicFormInput,
+  ) {
+    try {
+      const [form] = await this.db
+        .insert(signPublicForms)
+        .values({
+          orgId,
+          templateId,
+          slug: input.slug,
+          status: "published",
+          accessCodeHash: input.accessCode ? this.tokens.hash(input.accessCode) : null,
+          maxSubmissions: input.maxSubmissions,
+          expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
+          completionRedirectUrl: input.completionRedirectUrl,
+          webhookUrl: input.webhookUrl,
+          embedAllowed: input.embedAllowed,
+          createdByMembershipId,
+        })
+        .returning();
+      return form;
+    } catch (err) {
+      if (isUniqueViolationOn(err, "uniq_sign_public_forms_slug"))
+        throw new ConflictException("This slug is already in use");
+      throw err;
+    }
   }
 
   async getPublicForm(slug: string) {
