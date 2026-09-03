@@ -493,17 +493,25 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
         continue;
       }
       const requestUrl = withQuery(url, synthesized.query);
-      const body = synthesized.body;
-      bodiesSynthesized += body === null ? 0 : 1;
+      bodiesSynthesized += synthesized.body === null ? 0 : 1;
+      /**
+       * Each of the three requests gets its own body, distinct only in the values the schema
+       * leaves free. A CONSTANT body collides with a unique index and corrupts the very control
+       * this sweep depends on — measured on `POST /build/:projectId/labels`, where the third
+       * request hit `uniq_ticket_labels_org_name`, answered 500 where the second answered 201, and
+       * a route that disclosed nothing was scored LEAK.
+       */
+      const bodyFor = (): Record<string, unknown> | null =>
+        synthesized.body === null ? null : synthesizeRequest(planned.verb, planned.path, randomUUID().slice(0, 8)).body;
 
       let control: Sent;
       let probeResult: Sent;
       if (MUTATING.has(planned.verb)) {
-        probeResult = await send(planned.verb, requestUrl, proberToken, body);
-        control = await send(planned.verb, requestUrl, sourceToken, body);
+        probeResult = await send(planned.verb, requestUrl, proberToken, bodyFor());
+        control = await send(planned.verb, requestUrl, sourceToken, bodyFor());
       } else {
-        control = await send(planned.verb, requestUrl, sourceToken, body);
-        probeResult = await send(planned.verb, requestUrl, proberToken, body);
+        control = await send(planned.verb, requestUrl, sourceToken, bodyFor());
+        probeResult = await send(planned.verb, requestUrl, proberToken, bodyFor());
       }
 
       const raw = score(
@@ -519,7 +527,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       if (isDisclosure(raw.verdict)) {
         const absentUrl = absentUrlFor(planned);
         if (absentUrl !== null) {
-          const absent = await send(planned.verb, withQuery(absentUrl, synthesized.query), proberToken, body);
+          const absent = await send(planned.verb, withQuery(absentUrl, synthesized.query), proberToken, bodyFor());
           absentStatus = absent.status === 0 ? null : absent.status;
           scored = disambiguate(raw, probeResult.status, absentStatus);
         }

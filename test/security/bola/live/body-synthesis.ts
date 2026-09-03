@@ -124,12 +124,31 @@ function deref(schema: JsonSchema, seen: ReadonlySet<string>): Attempt {
  * uses is. The date-time pattern here is the leap-year-aware one Zod emits, which no naive
  * generator satisfies, so the candidate has to be a real ISO instant.
  */
-function stringCandidates(schema: JsonSchema): string[] {
+function stringCandidates(schema: JsonSchema, nonce: string): string[] {
   const out: string[] = [];
   const push = (value: string): void => {
     if (!out.includes(value)) out.push(value);
   };
   const format = schema.format ?? "";
+  /**
+   * A CONSTANT body collides with a unique index, and that corrupts the three-way control.
+   *
+   * Measured: `POST /build/:projectId/labels` under `uniq_ticket_labels_org_name (org_id, name)`.
+   * The cross-tenant probe created "bola-probe" in the prober's org and answered 201, the
+   * own-tenant control created it in the source org and answered 201, and the absent-id request —
+   * sent as the prober again, into the org that now holds that name — raised 23505 and answered
+   * 500. `disambiguate` compares the cross-tenant answer with the absent one, saw 201 against 500,
+   * and could not demote the verdict, so a route that discloses nothing was scored LEAK.
+   *
+   * A per-request nonce makes the three bodies equivalent-but-distinct, which is what makes the
+   * three answers comparable at all. It is applied only where the schema constrains nothing — an
+   * enum, a const, a format or a pattern still wins, so a patterned unique column remains a known
+   * residual rather than a silently wrong verdict.
+   */
+  if (nonce.length > 0 && schema.enum === undefined && schema.const === undefined && schema.pattern === undefined) {
+    if (format === "email") push(`bola.${nonce}@example.com`);
+    else if (format === "") push(`bola-${nonce}`);
+  }
   if (format === "uuid") push("00000000-0000-4000-8000-000000000000");
   if (format === "date-time") push("2027-01-15T00:00:00.000Z");
   if (format === "date") push("2027-01-15");
@@ -183,10 +202,10 @@ function fitLength(value: string, schema: JsonSchema): string | null {
   return out.length >= min ? out : null;
 }
 
-function synthesizeString(schema: JsonSchema, where: string): Attempt {
+function synthesizeString(schema: JsonSchema, where: string, nonce: string): Attempt {
   const regex = schema.pattern === undefined ? null : compilePattern(schema.pattern);
   if (schema.pattern !== undefined && regex === null) return no(`${where}: pattern ${schema.pattern} does not compile`);
-  for (const candidate of stringCandidates(schema)) {
+  for (const candidate of stringCandidates(schema, nonce)) {
     const fitted = fitLength(candidate, schema);
     if (fitted === null) continue;
     if (regex && !regex.test(fitted)) continue;
@@ -229,7 +248,7 @@ function concreteType(schema: JsonSchema): string | null {
   return null;
 }
 
-function synthesizeValue(raw: JsonSchema, where: string, seen: ReadonlySet<string>): Attempt {
+function synthesizeValue(raw: JsonSchema, where: string, seen: ReadonlySet<string>, nonce = ""): Attempt {
   const resolved = deref(raw, seen);
   if (!resolved.ok) return resolved;
   const schema = resolved.value as JsonSchema;
@@ -241,7 +260,7 @@ function synthesizeValue(raw: JsonSchema, where: string, seen: ReadonlySet<strin
   if (schema.allOf && schema.allOf.length > 0) {
     const merged: Record<string, unknown> = {};
     for (const branch of schema.allOf) {
-      const part = synthesizeValue(branch, where, nextSeen);
+      const part = synthesizeValue(branch, where, nextSeen, nonce);
       if (!part.ok) return part;
       if (part.value !== null && typeof part.value === "object" && !Array.isArray(part.value))
         Object.assign(merged, part.value);
@@ -253,7 +272,7 @@ function synthesizeValue(raw: JsonSchema, where: string, seen: ReadonlySet<strin
   if (union && union.length > 0) {
     const reasons: string[] = [];
     for (const branch of union) {
-      const attempt = synthesizeValue(branch, where, nextSeen);
+      const attempt = synthesizeValue(branch, where, nextSeen, nonce);
       if (attempt.ok) return attempt;
       reasons.push(attempt.why);
     }
@@ -267,7 +286,7 @@ function synthesizeValue(raw: JsonSchema, where: string, seen: ReadonlySet<strin
     for (const name of schema.required ?? []) {
       const property = schema.properties?.[name];
       if (!property) return no(`${where}.${name}: required but has no schema`);
-      const attempt = synthesizeValue(property, `${where}.${name}`, nextSeen);
+      const attempt = synthesizeValue(property, `${where}.${name}`, nextSeen, nonce);
       if (!attempt.ok) return attempt;
       out[name] = attempt.value;
     }
@@ -278,12 +297,12 @@ function synthesizeValue(raw: JsonSchema, where: string, seen: ReadonlySet<strin
     const count = schema.minItems ?? 0;
     if (count === 0) return ok([]);
     if (!schema.items) return no(`${where}: minItems ${String(count)} but no item schema`);
-    const item = synthesizeValue(schema.items, `${where}[]`, nextSeen);
+    const item = synthesizeValue(schema.items, `${where}[]`, nextSeen, nonce);
     if (!item.ok) return item;
     return ok(Array.from({ length: count }, () => item.value));
   }
 
-  if (type === "string") return synthesizeString(schema, where);
+  if (type === "string") return synthesizeString(schema, where, nonce);
   if (type === "integer") return synthesizeNumber(schema, true, where);
   if (type === "number") return synthesizeNumber(schema, false, where);
   if (type === "boolean") return ok(true);
@@ -316,7 +335,7 @@ const EMPTY_QUERY: Readonly<Record<string, string>> = Object.freeze({});
  * confused with one probed with `{}` — a sweep that cannot say which of the two it sent cannot
  * defend either result.
  */
-export function synthesizeRequest(verb: string, routePath: string): SynthesizedRequest {
+export function synthesizeRequest(verb: string, routePath: string, nonce = ""): SynthesizedRequest {
   const operation = findOperation(verb, routePath);
   if (!operation)
     return { body: null, query: EMPTY_QUERY, source: "no-operation", unsatisfiable: [`${verb} ${routePath} is not in openapi.json`] };
@@ -329,6 +348,8 @@ export function synthesizeRequest(verb: string, routePath: string): SynthesizedR
       problems.push(`query.${parameter.name}: required but has no schema`);
       continue;
     }
+    // The query is left deterministic: it carries filters and dates, not the unique columns a
+    // repeated write collides on, and a nonce there would make the three urls differ needlessly.
     const attempt = synthesizeValue(parameter.schema, `query.${parameter.name}`, new Set());
     if (!attempt.ok) problems.push(attempt.why);
     else query[parameter.name] = String(attempt.value);
@@ -343,7 +364,7 @@ export function synthesizeRequest(verb: string, routePath: string): SynthesizedR
       unsatisfiable: problems,
     };
 
-  const attempt = synthesizeValue(schema, "body", new Set());
+  const attempt = synthesizeValue(schema, "body", new Set(), nonce);
   if (!attempt.ok)
     return { body: null, query, source: "unsatisfiable", unsatisfiable: [...problems, attempt.why] };
 

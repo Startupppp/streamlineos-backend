@@ -240,6 +240,47 @@ describe("SELF-TEST — the synthesiser satisfies the constraints it is given", 
   });
 });
 
+/**
+ * A constant body collides with a unique index, and the collision lands on the THIRD request — the
+ * absent-id control — which is exactly the one the sweep uses to tell a leak from a miss. Measured
+ * on `POST /build/:projectId/labels` against `uniq_ticket_labels_org_name`: probe 201, control 201,
+ * absent 500, verdict LEAK, disclosure nil.
+ */
+describe("NONCE — repeated writes must not collide, or the three-way control is worthless", () => {
+  const bodyOf = (schema: unknown, nonce: string): unknown => {
+    const doc = loadOpenApiDocument() as unknown as { paths: Record<string, unknown> };
+    doc.paths["/__nonce__"] = { post: { requestBody: { content: { "application/json": { schema } } } } };
+    const result = synthesizeRequest("POST", "/__nonce__", nonce);
+    delete doc.paths["/__nonce__"];
+    return result.body;
+  };
+  const NAMED = { type: "object", properties: { name: { type: "string", minLength: 1 } }, required: ["name"] };
+
+  it("gives two requests different values for an unconstrained string", () => {
+    expect(bodyOf(NAMED, "aaaa1111")).not.toEqual(bodyOf(NAMED, "bbbb2222"));
+  });
+
+  it("is deterministic with no nonce, so the offline coverage numbers stay reproducible", () => {
+    expect(bodyOf(NAMED, "")).toEqual({ name: "bola-probe" });
+  });
+
+  it("never breaks a constraint to be unique — an enum, a const and a pattern all still win", () => {
+    expect(bodyOf({ type: "object", properties: { s: { type: "string", enum: ["OPEN"] } }, required: ["s"] }, "zz")).toEqual({ s: "OPEN" });
+    expect(
+      bodyOf({ type: "object", properties: { d: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" } }, required: ["d"] }, "zz"),
+    ).toEqual({ d: "2027-01-15" });
+  });
+
+  it("keeps a nonced value inside its own length bounds", () => {
+    const body = bodyOf(
+      { type: "object", properties: { s: { type: "string", minLength: 20, maxLength: 24 } }, required: ["s"] },
+      "abcd1234",
+    ) as { s: string };
+    expect(body.s.length).toBeGreaterThanOrEqual(20);
+    expect(body.s.length).toBeLessThanOrEqual(24);
+  });
+});
+
 describe("path translation and query assembly", () => {
   it("rewrites the harness's :param into the contract's {param}", () => {
     expect(toContractPath("/build/:projectId/bugs/:bugId")).toBe("/build/{projectId}/bugs/{bugId}");
