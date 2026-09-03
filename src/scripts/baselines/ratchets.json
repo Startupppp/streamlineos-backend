@@ -1,0 +1,624 @@
+{
+  "note": "Every top-level integer constant in every backend gate script, with the direction it may move. check:baseline-integrity fails on an unregistered constant (which is what a rename looks like), a stale registration (the other half of a rename), and any move in the unsafe direction. ratchet = may only decrease. floor = may only increase; lowering a floor is how a gate goes blind while printing OK. pinned = may not change without re-registering, used where the safe direction is genuinely not obvious.",
+  "measured": "2026-09-03",
+  "entries": {
+    "check-ai-charge-declared.mjs": {
+      "ANTI_VACUITY_MIN": {
+        "value": 80,
+        "direction": "floor"
+      }
+    },
+    "check-authz-deny.mjs": {
+      "MIN_CONTROLLERS": {
+        "value": 150,
+        "direction": "floor"
+      },
+      "MIN_GATED": {
+        "value": 800,
+        "direction": "floor"
+      },
+      "MIN_DENY_SPECS": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-bare-throw.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "MIN_THROW_MATCHERS": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "MIN_RISK_TESTS": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-baseline-integrity.mjs": {
+      "MIN_GATE_SCRIPTS": {
+        "value": 40,
+        "direction": "floor"
+      },
+      "MIN_CONSTANTS": {
+        "value": 100,
+        "direction": "floor"
+      }
+    },
+    "check-bounded-contracts.mjs": {
+      "PAGE_SIZE_CAP": {
+        "value": 100,
+        "direction": "ratchet",
+        "owner": "api/platform owner",
+        "reason": "The hard per-page cap every list contract is checked against. Raising it widens every unbounded-read surface at once."
+      }
+    },
+    "check-cache-invalidation.mjs": {
+      "MIN_SERVICE_FILES": {
+        "value": 30,
+        "direction": "floor"
+      },
+      "MIN_WRITE_SITES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_INVALIDATE_SITES": {
+        "value": 200,
+        "direction": "floor"
+      }
+    },
+    "check-db-call-count.mjs": {
+      "LOOP_BODY_LOOKFORWARD": {
+        "value": 30,
+        "direction": "floor"
+      },
+      "MIN_FILES": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_MODULES": {
+        "value": 40,
+        "direction": "floor"
+      },
+      "MIN_INSPECTED_LOOPS": {
+        "value": 2600,
+        "direction": "floor"
+      },
+      "ACTIONABLE_UNDETECTED_BASELINE": {
+        "value": 3,
+        "direction": "ratchet",
+        "owner": "perf/db owner",
+        "reason": "Introduced by c0daca5b while UNDETECTED_CLAIM_BASELINE went 2 -> 0 in the same file: net 2 -> 3. That net raise is the reason this gate exists, and it is recorded here rather than argued away."
+      },
+      "UNDETECTED_CLAIM_BASELINE": {
+        "value": 0,
+        "direction": "ratchet"
+      }
+    },
+    "check-declaration-column-drift.ts": {
+      "MIN_DECLARED_TABLES": {
+        "value": 700,
+        "direction": "floor"
+      },
+      "MIN_DECLARED_COLUMNS": {
+        "value": 5000,
+        "direction": "floor"
+      },
+      "MIN_LIVE_COLUMNS": {
+        "value": 5000,
+        "direction": "floor"
+      }
+    },
+    "check-drop-column-safety.mjs": {
+      "MIN_MIGRATION_FILES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_SCHEMA_FILES": {
+        "value": 50,
+        "direction": "floor"
+      },
+      "MIN_DROPS": {
+        "value": 1,
+        "direction": "floor"
+      }
+    },
+    "check-evidence-seal.mjs": {
+      "MIN_SEALS": {
+        "value": 2,
+        "direction": "floor"
+      },
+      "MIN_SEALED_FILES": {
+        "value": 20,
+        "direction": "floor"
+      }
+    },
+    "check-file-sizes.mjs": {
+      "LIMIT": {
+        "value": 500,
+        "direction": "ratchet",
+        "owner": "release owner",
+        "reason": "CLAUDE.md \u00a77's hard review limit. Policy, not debt; raising it would retire the rule by arithmetic."
+      },
+      "MIN_FILES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-fire-and-forget.mjs": {
+      "MIN_FILES": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "TIER2_RATCHET": {
+        "value": 279,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "198 floating promises + 81 swallowed rejections, measured hermetically at head 2026-09-03. Lowered 283 -> 279 in the same pass that registered it."
+      }
+    },
+    "check-gate-wiring.mjs": {
+      "MIN_GATES": {
+        "value": 60,
+        "direction": "floor"
+      }
+    },
+    "check-hardcoded-secrets.mjs": {
+      "MIN_FILES": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "MIN_CREDENTIAL_LENGTH": {
+        "value": 12,
+        "direction": "ratchet",
+        "owner": "security owner",
+        "reason": "Minimum length a matched string must have to be called a credential. Raising it makes the detector match fewer strings, so the safe direction is down."
+      }
+    },
+    "check-hr-pagination-gate.mjs": {
+      "MIN_FILES": {
+        "value": 60,
+        "direction": "floor"
+      },
+      "BASELINE": {
+        "value": 60,
+        "direction": "ratchet",
+        "owner": "hr owner",
+        "reason": "HR list endpoints still unpaginated. Lowered 87 -> 60 by 7723ef819; never raised."
+      }
+    },
+    "check-hr-table-freeze.mjs": {
+      "MIN_FILES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-import-direction.mjs": {
+      "MIN_FILES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-kebab-case.mjs": {
+      "MIN_ENTRIES": {
+        "value": 500,
+        "direction": "floor"
+      }
+    },
+    "check-lifecycle-predicates.mjs": {
+      "MIN_TABLES": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "MIN_LIFECYCLE_TABLES": {
+        "value": 50,
+        "direction": "floor"
+      },
+      "MIN_READ_SITES": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "JOIN_CANDIDATE_BASELINE": {
+        "value": 335,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Joined reads with no lifecycle predicate. Never moved."
+      },
+      "PRIMARY_CANDIDATE_BASELINE": {
+        "value": 75,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Primary reads with no lifecycle predicate. Fixed at source rather than baselined when it drifted to 76 (ticket 35 S10)."
+      }
+    },
+    "check-log-secrets.mjs": {
+      "MIN_SOURCE_FILES": {
+        "value": 500,
+        "direction": "floor"
+      }
+    },
+    "check-migration-discipline.mjs": {
+      "MIN_SQL_FILES": {
+        "value": 380,
+        "direction": "floor"
+      }
+    },
+    "check-migration-rollback.mjs": {
+      "MIN_SQL_FILES": {
+        "value": 380,
+        "direction": "floor"
+      },
+      "BASELINE_CUTOFF": {
+        "value": 839,
+        "direction": "ratchet",
+        "owner": "migrations owner",
+        "reason": "Migration index below which a rollback script is not required. Raising it exempts more migrations from the requirement."
+      }
+    },
+    "check-mock-surface.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-module-di.mjs": {
+      "MIN_MODULE_FILES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "RUNTIME_SOURCE_FLOOR": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "REACHABLE_MODULE_FLOOR": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "REGISTERED_CLASS_FLOOR": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "DECORATED_CLASS_FLOOR": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "MAX_UNREGISTERED": {
+        "value": 0,
+        "direction": "ratchet"
+      }
+    },
+    "check-module-gate.mjs": {
+      "CONTROLLER_MIN": {
+        "value": 200,
+        "direction": "floor"
+      }
+    },
+    "check-module-registration.mjs": {
+      "MIN_MODULES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-n1-growing-loops.mjs": {
+      "MAX_GROWING_SITES": {
+        "value": 106,
+        "direction": "ratchet",
+        "owner": "perf/db owner",
+        "reason": "Growing-collection loop sites. Never raised."
+      },
+      "MIN_LOOP_NODES": {
+        "value": 4800,
+        "direction": "floor"
+      },
+      "MIN_FILES": {
+        "value": 1800,
+        "direction": "floor"
+      }
+    },
+    "check-namespace-coverage.mjs": {
+      "MIN_SERVICE_FILES": {
+        "value": 30,
+        "direction": "floor"
+      },
+      "MIN_READ_NAMESPACES": {
+        "value": 5,
+        "direction": "floor"
+      }
+    },
+    "check-navigation-permissions.mjs": {
+      "MIN_CONTROLLER_FILES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_ROUTE_REFS": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_NAV_FILES": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "MIN_NAV_GATES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-openapi-coverage.mjs": {
+      "MIN_OPERATIONS": {
+        "value": 3000,
+        "direction": "floor"
+      },
+      "MIN_ERROR_SHAPE_PCT": {
+        "value": 95,
+        "direction": "floor"
+      }
+    },
+    "check-openapi-path-params.mjs": {
+      "MIN_OPERATIONS": {
+        "value": 500,
+        "direction": "floor"
+      }
+    },
+    "check-outbox-consumers.mjs": {
+      "MIN_FILES": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "MIN_EMITTED": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "MIN_CONSUMED": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "MIN_REGISTERED_PROVIDERS": {
+        "value": 200,
+        "direction": "floor"
+      }
+    },
+    "check-over-300.mjs": {
+      "LIMIT": {
+        "value": 300,
+        "direction": "ratchet",
+        "owner": "release owner",
+        "reason": "CLAUDE.md \u00a77's 300-line target. Policy, not debt."
+      },
+      "BASELINE": {
+        "value": 394,
+        "direction": "ratchet",
+        "owner": "release owner",
+        "reason": "RAISED ONCE, 392 -> 394 by c3f0b73db, sized to that day's breach with no headroom \u2014 the one upward move in either repository that this release has not justified away. RED at head: 406 vs 394. Routed to release management; deliberately NOT raised again."
+      },
+      "MIN_FILES": {
+        "value": 50,
+        "direction": "floor"
+      }
+    },
+    "check-owner-authority.mjs": {
+      "GATE_LOOKAHEAD_LINES": {
+        "value": 4,
+        "direction": "floor"
+      }
+    },
+    "check-permission-keys.mjs": {
+      "MIN_CONTROLLER_FILES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_ROUTE_REFS": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_UNION_KEYS": {
+        "value": 100,
+        "direction": "floor"
+      }
+    },
+    "check-placement-bypass.mjs": {
+      "MIN_BYPASS_SITES": {
+        "value": 30,
+        "direction": "floor"
+      }
+    },
+    "check-public-object-urls.mjs": {
+      "MIN_PUBLIC_BASE_SITES": {
+        "value": 4,
+        "direction": "floor"
+      }
+    },
+    "check-query-projections.mjs": {
+      "MIN_FILES": {
+        "value": 2000,
+        "direction": "floor"
+      },
+      "CONSUMER_LOOKFORWARD": {
+        "value": 80,
+        "direction": "floor"
+      }
+    },
+    "check-relation-hydration.mjs": {
+      "MAX_UNPROJECTED_RELATIONS": {
+        "value": 186,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Relation reads with no column projection. Never raised."
+      },
+      "MAX_UNPROJECTED_USERS": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "MAX_CREDENTIAL_RELATIONS": {
+        "value": 0,
+        "direction": "ratchet"
+      },
+      "MIN_FILES": {
+        "value": 3400,
+        "direction": "floor"
+      },
+      "MIN_TABLES": {
+        "value": 850,
+        "direction": "floor"
+      },
+      "MIN_RELATION_TABLES": {
+        "value": 580,
+        "direction": "floor"
+      },
+      "MIN_QUERY_CALLS": {
+        "value": 1650,
+        "direction": "floor"
+      },
+      "MIN_RELATION_ENTRIES": {
+        "value": 530,
+        "direction": "floor"
+      }
+    },
+    "check-relation-key-reach.mjs": {
+      "MIN_BACKEND_FILES": {
+        "value": 2000,
+        "direction": "floor"
+      },
+      "MIN_FRONTEND_FILES": {
+        "value": 2500,
+        "direction": "floor"
+      },
+      "MIN_RELATION_KEYS": {
+        "value": 80,
+        "direction": "floor"
+      }
+    },
+    "check-request-transaction-cost.mjs": {
+      "COUNTER_READ_BORROWS": {
+        "value": 2,
+        "direction": "pinned"
+      }
+    },
+    "check-set-null-column-lists.ts": {
+      "MIN_DECLARED": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_REQUIRING_COLUMN_LIST": {
+        "value": 20,
+        "direction": "floor"
+      }
+    },
+    "check-tenant-indexes.mjs": {
+      "MIN_CATALOG_TENANT_TABLES": {
+        "value": 400,
+        "direction": "floor"
+      }
+    },
+    "check-tenant-isolation-coverage.mjs": {
+      "MIN_SERVICES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "MIN_TEST_FILES": {
+        "value": 5,
+        "direction": "floor"
+      }
+    },
+    "check-tenant-relationships.mjs": {
+      "MIN_TENANT_TABLES": {
+        "value": 400,
+        "direction": "floor"
+      }
+    },
+    "check-test-suppressions.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_SITES": {
+        "value": 5,
+        "direction": "floor"
+      },
+      "QUARANTINE_BASELINE": {
+        "value": 6,
+        "direction": "ratchet",
+        "owner": "CRM/inventory release owner",
+        "reason": "6 describe.skip blocks in src/modules/ai/core/crm-copilot.service.phase2.spec.ts, all targeting CrmScoringService/CrmBriefService. Accepted residual R-9, blocker SCOPE, review 2026-12-01."
+      },
+      "CONDITIONAL_BASELINE": {
+        "value": 28,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Runtime-selected describes gated on DATABASE_URL / APP_DATABASE_URL / a provider key. Honest skips, each with a registered blocker."
+      }
+    },
+    "check-transaction-callbacks.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_DOUBLES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "VOID_FILE_BASELINE": {
+        "value": 2,
+        "direction": "ratchet",
+        "owner": "CRM/inventory release owner",
+        "reason": "inv-replenishment.service.spec.ts and lead-status-tenant-isolation.spec.ts. Accepted residual R-9, blocker SCOPE. Lowered 9 -> 2 by 6ba5080ca."
+      }
+    },
+    "check-type-assertions.mjs": {
+      "SCAN_FLOOR_FILES": {
+        "value": 2000,
+        "direction": "floor"
+      },
+      "CEILING_FLOOR_TOTAL": {
+        "value": 1000,
+        "direction": "floor"
+      },
+      "MIN_SELF_TEST_CHECKS": {
+        "value": 43,
+        "direction": "floor"
+      }
+    },
+    "check-unbounded-reads.mjs": {
+      "MIN_FILES": {
+        "value": 500,
+        "direction": "floor"
+      },
+      "MIN_MODULES": {
+        "value": 40,
+        "direction": "floor"
+      },
+      "ORDER_BY_LOOKBACK": {
+        "value": 25,
+        "direction": "floor"
+      },
+      "STATEMENT_MAX_LINES": {
+        "value": 120,
+        "direction": "floor"
+      }
+    },
+    "check-unjoined-table-refs.mjs": {
+      "MIN_FILES": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_CHAINS": {
+        "value": 200,
+        "direction": "floor"
+      }
+    },
+    "check-vacuous-assertions.mjs": {
+      "MIN_SPEC_FILES": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "MIN_TEST_CALLBACKS": {
+        "value": 8000,
+        "direction": "floor"
+      },
+      "MIN_EXPECTS": {
+        "value": 20000,
+        "direction": "floor"
+      }
+    }
+  }
+}

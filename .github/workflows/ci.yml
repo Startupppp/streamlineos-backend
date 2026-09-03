@@ -482,6 +482,23 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:bare-throw:self-test && pnpm check:bare-throw
 
+      # 2026-09-03 (ticket 35, box 5) — "no baseline was raised merely to turn a
+      # regression green" was being audited by walking each identifier's git
+      # history, and that method has a hole ON RECORD: c0daca5b lowered
+      # UNDETECTED_CLAIM_BASELINE 2 -> 0 in check-db-call-count.mjs while
+      # introducing ACTIONABLE_UNDETECTED_BASELINE = 3 in the same file. Per
+      # identifier both moves look fine; the FILE went 2 -> 3. A net raise
+      # carried across a rename is invisible to `git log -L` and to a diff hunk.
+      # Every top-level integer constant in every gate script is now registered
+      # with a direction, so a rename cannot land without touching the registry
+      # and the registry prints the net movement per file. MEASURED at head:
+      # rc=0, 88 gate scripts, 121 constants, 0 unregistered, 0 stale —
+      # ratchet 20 (may only decrease) · floor 100 (may only increase; lowering
+      # one is how a gate goes blind while printing OK) · pinned 1.
+      - name: No gate's own numbers moved in the unsafe direction
+        if: ${{ !cancelled() }}
+        run: pnpm check:baseline-integrity:self-test && pnpm check:baseline-integrity
+
       # Alert detection logic, exercised against fixtures. These do not touch a database or a
       # webhook; they prove each alert fires on a breaching input and stays quiet on a clean one.
       - name: Alert self-tests

@@ -362,6 +362,9 @@
     "check:namespace-coverage:self-test": "node src/scripts/check-namespace-coverage.mjs --self-test",
     "check:replay-ledger": "node --env-file-if-exists=.env src/scripts/check-replay-ledger.mjs",
     "check:replay-ledger:self-test": "node src/scripts/check-replay-ledger.mjs --self-test",
+    "check:baseline-integrity": "node src/scripts/check-baseline-integrity.mjs",
+    "check:baseline-integrity:self-test": "node src/scripts/check-baseline-integrity.mjs --self-test",
+    "check:baseline-integrity:emit": "node src/scripts/check-baseline-integrity.mjs --emit",
     "check:gate-wiring": "node src/scripts/check-gate-wiring.mjs"
   },
   "dependencies": {
