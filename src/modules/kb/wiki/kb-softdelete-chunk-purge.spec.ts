@@ -52,12 +52,13 @@ function makeDb(subtreeIds: number[]) {
 }
 
 const makeAudit = () => ({ log: jest.fn() });
+const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) });
 const makePlanLimits = () => ({});
 
 describe("KbPageTreeService.softDelete — chunk purge is inside the transaction", () => {
   it("calls tx.delete on kbArticleChunks inside the transaction for the soft-deleted subtree", async () => {
     const { db, txDelete } = makeDb([42, 43]);
-    const svc = new KbPageTreeService(db as never, makeAudit() as never);
+    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
 
     await svc.softDelete(makeUser(), 42);
 
@@ -83,7 +84,7 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
     });
 
     void origTransaction;
-    const svc = new KbPageTreeService(db as never, makeAudit() as never);
+    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
 
     await svc.softDelete(makeUser(), 42);
 

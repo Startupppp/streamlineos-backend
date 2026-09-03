@@ -79,6 +79,7 @@ function makeDb(subtreeIds: number[], pagesToIndexRows: typeof RESTORED_PAGE[]) 
 }
 
 const makeAudit = () => ({ log: jest.fn() });
+const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) });
 const makePlanLimits = () => ({});
 
 describe("KbPageTreeService.restore — emits kb.content.index for restored pages", () => {
@@ -87,7 +88,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
   it("emits one kb.content.index event per restored page that has content", async () => {
     const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
     const { db } = makeDb([10], [RESTORED_PAGE]);
-    const svc = new KbPageTreeService(db as never, makeAudit() as never);
+    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
 
     await svc.restore(makeUser(), 10);
 
@@ -101,7 +102,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
     const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
     const emptyPage = { ...RESTORED_PAGE, contentText: "" };
     const { db } = makeDb([10], [emptyPage]);
-    const svc = new KbPageTreeService(db as never, makeAudit() as never);
+    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
 
     await svc.restore(makeUser(), 10);
 
@@ -112,7 +113,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
     const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
     const child = { ...RESTORED_PAGE, id: 11, contentText: "child content" };
     const { db } = makeDb([10, 11], [RESTORED_PAGE, child]);
-    const svc = new KbPageTreeService(db as never, makeAudit() as never);
+    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
 
     await svc.restore(makeUser(), 10);
 
@@ -125,7 +126,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
   it("bites: removing OutboxWriter.emit from restore leaves the spy uncalled", async () => {
     const emitSpy = jest.spyOn(OutboxWriter, "emit").mockResolvedValue(undefined);
     const { db } = makeDb([10], [RESTORED_PAGE]);
-    const svc = new KbPageTreeService(db as never, makeAudit() as never);
+    const svc = new KbPageTreeService(db as never, makeAudit() as never, makeStorage() as never);
 
     await svc.restore(makeUser(), 10);
 

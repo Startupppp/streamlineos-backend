@@ -20,6 +20,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { MovePageInput } from "./dto/kb-pages.schemas";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { KB_PAGE_COLUMNS, KB_PAGE_LIST_COLUMNS, type KbPageListItem, type KbPageRow } from "./kb-page-columns";
+import { StorageService } from "../../storage/storage.service";
+import { attemptPageAttachmentPurge, recordPageAttachmentPurge } from "./kb-page-attachment-purge";
 
 type PageRow = KbPageRow;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -52,6 +54,7 @@ export class KbPageTreeService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
   ) {}
 
   async getTree(user: CurrentUserContext, projectId?: number): Promise<{
@@ -227,8 +230,10 @@ export class KbPageTreeService {
     });
     if (!page) throw new NotFoundException("Page not found");
 
+    const subtreeIds = await this.db.transaction((tx) => this.collectSubtreeIds(tx, orgId, pageId));
+    const purgeKeys = await recordPageAttachmentPurge(this.db, orgId, subtreeIds);
+
     await this.db.transaction(async (tx) => {
-      const subtreeIds = await this.collectSubtreeIds(tx, orgId, pageId);
       await tx
         .delete(kbPages)
         .where(
@@ -238,6 +243,8 @@ export class KbPageTreeService {
           ),
         );
     });
+
+    await attemptPageAttachmentPurge(this.db, this.storage, orgId, purgeKeys);
 
     this.audit.log({
       action: "kb.page.permanently_deleted",
@@ -251,12 +258,22 @@ export class KbPageTreeService {
 
   async emptyTrash(user: CurrentUserContext): Promise<{ purgedCount: number }> {
     const orgId = user.orgId;
+    const trashed = await this.db
+      .select({ id: kbPages.id })
+      .from(kbPages)
+      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)));
+
+    if (trashed.length === 0) return { purgedCount: 0 };
+
+    const ids = trashed.map((p) => p.id);
+    const purgeKeys = await recordPageAttachmentPurge(this.db, orgId, ids);
+
     const deleted = await this.db
       .delete(kbPages)
-      .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt)))
+      .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, ids)))
       .returning({ id: kbPages.id });
 
-    if (deleted.length === 0) return { purgedCount: 0 };
+    await attemptPageAttachmentPurge(this.db, this.storage, orgId, purgeKeys);
 
     this.audit.log({
       action: "kb.trash.emptied",
@@ -288,6 +305,7 @@ export class KbPageTreeService {
       if (expired.length === 0) break;
 
       const ids = expired.map((p) => p.id);
+      const purgeKeys = await recordPageAttachmentPurge(this.db, orgId, ids);
       await this.db
         .delete(kbPages)
         .where(
@@ -296,6 +314,7 @@ export class KbPageTreeService {
             sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
           ),
         );
+      await attemptPageAttachmentPurge(this.db, this.storage, orgId, purgeKeys);
       purgedCount += ids.length;
     }
 

@@ -19,6 +19,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
   }
 
   const audit = {} as never;
+  const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(true) }) as never;
 
   function makeDb() {
     const wheres: unknown[] = [];
@@ -54,7 +55,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("scopes page tree query to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbPageTreeService(db, audit);
+    const svc = new KbPageTreeService(db, audit, makeStorage());
 
     await svc.getTree(makeUser(ATTACKER));
 
@@ -66,7 +67,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("returns page tree for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbPageTreeService(db, audit);
+    const svc = new KbPageTreeService(db, audit, makeStorage());
 
     const result = await svc.getTree(makeUser(OWNER));
 
