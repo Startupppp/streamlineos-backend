@@ -221,20 +221,23 @@ export class KbSpacesService {
             .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
         ]);
 
-        for (const { contentType, id } of [
-          ...articles.map((row) => ({ contentType: "article" as const, id: row.id })),
-          ...pages.map((row) => ({ contentType: "page" as const, id: row.id })),
-        ])
-          await OutboxWriter.emit(tx, {
+        const occurredAt = new Date();
+        await OutboxWriter.emitMany(
+          tx,
+          [
+            ...articles.map((row) => ({ contentType: "article" as const, id: row.id })),
+            ...pages.map((row) => ({ contentType: "page" as const, id: row.id })),
+          ].map(({ contentType, id }) => ({
             eventId: randomUUID(),
             organizationId: orgId,
             aggregateType: contentType === "article" ? "kb_article" : "kb_page",
             aggregateId: String(id),
-            aggregateVersion: Date.now(),
+            aggregateVersion: occurredAt.getTime(),
             eventType: "kb.content.delete",
             payload: { contentType, contentId: id },
-            occurredAt: new Date(),
-          });
+            occurredAt,
+          })),
+        );
       },
       { orgId },
     );

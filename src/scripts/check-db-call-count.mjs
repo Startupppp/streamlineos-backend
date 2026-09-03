@@ -424,19 +424,49 @@ const FIXED_VERDICTS = new Set(["N+1-FIXED"]);
 const STILL_DETECTED_VERDICTS = new Set(["BATCHED", "FALSE-POSITIVE", "ACTIONABLE"]);
 
 /**
- * Entries asserting "still detected" that the detector no longer matches.
- * MEASURED 2 on 2026-09-02, both FALSE-POSITIVE and both owned elsewhere:
- *   /cron/cron-hr-retention-documents.ts — a file ticket 37 CREATED by splitting
- *     cron-hr-retention.service.ts, whose classification note records the re-key.
- *     A split moves code into a filename the baseline has never seen, and this is
- *     the second gate to trip on that one file (check:unbounded-reads is the other).
- *   /hr/global/compliance-requirements.service.ts — classified by reading, and the
- *     detector has since stopped matching it.
- * Ratcheted rather than blocking so this check cannot red a gate that is green on
- * everything else while ticket 21's second pass is live in the same baseline file.
- * It may only go down.
+ * THE INVISIBLE SET, named so it stops being invisible.
+ *
+ * A pattern detector can only match what looks like a database call. A residual
+ * N+1 whose per-row work is a SERVICE call — `this.audit.log(row)`,
+ * `applyOne(change)`, `approveSinglePeriod(period)` — is a real defect that this
+ * file will never match, and there was no verdict for it. The three files that
+ * carried one were left `ACTIONABLE`, which asserts "the detector still matches
+ * me"; it does not, so each tripped the stale-verdict check, and the response
+ * was to raise UNDETECTED_CLAIM_BASELINE. That ratchet was absorbing real
+ * findings — the gate's own escape hatch for its own blindness.
+ *
+ * `ACTIONABLE-UNDETECTED` says the opposite of a ratchet: a human read this call
+ * site, confirmed the N+1 is real, and confirmed the detector cannot see it. It
+ * is excluded from STILL_DETECTED_VERDICTS (so it never reads as stale) and from
+ * FIXED_VERDICTS (so it never reads as fixed), it is printed on every run, and
+ * it is ratcheted at ACTIONABLE_UNDETECTED_BASELINE, which may only go DOWN.
+ * Adding one is admitting a defect, not excusing it.
  */
-const UNDETECTED_CLAIM_BASELINE = 2;
+const ACTIONABLE_UNDETECTED_VERDICT = "ACTIONABLE-UNDETECTED";
+
+/**
+ * Files holding a human-confirmed N+1 the patterns cannot match. MEASURED 3 on
+ * 2026-09-03, each read and each residual named in its classification note:
+ *   /hr/core/hr-effective-change-applier.service.ts — `applyOne` per due change.
+ *   /hr/time/leave-approver.service.ts — one accumulate step per approver rule.
+ *   /timesheets/core/approvals-bulk.service.ts — `approveSinglePeriod` per period.
+ * May only go down. Do not add a file here to silence a red gate; the verdict
+ * exists so that a defect the detector cannot see is still counted as a defect.
+ */
+const ACTIONABLE_UNDETECTED_BASELINE = 3;
+
+/**
+ * Entries asserting "still detected" that the detector no longer matches.
+ *
+ * WAS 2 and is now 0. Both files it named are gone from the baseline: the
+ * keyset drain in /access/access-permission.resolver.ts no longer exists in that
+ * file, and /cron/cron-hr-retention-documents.ts:33 is a pure in-memory filter
+ * whose only `sql` template sits in a different function below the loop — both
+ * were obsolete FALSE-POSITIVE excuses, and both are removed rather than
+ * ratcheted. The three entries this number was really absorbing were real
+ * findings and now carry ACTIONABLE-UNDETECTED. It may only go down.
+ */
+const UNDETECTED_CLAIM_BASELINE = 0;
 
 export function checkForRegressions(counts, classification) {
   const regressions = [];
@@ -470,6 +500,16 @@ export function countActionable(counts, classification) {
   for (const relPath of Object.keys(counts))
     if (classification[relPath]?.verdict === "ACTIONABLE") total += counts[relPath];
   return total;
+}
+
+/**
+ * The invisible set, listed. These entries are found in the CLASSIFICATION, not
+ * in `counts`, because being absent from `counts` is the whole point of them.
+ */
+export function listActionableUndetected(classification) {
+  return Object.entries(classification)
+    .filter(([, v]) => v?.verdict === ACTIONABLE_UNDETECTED_VERDICT)
+    .map(([file, v]) => ({ file, note: v.note ?? "" }));
 }
 
 function isExcludedModule(relPath) {
@@ -937,7 +977,29 @@ function runSelfTests() {
     }
   }
 
-  console.log("SELF-TEST PASS: all 33 detection/classification/coverage checks passed");
+  {
+    // ACTIONABLE-UNDETECTED must be inert to BOTH directional checks, or it is
+    // just another name for a red gate and nobody will use it.
+    const entry = { "/hr/x.service.ts": { verdict: ACTIONABLE_UNDETECTED_VERDICT, note: "applyOne per row" } };
+    if (checkForUndetectedClaims({}, entry).length > 0) {
+      console.error("SELF-TEST FAIL: ACTIONABLE-UNDETECTED must not be reported as a stale verdict");
+      process.exit(1);
+    }
+    if (checkForRegressions({ "/hr/x.service.ts": 1 }, entry).length > 0) {
+      console.error("SELF-TEST FAIL: ACTIONABLE-UNDETECTED must not be reported as a regression");
+      process.exit(1);
+    }
+    if (listActionableUndetected(entry).length !== 1) {
+      console.error("SELF-TEST FAIL: ACTIONABLE-UNDETECTED was not listed in the invisible set");
+      process.exit(1);
+    }
+    if (listActionableUndetected({ "/a.ts": { verdict: "ACTIONABLE" } }).length !== 0) {
+      console.error("SELF-TEST FAIL: an ordinary ACTIONABLE entry leaked into the invisible set");
+      process.exit(1);
+    }
+  }
+
+  console.log("SELF-TEST PASS: all 37 detection/classification/coverage checks passed");
   process.exitCode = 0;
 }
 
@@ -1000,6 +1062,7 @@ async function main() {
   const regressions = checkForRegressions(counts, classification);
   const undetectedClaims = checkForUndetectedClaims(counts, classification);
   const actionable = countActionable(counts, classification);
+  const actionableUndetected = listActionableUndetected(classification);
 
   const detectedTotal = Object.keys(counts).length;
   const actionableFiles = Object.entries(classification)
@@ -1011,8 +1074,19 @@ async function main() {
   );
   console.log(`Detected ${detectedTotal} file(s) with loop-internal DB calls (N+1 candidates).`);
   console.log(`  ACTIONABLE: ${actionableFiles} file(s) (${actionable} call site(s) to fix)`);
+  console.log(
+    `  ACTIONABLE-UNDETECTED: ${actionableUndetected.length} file(s) (ratchet ${ACTIONABLE_UNDETECTED_BASELINE}) — a real N+1 these patterns cannot match, because the per-row work is a service call:`,
+  );
+  for (const u of actionableUndetected) console.log(`    INVISIBLE  ${u.file}`);
 
   let failed = false;
+
+  if (actionableUndetected.length > ACTIONABLE_UNDETECTED_BASELINE) {
+    console.error(
+      `\nINVISIBLE-SET REGRESSION: ${actionableUndetected.length} ACTIONABLE-UNDETECTED file(s) against a ratchet of ${ACTIONABLE_UNDETECTED_BASELINE}. This verdict records a defect the detector cannot see; it may only go down.`,
+    );
+    failed = true;
+  }
 
   if (coverage.inspected < MIN_INSPECTED_LOOPS) {
     console.error(
