@@ -1,16 +1,19 @@
 /**
  * BOLA regression for `sign:certificate:download` (findings register #15).
  *
- * `sign:certificate:download` is not scopable, so a per-person
- * `user_permission_grants` row hands it out at scope "all" while the same
- * member's `sign:envelope:view` stays "own". Before the fix,
- * `GET /sign/envelopes/:envelopeId/certificate` and
- * `GET /sign/envelopes/:envelopeId/final-pdf` bound only `orgId`, so that member
- * could download every fully-executed contract PDF in the organisation — and any
- * other tenant's envelope id was the same request minus the org match.
+ * Neither `sign:certificate:download` nor `sign:audit:view` is scopable, so a
+ * per-person `user_permission_grants` row hands either out at scope "all" while
+ * the same member's `sign:envelope:view` stays "own". Before the fix,
+ * `GET /sign/envelopes/:envelopeId/certificate`,
+ * `GET /sign/envelopes/:envelopeId/final-pdf` and
+ * `GET /sign/envelopes/:envelopeId/audit` bound only `orgId`, so that member
+ * could download every fully-executed contract PDF in the organisation and read
+ * the signing trail of every envelope in it — who opened, signed and downloaded
+ * what, and when. Any other tenant's envelope id was the same request minus the
+ * org match.
  *
- * After the fix both routes resolve the caller's `sign:envelope:view` scope and
- * answer 404 (never 403) for an out-of-scope or cross-tenant envelope, so the
+ * After the fix all three routes resolve the caller's `sign:envelope:view` scope
+ * and answer 404 (never 403) for an out-of-scope or cross-tenant envelope, so the
  * response does not confirm that the envelope exists.
  */
 
@@ -18,9 +21,10 @@ import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
+import { SignAuditService } from "../sign-audit.service";
 import { SignFinalizationService } from "../sign-finalization.service";
 import { SignCertificatesController } from "../sign-certificates.controller";
-import { envelopeIsVisible, resolveEnvelopeViewScope } from "../sign-envelope-scope";
+import { envelopeIsVisible, resolveEnvelopeViewScope, SYSTEM_ENVELOPE_SCOPE } from "../sign-envelope-scope";
 
 const ORG = "org-test";
 const SENDER_MEMBERSHIP = 10;
@@ -144,6 +148,72 @@ describe("GET /sign/envelopes/:envelopeId/certificate — envelope-view scope ga
   });
 });
 
+function makeAuditService(envelope: ReturnType<typeof makeEnvelope> | null) {
+  const rows = [{ id: 1, envelopeId: ENVELOPE_ID, eventType: "recipient_completed" }];
+  const limit = jest.fn().mockResolvedValue(rows);
+  const orderBy = jest.fn().mockReturnValue({ limit });
+  const where = jest.fn().mockReturnValue({ orderBy });
+  const from = jest.fn().mockReturnValue({ where });
+  const select = jest.fn().mockReturnValue({ from });
+  const db = {
+    select,
+    query: { signEnvelopes: { findFirst: jest.fn().mockResolvedValue(envelope) } },
+  } as unknown as Db;
+  return { service: new SignAuditService(db), select, rows };
+}
+
+describe("GET /sign/envelopes/:envelopeId/audit — envelope-view scope gate", () => {
+  it("returns the trail when the caller holds sign:envelope:view at scope all", async () => {
+    const { service, rows } = makeAuditService(makeEnvelope());
+    await expect(
+      service.listForEnvelope(ORG, ENVELOPE_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: true }),
+    ).resolves.toEqual(rows);
+  });
+
+  it("returns the trail when the caller is the sender and the scope is own", async () => {
+    const { service, rows } = makeAuditService(makeEnvelope());
+    await expect(
+      service.listForEnvelope(ORG, ENVELOPE_ID, { membershipId: SENDER_MEMBERSHIP, viewAll: false }),
+    ).resolves.toEqual(rows);
+  });
+
+  it("throws NotFoundException for another member's envelope at scope own — the audit key alone no longer reads every signing trail", async () => {
+    const { service, select } = makeAuditService(makeEnvelope());
+    await expect(
+      service.listForEnvelope(ORG, ENVELOPE_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: false }),
+    ).rejects.toThrow(NotFoundException);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("answers 404, never 403, so the response does not confirm the envelope exists", async () => {
+    const { service } = makeAuditService(makeEnvelope());
+    await expect(
+      service.listForEnvelope(ORG, ENVELOPE_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: false }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("gives a cross-tenant id and an out-of-scope id the same message, so the two are indistinguishable", async () => {
+    const missing = makeAuditService(null);
+    const outOfScope = makeAuditService(makeEnvelope());
+    const crossTenant = await missing.service
+      .listForEnvelope(ORG, ENVELOPE_ID, { membershipId: SENDER_MEMBERSHIP, viewAll: true })
+      .catch((error: Error) => error.message);
+    const denied = await outOfScope.service
+      .listForEnvelope(ORG, ENVELOPE_ID, { membershipId: OTHER_MEMBERSHIP, viewAll: false })
+      .catch((error: Error) => error.message);
+
+    expect(denied).toBe(crossTenant);
+  });
+
+  it("requires a scope argument, so an unscoped read of the trail is unrepresentable", () => {
+    expect(SignAuditService.prototype.listForEnvelope.length).toBe(3);
+  });
+
+  it("names the finalization pipeline's own reads SYSTEM_ENVELOPE_SCOPE rather than leaving them unscoped", () => {
+    expect(SYSTEM_ENVELOPE_SCOPE).toEqual({ membershipId: null, viewAll: true });
+  });
+});
+
 describe("SignCertificatesController — resolves sign:envelope:view, not the download key", () => {
   const makeUser = (): CurrentUserContext =>
     ({
@@ -193,6 +263,30 @@ describe("SignCertificatesController — resolves sign:envelope:view, not the do
       expect.anything(),
       expect.objectContaining({ viewAll: true }),
     );
+  });
+
+  it("forwards viewAll:false to the audit list when sign:envelope:view is own", async () => {
+    const audit = { listForEnvelope: jest.fn().mockResolvedValue([]) } as unknown as SignAuditService;
+    const ctrl = new SignCertificatesController(audit, {} as never, makeAccess("own"));
+
+    await ctrl.getAudit(ENVELOPE_ID, makeUser());
+
+    expect(audit.listForEnvelope).toHaveBeenCalledWith(
+      ORG,
+      ENVELOPE_ID,
+      expect.objectContaining({ viewAll: false, membershipId: OTHER_MEMBERSHIP }),
+    );
+  });
+
+  it("reads sign:envelope:view for the audit route too, not sign:audit:view", async () => {
+    const access = makeAccess("all");
+    const audit = { listForEnvelope: jest.fn().mockResolvedValue([]) } as unknown as SignAuditService;
+    const ctrl = new SignCertificatesController(audit, {} as never, access);
+
+    await ctrl.getAudit(ENVELOPE_ID, makeUser());
+
+    expect(access.scopeFor).toHaveBeenCalledWith(expect.anything(), "sign:envelope:view");
+    expect(access.scopeFor).not.toHaveBeenCalledWith(expect.anything(), "sign:audit:view");
   });
 
   it("forwards viewAll:false to getCertificateUrl when sign:envelope:view is none", async () => {

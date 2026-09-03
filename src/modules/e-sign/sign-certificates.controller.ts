@@ -32,8 +32,9 @@ export class SignCertificatesController {
   @Get(":envelopeId/audit")
   @RequirePermission("sign:audit:view")
   @Validate({ params: envelopeIdParams })
-  getAudit(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.audit.listForEnvelope(u.orgId, envelopeId);
+  async getAudit(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
+    const scope = await resolveEnvelopeViewScope(this.access, u);
+    return this.audit.listForEnvelope(u.orgId, envelopeId, scope);
   }
 
   @Get(":envelopeId/certificate")

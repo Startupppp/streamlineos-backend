@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { signAuditEvents } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { mustGetVisibleEnvelope, type EnvelopeViewScope } from "./sign-envelope-scope";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -100,7 +101,14 @@ export class SignAuditService {
     });
   }
 
-  async listForEnvelope(orgId: string, envelopeId: number) {
+  /**
+   * `sign:audit:view` is not scopable, so its own grant can only say "all". The
+   * trail names who opened, signed and downloaded what and when, so it is bound
+   * to the caller's `sign:envelope:view` scope for the same reason the final PDF
+   * is: an envelope you may not see has no readable history.
+   */
+  async listForEnvelope(orgId: string, envelopeId: number, scope: EnvelopeViewScope) {
+    await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Envelope not found");
     return this.db
       .select()
       .from(signAuditEvents)
