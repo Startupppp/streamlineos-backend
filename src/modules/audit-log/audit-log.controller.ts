@@ -31,6 +31,12 @@ export class AuditLogController {
     return this.auditLog.list(u.orgId, filters);
   }
 
+  /**
+   * `@NoTenantTransaction()` because the generator below is drained across the
+   * client's socket: one request transaction would be pinned to a slow client
+   * for the whole download. `exportCsvChunks` opens one tenant transaction per
+   * keyset page instead, and holds none across a `res.write`.
+   */
   @Get("export")
   @RequirePermission("audit-log:read")
   @NoTenantTransaction()

@@ -37,6 +37,12 @@ export class KbArticleAiController {
    * Every streamed action lands here, so the abort seam, the awaited pipe and
    * the `HttpException` passthrough are configured once for the four of them
    * rather than four times.
+   *
+   * All four handlers carry `@NoTenantTransaction()` for the same reason: the
+   * pipe is awaited, so the request-scoped transaction would stay open and idle
+   * for the whole provider stream and pin a pooled connection to it. The service
+   * does its tenant-scoped read in its own `runInTenantTransaction` that commits
+   * before the provider call, so nothing here reaches the pool without a GUC.
    */
   private streamAction(
     req: Request,

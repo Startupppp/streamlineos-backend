@@ -88,6 +88,12 @@ export class ContactsController {
     return this.contacts.bulkImport(u.orgId, body);
   }
 
+  /**
+   * `@NoTenantTransaction()` because the generator below is drained across the
+   * client's socket: one request transaction would be pinned to a slow client
+   * for the whole download. `exportCsvChunks` opens one tenant transaction per
+   * keyset page instead, and `AccessService.scopeFor` opens its own.
+   */
   @Get("export")
   @RequirePermission("crm:contacts:view")
   @NoTenantTransaction()

@@ -124,10 +124,15 @@ export class KbPageAiService {
   /**
    * The streamed representation of the same four actions, and the one the wiki
    * panel opens. It goes through the same gateway under the same feature key as
-   * the buffered sibling, so the two cannot start metering differently. The
-   * visibility check opens its own tenant transaction: a streaming route must
-   * carry `@NoTenantTransaction()`, or the request-scoped transaction commits
-   * the instant the handler hands the stream off.
+   * the buffered sibling, so the two cannot start metering differently.
+   *
+   * The visibility check opens its own short tenant transaction and that
+   * transaction COMMITS BEFORE the provider call, which is the whole point: the
+   * route carries `@NoTenantTransaction()` because `respondWithAiTextStream`
+   * awaits the pipe, so the request-scoped transaction would otherwise stay open
+   * and idle for the entire stream — up to the 60s stream deadline, which is the
+   * same 60s as the `idle_in_transaction_session_timeout` `withTenant` sets —
+   * pinning a pooled connection to the provider for its duration.
    */
   async stream(
     user: CurrentUserContext,

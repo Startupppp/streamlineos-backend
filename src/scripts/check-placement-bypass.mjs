@@ -50,6 +50,30 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "src/modules/organization/core/organization.controller.ts",
     "identity-scoped organization discovery and switching; each handler opens its own withIdentity or runInTenantTransaction before touching the database",
   ],
+  // The four below are NOT the SSE shape above. `respondWithAiTextStream` AWAITS
+  // `pipeAiTextStream`, and the two CSV exports await `drain` between pages, so the
+  // request transaction would not commit early — it would stay OPEN and IDLE for the
+  // whole provider stream or the whole download, pinning a pooled connection and
+  // tripping the 60s `idle_in_transaction_session_timeout` that `withTenant` sets.
+  // Each of the four does its tenant-scoped work in a short explicit
+  // `runInTenantTransaction(db, fn, { orgId })` that commits BEFORE the long phase,
+  // which is what `common/tenant/README.md` prescribes for exactly this class.
+  [
+    "src/modules/kb/help-centre/kb-article-ai.controller.ts",
+    "the four streamed article actions (summarize/ask/improve/suggest-related): respondWithAiTextStream awaits the pipe, so a request transaction would be held open for the full stream — up to AI_TEXT_STREAM_DEADLINE_MS (60s), the same 60s as the idle_in_transaction_session_timeout withTenant sets — holding a pooled connection across the provider call. KbArticleAiService.stream reads the article and runs assertCanViewArticle inside runInTenantTransaction(db, fn, { orgId }) that commits before the provider call, and the credit ledger opens its own; no database access on this path reaches the pool without a tenant GUC",
+  ],
+  [
+    "src/modules/kb/wiki/kb-page-ai.controller.ts",
+    "the wiki twin of kb-article-ai.controller and the same shape: respondWithAiTextStream awaits the pipe, so the request transaction would be held across the provider stream. KbPageAiService.stream resolves accessible project ids and the page visibility predicate inside runInTenantTransaction(db, fn, { orgId }) that commits before the provider call; kb-doc-ai-stream.spec.ts drives both surfaces from one table so the two cannot diverge",
+  ],
+  [
+    "src/modules/audit-log/audit-log.controller.ts",
+    "GET /audit-log/export streams an async generator to the client socket and awaits `drain` between writes, so one request transaction would be pinned to a slow client for the whole download. AuditLogService.exportCsvChunks opens one runInTenantTransaction(db, fn, { orgId }) per 500-row keyset page — the minimum correct unit, one page not one row — and holds none across a res.write. The controller's other three handlers keep the request transaction",
+  ],
+  [
+    "src/modules/contacts/contacts.controller.ts",
+    "GET /contacts/export is the same paged-generator export as audit-log: ContactsService.exportCsvChunks opens one runInTenantTransaction(db, fn, { orgId }) per 500-row keyset page, and contacts.service.spec.ts pins one transaction per page. The DataScope is resolved first through AccessService.scopeFor, which opens its own explicit tenant transaction. The controller's other eight handlers keep the request transaction",
+  ],
 ]);
 
 export const CONTEXT_EXIT_ALLOWLIST = new Map([
