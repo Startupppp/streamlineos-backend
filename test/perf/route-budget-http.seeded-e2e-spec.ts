@@ -88,6 +88,17 @@ const WARMUP = Number(process.env.ROUTE_BUDGET_HTTP_WARMUP ?? "3");
 const DEADLINE_MS = Number(process.env.ROUTE_BUDGET_HTTP_DEADLINE_MS ?? "30000");
 const ONLY = process.env.ROUTE_BUDGET_HTTP_ONLY ?? "";
 /**
+ * Refuse the write half rather than mutate a database other people are citing.
+ *
+ * The seed this harness reaches is shared evidence: several reports quote its row counts to the
+ * unit. The plan's POST entries insert on purpose, so measuring them against that database would
+ * move numbers other tickets have already published. On an isolated copy this stays off; where a
+ * copy is unavailable, the writes become DECLARED refusals with a stated reason and land in the
+ * refusal count, which is the difference between "13 routes have no budget" and "13 routes were
+ * not measured here".
+ */
+const SKIP_WRITES = process.env.ROUTE_BUDGET_HTTP_SKIP_WRITES === "1";
+/**
  * Where to ask git about the code being measured.
  *
  * The shared working tree carries every concurrent agent's in-flight edits, and a half-applied
@@ -291,6 +302,7 @@ describeIfSeeded("route budgets over the HTTP stack (seeded)", () => {
                 ? "Redis disabled — every count is the cache-MISS ceiling"
                 : "Redis ENABLED — counts are a mixture of hit and miss paths and are NOT a miss ceiling",
             compression: "off — responseBytes is the uncompressed payload the application produced",
+            readOnly: SKIP_WRITES,
             samples: SAMPLES,
             writeSamples: WRITE_SAMPLES,
             heapSamples: HEAP_SAMPLES,
@@ -404,6 +416,14 @@ describeIfSeeded("route budgets over the HTTP stack (seeded)", () => {
 
       for (const entry of plan) {
         if (ONLY && !entry.key.includes(ONLY)) continue;
+        if (SKIP_WRITES && entry.method === "post") {
+          routes[entry.key] = unmeasured(
+            "declined: the run is read-only because the target database is shared evidence — " +
+              "measuring this write would move row counts other reports quote",
+            "unmeasured",
+          );
+          continue;
+        }
         // The signing key issues a 10-minute token and a full capture outruns it, so the token is
         // re-minted per route. Without this the run degrades into 401s partway through and records
         // them as "the route is broken".
