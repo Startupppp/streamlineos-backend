@@ -85,8 +85,8 @@ export class ProjectsTicketRelationsService {
     projectId: number,
     ticketId: number,
   ) {
-    await this.requireMember(u.orgId, projectId, u.userId);
     await this.requireProjectTicket(u.orgId, projectId, ticketId);
+    await this.requireMember(u.orgId, projectId, u.userId);
 
     const relatedTicketSelect = {
       columns: {
@@ -149,8 +149,8 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     body: AddRelationInput,
   ) {
-    await this.requireMember(u.orgId, projectId, u.userId);
     await this.requireProjectTicket(u.orgId, projectId, ticketId);
+    await this.requireMember(u.orgId, projectId, u.userId);
 
     if (body.relatedTicketId === ticketId) {
       throw new BadRequestException("A ticket cannot relate to itself.");
@@ -236,8 +236,8 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     relatedId: number,
   ) {
-    await this.requireMember(u.orgId, projectId, u.userId);
     await this.requireProjectTicket(u.orgId, projectId, ticketId);
+    await this.requireMember(u.orgId, projectId, u.userId);
 
     if (!relatedId)
       throw new BadRequestException("relatedId query param required.");

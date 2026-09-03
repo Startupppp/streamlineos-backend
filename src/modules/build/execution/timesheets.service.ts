@@ -33,6 +33,7 @@ import type {
   TimeEntriesListQuery,
   UpdateEntryInput,
 } from "./dto/timesheets.schemas";
+import { assertTicketInOrg } from "../core/project-access";
 
 @Injectable()
 export class TimesheetsService {
@@ -356,7 +357,8 @@ export class TimesheetsService {
     );
   }
 
-  listTicketTimeEntries(orgId: string, ticketId: number) {
+  async listTicketTimeEntries(orgId: string, ticketId: number) {
+    await assertTicketInOrg(this.db, orgId, ticketId);
     return this.db.query.timesheets.findMany({
       where: and(
         eq(timesheets.ticketId, ticketId),

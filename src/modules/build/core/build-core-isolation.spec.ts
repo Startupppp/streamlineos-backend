@@ -111,21 +111,34 @@ describe("ProjectsLabelsService — cross-tenant isolation (BOLA)", () => {
 });
 
 describe("ProjectsCustomFieldsService — cross-tenant isolation", () => {
-  it("lists no custom fields for a cross-org project (query is orgId-scoped)", async () => {
+  it("refuses a cross-org project instead of listing an empty set", async () => {
+    const orderBy = jest.fn().mockResolvedValue([]);
     const db = {
       ...makeNotFoundDb(),
       select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy }) }),
+      }),
+    } as unknown as Db;
+
+    const svc = new ProjectsCustomFieldsService(db);
+
+    await expect(svc.listFields("org-attacker", 999)).rejects.toThrow(NotFoundException);
+    expect(orderBy).not.toHaveBeenCalled();
+  });
+
+  it("lists the org's own custom fields (control)", async () => {
+    const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+      select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockResolvedValue([]),
-          }),
+          where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) }),
         }),
       }),
     } as unknown as Db;
 
     const svc = new ProjectsCustomFieldsService(db);
-    const result = await svc.listFields("org-attacker", 999);
-    expect(result).toEqual([]);
+
+    await expect(svc.listFields("org-owner", 1)).resolves.toEqual([]);
   });
 });
 

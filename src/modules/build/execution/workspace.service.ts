@@ -23,6 +23,7 @@ import type {
   UpdateMilestoneInput,
   UpdateViewInput,
 } from "./dto/workspace.schemas";
+import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()
 export class MilestonesService {
@@ -85,6 +86,7 @@ export class IntakeService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listIntake(orgId: string, projectId: number, query: IntakeListQuery) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const { limit, cursor } = query;
     const pos = decodeCursor(cursor);
 
@@ -218,7 +220,8 @@ export class IntakeService {
 export class ViewsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listViews(orgId: string, userId: string, projectId: number) {
+  async listViews(orgId: string, userId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     return this.db
       .select()
       .from(projectViews)

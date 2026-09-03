@@ -28,7 +28,7 @@ function makeCtx(orgId: string): CurrentUserContext {
   return { userId: "u1", orgId, isOrgOwner: false, sessionId: "s1", principal: { kind: "human-session", membershipId: 1, isOrgOwner: false } } as unknown as CurrentUserContext;
 }
 
-function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[] } {
+function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[]; projectFindFirst: jest.Mock } {
   const capturedWheres: unknown[] = [];
   const chain: Record<string, unknown> = {};
   const resolved = Promise.resolve([]);
@@ -42,8 +42,12 @@ function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[] } {
   chain.then = (fn: (v: unknown[]) => unknown) => resolved.then(fn);
   chain.catch = (fn: (e: unknown) => unknown) => resolved.catch(fn);
   chain.finally = (fn: () => void) => resolved.finally(fn);
-  const db = { select: jest.fn().mockReturnValue(chain) } as unknown as Db;
-  return { db, capturedWheres };
+  const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
+  const db = {
+    query: { projects: { findFirst: projectFindFirst } },
+    select: jest.fn().mockReturnValue(chain),
+  } as unknown as Db;
+  return { db, capturedWheres, projectFindFirst };
 }
 
 describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
@@ -58,6 +62,15 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
     const allCallArgs = capturedWheres.flatMap((w) => sqlValues(w));
     expect(allCallArgs).toContain(ATTACKER_ORG);
     expect(allCallArgs).not.toContain(OWNER_ORG);
+  });
+
+  it("getProjectAnalytics refuses a project the requesting org does not own (404, not an empty 200)", async () => {
+    const { db, projectFindFirst } = makeAnalyticsDb();
+    projectFindFirst.mockResolvedValue(undefined);
+    const cache = { cached: jest.fn().mockImplementation((_k: string, fn: () => unknown) => fn()) } as unknown as CacheService;
+    const svc = new ProjectsAnalyticsService(db, cache);
+
+    await expect(svc.getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("getProjectAnalytics works for the owning org (control — same-tenant access works)", async () => {

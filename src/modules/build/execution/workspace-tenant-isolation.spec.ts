@@ -165,26 +165,27 @@ describe("MilestonesService — project membership gate (BOLA fix)", () => {
 });
 
 describe("IntakeService — cross-tenant isolation", () => {
-  it("listIntake scopes WHERE to requesting org and returns empty for attacker (cross-tenant isolation)", async () => {
+  it("listIntake refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = {
+      query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
     const svc = new IntakeService(db);
 
-    const result = await svc.listIntake(ATTACKER_ORG, 1, { limit: 10 } as never);
+    await expect(svc.listIntake(ATTACKER_ORG, 1, { limit: 10 } as never)).rejects.toThrow(NotFoundException);
 
-    expect(where).toHaveBeenCalled();
-    const predicate = where.mock.calls[0]?.[0];
+    expect(where).not.toHaveBeenCalled();
+    const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
     expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
     expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
-    expect(result.items).toHaveLength(0);
-    expect(result.pagination.hasMore).toBe(false);
   });
 
   it("listIntake returns items for the owning org (control — same-tenant access works)", async () => {
     const fakeItem = { id: 1, orgId: OWNER_ORG, projectId: 1, title: "req", description: null, source: "manual", status: "pending", submitterEmail: null, submitterName: null, priority: null, requestType: null, linkedWorkItemId: null, declineReason: null, createdAt: new Date(), updatedAt: new Date() };
     const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -204,25 +205,27 @@ describe("IntakeService — cross-tenant isolation", () => {
 });
 
 describe("ViewsService — cross-tenant isolation", () => {
-  it("listViews scopes WHERE to requesting org (cross-tenant isolation)", async () => {
+  it("listViews refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
     const db = {
+      query: { projects: { findFirst: projectFindFirst } },
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
     const svc = new ViewsService(db);
 
-    const result = await svc.listViews(ATTACKER_ORG, "u1", 1);
+    await expect(svc.listViews(ATTACKER_ORG, "u1", 1)).rejects.toThrow(NotFoundException);
 
-    expect(where).toHaveBeenCalled();
-    const predicate = where.mock.calls[0]?.[0];
+    expect(where).not.toHaveBeenCalled();
+    const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
     expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
     expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
-    expect(result).toHaveLength(0);
   });
 
   it("listViews returns views for the owning org (control — same-tenant access works)", async () => {
     const fakeView = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "All Issues" };
     const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeView]) }) }),

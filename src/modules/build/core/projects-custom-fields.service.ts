@@ -5,6 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
 import { ticketCustomFieldValues, tickets } from "../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/custom-fields.schemas";
+import { assertProjectInOrg } from "./project-access";
 
 const BUILD_ENTITY_TYPE = "build_ticket" as const;
 
@@ -41,6 +42,7 @@ export class ProjectsCustomFieldsService {
   }
 
   async listFields(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const rows = await this.db
       .select()
       .from(customFieldDefinitions)

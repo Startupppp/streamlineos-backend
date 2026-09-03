@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { assertProjectInOrg } from "./project-access";
 
 @Injectable()
 export class ProjectsAnalyticsService {
@@ -14,6 +15,7 @@ export class ProjectsAnalyticsService {
   ) {}
 
   async getProjectAnalytics(orgId: string, projectId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const key = `projects:analytics:${orgId}:${projectId}`;
     return this.cache.cached(key, () => this.computeProjectAnalytics(orgId, projectId), CACHE_TTL.MEDIUM);
   }

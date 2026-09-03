@@ -32,6 +32,7 @@ import type {
   CommentInput,
   UpdateRelatedLinkInput,
 } from "./dto/projects.schemas";
+import { assertTicketInOrg } from "./project-access";
 
 const ACTION_LABELS: Record<string, string> = {
   created: "created this ticket",
@@ -191,7 +192,8 @@ export class ProjectsTicketSubresourcesService {
     }));
   }
 
-  getSubtasks(orgId: string, ticketId: number) {
+  async getSubtasks(orgId: string, ticketId: number) {
+    await assertTicketInOrg(this.db, orgId, ticketId);
     return this.db.query.tickets.findMany({
       where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: {

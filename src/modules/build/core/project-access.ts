@@ -6,6 +6,7 @@ import {
   projects,
   projectTeamAssignments,
   projectTeamMembers,
+  tickets,
 } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -26,6 +27,22 @@ export async function assertProjectInOrg(
     columns: { id: true },
   });
   if (!project) throw new NotFoundException("Project not found");
+}
+
+export async function assertTicketInOrg(
+  db: Db,
+  orgId: string,
+  ticketId: number,
+): Promise<void> {
+  const ticket = await db.query.tickets.findFirst({
+    where: and(
+      eq(tickets.id, ticketId),
+      eq(tickets.orgId, orgId),
+      isNull(tickets.deletedAt),
+    ),
+    columns: { id: true },
+  });
+  if (!ticket) throw new NotFoundException("Ticket not found");
 }
 
 export async function resolveProjectAccess(

@@ -28,7 +28,10 @@ function buildDb(captured: Captured) {
     limit: jest.fn().mockResolvedValue([]),
   };
   (builder.from as jest.Mock).mockReturnValue(builder);
-  return { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
+  return {
+    query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 42 }) } },
+    select: jest.fn().mockReturnValue(builder),
+  } as unknown as Db;
 }
 
 async function capture(cursor: string | undefined): Promise<Captured> {
