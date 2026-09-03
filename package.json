@@ -325,6 +325,8 @@
     "check:alert-ack:self-test": "node src/scripts/check-alert-ack.mjs --self-test",
     "check:set-null-column-lists": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-set-null-column-lists.ts",
     "check:set-null-column-lists:self-test": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-set-null-column-lists.ts --self-test",
+    "check:declaration-column-drift": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-declaration-column-drift.ts",
+    "check:declaration-column-drift:self-test": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-declaration-column-drift.ts --self-test",
     "check:lifecycle-predicates": "node src/scripts/check-lifecycle-predicates.mjs",
     "check:lifecycle-predicates:self-test": "node src/scripts/check-lifecycle-predicates.mjs --self-test",
     "check:test-suppressions": "node src/scripts/check-test-suppressions.mjs",
