@@ -149,6 +149,36 @@ async function placeOrganizations(sql, write) {
   return inserted;
 }
 
+/**
+ * 3. THE WORKSPACE GATE. `app/(authenticated)/layout.tsx` redirects any session whose
+ *    organisation has no `onboarding_completed_at` to `/org-setup`, so every authenticated
+ *    route answers 307 and renders nothing. Measured on this seed: 3 organisations, 0 with
+ *    the stamp. That is the third reason a perf seed cannot answer an authenticated request,
+ *    and like placement and module entitlement it is a seed gap rather than an application
+ *    defect — completing or skipping the wizard is what stamps it in the product.
+ */
+async function completeOrgOnboarding(sql, write) {
+  const pending = await sql.unsafe(
+    `SELECT id FROM organizations WHERE onboarding_completed_at IS NULL ORDER BY id`,
+  );
+  process.stdout.write(
+    `[prepare-perf-http-seed] organisations short of the workspace gate: ${String(pending.length)}\n`,
+  );
+  if (!write) return 0;
+
+  let stamped = 0;
+  for (const row of pending) {
+    const result = await sql.unsafe(
+      `UPDATE organizations SET onboarding_completed_at = now()
+        WHERE id = $1 AND onboarding_completed_at IS NULL
+        RETURNING id`,
+      [String(row.id)],
+    );
+    stamped += result.length;
+  }
+  return stamped;
+}
+
 async function enableModules(sql, write) {
   const missing = await sql.unsafe(
     `SELECT o.id AS org_id, c.module_key
@@ -191,12 +221,13 @@ async function main() {
     process.stdout.write(`[prepare-perf-http-seed] database=${guard.database}\n`);
     const placed = await placeOrganizations(sql, write);
     const enabled = await enableModules(sql, write);
+    const stamped = await completeOrgOnboarding(sql, write);
     if (!write) {
       process.stdout.write("[prepare-perf-http-seed] dry run — pass --write to insert\n");
       return;
     }
     process.stdout.write(
-      `[prepare-perf-http-seed] inserted ${String(placed)} placement row(s), ${String(enabled)} module row(s)\n`,
+      `[prepare-perf-http-seed] inserted ${String(placed)} placement row(s), ${String(enabled)} module row(s), stamped ${String(stamped)} workspace gate(s)\n`,
     );
   } finally {
     await sql.end({ timeout: 5 });
