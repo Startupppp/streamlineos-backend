@@ -140,6 +140,7 @@ function routeWithEmailRule(mandatory: boolean) {
     orgPolicy: null,
     availableChannels: new Set<NotificationChannel>(["IN_APP", "EMAIL"]),
     suppressedChannels: suppressed,
+    consentedChannels: new Set<NotificationChannel>(),
   });
 }
 

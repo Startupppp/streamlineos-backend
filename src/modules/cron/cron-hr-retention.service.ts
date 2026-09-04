@@ -5,6 +5,7 @@ import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import { drainPages } from "./drain";
 import { StorageService } from "../storage/storage.service";
+import { storagePendingPurge } from "../../db/schema/common/storage-pending-purge";
 import type { TenantTx } from "../../common/tenant";
 import {
   hrRetentionPolicies,
@@ -48,6 +49,66 @@ export interface HrRetentionSweepResult {
   skippedDocumentPolicies: number;
   /** @deprecated Compatibility fields; policies are no longer silently skipped. */
   skippedPayrollPolicies: number;
+}
+
+/**
+ * Deletes one object whose owning row retention has already removed, recording a
+ * pending-purge ledger row BEFORE the delete is attempted.
+ *
+ * The order is the whole point. The row that held this key is gone by the time
+ * this runs, so before the ledger row existed a transient storage failure was
+ * permanent: nothing was left pointing at the object and nothing would ever try
+ * again — the sweep counted it as an orphan and moved on. With the row written
+ * first, the storage sweep retries it, and a failure becomes a delay.
+ *
+ * Returns whether the object was actually deleted.
+ */
+export async function purgeRetiredObject(
+  db: Db,
+  storage: Pick<StorageService, "deleteFileIfPresent">,
+  orgId: string,
+  key: string,
+  logError: (message: string, meta: Record<string, unknown>) => void,
+): Promise<boolean> {
+  try {
+    await db
+      .insert(storagePendingPurge)
+      .values({
+        orgId,
+        storageKey: key,
+        purpose: "hr-retention:retired-object",
+        bucket: "default",
+        status: "pending",
+      })
+      .onConflictDoUpdate({
+        target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
+        set: { status: "pending", lastAttemptedAt: null, failedReason: null },
+      });
+  } catch (err) {
+    logError("[hr-retention] could not record the pending purge for a retired object", {
+      orgId,
+      key,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
+    await storage.deleteFileIfPresent(orgId, key);
+  } catch (err) {
+    logError(
+      "[hr-retention] stored object survived its retired record — purge row left for the storage sweep to retry",
+      { orgId, key, error: err instanceof Error ? err.message : String(err) },
+    );
+    return false;
+  }
+
+  await db
+    .update(storagePendingPurge)
+    .set({ status: "confirmed", confirmedAt: new Date(), lastAttemptedAt: new Date() })
+    .where(
+      and(eq(storagePendingPurge.orgId, orgId), eq(storagePendingPurge.storageKey, key)),
+    );
+  return true;
 }
 
 @Injectable()
@@ -271,16 +332,11 @@ export class CronHrRetentionService {
   ): Promise<void> {
     for (const [orgId, keys] of retiredKeys) {
       for (const key of keys) {
-        try {
-          await this.storage.deleteFileIfPresent(orgId, key);
-          result.storageObjectsDeleted += 1;
-        } catch (err) {
-          result.storageObjectsOrphaned += 1;
-          this.logger.error(
-            "[hr-retention] stored object survived its retired record — orphan left in object storage",
-            { orgId, key, error: err instanceof Error ? err.message : String(err) },
-          );
-        }
+        const deleted = await purgeRetiredObject(this.db, this.storage, orgId, key, (message, meta) =>
+          this.logger.error(message, meta),
+        );
+        if (deleted) result.storageObjectsDeleted += 1;
+        else result.storageObjectsOrphaned += 1;
       }
       retiredKeys.set(orgId, []);
     }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -19,6 +20,8 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
+import { isOwnOrgStorageKey } from "../../storage/storage-key";
 import type { AddVaultDocumentInput } from "./dto/candidate-records.schemas";
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -52,13 +55,26 @@ export class RecruitmentCandidateVaultService {
   ) {
     await this.ensureCandidate(orgId, candidateId);
 
-    const mimeAllowed = ALLOWED_MIME_TYPES.has(input.fileType.toLowerCase());
-    const extAllowed = ALLOWED_EXTENSIONS.test(input.filename);
-    if (!mimeAllowed && !extAllowed) {
+    /**
+     * Both, not either. Accepting a declared MIME type OR a filename extension
+     * means a caller declaring `application/pdf` for `payload.html` is admitted
+     * on the MIME alone, and one naming `payload.pdf` is admitted on the
+     * extension alone — the pair only constrains anything when both must hold.
+     */
+    if (!ALLOWED_MIME_TYPES.has(input.fileType.toLowerCase()) || !ALLOWED_EXTENSIONS.test(input.filename)) {
       throw new UnsupportedMediaTypeException(
         "Only PDF and DOCX files are allowed for candidate documents.",
       );
     }
+
+    /**
+     * The key is a client string on this route — no bytes pass through it — so
+     * the tenant prefix is asserted here or never. Without it the vault row
+     * becomes a pointer at any object the caller can spell, and the download
+     * route authorises the ROW.
+     */
+    if (!isOwnOrgStorageKey(input.s3Key, orgId))
+      throw new BadRequestException("Invalid file reference");
 
     const [doc] = await this.db
       .insert(candidateDocumentsVault)
@@ -98,11 +114,33 @@ export class RecruitmentCandidateVaultService {
         eq(candidateDocumentsVault.candidateId, candidateId),
         eq(candidateDocumentsVault.orgId, orgId),
       ),
-      columns: { id: true, filename: true, documentType: true },
+      columns: { id: true, filename: true, documentType: true, s3Key: true },
     });
     if (!existing) throw new NotFoundException("Vault document not found");
 
     await this.db.transaction(async (tx) => {
+      /**
+       * The purge row is written inside the same transaction that removes the
+       * vault row, so the object can never outlive the only pointer to it. The
+       * sweeper owns the delete itself; doing it here would leave a transient
+       * storage failure indistinguishable from a permanent orphan.
+       */
+      if (existing.s3Key.trim().length > 0) {
+        await tx
+          .insert(storagePendingPurge)
+          .values({
+            orgId,
+            storageKey: existing.s3Key,
+            purpose: "recruitment:vault-document:delete",
+            bucket: "default",
+            status: "pending",
+          })
+          .onConflictDoUpdate({
+            target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
+            set: { status: "pending", lastAttemptedAt: null, failedReason: null },
+          });
+      }
+
       await tx.insert(vaultAccessLogs).values({
         orgId,
         candidateId,

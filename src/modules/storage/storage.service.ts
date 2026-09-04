@@ -17,7 +17,11 @@ import {
   type StorageConfig,
   type StoragePlacement,
 } from "./storage-placement";
-import { isForeignOrgKey, isSensitiveStorageKey } from "./storage-key";
+import {
+  isForeignOrgKey,
+  isSensitiveStorageKey,
+  isWellFormedStorageKey,
+} from "./storage-key";
 import { FileQuarantineService, type KeyBlockCheck } from "./file-quarantine.service";
 
 export type { R2Config, StorageConfig, StoragePlacement };
@@ -432,16 +436,6 @@ export class StorageService {
   }
 
   isValidFileKey(key: string): boolean {
-    if (!key || key.length > 1024) return false;
-    if (key.includes("..") || key.includes("\\") || key.startsWith("/"))
-      return false;
-    if (key.includes("\0")) return false;
-    if (
-      /^[a-z][a-z0-9+.-]*:/i.test(key) ||
-      key.includes("?") ||
-      key.includes("#")
-    )
-      return false;
-    return /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(key);
+    return isWellFormedStorageKey(key);
   }
 }

@@ -40,6 +40,7 @@ import {
   collectHeavyColumnTables,
   OUT_OF_RELEASE_SCOPE,
 } from "./existence-paths.mjs";
+import { scanCountExistenceProbes } from "./count-existence-probes.mjs";
 
 const ROOT = new URL("../", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 const BASELINE_FILE = new URL(
@@ -377,12 +378,64 @@ function runSelfTests() {
   }
 
   const files = collectSourceFiles(ROOT);
+  /* --- PRD-C073: the COUNT half of the existence clause --- */
+  const cp = (label, fixture, expected) => {
+    const got = scanCountExistenceProbes("src/modules/x/y.service.ts", fixture).length;
+    if (got !== expected) {
+      console.error(`SELF-TEST FAIL: ${label} — expected ${expected}, got ${got}`);
+      process.exit(1);
+    }
+  };
+
+  cp(
+    "a count() compared only against 0 IS an unbounded existence probe",
+    `const [row] = await this.db.select({ total: count() }).from(journalEntries).where(w);
+     if ((row?.total ?? 0) > 0) throw new ConflictException("nope");`,
+    1,
+  );
+  cp(
+    "the same probe with .limit(1) is not a finding",
+    `const rows = await this.db.select({ one: sql\`1\` }).from(journalEntries).where(w).limit(1);
+     if (rows.length > 0) throw new ConflictException("nope");`,
+    0,
+  );
+  cp(
+    "a count() whose value ESCAPES is a real count, not a probe",
+    `const [row] = await this.db.select({ total: count() }).from(journalEntries).where(w);
+     if ((row?.total ?? 0) > 0) this.log(row.total);
+     return row?.total ?? 0;`,
+    0,
+  );
+  cp(
+    "a count() compared against a business threshold is not an existence probe",
+    `const [row] = await this.db.select({ total: count() }).from(seats).where(w);
+     if ((row?.total ?? 0) > 25) throw new ConflictException("seat limit");`,
+    0,
+  );
+  cp(
+    "Number(...) around the value does not hide the probe",
+    `const [row] = await this.db.select({ cnt: count() }).from(roleAssignments).where(w);
+     if (Number(row?.cnt ?? 0) > 0) throw new ConflictException("in use");`,
+    1,
+  );
+  // The attribution bug this rule was written through: sixteen sibling probes inside one
+  // Promise.all must report as sixteen findings on sixteen bindings, not as 16 x 16.
+  cp(
+    "each element of a destructured Promise.all lands on its OWN binding",
+    `const [a, b] = await Promise.all([
+       this.countRows(this.db.select({ value: count() }).from(orgUnits).where(w)),
+       this.countRows(this.db.select({ value: count() }).from(hrPositions).where(w)),
+     ]);
+     return { x: a > 0, y: b > 0 };`,
+    2,
+  );
+
   if (files.length < MIN_FILES) {
     console.error(`SELF-TEST FAIL: discovered only ${files.length} source files (expected >= ${MIN_FILES}) — ROOT is wrong: ${ROOT}`);
     process.exit(1);
   }
 
-  console.log(`SELF-TEST PASS: all 26 projection checks passed (${resolved.size} heavy-column tables resolved from the real schema)`);
+  console.log(`SELF-TEST PASS: all 32 projection checks passed (${resolved.size} heavy-column tables resolved from the real schema)`);
 }
 
 function main() {
@@ -409,6 +462,8 @@ function main() {
   const countPaths = [];
   const existenceInScope = [];
   const existenceDeferred = [];
+  const countProbesInScope = [];
+  const countProbesDeferred = [];
   const heavyReads = [];
   for (const file of files) {
     let src;
@@ -425,6 +480,10 @@ function main() {
     for (const e of scanExistencePaths(rel, src))
       (OUT_OF_RELEASE_SCOPE.test(rel) ? existenceDeferred : existenceInScope).push(
         `${e.file}:${e.line} (${e.shape} on ${e.subject}, ${e.binding} only ${e.kind}-tested)`,
+      );
+    for (const c of scanCountExistenceProbes(rel, src))
+      (OUT_OF_RELEASE_SCOPE.test(rel) ? countProbesDeferred : countProbesInScope).push(
+        `${c.file}:${c.line} (count() on ${c.table}, ${c.binding} only compared against an existence threshold, no LIMIT)`,
       );
   }
 
@@ -459,8 +518,36 @@ function main() {
   console.log(`Unprojected COUNT paths (.length only): ${countPaths.length} (allowed ${baseline.countPathsAllowed}).`);
   console.log(`Unprojected EXISTENCE/COUNT paths, AST: ${existenceInScope.length} in scope (allowed ${baseline.existencePathsAllowed ?? 0}) · ${existenceDeferred.length} deferred to crm/inventory (ratchet ${baseline.existenceDeferredAllowed ?? 0}).`);
   console.log(`Full-row reads of a vector/tsvector/bytea table: ${heavyReads.length} (allowed ${baseline.heavyColumnReadsAllowed ?? 0}) over ${heavyTables.size} such tables.`);
+  console.log(`Unbounded COUNT existence probes (count() vs 0/1, no LIMIT): ${countProbesInScope.length} in scope (allowed 0) · ${countProbesDeferred.length} deferred to crm/inventory (reported, not enforced).`);
 
   let failed = false;
+
+  /**
+   * PRD-C073's other half, in its own words: "do not fetch records or COUNTS when
+   * only existence is required". Everything above this rule covers records. Nothing
+   * covered counts, and the count is the more expensive shape — a record read is
+   * bounded by the row, but `select({ total: count() }).from(t).where(org, status)`
+   * aggregates the tenant's whole matching history to answer a yes/no question.
+   * Measured at head: accounting-settings.service.ts counted every POSTED journal
+   * entry in the organisation to decide whether the base currency may still change.
+   *
+   * Enforced at a LITERAL zero, with no baseline key, deliberately. The population
+   * was 21 in scope when this rule was written and all 21 were rewritten as
+   * `select({ one: sql`1` }) ... .limit(1)` in the same commit, so there is nothing
+   * to ratchet down from — and a rule with no baseline entry cannot be relaxed by
+   * re-emitting the baseline. Narrowing one of these changes no response DTO: the
+   * count is never returned, only compared against 0 or 1.
+   *
+   * The deferred count covers crm/leads/deals/contacts/inventory, which are out of
+   * this release's scope; it is printed so it cannot hide, not enforced.
+   */
+  if (countProbesInScope.length > 0) {
+    console.error(
+      `\n${countProbesInScope.length} count() aggregate(s) answer a yes/no question with no LIMIT. Rewrite as \`select({ one: sql\`1\` }).from(t).where(...).limit(1)\` and test rows.length — the numeric value is never used for anything but the comparison, so no response DTO changes:`,
+    );
+    for (const c of countProbesInScope) console.error(`  UNBOUNDED-COUNT-PROBE  ${c}`);
+    failed = true;
+  }
 
   /**
    * The existence half of this box's own clause, which nothing enforced until

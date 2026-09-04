@@ -30,6 +30,28 @@ export interface RouteContext {
   } | null;
   availableChannels: Set<NotificationChannel>;
   suppressedChannels: Map<NotificationChannel, SuppressionReason>;
+  /**
+   * COMP-003. The channels this recipient has a GRANTED `notification_consents`
+   * row for. Absent means absent: an empty set suppresses every consent-gated
+   * channel, which is the only safe default for a legal basis.
+   */
+  consentedChannels: Set<NotificationChannel>;
+}
+
+/**
+ * COMP-003. `notification_consents`, `notification_consent_events` and the
+ * `CONSENT_MISSING` suppression reason were all declared, migrated and read by
+ * nobody but the GDPR export adapter — which therefore exported an empty list.
+ * SMS and WhatsApp routed on preferences, org policy and suppression rules alone,
+ * so a channel that legally cannot ship without a recorded agreement shipped on a
+ * toggle. These two are the channels that gate; EMAIL and PUSH do not, because
+ * unsubscribe (`notification_suppression_rules`) is their governing mechanism and
+ * a browser push subscription is itself the grant.
+ */
+export const CONSENT_REQUIRED_CHANNELS = ["SMS", "WHATSAPP"] as const;
+
+export function requiresConsent(channel: NotificationChannel): boolean {
+  return CONSENT_REQUIRED_CHANNELS.some((c) => c === channel);
 }
 
 const PRIORITY_RANK: Record<NotificationPriority, number> = { LOW: 0, NORMAL: 1, HIGH: 2, CRITICAL: 3 };
@@ -43,6 +65,7 @@ function isHigh(priority: NotificationPriority): boolean {
 
 export function computeRouting(ctx: RouteContext): RoutingResult {
   const { definition, priority, prefs, orgPolicy, availableChannels, suppressedChannels } = ctx;
+  const consented = ctx.consentedChannels ?? new Set<NotificationChannel>();
   const mandatory = definition.mandatory;
   const allowed = new Set<NotificationChannel>(definition.allowedChannels);
   allowed.add("IN_APP");
@@ -69,6 +92,14 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
 
   for (const channel of candidates) {
     const isInApp = channel === "IN_APP";
+    // Consent is checked before every other gate, and it binds a mandatory event
+    // too. A mandatory alert does not create a legal basis to text somebody; what
+    // it does create is an obligation to reach them, and FALLBACK_CHAIN below
+    // carries WHATSAPP -> SMS -> EMAIL -> IN_APP for exactly that.
+    if (requiresConsent(channel) && !consented.has(channel)) {
+      suppress(channel, "CONSENT_MISSING", "No recorded consent for this channel");
+      continue;
+    }
     if (userMuted && !isInApp) { suppress(channel, "MUTE", "Muted by preference"); continue; }
     if (eventPrefChannels && canUserOverride && !mandatory && eventPrefChannels[channel] === false) { suppress(channel, "CHANNEL_DISABLED", "Disabled for this event"); continue; }
     if (!prefs.channelEnabled[channel] && !(mandatory && !isInApp)) { if (!mandatory) { suppress(channel, "CHANNEL_DISABLED", "Channel turned off"); continue; } }
@@ -85,7 +116,8 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
       for (const b of blocked) {
         let fallback = FALLBACK_CHAIN[b.channel];
         while (fallback && fallback !== "IN_APP") {
-          if (allowed.has(fallback) && availableChannels.has(fallback) && !sending.has(fallback)) { send(fallback); break; }
+          const consentOk = !requiresConsent(fallback) || consented.has(fallback);
+          if (consentOk && allowed.has(fallback) && availableChannels.has(fallback) && !sending.has(fallback)) { send(fallback); break; }
           fallback = FALLBACK_CHAIN[fallback];
         }
       }

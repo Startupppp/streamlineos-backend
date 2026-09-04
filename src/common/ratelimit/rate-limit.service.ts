@@ -90,6 +90,12 @@ const TIERS: Record<string, Tier> = {
   "settings:email-template-test": { limit: 5, windowSecs: 3600 },
   "mail:send": { limit: 30, windowSecs: 60 },
   "mail:reply": { limit: 30, windowSecs: 60 },
+  // An arbitrary To:, an arbitrary subject and arbitrary HTML, sent from the
+  // platform's own sender. Its sibling settings/email-templates/test has been
+  // limited since it could aim the sender anywhere; this route could do the same
+  // thing with a free-form body and carried no limiter at all. 60/hour is more
+  // than a recruiter working a pipeline needs and far short of a flood.
+  "hr:communications-send": { limit: 60, windowSecs: 3600 },
   "hr:attendance-report": { limit: 5, windowSecs: 3600 },
   "hr:employee-backfill": { limit: 3, windowSecs: 3600 },
   "hr:employee-bulk-onboard": { limit: 10, windowSecs: 3600 },

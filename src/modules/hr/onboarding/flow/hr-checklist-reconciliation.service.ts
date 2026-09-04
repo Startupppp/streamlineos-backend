@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hasCompatibleHolidays } from "../../../../db/compat/organization-holidays";
@@ -100,79 +100,123 @@ export class HrChecklistReconciliationService {
   private async computeSignals(orgId: string): Promise<HrSignals> {
     const [
       org,
-      departmentsCount,
-      locationsCount,
-      jobRolesCount,
-      positionsCount,
-      leavePoliciesCount,
+      hasDepartments,
+      hasLocations,
+      hasJobRoles,
+      hasPositions,
+      hasLeavePolicies,
       hasHolidays,
-      shiftsCount,
-      onboardingTemplatesCount,
-      documentTypesCount,
-      workflowsCount,
-      salaryComponentsCount,
-      payrollPoliciesCount,
-      hiringFlowsCount,
-      scorecardTemplatesCount,
-      offerTemplatesCount,
-      employeesCount,
+      hasShifts,
+      hasOnboardingTemplates,
+      hasDocumentTypes,
+      hasWorkflows,
+      hasSalaryComponents,
+      hasPayrollPolicies,
+      hasHiringFlows,
+      hasScorecardTemplates,
+      hasOfferTemplates,
+      hasEmployees,
     ] = await Promise.all([
       this.db.query.organizations.findFirst({
         where: eq(organizations.id, orgId),
         columns: { name: true, country: true, timezone: true },
       }),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(orgUnits)
-          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), isNull(orgUnits.deletedAt))),
+          .where(
+            and(
+              eq(orgUnits.orgId, orgId),
+              eq(orgUnits.kind, "DEPARTMENT"),
+              isNull(orgUnits.deletedAt),
+            ),
+          )
+          .limit(1),
       ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(orgUnits)
-          .where(and(eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "LOCATION"), isNull(orgUnits.deletedAt))),
+          .where(
+            and(
+              eq(orgUnits.orgId, orgId),
+              eq(orgUnits.kind, "LOCATION"),
+              isNull(orgUnits.deletedAt),
+            ),
+          )
+          .limit(1),
       ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(hrJobRoles)
-          .where(and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true))),
+          .where(
+            and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true)),
+          )
+          .limit(1),
       ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(hrPositions)
-          .where(and(eq(hrPositions.orgId, orgId), isNull(hrPositions.deletedAt))),
+          .where(
+            and(eq(hrPositions.orgId, orgId), isNull(hrPositions.deletedAt)),
+          )
+          .limit(1),
       ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(leavePolicies)
-          .where(and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.isActive, true))),
+          .where(
+            and(
+              eq(leavePolicies.orgId, orgId),
+              eq(leavePolicies.isActive, true),
+            ),
+          )
+          .limit(1),
       ),
       hasCompatibleHolidays(this.db, orgId),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(shiftTemplates)
-          .where(and(eq(shiftTemplates.orgId, orgId), eq(shiftTemplates.isActive, true))),
+          .where(
+            and(
+              eq(shiftTemplates.orgId, orgId),
+              eq(shiftTemplates.isActive, true),
+            ),
+          )
+          .limit(1),
       ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(onboardingTemplates)
-          .where(and(eq(onboardingTemplates.orgId, orgId), eq(onboardingTemplates.isActive, true))),
+          .where(
+            and(
+              eq(onboardingTemplates.orgId, orgId),
+              eq(onboardingTemplates.isActive, true),
+            ),
+          )
+          .limit(1),
       ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(documentTypes)
-          .where(and(eq(documentTypes.orgId, orgId), eq(documentTypes.isActive, true))),
+          .where(
+            and(
+              eq(documentTypes.orgId, orgId),
+              eq(documentTypes.isActive, true),
+            ),
+          )
+          .limit(1),
       ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(hrWorkflowDefinitions)
           .where(
             and(
@@ -180,56 +224,91 @@ export class HrChecklistReconciliationService {
               eq(hrWorkflowDefinitions.status, "active"),
               isNull(hrWorkflowDefinitions.deletedAt),
             ),
-          ),
+          )
+          .limit(1),
       ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(salaryComponents)
-          .where(and(eq(salaryComponents.orgId, orgId), eq(salaryComponents.isActive, true))),
+          .where(
+            and(
+              eq(salaryComponents.orgId, orgId),
+              eq(salaryComponents.isActive, true),
+            ),
+          )
+          .limit(1),
       ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
           .from(payrollPolicies)
-          .where(and(eq(payrollPolicies.orgId, orgId), eq(payrollPolicies.status, "ACTIVE"))),
+          .where(
+            and(
+              eq(payrollPolicies.orgId, orgId),
+              eq(payrollPolicies.status, "ACTIVE"),
+            ),
+          )
+          .limit(1),
       ),
-      this.countRows(this.db.select({ value: count() }).from(hiringFlows).where(eq(hiringFlows.orgId, orgId))),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
+          .from(hiringFlows)
+          .where(eq(hiringFlows.orgId, orgId))
+          .limit(1),
+      ),
+      this.any(
+        this.db
+          .select({ one: sql`1` })
           .from(scorecardTemplates)
-          .where(and(eq(scorecardTemplates.orgId, orgId), eq(scorecardTemplates.isActive, true))),
+          .where(
+            and(
+              eq(scorecardTemplates.orgId, orgId),
+              eq(scorecardTemplates.isActive, true),
+            ),
+          )
+          .limit(1),
       ),
-      this.countRows(
-        this.db.select({ value: count() }).from(offerLetterTemplates).where(eq(offerLetterTemplates.orgId, orgId)),
-      ),
-      this.countRows(
+      this.any(
         this.db
-          .select({ value: count() })
+          .select({ one: sql`1` })
+          .from(offerLetterTemplates)
+          .where(eq(offerLetterTemplates.orgId, orgId))
+          .limit(1),
+      ),
+      this.any(
+        this.db
+          .select({ one: sql`1` })
           .from(organizationMembers)
-          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.isOwner, false))),
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.isOwner, false),
+            ),
+          )
+          .limit(1),
       ),
     ]);
 
     return {
       org_profile: Boolean(org?.name && org.country && org.timezone),
-      locations_departments: departmentsCount > 0 && locationsCount > 0,
-      roles_positions: jobRolesCount > 0 && positionsCount > 0,
-      leave_policies: leavePoliciesCount > 0,
+      locations_departments: hasDepartments && hasLocations,
+      roles_positions: hasJobRoles && hasPositions,
+      leave_policies: hasLeavePolicies,
       holiday_calendar: hasHolidays,
-      attendance_schedule: shiftsCount > 0,
-      onboarding_template: onboardingTemplatesCount > 0,
-      document_types: documentTypesCount > 0,
-      approval_workflows: workflowsCount > 0,
-      payroll_setup: salaryComponentsCount > 0 && payrollPoliciesCount > 0,
-      recruitment_setup: hiringFlowsCount > 0 || scorecardTemplatesCount > 0 || offerTemplatesCount > 0,
-      first_employees: employeesCount > 0,
+      attendance_schedule: hasShifts,
+      onboarding_template: hasOnboardingTemplates,
+      document_types: hasDocumentTypes,
+      approval_workflows: hasWorkflows,
+      payroll_setup: hasSalaryComponents && hasPayrollPolicies,
+      recruitment_setup:
+        hasHiringFlows || hasScorecardTemplates || hasOfferTemplates,
+      first_employees: hasEmployees,
     };
   }
 
-  private async countRows(query: PromiseLike<{ value: number }[]>): Promise<number> {
-    const rows = await query;
-    return rows[0]?.value ?? 0;
+  private async any(query: PromiseLike<unknown[]>): Promise<boolean> {
+    return (await query).length > 0;
   }
 }

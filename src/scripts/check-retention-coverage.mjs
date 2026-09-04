@@ -170,7 +170,7 @@ const RETENTION_MATRIX = {
   notification_outbox: {
     decision: "RETAIN-BOUNDED",
     worker: "CronNotificationOutboxRetentionService",
-    notes: "30-day retention for terminal states (PROCESSED, DEAD). PENDING and IN_FLIGHT rows are never touched. forEachOrg, batch 500, per-org lease.",
+    notes: "30-day retention for PROCESSED, 180-day for DEAD so dead-letter evidence outlives the 24h alert window. PENDING and IN_FLIGHT rows are never touched. forEachOrg, batch 500, per-org lease.",
   },
   outbox_events: {
     decision: "RETAIN-BOUNDED",

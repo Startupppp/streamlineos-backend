@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import type { NotificationChannelProvider } from "./notification-provider.interface";
 import type { NotificationChannel, ProviderSendInput, ProviderSendResult, ProviderValidationResult } from "../notification.types";
 import { EmailProviderService, isTransientError } from "../../email/email.provider";
@@ -6,6 +6,7 @@ import { getEmailTemplate, escapeHtml } from "../../email/templates/base";
 import { renderButton } from "../../email/templates/components";
 import { createUnsubscribeToken } from "../../email/unsubscribe-token";
 import { appUrl } from "../../email/app-url";
+import { logger } from "../../../common/logger/logger.service";
 
 /**
  * COMP-002. RFC 8058 one-click unsubscribe headers, so a mail client can offer the
@@ -46,13 +47,17 @@ function buildHtml(input: ProviderSendInput): string {
 @Injectable()
 export class NotificationEmailProvider implements NotificationChannelProvider {
   readonly channel: NotificationChannel = "EMAIL";
-  private readonly logger = new Logger(NotificationEmailProvider.name);
 
   constructor(private readonly emailProvider: EmailProviderService) {}
 
   async send(input: ProviderSendInput): Promise<ProviderSendResult> {
     if (input.sandbox) {
-      this.logger.debug(`SANDBOX EMAIL -> ${input.recipientAddress ?? "no-address"}: ${input.title}`);
+      logger.debug("sandbox email not dispatched", {
+        orgId: input.orgId,
+        userId: input.userId,
+        channel: this.channel,
+        hasAddressOnFile: input.recipientAddress != null,
+      });
       return { status: "SENT", providerMessageId: "sandbox-email", providerResponse: { sandbox: true } };
     }
     if (!input.recipientAddress) {

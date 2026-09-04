@@ -476,12 +476,14 @@ export class ChatChannelMembersImplementation {
       .where(
         cursor !== undefined
           ? and(
+              eq(chatAttachments.orgId, orgId),
               eq(chatMessages.orgId, orgId),
               eq(chatMessages.channelId, channelId),
               eq(chatMessages.isDeleted, false),
               lt(chatAttachments.id, cursor),
             )
           : and(
+              eq(chatAttachments.orgId, orgId),
               eq(chatMessages.orgId, orgId),
               eq(chatMessages.channelId, channelId),
               eq(chatMessages.isDeleted, false),

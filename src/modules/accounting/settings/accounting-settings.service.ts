@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -49,12 +49,13 @@ export class AccountingSettingsService {
     const current = await this.getOrCreateSettings(u.orgId);
 
     if (input.baseCurrency && input.baseCurrency !== current.baseCurrency) {
-      const [journalCount] = await this.db
-        .select({ total: count() })
+      const posted = await this.db
+        .select({ one: sql`1` })
         .from(journalEntries)
-        .where(and(eq(journalEntries.orgId, u.orgId), eq(journalEntries.status, "POSTED")));
+        .where(and(eq(journalEntries.orgId, u.orgId), eq(journalEntries.status, "POSTED")))
+        .limit(1);
 
-      if ((journalCount?.total ?? 0) > 0) {
+      if (posted.length > 0) {
         throw new ConflictException("Cannot change base currency after posting journals");
       }
     }
@@ -94,13 +95,14 @@ export class AccountingSettingsService {
   private async fetchSetupStatus(orgId: string) {
     const TOTAL_PURPOSES = 16;
 
-    const [settings, [accountCount], [systemMappedCount], [openingBalanceEntry], [periodCount]] =
+    const [settings, anyAccount, [systemMappedCount], [openingBalanceEntry], anyPeriod] =
       await Promise.all([
         this.getOrCreateSettings(orgId),
         this.db
-          .select({ total: count() })
+          .select({ one: sql`1` })
           .from(ledgerAccounts)
-          .where(eq(ledgerAccounts.orgId, orgId)),
+          .where(eq(ledgerAccounts.orgId, orgId))
+          .limit(1),
         this.db
           .select({ total: count() })
           .from(accSystemAccountMap)
@@ -111,9 +113,10 @@ export class AccountingSettingsService {
           .where(and(eq(journalEntries.orgId, orgId), eq(journalEntries.sourceType, "OPENING_BALANCE")))
           .limit(1),
         this.db
-          .select({ total: count() })
+          .select({ one: sql`1` })
           .from(accountingPeriods)
-          .where(eq(accountingPeriods.orgId, orgId)),
+          .where(eq(accountingPeriods.orgId, orgId))
+          .limit(1),
       ]);
 
     const steps = [
@@ -130,7 +133,7 @@ export class AccountingSettingsService {
       {
         key: "coa",
         label: "Set up chart of accounts",
-        done: (accountCount?.total ?? 0) > 0,
+        done: anyAccount.length > 0,
       },
       {
         key: "system_accounts",
@@ -145,7 +148,7 @@ export class AccountingSettingsService {
       {
         key: "periods",
         label: "Create accounting periods",
-        done: (periodCount?.total ?? 0) > 0,
+        done: anyPeriod.length > 0,
       },
     ];
 

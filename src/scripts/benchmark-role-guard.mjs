@@ -46,6 +46,11 @@ export function resolveSsl(env) {
  * `current_org_id()`, which RAISES 42501, so it is the only shape that distinguishes
  * "RLS is in force" from "the read simply found nothing". Measured 2026-09-04 against
  * scratch_perf_seed and scratch_gates_head as streamline_app.
+ *
+ * A harness may probe a different relation when it is closer to what that harness
+ * measures — capture-build-baseline.mjs probes `build.tickets`, verified 2026-09-04 to
+ * raise 42501 on the same targets — but only ever one whose policy RAISES. Never
+ * `organization_members`.
  */
 export const RLS_PROBE_RELATION = "calendar_events";
 

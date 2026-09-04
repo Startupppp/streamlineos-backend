@@ -201,6 +201,20 @@ function selfTest() {
     fail("tally", `expected 2 written / 3 refused, got ${written.length}/${refused.length}`);
   else pass("tally — 2 written, 3 refused, 1 unlinked");
 
+  // PRD-C079: the manifest may only record the role its input artifact observed.
+  if (resolveMeasurementRole({ tenant: "org-1" }).ok)
+    fail("role-absent-is-refused", "an artifact with no observed role was accepted");
+  else pass("role-absent-is-refused — an artifact carrying no `role` cannot populate measurement.role");
+
+  if (resolveMeasurementRole({ role: "neondb_owner (rolbypassrls = true)" }).ok)
+    fail("owner-role-is-refused", "a BYPASSRLS role string was accepted as provenance");
+  else pass("owner-role-is-refused — a role not proven non-BYPASSRLS is refused");
+
+  const proven = resolveMeasurementRole({ role: "streamline_app (rolbypassrls = false, tenant GUC set)" });
+  if (!proven.ok || proven.role !== "streamline_app (rolbypassrls = false, tenant GUC set)")
+    fail("proven-role-is-carried", `an observed non-BYPASSRLS role was not carried through: ${String(proven.why)}`);
+  else pass("proven-role-is-carried — an observed non-BYPASSRLS role reaches measurement.role verbatim");
+
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
     process.exit(1);

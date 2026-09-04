@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { runWithObservabilityContext } from "../../../common/observability";
 import { vaultAccessLogs } from "../../../db/schema";
+import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
 import { RecruitmentCandidateVaultService } from "./recruitment-candidate-vault.service";
 
 interface InsertedRow {
@@ -19,7 +20,8 @@ function buildDb(document: Record<string, unknown> | undefined) {
     insert: (table: unknown) => ({
       values: (values: Record<string, unknown>) => {
         inserted.push({ table, values });
-        return Promise.resolve([values]);
+        const settled = Promise.resolve([values]);
+        return Object.assign(settled, { onConflictDoUpdate: () => settled });
       },
     }),
     delete: (table: unknown) => ({
@@ -49,7 +51,12 @@ function buildDb(document: Record<string, unknown> | undefined) {
   };
 }
 
-const DOCUMENT = { id: 42, filename: "offer-letter.pdf", documentType: "OFFER" };
+const DOCUMENT = {
+  id: 42,
+  filename: "offer-letter.pdf",
+  documentType: "OFFER",
+  s3Key: "org_1/candidate-vault/42-offer-letter.pdf",
+};
 
 describe("vault document deletion writes an audit row", () => {
   it("records the deletion and the document's name in the same transaction as the delete", async () => {
@@ -59,10 +66,11 @@ describe("vault document deletion writes an audit row", () => {
     await service.deleteVaultDocument("org_1", 7, 42, "user_actor");
 
     expect(harness.ranTransaction()).toBe(true);
-    expect(harness.inserted).toHaveLength(1);
     expect(harness.deletes).toHaveLength(1);
-    expect(harness.inserted[0]?.table).toBe(vaultAccessLogs);
-    expect(harness.inserted[0]?.values).toEqual({
+
+    const auditRow = harness.inserted.find((r) => r.table === vaultAccessLogs);
+    expect(auditRow).toBeDefined();
+    expect(auditRow?.values).toEqual({
       orgId: "org_1",
       candidateId: 7,
       vaultDocumentId: 42,
@@ -70,6 +78,23 @@ describe("vault document deletion writes an audit row", () => {
       documentType: "OFFER",
       accessedBy: "user_actor",
       action: "DELETE",
+    });
+
+    /**
+     * PRD-C103, "deletion must clean database rows and objects without
+     * orphaning". The row is what points at the object, so the purge record has
+     * to be written INSIDE the same transaction that removes it — otherwise a
+     * crash between the two loses the only pointer and the object survives
+     * forever, unreachable and still billed for.
+     */
+    const purgeRow = harness.inserted.find((r) => r.table === storagePendingPurge);
+    expect(purgeRow).toBeDefined();
+    expect(purgeRow?.values).toEqual({
+      orgId: "org_1",
+      storageKey: "org_1/candidate-vault/42-offer-letter.pdf",
+      purpose: "recruitment:vault-document:delete",
+      bucket: "default",
+      status: "pending",
     });
   });
 
@@ -82,7 +107,9 @@ describe("vault document deletion writes an audit row", () => {
       async () => service.deleteVaultDocument("org_1", 7, 42),
     );
 
-    expect(harness.inserted[0]?.values.accessedBy).toBe("user_ambient");
+    expect(
+      harness.inserted.find((r) => r.table === vaultAccessLogs)?.values.accessedBy,
+    ).toBe("user_ambient");
   });
 
   it("refuses to delete at all when no actor can be identified", async () => {

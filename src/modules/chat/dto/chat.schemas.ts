@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { idCursorSchema } from "../../../common/pagination/cursor.schema";
 import { pageSizeField } from "../../../common/pagination/list-query.schema";
+import { isWellFormedStorageKey } from "../../storage/storage-key";
 
 const channelBaseSchema = z.object({
   name: z.string().min(1),
@@ -51,7 +52,7 @@ export const sendMessageSchema = z.object({
       z.object({
         fileName: z.string(),
         fileUrl: z.string(),
-        fileKey: z.string(),
+        fileKey: z.string().min(1).max(1024).refine(isWellFormedStorageKey, "Invalid file key"),
         fileSize: z.number(),
         mimeType: z.string(),
       }),

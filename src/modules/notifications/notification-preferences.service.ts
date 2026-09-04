@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { UpdatePreferenceInput, EventPreferenceInput, CreateSuppressionInput } from "./dto/preference.schemas";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
+import { NotificationConsentService, type ConsentChannel } from "./notification-consent.service";
 import { ALL_CHANNELS, type NotificationChannel } from "./notification.types";
 
 type EventPrefMap = Record<string, { channels?: Record<string, boolean>; muted?: boolean; mode?: string }>;
@@ -36,6 +37,7 @@ export class NotificationPreferencesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: NotificationEventRegistryService,
+    private readonly consents: NotificationConsentService,
   ) {}
 
   private memberPredicate(userId: string, membershipId: number | null | undefined) {
@@ -105,6 +107,17 @@ export class NotificationPreferencesService {
     // Without this projection the preference centre would still write, still show the
     // toggle as saved, and change nothing about what actually gets sent.
     await this.projectToRules(orgId, userId, dto, membershipId);
+
+    // COMP-003. Switching SMS or WhatsApp off is a withdrawal, not a mute. Leaving
+    // a GRANTED consent row standing behind an off toggle means the record of
+    // agreement and the person's stated wish disagree, and the record is what an
+    // auditor reads. Switching ON grants nothing: consent needs a destination and
+    // a toggle carries none, so the consent surface is where that is given.
+    const withdrawing: ConsentChannel[] = [];
+    if (dto.smsEnabled === false) withdrawing.push("SMS");
+    if (dto.whatsappEnabled === false) withdrawing.push("WHATSAPP");
+    if (withdrawing.length > 0)
+      await this.consents.withdrawChannels(orgId, userId, membershipId, withdrawing);
 
     await this.audit(orgId, userId, "preference.updated", { fields: Object.keys(dto) });
     return result;

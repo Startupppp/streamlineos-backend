@@ -91,9 +91,17 @@ export class SupportKbGapService {
     });
 
     if (!gatewayResult.ok) {
-      logger.error("support kb-gap draft failed", { orgId, gapId, kind: gatewayResult.kind });
-      if (gatewayResult.kind === "quota_exceeded")
+      /**
+       * An exhausted AI credit wallet is an expected domain outcome — the tenant
+       * is being asked to top up, nothing is broken — so it is reported at warn.
+       * Only the kinds an operator can act on stay at error, which is what keeps
+       * the error stream a list of faults rather than a list of billing states.
+       */
+      if (gatewayResult.kind === "quota_exceeded") {
+        logger.warn("support kb-gap draft declined", { orgId, gapId, kind: gatewayResult.kind });
         throw new InsufficientAiCreditsException({ message: gatewayResult.message });
+      }
+      logger.error("support kb-gap draft failed", { orgId, gapId, kind: gatewayResult.kind });
       throw new BadRequestException("AI draft generation failed");
     }
 

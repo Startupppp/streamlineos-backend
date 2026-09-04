@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import {
   kbArticleAttachments,
@@ -9,6 +9,8 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
+import { isOwnOrgStorageKey } from "../../storage/storage-key";
 import { StorageService } from "../../storage/storage.service";
 import type {
   CreateKbAttachmentInput,
@@ -133,6 +135,13 @@ export class SupportKbEngagementService {
   async createAttachment(orgId: string, articleId: number, userId: string, input: CreateKbAttachmentInput) {
     await this.ensureArticle(orgId, articleId);
 
+    /**
+     * The bytes never pass through this route, so the only thing standing
+     * between a client string and a stored pointer is this assertion.
+     */
+    if (!isOwnOrgStorageKey(input.fileKey, orgId))
+      throw new BadRequestException("Invalid file reference");
+
     const [inserted] = await this.db
       .insert(kbArticleAttachments)
       .values({
@@ -171,6 +180,28 @@ export class SupportKbEngagementService {
       .returning({ fileKey: kbArticleAttachments.fileKey });
 
     if (!deleted) throw new NotFoundException("Attachment not found");
+
+    /**
+     * The row is gone; without this the object it pointed at is unreachable and
+     * unbilled-for forever. The sweeper retries the delete, so a storage outage
+     * is a delay rather than a permanent orphan.
+     */
+    if (deleted.fileKey.trim().length > 0) {
+      await this.db
+        .insert(storagePendingPurge)
+        .values({
+          orgId,
+          storageKey: deleted.fileKey,
+          purpose: "support:kb-attachment:delete",
+          bucket: "default",
+          status: "pending",
+        })
+        .onConflictDoUpdate({
+          target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
+          set: { status: "pending", lastAttemptedAt: null, failedReason: null },
+        });
+    }
+
     return { success: true };
   }
 
