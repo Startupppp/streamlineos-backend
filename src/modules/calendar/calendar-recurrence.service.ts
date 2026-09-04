@@ -1,10 +1,22 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, like, sql } from "drizzle-orm";
-import { calendarEvents, calendarEventExceptions, notificationOutbox, organizationMembers } from "../../db/schema";
+import {
+  calendarEvents,
+  calendarEventExceptions,
+  calendarProviderSyncQueue,
+  notificationOutbox,
+  organizationMembers,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../db/drizzle.types";
 import type { UpsertOccurrenceExceptionInput } from "./dto/occurrence-exception.schemas";
+
+interface SeriesSyncTarget {
+  integrationConnectionId: number | null;
+  externalEventId: string | null;
+  localVersion: number;
+}
 
 @Injectable()
 export class CalendarRecurrenceService {
@@ -92,14 +104,59 @@ export class CalendarRecurrenceService {
    * occurrence edit read as provider-newer. `updateEvent` bumps both columns together on
    * every local change; an occurrence edit is a local change to the same series.
    */
-  private bumpSeries(tx: TenantTx, orgId: string, eventId: number) {
-    return tx
+  private async bumpSeries(
+    tx: TenantTx,
+    orgId: string,
+    eventId: number,
+  ): Promise<SeriesSyncTarget | null> {
+    const rows = await tx
       .update(calendarEvents)
       .set({
         localVersion: sql`${calendarEvents.localVersion} + 1`,
         updatedAt: new Date(),
       })
-      .where(and(eq(calendarEvents.orgId, orgId), eq(calendarEvents.id, eventId)));
+      .where(and(eq(calendarEvents.orgId, orgId), eq(calendarEvents.id, eventId)))
+      .returning({
+        integrationConnectionId: calendarEvents.integrationConnectionId,
+        externalEventId: calendarEvents.externalEventId,
+        localVersion: calendarEvents.localVersion,
+      });
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Writes the provider-sync intent for ONE occurrence, in the same transaction as the
+   * exception row it describes.
+   *
+   * `calendar-recurrence.service.ts` was absent from every `insert(calendarProviderSyncQueue)`
+   * site, so a per-occurrence move or cancel changed the local calendar and enqueued nothing:
+   * the provider copy kept the original occurrence for ever, and `getSyncStatus` reported the
+   * SERIES' last row, so nothing anywhere said the two had diverged.
+   *
+   * `occurrenceStart` in the payload is the nominal instant, which is what makes this an
+   * instance write at the provider instead of a whole-series overwrite. The row is stamped
+   * with the version `bumpSeries` just produced so it takes its place in the same monotonic
+   * chain as the create/update/delete rows.
+   */
+  private async enqueueOccurrenceSync(
+    tx: TenantTx,
+    orgId: string,
+    eventId: number,
+    userId: string,
+    occurrenceStart: Date,
+    operation: "update" | "delete",
+    series: SeriesSyncTarget | null,
+  ): Promise<void> {
+    if (!series?.integrationConnectionId || !series.externalEventId) return;
+    await tx.insert(calendarProviderSyncQueue).values({
+      orgId,
+      eventId,
+      connectionId: series.integrationConnectionId,
+      operation,
+      externalEventId: series.externalEventId,
+      eventLocalVersion: series.localVersion,
+      payload: { userId, occurrenceStart: occurrenceStart.toISOString() },
+    });
   }
 
   async upsertOccurrenceException(
@@ -135,7 +192,8 @@ export class CalendarRecurrenceService {
           },
         })
         .returning();
-      await this.bumpSeries(tx, orgId, eventId);
+      const series = await this.bumpSeries(tx, orgId, eventId);
+      await this.enqueueOccurrenceSync(tx, orgId, eventId, userId, occurrenceStart, "update", series);
       if (input.modifiedStart)
         // The reminders being dead-lettered are the ones scheduled against the key that
         // was actually written, not the instant the caller happened to name.
@@ -167,7 +225,8 @@ export class CalendarRecurrenceService {
           set: { isCancelled: true, updatedAt: new Date() },
         })
         .returning();
-      await this.bumpSeries(tx, orgId, eventId);
+      const series = await this.bumpSeries(tx, orgId, eventId);
+      await this.enqueueOccurrenceSync(tx, orgId, eventId, userId, occurrenceStart, "delete", series);
       await tx
         .update(notificationOutbox)
         .set({ state: "DEAD" })

@@ -637,6 +637,25 @@ function carrierSlot(args: string, carrier: string): number {
   return -1;
 }
 
+/**
+ * Nest appends `_v<n>` to the operationId of a handler carrying `@Version`, so
+ * `UsersController.listUsersV2` on `API_VERSION_NEXT` is emitted as
+ * `UsersController_listUsersV2_v2`. A direct lookup misses it, and a miss is
+ * recorded as `handler-not-found` — a blind spot, not a pass, which is how four
+ * id-shaped query fields on `GET /v2/users` went unanalysed. Resolve the
+ * unsuffixed form on a miss so every versioned route is swept; a genuinely
+ * absent handler still misses both ways and stays visible.
+ */
+function resolveRoute(
+  byOperationId: ReadonlyMap<string, HandlerRoute>,
+  operationId: string,
+): HandlerRoute | undefined {
+  const direct = byOperationId.get(operationId);
+  if (direct) return direct;
+  const unversioned = operationId.replace(/_v\d+$/, "");
+  return unversioned === operationId ? undefined : byOperationId.get(unversioned);
+}
+
 export function analyzeIdFields(): FieldBinding[] {
   const { sites } = enumerateIdFieldSites();
   const routes = loadRouteSurface();
@@ -645,7 +664,7 @@ export function analyzeIdFields(): FieldBinding[] {
   for (const route of routes) byOperationId.set(`${route.controllerClass}_${route.handler}`, route);
 
   return sites.map((site): FieldBinding => {
-    const route = byOperationId.get(site.operationId);
+    const route = resolveRoute(byOperationId, site.operationId);
     if (!route) return { ...site, verdict: "handler-not-found", evidence: "", where: "" };
     if (route.pathParams.includes(site.field))
       return { ...site, verdict: "path-parameter", evidence: "also a path parameter", where: route.file };

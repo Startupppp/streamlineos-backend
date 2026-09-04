@@ -81,11 +81,11 @@ export class SurveyLiveSessionController {
   @Validate({ params: sessionIdParams })
   async results(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     const session = await this.liveSessions.get(u.orgId, sessionId);
-    const participantCount = await this.liveParticipants.getParticipantCount(sessionId);
+    const participantCount = await this.liveParticipants.getParticipantCount(u.orgId, sessionId);
     if (!session.currentQuestionId) {
       return { participantCount, revealed: false, question: null };
     }
-    const results = await this.liveParticipants.getQuestionResults(sessionId, session.currentQuestionId);
+    const results = await this.liveParticipants.getQuestionResults(u.orgId, sessionId, session.currentQuestionId);
     return { participantCount, revealed: Boolean((session.settings as { revealed?: boolean })?.revealed), question: results };
   }
 }

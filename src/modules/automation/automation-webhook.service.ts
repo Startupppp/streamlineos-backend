@@ -6,6 +6,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { checkWebhookUrl } from "../../common/security/ssrf-guard";
 import { type EventPayload } from "./automation.evaluator";
+import { outboundTraceHeaders } from "../../common/outbound/call-provider";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
@@ -84,6 +85,7 @@ export class AutomationWebhookService {
           "Content-Type": "application/json",
           "X-StreamlineOS-Signature": `sha256=${signature}`,
           "X-Webhook-Event": eventName,
+          ...outboundTraceHeaders(),
         },
         body,
         signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),

@@ -116,6 +116,7 @@ export class CalendarConflictService {
         .where(
         and(
           eq(calendarEvents.orgId, orgId),
+          mineOrAttending,
           or(
             and(
               isNull(calendarEvents.rrule),
@@ -131,7 +132,6 @@ export class CalendarConflictService {
               ),
             ),
           ),
-          mineOrAttending,
           after === null
             ? undefined
             : or(
@@ -207,6 +207,9 @@ export class CalendarConflictService {
     const occurrences: CalendarOccurrence[] = [];
     for (const row of rows) {
       const rsvpStatus = rsvpMap.get(row.id) ?? null;
+      // Belt to `mineOrAttending`'s braces. The SQL predicate is what keeps the drain
+      // bounded; this keeps the RESULT correct even if a caller ever hands this method a
+      // transaction whose row set was not narrowed by it.
       if (row.createdByMembershipId !== callerMembershipId && rsvpStatus === null) continue;
       if (rsvpStatus === "declined") continue;
       const exceptions = exceptionsByEvent.get(row.id) ?? [];

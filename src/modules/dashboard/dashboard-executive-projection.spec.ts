@@ -42,18 +42,27 @@ function access(available: boolean, holds: boolean): AccessService {
   return {
     moduleAvailability: jest.fn().mockResolvedValue({ available }),
     holds: jest.fn().mockResolvedValue(holds),
+    getPermissionsVersion: jest.fn().mockResolvedValue(7),
   } as unknown as AccessService;
 }
 
 function passthroughCache() {
   const keys: string[] = [];
+  const orgs: string[] = [];
+  const globalCached = jest.fn();
   return {
     keys,
+    orgs,
+    globalCached,
     cache: {
-      cached: jest.fn().mockImplementation((key: string, fn: () => unknown) => {
-        keys.push(key);
-        return fn();
-      }),
+      cached: globalCached,
+      cachedForOrg: jest
+        .fn()
+        .mockImplementation((orgId: string, key: string, fn: () => unknown) => {
+          orgs.push(orgId);
+          keys.push(key);
+          return fn();
+        }),
     } as never,
   };
 }
@@ -74,6 +83,36 @@ describe("executive dashboard projection", () => {
     expect(tables).not.toContain("deals");
     expect(tables).not.toContain("lead_party_map");
     expect(keys[0]).toContain(":core");
+  });
+
+  it("writes through the org's own Redis cell, never the global one", async () => {
+    const { db } = makeDb();
+    const { cache, keys, orgs, globalCached } = passthroughCache();
+    const svc = new DashboardCrmService(db, cache, access(true, true));
+
+    await svc.getExecutiveDashboard(user());
+
+    expect(globalCached).not.toHaveBeenCalled();
+    expect(orgs).toEqual([ORG]);
+    expect(keys[0]).toContain("dashboard-home:");
+    expect(keys[0]).toContain("crm-executive");
+  });
+
+  it("rotates the key when the org's permissions version moves", async () => {
+    const stale = passthroughCache();
+    const fresh = passthroughCache();
+    const staleAccess = access(true, true);
+    const freshAccess = access(true, true);
+    (freshAccess.getPermissionsVersion as jest.Mock).mockResolvedValue(8);
+
+    await new DashboardCrmService(makeDb().db, stale.cache, staleAccess).getExecutiveDashboard(
+      user(),
+    );
+    await new DashboardCrmService(makeDb().db, fresh.cache, freshAccess).getExecutiveDashboard(
+      user(),
+    );
+
+    expect(stale.keys[0]).not.toBe(fresh.keys[0]);
   });
 
   it("omits every CRM figure when the caller lacks the CRM read permission", async () => {

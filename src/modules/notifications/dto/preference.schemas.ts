@@ -38,3 +38,19 @@ export const createSuppressionSchema = z.object({
 export type UpdatePreferenceInput = z.infer<typeof updatePreferenceSchema>;
 export type EventPreferenceInput = z.infer<typeof eventPreferenceSchema>;
 export type CreateSuppressionInput = z.infer<typeof createSuppressionSchema>;
+
+/**
+ * COMP-003. A record of agreement, not a setting: the destination it was given for,
+ * where it came from and under which legal basis. `state` is the only field a
+ * withdrawal changes, and the append-only companion table records both directions.
+ */
+export const recordConsentSchema = z.object({
+  channel: z.enum(["SMS", "WHATSAPP"]),
+  destination: z.string().min(3).max(320),
+  state: z.enum(["GRANTED", "WITHDRAWN"]),
+  legalBasis: z
+    .enum(["CONSENT", "CONTRACT", "LEGITIMATE_INTEREST", "LEGAL_OBLIGATION"])
+    .optional(),
+}).strict();
+
+export type RecordConsentInputDto = z.infer<typeof recordConsentSchema>;

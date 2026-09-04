@@ -13,7 +13,10 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_TTL } from "../../common/cache/cache-keys";
+import {
+  CACHE_TTL,
+  DASHBOARD_PENDING_APPROVALS_NAMESPACE,
+} from "../../common/cache/cache-keys";
 import { getTodayString } from "../../common/date";
 import { type DashboardForbidden } from "./dashboard.errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -30,7 +33,10 @@ import {
   resolveLeavesViewScope,
 } from "../hr/time/leaves-scope";
 import { applyScope } from "../access/apply-scope";
-import { buildOrgDashboardCacheKey } from "./dashboard-cache-key";
+import {
+  buildOrgSectionCacheKey,
+  buildScopedSectionCacheKey,
+} from "./dashboard-cache-key";
 import {
   boundedDashboardList,
   DASHBOARD_LIST_CAP,
@@ -86,10 +92,18 @@ export class DashboardLeaveService {
     return boundedDashboardList(rows, totalRows[0]?.count ?? rows.length);
   }
 
-  getMyLeaveBalance(orgId: string, userId: string) {
+  async getMyLeaveBalance(u: CurrentUserContext) {
+    const { orgId, userId } = u;
     const currentYear = new Date().getFullYear();
-    const key = `dashboard:my-leave-balance:${orgId}:${userId}:${currentYear}`;
-    return this.cache.cached(
+    const key = await buildScopedSectionCacheKey(
+      this.access,
+      u,
+      "leave-balance",
+      "own",
+      String(currentYear),
+    );
+    return this.cache.cachedForOrg(
+      orgId,
       key,
       () =>
         this.db
@@ -120,11 +134,18 @@ export class DashboardLeaveService {
     }
 
     const isApprover = await this.access.holds(u, "hr:leaves:approve");
-    const audience = scope === "all" ? "org" : u.userId;
-    const key = `dashboard:pending-approvals:${orgId}:${scope}:${audience}:${isApprover ? "approver" : "self"}`;
+    const key = await buildScopedSectionCacheKey(
+      this.access,
+      u,
+      "pending-approvals",
+      scope,
+      isApprover ? "approver" : "self",
+    );
     const visible = leaveApprovalScope(scope, u.principal ? actingMembershipId(u.principal) : null);
 
-    return this.cache.cached(
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      DASHBOARD_PENDING_APPROVALS_NAMESPACE,
       key,
       async () => {
         const [leaveCount] = await this.db
@@ -165,10 +186,10 @@ export class DashboardLeaveService {
 
   async getUpcomingHolidays(orgId: string) {
     const today = getTodayString();
-    const key = await buildOrgDashboardCacheKey(
+    const key = await buildOrgSectionCacheKey(
       this.access,
       orgId,
-      "holidays",
+      "upcoming-holidays",
       today,
     );
     return this.cache.cachedForOrg(

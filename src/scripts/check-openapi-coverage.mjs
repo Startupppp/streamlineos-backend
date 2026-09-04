@@ -88,8 +88,30 @@ const MIN_ERROR_SHAPE_PCT = 95;
  * truthfully is worth more than one that reports 100% over 0.027%.
  *
  * Lower it as coverage lands. `check:baseline-integrity` reports any improvement as bankable.
+ *
+ * 3617 -> 3613, MEASURED 2026-09-04 (v2 ticket 04). The ratchet was BREACHED at 3621: six
+ * operations were added — `/v2/users`, `/v2/users/{userId}` and four more — and none carried a
+ * response schema, so the count grew past a ceiling that may only shrink. It was NOT raised to
+ * absorb them; ten handlers were given a real `@ResponseSchema(...)` instead:
+ *   POST/PUT   /calendar/events                                    (the projected mutate row)
+ *   PATCH/DEL  /calendar/events/{eventId}/occurrences/{...}
+ *   POST       /platform/operator-access/grants                     ({ grantId })
+ *   POST       /platform/operator-access/grants/{grantId}/approve   ({ ok: true })
+ *   POST       /platform/operator-access/grants/{grantId}/reject    ({ ok: true })
+ *   DELETE     /platform/operator-access/grants/{grantId}           ({ ok: true })
+ *   GET        /platform/operator-access/grants                     (the nine-column projection)
+ *   GET        /platform/operator-access/logs                       (the six-column projection)
+ * Each is compared against the real handler return by `ResponseContractInterceptor` under
+ * NODE_ENV=test, so none of them is decoration.
+ *
+ * 3613 is a measurement, not arithmetic: the document was rebuilt in memory from this working
+ * tree via `generateOpenApiJson()` and the predicate below run over it (3651 operations, 38
+ * covered, 3613 uncovered). It is NOT what the COMMITTED openapi.json measures — that document
+ * predates both these ten schemas and three routes other lanes added, and still reports 3621.
+ * This gate therefore stays RED until openapi.json is regenerated, which this release does once,
+ * at the end of the wave, by one agent.
  */
-const RESPONSE_SCHEMA_UNCOVERED_CEILING = 3617;
+const RESPONSE_SCHEMA_UNCOVERED_CEILING = 3613;
 
 /**
  * Format a coverage percentage. Never prints "100%" unless covered === total.

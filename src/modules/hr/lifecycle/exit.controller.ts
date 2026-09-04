@@ -181,7 +181,9 @@ export class ExitController {
     }
 
     const expiresIn = 300;
-    const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn);
+    const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn, undefined, {
+      preauthorized: true,
+    });
     await this.audit.logCritical({
       action: "hr.resignation_letter_viewed",
       userId: currentUser.userId,

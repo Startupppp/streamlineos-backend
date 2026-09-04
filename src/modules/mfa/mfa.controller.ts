@@ -1,5 +1,6 @@
 import {
   Body,
+  Header,
   Controller,
   Get,
   HttpCode,
@@ -8,6 +9,7 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
@@ -55,6 +57,9 @@ export class MfaController {
   @BodylessAction()
   @Universal()
   @HttpCode(200)
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   setup(@CurrentUser() u: CurrentUserContext) {
     return this.mfa.setup(u.userId);
   }

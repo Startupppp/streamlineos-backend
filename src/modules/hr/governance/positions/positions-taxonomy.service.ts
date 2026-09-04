@@ -5,8 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, ne } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrPositionStatuses } from "../../../../db/schema";
@@ -136,17 +135,18 @@ export class PositionsTaxonomyService {
     if (!existing.isActive)
       throw new BadRequestException("Status is already retired");
 
-    const [countRow] = await this.db
-      .select({ cnt: count() })
+    const activeStatuses = await this.db
+      .select({ one: sql`1` })
       .from(hrPositionStatuses)
       .where(
         and(
           eq(hrPositionStatuses.orgId, orgId),
           eq(hrPositionStatuses.isActive, true),
         ),
-      );
+      )
+      .limit(2);
 
-    if ((countRow?.cnt ?? 1) <= 1)
+    if (activeStatuses.length <= 1)
       throw new BadRequestException("At least one active status is required");
 
     await this.db

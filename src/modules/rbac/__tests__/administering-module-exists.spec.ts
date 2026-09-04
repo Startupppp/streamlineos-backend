@@ -41,7 +41,12 @@ const NON_MODULE_NAMESPACES = [
   "sales",
   "self",
   "storage",
-  "tasks",
+  // `tasks` left this list when it was registered: it owns a calendar source,
+  // and a source whose module the registry does not hold reads as core-by-
+  // default and shows on the calendar of an organisation that has enabled
+  // nothing. Registering it as universal/not-plan-gated leaves availability
+  // exactly where it was (`isCoreModuleKey("tasks")` was true either way) and
+  // makes that a decision rather than an accident.
 ];
 
 function namespaceOf(permissionKey: string): string {

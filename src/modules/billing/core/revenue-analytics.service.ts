@@ -61,6 +61,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
         previousPlan: input.previousPlan ?? null,
         mrr: input.mrr,
         amount: input.amount ?? null,
+        currency: input.currency,
         metadata: input.metadata ?? null,
       },
       occurredAt: new Date(),
@@ -97,6 +98,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
         previousPlan: payload.previousPlan ?? undefined,
         mrr: payload.mrr,
         amount: payload.amount ?? undefined,
+        currency: payload.currency ?? undefined,
         metadata: payload.metadata ?? undefined,
       });
       await new InboxConsumer(tx).markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED", null);

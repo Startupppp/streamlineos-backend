@@ -26,7 +26,6 @@ import {
   type UpdateSpaceInput,
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { accountableMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
@@ -34,7 +33,6 @@ const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).
 
 @Controller("kb/spaces")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbSpacesController {
   constructor(
     private readonly spaces: KbSpacesService,

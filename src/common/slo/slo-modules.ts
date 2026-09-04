@@ -49,6 +49,12 @@ const MODULE_SLO_OWNERSHIP: readonly ModuleOwnership[] = [
     writeSurface: "workflow definition and manual-run mutations",
   },
   {
+    module: "tasks",
+    owner: "delivery-team",
+    readSurface: "task, sequence, queue and analytics lists",
+    writeSurface: "task create, complete and sequence-apply mutations",
+  },
+  {
     module: "sign",
     owner: "delivery-team",
     readSurface: "envelope and recipient lists",

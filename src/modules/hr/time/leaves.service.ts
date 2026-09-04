@@ -201,7 +201,6 @@ export class LeavesService {
             name: true,
             firstName: true,
             lastName: true,
-            email: true,
             image: true,
           },
         },

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Inject } from "@nestjs/common";
-import { and, asc, eq, count, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollExceptions, payrollRuns, payrollRunEvents } from "../../../db/schema";
@@ -178,18 +178,20 @@ export class ExceptionsService {
         metadata: { exceptionId, reason: body.reason },
       });
 
-      const [remainingBlockers] = await tx
-        .select({ total: count() })
+      const remainingBlockers = await tx
+        .select({ one: sql`1` })
         .from(payrollExceptions)
         .where(
           and(
+            eq(payrollExceptions.orgId, orgId),
             eq(payrollExceptions.runId, runId),
             eq(payrollExceptions.status, "OPEN"),
             eq(payrollExceptions.severity, "BLOCKER"),
           ),
-        );
+        )
+        .limit(1);
 
-      if ((remainingBlockers?.total ?? 0) === 0 && runCheck[0].status === "EXCEPTIONS_FOUND") {
+      if (remainingBlockers.length === 0 && runCheck[0].status === "EXCEPTIONS_FOUND") {
         await tx
           .update(payrollRuns)
           .set({ status: "PREVIEW_READY" })

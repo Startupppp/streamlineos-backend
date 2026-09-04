@@ -9,6 +9,18 @@ export const providerSyncPayloadSchema = z.object({
   allDay: z.boolean().optional(),
   attendeeEmails: z.array(z.string()).optional(),
   addConference: z.boolean().optional(),
+  /**
+   * The series' RRULE. Absent from the payload meant absent from the push, and a
+   * weekly series reached Google as one meeting at the first occurrence.
+   */
+  rrule: z.string().nullish(),
+  /**
+   * Set only on an OCCURRENCE-scoped row: the nominal instant of the single occurrence
+   * this job writes, i.e. `calendar_event_exceptions.occurrence_start`. Its presence is
+   * what turns an `update`/`delete` into an instance write rather than a series write,
+   * so a per-occurrence edit no longer overwrites — or silently skips — the whole series.
+   */
+  occurrenceStart: z.string().optional(),
 });
 
 type ProviderSyncPayload = z.infer<typeof providerSyncPayloadSchema>;

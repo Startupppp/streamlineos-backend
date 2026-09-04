@@ -19,6 +19,10 @@ import {
   parseOrgFeatureFlags,
 } from "./settings.helpers";
 import type { CreateApiKeyInput, FeatureFlagInput } from "./dto/settings.schemas";
+import { logger } from "../../common/logger/logger.service";
+
+/** The key list is a page, not a dump. Mirrors `SESSION_LIST_CAP`. */
+export const API_KEY_LIST_CAP = 100;
 
 @Injectable()
 export class SettingsService {
@@ -82,16 +86,30 @@ export class SettingsService {
     );
   }
 
+  /**
+   * The one read in this module that was not a per-org config lookup. Nothing
+   * prunes `api_keys` and nothing caps how many an org may mint, so this grew a
+   * row per key forever with no `limit`; the tie-break on `id` makes the capped
+   * page a stable prefix rather than an arbitrary subset that changes between
+   * two reads of the same state. Truncation is logged, never silent.
+   */
   async listApiKeys(u: CurrentUserContext) {
     if (!isStructuralOrgAdminContext(u)) {
       throw new ForbiddenException("Only admins can manage API keys.");
     }
-    return this.db.query.apiKeys.findMany({
+    const rows = await this.db.query.apiKeys.findMany({
       where: and(eq(apiKeys.orgId, u.orgId), eq(apiKeys.isRevoked, false)),
       columns: { keyHash: false },
       with: { creator: { columns: { name: true, email: true } } },
-      orderBy: (t, { desc: d }) => [d(t.createdAt)],
+      orderBy: (t, { asc: a, desc: d }) => [d(t.createdAt), a(t.id)],
+      limit: API_KEY_LIST_CAP + 1,
     });
+    if (rows.length > API_KEY_LIST_CAP)
+      logger.warn("api key list truncated at the page cap", {
+        orgId: u.orgId,
+        cap: API_KEY_LIST_CAP,
+      });
+    return rows.slice(0, API_KEY_LIST_CAP);
   }
 
   async createApiKey(u: CurrentUserContext, input: CreateApiKeyInput) {

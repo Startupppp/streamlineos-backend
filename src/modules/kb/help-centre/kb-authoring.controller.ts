@@ -16,7 +16,6 @@ import {
   type SummarizeInput,
 } from "./dto/kb-authoring.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
 /**
  * Every handler here carries `@NoTenantTransaction()`. `KbAuthoringService.run`
@@ -40,7 +39,6 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 @Controller("kb/ai")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @UseInterceptors(AiRequestAbortInterceptor)
-@RequireModule("kb")
 export class KbAuthoringController {
   constructor(private readonly authoring: KbAuthoringService) {}
 

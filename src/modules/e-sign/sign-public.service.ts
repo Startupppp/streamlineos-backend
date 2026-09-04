@@ -173,9 +173,13 @@ export class SignPublicService {
       if (this.deriveState(recipient, envelope) !== "active" && recipient.status !== "completed") {
         throw new ForbiddenException("This document is not currently available.");
       }
+      if (!recipient.authenticatedAt)
+        throw new ForbiddenException("Please complete authentication first");
       const doc = await this.db.query.signDocuments.findFirst({ where: and(eq(signDocuments.id, documentId), eq(signDocuments.envelopeId, envelope.id)) });
       if (!doc) throw new NotFoundException("Document not found");
-      const url = await this.storage.getFileUrl(envelope.orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS);
+      const url = await this.storage.getFileUrl(envelope.orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+        preauthorized: true,
+      });
       return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS };
     });
   }

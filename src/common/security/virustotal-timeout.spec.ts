@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { VirusTotalScanner } from "./virustotal-av-scanner";
@@ -60,7 +61,45 @@ describe("VirusTotalScanner outbound deadlines", () => {
     expect(callSites).toHaveLength(1);
     expect(SOURCE).toContain("signal: AbortSignal.timeout(timeoutMs)");
 
+    /**
+     * One guarded call, because the hash report is now the ONLY outbound
+     * request: the file-submission and analysis-polling endpoints were deleted.
+     * The count is not the guard on its own — `callSites` above is — so it moves
+     * with the endpoint list rather than pinning a number.
+     */
     const guardedCalls = SOURCE.match(/this\.vtFetch\(/g) ?? [];
-    expect(guardedCalls).toHaveLength(3);
+    expect(guardedCalls).toHaveLength(1);
+  });
+
+  /**
+   * The tenant-private guarantee, asserted on behaviour rather than on source:
+   * a file VirusTotal has never seen must be refused, and nothing may leave this
+   * process except the hash. A regression that restores the submission endpoint
+   * fails here on the request count and the method before any source scan runs.
+   */
+  it("never sends the file body — an unknown hash is refused, not submitted", async () => {
+    const requests: Array<{ url: string; method: string | undefined; hasBody: boolean }> = [];
+    globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      requests.push({
+        url: String(input),
+        method: init?.method,
+        hasBody: init?.body !== undefined && init?.body !== null,
+      });
+      return Promise.resolve(new Response("{}", { status: 404 }));
+    };
+
+    const scanner = new VirusTotalScanner("test-key");
+    const payload = Buffer.from("first-seen-tenant-payslip");
+    const result = await scanner.scan(payload, "payslip.pdf", "application/pdf");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.method).toBeUndefined();
+    expect(requests[0]?.hasBody).toBe(false);
+    expect(requests[0]?.url).toContain(
+      createHash("sha256").update(payload).digest("hex"),
+    );
+    expect(requests.some((r) => r.url.endsWith("/files"))).toBe(false);
+    expect(result.status).toBe("error");
+    expect(result.status === "error" && result.reason).toBe("vt-unknown-hash");
   });
 });

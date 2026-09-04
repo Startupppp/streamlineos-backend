@@ -9,6 +9,7 @@ import { AutomationEmailService } from "../../automation/automation-email.servic
 import { HR_WORKFLOW_STARTER, type HrWorkflowStarterPort } from "./hr-workflow-starter.port";
 import type { HrAutomationAction, HrActionResult } from "../../../db/schema/hr/automation-engine";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
+import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
@@ -127,7 +128,7 @@ export class HrAutomationActionsService {
     }
 
     const body = JSON.stringify({ orgId, payload, timestamp: new Date().toISOString() });
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const headers: Record<string, string> = { "Content-Type": "application/json", ...outboundTraceHeaders() };
     if (secret) {
       headers["X-StreamlineOS-Signature"] = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
     }

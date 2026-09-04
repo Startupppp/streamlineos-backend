@@ -215,7 +215,7 @@ describe("storage-key-catalog — which columns name KB-bucket objects", () => {
 describe("PURGE_ADAPTER_REGISTRY.object_storage — the delete and its verification address the upload's bucket", () => {
   it("removes a KB attachment from the bucket KbMediaService uploaded it into", async () => {
     const s3 = fakeObjectStore();
-    const store = new StorageService({} as MediaCompressionService, config);
+    const store = new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false });
     await uploadKbAttachment(store);
 
     const put = s3.sent.find((s) => s.command === "PutObjectCommand");
@@ -249,7 +249,7 @@ describe("PURGE_ADAPTER_REGISTRY.object_storage — the delete and its verificat
 
   it("keeps a non-KB key on the default bucket (control — the fix is not 'send everything to KB')", async () => {
     const s3 = fakeObjectStore();
-    const store = new StorageService({} as MediaCompressionService, config);
+    const store = new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false });
     const key = await store.uploadFile(ORG, Buffer.from("x"), "documents", "contract.pdf", "application/pdf");
 
     expect(s3.sent[0]?.bucket).toBe(DEFAULT_BUCKET);
@@ -273,7 +273,7 @@ describe("PURGE_ADAPTER_REGISTRY.object_storage — the delete and its verificat
 
   it("records the bucket on the pending-purge row before the object is deleted", async () => {
     const s3 = fakeObjectStore();
-    const store = new StorageService({} as MediaCompressionService, config);
+    const store = new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false });
     await uploadKbAttachment(store);
     const put = s3.sent.find((s) => s.command === "PutObjectCommand");
 
@@ -299,7 +299,7 @@ describe("PURGE_ADAPTER_REGISTRY.object_storage — the delete and its verificat
 
   it("does not report CONFIRMED when the KB object survives the delete", async () => {
     const s3 = fakeObjectStore();
-    const store = new StorageService({} as MediaCompressionService, config);
+    const store = new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false });
     await uploadKbAttachment(store);
     const put = s3.sent.find((s) => s.command === "PutObjectCommand");
 

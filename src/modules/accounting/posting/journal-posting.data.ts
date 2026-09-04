@@ -10,6 +10,23 @@ export interface DraftLine {
   description?: string | null;
 }
 
+/**
+ * A line whose amounts are already exact ledger-scale decimal strings.
+ *
+ * `journal_lines.debit`/`credit` are `numeric(18,4)`, whose range runs past
+ * 2^53/10^4 — the point beyond which an IEEE-754 double can no longer carry four
+ * decimal places. Any path that reads amounts back out of the ledger and writes
+ * them again (a reversal) must stay in text the whole way, or a posted entry can
+ * become unreversible because its reconstructed debits no longer equal its
+ * credits.
+ */
+export interface DraftDecimalLine {
+  accountCode: string;
+  debit: string;
+  credit: string;
+  description?: string | null;
+}
+
 export interface DraftEntry {
   orgId: string;
   entryDate: string;
@@ -21,6 +38,10 @@ export interface DraftEntry {
   status?: "DRAFT" | "POSTED";
   createdBy: string;
   lines: DraftLine[];
+}
+
+export interface DraftDecimalEntry extends Omit<DraftEntry, "lines"> {
+  lines: DraftDecimalLine[];
 }
 
 export interface PersistedEntry {

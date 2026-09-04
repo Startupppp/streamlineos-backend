@@ -1,5 +1,6 @@
 import {
   Body,
+  Header,
   Controller,
   Delete,
   Get,
@@ -12,6 +13,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -61,6 +63,9 @@ export class WebhooksController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ body: createSchema })
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   create(
     @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +79,9 @@ export class WebhooksController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ params: webhookIdParams })
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   rotateSecret(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,

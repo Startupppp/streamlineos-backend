@@ -12,7 +12,6 @@ import {
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbTranslationsService } from "./kb-translations.service";
@@ -28,7 +27,6 @@ const articleIdlocaleParams = z.object({ articleId: z.coerce.number().int().posi
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbTranslationsController {
   constructor(private readonly translations: KbTranslationsService) {}
 

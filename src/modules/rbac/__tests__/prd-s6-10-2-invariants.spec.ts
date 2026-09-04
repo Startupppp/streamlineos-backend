@@ -1,8 +1,8 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import type { Db } from "../../../db/drizzle.module";
 import { RolesService } from "../roles.service";
 import { RoleSeedService } from "../role-seed.service";
 import { ROLE_TEMPLATES } from "../role-templates.constants";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 jest.mock("../../../common/rbac/is-structural-org-admin", () => ({
   isStructuralOrgAdmin: jest.fn().mockResolvedValue(true),
@@ -22,50 +22,59 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   ),
 }));
 
-function buildSeedService(): RoleSeedService {
-  const service: RoleSeedService = Object.create(RoleSeedService.prototype);
-  const db: Partial<Db> = {
-    query: {
-      roles: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-    } as unknown as Db["query"],
+/**
+ * The stub standing in for the injected Drizzle client, named so the tests can
+ * reprogram it WITHOUT reaching back through `Reflect.get(service, "db")` and
+ * casting the result. That cast was `as any`, and `as any` on a private-field
+ * read is the worst of both worlds: it neither proves the field is there nor
+ * checks what is assigned into it, so a rename of `db` would leave both tests
+ * below assigning onto a missing field and still going green.
+ */
+interface StubbedDb {
+  query: { roles: { findFirst: jest.Mock } };
+  select: jest.Mock;
+}
+
+function makeStubbedDb(): StubbedDb {
+  return {
+    query: { roles: { findFirst: jest.fn().mockResolvedValue(null) } },
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 999 }]) }),
       }),
     }),
   };
-  Reflect.set(service, "db", db);
+}
+
+function buildSeedService(): RoleSeedService {
+  const service: RoleSeedService = Object.create(RoleSeedService.prototype);
+  Reflect.set(service, "db", makeStubbedDb());
   return service;
 }
 
-function buildRolesService(): RolesService {
+function buildRolesService(): { service: RolesService; db: StubbedDb } {
   const service: RolesService = Object.create(RolesService.prototype);
-  const db: Partial<Db> = {
-    query: {
-      roles: {
-        findFirst: jest.fn().mockResolvedValue(null),
-      },
-    } as unknown as Db["query"],
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 999 }]) }),
-      }),
-    }),
-  };
+  const db = makeStubbedDb();
   Reflect.set(service, "db", db);
   Reflect.set(service, "audit", { log: jest.fn() });
   Reflect.set(service, "accessService", {});
   Reflect.set(service, "permissionService", {});
   Reflect.set(service, "memberService", {});
-  return service;
+  return { service, db };
 }
 
 describe("custom-role creation is template-locked — no arbitrary role creation", () => {
   it("materializeTemplate rejects an unknown templateId with NotFoundException", async () => {
     const service = buildSeedService();
-    const actor = { orgId: "org-1", userId: "u-1", membershipId: 1, isOwner: true, role: "OWNER" } as any;
+    const actor: CurrentUserContext = {
+      userId: "u-1",
+      orgId: "org-1",
+      role: "OWNER",
+      isOrgOwner: true,
+      sessionId: "sess-1",
+      tokenScopes: null,
+      principal: { kind: "human-session", membershipId: 1, isOrgOwner: true },
+    };
 
     await expect(
       service.materializeTemplate(actor, "not-a-real-template-id-xyz"),
@@ -77,7 +86,15 @@ describe("custom-role creation is template-locked — no arbitrary role creation
     expect(validIds.size).toBeGreaterThan(0);
 
     const service = buildSeedService();
-    const actor = { orgId: "org-1", userId: "u-1", membershipId: 1, isOwner: true, role: "OWNER" } as any;
+    const actor: CurrentUserContext = {
+      userId: "u-1",
+      orgId: "org-1",
+      role: "OWNER",
+      isOrgOwner: true,
+      sessionId: "sess-1",
+      tokenScopes: null,
+      principal: { kind: "human-session", membershipId: 1, isOrgOwner: true },
+    };
 
     for (const invalidId of [
       "arbitrary-custom-role",
@@ -114,8 +131,8 @@ describe("custom-role creation is template-locked — no arbitrary role creation
 
 describe("cross-tenant isolation — services throw NotFoundException (HTTP 404), not ForbiddenException (HTTP 403)", () => {
   it("getRoles returns an empty page for a tenant with no roles, never a 403", async () => {
-    const service = buildRolesService();
-    (Reflect.get(service, "db") as any).select = jest.fn().mockReturnValue({
+    const { service, db } = buildRolesService();
+    db.select = jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         leftJoin: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -134,8 +151,8 @@ describe("cross-tenant isolation — services throw NotFoundException (HTTP 404)
   });
 
   it("does not throw ForbiddenException — cross-tenant misses must return 404 not 403", async () => {
-    const service = buildRolesService();
-    (Reflect.get(service, "db") as any).query.roles.findFirst = jest.fn().mockResolvedValue(null);
+    const { service, db } = buildRolesService();
+    db.query.roles.findFirst = jest.fn().mockResolvedValue(null);
 
     const err = await service.getRole("org-attacker", 42).catch((e: unknown) => e);
 

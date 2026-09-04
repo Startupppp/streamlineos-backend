@@ -17,16 +17,7 @@ import {
   updatePartyWithMirror,
 } from "./party-legacy-writer";
 import { repointLegacyIds, type LegacyIdsByKind } from "./party-merge-legacy-ids";
-
-interface MergeSnapshot {
-  survivorBefore: Record<string, unknown>;
-  mergedBefore: Record<string, unknown>;
-  movedContactIds: string[];
-  addedRoles: string[];
-  movedIdentifierIds?: string[];
-  movedEmployeePartyIds?: string[];
-  movedLegacyIds?: LegacyIdsByKind;
-}
+import { mergeSnapshotSchema } from "./dto/party-merge-snapshot.schema";
 
 const NO_LEGACY_IDS: LegacyIdsByKind = { lead: [], client: [], contact: [], organisation: [] };
 
@@ -56,7 +47,18 @@ export class PartyRevertService {
 
     if (!record) throw new NotFoundException("Merge not found");
 
-    const snapshot = record.snapshot as unknown as MergeSnapshot;
+    /**
+     * Parsed, not cast.
+     *
+     * This is the read half of the jsonb round-trip whose write half is
+     * `party-merge.service.ts`, and a cast over a stored shape cannot fail. A
+     * snapshot written by an older release used to deserialise into a lie: the
+     * two `updatePartyWithMirror`/`restorePartyWithMirror` writes below run
+     * FIRST and are not in a transaction, so `snapshot.movedContactIds.length`
+     * would then throw TypeError with both parties already rewritten and the
+     * merge row still open. Parsing raises before the first write instead.
+     */
+    const snapshot = mergeSnapshotSchema.parse(record.snapshot);
     const survivorBefore = snapshot.survivorBefore;
     const mergedBefore = snapshot.mergedBefore;
 

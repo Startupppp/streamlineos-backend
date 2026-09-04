@@ -48,6 +48,11 @@ describe("NotificationPreferencesService — preference rule projection", () => 
       { assertKnown: jest.fn(), listForOrg: jest.fn() } as unknown as ConstructorParameters<
         typeof NotificationPreferencesService
       >[1],
+    
+  {
+      withdrawChannels: jest.fn().mockResolvedValue(0),
+      withdrawChannel: jest.fn().mockResolvedValue(0),
+    } as unknown as ConstructorParameters<typeof NotificationPreferencesService>[2],
     );
     return { svc, captured };
   }

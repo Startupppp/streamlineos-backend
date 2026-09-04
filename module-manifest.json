@@ -318,6 +318,20 @@
     },
     {
       "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [],
+      "displayName": "Tasks",
+      "id": "tasks",
+      "ladder": "universal",
+      "moduleFolder": "tasks",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": false,
+      "route": null,
+      "schemaFolder": null
+    },
+    {
+      "administersNamespaces": [],
       "administrable": true,
       "cacheNamespaces": [
         "timesheets"

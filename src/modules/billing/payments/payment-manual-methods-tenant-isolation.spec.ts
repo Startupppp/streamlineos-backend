@@ -1,4 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { PaymentAuditService } from "./payment-audit.service";
 import { PaymentManualMethodsService } from "./payment-manual-methods.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -18,7 +20,7 @@ describe("PaymentManualMethodsService — cross-tenant isolation", () => {
   it("returns empty list for a different org (cross-tenant isolation)", async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = { query: { paymentManualMethods: { findMany, findFirst: jest.fn().mockResolvedValue(null) } } } as unknown as Db;
-    const mockAudit = { log: jest.fn() } as any;
+    const mockAudit = stubService<PaymentAuditService>({ log: jest.fn() });
     const svc = new PaymentManualMethodsService(db, mockAudit);
     const result = await svc.list(ATTACKER);
     expect(result).toHaveLength(0);
@@ -29,7 +31,7 @@ describe("PaymentManualMethodsService — cross-tenant isolation", () => {
   it("returns methods for the owning org (control — same-tenant)", async () => {
     const findMany = jest.fn().mockResolvedValue([METHOD_ROW]);
     const db = { query: { paymentManualMethods: { findMany, findFirst: jest.fn().mockResolvedValue(null) } } } as unknown as Db;
-    const mockAudit = { log: jest.fn() } as any;
+    const mockAudit = stubService<PaymentAuditService>({ log: jest.fn() });
     const svc = new PaymentManualMethodsService(db, mockAudit);
     const result = await svc.list(OWNER);
     expect(result).toHaveLength(1);

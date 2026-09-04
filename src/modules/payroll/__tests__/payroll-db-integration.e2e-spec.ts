@@ -408,6 +408,7 @@ d("Payroll DB Integration", () => {
       const storageSvc = new StorageService(
         {} as unknown as MediaCompressionService,
         storageConfig,
+        { isKeyBlocked: async () => false },
       );
       const svc = new BatchCreatorService(
         db,
@@ -572,6 +573,7 @@ d("Payroll DB Integration", () => {
       const storageSvc = new StorageService(
         {} as unknown as MediaCompressionService,
         storageConfig,
+        { isKeyBlocked: async () => false },
       );
       const svc = new PayoutBatchesService(
         db,
@@ -590,6 +592,7 @@ d("Payroll DB Integration", () => {
       const storageSvc = new StorageService(
         {} as unknown as MediaCompressionService,
         storageConfig,
+        { isKeyBlocked: async () => false },
       );
       const svc = new PayoutBatchesService(
         db,

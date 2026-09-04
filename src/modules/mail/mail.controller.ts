@@ -134,7 +134,7 @@ export class MailController {
     @Body() body: ReplyMailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.mail.replyMail(u.orgId, u.userId, body.accountId, body.messageId, body.threadId, body.bodyHtml, body.cc);
+    await this.mail.replyMail(u.orgId, u.userId, body.accountId, body.messageId, body.threadId, body.bodyHtml, body.cc, body.to);
     this.audit.log({ action: "mail.reply", userId: u.userId, orgId: u.orgId, metadata: { accountId: body.accountId, messageId: body.messageId } });
     return { sent: true };
   }

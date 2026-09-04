@@ -302,7 +302,9 @@ export class StorageController {
       return;
     }
 
-    const signedUrl = await this.storage.getFileUrl(orgId, fileKey, expiresIn);
+    const signedUrl = await this.storage.getFileUrl(orgId, fileKey, expiresIn, undefined, {
+      preauthorized: true,
+    });
     res.json({ url: signedUrl });
   }
 
@@ -326,7 +328,16 @@ export class StorageController {
 
     const stream = await this.openStream(u.orgId, keyParam, "Not found");
     res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
-    res.setHeader("Cache-Control", "private, max-age=86400, immutable");
+    /**
+     * `immutable` told the browser not to revalidate for a day, which outlives
+     * both a replacement of the object under the same key and a revocation of
+     * the permission that `assertKeyReadable` just checked — the revoked viewer
+     * keeps serving the image from its own cache and no further request reaches
+     * this handler. `Vary` is the companion: the bearer token is the only thing
+     * separating two viewers of the same URL.
+     */
+    res.setHeader("Cache-Control", "private, max-age=60, must-revalidate");
+    res.setHeader("Vary", "Authorization, Cookie");
     this.pipe(stream.body, res);
   }
 

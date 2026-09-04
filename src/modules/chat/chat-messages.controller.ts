@@ -113,11 +113,12 @@ export class ChatMessagesController {
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams, body: editMessageSchema })
   edit(
+    @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
     @Body() body: EditMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.moderation.edit(messageId, u.userId, u.orgId, body.content);
+    return this.moderation.edit(messageId, channelId, u.userId, u.orgId, body.content);
   }
 
   @ApiOperation({ summary: "Soft-delete a message" })
@@ -126,10 +127,11 @@ export class ChatMessagesController {
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams })
   remove(
+    @Param("channelId", ParseIntPipe) channelId: number,
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.moderation.remove(messageId, u.userId, u.isOrgOwner, u.orgId);
+    return this.moderation.remove(messageId, channelId, u.userId, u.isOrgOwner, u.orgId);
   }
 
   @ApiOperation({ summary: "Add an emoji reaction to a message (idempotent)" })

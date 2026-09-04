@@ -162,8 +162,12 @@ async function buildService(opts: {
 
   mockRunOutsideTenantContext.mockImplementation((fn) => fn());
   mockWithIdentity.mockImplementation((_db, _userId, fn) => {
-    const countRow = [{ n: otherActiveMemberships }];
-    const whereFn = jest.fn().mockResolvedValue(countRow);
+    // PRD-C073: the "is there another active membership?" probe is a bounded
+    // `select({ one: sql1 }) ... .limit(1)`, not an unbounded count(), so the double
+    // returns ROWS — one when another membership exists, none when it does not.
+    const rows = Array.from({ length: Math.min(otherActiveMemberships, 1) }, () => ({ one: 1 }));
+    const limitFn = jest.fn().mockResolvedValue(rows);
+    const whereFn = jest.fn().mockReturnValue({ limit: limitFn });
     const innerJoinFn = jest.fn().mockReturnValue({ where: whereFn });
     const fromFn = jest.fn().mockReturnValue({ innerJoin: innerJoinFn });
     const selectFn = jest.fn().mockReturnValue({ from: fromFn });

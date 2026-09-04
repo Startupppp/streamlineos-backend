@@ -8,7 +8,7 @@ import { LEGACY_CELL_ID } from "../../common/region/placement";
 import { cellPrefixed } from "../../common/cell-transport/cell-channel-namespace";
 
 const CHAT_TOKEN_TTL_MS = 3_600 * 1_000;
-const MAX_CAPABILITY_CHANNELS = 500;
+export const MAX_CAPABILITY_CHANNELS = 500;
 
 @Injectable()
 export class AblyService {
@@ -33,6 +33,19 @@ export class AblyService {
     return cellPrefixed(this.cellId, `chat:${orgId}:${channelId}`);
   }
 
+  /**
+   * The org-wide chat presence channel.
+   *
+   * It is NOT one of the numbered `chat:{org}:{id}` channels: it carries no messages, only the
+   * presence set, so it is granted `subscribe` + `presence` and never `publish` or `history`.
+   * `presence` is the op Ably requires to ENTER a presence set — `subscribe` alone only reads it —
+   * which is why `useChatPresence`'s `presence.enter` was refused for as long as this key was
+   * absent from the capability map, silently, because the hook swallows the rejection.
+   */
+  presenceChannelName(orgId: string): string {
+    return cellPrefixed(this.cellId, `chat:${orgId}:presence`);
+  }
+
   createChatTokenRequest(
     clientId: string,
     orgId: string,
@@ -53,6 +66,7 @@ export class AblyService {
       [cellPrefixed(this.cellId, `huddle-signal:${orgId}:*:${clientId}`)]: [
         "subscribe",
       ],
+      [this.presenceChannelName(orgId)]: ["subscribe", "presence"],
     };
     for (const channelId of channelIds.slice(0, MAX_CAPABILITY_CHANNELS)) {
       capability[cellPrefixed(this.cellId, `chat:${orgId}:${channelId}`)] = [

@@ -7,6 +7,7 @@ import {
 import { z } from "zod";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
+import { outboundTraceHeaders } from "../outbound/call-provider";
 
 const turnstileResponseSchema = z.object({
   success: z.boolean(),
@@ -42,6 +43,7 @@ export class TurnstileService {
         "https://challenges.cloudflare.com/turnstile/v0/siteverify",
         {
           method: "POST",
+          headers: outboundTraceHeaders(),
           body,
           signal: AbortSignal.timeout(5000),
         },

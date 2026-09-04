@@ -6,14 +6,17 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { NotificationPreferencesService } from "./notification-preferences.service";
 import { NotificationPreferenceRulesService } from "./notification-preference-rules.service";
+import { NotificationConsentService } from "./notification-consent.service";
 import { preferenceRuleSchema, type PreferenceRuleBody } from "./dto/preference-rule.schemas";
 import {
   updatePreferenceSchema,
   eventPreferenceSchema,
   createSuppressionSchema,
+  recordConsentSchema,
   type UpdatePreferenceInput,
   type EventPreferenceInput,
   type CreateSuppressionInput,
+  type RecordConsentInputDto,
 } from "./dto/preference.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
@@ -28,6 +31,7 @@ export class NotificationPreferencesController {
   constructor(
     private readonly preferences: NotificationPreferencesService,
     private readonly rules: NotificationPreferenceRulesService,
+    private readonly consents: NotificationConsentService,
   ) {}
 
   @Get()
@@ -110,5 +114,27 @@ export class NotificationPreferencesController {
   @Validate({ params: suppressionIdParams })
   removeSuppression(@Param("suppressionId", ParseIntPipe) suppressionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.preferences.removeSuppression(u.orgId, u.userId, suppressionId);
+  }
+
+  /**
+   * COMP-003. The consent surface. SMS and WhatsApp do not route without a GRANTED
+   * row here — a preference toggle is a setting, and this is the record of
+   * agreement that a setting cannot stand in for.
+   */
+  @Get("consents")
+  @Universal()
+  listConsents(@CurrentUser() u: CurrentUserContext) {
+    return this.consents.list(u.orgId, actingMembershipId(u.principal));
+  }
+
+  @Put("consents")
+  @Universal()
+  @HttpCode(200)
+  @Validate({ body: recordConsentSchema })
+  recordConsent(
+    @Body() body: RecordConsentInputDto,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.consents.record(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 }

@@ -193,6 +193,71 @@ export const BUDGETS = [
     ],
   },
   {
+    /**
+     * `GET /me/inbox/unified` — `UnifiedInboxService.fetchNotifications`.
+     *
+     * PRD-C145 names the Inbox list path explicitly, and until now nothing measured it: the
+     * unified inbox had no route budget, no benchmark and no read-cost budget, so its ceiling
+     * was assumed rather than enforced. It is NOT the same statement as `notifications-list` —
+     * it carries the actor LEFT JOIN to `users` and, unlike that budget, has no `created_at`
+     * window, so it walks every monthly partition of `notifications` through Merge Append
+     * rather than the two or three a window reaches.
+     *
+     * The recipient predicate is `membership_id`, matching `idx_notifications_list_cursor`
+     * `(org_id, membership_id, id DESC) WHERE deleted_at IS NULL AND archived_at IS NULL`.
+     * Keyed on `user_id` the same read measured 2,043 blocks and grew with the tenant; the
+     * seq-scan assertion is what keeps it from drifting back.
+     */
+    id: "inbox-unified-notifications-page",
+    ceiling: 5_000,
+    minRows: 100,
+    maxScanRows: 2_000,
+    rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
+    sql: `
+      SELECT n.id, n.title, n.message, n.is_read, n.category, n.source_module, n.link,
+             n.created_at, u.id AS actor_user_id, u.name AS actor_name, u.image AS actor_image
+      FROM notifications n
+      LEFT JOIN users u ON u.id = n.actor_user_id
+      WHERE n.org_id = $1 AND n.membership_id = $2
+        AND n.deleted_at IS NULL AND n.archived_at IS NULL
+      ORDER BY n.id DESC
+      LIMIT 50`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "notifications" },
+    ],
+  },
+  {
+    /**
+     * `GET /me/inbox/unified/count` — `UnifiedInboxService.countNotificationUnread`. The
+     * unread/count half of the same PRD-C145 clause, and the twin of a defect already fixed
+     * once on `GET /notifications/unread-count`, which measured 10,234 blocks on `user_id`
+     * and 16 on `membership_id`. The badge is issued on every authenticated page load, so an
+     * unenforced ceiling here is the most expensive kind.
+     */
+    id: "inbox-unified-unread-count",
+    ceiling: 3_000,
+    minRows: 100,
+    /**
+     * A COUNT has no LIMIT to bound it, so `maxScanRows` is the only bound this budget can
+     * carry — without one the entry declared a block ceiling and nothing about plan shape.
+     * Keyed on `membership_id` the plan touches 0 rows on the reference tenant; keyed on
+     * `user_id` it touched 2,046 across the monthly partitions at 10,234 blocks. 500 admits
+     * a real unread backlog and fails that regression.
+     */
+    maxScanRows: 500,
+    rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
+    sql: `
+      SELECT count(*)::int
+      FROM notifications
+      WHERE org_id = $1 AND membership_id = $2
+        AND is_read = false AND deleted_at IS NULL AND archived_at IS NULL`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "notifications" },
+    ],
+  },
+  {
     id: "chat-channel-list",
     ceiling: 8_000,
     minRows: 50,
@@ -252,6 +317,81 @@ export const BUDGETS = [
       // seed's two 500-member channels being ordered by joined_at with no matching index prefix;
       // it is inside the ceiling and is recorded here rather than silently tolerated.
       { kind: "forbid-seq-scan", relation: "chat_channel_members" },
+    ],
+  },
+  {
+    /**
+     * `GET /chat/ably-token` and `GET /support/ably-token` —
+     * `ChatChannelListService.listMemberChannelIds`, the only read either token route makes.
+     *
+     * PRD-C145 names the realtime-token paths, and they had no budget of any kind: no entry
+     * here, no benchmark and no key in contracts/route-budgets.json matching /ably|token/.
+     * The read used to have no LIMIT at all — `AblyService.createChatTokenRequest` grants at
+     * most `MAX_CAPABILITY_CHANNELS` (500) of whatever it is handed, so a member of 50,000
+     * channels paid for 50,000 rows on every token mint to have 49,500 discarded in memory.
+     * `maxScanRows` is what pins that: at 600 it admits the 501 rows the bounded read may
+     * legitimately touch and fails the moment the LIMIT is removed again.
+     *
+     * The seq-scan assertion names `chat_channel_members` and NOT `chat_channels`, for the
+     * same reason `chat-channel-list` gives: memberships are the growing side (thousands per
+     * tenant) while `chat_channels` is 56 rows over 2 pages on this seed, where a sequential
+     * read is the planner's correct choice and asserting against it would pin table size
+     * rather than plan shape.
+     */
+    id: "chat-realtime-token-channel-ids",
+    ceiling: 4_000,
+    minRows: 50,
+    maxScanRows: 600,
+    rowCountSql: `SELECT count(*)::int FROM chat_channels WHERE org_id = $1 AND is_archived = false`,
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
+    sql: `
+      SELECT chat_channels.id
+      FROM chat_channel_members
+      INNER JOIN chat_channels ON chat_channels.id = chat_channel_members.channel_id
+      WHERE chat_channels.org_id = $1
+        AND chat_channel_members.membership_id = $2
+        AND chat_channels.is_archived = false
+      LIMIT 501`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "chat_channel_members" },
+    ],
+  },
+  {
+    /**
+     * `GET /support/ably-token` — `SupportRealtimeService.createTokenRequest`, the scoped
+     * branch. The chat token route and this one are two DIFFERENT statements against two
+     * different tables, so `chat-realtime-token-channel-ids` does not cover it: a caller
+     * whose `support:tickets:view` DataScope is narrower than `all` gets one Ably channel
+     * per ticket it can see, read here from `support_tickets` by assignee membership.
+     *
+     * PRD-C145 names the realtime-token paths and both of them were unbudgeted. The read is
+     * already bounded at `MAX_SCOPED_CHANNELS` (200), and `maxScanRows: 300` is what pins
+     * that: it admits the rows a bounded lookup may legitimately touch and fails the moment
+     * the LIMIT or the covering index goes away.
+     *
+     * The seq-scan assertion names `support_tickets` — the growing side, 3,000 rows on this
+     * seed — and the plan reaches it through `idx_support_tickets_org_assignee_actor`
+     * `(org_id, assignee_membership_id, …)`, driven by a single-row index lookup on
+     * `organization_members`. Keyed without the membership subselect the same read is a scan
+     * of every ticket in the tenant.
+     */
+    id: "support-realtime-token-ticket-ids",
+    ceiling: 4_000,
+    minRows: 100,
+    maxScanRows: 300,
+    rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT id
+      FROM support_tickets
+      WHERE org_id = $1
+        AND assignee_membership_id IN (
+          SELECT id FROM organization_members
+          WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE'
+        )
+      LIMIT 200`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "support_tickets" },
     ],
   },
   {

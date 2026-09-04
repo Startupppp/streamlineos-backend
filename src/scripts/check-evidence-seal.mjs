@@ -20,6 +20,25 @@
  * evidence directory, which is the same vacuity trap as a lookup table that
  * matches nothing.
  *
+ * ---------------------------------------------------------------------------
+ * 2026-09-04 (v2 ticket 30) — A FIFTH, one level down: **a seal that attests to
+ * nothing must not read as verified.**
+ *
+ * The manifest reader was `manifest.hashes ?? manifest.files ?? {}` — a bare
+ * fallback to an empty object. Any manifest whose file list sat under a key it
+ * did not recognise resolved to zero sealed files, and zero of zero files match,
+ * so the seal printed `OK … 0/0 files match` and the run exited 0. The aggregate
+ * floor could not catch it either: MIN_SEALED_FILES existed only inside the
+ * self-test, and the other seals' 80 files satisfied it whatever any one seal
+ * did. Reproduced against a manifest listing two files under `artifacts` that do
+ * not exist on disk: `2 seal(s) verified · 1/1 sealed files match · 0 broken`,
+ * exit 0.
+ *
+ * So the reader now NORMALISES the shapes that exist (`hashes`/`files` as a map,
+ * `artifacts`/`files` as an array of `{file, sha256}`), and anything it cannot
+ * recognise is BROKEN by name and by key list rather than empty. A recognised
+ * but EMPTY seal is broken too: attesting to nothing is not the same as holding.
+ *
  * Flags:
  *   --self-test          fixture-driven assertions against a scratch tree
  *   --root=<dir>         verify the seals under <dir> instead of the workspace
@@ -28,6 +47,7 @@
  *   0 every seal holds · 1 a seal is broken · 2 nothing to verify (INCONCLUSIVE)
  */
 
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -42,6 +62,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { WORKSPACE_ROOT, workspaceAvailable, workspaceUnreachableReason } from "./check-repo-paths.mjs";
 
 const SELF_TEST = process.argv.includes("--self-test");
@@ -113,6 +134,53 @@ export function topLevelFiles(dir) {
 }
 
 /**
+ * Resolve a manifest to `{ file -> sha256 }`, or to `null` when its shape is not
+ * one this gate understands.
+ *
+ * `null` is the whole point. The previous reader fell back to `{}`, which is
+ * indistinguishable from a seal covering nothing — and a seal covering nothing
+ * passes every check below it. Two shapes exist in the tree and both are
+ * accepted; a third one is a defect to report, never a silent empty.
+ */
+export function normaliseSealHashes(manifest) {
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest))
+    return { hashes: null, shape: null };
+
+  const asMap = (value) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+    const out = {};
+    for (const [file, digest] of Object.entries(value)) {
+      if (typeof file !== "string" || file === "" || typeof digest !== "string" || digest === "") return null;
+      out[file] = digest;
+    }
+    return out;
+  };
+
+  const asList = (value) => {
+    if (!Array.isArray(value) || value.length === 0) return null;
+    const out = {};
+    for (const entry of value) {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const file = entry.file ?? entry.path ?? entry.name;
+      const digest = entry.sha256 ?? entry.hash ?? entry.digest;
+      if (typeof file !== "string" || file === "" || typeof digest !== "string" || digest === "") return null;
+      out[file] = digest;
+    }
+    return out;
+  };
+
+  for (const key of ["hashes", "files"]) {
+    const map = asMap(manifest[key]);
+    if (map !== null) return { hashes: map, shape: key };
+  }
+  for (const key of ["artifacts", "files", "entries"]) {
+    const list = asList(manifest[key]);
+    if (list !== null) return { hashes: list, shape: `${key}[]` };
+  }
+  return { hashes: null, shape: null };
+}
+
+/**
  * Verify one seal. Returns every way it can be broken, separately, so the report
  * says which of the three failure modes occurred rather than "mismatch".
  */
@@ -122,10 +190,34 @@ export function verifySeal(sealPath, declaredUnsealed = []) {
   try {
     manifest = JSON.parse(readFileSync(sealPath, "utf8"));
   } catch (err) {
-    return { sealPath, unreadable: String(err), changed: [], missing: [], unsealed: [], matched: 0 };
+    return {
+      sealPath,
+      unreadable: String(err),
+      unrecognised: null,
+      changed: [],
+      missing: [],
+      unsealed: [],
+      matched: 0,
+      sealedCount: 0,
+      shape: null,
+    };
   }
 
-  const hashes = manifest.hashes ?? manifest.files ?? {};
+  const { hashes, shape } = normaliseSealHashes(manifest);
+  if (hashes === null) {
+    const keys = manifest !== null && typeof manifest === "object" ? Object.keys(manifest) : [];
+    return {
+      sealPath,
+      unreadable: null,
+      unrecognised: `the seal declares no recognisable file list (keys: ${keys.length ? keys.join(", ") : "none"})`,
+      changed: [],
+      missing: [],
+      unsealed: [],
+      matched: 0,
+      sealedCount: 0,
+      shape: null,
+    };
+  }
   const sealedNames = Object.keys(hashes);
   const changed = [];
   const missing = [];
@@ -146,7 +238,17 @@ export function verifySeal(sealPath, declaredUnsealed = []) {
   const allowed = new Set(declaredUnsealed);
   const unsealed = topLevelFiles(dir).filter((f) => !sealedSet.has(f) && !allowed.has(f));
 
-  return { sealPath, unreadable: null, changed, missing, unsealed, matched, sealedCount: sealedNames.length };
+  return {
+    sealPath,
+    unreadable: null,
+    unrecognised: null,
+    changed,
+    missing,
+    unsealed,
+    matched,
+    sealedCount: sealedNames.length,
+    shape,
+  };
 }
 
 function runSelfTest() {
@@ -227,6 +329,161 @@ function runSelfTest() {
     rmSync(fixtureRoot, { recursive: true, force: true });
   }
 
+  // ---------------------------------------------------------------------------
+  // 2026-09-04 (v2 ticket 30) — the vacuity class, at the unit level and then
+  // END TO END through the real exit code. The unit assertions alone would not
+  // have caught the original defect: `verifySeal` returned matched=0 of 0 and
+  // every caller read that as success.
+  // ---------------------------------------------------------------------------
+
+  assert(
+    "a `hashes` map is recognised",
+    normaliseSealHashes({ hashes: { "a.txt": "aa" } }).shape === "hashes",
+  );
+  assert(
+    "a `files` map is recognised",
+    normaliseSealHashes({ files: { "a.txt": "aa" } }).shape === "files",
+  );
+  assert(
+    "an `artifacts: [{file, sha256}]` LIST is normalised into the hash map — the shape the " +
+      "data-catalogue seal ships and the reader silently discarded",
+    (() => {
+      const { hashes, shape } = normaliseSealHashes({
+        artifacts: [
+          { file: "catalogue.csv", sha256: "deadbeef" },
+          { file: "policy.md", sha256: "cafebabe" },
+        ],
+      });
+      return shape === "artifacts[]" && hashes?.["catalogue.csv"] === "deadbeef" && Object.keys(hashes).length === 2;
+    })(),
+  );
+  assert(
+    "a manifest whose file list sits under an UNRECOGNISED key resolves to null, not to {}",
+    normaliseSealHashes({ algorithm: "sha256", attests: { "a.txt": "aa" } }).hashes === null,
+  );
+  assert("a non-object manifest resolves to null", normaliseSealHashes(null).hashes === null);
+  assert("an array manifest resolves to null", normaliseSealHashes([]).hashes === null);
+  assert(
+    "a malformed list entry ({file} with no digest) resolves to null rather than a partial map",
+    normaliseSealHashes({ artifacts: [{ file: "a.txt" }] }).hashes === null,
+  );
+
+  // --- live path, as a child process, so the assertion is on the EXIT CODE ---
+  const SCRIPT = fileURLToPath(import.meta.url);
+  const runLive = (root) => {
+    try {
+      const stdout = execFileSync(process.execPath, [SCRIPT, `--root=${root}`], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return { status: 0, out: stdout };
+    } catch (err) {
+      return { status: err.status ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
+    }
+  };
+
+  const sealDir = (dir, names) => {
+    const hashes = {};
+    for (const n of names) hashes[n] = sha256File(join(dir, n));
+    writeFileSync(join(dir, SEAL_FILENAME), JSON.stringify({ sourceDir: dir, fileCount: names.length, hashes }, null, 2));
+  };
+
+  const buildTree = (label, perDir, mutate) => {
+    const root = mkdtempSync(join(tmpdir(), `evidence-seal-${label}-`));
+    const evidenceDir = join(root, "evidence");
+    const nestedDir = join(evidenceDir, "bootstrap");
+    mkdirSync(nestedDir, { recursive: true });
+    const outer = [];
+    const inner = [];
+    for (let i = 0; i < perDir; i++) {
+      const a = `a${i}.log`;
+      const b = `b${i}.log`;
+      writeFileSync(join(evidenceDir, a), `alpha ${i}\n`);
+      writeFileSync(join(nestedDir, b), `bravo ${i}\n`);
+      outer.push(a);
+      inner.push(b);
+    }
+    // The three files DECLARED_UNSEALED names, so a fixture root exercises that
+    // check rather than tripping its staleness rule.
+    for (const d of DECLARED_UNSEALED) writeFileSync(join(evidenceDir, d.file), `${d.file}\n`);
+    sealDir(evidenceDir, outer);
+    sealDir(nestedDir, inner);
+    if (mutate !== undefined) mutate(evidenceDir);
+    return { root, evidenceDir };
+  };
+
+  const scratchTrees = [];
+  try {
+    const healthy = buildTree("healthy", 12);
+    scratchTrees.push(healthy.root);
+    const healthyRun = runLive(healthy.evidenceDir);
+    assert("CONTROL: a healthy fixture tree exits 0", healthyRun.status === 0);
+    assert("CONTROL: and says so", healthyRun.out.includes("every evidence seal holds"));
+
+    // The exact fixture that reproduced the defect: a seal declaring two files
+    // under `artifacts`, neither of which exists on disk. At head this printed
+    // `OK ... 0/0 files match` and the run exited 0.
+    const vacuous = buildTree("vacuous", 12, (evidenceDir) => {
+      const dir = join(evidenceDir, "vacuous");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, SEAL_FILENAME),
+        JSON.stringify({
+          algorithm: "sha256",
+          covers: "the production data catalogue",
+          artifacts: [
+            { file: "catalogue.csv", sha256: "deadbeef" },
+            { file: "policy.md", sha256: "cafebabe" },
+          ],
+        }),
+      );
+    });
+    scratchTrees.push(vacuous.root);
+    const vacuousRun = runLive(vacuous.evidenceDir);
+    assert(
+      "a seal attesting to files that do not exist FAILS the run — it used to read as 0/0 and pass",
+      vacuousRun.status === 1,
+    );
+    assert("and both attested files are named as MISSING", vacuousRun.out.includes("MISSING  catalogue.csv"));
+
+    // A manifest this gate cannot understand is BROKEN, not empty.
+    const mystery = buildTree("mystery", 12, (evidenceDir) => {
+      const dir = join(evidenceDir, "mystery");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, SEAL_FILENAME), JSON.stringify({ algorithm: "sha256", attests: { "a.txt": "aa" } }));
+    });
+    scratchTrees.push(mystery.root);
+    const mysteryRun = runLive(mystery.evidenceDir);
+    assert("a seal in an unrecognised shape FAILS the run", mysteryRun.status === 1);
+    assert(
+      "and the report names the keys it did find, so the shape can be fixed",
+      mysteryRun.out.includes("no recognisable file list") && mysteryRun.out.includes("attests"),
+    );
+
+    // An explicitly empty seal. Recognised shape, zero files, still not a pass.
+    const empty = buildTree("empty", 12, (evidenceDir) => {
+      const dir = join(evidenceDir, "empty");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, SEAL_FILENAME), JSON.stringify({ algorithm: "sha256", hashes: {} }));
+    });
+    scratchTrees.push(empty.root);
+    const emptyRun = runLive(empty.evidenceDir);
+    assert("a seal covering zero files FAILS the run", emptyRun.status === 1);
+    assert("and says it attests to nothing", emptyRun.out.includes("attests to nothing"));
+
+    // The aggregate floor, now in the live path rather than only in here.
+    const shrunk = buildTree("shrunk", 2);
+    scratchTrees.push(shrunk.root);
+    const shrunkRun = runLive(shrunk.evidenceDir);
+    assert(
+      `a tree covering fewer than ${MIN_SEALED_FILES} files is INCONCLUSIVE (exit 2), never a pass`,
+      shrunkRun.status === 2,
+    );
+    assert("and it is not reported as a clean run", !shrunkRun.out.includes("every evidence seal holds"));
+  } finally {
+    for (const t of scratchTrees) rmSync(t, { recursive: true, force: true });
+  }
+
   // The real tree, so a moved evidence directory fails here too.
   if (workspaceAvailable) {
     const realSeals = findSeals(join(WORKSPACE_ROOT, EVIDENCE_REL));
@@ -284,6 +541,33 @@ for (const sealPath of seals) {
     continue;
   }
 
+  // A manifest whose file list this gate cannot find. Reading it as an empty
+  // seal is how a document attesting to two files that do not exist printed
+  // `OK — 0/0 files match` and exited 0.
+  if (result.unrecognised !== null) {
+    console.error(`BROKEN  ${sealRel} — ${result.unrecognised}.`);
+    console.error(
+      "  A seal whose shape this gate does not understand is not an empty seal. Write the file " +
+        "list under `hashes` (a map) or `artifacts` (a list of {file, sha256}), or teach " +
+        "normaliseSealHashes the new shape — do not leave it reading as nothing.",
+    );
+    broken++;
+    continue;
+  }
+
+  // A recognised but EMPTY seal. Zero of zero files match, which is not the same
+  // as a seal that holds. This is an INVARIANT, not a tunable floor: the aggregate
+  // MIN_SEALED_FILES cannot catch it either way, because the other seals satisfy
+  // it whatever this one covers.
+  if (result.sealedCount === 0) {
+    console.error(
+      `BROKEN  ${sealRel} — the seal covers no files at all. A seal that attests to nothing ` +
+        "verifies nothing; delete it or re-run the sealer over the directory it claims to cover.",
+    );
+    broken++;
+    continue;
+  }
+
   const problems = result.changed.length + result.missing.length + result.unsealed.length;
   if (problems === 0) {
     console.log(`OK      ${sealRel} — ${result.matched}/${result.sealedCount} files match${declared.length ? `, ${declared.length} declared-unsealed` : ""}`);
@@ -314,6 +598,16 @@ if (stale.length > 0) {
 console.log(
   `\n${seals.length} seal(s) verified · ${totalMatched}/${totalSealed} sealed files match · ${broken} broken`,
 );
+
+// The aggregate floor, in the LIVE path. It existed only inside the self-test,
+// where it can only ever describe the tree the self-test happens to find.
+if (broken === 0 && totalSealed < MIN_SEALED_FILES) {
+  console.error(
+    `\nINCONCLUSIVE — ${seals.length} seal(s) cover only ${totalSealed} file(s) (floor ` +
+      `${MIN_SEALED_FILES}). "Every seal holds" over almost nothing proves almost nothing.`,
+  );
+  process.exit(2);
+}
 
 if (broken > 0) {
   console.error("A broken seal means the evidence no longer is what it was attested to be. Re-run the sealer only after establishing why it changed.");

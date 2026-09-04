@@ -78,6 +78,7 @@ describe("KbAskService — source citation re-verification", () => {
     retrieveTopSources: jest.fn(),
     retrieveAttachmentSnippets: jest.fn().mockResolvedValue(""),
     articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
+    articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
   };
 
   beforeEach(async () => {
@@ -235,6 +236,7 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
       ]),
       retrieveAttachmentSnippets: jest.fn().mockResolvedValue(""),
       articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
+      articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
     });
 
     const makeGatewayOk2 = () => ({
@@ -316,6 +318,7 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
         ]),
         retrieveAttachmentSnippets: jest.fn().mockResolvedValue(""),
         articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
+        articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
       };
 
       const mod = await Test.createTestingModule({

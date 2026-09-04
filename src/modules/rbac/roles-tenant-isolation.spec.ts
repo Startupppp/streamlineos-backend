@@ -1,5 +1,10 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import type { AuditService } from "../../common/audit/audit.service";
+import { stubService } from "../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../access/access.service";
+import type { RoleMemberService } from "./role-member.service";
+import type { RolePermissionService } from "./role-permission.service";
 import { RolesService } from "./roles.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -60,10 +65,10 @@ describe("RolesService — cross-tenant isolation", () => {
 
   it("returns empty roles for a different org (cross-tenant isolation)", async () => {
     const { db, whereCalls } = makeDb(null, []);
-    const mockAudit = { log: jest.fn() } as any;
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue({}) } as any;
-    const mockRolePerm = { getRolePermissions: jest.fn().mockResolvedValue([]) } as any;
-    const mockRoleMember = {} as any;
+    const mockAudit = stubService<AuditService>({ log: jest.fn() });
+    const mockAccess = stubService<AccessService>({ resolveUserPermissions: jest.fn().mockResolvedValue({}) });
+    const mockRolePerm = stubService<RolePermissionService>({ getRolePermissions: jest.fn().mockResolvedValue([]) });
+    const mockRoleMember = stubService<RoleMemberService>({});
     const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
     const result = await svc.getRoles(ATTACKER, { limit: 20 });
     expect(result.data).toHaveLength(0);
@@ -76,10 +81,10 @@ describe("RolesService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a role in a different org (cross-tenant isolation)", async () => {
     const { db } = makeDb(null);
-    const mockAudit = { log: jest.fn() } as any;
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue({}) } as any;
-    const mockRolePerm = {} as any;
-    const mockRoleMember = {} as any;
+    const mockAudit = stubService<AuditService>({ log: jest.fn() });
+    const mockAccess = stubService<AccessService>({ resolveUserPermissions: jest.fn().mockResolvedValue({}) });
+    const mockRolePerm = stubService<RolePermissionService>({});
+    const mockRoleMember = stubService<RoleMemberService>({});
     const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
     await expect(svc.getRole(ATTACKER, ROLE_ID)).rejects.toThrow(NotFoundException);
   });
@@ -87,10 +92,10 @@ describe("RolesService — cross-tenant isolation", () => {
   it("returns roles for the owning org (control — same-tenant)", async () => {
     const roleRow = { id: ROLE_ID, orgId: OWNER, name: "Member", slug: "MEMBER" };
     const { db } = makeDb(roleRow, [roleRow]);
-    const mockAudit = { log: jest.fn() } as any;
-    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue({}) } as any;
-    const mockRolePerm = { getRolePermissions: jest.fn().mockResolvedValue([]) } as any;
-    const mockRoleMember = {} as any;
+    const mockAudit = stubService<AuditService>({ log: jest.fn() });
+    const mockAccess = stubService<AccessService>({ resolveUserPermissions: jest.fn().mockResolvedValue({}) });
+    const mockRolePerm = stubService<RolePermissionService>({ getRolePermissions: jest.fn().mockResolvedValue([]) });
+    const mockRoleMember = stubService<RoleMemberService>({});
     const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
     const result = await svc.getRoles(OWNER, { limit: 20 });
     expect(result.data).toHaveLength(1);

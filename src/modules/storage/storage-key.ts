@@ -111,6 +111,36 @@ export function isForeignOrgKey(key: string, callerOrgId: string): boolean {
   return ownerOrgId !== null && ownerOrgId !== callerOrgId;
 }
 
+/**
+ * Shape check for an object key, independent of any storage client. It lives
+ * beside the tenant predicates because every ingestion route that stores a key
+ * the client chose has to run both, and a route that can only reach the check
+ * through `StorageService` ends up skipping it.
+ */
+export function isWellFormedStorageKey(key: string): boolean {
+  if (!key || key.length > 1024) return false;
+  if (key.includes("..") || key.includes("\\") || key.startsWith("/")) return false;
+  if (key.includes("\0")) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(key) || key.includes("?") || key.includes("#"))
+    return false;
+  return /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(key);
+}
+
+/**
+ * The predicate every key-ingestion route owes its tenant: a stored key must be
+ * well formed AND name the caller's own organisation. Storing an unconstrained
+ * client string turns the row into a pointer at whatever object the client
+ * spelled, and the read path then authorises the ROW and signs the key.
+ *
+ * `parseStorageKey` rather than a bare `startsWith` because a region that sets
+ * `R2_KEY_PREFIX` shifts the organisation one segment right, and a prefix check
+ * would reject that tenant's own legitimate keys.
+ */
+export function isOwnOrgStorageKey(key: string, orgId: string): boolean {
+  if (!isWellFormedStorageKey(key)) return false;
+  return parseStorageKey(key, orgId).ownerOrgId === orgId;
+}
+
 export function sanitizeFileName(fileName: string): string {
   const base = fileName.split(/[/\\]/).pop() ?? "";
   const cleaned = base

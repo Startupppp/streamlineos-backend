@@ -172,6 +172,21 @@ describe("MailMetadataService.listCached — indexed search", () => {
     expect(sql).not.toContain('"id" in');
   });
 
+  it("BITE: an EMPTY id list is the answer, not a fallback — a zero-row definer result must not re-derive it with three leading-wildcard ILIKEs", async () => {
+    const harness = makeDb([], []);
+
+    const page = await new MailMetadataService(harness.db).listCached(
+      MEMBERSHIP, ORG, ACCOUNT, "inbox", 10, "no-such-term",
+    );
+
+    expect(harness.execute).toHaveBeenCalledTimes(1);
+    const { sql } = renderWhere(harness.getWhere());
+    expect(sql).not.toContain("ilike");
+    expect(sql).toContain("false");
+    expect(page.hasData).toBe(false);
+    expect(page.messages).toEqual([]);
+  });
+
   it("falls back to ILIKE rather than 500ing when the helper function is missing", async () => {
     const harness = makeDb([row(5, "2027-01-05T00:00:00.000Z")]);
     (harness.execute as jest.Mock).mockRejectedValueOnce(

@@ -351,43 +351,62 @@ describe("payroll-setup — complexity filter (e2e)", () => {
 });
 
 describe("payroll-setup — seedPayrollTemplates idempotency (unit)", () => {
-  it("calling seedPayrollTemplates twice returns seeded=0 the second time", async () => {
-    const insertedKeys = new Set<string>();
-    const mockDb = {
-      query: {
-        payrollTemplates: {
-          findFirst: jest.fn(({ where: _where }: { where: unknown }): Promise<{ id: number } | null> => {
-            return Promise.resolve(null);
-          }),
-        },
-      },
-      insert: jest.fn(() => ({
-        values: jest.fn((vals: { key: string }) => {
-          insertedKeys.add(vals.key);
-          return Promise.resolve();
+  /**
+   * `seedPayrollTemplates` reads the already-seeded keys in ONE org-scoped
+   * query and writes the missing ones in ONE bulk insert. The store below is
+   * stateful on purpose: the second call reads back exactly what the first one
+   * wrote, so idempotency has to come from the seeder. Hand-feeding
+   * "row exists" on the second call would assert the mock instead.
+   */
+  function seedStore() {
+    const seededKeys = new Set<string>();
+    const insertedBatchSizes: number[] = [];
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: () =>
+            Promise.resolve([...seededKeys].map((key) => ({ key }))),
         }),
-      })),
+      }),
+      insert: () => ({
+        values: (rows: Array<{ key: string }>) => {
+          insertedBatchSizes.push(rows.length);
+          for (const row of rows) seededKeys.add(row.key);
+          return Promise.resolve();
+        },
+      }),
     };
-
-    const findFirstImpl = ({ where: _where }: { where: unknown }) => {
-      return Promise.resolve(null);
+    return {
+      seededKeys,
+      insertedBatchSizes,
+      db: db as unknown as Parameters<typeof seedPayrollTemplates>[0],
     };
-    const findFirstImplSecond = ({ where: _where }: { where: unknown }) => {
-      return Promise.resolve({ id: 1 });
-    };
+  }
 
-    mockDb.query.payrollTemplates.findFirst
-      .mockImplementation(findFirstImpl);
+  it("calling seedPayrollTemplates twice returns seeded=0 the second time", async () => {
+    const store = seedStore();
 
-    const first = await seedPayrollTemplates(mockDb as unknown as Parameters<typeof seedPayrollTemplates>[0]);
+    const first = await seedPayrollTemplates(store.db);
     expect(first.seeded).toBeGreaterThan(0);
     expect(first.skipped).toBe(0);
+    expect(store.seededKeys.size).toBe(first.seeded);
 
-    mockDb.query.payrollTemplates.findFirst
-      .mockImplementation(findFirstImplSecond);
-
-    const second = await seedPayrollTemplates(mockDb as unknown as Parameters<typeof seedPayrollTemplates>[0]);
+    const second = await seedPayrollTemplates(store.db);
     expect(second.seeded).toBe(0);
     expect(second.skipped).toBeGreaterThan(0);
+    expect(store.seededKeys.size).toBe(first.seeded);
+  });
+
+  it("writes every missing seed in a single insert, not one per seed", async () => {
+    const store = seedStore();
+
+    const first = await seedPayrollTemplates(store.db);
+
+    // One bulk insert. A per-seed loop here is the N+1 that 0edfcf713 removed.
+    expect(store.insertedBatchSizes).toEqual([first.seeded]);
+
+    const second = await seedPayrollTemplates(store.db);
+    expect(second.seeded).toBe(0);
+    expect(store.insertedBatchSizes).toEqual([first.seeded]);
   });
 });

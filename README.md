@@ -127,6 +127,8 @@ specific thing that would have to change first.
 | Outbox events retention | `POST /cron/outbox-events-retention-sweep` | daily | 1800s |
 | KB chat history purge | `POST /cron/kb-chat-history-purge` | daily | 600s |
 | KB chunk retention | `POST /cron/kb-chunk-retention-sweep` | daily | 600s |
+| KB telemetry retention | `POST /cron/kb-telemetry-retention-sweep` | daily | 600s |
+| KB trash purge | `POST /cron/kb-trash-purge` | daily | 300s |
 | Build webhook delivery retention | `POST /cron/build-retention-prune` | daily | 120s |
 | Notification partition detach/drop | `POST /cron/notifications-retention-detach` | daily | 300s |
 | GDPR subject-export artifact retention | `POST /cron/gdpr-export-artifact-retention` | hourly | 900s |

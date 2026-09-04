@@ -164,7 +164,18 @@ export class PayoutBatchesService {
     };
   }
 
-  async getFile(orgId: string, batchId: number) {
+  /**
+   * The bank file lists every payee's UNMASKED account number and IFSC. It used
+   * to leave the authenticated session as a one-hour presigned URL that the
+   * client opened in a new tab: the link outlived the screen, sat in browser
+   * history, needed no session to redeem, and carried no `Cache-Control`.
+   *
+   * It streams through the API instead — the shape
+   * `payroll-export.controller.ts` already uses — so possession of a URL is
+   * never possession of the file, and the only credential that opens it is the
+   * caller's own `payroll:bank:manage`.
+   */
+  async downloadFile(orgId: string, batchId: number) {
     const batch = await this.db
       .select({ id: payrollBankBatches.id, fileKey: payrollBankBatches.fileKey, batchNumber: payrollBankBatches.batchNumber })
       .from(payrollBankBatches)
@@ -175,8 +186,10 @@ export class PayoutBatchesService {
     if (!batch[0].fileKey || !this.storage.isConfigured())
       throw new NotFoundException("File not available for this batch");
 
-    const url = await this.storage.getFileUrl(orgId, batch[0].fileKey, 3600);
-    return { url, batchNumber: batch[0].batchNumber };
+    return {
+      file: await this.storage.getFileStream(orgId, batch[0].fileKey),
+      fileName: `${batch[0].batchNumber}.csv`,
+    };
   }
 
   async getBankDetails(orgId: string, employeeUserId: string, actorId: string) {

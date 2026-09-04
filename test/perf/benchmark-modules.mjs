@@ -22,6 +22,15 @@
  * an eleven-partition Append and is declared ORDINARY, because it is a plain paginated list and the
  * breach is the finding.
  *
+ * EVERY read-cost budget in the catalog is claimed by exactly one module. The five that were not —
+ * `inbox-unified-notifications-page`, `inbox-unified-unread-count`, `chat-realtime-token-channel-ids`,
+ * `support-realtime-token-ticket-ids` and `calendar-events-visible-batch` — are the unified-inbox and
+ * realtime-token paths PRD-C145 names. They existed in `read-cost-budgets.mjs` and were measured by
+ * that instrument, but being in no module kept them out of the manifest entirely, so the manifest
+ * carried no p95 for the very paths the criterion asks about. All five are declared ORDINARY:
+ * `calendar-events-visible-batch` is the slowest statement in the corpus and is still ordinary, per
+ * the rule below that a slow statement is not reclassified to make it pass.
+ *
  * SIX heavy-query ids are deliberately NOT claimed by any module:
  * `fanout-roles-semijoin-rewrite`, `read-section-page-union-rewrite`,
  * `membership-unread-count-equivalent`, `search-ticket-ilike-under-rls`, `search-ilike-under-rls`
@@ -54,6 +63,8 @@ export const MODULES = [
     readCostBudgets: {
       "notifications-list": O,
       "notifications-unread-count": O,
+      "inbox-unified-notifications-page": O,
+      "inbox-unified-unread-count": O,
     },
     heavyQueries: [
       "unread-count",
@@ -77,6 +88,7 @@ export const MODULES = [
       "chat-messages-page": O,
       "chat-channel-members": O,
       "chat-saved-messages": O,
+      "chat-realtime-token-channel-ids": O,
     },
     heavyQueries: [],
     concurrencyProbe: "chat-channel-list",
@@ -88,6 +100,7 @@ export const MODULES = [
     tables: ["calendar_events", "event_attendees"],
     readCostBudgets: {
       "dashboard-personal-calendar-events": O,
+      "calendar-events-visible-batch": O,
     },
     heavyQueries: [
       "export-calendar-range",
@@ -303,6 +316,7 @@ export const MODULES = [
     readCostBudgets: {
       "support-ticket-queue": O,
       "support-ticket-assigned-to-me": O,
+      "support-realtime-token-ticket-ids": O,
     },
     heavyQueries: [],
     concurrencyProbe: "support-ticket-queue",
@@ -360,6 +374,22 @@ export function validateModules(modules, knownReadCost, knownHeavy) {
     }
     if (!Object.prototype.hasOwnProperty.call(m.readCostBudgets ?? {}, m.concurrencyProbe))
       errors.push(`${m.id}: concurrencyProbe "${m.concurrencyProbe}" is not one of the module's read-cost budgets`);
+  }
+  /*
+    The direction that was NOT checked, and it is the one that loses coverage silently. Claiming a
+    benchmark that does not exist was already an error; leaving one unclaimed was not, so five
+    budgets — every unified-inbox and realtime-token path — sat in read-cost-budgets.mjs being
+    measured by that instrument while the manifest carried no entry, no class and no ceiling for
+    them. Nothing failed, the manifest simply described a smaller corpus than the catalog holds.
+    Heavy queries are exempt because six are deliberately unclaimed, named in the header above.
+  */
+  if (knownReadCost) {
+    for (const id of knownReadCost)
+      if (!seenBenchmark.has(id))
+        errors.push(
+          `read-cost budget "${id}" exists in read-cost-budgets.mjs but no module claims it, so the ` +
+            `manifest would carry no ceiling for it. Add it to the module that owns the path.`,
+        );
   }
   return errors;
 }

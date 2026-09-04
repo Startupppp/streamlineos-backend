@@ -20,6 +20,7 @@ function stub(): Stub & Record<string, jest.Mock> {
   return {
     fn,
     sweep: fn,
+    purgeExpiredTrash: fn,
     purgeExpiredConversations: fn,
     pruneStaleChunks: fn,
     pruneWebhookDeliveries: fn,
@@ -51,6 +52,8 @@ function buildScheduler(
     s[11] as never,
     s[12] as never,
     s[13] as never,
+    s[14] as never,
+    s[15] as never,
   );
 }
 
@@ -93,7 +96,13 @@ describe("CronRetentionSchedulerService — every declared sweep actually runs",
 
     const outcome = await service.tick();
 
-    expect(RETENTION_JOBS.length).toBe(16);
+    /*
+     * An anti-vacuity floor, not a budget: it exists so this test cannot pass over an
+     * empty declaration list. It moves UP as jobs are added and must never move down —
+     * 16 to 18 when kb-telemetry-retention-sweep was written and kb-trash-purge stopped
+     * being deliberately unscheduled (ticket 16, PRD-C134).
+     */
+    expect(RETENTION_JOBS.length).toBe(18);
     expect(outcome.considered).toBe(RETENTION_JOBS.length);
     expect(outcome.ran).toHaveLength(RETENTION_JOBS.length);
     expect(outcome.failed).toEqual([]);

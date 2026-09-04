@@ -2,11 +2,22 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { calendarEvents, calendarProviderSyncQueue, userIntegrationConnections } from "../../db/schema";
+import {
+  calendarEventExceptions,
+  calendarEvents,
+  calendarProviderSyncQueue,
+  userIntegrationConnections,
+} from "../../db/schema";
 import { forEachOrg } from "../../common/tenant";
 import type { ForEachOrgResult } from "../../common/tenant/for-each-org";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { ExternalCalendarSyncService, type PushConnection, type PushEventInput } from "./external-calendar-sync.service";
+import {
+  ExternalCalendarSyncService,
+  type PushConnection,
+  type PushEventInput,
+  type PushOccurrenceTarget,
+} from "./external-calendar-sync.service";
+import { ProviderCapabilityError } from "./external-event-normalizers";
 import { connectionOwnerPredicate } from "../integrations/core/connection-owner.predicate";
 import { providerSyncPayloadSchema } from "./dto/provider-sync.schemas";
 
@@ -85,7 +96,11 @@ export class CalendarProviderSyncSweepService {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         const attempts = row.attemptCount + 1;
-        const dead = attempts >= MAX_ATTEMPTS;
+        // A capability refusal cannot succeed on a later attempt, so it is dead on the
+        // first one. What matters is that it is dead RATHER than processed: the row used
+        // to fall through to the PROCESSED mark below, which mapState projects to
+        // `synced` over a provider copy that was never written.
+        const dead = err instanceof ProviderCapabilityError || attempts >= MAX_ATTEMPTS;
         const backoffMs = RETRY_BACKOFF_MS[Math.min(attempts, RETRY_BACKOFF_MS.length - 1)] ?? 1_800_000;
         const nextAttemptAt = dead ? null : new Date(now.getTime() + backoffMs);
         this.logger.error(
@@ -114,11 +129,22 @@ export class CalendarProviderSyncSweepService {
 
     const conn = await this.resolveConnection(row.orgId, row.connectionId, userId);
 
+    // Present only on an occurrence-scoped row, written by CalendarRecurrenceService.
+    // It turns the push below into an instance write instead of a series write.
+    const occurrenceStart = payload.occurrenceStart ? new Date(payload.occurrenceStart) : null;
+
     if (row.operation === "delete") {
       if (!row.externalEventId) return;
-      const result = await this.sync.pushDelete(userId, conn, row.externalEventId);
-      if (!result.success)
-        this.logger.warn(`calendar-provider-sync delete skipped for ${conn.toolkit}: ${result.reason}`);
+      const occurrenceTarget = occurrenceStart
+        ? await this.resolveOccurrenceTarget(row.orgId, row.eventId, occurrenceStart)
+        : undefined;
+      // A cancelled occurrence whose exception row is gone again — the cancel was undone
+      // locally — has nothing left to remove at the provider.
+      if (occurrenceStart && !occurrenceTarget) return;
+      const result = await this.sync.pushDelete(userId, conn, row.externalEventId, occurrenceTarget);
+      // Never a warn-and-return: that fell through to the PROCESSED mark and reported
+      // `synced` over a provider copy this delete never touched.
+      if (!result.success) throw new ProviderCapabilityError(result.reason);
       return;
     }
 
@@ -129,7 +155,7 @@ export class CalendarProviderSyncSweepService {
         where: and(eq(calendarEvents.id, eventId), eq(calendarEvents.orgId, row.orgId)),
         columns: {
           id: true, title: true, description: true, startDate: true, endDate: true,
-          allDay: true, externalEventId: true, localVersion: true,
+          allDay: true, externalEventId: true, localVersion: true, rrule: true,
         },
       }),
     );
@@ -143,6 +169,7 @@ export class CalendarProviderSyncSweepService {
       allDay: payload.allDay ?? eventRow.allDay,
       attendeeEmails: payload.attendeeEmails ?? [],
       addConference: payload.addConference ?? false,
+      rrule: payload.rrule ?? eventRow.rrule ?? null,
     };
 
     if (row.operation === "create") {
@@ -196,19 +223,97 @@ export class CalendarProviderSyncSweepService {
         row.eventId !== null &&
         row.eventLocalVersion !== null &&
         eventRow.localVersion > row.eventLocalVersion &&
-        await this.hasNewerPendingUpdateFor(row.orgId, row.eventId, row.id)
+        await this.hasNewerPendingUpdateFor(row.orgId, row.eventId, row.id, payload.occurrenceStart ?? null)
       ) return;
       const extId = row.externalEventId ?? eventRow.externalEventId;
       if (!extId) return;
+
+      if (occurrenceStart) {
+        const exception = await this.loadException(row.orgId, eventId, occurrenceStart);
+        // The exception was removed after the row was enqueued: the occurrence is back on
+        // the series' own schedule, so there is nothing occurrence-shaped left to push.
+        if (!exception) return;
+        if (exception.isCancelled) return;
+        const duration = eventRow.endDate.getTime() - eventRow.startDate.getTime();
+        const effectiveStart = exception.modifiedStart ?? occurrenceStart;
+        const effectiveEnd =
+          exception.modifiedEnd ?? new Date(effectiveStart.getTime() + duration);
+        const target: PushOccurrenceTarget = { nominalStart: occurrenceStart, allDay: eventRow.allDay };
+        const instanceResult = await this.sync.pushUpdate(
+          userId,
+          conn,
+          extId,
+          {
+            title: exception.modifiedTitle ?? eventRow.title,
+            description: eventRow.description ?? null,
+            startIso: effectiveStart.toISOString(),
+            endIso: effectiveEnd.toISOString(),
+            rrule: null,
+          },
+          target,
+        );
+        if (!instanceResult.success) throw new ProviderCapabilityError(instanceResult.reason);
+        return;
+      }
+
       const result = await this.sync.pushUpdate(userId, conn, extId, {
         title: eventRow.title,
         description: eventRow.description ?? null,
         startIso: eventRow.startDate.toISOString(),
         endIso: eventRow.endDate.toISOString(),
+        rrule: pushInput.rrule,
       });
-      if (!result.success)
-        this.logger.warn(`calendar-provider-sync update skipped for ${conn.toolkit}: ${result.reason}`);
+      // Same reason as the delete arm: a refusal that only logs is reported as `synced`.
+      if (!result.success) throw new ProviderCapabilityError(result.reason);
     }
+  }
+
+  /**
+   * Reads the exception row an occurrence-scoped job describes, in its own tenant
+   * transaction (see `resolveConnection` for why the ambient GUC is absent here).
+   */
+  private async loadException(orgId: string, eventId: number, occurrenceStart: Date) {
+    const rows = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx
+        .select({
+          isCancelled: calendarEventExceptions.isCancelled,
+          modifiedTitle: calendarEventExceptions.modifiedTitle,
+          modifiedStart: calendarEventExceptions.modifiedStart,
+          modifiedEnd: calendarEventExceptions.modifiedEnd,
+        })
+        .from(calendarEventExceptions)
+        .where(
+          and(
+            eq(calendarEventExceptions.orgId, orgId),
+            eq(calendarEventExceptions.eventId, eventId),
+            eq(calendarEventExceptions.occurrenceStart, occurrenceStart),
+          ),
+        )
+        .limit(1),
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Confirms the occurrence a cancel job names still has a cancelled exception row, and
+   * carries the `allDay` flag the provider's instance id is built from.
+   */
+  private async resolveOccurrenceTarget(
+    orgId: string,
+    eventId: number | null,
+    occurrenceStart: Date,
+  ): Promise<PushOccurrenceTarget | undefined> {
+    if (eventId === null) return undefined;
+    const rows = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx
+        .select({ allDay: calendarEvents.allDay })
+        .from(calendarEvents)
+        .where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.orgId, orgId)))
+        .limit(1),
+    );
+    const parent = rows[0];
+    if (!parent) return undefined;
+    return { nominalStart: occurrenceStart, allDay: parent.allDay };
   }
 
   /**
@@ -260,9 +365,26 @@ export class CalendarProviderSyncSweepService {
     return { id: row.id, toolkit: row.toolkit, composioConnectedAccountId: row.composioConnectedAccountId };
   }
 
-  private async hasNewerPendingUpdateFor(orgId: string, eventId: number, currentRowId: number): Promise<boolean> {
+  /**
+   * A later update supersedes this one only when it writes THE SAME provider object.
+   *
+   * Scoping this to the event alone was wrong once occurrence-scoped rows existed: a
+   * series edit queued after an occurrence edit writes a different object at the provider,
+   * so treating it as a supersession dropped the occurrence write and left that one
+   * occurrence permanently stale. A series row is superseded only by a series row, and an
+   * occurrence row only by a row naming the same occurrence.
+   */
+  private async hasNewerPendingUpdateFor(
+    orgId: string,
+    eventId: number,
+    currentRowId: number,
+    occurrenceStart: string | null,
+  ): Promise<boolean> {
     // Same reason as resolveConnection: calendar_provider_sync_queue is RLS-protected and
     // this runs outside forEachOrg's callback, so it needs its own tenant transaction.
+    const sameTarget = occurrenceStart
+      ? sql`${calendarProviderSyncQueue.payload} ->> 'occurrenceStart' = ${occurrenceStart}`
+      : sql`${calendarProviderSyncQueue.payload} ->> 'occurrenceStart' is null`;
     const rows = await runInNewTenantTransaction(this.db, orgId, (tx) =>
       tx
         .select({ id: calendarProviderSyncQueue.id })
@@ -274,6 +396,7 @@ export class CalendarProviderSyncSweepService {
             eq(calendarProviderSyncQueue.operation, "update"),
             inArray(calendarProviderSyncQueue.state, ["PENDING", "IN_FLIGHT"]),
             gt(calendarProviderSyncQueue.id, currentRowId),
+            sameTarget,
           ),
         )
         .limit(1),

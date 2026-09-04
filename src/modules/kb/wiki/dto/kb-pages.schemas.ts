@@ -57,8 +57,23 @@ export const lockPageSchema = z.object({
 }).strict();
 export type LockPageInput = z.infer<typeof lockPageSchema>;
 
+/**
+ * `GET /kb/pages/search` was a bare `q` answering a hard, undeclared `.limit(20)`. Twenty
+ * is a defensible ceiling for a rank-ordered typeahead — the 400th-best match for a prefix
+ * query is not a result anyone scrolls to — but a ceiling the caller cannot see or move is
+ * silent truncation: the response was a plain array, so a query matching 500 pages and one
+ * matching 20 were indistinguishable.
+ *
+ * The ceiling is now stated (`KB_PAGE_SEARCH_MAX_LIMIT`), the caller may ask for less, and
+ * the response says whether it was cut. This is deliberately a bounded top-N and NOT a
+ * cursor: paging a `ts_rank` ordering means re-ranking on every page, and a quick switcher
+ * that pages is a worse answer than one that tells you to type more.
+ */
+export const KB_PAGE_SEARCH_MAX_LIMIT = 20;
+
 export const searchPagesSchema = z.object({
   q: z.string().trim().max(200).default(""),
+  limit: z.coerce.number().int().min(1).max(KB_PAGE_SEARCH_MAX_LIMIT).default(KB_PAGE_SEARCH_MAX_LIMIT),
 }).strict();
 export type SearchPagesInput = z.infer<typeof searchPagesSchema>;
 

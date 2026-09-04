@@ -164,8 +164,7 @@ describe("HrSalaryStructuresService — cross-tenant isolation", () => {
   it("hides salary structures from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
-    const mockCache = { cached: jest.fn().mockImplementation((_k: string, fn: () => Promise<unknown>) => fn()) };
-    const svc = new HrSalaryStructuresService(db, mockAudit as never, mockCache as never);
+    const svc = new HrSalaryStructuresService(db, mockAudit as never);
     await svc.list(ATTACKER, undefined, "actor-1", false);
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
@@ -173,8 +172,7 @@ describe("HrSalaryStructuresService — cross-tenant isolation", () => {
   it("returns salary structures for owning org (control)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
-    const mockCache = { cached: jest.fn().mockImplementation((_k: string, fn: () => Promise<unknown>) => fn()) };
-    const svc = new HrSalaryStructuresService(db, mockAudit as never, mockCache as never);
+    const svc = new HrSalaryStructuresService(db, mockAudit as never);
     await svc.list(OWNER, undefined, "actor-1", false);
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });

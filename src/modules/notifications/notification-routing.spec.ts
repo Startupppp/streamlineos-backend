@@ -43,6 +43,9 @@ function baseCtx(over: Partial<RouteContext> = {}): RouteContext {
     orgPolicy: null,
     availableChannels: new Set<NotificationChannel>(["IN_APP", "EMAIL"]),
     suppressedChannels: new Map(),
+    // COMP-003: consent gates SMS and WHATSAPP only; this baseline routes neither,
+    // and the consent tests live in notification-consent-routing.spec.ts.
+    consentedChannels: new Set<NotificationChannel>(),
     ...over,
   };
 }

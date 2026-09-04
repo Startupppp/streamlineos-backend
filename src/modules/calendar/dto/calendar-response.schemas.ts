@@ -145,3 +145,87 @@ export const calendarRsvpResponseSchema = z.object({
 
 /** `CalendarService.deleteEvent`. */
 export const calendarDeleteEventResponseSchema = z.object({ deleted: z.boolean() });
+
+/**
+ * `calendarEventWireColumns` — `calendar.service.ts`, the projection `createEvent` and
+ * `updateEvent` now return.
+ *
+ * Both used to `.returning()` the whole 26-column `calendar_events` row. This is the
+ * 19 the client consumes plus `localVersion`; the nine internal/other-domain columns
+ * (`createdByMembershipId`, `reminder15MinSent`, `integrationConnectionId`,
+ * `externalEventId`, `agenda`, `postMeetingNotes`, `visibility`, `linkedDealId`,
+ * `linkedLeadId`) are no longer on the wire. NOT `.strict()`, per the file header.
+ */
+export const calendarMutatedEventSchema = z.object({
+  id: z.number().int(),
+  orgId: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  location: z.string().nullable(),
+  meetingUrl: z.string().nullable(),
+  startDate: wireDate(),
+  endDate: wireDate(),
+  timezone: z.string(),
+  allDay: z.boolean(),
+  color: z.string().nullable(),
+  category: z.string(),
+  entityType: z.string().nullable(),
+  entityId: z.string().nullable(),
+  rrule: z.string().nullable(),
+  recurrenceEnd: wireDate().nullable(),
+  localVersion: z.number().int(),
+  createdAt: wireDate(),
+  updatedAt: wireDate(),
+});
+
+/** `CalendarService.createEvent` — the whole 201 body, not just the event. */
+export const calendarCreateEventResponseSchema = z.object({
+  event: calendarMutatedEventSchema,
+  /** `OooConflict` — `calendar.types.ts:69`; the leave dates are date-only strings. */
+  oooConflicts: z.array(
+    z.object({
+      userId: z.string(),
+      userName: z.string().nullable(),
+      leaveStart: z.string(),
+      leaveEnd: z.string(),
+    }),
+  ),
+  /** `CalendarOccurrence` — `calendar-occurrence.service.ts:17`. */
+  eventConflicts: z.array(
+    z.object({
+      eventId: z.number().int(),
+      title: z.string(),
+      startDate: wireDate(),
+      endDate: wireDate(),
+      nominalStart: wireDate(),
+      allDay: z.boolean(),
+      timezone: z.string(),
+      orgId: z.string(),
+    }),
+  ),
+  meetingUrl: z.string().nullable(),
+  syncQueued: z.boolean(),
+});
+
+/** `CalendarService.updateEvent` — the projected row, or a 404 before this point. */
+export const calendarUpdateEventResponseSchema = calendarMutatedEventSchema;
+
+/**
+ * `CalendarRecurrenceService.upsertOccurrenceException` / `cancelOccurrence` — both end in a
+ * bare `.returning()` over `calendar_event_exceptions`, so the contract is that table's whole
+ * ten-column row. Recorded as it is rather than as it ought to be: narrowing it is a wire
+ * change and belongs to the ticket that also updates the client, the same stance
+ * `calendarRsvpResponseSchema` above takes.
+ */
+export const calendarOccurrenceExceptionResponseSchema = z.object({
+  id: z.number().int(),
+  orgId: z.string(),
+  eventId: z.number().int(),
+  occurrenceStart: wireDate(),
+  isCancelled: z.boolean(),
+  modifiedTitle: z.string().nullable(),
+  modifiedStart: wireDate().nullable(),
+  modifiedEnd: wireDate().nullable(),
+  createdAt: wireDate(),
+  updatedAt: wireDate(),
+});

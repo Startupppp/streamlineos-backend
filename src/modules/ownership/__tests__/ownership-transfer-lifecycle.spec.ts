@@ -2,6 +2,8 @@ import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../common/tenant/with-tenant";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
 import { assertTransitionAllowed } from "../../organization/core/lifecycle/organization-lifecycle-transitions";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
@@ -206,7 +208,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("is NOT blocked by an active legal hold, which only refuses destructive transitions", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(makeTenantTx("ACTIVE", true) as any),
+        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", true))),
       );
       setupOrgTransferTx();
 
@@ -238,7 +240,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("throws BadRequestException when the org statusV2 disallows the OWNERSHIP_TRANSFER transition", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(makeTenantTx("ARCHIVED", false) as any),
+        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ARCHIVED", false))),
       );
 
       await expect(
@@ -252,7 +254,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("succeeds when the org is ACTIVE with no legal hold", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(makeTenantTx("ACTIVE", false) as any),
+        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
       );
       setupOrgTransferTx();
 
@@ -305,7 +307,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("calls runInTenantTransaction with the correct orgId and invokes the callback", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(makeTenantTx("ARCHIVED", true) as any),
+        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ARCHIVED", true))),
       );
 
       await expect(
@@ -325,7 +327,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("org transfer: retry skips validate-new-owner when already DONE", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(makeTenantTx("ACTIVE", false) as any),
+        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
       );
       setupOrgTransferTx();
 
@@ -347,7 +349,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("org transfer: failure in transfer-ownership calls compensate and rethrows", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(makeTenantTx("ACTIVE", false) as any),
+        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
       );
 
       const boom = new Error("transfer failed");
@@ -365,7 +367,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("org transfer: saga begin is called with org-scoped transfer requestKey", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(makeTenantTx("ACTIVE", false) as any),
+        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
       );
       setupOrgTransferTx();
 

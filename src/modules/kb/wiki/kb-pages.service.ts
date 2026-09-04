@@ -18,6 +18,7 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { extractMentionUserIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { KB_PAGE_SEARCH_MAX_LIMIT } from "./dto/kb-pages.schemas";
 import type { CreatePageInput, UpdatePageInput } from "./dto/kb-pages.schemas";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
@@ -28,6 +29,13 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
 type PageRow = KbPageRow;
+
+export interface KbPageSearchHit {
+  id: number;
+  title: string;
+  icon: string | null;
+  snippet: string;
+}
 
 @Injectable()
 export class KbPagesService {
@@ -273,7 +281,25 @@ export class KbPagesService {
     return result;
   }
 
-  async search(user: CurrentUserContext, q: string): Promise<{ id: number; title: string; icon: string | null; snippet: string }[]> {
+  /**
+   * A bounded top-N, and it says so.
+   *
+   * This was a hard `.limit(20)` returning a plain array: a query matching 500 pages and a
+   * query matching 20 came back identical, so a user who could not find their page had no
+   * way to learn that the list was cut rather than complete. Twenty stays the ceiling — the
+   * 400th-best match for a `ts_rank` prefix query is not a result anyone scrolls to, and
+   * paging a rank ordering means re-ranking every page — but the cut is now reported, and
+   * `KB_PAGE_SEARCH_MAX_LIMIT` is where the number lives instead of being buried in a
+   * `.limit()` call.
+   *
+   * `limit + 1` is fetched so `hasMore` costs nothing: the sentinel row is discarded and
+   * its only job is to answer the question.
+   */
+  async search(
+    user: CurrentUserContext,
+    q: string,
+    limit: number = KB_PAGE_SEARCH_MAX_LIMIT,
+  ): Promise<{ items: KbPageSearchHit[]; hasMore: boolean; limit: number }> {
     const words = q
       .trim()
       .split(/\s+/)
@@ -284,7 +310,7 @@ export class KbPagesService {
         return w.length > 0;
       })
       .slice(0, 8);
-    if (words.length === 0) return [];
+    if (words.length === 0) return { items: [], hasMore: false, limit };
     const orgId = user.orgId;
     const prefixQuery = words.map(function toPrefix(w) {
       return `${w}:*`;
@@ -308,8 +334,9 @@ export class KbPagesService {
         ),
       )
       .orderBy(sql`ts_rank(${kbPages}.fts, ${tsquery}) desc`)
-      .limit(20);
-    return rows;
+      .limit(limit + 1);
+    const hasMore = rows.length > limit;
+    return { items: hasMore ? rows.slice(0, limit) : rows, hasMore, limit };
   }
 
   async setVisibility(

@@ -85,6 +85,7 @@ jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.f
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
 
+import { NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -334,14 +335,26 @@ describe("ChatAssistantService.processChat carries a tenant context (SERVICE)", 
     expect(log).not.toContain("untenanted");
   });
 
-  it("also carries one on the conversation-scoped append", async () => {
+  /**
+   * The outcome assertion is now `rejects`, and that is the FIX being pinned,
+   * not a relaxation. Conversation 77 does not belong to this actor in the model
+   * below — nothing does — and `appendMessageToConversation` used to key its
+   * SELECT and both UPDATEs on the bare `id`, so the turn completed and wrote
+   * into a conversation the caller had no claim to. Completing is the defect;
+   * a `NotFoundException` is the corrected behaviour, and it is a stricter
+   * assertion than the `toBeDefined()` it replaces. The tenant-context claim
+   * this test exists for is unchanged and still checked on the line below: the
+   * ownership SELECT is issued, and it is issued inside a tenant transaction.
+   */
+  it("also carries one on the conversation-scoped append, which refuses a conversation the caller does not own", async () => {
     const { db, log } = denyingHandle();
     const svc = buildService(db, makeLedger());
 
     await expect(
       svc.processChat([{ role: "user", content: "hello" }], ACTOR, 77),
-    ).resolves.toBeDefined();
+    ).rejects.toBeInstanceOf(NotFoundException);
 
+    expect(log.length).toBeGreaterThan(0);
     expect(log).not.toContain("untenanted");
   });
 });

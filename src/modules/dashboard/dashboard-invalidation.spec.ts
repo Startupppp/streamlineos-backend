@@ -39,6 +39,7 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
 
   function makeSpyCache() {
     const invalidatedKeys: string[] = [];
+    const invalidatedOrgs: string[] = [];
     const cache = {
       cached: jest.fn().mockImplementation(async (_k: string, f: () => Promise<unknown>) => f()),
       cachedForOrg: jest.fn().mockImplementation(async (_orgId: string, _k: string, f: () => Promise<unknown>) => f()),
@@ -46,12 +47,17 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
         invalidatedKeys.push(key);
         return Promise.resolve();
       }),
+      invalidateForOrg: jest.fn().mockImplementation((orgId: string, key: string) => {
+        invalidatedOrgs.push(orgId);
+        invalidatedKeys.push(key);
+        return Promise.resolve();
+      }),
     } as unknown as CacheService;
-    return { cache, invalidatedKeys };
+    return { cache, invalidatedKeys, invalidatedOrgs };
   }
 
   it("BITE: createAnnouncement invalidates ONLY the announcementsList cache key", async () => {
-    const { cache, invalidatedKeys } = makeSpyCache();
+    const { cache, invalidatedKeys, invalidatedOrgs } = makeSpyCache();
     const access = makeAccess();
     const db = makeDb();
     const actor = makeUser(ORG_A, USER_A);
@@ -65,10 +71,11 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
 
     expect(invalidatedKeys).toHaveLength(1);
     expect(invalidatedKeys[0]).toBe(CACHE_KEYS.announcementsList(ORG_A));
+    expect(invalidatedOrgs).toEqual([ORG_A]);
   });
 
   it("BITE: createAnnouncement does NOT invalidate stats, availability, or leave section keys", async () => {
-    const { cache, invalidatedKeys } = makeSpyCache();
+    const { cache, invalidatedKeys, invalidatedOrgs } = makeSpyCache();
     const access = makeAccess();
     const db = makeDb();
     const actor = makeUser(ORG_A, USER_A);
@@ -87,7 +94,7 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
   });
 
   it("BITE: deleteAnnouncement invalidates ONLY the announcementsList cache key", async () => {
-    const { cache, invalidatedKeys } = makeSpyCache();
+    const { cache, invalidatedKeys, invalidatedOrgs } = makeSpyCache();
     const access = makeAccess();
     const db = makeDb();
     const actor = makeUser(ORG_A, USER_A);
@@ -97,6 +104,7 @@ describe("ITEM E — mutation invalidates ONLY the affected section prefix", () 
 
     expect(invalidatedKeys).toHaveLength(1);
     expect(invalidatedKeys[0]).toBe(CACHE_KEYS.announcementsList(ORG_A));
+    expect(invalidatedOrgs).toEqual([ORG_A]);
   });
 });
 

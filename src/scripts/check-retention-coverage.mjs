@@ -5,25 +5,53 @@
  *
  * Reads the retention policy matrix defined below against the live database.
  * Reports COVERED, UNCOVERED, and KEEP-FOREVER tables. Exits 1 when any
- * high-growth table (>= COVERAGE_THRESHOLD_MB) is uncovered. The threshold
+ * high-growth table (>= --threshold-mb) is uncovered. The threshold
  * must be a finite positive number; invalid input fails closed rather than
  * producing an empty, falsely-clean result.
  *
+ * TWO WAYS THIS GATE USED TO REPORT GREEN OVER NOTHING, both now closed.
+ *
+ * 1. `pg_total_relation_size(c.oid) / 1048576` is INTEGER division on a bigint,
+ *    so every table under 1 MiB measured as exactly 0 MB. `--threshold-mb=0.1`
+ *    therefore selected the identical set as the default `1`, and no argument
+ *    could ever reach a sub-megabyte table. Measured on a 946-table schema:
+ *    `/1048576 >= 0.1` matched 41 tables and `/1048576.0 >= 0.1` matched 88.
+ *    The divisor is now `1048576.0`, which is numeric division. At the default
+ *    threshold of exactly 1 the selected set is unchanged (both forms reduce to
+ *    `bytes >= 1048576`); what changes is that the threshold argument works.
+ *
+ * 2. Nothing put a floor under the corpus. Against a migrated-but-empty schema
+ *    every table measured below the threshold, `highGrowth` came back empty,
+ *    `uncovered` was therefore empty too, and the gate exited 0 having
+ *    classified not one table. That green said "no uncovered table" when it
+ *    meant "no table". MIN_TABLES_SCANNED and MIN_HIGH_GROWTH_TABLES below are
+ *    the same shape as MIN_SEALS / MIN_SEALED_FILES in check-evidence-seal.mjs:
+ *    an unmeasured corpus is INCONCLUSIVE (exit 2), never a pass.
+ *
+ * The floors are deliberately NOT raisable from the command line. The fix for a
+ * gate that measures nothing is a database with something in it, not a lower bar.
+ *
+ * DATABASE_URL is read from the environment only. This script no longer calls
+ * `dotenv.config()` itself: that silently substituted the .env connection string
+ * whenever DATABASE_URL was unset, so the documented exit-2 path was unreachable
+ * and the gate reported on whichever database .env happened to name. It also
+ * wrote a banner to STDOUT, which corrupted the JSON report this script exists
+ * to emit. The npm script passes `--env-file-if-exists=.env`, so the packaged
+ * gate still picks up a local .env — by an explicit flag rather than in secret.
+ *
  * Usage:
- *   node src/scripts/check-retention-coverage.mjs
+ *   DATABASE_URL=postgres://... node src/scripts/check-retention-coverage.mjs
  *   node src/scripts/check-retention-coverage.mjs --threshold-mb=5
  *   node src/scripts/check-retention-coverage.mjs --self-test
+ *   node src/scripts/check-retention-coverage.mjs --print-query
  *
  * Exit codes:
- *   0 = all high-growth tables are covered
+ *   0 = a real corpus was measured and every high-growth table is covered
  *   1 = at least one high-growth table has no retention decision
- *   2 = DATABASE_URL not set
+ *   2 = INCONCLUSIVE — DATABASE_URL unset, an unusable threshold, a query
+ *       failure, or a corpus too small to have measured anything
  */
-import { resolve } from "node:path";
 import postgres from "postgres";
-import * as dotenv from "dotenv";
-
-dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 const args = process.argv.slice(2);
 const thresholdArg = args.find((a) => a.startsWith("--threshold-mb="))?.slice(15) ?? "1";
@@ -63,6 +91,21 @@ const RETENTION_MATRIX = {
     decision: "RETAIN-BOUNDED",
     worker: "CronAiUsageRetentionService",
     notes: "730-day default. Dry-run by default. Resumable cursor in Redis. 401 rows now.",
+  },
+  kb_pages: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronKbService (kb-trash-purge)",
+    notes: "Soft delete is the lifecycle; KbPageTreeService.purgeExpired hard-deletes in bounded batches once deleted_at is older than the org's trash_retention_days, recording attachment purge keys first. The worker existed and was DELIBERATELY unscheduled, its stated reason being the absence of this very inventory entry — so the drain was correct and dead, and the table read UNCOVERED against a live database. This entry is what let kb-trash-purge join RETENTION_JOBS. Decided 2026-09-04 (ticket 16, PRD-C134).",
+  },
+  kb_events: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronKbTelemetryRetentionService",
+    notes: "One row per article view and per search — the two hottest KB read paths — and the only source behind the analytics overview, gaps, no-results and content-gaps reports, whose rangeSchema leaves both bounds optional so the default read is unbounded. 365 days, matching chat_messages, the other user-attributable append-only stream. Free text in `query` and an actor membership make it discoverable, so org-wide and HR subject legal holds both stop the sweep. Decided 2026-09-04 (ticket 16, PRD-C134).",
+  },
+  kb_ingestion_checkpoints: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronKbTelemetryRetentionService",
+    notes: "One row per chunk carrying a full vector(1536) plus its source text. clearCheckpoints fires only on ingestion SUCCESS, so a crashed worker, a source stranded in `processing` or a provider outage mid-batch leaves them permanently. Expired on the outbox dead-letter horizon (OUTBOX_RETENTION_DAYS = 30) by sharing that constant: nothing resumes a run whose retry budget expired. Derived data, so only the org-wide legal hold applies. Decided 2026-09-04 (ticket 16, PRD-C134).",
   },
   kb_chat_conversations: {
     decision: "RETAIN-BOUNDED",
@@ -127,7 +170,7 @@ const RETENTION_MATRIX = {
   notification_outbox: {
     decision: "RETAIN-BOUNDED",
     worker: "CronNotificationOutboxRetentionService",
-    notes: "30-day retention for terminal states (PROCESSED, DEAD). PENDING and IN_FLIGHT rows are never touched. forEachOrg, batch 500, per-org lease.",
+    notes: "30-day retention for PROCESSED, 180-day for DEAD so dead-letter evidence outlives the 24h alert window. PENDING and IN_FLIGHT rows are never touched. forEachOrg, batch 500, per-org lease.",
   },
   outbox_events: {
     decision: "RETAIN-BOUNDED",
@@ -210,6 +253,76 @@ export function policyTableName(tableName, parentTableName = null) {
   return parentTableName || tableName;
 }
 
+/**
+ * A gate that classified nothing must not answer "clean". Both floors below are
+ * INCONCLUSIVE conditions, not failures: they say the corpus could not support a
+ * verdict, which is a different claim from "every table is covered".
+ *
+ * MIN_TABLES_SCANNED — the schema this ran against must actually be a migrated
+ * StreamlineOS schema. Head carries 946 base/partitioned tables in `public`; 200
+ * is a floor no partial or wrong database clears while staying comfortably under
+ * any real one.
+ *
+ * MIN_HIGH_GROWTH_TABLES — at least one table must clear the threshold, or the
+ * classifier never ran and `uncovered.length === 0` is arithmetic rather than
+ * evidence. This is the exact shape that reported green over a fully migrated but
+ * empty 943-table database.
+ */
+export const MIN_TABLES_SCANNED = 200;
+export const MIN_HIGH_GROWTH_TABLES = 1;
+
+/**
+ * The size expression, exported so the self-test asserts on the string the query
+ * actually interpolates rather than on a regex over this file.
+ *
+ * The divisor MUST carry a decimal point. `pg_total_relation_size()` returns
+ * bigint, and `bigint / bigint` is integer division in Postgres: with `1048576`
+ * every table under one mebibyte evaluates to exactly 0, so `--threshold-mb`
+ * could never select one and the flag was inert below 1. `1048576.0` is numeric,
+ * so the quotient keeps its fraction.
+ */
+export const TOTAL_MB_EXPRESSION = "pg_total_relation_size(c.oid) / 1048576.0";
+
+/** No bound parameters — the threshold is applied in JS so both forms stay comparable. */
+export const CATALOGUE_QUERY = `
+    SELECT
+      c.relname                           AS table_name,
+      COALESCE(parent.relname, c.relname) AS policy_table,
+      ${TOTAL_MB_EXPRESSION}              AS total_mb,
+      COALESCE(s.n_live_tup, 0)           AS n_live_tup
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_inherits i ON i.inhrelid = c.oid
+    LEFT JOIN pg_class parent ON parent.oid = i.inhparent
+    LEFT JOIN pg_stat_user_tables s
+      ON s.relname = c.relname AND s.schemaname = n.nspname
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r', 'p')
+    ORDER BY pg_total_relation_size(c.oid) DESC
+  `;
+
+/*
+ * `--print-query` exposes the shipped SQL and the corpus floors without opening a
+ * connection, so retention-coverage-gate.db.spec.ts can measure THIS file rather
+ * than an importable copy of it. Importing the module is not an option: it calls
+ * process.exit() at top level, which would take the jest worker with it.
+ */
+if (args.includes("--print-query")) {
+  process.stdout.write(
+    JSON.stringify(
+      {
+        totalMbExpression: TOTAL_MB_EXPRESSION,
+        catalogueQuery: CATALOGUE_QUERY,
+        minTablesScanned: MIN_TABLES_SCANNED,
+        minHighGrowthTables: MIN_HIGH_GROWTH_TABLES,
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  process.exit(0);
+}
+
 if (args.includes("--self-test")) {
   const checks = {
     auditLogsIsKeepForever: RETENTION_MATRIX["audit_logs"].decision === "KEEP-FOREVER",
@@ -218,6 +331,22 @@ if (args.includes("--self-test")) {
     chatMessagesHasWorker: RETENTION_MATRIX["chat_messages"].worker !== null,
     kbChunksHasWorker: RETENTION_MATRIX["kb_article_chunks"].worker !== null,
     kbChatConversationsHasWorker: RETENTION_MATRIX["kb_chat_conversations"].worker === "CronKbChatRetentionService",
+    /*
+     * Both of these were invisible to this gate rather than covered by it. It reports on
+     * tables at or above --threshold-mb in the live database, so an uncovered table that
+     * is still small is never classified at all — and "not in the report" reads exactly
+     * like "fine". Naming them in the matrix is what lets `classify` answer for them the
+     * moment they cross the threshold, instead of the gate discovering them by growing.
+     */
+    kbPagesHasWorker:
+      RETENTION_MATRIX["kb_pages"].worker !== null &&
+      classify("kb_pages").status === "COVERED",
+    kbEventsHasWorker:
+      RETENTION_MATRIX["kb_events"].worker === "CronKbTelemetryRetentionService" &&
+      classify("kb_events").status === "COVERED",
+    kbIngestionCheckpointsHasWorker:
+      RETENTION_MATRIX["kb_ingestion_checkpoints"].worker === "CronKbTelemetryRetentionService" &&
+      classify("kb_ingestion_checkpoints").status === "COVERED",
     webhookDeliveriesHaveWorker: RETENTION_MATRIX["webhook_deliveries"].worker === "CronBuildRetentionService",
     auditLogsHasNoWorker: RETENTION_MATRIX["audit_logs"].worker === null,
     classifyUnknownIsUncovered: classify("unknown_table_xyz", 100).status === "UNCOVERED",
@@ -248,6 +377,20 @@ if (args.includes("--self-test")) {
     performanceReviewsIsKeepForever:
       RETENTION_MATRIX["performance_reviews"].decision === "KEEP-FOREVER" &&
       classify("performance_reviews").status === "KEEP-FOREVER",
+    /*
+     * The regression this gate shipped for two releases: an integer divisor made
+     * every sub-megabyte table measure 0 MB, so `--threshold-mb=0.1` selected the
+     * identical set as the default and no argument could reach below 1 MB. A
+     * database is needed to prove the arithmetic (retention-coverage-gate.db.spec.ts
+     * does that); what this check pins is that the divisor never loses its decimal
+     * point again, since that single character is the whole defect.
+     */
+    sizeDivisorIsNumericNotInteger:
+      /\/\s*1048576\.\d/.test(TOTAL_MB_EXPRESSION) && !/\/\s*1048576\s*(?![.\d])/.test(TOTAL_MB_EXPRESSION),
+    catalogueQueryUsesTheExportedSizeExpression: CATALOGUE_QUERY.includes(TOTAL_MB_EXPRESSION),
+    /* A corpus floor that can be satisfied by an empty database is not a floor. */
+    corpusFloorsAreAboveZero: MIN_TABLES_SCANNED > 0 && MIN_HIGH_GROWTH_TABLES > 0,
+    corpusFloorIsNotCommandLineRaisable: !args.some((a) => a.startsWith("--min-tables")),
     invalidThresholdsFailClosed: ["", "0", "-1", "NaN", "Infinity"].every((value) => {
       try {
         parseThreshold(value);
@@ -277,29 +420,17 @@ if (args.includes("--self-test")) {
 
 const url = process.env.DATABASE_URL;
 if (!url) {
-  process.stderr.write("DATABASE_URL is required\n");
+  process.stderr.write(
+    "INCONCLUSIVE — DATABASE_URL is not set, so no table was measured. " +
+      "This is exit 2, not a pass.\n",
+  );
   process.exit(2);
 }
 
 const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {} });
 
 try {
-  const rows = await sql`
-    SELECT
-      c.relname                                AS table_name,
-      COALESCE(parent.relname, c.relname)      AS policy_table,
-      pg_total_relation_size(c.oid) / 1048576 AS total_mb,
-      COALESCE(s.n_live_tup, 0)               AS n_live_tup
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    LEFT JOIN pg_inherits i ON i.inhrelid = c.oid
-    LEFT JOIN pg_class parent ON parent.oid = i.inhparent
-    LEFT JOIN pg_stat_user_tables s
-      ON s.relname = c.relname AND s.schemaname = n.nspname
-    WHERE n.nspname = 'public'
-      AND c.relkind IN ('r', 'p')
-    ORDER BY pg_total_relation_size(c.oid) DESC
-  `;
+  const rows = await sql.unsafe(CATALOGUE_QUERY);
 
   const results = rows.map((row) => {
     const totalMb = Number(row.total_mb ?? 0);
@@ -312,6 +443,16 @@ try {
       ...classification,
     };
   });
+
+  if (results.length < MIN_TABLES_SCANNED) {
+    process.stderr.write(
+      `INCONCLUSIVE — the catalogue query returned ${results.length} table(s) in schema "public" ` +
+        `(expected >= ${MIN_TABLES_SCANNED}). This is not a migrated StreamlineOS schema, so ` +
+        `"no uncovered table" would mean "no table". Point DATABASE_URL at a migrated database.\n`,
+    );
+    await sql.end();
+    process.exit(2);
+  }
 
   const highGrowth = results.filter((r) => r.total_mb >= thresholdMb);
   const uncovered = highGrowth.filter((r) => r.status === "UNCOVERED");
@@ -346,6 +487,17 @@ try {
         "\n",
     );
     process.exit(1);
+  }
+
+  if (highGrowth.length < MIN_HIGH_GROWTH_TABLES) {
+    process.stderr.write(
+      `INCONCLUSIVE — ${results.length} table(s) were scanned and ${highGrowth.length} cleared ` +
+        `${thresholdMb} MB, so the retention matrix was never consulted. Exiting 0 here would ` +
+        `report "every high-growth table is covered" over an empty set. Run this against a ` +
+        `database carrying real data, or lower --threshold-mb — do not read this as a pass.\n`,
+    );
+    await sql.end();
+    process.exit(2);
   }
 
   process.exit(0);

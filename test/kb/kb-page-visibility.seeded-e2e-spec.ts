@@ -223,7 +223,8 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
         expect(read.id).toBe(page.id);
 
         const keyword = await asReader(fixture.orgId, () => pages.search(insiderCtx, query));
-        expect(keyword.map((row) => row.id)).toContain(page.id);
+        expect(keyword.items.map((row) => row.id)).toContain(page.id);
+        expect(keyword.hasMore).toBe(false);
 
         const vectorResults = await asReader(fixture.orgId, () =>
           search.retrieveTopArticles(insiderCtx, query, 5),
@@ -235,7 +236,7 @@ describe("[seeded-e2e] a page that belongs to a project", () => {
         ).rejects.toMatchObject({ status: 404 });
 
         const outsiderKeyword = await asReader(fixture.orgId, () => pages.search(outsiderCtx, query));
-        expect(outsiderKeyword.map((row) => row.id)).not.toContain(page.id);
+        expect(outsiderKeyword.items.map((row) => row.id)).not.toContain(page.id);
 
         const outsiderVector = await asReader(fixture.orgId, () =>
           search.retrieveTopArticles(outsiderCtx, query, 5),

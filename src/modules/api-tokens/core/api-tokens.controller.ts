@@ -1,5 +1,6 @@
 import {
   Body,
+  Header,
   Controller,
   Get,
   HttpCode,
@@ -10,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { NO_COMPRESSION_HEADER } from "../../../common/http/compression.config";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -50,6 +52,10 @@ export class ApiTokensController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:settings:manage")
+  // PRD-C089 (BREACH) — this body is the plaintext API key, returned exactly once, `app.enableCors({ credentials: true })`
+  // is live, and a compressed length is a cross-origin size oracle. `shouldCompress` checks
+  // this opt-out first, so no content type can overrule it.
+  @Header(NO_COMPRESSION_HEADER, "1")
   @Validate({ body: createApiTokenSchema })
   createToken(
     @CurrentUser() u: CurrentUserContext,

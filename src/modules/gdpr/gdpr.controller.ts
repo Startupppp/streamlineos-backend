@@ -11,6 +11,7 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
+import { z } from "zod";
 import type { Request, Response } from "express";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -38,6 +39,17 @@ import {
 import { GdprRectificationService } from "./gdpr-rectification.service";
 import { gdprErasureBodySchema, type GdprErasureBody } from "./dto/gdpr-erasure.schemas";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
+
+
+/**
+ * PRD-C048 — three data-subject routes bound their path id with neither a pipe nor a
+ * `@Validate({ params })`, so an arbitrary segment reached the export/erasure services
+ * unchecked. `gdprExportJobIdParams` in the same file already did this right; these
+ * three are the sibling ids that were missed. `.min(1)` matches the repo-wide shape for
+ * a `users.id` path segment, which is `text`, not a uuid.
+ */
+const personIdParams = z.object({ personId: z.string().min(1).max(128) }).strict();
+const subjectIdParams = z.object({ subjectId: z.string().min(1).max(128) }).strict();
 
 @Controller("gdpr")
 export class GdprController {
@@ -87,7 +99,7 @@ export class GdprController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:retention:manage")
   @Post("export/:personId")
-  @Validate({ body: exportRequestBodySchema })
+  @Validate({ params: personIdParams, body: exportRequestBodySchema })
   async exportPersonData(
     @Param("personId") personId: string,
     @CurrentUser() user: CurrentUserContext,
@@ -117,7 +129,7 @@ export class GdprController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:retention:manage")
   @Post("export-async/:personId")
-  @Validate({ body: gdprAsyncExportBodySchema })
+  @Validate({ params: personIdParams, body: gdprAsyncExportBodySchema })
   async createPersonExportJob(
     @Param("personId") personId: string,
     @CurrentUser() user: CurrentUserContext,
@@ -178,7 +190,7 @@ export class GdprController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:retention:manage")
   @Post("erasure/:subjectId")
-  @Validate({ body: gdprErasureBodySchema })
+  @Validate({ params: subjectIdParams, body: gdprErasureBodySchema })
   async eraseSubjectData(
     @Param("subjectId") subjectId: string,
     @CurrentUser() user: CurrentUserContext,

@@ -149,7 +149,9 @@ export class SignDocumentsService {
   async getPreviewUrl(orgId: string, documentId: number, scope: EnvelopeViewScope) {
     const doc = await this.get(orgId, documentId);
     await mustGetVisibleEnvelope(this.db, orgId, doc.envelopeId, scope, "Document not found");
-    const url = await this.storage.getFileUrl(orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS);
+    const url = await this.storage.getFileUrl(orgId, doc.currentFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+      preauthorized: true,
+    });
     return { document: doc, url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS };
   }
 

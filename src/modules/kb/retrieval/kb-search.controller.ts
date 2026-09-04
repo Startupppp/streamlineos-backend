@@ -9,11 +9,9 @@ import { KbSearchService } from "./kb-search.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { searchSchema, type SearchInput } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbSearchController {
   constructor(
     private readonly search: KbSearchService,

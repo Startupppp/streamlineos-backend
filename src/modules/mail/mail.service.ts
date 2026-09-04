@@ -48,6 +48,58 @@ export class MailService {
     return this.accounts.listAccounts(orgId, userId);
   }
 
+  /**
+   * How many messages in `folder` are unread, for the unread badge.
+   *
+   * The badge is rendered by every authenticated page, and it used to be derived
+   * by listing `scanLimit` messages per connected mailbox out of Gmail/Graph and
+   * counting `!isRead` in JavaScript — a provider fanout on every page load, and
+   * an answer that was only ever `exact` when the mailbox happened to hold fewer
+   * than `scanLimit` messages.
+   *
+   * `mail_message_metadata` already mirrors exactly the rows being counted: it is
+   * upserted on every inbox load by `deferUpsertBatch`, whichever read path
+   * served that load. So when every connected mailbox's copy of `folder` is
+   * fresh, one indexed aggregate against the mirror answers it exactly.
+   *
+   * The provider fanout stays as the cold and stale path rather than being
+   * deleted, because the mirror only holds what has already been listed — a
+   * member who has never opened their inbox has no rows, and counting zero there
+   * would be wrong rather than slow. That fanout also refreshes the mirror on its
+   * way through, so the following call is served locally.
+   *
+   * All-fresh rather than per-account is deliberate: mixing a mirrored count for
+   * some mailboxes with a scanned count for others would double-count nothing but
+   * would report `exact` for a number that is partly a 100-message sample.
+   */
+  async countUnread(
+    orgId: string,
+    userId: string,
+    membershipId: number | null,
+    folder: MailFolder,
+    scanLimit: number,
+  ): Promise<{ unread: number; exact: boolean }> {
+    const accounts = await this.accounts.listAccounts(orgId, userId);
+    if (accounts.length === 0) return { unread: 0, exact: true };
+
+    if (membershipId !== null) {
+      const accountIds = accounts.map((acc) => acc.id);
+      const fresh = await this.metadata.freshAccountIds(orgId, accountIds, folder);
+      if (fresh.length === accountIds.length) {
+        const unread = await this.metadata.countUnread(orgId, membershipId, folder, accountIds);
+        return { unread, exact: true };
+      }
+    }
+
+    const result = await this.listMessages(
+      orgId, userId, membershipId, folder, "all", scanLimit, undefined,
+    );
+    return {
+      unread: result.messages.filter((m) => !m.isRead).length,
+      exact: result.messages.length < scanLimit,
+    };
+  }
+
   async listMessages(
     orgId: string,
     userId: string,
@@ -67,21 +119,28 @@ export class MailService {
       return { messages: [], nextCursor: null, accountErrors: [] };
     }
 
-    const singleAcc = accountIdParam === "all" ? undefined : targetAccounts[0];
-
     // The paging regime is chosen once, at page one, and then carried in the cursor:
     // a keyset against the local mirror and a provider page token resume differently,
     // so swapping regimes mid-scroll repeats or skips rows.
+    //
+    // The mirror serves the whole target set, not just a mailbox the reader has
+    // singled out. It used to be gated on `accountIdParam !== "all"`, and every
+    // default caller passes "all" — the list pane opens on it — so the indexed
+    // keyset path that `idx_mail_metadata_list_keyset` exists for was unreachable
+    // from the shipped UI, and the default inbox load was always a provider
+    // fanout. The union is the same single index walk: the keyset index leads
+    // with (org_id, user_membership_id, folder) and orders by (date DESC, id
+    // DESC), with no account column in between.
     const metadataCursor = cursor ? decodeMetadataCursor(cursor, userId) : null;
-    if (singleAcc && membershipId !== null) {
+    if (membershipId !== null) {
       if (metadataCursor !== null) {
         return this.pageFromMetadata(
-          orgId, userId, membershipId, singleAcc, folder, limit, query, metadataCursor,
+          orgId, userId, membershipId, targetAccounts, folder, limit, query, metadataCursor,
         );
       }
       if (!cursor) {
         const page = await this.listFromMetadata(
-          orgId, userId, membershipId, singleAcc, folder, limit, query,
+          orgId, userId, membershipId, targetAccounts, folder, limit, query,
         );
         if (page) return page;
       }
@@ -105,6 +164,13 @@ export class MailService {
       outlookHasMore: boolean;
       currentCursorValue: AccountCursorValue;
     }> = [];
+    // The incoming position of every account whose fetch REJECTED. It is carried
+    // into the outgoing cursor verbatim: an account that is not in the cursor map
+    // decodes on the next request as "no position yet" and replays from row zero,
+    // so one transient provider error re-delivers that mailbox's first page in the
+    // middle of a scroll — duplicate `accountId-id` keys, and every message
+    // between its real position and the end silently unreachable.
+    const carriedCursors: Array<{ accId: number; value: AccountCursorValue }> = [];
 
     settled.forEach((outcome, i) => {
       const acc = targetAccounts[i];
@@ -124,6 +190,8 @@ export class MailService {
         const message = err instanceof Error ? err.message : "Failed to load messages";
         accountErrors.push({ accountId: acc.id, accountEmail: acc.accountEmail, message });
         if (err instanceof ComposioToolError && err.isAuthError) reauthAccountIds.push(acc.id);
+        const carried = parsedCursor[acc.id];
+        if (carried !== undefined) carriedCursors.push({ accId: acc.id, value: carried });
       }
     });
 
@@ -166,6 +234,13 @@ export class MailService {
       }
     }
 
+    // Applied after the fetch loop rather than inside it: an account is either
+    // fulfilled or rejected, never both, so these keys never collide with one the
+    // loop wrote. A carried non-null position also keeps `hasMore` true, so a
+    // scroll whose only remaining mailbox errored can still be resumed instead of
+    // ending on a failure the reader never chose.
+    for (const carried of carriedCursors) nextCursorMap[carried.accId] = carried.value;
+
     const hasMore = Object.values(nextCursorMap).some((v) => v !== undefined && v !== null);
     const nextCursor = hasMore ? encodeCursor(nextCursorMap, userId) : null;
 
@@ -184,21 +259,34 @@ export class MailService {
    * does not match. The mirror only holds what has already been listed, so a
    * search miss here is inconclusive and the provider stays the authority.
    */
+  /**
+   * Page one from the mirror, or `null` to let the provider fanout answer.
+   *
+   * EVERY target mailbox has to be fresh, not just the one whose rows happen to
+   * top the page. Freshness used to be read off the returned rows' `synced_at`,
+   * which is sound for a single mailbox and wrong for a union: a mailbox that
+   * syncs every minute would keep the page looking fresh while a second, stale
+   * mailbox contributed nothing and stayed invisible to its owner. One indexed
+   * probe over the whole set answers it instead, and a mailbox with no mirrored
+   * rows at all is by definition not fresh, so a newly connected account always
+   * falls through to the provider that will populate it.
+   */
   private async listFromMetadata(
     orgId: string,
     userId: string,
     membershipId: number,
-    acc: MailAccount,
+    accounts: MailAccount[],
     folder: MailFolder,
     limit: number,
     query: string | undefined,
   ): Promise<MailListResponse | null> {
-    if (query && !(await this.metadata.isFreshForAccount(orgId, acc.id, folder))) return null;
+    const accountIds = accounts.map((acc) => acc.id);
+    const fresh = await this.metadata.freshAccountIds(orgId, accountIds, folder);
+    if (fresh.length !== accountIds.length) return null;
 
-    const cached = await this.metadata.listCached(membershipId, orgId, acc.id, folder, limit, query);
+    const cached = await this.metadata.listCached(membershipId, orgId, accountIds, folder, limit, query);
     if (!cached.hasData) return null;
-    if (!query && !cached.isFresh) return null;
-    return this.metadataPageResponse(cached, acc, userId);
+    return this.metadataPageResponse(cached, accounts, userId);
   }
 
   /**
@@ -212,29 +300,37 @@ export class MailService {
     orgId: string,
     userId: string,
     membershipId: number,
-    acc: MailAccount,
+    accounts: MailAccount[],
     folder: MailFolder,
     limit: number,
     query: string | undefined,
     after: MailMetadataCursor,
   ): Promise<MailListResponse> {
     const cached = await this.metadata.listCached(
-      membershipId, orgId, acc.id, folder, limit, query, after,
+      membershipId, orgId, accounts.map((acc) => acc.id), folder, limit, query, after,
     );
-    return this.metadataPageResponse(cached, acc, userId);
+    return this.metadataPageResponse(cached, accounts, userId);
   }
 
+  /**
+   * `provider` is resolved per row. A union page can hold Gmail and Outlook rows
+   * at once, and the client keys its reading pane and its actions off this field
+   * — stamping one mailbox's provider onto every row sends a Graph message id
+   * down the Gmail path.
+   */
   private metadataPageResponse(
     cached: CachedMailPage,
-    acc: MailAccount,
+    accounts: MailAccount[],
     userId: string,
   ): MailListResponse {
+    const providerByAccount = new Map(accounts.map((acc) => [acc.id, acc.provider]));
+    const fallbackProvider = accounts[0]?.provider ?? "gmail";
     return {
       messages: cached.messages.map((m) => ({
         id: m.messageId,
         threadId: m.threadId,
         accountId: m.accountId,
-        provider: acc.provider,
+        provider: providerByAccount.get(m.accountId) ?? fallbackProvider,
         from: { email: m.senderEmail, name: m.senderName },
         to: [],
         subject: m.subject,
@@ -360,6 +456,23 @@ export class MailService {
     }
   }
 
+  /**
+   * Send `bodyHtml` as a reply to `messageId`.
+   *
+   * `to` is the recipient the sender chose in the compose sheet. It used to have
+   * nowhere to go: the reply form collected a required, validated To address and
+   * the request body had no field for it, so a sender who changed the recipient
+   * got a "Reply sent" toast for a message delivered to whoever the server
+   * derived instead. Both providers can be told a recipient — Gmail through
+   * `recipient_email`, Graph through the `message.toRecipients` of the reply
+   * action it already uses for `ccRecipients` — so the address is carried
+   * through rather than the field being removed.
+   *
+   * Absent `to`, the derivation stays exactly as it was: the original sender,
+   * unless this account IS the original sender, in which case the message's
+   * first To address (replying to something you sent goes to the person you sent
+   * it to, not back to yourself).
+   */
   async replyMail(
     orgId: string,
     userId: string,
@@ -368,22 +481,24 @@ export class MailService {
     threadId: string | undefined,
     bodyHtml: string,
     cc?: string[],
+    to?: string[],
   ): Promise<void> {
     const acc = await this.accounts.assertOwnedConnection(orgId, userId, accountId);
     const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
+    const requestedRecipient = to?.[0];
     if (acc.provider === "gmail") {
       if (!threadId) throw new BadRequestException("threadId is required for Gmail replies");
-      const original = await this.gmail.getMessage(userId, conn, messageId);
-      let recipientEmail: string | undefined;
-      if (original.from.email !== acc.accountEmail) {
-        recipientEmail = original.from.email;
-      } else {
-        recipientEmail = original.to[0]?.email;
+      let recipientEmail = requestedRecipient;
+      if (!recipientEmail) {
+        const original = await this.gmail.getMessage(userId, conn, messageId);
+        recipientEmail = original.from.email !== acc.accountEmail
+          ? original.from.email
+          : original.to[0]?.email;
       }
       if (!recipientEmail) throw new BadRequestException("Cannot determine reply recipient: original message has no resolvable address");
       await this.gmail.replyToThread(userId, conn, { threadId, recipientEmail, bodyHtml, cc });
     } else {
-      await this.outlook.replyToMessage(userId, conn, messageId, bodyHtml, cc);
+      await this.outlook.replyToMessage(userId, conn, messageId, bodyHtml, cc, requestedRecipient);
     }
   }
 

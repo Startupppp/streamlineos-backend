@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gt, ilike, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { mailMessageMetadata } from "../../db/schema/mail";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -144,6 +144,20 @@ export class MailMetadataService {
    * ILIKE, which is the faster plan once the match is that broad. So does a
    * function that is missing or errors: a slower correct answer beats a 500 on
    * a database whose migrations have not caught up.
+   *
+   * An EMPTY id list is not a fallback case, it is the answer. The indexed
+   * expression concatenates the same three columns the ILIKE branch ORs over,
+   * separated by `chr(1)` which the function asserts the term cannot contain,
+   * so the two are exactly equivalent (migration 1022) — an id list of zero
+   * length means no row in this org/membership/folder matches, and re-deriving
+   * that same empty answer through three leading-wildcard ILIKEs is a full
+   * sequential scan of the tenant's mirrored mailbox for a result already
+   * known. Measured on a 200k-row reproduction as the non-owner with the tenant
+   * GUC set, warm: 2.2 ms / 486 buffers for the definer against 184 ms / 5,006
+   * buffers for the ILIKE. This is the most common interactive case, because
+   * the list pane debounces at 300 ms and searches every prefix of the term as
+   * it is typed. The caller still treats an empty page as inconclusive and
+   * falls through to the provider, exactly as it did before.
    */
   private async resolveSearchCondition(
     membershipId: number,
@@ -162,7 +176,8 @@ export class MailMetadataService {
       const rows = await this.db.execute(
         sql`SELECT app.search_mail_message_ids(${query}, ${membershipId}, ${folder}, ${SEARCH_ID_CAP + 1}) AS id`,
       );
-      if (rows.length === 0 || rows.length > SEARCH_ID_CAP) return literal;
+      if (rows.length > SEARCH_ID_CAP) return literal;
+      if (rows.length === 0) return sql`false`;
       return inArray(
         mailMessageMetadata.id,
         rows.map((r) => Number(r["id"])),
@@ -205,10 +220,23 @@ export class MailMetadataService {
     });
   }
 
+  /**
+   * `accountId` accepts a set, not just one id.
+   *
+   * The keyset index is `(org_id, user_membership_id, folder, date DESC,
+   * id DESC)` — it does not lead with `account_id`, so ordering the union of a
+   * member's mailboxes is the same single index walk as ordering one of them.
+   * That is what makes the mirror usable for the default `?accountId=all` view
+   * rather than only for a mailbox the reader has singled out.
+   *
+   * `null` still means "every row this membership has mirrored in this folder",
+   * which includes mailboxes since disconnected; a caller that must not show
+   * those passes its live account ids instead.
+   */
   async listCached(
     membershipId: number,
     orgId: string,
-    accountId: number | null,
+    accountId: number | readonly number[] | null,
     folder: MailFolder,
     limit: number,
     query?: string,
@@ -219,7 +247,10 @@ export class MailMetadataService {
       eq(mailMessageMetadata.userMembershipId, membershipId),
       eq(mailMessageMetadata.folder, folder),
     ];
-    if (accountId !== null) conditions.push(eq(mailMessageMetadata.accountId, accountId));
+    if (typeof accountId === "number")
+      conditions.push(eq(mailMessageMetadata.accountId, accountId));
+    else if (accountId !== null)
+      conditions.push(inArray(mailMessageMetadata.accountId, [...accountId]));
     if (query) conditions.push(await this.resolveSearchCondition(membershipId, folder, query));
     if (after) conditions.push(this.keysetCondition(after));
 
@@ -280,6 +311,79 @@ export class MailMetadataService {
           ? { d: last.date ? last.date.toISOString() : null, i: last.id }
           : null,
     };
+  }
+
+  /**
+   * How many of this member's mirrored messages in `folder` are unread.
+   *
+   * The badge this answers used to have no query at all: it listed 100 messages
+   * per connected mailbox out of Gmail/Graph over HTTP and counted `!isRead` in
+   * JavaScript, on a number every authenticated page renders. Counting against
+   * the mirror instead is one indexed aggregate.
+   *
+   * `idx_mail_metadata_unread_count` is `(org_id, user_membership_id, folder,
+   * account_id) WHERE is_read = false` — this predicate exactly. The partial
+   * qualifier matters: on a mailbox that is mostly read, the unread rows are a
+   * small tail, and a full index over `is_read` would be almost entirely dead
+   * weight on a table that is re-upserted on every inbox load. `org_id` leads it
+   * because the RLS policy adds `org_id = app.current_org_id()`, which is not
+   * leakproof and so is evaluated against the heap tuple unless the index
+   * supplies the column itself.
+   *
+   * `accountIds` is the caller's live account list, not a convenience: a mailbox
+   * that has been disconnected leaves its mirrored rows behind, and counting
+   * them would keep a revoked account's unread mail in the badge forever.
+   */
+  async countUnread(
+    orgId: string,
+    membershipId: number,
+    folder: MailFolder,
+    accountIds: readonly number[],
+  ): Promise<number> {
+    if (accountIds.length === 0) return 0;
+    const rows = await this.db
+      .select({ cnt: count() })
+      .from(mailMessageMetadata)
+      .where(
+        and(
+          eq(mailMessageMetadata.orgId, orgId),
+          eq(mailMessageMetadata.userMembershipId, membershipId),
+          eq(mailMessageMetadata.folder, folder),
+          eq(mailMessageMetadata.isRead, false),
+          inArray(mailMessageMetadata.accountId, [...accountIds]),
+        ),
+      );
+    return Number(rows[0]?.cnt ?? 0);
+  }
+
+  /**
+   * Which of `accountIds` have a copy of `folder` fresh enough to answer a read
+   * without going to the provider.
+   *
+   * One query for the whole set rather than `isFreshForAccount` per account —
+   * the per-account form is a loop that grows with the number of connected
+   * mailboxes, which is exactly the shape `check:n1-growing-loops` exists to
+   * stop.
+   */
+  async freshAccountIds(
+    orgId: string,
+    accountIds: readonly number[],
+    folder: MailFolder,
+  ): Promise<number[]> {
+    if (accountIds.length === 0) return [];
+    const cutoff = new Date(Date.now() - CACHE_FRESH_SECS * 1000);
+    const rows = await this.db
+      .selectDistinct({ accountId: mailMessageMetadata.accountId })
+      .from(mailMessageMetadata)
+      .where(
+        and(
+          eq(mailMessageMetadata.orgId, orgId),
+          inArray(mailMessageMetadata.accountId, [...accountIds]),
+          eq(mailMessageMetadata.folder, folder),
+          gt(mailMessageMetadata.syncedAt, cutoff),
+        ),
+      );
+    return rows.map((r) => r.accountId);
   }
 
   /**

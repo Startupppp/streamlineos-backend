@@ -117,7 +117,11 @@ export class OutlookMailProvider {
       }
     }).filter((m): m is MailMessageSummary => m !== null);
 
-    const nextSkip = messages.length === limit ? skip + limit : null;
+    // Counted against what the server returned rather than what normalised, the
+    // same way `listMessagesForIngress` does: one message that fails to
+    // normalise makes `messages.length < limit` on a full page, which reads as
+    // "the mailbox is exhausted" and silently ends the scroll early.
+    const nextSkip = items.length === limit ? skip + limit : null;
     return { messages, nextSkip };
   }
 
@@ -262,16 +266,28 @@ export class OutlookMailProvider {
     await this.gateway.executeProxy(conn.composioAccountId, "POST", "/me/sendMail", payload);
   }
 
+  /**
+   * `to` overrides who the reply goes to.
+   *
+   * Graph's reply action takes a `message` of writeable properties to apply to
+   * the reply it builds; `ccRecipients` already rides there, and `toRecipients`
+   * is the same mechanism, so an explicitly chosen recipient needs no second
+   * protocol. Omitted, the key is left off the payload entirely rather than sent
+   * empty, so Graph keeps addressing the reply the way it always has.
+   */
   async replyToMessage(
     userId: string,
     conn: NormalizerConnectionMeta,
     messageId: string,
     bodyHtml: string,
     cc?: string[],
+    to?: string,
   ): Promise<void> {
     const ccRecipients = (cc ?? []).map((email) => ({ emailAddress: { address: email } }));
     const payload = {
-      message: { ccRecipients },
+      message: to
+        ? { ccRecipients, toRecipients: [{ emailAddress: { address: to } }] }
+        : { ccRecipients },
       comment: bodyHtml,
     };
     await this.gateway.executeProxy(conn.composioAccountId, "POST", `/me/messages/${messageId}/reply`, payload);

@@ -73,6 +73,13 @@ const tokenParams = z.object({ token: z.string().min(1) }).strict();
 const orgSlugjobIdParams = z.object({ orgSlug: z.string().min(1), jobId: z.coerce.number().int().positive() }).strict();
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const slugParams = z.object({ slug: z.string().min(1) }).strict();
+/**
+ * PRD-C048 — `GET /public/careers/:orgSlug/jobs` and `GET /public/org/:orgId` were the two
+ * public routes still binding a path segment with no pipe and no `@Validate({ params })`.
+ * Unauthenticated surfaces are exactly where an unvalidated segment matters most.
+ */
+const orgSlugParams = z.object({ orgSlug: z.string().min(1).max(128) }).strict();
+const orgIdParams = z.object({ orgId: z.string().min(1).max(128) }).strict();
 
 
 function header(req: Request, name: string): string | undefined {
@@ -142,6 +149,7 @@ export class PublicController {
     "Cache-Control",
     "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
   )
+  @Validate({ params: orgSlugParams })
   listOrgJobs(@Param("orgSlug") orgSlug: string) {
     return this.careers.listOrgJobs(orgSlug);
   }
@@ -355,6 +363,7 @@ export class PublicController {
     "Cache-Control",
     "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
   )
+  @Validate({ params: orgIdParams })
   getOrgName(@Param("orgId") orgId: string) {
     return this.org.getOrgName(orgId);
   }

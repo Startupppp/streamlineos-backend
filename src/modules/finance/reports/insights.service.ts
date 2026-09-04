@@ -8,6 +8,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { baseCreditAmount, baseDebitAmount } from "../../accounting/core/journal-base-amount";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { InsightsQuery, AnomalyFinding } from "./dto/insights.schemas";
@@ -111,8 +112,8 @@ export class InsightsService {
       this.db
         .select({
           accountType: ledgerAccounts.accountType,
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         })
         .from(ledgerAccounts)
         .innerJoin(journalLines, eq(journalLines.accountId, ledgerAccounts.id))
@@ -135,8 +136,8 @@ export class InsightsService {
 
       this.db
         .select({
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))

@@ -11,7 +11,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AccessService } from "../access/access.service";
-import { buildOrgDashboardCacheKey } from "./dashboard-cache-key";
+import { buildOrgSectionCacheKey } from "./dashboard-cache-key";
 import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
@@ -37,7 +37,7 @@ export class DashboardBirthdaysService {
 
   async getBirthdays(orgId: string): Promise<BirthdayEntry[]> {
     const today = new Date().toISOString().slice(0, 10);
-    const key = await buildOrgDashboardCacheKey(
+    const key = await buildOrgSectionCacheKey(
       this.access,
       orgId,
       "birthdays",

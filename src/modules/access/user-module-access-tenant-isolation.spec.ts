@@ -1,4 +1,7 @@
 import type { Db } from "../../db/drizzle.module";
+import type { CacheService } from "../../common/cache/cache.service";
+import { stubService } from "../../test/service-stub.spec-fixtures";
+import type { EntitlementsService } from "./entitlements.service";
 import { UserModuleAccessService } from "./user-module-access.service";
 
 describe("UserModuleAccessService — cross-tenant isolation", () => {
@@ -21,8 +24,8 @@ describe("UserModuleAccessService — cross-tenant isolation", () => {
 
   it("returns empty denied modules for a different org (cross-tenant isolation)", async () => {
     const db = makeDb([]);
-    const mockEntitlements = { getEnabledModules: jest.fn().mockResolvedValue(new Set()), isCoreModule: jest.fn().mockReturnValue(false) } as any;
-    const mockCache = {} as any;
+    const mockEntitlements = stubService<EntitlementsService>({ isCoreModule: jest.fn().mockReturnValue(false) });
+    const mockCache = stubService<CacheService>({});
     const svc = new UserModuleAccessService(db, mockEntitlements, mockCache);
     const result = await svc.getUserDeniedModules(ATTACKER, USER_ID);
     expect(result.size).toBe(0);
@@ -30,8 +33,8 @@ describe("UserModuleAccessService — cross-tenant isolation", () => {
 
   it("returns denied modules for the owning org (control — same-tenant)", async () => {
     const db = makeDb([{ moduleKey: "payroll" }]);
-    const mockEntitlements = { getEnabledModules: jest.fn().mockResolvedValue(new Set()), isCoreModule: jest.fn().mockReturnValue(false) } as any;
-    const mockCache = {} as any;
+    const mockEntitlements = stubService<EntitlementsService>({ isCoreModule: jest.fn().mockReturnValue(false) });
+    const mockCache = stubService<CacheService>({});
     const svc = new UserModuleAccessService(db, mockEntitlements, mockCache);
     const result = await svc.getUserDeniedModules(OWNER, USER_ID);
     expect(result).toBeInstanceOf(Set);

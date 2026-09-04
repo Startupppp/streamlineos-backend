@@ -208,7 +208,7 @@ export class RecordLayoutsService {
         LIMIT ${USAGE_SAMPLE_CAP}
       ) s`);
 
-    const [row] = rows as unknown as Array<Record<string, number | null>>;
+    const [row] = rows;
     const filled: Record<string, number> = {};
     counted.forEach((field, index) => {
       filled[field] = Number(row?.[`f${index}`] ?? 0);

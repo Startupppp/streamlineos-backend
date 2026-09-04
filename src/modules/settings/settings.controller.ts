@@ -1,5 +1,6 @@
 import {
   Body,
+  Header,
   Controller,
   Delete,
   Get,
@@ -11,6 +12,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -68,6 +70,9 @@ export class SettingsController {
   @HttpCode(201)
   @Idempotent("settings.apiKey.create")
   @Validate({ body: createApiKeySchema })
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   createApiKey(
     @Body() body: CreateApiKeyInput,
     @CurrentUser() u: CurrentUserContext,

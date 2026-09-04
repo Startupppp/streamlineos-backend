@@ -1,4 +1,7 @@
 import type { Db } from "../../db/drizzle.module";
+import type { AuditService } from "../../common/audit/audit.service";
+import { stubService } from "../../test/service-stub.spec-fixtures";
+import type { DirectoryPersonEnsureService } from "./directory-person-ensure.service";
 import { WorkerEngagementsService } from "./worker-engagements.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -32,8 +35,8 @@ describe("WorkerEngagementsService — cross-tenant isolation", () => {
 
   it("returns empty data for a different org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
-    const mockAudit = { log: jest.fn() } as any;
-    const mockIdentities = {} as any;
+    const mockAudit = stubService<AuditService>({ log: jest.fn() });
+    const mockIdentities = stubService<DirectoryPersonEnsureService>({});
     const svc = new WorkerEngagementsService(db, mockAudit, mockIdentities);
     const result = await svc.listWorkers(ATTACKER, { limit: 20 });
     expect(result.data).toHaveLength(0);
@@ -44,8 +47,8 @@ describe("WorkerEngagementsService — cross-tenant isolation", () => {
   it("returns workers for the owning org (control — same-tenant)", async () => {
     const workerRow = { workerId: "w-1", organizationId: OWNER, displayName: "Bob" };
     const { db } = makeDb([workerRow]);
-    const mockAudit = { log: jest.fn() } as any;
-    const mockIdentities = {} as any;
+    const mockAudit = stubService<AuditService>({ log: jest.fn() });
+    const mockIdentities = stubService<DirectoryPersonEnsureService>({});
     const svc = new WorkerEngagementsService(db, mockAudit, mockIdentities);
     const result = await svc.listWorkers(OWNER, { limit: 20 });
     expect(result.data).toHaveLength(1);

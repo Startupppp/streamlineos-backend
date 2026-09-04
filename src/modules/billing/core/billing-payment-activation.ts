@@ -159,6 +159,9 @@ export class BillingPaymentActivation {
             previousPlan: revenue.previousPlan,
             mrr: revenue.mrr,
             amount: revenue.mrr,
+            // Both come from PLAN_PRICES_PAISE, which is paise of PLATFORM_PRICE_CURRENCY —
+            // not `price.currency`, which denominates what the customer was charged.
+            currency: PLATFORM_PRICE_CURRENCY,
             metadata: { paymentId: input.paymentId, source: "verify-and-activate" },
             dedupeKey: `verify-and-activate:${input.paymentId}`,
           });

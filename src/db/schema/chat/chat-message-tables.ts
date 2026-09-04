@@ -88,6 +88,7 @@ export const chatMessageReactions = pgTable(
   (table) => [
     uniqueIndex("uniq_chat_message_reaction_actor_emoji").on(table.orgId, table.messageId, table.membershipId, table.emoji),
     index("idx_chat_message_reactions_membership").on(table.orgId, table.membershipId),
+    unique("uniq_chat_message_reactions_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.messageId], foreignColumns: [chatMessages.orgId, chatMessages.id], name: "fk_chat_message_reactions_org_message" }),
     foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_message_reactions_org_membership" }),
   ],

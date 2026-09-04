@@ -101,7 +101,9 @@ export class StorageVaultController {
     let signedUrl: string | null = null;
     if (key.length > 0 && this.storage.isConfigured()) {
       try {
-        signedUrl = await this.storage.getFileUrl(u.orgId, key, SIGNED_URL_EXPIRY_SECONDS);
+        signedUrl = await this.storage.getFileUrl(u.orgId, key, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+          preauthorized: true,
+        });
       } catch {
         signedUrl = null;
       }

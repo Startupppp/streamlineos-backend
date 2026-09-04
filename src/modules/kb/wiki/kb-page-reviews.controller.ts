@@ -29,7 +29,6 @@ import {
   type RejectReviewInput,
 } from "./dto/kb-page-reviews.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -37,7 +36,6 @@ const reviewIdParams = z.object({ reviewId: z.coerce.number().int().positive() }
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbPageReviewsController {
   constructor(private readonly reviews: KbPageReviewsService) {}
 

@@ -95,7 +95,10 @@ describe("LeavesWriteService server-derived approver", () => {
     };
     const workflowEngine = { startWorkflow: jest.fn().mockResolvedValue(undefined) };
     const automation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
-    const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
+    const cache = {
+      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+    };
     const service = new LeavesWriteService(
       db as never,
       { logCritical: jest.fn() } as never,

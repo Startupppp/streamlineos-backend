@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { baseCreditAmount, baseDebitAmount } from "../../accounting/core/journal-base-amount";
 import { invoices, invoiceItems, purchaseBills, purchaseBillItems } from "../../../db/schema/crm/invoicing";
 import { clients } from "../../../db/schema/crm/contacts";
 import { journalLines } from "../../../db/schema/accounting/accounting";
@@ -342,7 +343,7 @@ export class TaxReportsService {
     try {
       const accountId = await this.posting.resolveSystemAccount(orgId, "TAX_PAYABLE");
       const rows = await this.db
-        .select({ totalDebit: sql<string>`sum(${journalLines.debit})`, totalCredit: sql<string>`sum(${journalLines.credit})` })
+        .select({ totalDebit: sql<string>`sum(${baseDebitAmount})`, totalCredit: sql<string>`sum(${baseCreditAmount})` })
         .from(journalLines)
         .where(and(eq(journalLines.orgId, orgId), eq(journalLines.accountId, accountId)));
       const row = rows[0];

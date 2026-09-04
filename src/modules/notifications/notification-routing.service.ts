@@ -6,6 +6,7 @@ import {
   notificationPolicyDefaults,
   notificationProviderAccounts,
   notificationSuppressionRules,
+  notificationConsents,
   notificationDeliveries,
   organizationMembers,
   userPreferences,
@@ -29,9 +30,18 @@ import {
   quietHoursEndAt,
   type QuietHoursConfig,
 } from "./quiet-hours.util";
-import { computeRouting, type RouteContext } from "./notification-routing-computation";
+import {
+  computeRouting,
+  CONSENT_REQUIRED_CHANNELS,
+  type RouteContext,
+} from "./notification-routing-computation";
 
-export { computeRouting, type RouteContext } from "./notification-routing-computation";
+export {
+  computeRouting,
+  CONSENT_REQUIRED_CHANNELS,
+  requiresConsent,
+  type RouteContext,
+} from "./notification-routing-computation";
 
 interface ResolvedPreferences {
   channelEnabled: Record<NotificationChannel, boolean>;
@@ -270,6 +280,54 @@ export class NotificationRoutingService {
     return perUser;
   }
 
+  /**
+   * COMP-003. `notification_consents` had no reader outside the GDPR export, so
+   * SMS and WhatsApp routed with no regard for whether a legal basis was ever
+   * recorded. One batched query, shaped like the preference-rule fetch beside it:
+   * the consent row is keyed on membership, and routing works in user ids.
+   *
+   * "Any GRANTED row for this channel" is the right question at routing time. The
+   * destination is not known until the delivery worker resolves it, so the row's
+   * `destination` is what the consent was given FOR, and the gate here is whether
+   * consent exists at all. A withdrawal flips `state`, so a WITHDRAWN row does not
+   * match and the channel closes again.
+   */
+  private async loadConsentBatch(
+    orgId: string,
+    userIds: string[],
+  ): Promise<Map<string, Set<NotificationChannel>>> {
+    const perUser = new Map<string, Set<NotificationChannel>>();
+    for (const u of userIds) perUser.set(u, new Set());
+    if (userIds.length === 0) return perUser;
+
+    const rows = await this.db
+      .select({
+        userId: organizationMembers.userId,
+        channel: notificationConsents.channel,
+      })
+      .from(notificationConsents)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, notificationConsents.orgId),
+          eq(organizationMembers.id, notificationConsents.membershipId),
+        ),
+      )
+      .where(
+        and(
+          eq(notificationConsents.orgId, orgId),
+          eq(notificationConsents.state, "GRANTED"),
+          inArray(notificationConsents.channel, [...CONSENT_REQUIRED_CHANNELS]),
+          eq(organizationMembers.status, "ACTIVE"),
+          inArray(organizationMembers.userId, userIds),
+        ),
+      )
+      .limit(Math.max(1, userIds.length * CONSENT_REQUIRED_CHANNELS.length * 4));
+
+    for (const row of rows) perUser.get(row.userId)?.add(row.channel);
+    return perUser;
+  }
+
   private async applyRateLimitsBatch(
     orgId: string,
     userIds: string[],
@@ -428,11 +486,10 @@ export class NotificationRoutingService {
     const routingDefinition = channels
       ? { ...definition, defaultChannels: channels, allowedChannels: channels }
       : definition;
-    const suppressionByUser = await this.loadSuppressionBatch(
-      orgId,
-      userIds,
-      routingDefinition,
-    );
+    const [suppressionByUser, consentByUser] = await Promise.all([
+      this.loadSuppressionBatch(orgId, userIds, routingDefinition),
+      this.loadConsentBatch(orgId, userIds),
+    ]);
     await this.applyRateLimitsBatch(
       orgId,
       userIds,
@@ -454,6 +511,7 @@ export class NotificationRoutingService {
         orgPolicy,
         availableChannels,
         suppressedChannels: suppressionByUser.get(userId) ?? new Map(),
+        consentedChannels: consentByUser.get(userId) ?? new Set(),
       });
       results.set(userId, { ...result, userId });
     }

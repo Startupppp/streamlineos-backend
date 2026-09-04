@@ -42,7 +42,11 @@ describe("InvitationAcceptanceService.decline", () => {
       organizationMembers: { findFirst: memberFindFirst },
     },
     select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({ where: adminSelectWhere }),
+      from: jest.fn().mockReturnValue({
+        where: jest.fn(() => ({
+          orderBy: jest.fn().mockReturnValue({ limit: adminSelectWhere }),
+        })),
+      }),
     }),
     transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };

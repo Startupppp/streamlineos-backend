@@ -33,8 +33,9 @@ function schedulerWith(billing: CronBillingService, lease: CronLeaseService) {
     purgeExpiredConversations: run,
     pruneStaleChunks: run,
     pruneWebhookDeliveries: run,
+    purgeExpiredTrash: run,
   };
-  const fill = Array.from({ length: 13 }, () => noop);
+  const fill = Array.from({ length: 15 }, () => noop);
   return new CronRetentionSchedulerService(
     null,
     lease,
@@ -51,6 +52,8 @@ function schedulerWith(billing: CronBillingService, lease: CronLeaseService) {
     fill[10] as never,
     fill[11] as never,
     fill[12] as never,
+    fill[13] as never,
+    fill[14] as never,
     billing,
   );
 }

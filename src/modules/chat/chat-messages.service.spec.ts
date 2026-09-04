@@ -241,24 +241,24 @@ describe("ChatMessageModerationService", () => {
   describe("edit", () => {
     it("throws NotFoundException if message does not exist", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue(null);
-      await expect(moderation.edit(999, "user1", "org1", "new content")).rejects.toThrow(NotFoundException);
+      await expect(moderation.edit(999, 1, "user1", "org1", "new content")).rejects.toThrow(NotFoundException);
     });
 
     it("throws ForbiddenException if user is not the message owner", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderMembershipId: 99, isDeleted: false });
-      await expect(moderation.edit(1, "user1", "org1", "new content")).rejects.toThrow(ForbiddenException);
+      await expect(moderation.edit(1, 1, "user1", "org1", "new content")).rejects.toThrow(ForbiddenException);
     });
   });
 
   describe("remove", () => {
     it("throws NotFoundException if message does not exist", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue(null);
-      await expect(moderation.remove(999, "user1", false, "org1")).rejects.toThrow(NotFoundException);
+      await expect(moderation.remove(999, 1, "user1", false, "org1")).rejects.toThrow(NotFoundException);
     });
 
     it("throws ForbiddenException if user is not the owner and not admin", async () => {
       mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderMembershipId: 99, isDeleted: false, channelId: 1 });
-      await expect(moderation.remove(1, "user1", false, "org1")).rejects.toThrow(ForbiddenException);
+      await expect(moderation.remove(1, 1, "user1", false, "org1")).rejects.toThrow(ForbiddenException);
     });
   });
 });

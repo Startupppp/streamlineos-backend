@@ -1,5 +1,6 @@
 import {
   Body,
+  Header,
   Controller,
   Get,
   HttpCode,
@@ -16,6 +17,7 @@ import { jwtVerify } from "jose";
 import type { Redis } from "@upstash/redis";
 import { REDIS } from "../../common/cache/cache.service";
 import { SESSION_PROOF_ISSUER, SESSION_PROOF_AUDIENCE } from "../../common/auth/backend-claims";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { JwtKeyringService } from "../../common/auth/jwt-keyring.service";
 import { MembershipStateService } from "../../common/auth/membership-state.service";
@@ -259,6 +261,10 @@ export class AuthController {
   @Post("session-exchange")
   @Public()
   @HttpCode(200)
+  // PRD-C089 (BREACH) — this body is a bearer token, `app.enableCors({ credentials: true })`
+  // is live, and a compressed length is a cross-origin size oracle. `shouldCompress` checks
+  // this opt-out first, so no content type can overrule it.
+  @Header(NO_COMPRESSION_HEADER, "1")
   @Validate({ body: sessionExchangeSchema })
   async sessionExchange(
     @Body() body: SessionExchangeInput,

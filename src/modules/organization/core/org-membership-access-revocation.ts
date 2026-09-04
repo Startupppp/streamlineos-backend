@@ -1,5 +1,5 @@
 import { Logger } from "@nestjs/common";
-import { and, count, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
 import {
   agentTokens,
   chatHuddleParticipants,
@@ -320,8 +320,8 @@ export class OrgMembershipAccessRevocation {
 
     const hasOtherActiveMemberships = await runOutsideTenantContext(() =>
       withIdentity(this.db, memberUserId, async (tx) => {
-        const [result] = await tx
-          .select({ n: count() })
+        const other = await tx
+          .select({ one: sql`1` })
           .from(organizationMembers)
           .innerJoin(
             organizations,
@@ -335,8 +335,9 @@ export class OrgMembershipAccessRevocation {
               isNull(organizations.deletedAt),
               ne(organizationMembers.orgId, orgId),
             ),
-          );
-        return (result?.n ?? 0) > 0;
+          )
+          .limit(1);
+        return other.length > 0;
       }),
     );
     if (!hasOtherActiveMemberships) {

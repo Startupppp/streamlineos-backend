@@ -175,7 +175,10 @@ describe("LeavesWriteService — the deferred leave side effects are visible whe
       { emit } as never,
       { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
       { startWorkflow } as never,
-      { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never,
+      {
+        invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+        invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+      } as never,
       { membersWithPermission: jest.fn().mockResolvedValue([{ userId: "manager-1" }]) } as never,
       { resolve: jest.fn().mockResolvedValue({ id: "manager-1", name: "Manager" }) } as never,
       { probationCoverageOn: jest.fn().mockResolvedValue("past-probation") } as never,

@@ -55,14 +55,18 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {
   calendarAttendeeListResponseSchema,
+  calendarCreateEventResponseSchema,
   calendarDeleteEventResponseSchema,
   calendarEventsResponseSchema,
+  calendarOccurrenceExceptionResponseSchema,
   calendarRsvpResponseSchema,
   calendarSourcePreferenceResponseSchema,
   calendarSourcesResponseSchema,
+  calendarUpdateEventResponseSchema,
   externalCalendarEventsResponseSchema,
 } from "./dto/calendar-response.schemas";
 import {
+  syncCancelResponseSchema,
   syncRetryResponseSchema,
   syncStatusResponseSchema,
 } from "./dto/sync-status.schemas";
@@ -138,6 +142,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(201)
   @Validate({ body: createEventSchema })
+  @ResponseSchema(calendarCreateEventResponseSchema)
   createEvent(
     @Body() body: CreateEventInput,
     @CurrentUser() u: CurrentUserContext,
@@ -148,6 +153,7 @@ export class CalendarController {
   @Put("events/:eventId")
   @Universal()
   @Validate({ params: eventIdParams, body: updateEventSchema })
+  @ResponseSchema(calendarUpdateEventResponseSchema)
   async updateEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Body() body: UpdateEventInput,
@@ -196,6 +202,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(200)
   @Validate({ params: eventIdoccurrenceStartParams, body: upsertOccurrenceExceptionSchema })
+  @ResponseSchema(calendarOccurrenceExceptionResponseSchema)
   async upsertOccurrenceException(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Param("occurrenceStart") occurrenceStart: string,
@@ -217,6 +224,7 @@ export class CalendarController {
   @Universal()
   @HttpCode(200)
   @Validate({ params: eventIdoccurrenceStartParams })
+  @ResponseSchema(calendarOccurrenceExceptionResponseSchema)
   async cancelOccurrence(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Param("occurrenceStart") occurrenceStart: string,
@@ -254,6 +262,24 @@ export class CalendarController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.calendarSyncStatus.retrySync(u.orgId, u.userId, eventId);
+  }
+
+  /**
+   * The cancellation half of the queue's lifecycle. `sync-retry` revives a terminal job;
+   * this withdraws one that has not been dispatched yet, which the queue had no way to
+   * express at all. `Universal` and the creator check inside the service match
+   * `sync-retry` exactly — seeing an event is not standing to change what it pushes.
+   */
+  @Delete("events/:eventId/sync-queue")
+  @Universal()
+  @HttpCode(200)
+  @Validate({ params: eventIdParams })
+  @ResponseSchema(syncCancelResponseSchema)
+  cancelSync(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.calendarSyncStatus.cancelSync(u.orgId, u.userId, eventId);
   }
 
   @Get("events/:eventId/rsvp")

@@ -819,6 +819,25 @@ export function classifyReturns(returns, ctx, deps, hops, trail) {
 }
 
 /** Wire the hop machinery to a source index. Returns { classifyOperation }. */
+/**
+ * The handler names an operationId could be naming.
+ *
+ * `@Version("2")` makes Nest's Swagger explorer append a `_v<version>` suffix to the
+ * operationId — `UsersController_listUsersV2` is emitted as `UsersController_listUsersV2_v2`
+ * — and there is no method by that name, so the source reader gave up and `GET /v2/users`
+ * came out as NOT SCANNED. An unreadable endpoint is not a clean one, so a versioned route
+ * silently left this gate's corpus the moment API versioning was configured, and the corpus
+ * line read 338 of 339 while nothing said which rule had stopped applying.
+ *
+ * The literal name is tried FIRST: a handler may genuinely be called `somethingV2` — or even
+ * end in `_v2` — and guessing the stripped name first would resolve the wrong method and
+ * report its shape as this operation's.
+ */
+export function versionedMethodCandidates(method) {
+  const stripped = method.replace(/_v[0-9]+$/, "");
+  return stripped === method ? [method] : [method, stripped];
+}
+
 export function createSourceReader(index) {
   const memo = new Map();
   let chain = [];
@@ -901,16 +920,22 @@ export function createSourceReader(index) {
     const separator = operationId.indexOf("_");
     if (separator < 0) return { kind: "unresolved", why: `operationId ${operationId} has no method part`, chain: [] };
     const cls = operationId.slice(0, separator);
-    const method = operationId.slice(separator + 1);
+    const declaredMethod = operationId.slice(separator + 1);
     const file = index.controllerFile.get(cls);
     if (!file) return { kind: "unresolved", why: `controller ${cls} not found in src/`, chain: [] };
+
+    const source = index.readSource(file);
+    const clsBody = classBody(source, cls);
+    const method =
+      versionedMethodCandidates(declaredMethod).find(
+        (candidate) => clsBody !== null && findMethod(clsBody, candidate) !== null,
+      ) ?? declaredMethod;
 
     // A handler that takes `@Res()` and returns nothing writes the response itself — it never
     // reaches the serializer, so there is no JSON envelope for this rule to be about. Only the
     // no-return form: a `@Res({ passthrough: true })` handler that DOES return still answers
     // with JSON on its non-download arm.
-    const body = classBody(index.readSource(file), cls);
-    const handler = body === null ? null : findMethod(body, method);
+    const handler = clsBody === null ? null : findMethod(clsBody, method);
     if (handler !== null && handler.sig.includes("@Res(") && returnExpressions(handler.body).length === 0) {
       return { kind: "scalar", why: "streams its own response through @Res()", chain: [`${cls}.${method}`] };
     }
@@ -1164,6 +1189,41 @@ if (SELF_TEST) {
   if (csvOnly.kind !== "scalar")
     fail("download-only", `a handler whose every arm is a download is not a collection; got ${csvOnly.kind}`);
   else pass("download-only — a handler with only non-JSON arms is not judged by this rule");
+
+  /* --- a @Version()-suffixed operationId resolves to the handler it names --- */
+  const versionCases = [
+    ["listUsersV2_v2", ["listUsersV2_v2", "listUsersV2"], "a _v2 suffix is tried literally, then stripped"],
+    ["listUsers", ["listUsers"], "an unsuffixed name produces exactly one candidate"],
+    ["exportV2_v10", ["exportV2_v10", "exportV2"], "a multi-digit version suffix is stripped, the V2 in the name is not"],
+  ];
+  for (const [operationMethod, expected, label] of versionCases) {
+    const got = versionedMethodCandidates(operationMethod);
+    if (JSON.stringify(got) !== JSON.stringify(expected))
+      fail(`versioned-method:${label}`, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(got)}`);
+    else pass(`versioned-method — ${label}`);
+  }
+  if (versionedMethodCandidates("listUsersV2_v2")[0] !== "listUsersV2_v2")
+    fail("versioned-method-order", "the literal name must be tried before the stripped one, or a real _v2 method resolves wrong");
+  else pass("versioned-method — the literal name is tried before the stripped one");
+
+  // The helper alone proves nothing about the WIRING: narrowing classifyOperation back to the
+  // literal name leaves every case above passing while /v2/users drops out of the corpus
+  // again. So this one drives the real reader over the real src/ and asserts the versioned
+  // operationId Nest actually emits resolves to a shape.
+  if (!existsSync(SRC_ROOT)) {
+    fail("versioned-operation-resolves", `src/ not found at ${SRC_ROOT}`);
+  } else {
+    const liveReader = createSourceReader(createSourceIndex(SRC_ROOT));
+    const suffixed = liveReader.classifyOperation("UsersController_listUsersV2_v2");
+    const plain = liveReader.classifyOperation("UsersController_listUsersV2");
+    if (plain.kind === "unresolved")
+      fail("versioned-operation-premise", `UsersController.listUsersV2 must itself resolve, or this case is vacuous: ${plain.why}`);
+    else if (suffixed.kind === "unresolved")
+      fail("versioned-operation-resolves", `a @Version()-suffixed operationId must resolve to its handler; got unresolved: ${suffixed.why}`);
+    else if (suffixed.kind !== plain.kind)
+      fail("versioned-operation-resolves", `the suffixed id resolved to ${suffixed.kind}, the plain one to ${plain.kind} — they are the same handler`);
+    else pass(`versioned-operation — UsersController_listUsersV2_v2 resolves to the same ${plain.kind} as the unsuffixed id`);
+  }
 
   /* --- the anti-vacuity property: an endpoint the reader cannot read is NOT scanned --- */
   const sourceDoc = { paths: {

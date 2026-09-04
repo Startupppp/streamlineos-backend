@@ -23,12 +23,48 @@ describe("LeavesService user projection", () => {
       name: true,
       firstName: true,
       lastName: true,
-      email: true,
       image: true,
     });
     expect(columns).not.toHaveProperty("totpSecret");
     expect(columns).not.toHaveProperty("bankDetails");
     expect(columns).not.toHaveProperty("taxId");
+  });
+
+  it("does NOT project email: /me/time-off/team-calendar is org-wide and no client reads it", async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new LeavesService(
+      { query: { leaveRequests: { findMany } } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
+    );
+
+    await service.thisWeek("org-1");
+
+    const columns = findMany.mock.calls[0]?.[0]?.with?.user?.columns;
+    expect(columns).not.toHaveProperty("email");
+    expect(Object.keys(columns as Record<string, boolean>)).not.toContain("email");
+  });
+
+  it("hands back no email on a row, so a leaked column cannot reach the response", async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 1,
+        user: { id: "user-1", firstName: "Ada", lastName: "L", image: null },
+      },
+    ]);
+    const service = new LeavesService(
+      { query: { leaveRequests: { findMany } } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
+    );
+
+    const rows = await service.thisWeek("org-1");
+
+    expect(rows[0]?.user).not.toHaveProperty("email");
   });
 
   it("serves designation from the employment accessor, not from the users row", async () => {

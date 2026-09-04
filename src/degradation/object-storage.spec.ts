@@ -24,7 +24,7 @@ function makeStorageService(endpoint: string): StorageService {
       mimeType: _mime,
     })),
   } as unknown as MediaCompressionService;
-  return new StorageService(compression, config);
+  return new StorageService(compression, config, { isKeyBlocked: async () => false });
 }
 
 describe("Object storage degraded — pre-generated key survives upload failure", () => {

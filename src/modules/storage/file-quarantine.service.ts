@@ -50,6 +50,16 @@ const fileQuarantineRecords = pgTable(
 
 export type QuarantineStatus = "pending_scan" | "clean" | "infected" | "error";
 
+/**
+ * The narrow slice of the quarantine that a signing path needs. `StorageService`
+ * depends on this shape rather than the whole service so a caller constructing
+ * the storage service directly is not forced to build a database-backed
+ * quarantine to sign a key.
+ */
+export interface KeyBlockCheck {
+  isKeyBlocked(orgId: string, storageKey: string): Promise<boolean>;
+}
+
 export interface QuarantineRecord {
   id: string;
   orgId: string;

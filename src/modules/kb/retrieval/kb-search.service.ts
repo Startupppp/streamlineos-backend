@@ -48,6 +48,29 @@ export class KbSearchService {
     return articleOwnerScopeFilter(articleScope, user);
   }
 
+  /**
+   * The second of the two article ACL dimensions, as a façade in the same shape as
+   * `articleOwnerFilterFor` above and for the same reason.
+   *
+   * Article visibility is owner scope AND per-article `kb_article_restrictions`.
+   * Retrieval applies both on the way in (`search`, `retrieveTopArticles`,
+   * `KbCandidateService.article{Keyword,Vector}Candidates`), but the post-answer
+   * citation re-verification in `KbAskService.resolveVisibleArticles` only ever
+   * re-applied the owner half — so a restriction added between retrieval and the
+   * model's reply was invisible to the check whose entire job is to catch exactly
+   * that window. Both halves resolve through one call now, so the two paths cannot
+   * drift apart again by one caller forgetting a condition.
+   *
+   * Returns `null` for a `kb:spaces:manage` holder, matching `search`'s
+   * `if (!isAdmin)`: an admin is not subject to per-article restrictions, and
+   * pushing the predicate anyway would strip their own citations.
+   */
+  async articleRestrictionFilterFor(user: CurrentUserContext): Promise<SQL | null> {
+    if (await this.access.isAdmin(user)) return null;
+    const principal = await this.access.getPrincipalIds(user);
+    return this.candidates.articleRestrictionFilter(user.orgId, principal);
+  }
+
   private async embedSearchQuery(text: string, orgId: string) {
     return this.aiGateway.embedQueryWithCredit({
       text,
@@ -158,7 +181,7 @@ export class KbSearchService {
       snippet: this.candidates.buildSnippet(contentText, input.q),
     }));
 
-    await this.events.record(user.orgId, total > 0 ? "search" : "search_no_results", {
+    await this.events.recordDetached(user.orgId, total > 0 ? "search" : "search_no_results", {
       actorMembershipId: actingMembershipId(user.principal) ?? null,
       query: input.q,
       metadata: { resultsCount: total },

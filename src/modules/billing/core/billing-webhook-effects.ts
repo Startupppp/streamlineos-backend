@@ -73,6 +73,7 @@ export class BillingWebhookEffects {
           orgId,
           mrr: 0,
           amount: payment.amount,
+          currency: payment.currency,
           metadata: { paymentId: payment.id, packId, source: "provider-webhook" },
           dedupeKey: `${providerKey}:${payment.id}`,
         });
@@ -113,6 +114,7 @@ export class BillingWebhookEffects {
         orgId,
         mrr: 0,
         amount: payment.amount,
+        currency: payment.currency,
         metadata: { paymentId: payment.id, source: "provider-webhook" },
         dedupeKey: `${providerKey}:${payment.id}`,
       });

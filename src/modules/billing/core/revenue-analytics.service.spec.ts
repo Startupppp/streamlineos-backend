@@ -6,7 +6,7 @@ import { inboxRecords, outboxEvents } from "../../../db/schema/common/outbox";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
 import { type DbOrTx } from "../../../common/rbac/access-invalidate";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
+import { PLAN_PRICES_PAISE, PLATFORM_PRICE_CURRENCY } from "./plan-entitlements.constants";
 
 interface DbSeed {
   claimable?: boolean;
@@ -146,7 +146,13 @@ describe("recording happens through the outbox so it cannot be forgotten on a ne
     const db = makeDb();
     const { service, tx } = await build(db);
 
-    await service.emit(tx, { type: "new_subscription", orgId: "org1", plan: "STARTER", mrr: 99_900 });
+    await service.emit(tx, {
+      type: "new_subscription",
+      orgId: "org1",
+      plan: "STARTER",
+      mrr: 99_900,
+      currency: PLATFORM_PRICE_CURRENCY,
+    });
 
     expect(db._store.outbox).toHaveLength(1);
     expect(db._store.revenue).toHaveLength(0);
@@ -162,8 +168,18 @@ describe("recording happens through the outbox so it cannot be forgotten on a ne
     const db = makeDb();
     const { service, tx } = await build(db);
 
-    await service.emit(tx, { type: "new_subscription", orgId: "org1", mrr: 1 });
-    await service.emit(tx, { type: "upgrade", orgId: "org1", mrr: 2 });
+    await service.emit(tx, {
+      type: "new_subscription",
+      orgId: "org1",
+      mrr: 1,
+      currency: PLATFORM_PRICE_CURRENCY,
+    });
+    await service.emit(tx, {
+      type: "upgrade",
+      orgId: "org1",
+      mrr: 2,
+      currency: PLATFORM_PRICE_CURRENCY,
+    });
 
     const [first, second] = db._store.outbox;
     expect(first?.aggregateId).not.toBe(second?.aggregateId);
@@ -175,7 +191,12 @@ describe("recording happens through the outbox so it cannot be forgotten on a ne
     const { service, tx } = await build(db);
 
     await expect(
-      service.emit(tx, { type: "new_subscription", orgId: "", mrr: 1 }),
+      service.emit(tx, {
+        type: "new_subscription",
+        orgId: "",
+        mrr: 1,
+        currency: PLATFORM_PRICE_CURRENCY,
+      }),
     ).rejects.toThrow(ZodError);
     expect(db._store.outbox).toHaveLength(0);
   });

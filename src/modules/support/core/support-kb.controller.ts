@@ -45,6 +45,17 @@ import { BodylessAction } from "../../../common/openapi/zod-operation-contracts"
 import { z } from "zod";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
+/**
+ * PRD-C077: the resumption handle. `KbArticleReindexService.reindexAll` has always paged
+ * at REINDEX_BATCH_SIZE = 100 and returned a `nextArticleId`, but this controller accepted
+ * no cursor, so `afterArticleId` defaulted to 0 on every call and no article past the first
+ * hundred was ever reachable through the API — the returned handle had nowhere to go back in.
+ * `kb-page-indexing.controller.ts` has taken its cursor all along; this matches it.
+ */
+const reindexAllQuery = z
+  .object({ afterArticleId: z.coerce.number().int().min(0).default(0) })
+  .strict();
+type ReindexAllQuery = z.infer<typeof reindexAllQuery>;
 const articleAndAttachmentIdParams = z
   .object({
     articleId: z.coerce.number().int().positive(),
@@ -291,7 +302,8 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(200)
-  reindexAll(@CurrentUser() u: CurrentUserContext) {
-    return this.reindex.reindexAll(u.orgId);
+  @Validate({ query: reindexAllQuery })
+  reindexAll(@Query() query: ReindexAllQuery, @CurrentUser() u: CurrentUserContext) {
+    return this.reindex.reindexAll(u.orgId, query.afterArticleId);
   }
 }

@@ -138,7 +138,7 @@ export class DashboardController {
   @UseGuards(ModuleGuard)
   @RequireModule("hr")
   myLeaveBalance(@CurrentUser() u: CurrentUserContext) {
-    return this.leave.getMyLeaveBalance(u.orgId, u.userId);
+    return this.leave.getMyLeaveBalance(u);
   }
 
   @Get("pending-approvals")

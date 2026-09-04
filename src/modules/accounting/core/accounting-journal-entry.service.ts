@@ -20,7 +20,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { JournalPostingService, type DraftLine } from "../posting/journal-posting.service";
+import { JournalPostingService, type DraftDecimalLine } from "../posting/journal-posting.service";
 import { FinancePostingService } from "../posting/finance-posting.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
@@ -200,10 +200,10 @@ export class AccountingJournalEntryService {
       .orderBy(asc(journalLines.lineOrder));
     if (lineRows.length === 0) throw new ConflictException("Original entry has no lines");
 
-    const reversingLines: DraftLine[] = lineRows.map((line) => ({
+    const reversingLines: DraftDecimalLine[] = lineRows.map((line) => ({
       accountCode: line.accountCode,
-      debit: Number(toDecimal(line.credit)),
-      credit: Number(toDecimal(line.debit)),
+      debit: toDecimal(line.credit),
+      credit: toDecimal(line.debit),
       description: `Reverses ${original.entryNumber}: ${line.description ?? ""}`,
     }));
 
@@ -226,7 +226,7 @@ export class AccountingJournalEntryService {
     const wasExisting = existing.length > 0;
 
     const persisted = await this.db.transaction(async (tx) => {
-      const reversed = await this.posting.persistJournalEntry(
+      const reversed = await this.posting.persistDecimalJournalEntry(
         {
           orgId,
           entryDate: today,
