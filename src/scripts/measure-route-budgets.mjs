@@ -31,6 +31,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveMeasurementRole } from "./benchmark-role-guard.mjs";
 
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const BUDGETS_PATH = join(BACKEND_ROOT, "contracts", "route-budgets.json");
@@ -261,6 +262,16 @@ if (dbCallsPath) {
   }
 }
 
+// PRD-C079: the role provenance is READ off the artifact that was actually measured. It used to
+// be a string literal here, which survives being pointed at the owner and turns the manifest's own
+// RLS claim into an assertion nobody took. run-read-cost-budgets.mjs records what pg_roles said.
+const measuredRoleResolution = resolveMeasurementRole(artifact);
+if (!measuredRoleResolution.ok) {
+  process.stderr.write(`measure-route-budgets: REFUSING TO WRITE — ${measuredRoleResolution.why}\n`);
+  process.exit(1);
+}
+const measuredRole = measuredRoleResolution.role;
+
 manifest.measurement = {
   method: "read-path-explain",
   commit: gitCommit(),
@@ -270,7 +281,7 @@ manifest.measurement = {
     "measured route so the recorded commit stays the one the numbers describe.",
   takenAt: artifact.generatedAt ?? new Date().toISOString(),
   database: arg("database") ?? "scratch_perf_seed",
-  role: "streamline_app (rolbypassrls = false, tenant GUC set)",
+  role: measuredRole,
   referenceTenant: artifact.tenant,
   referenceProfile: artifact.profile,
   minorityTenant: minority?.tenant ?? null,

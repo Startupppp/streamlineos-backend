@@ -302,7 +302,9 @@ export class StorageController {
       return;
     }
 
-    const signedUrl = await this.storage.getFileUrl(orgId, fileKey, expiresIn);
+    const signedUrl = await this.storage.getFileUrl(orgId, fileKey, expiresIn, undefined, {
+      preauthorized: true,
+    });
     res.json({ url: signedUrl });
   }
 

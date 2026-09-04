@@ -100,7 +100,7 @@ async function uploadKbMedia(store: StorageService): Promise<void> {
 }
 
 function build(rows: Array<{ id: string; storageKey: string; purpose: string; bucket: string | null }>) {
-  const store = new StorageService({} as MediaCompressionService, config);
+  const store = new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false });
   const pendingPurge = {
     listForRetry: jest.fn().mockResolvedValue(rows),
     markConfirmed: jest.fn().mockResolvedValue(undefined),

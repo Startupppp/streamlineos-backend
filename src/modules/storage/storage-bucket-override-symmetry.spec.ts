@@ -59,7 +59,7 @@ function captureS3(bodyFor: () => unknown = () => undefined): {
 }
 
 function service(): StorageService {
-  return new StorageService({} as MediaCompressionService, config);
+  return new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false });
 }
 
 function bucketOf(sent: Sent[], command: string): string | undefined {

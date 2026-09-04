@@ -393,7 +393,7 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
 
 describe("StorageService private file references", () => {
   it("extracts only keys belonging to the configured storage base", () => {
-    const storage = new StorageService({} as never, makeStorageConfig("https://files.example.com"));
+    const storage = new StorageService({} as never, makeStorageConfig("https://files.example.com"), { isKeyBlocked: async () => false });
 
     expect(storage.getFileKeyFromUrl("https://files.example.com/onboarding-docs/a.pdf"))
       .toBe("onboarding-docs/a.pdf");
@@ -402,7 +402,7 @@ describe("StorageService private file references", () => {
   });
 
   it("rejects absolute URLs and traversal as object keys", () => {
-    const storage = new StorageService({} as never, makeStorageConfig());
+    const storage = new StorageService({} as never, makeStorageConfig(), { isKeyBlocked: async () => false });
 
     expect(storage.isValidFileKey("onboarding-docs/a.pdf")).toBe(true);
     expect(storage.isValidFileKey("https://attacker.example/a.pdf")).toBe(false);

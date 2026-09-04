@@ -63,7 +63,7 @@ function captureS3(uploads: Array<{ Key: string; UploadId: string; Initiated: Da
 }
 
 function build(): StorageMultipartService {
-  return new StorageMultipartService(new StorageService({} as MediaCompressionService, config));
+  return new StorageMultipartService(new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false }));
 }
 
 function counts(sent: Sent[], command: string): Sent[] {

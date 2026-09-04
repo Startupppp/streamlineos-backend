@@ -77,7 +77,7 @@ function only(sent: Sent[], command: string): Sent {
 }
 
 function storage(): StorageService {
-  return new StorageService({} as MediaCompressionService, config);
+  return new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false });
 }
 
 function thenable<T>(rows: T, extra: Record<string, unknown> = {}) {

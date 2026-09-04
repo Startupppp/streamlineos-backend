@@ -17,6 +17,8 @@ import {
   type StorageConfig,
   type StoragePlacement,
 } from "./storage-placement";
+import { isForeignOrgKey, isSensitiveStorageKey } from "./storage-key";
+import { FileQuarantineService, type KeyBlockCheck } from "./file-quarantine.service";
 
 export type { R2Config, StorageConfig, StoragePlacement };
 
@@ -34,6 +36,10 @@ export interface UploadJobResult {
   mimeType: string;
   size: number;
   sha256: string;
+}
+
+export interface SignedUrlOptions {
+  readonly preauthorized?: boolean;
 }
 
 export interface FileStreamResult {
@@ -72,6 +78,7 @@ export class StorageService {
   constructor(
     private readonly compression: MediaCompressionService,
     @Inject(APP_CONFIG) private readonly config: StorageConfig,
+    @Inject(FileQuarantineService) private readonly quarantine: KeyBlockCheck,
   ) {
     this.placement = new StoragePlacementResolver(config);
   }
@@ -220,16 +227,46 @@ export class StorageService {
     );
   }
 
+  /**
+   * Signing is the last point at which a key can still be refused, so the refusal
+   * lives here rather than in each caller. Every caller before this change
+   * authorised the ROW and then handed over whatever key the row carried, which
+   * makes a key a client once chose — a chat attachment naming `<own-org>/documents/…`,
+   * a vault row holding a foreign prefix — into a signed URL for an object the
+   * caller was never entitled to read.
+   *
+   * Sensitive folder roots are refused unless the caller passes `preauthorized`,
+   * which is the explicit statement that it has already run the record-scoped
+   * authorisation those folders require (`assertKeyReadable`, an `hr:documents:manage`
+   * check, an envelope-recipient session). A caller that has not run one cannot
+   * spell its way past the gate. The quarantine is consulted on every path,
+   * preauthorised or not: an infected object has no authorised reader.
+   */
   async getFileUrl(
     orgId: string,
     key: string,
     expiresIn = 3600,
     bucketOverride?: string,
+    options: SignedUrlOptions = {},
   ): Promise<string> {
+    await this.assertKeySignable(orgId, key, options.preauthorized === true);
     const placement = await this.placement.forOrg(orgId);
     const bucketName = this.placement.requireBucket(placement, bucketOverride);
     const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
     return getSignedUrl(placement.client, command, { expiresIn });
+  }
+
+  private async assertKeySignable(
+    orgId: string,
+    key: string,
+    preauthorized: boolean,
+  ): Promise<void> {
+    if (!this.isValidFileKey(key)) throw new NotFoundException("File not found");
+    if (isForeignOrgKey(key, orgId)) throw new NotFoundException("File not found");
+    if (!preauthorized && isSensitiveStorageKey(key, orgId))
+      throw new NotFoundException("File not found");
+    if (await this.quarantine.isKeyBlocked(orgId, key))
+      throw new NotFoundException("File not found");
   }
 
   /**

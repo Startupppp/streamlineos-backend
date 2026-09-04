@@ -3,6 +3,12 @@ import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
 import { BUDGETS, REQUIRED_BUDGET_IDS } from "./read-cost-budgets.mjs";
+import {
+  formatRoleProvenance,
+  resolveAppDatabaseUrl,
+  resolveSsl,
+  roleRefusal,
+} from "./benchmark-role-guard.mjs";
 
 export const KNOWN_ASSERTION_KINDS = new Set([
   "require-index-only-scan",
@@ -272,11 +278,12 @@ async function runBudget(budget, fixtures, dbUrl, ssl, orgId, samples) {
 async function main() {
   dotenv.config({ path: resolve(process.cwd(), ".env") });
 
-  const url = process.env.APP_DATABASE_URL;
-  if (!url) {
-    console.error("APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
+  const resolvedUrl = resolveAppDatabaseUrl(process.env);
+  if (!resolvedUrl.ok) {
+    console.error(resolvedUrl.why);
     process.exit(1);
   }
+  const url = resolvedUrl.url;
 
   const SELF_TEST = process.argv.includes("--self-test");
 
@@ -316,8 +323,29 @@ async function main() {
   // On the reference tenant both stay hard failures, so a shrinking seed can never go quiet.
   const STRICT = process.env.STREAMLINE_STRICT_BUDGETS === "1" || process.argv.includes("--strict");
 
-  const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
+  const ssl = resolveSsl(process.env);
   const db = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
+
+  // PRD-C079: the role is READ, never asserted. Every artifact this run writes carries the
+  // value observed here, and measure-route-budgets.mjs refuses an artifact without it.
+  const [connectedRole] = await db`
+    SELECT current_user AS name, r.rolbypassrls, r.rolsuper
+    FROM pg_roles r WHERE r.rolname = current_user`;
+  let deniedWithoutGuc = false;
+  try {
+    await db`SELECT count(*) FROM calendar_events`;
+  } catch (e) {
+    if (e?.code === "42501") deniedWithoutGuc = true;
+    else throw e;
+  }
+  const roleRefused = roleRefusal(connectedRole, deniedWithoutGuc);
+  if (roleRefused) {
+    console.error(roleRefused);
+    await db.end();
+    process.exit(1);
+  }
+  const ROLE_PROVENANCE = formatRoleProvenance(connectedRole);
+  if (!SELF_TEST) console.log(`role ${ROLE_PROVENANCE} · no-GUC read denied 42501`);
 
   let ORG = process.env.SEED_ORG_ID;
   if (!ORG) {
@@ -726,6 +754,7 @@ async function main() {
         JSON.stringify(
           {
             generatedAt: new Date().toISOString(),
+            role: ROLE_PROVENANCE,
             tenant: ORG,
             profile: PROFILE,
             samples: SAMPLES,

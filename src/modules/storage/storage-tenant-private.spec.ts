@@ -72,7 +72,7 @@ describe("StorageService — no upload path mints a permanent public URL", () =>
   };
 
   it("returns an object key, never the configured public base, from the planned path", async () => {
-    const service = new StorageService(compression as never, storageConfig());
+    const service = new StorageService(compression as never, storageConfig(), { isKeyBlocked: async () => false });
 
     const result = await service.planUpload(
       ORG_A,
@@ -88,7 +88,7 @@ describe("StorageService — no upload path mints a permanent public URL", () =>
   });
 
   it("scopes every generated key to the organisation that owns it", async () => {
-    const service = new StorageService(compression as never, storageConfig());
+    const service = new StorageService(compression as never, storageConfig(), { isKeyBlocked: async () => false });
 
     const a = await service.planUpload(
       ORG_A,

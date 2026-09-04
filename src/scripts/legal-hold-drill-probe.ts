@@ -141,7 +141,7 @@ async function runDrill(email: string, orgId: string, url: string): Promise<Dril
       const holds = new LegalHoldsService(db, audit);
       const storagePurge = new GdprStoragePurgeService(
         db,
-        new StorageService(new MediaCompressionService(), INERT_STORAGE_CONFIG),
+        new StorageService(new MediaCompressionService(), INERT_STORAGE_CONFIG, { isKeyBlocked: async () => false }),
       );
       const erasure = new GdprSubjectErasureService(
         db,
