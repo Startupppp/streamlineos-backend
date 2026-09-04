@@ -245,11 +245,19 @@ async function seedHr() {
     [LARGE_ORG],
   );
 
+  // A bare ON CONFLICT DO NOTHING suppresses nothing unless a matching unique constraint
+  // exists, and (org_id, user_id) was unconstrained until migration 1067 — so this inserted a
+  // fresh row per member on every run. Four runs left 500 (org_id, user_id) groups of 4, and
+  // 1067 then refused to apply. NOT EXISTS is what the hr_employments insert below already
+  // uses, and it does not depend on the index this seed has to be able to precede.
   for (const m of memberRows) {
     await sql.unsafe(
       `INSERT INTO hr_people (org_id, user_id, created_at, updated_at)
-       VALUES ($1, $2, now(), now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, now(), now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM hr_people p
+         WHERE p.org_id = $1 AND p.user_id = $2 AND p.deleted_at IS NULL
+       )`,
       [LARGE_ORG, m.user_id],
     );
   }
@@ -305,8 +313,11 @@ async function seedHr() {
          CURRENT_DATE + INTERVAL '3650 days'
        FROM hr_employments e
        WHERE e.org_id = $1 AND e.id != $2 AND e.deleted_at IS NULL AND e.is_primary = true
-       LIMIT $3
-       ON CONFLICT DO NOTHING`,
+         AND NOT EXISTS (
+           SELECT 1 FROM hr_reporting_lines rl
+           WHERE rl.org_id = $1 AND rl.employment_id = e.id AND rl.line_type = 'primary'
+         )
+       LIMIT $3`,
       [LARGE_ORG, managerEmpId, REPORTING_LINES],
     );
   }
@@ -331,8 +342,11 @@ async function seedLeave() {
 
   await sql.unsafe(
     `INSERT INTO leave_policies (org_id, leave_type_id, name, accrual_type, accrual_rate, is_active, effective_from, created_at)
-     VALUES ($1, $2, 'Standard Policy', 'MONTHLY', 1.5, true, '2024-01-01', now())
-     ON CONFLICT DO NOTHING`,
+     SELECT $1, $2, 'Standard Policy', 'MONTHLY', 1.5, true, '2024-01-01', now()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM leave_policies lp
+       WHERE lp.org_id = $1 AND lp.leave_type_id = $2
+     )`,
     [LARGE_ORG, leaveType],
   ).catch((e) => warn("leave_policies insert", e));
 
@@ -342,8 +356,11 @@ async function seedLeave() {
     const mo = String((i % 12) + 1).padStart(2, "0");
     await sql.unsafe(
       `INSERT INTO leave_requests (org_id, user_id, leave_type_id, status, start_date, end_date, created_at, updated_at)
-       VALUES ($1, $2, $3, 'APPROVED', $4::date, $5::date, now() - interval '${i} days', now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, $3, 'APPROVED', $4::date, $5::date, now() - interval '${i} days', now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM leave_requests lr
+         WHERE lr.org_id = $1 AND lr.user_id = $2 AND lr.leave_type_id = $3 AND lr.start_date = $4::date
+       )`,
       [LARGE_ORG, uid, leaveType, `${yr}-${mo}-01`, `${yr}-${mo}-03`],
     ).catch((e) => warn(`leave_request ${i}`, e));
   }
@@ -357,9 +374,14 @@ async function seedLeave() {
     ).catch((e) => warn(`leave_balance ${i}`, e));
     await sql.unsafe(
       `INSERT INTO hr_leave_ledger (org_id, user_id, leave_type_id, txn_type, days, effective_date, period, source, created_at)
-       VALUES ($1, $2, $3, 'accrual', 1.5, CURRENT_DATE - interval '${i * 30} days',
-         to_char(CURRENT_DATE - interval '${i * 30} days', 'YYYY-MM'), 'cron', now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, $3, 'accrual', 1.5, CURRENT_DATE - interval '${i * 30} days',
+         to_char(CURRENT_DATE - interval '${i * 30} days', 'YYYY-MM'), 'cron', now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM hr_leave_ledger ll
+         WHERE ll.org_id = $1 AND ll.user_id = $2 AND ll.leave_type_id = $3
+           AND ll.txn_type = 'accrual'
+           AND ll.period = to_char(CURRENT_DATE - interval '${i * 30} days', 'YYYY-MM')
+       )`,
       [LARGE_ORG, userIds[i], leaveType],
     ).catch((e) => warn(`leave_ledger ${i}`, e));
   }
@@ -375,8 +397,11 @@ async function seedAttendance() {
       const dateStr = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
       await sql.unsafe(
         `INSERT INTO attendance (org_id, user_id, date, status, created_at)
-         VALUES ($1, $2, $3::date, 'PRESENT', now())
-         ON CONFLICT DO NOTHING`,
+         SELECT $1, $2, $3::date, 'PRESENT', now()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM attendance a
+           WHERE a.org_id = $1 AND a.user_id = $2 AND a.date = $3::date
+         )`,
         [LARGE_ORG, userIds[i], dateStr],
       ).catch((e) => warn(`attendance d=${d} i=${i}`, e));
       inserted++;
@@ -473,8 +498,11 @@ async function seedBuild() {
 
   await sql.unsafe(
     `INSERT INTO build.sprints (org_id, project_id, name, status, start_date, end_date, deleted_at, created_at, updated_at)
-     VALUES ($1, $2, 'Sprint 1', 'ACTIVE', CURRENT_DATE - INTERVAL '7 days', CURRENT_DATE + INTERVAL '7 days', null, now(), now())
-     ON CONFLICT DO NOTHING`,
+     SELECT $1, $2, 'Sprint 1', 'ACTIVE', CURRENT_DATE - INTERVAL '7 days', CURRENT_DATE + INTERVAL '7 days', null, now(), now()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM build.sprints s
+       WHERE s.org_id = $1 AND s.project_id = $2 AND s.name = 'Sprint 1' AND s.deleted_at IS NULL
+     )`,
     [LARGE_ORG, projectId],
   ).catch((e) => warn("sprint", e));
 
@@ -518,8 +546,11 @@ async function seedBuild() {
   ]) {
     await sql.unsafe(
       `INSERT INTO build.roadmap_items (org_id, title, status, category, sort_order, votes, is_public, deleted_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, 1, 0, true, null, now(), now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, $3, $4, 1, 0, true, null, now(), now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM build.roadmap_items ri
+         WHERE ri.org_id = $1 AND ri.title = $2 AND ri.deleted_at IS NULL
+       )`,
       [LARGE_ORG, title, status, cat],
     ).catch((e) => warn("roadmap_item", e));
   }
@@ -530,16 +561,22 @@ async function seedBuild() {
   ]) {
     await sql.unsafe(
       `INSERT INTO build.feedback_posts (org_id, title, status, category, votes, submitted_by_name, duplicate_of_id, deleted_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, 3, 'Seed User', null, null, now(), now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, $3, $4, 3, 'Seed User', null, null, now(), now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM build.feedback_posts fp
+         WHERE fp.org_id = $1 AND fp.title = $2 AND fp.deleted_at IS NULL
+       )`,
       [LARGE_ORG, title, fstatus, cat],
     ).catch((e) => warn("feedback_post", e));
   }
   for (const [ctitle, ctype] of [["v1.0 release", "feature"], ["Bug fixes", "fix"]]) {
     await sql.unsafe(
       `INSERT INTO build.changelog_entries (org_id, title, content, version, type, is_published, published_at, created_at, updated_at)
-       VALUES ($1, $2, '', '1.0.0', $3, true, now(), now(), now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, '', '1.0.0', $3, true, now(), now(), now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM build.changelog_entries ce
+         WHERE ce.org_id = $1 AND ce.title = $2
+       )`,
       [LARGE_ORG, ctitle, ctype],
     ).catch((e) => warn("changelog_entry", e));
   }
@@ -643,8 +680,11 @@ async function seedChat() {
 
   const chanId = await sql.unsafe(
     `INSERT INTO chat_channels (org_id, name, type, is_private, is_archived, last_message_at, created_at, updated_at)
-     VALUES ($1, 'general', 'PUBLIC', false, false, now(), now(), now())
-     ON CONFLICT DO NOTHING RETURNING id`,
+     SELECT $1, 'general', 'PUBLIC', false, false, now(), now(), now()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM chat_channels WHERE org_id = $1 AND name = 'general'
+     )
+     RETURNING id`,
     [LARGE_ORG],
   ).then((r) => r[0]?.id);
 
@@ -667,8 +707,10 @@ async function seedChat() {
   for (let i = 1; i <= 55; i++) {
     await sql.unsafe(
       `INSERT INTO chat_channels (org_id, name, type, is_private, is_archived, last_message_at, created_at, updated_at)
-       VALUES ($1, $2, 'PUBLIC', false, false, now(), now(), now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, 'PUBLIC', false, false, now(), now(), now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM chat_channels WHERE org_id = $1 AND name = $2
+       )`,
       [LARGE_ORG, `channel-${i}`],
     ).catch(() => {});
   }
@@ -869,8 +911,11 @@ async function seedAccounting() {
   for (let i = 1; i <= CLIENT_COUNT; i++) {
     await sql.unsafe(
       `INSERT INTO clients (org_id, name, status, created_at, updated_at)
-       VALUES ($1, $2, 'ACTIVE', now() - interval '${i} days', now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, 'ACTIVE', now() - interval '${i} days', now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM clients c
+         WHERE c.org_id = $1 AND c.name = $2
+       )`,
       [LARGE_ORG, `Client ${i}`],
     ).catch((e) => warn(`client ${i}`, e));
   }
@@ -888,8 +933,11 @@ async function seedAccounting() {
   for (let i = 1; i <= INVOICE_COUNT; i++) {
     await sql.unsafe(
       `INSERT INTO invoices (org_id, client_id, invoice_number, status, total, currency, created_by, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, ${i * 100000}, 'INR', $5, now() - interval '${i} days', now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, $3, $4, ${i * 100000}, 'INR', $5, now() - interval '${i} days', now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM invoices iv
+         WHERE iv.org_id = $1 AND iv.invoice_number = $3
+       )`,
       [LARGE_ORG, clientId, `INV-${String(i).padStart(4, "0")}`, i % 2 === 0 ? "SENT" : "DRAFT", invoiceAuthorId],
     ).catch((e) => warn(`invoice ${i}`, e));
   }
@@ -897,8 +945,11 @@ async function seedAccounting() {
   for (let i = 1; i <= BILL_COUNT; i++) {
     await sql.unsafe(
       `INSERT INTO purchase_bills (org_id, bill_number, status, subtotal, tax_amount, cgst_amount, sgst_amount, igst_amount, discount, total, amount_paid, currency, exchange_rate, reverse_charge, bill_date, created_by, created_at, updated_at)
-       VALUES ($1, $2, $3, ${i * 50000}, 0, 0, 0, 0, 0, ${i * 50000}, 0, 'INR', 1, false, CURRENT_DATE - interval '${i} days', $4, now() - interval '${i} days', now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, $2, $3, ${i * 50000}, 0, 0, 0, 0, 0, ${i * 50000}, 0, 'INR', 1, false, CURRENT_DATE - interval '${i} days', $4, now() - interval '${i} days', now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM purchase_bills pb
+         WHERE pb.org_id = $1 AND pb.bill_number = $2
+       )`,
       [LARGE_ORG, `BILL-${String(i).padStart(4, "0")}`, i % 2 === 0 ? "PENDING" : "DRAFT", invoiceAuthorId],
     ).catch((e) => warn(`bill ${i}`, e));
   }
@@ -969,15 +1020,21 @@ async function seedAccounting() {
 
   await sql.unsafe(
     `INSERT INTO acc_tax_payments (org_id, tax_type, period_start, period_end, amount, paid_date, reference, created_by, created_at)
-     VALUES ($1, 'GST', '2026-01-01', '2026-03-31', 50000, '2026-04-15', 'TAX-2026-Q1', $2, now())
-     ON CONFLICT DO NOTHING`,
+     SELECT $1, 'GST', '2026-01-01', '2026-03-31', 50000, '2026-04-15', 'TAX-2026-Q1', $2, now()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM acc_tax_payments t
+       WHERE t.org_id = $1 AND t.reference = 'TAX-2026-Q1'
+     )`,
     [LARGE_ORG, authorId],
   ).catch((e) => warn("acc_tax_payments", e));
 
   await sql.unsafe(
     `INSERT INTO fin_reminder_policies (org_id, name, offsets, channel, template, is_active, created_at, updated_at)
-     VALUES ($1, 'Default AR Reminder', '[7, 14, 30]'::jsonb, 'EMAIL', 'default', true, now(), now())
-     ON CONFLICT DO NOTHING`,
+     SELECT $1, 'Default AR Reminder', '[7, 14, 30]'::jsonb, 'EMAIL', 'default', true, now(), now()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM fin_reminder_policies fp
+       WHERE fp.org_id = $1 AND fp.name = 'Default AR Reminder'
+     )`,
     [LARGE_ORG],
   ).catch((e) => warn("fin_reminder_policies", e));
 }
@@ -1069,16 +1126,21 @@ async function seedCalendarAndAnnouncements() {
   if (creatorMembershipId) {
     await sql.unsafe(
       `INSERT INTO calendar_events (org_id, title, start_date, end_date, category, visibility, created_by_membership_id, created_at, updated_at)
-       VALUES ($1, 'Seed Event', now() + interval '1 day', now() + interval '2 days', 'MEETING', 'org', $2, now(), now())
-       ON CONFLICT DO NOTHING`,
+       SELECT $1, 'Seed Event', now() + interval '1 day', now() + interval '2 days', 'MEETING', 'org', $2, now(), now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM calendar_events WHERE org_id = $1 AND title = 'Seed Event'
+       )`,
       [LARGE_ORG, creatorMembershipId],
     ).catch((e) => warn("calendar_event", e));
   }
 
   await sql.unsafe(
     `INSERT INTO announcements (org_id, title, content, author_id, status, is_pinned, expires_at, created_at, updated_at)
-     VALUES ($1, 'Welcome to scratch E2E!', 'Seed announcement for budget testing.', $2, 'PUBLISHED', false, null, now(), now())
-     ON CONFLICT DO NOTHING`,
+     SELECT $1, 'Welcome to scratch E2E!', 'Seed announcement for budget testing.', $2, 'PUBLISHED', false, null, now(), now()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM announcements a
+       WHERE a.org_id = $1 AND a.title = 'Welcome to scratch E2E!'
+     )`,
     [LARGE_ORG, authorId],
   ).catch((e) => warn("announcement", e));
 

@@ -274,25 +274,27 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     }
     if (!organizationPersonId) continue;
 
-    const [person] = await db.insert(hrPeople).values({
-      orgId: ORG_ID,
-      userId: p.id,
-      organizationPersonId,
-    }).onConflictDoNothing().returning({ id: hrPeople.id });
+    // Look the person up rather than relying on a conflict target: this seed must run before
+    // migration 1067, which is what creates the (org_id, user_id) index it would conflict on.
+    const existing = await db
+      .select({ id: hrPeople.id })
+      .from(hrPeople)
+      .where(
+        and(
+          eq(hrPeople.orgId, ORG_ID),
+          eq(hrPeople.organizationPersonId, organizationPersonId),
+        ),
+      )
+      .limit(1);
 
-    let personId = person?.id;
+    let personId = existing[0]?.id;
     if (!personId) {
-      const existing = await db
-        .select({ id: hrPeople.id })
-        .from(hrPeople)
-        .where(
-          and(
-            eq(hrPeople.orgId, ORG_ID),
-            eq(hrPeople.organizationPersonId, organizationPersonId),
-          ),
-        )
-        .limit(1);
-      personId = existing[0]?.id;
+      const [person] = await db
+        .insert(hrPeople)
+        .values({ orgId: ORG_ID, userId: p.id, organizationPersonId })
+        .onConflictDoNothing()
+        .returning({ id: hrPeople.id });
+      personId = person?.id;
     }
     if (!personId) continue;
 
@@ -319,12 +321,24 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
       if ("manager" in p && p.manager === PEOPLE[0].email) {
         const reporteeId = employmentIds.get(p.email);
         if (reporteeId) {
-          await db.insert(hrReportingLines).values({
-            orgId: ORG_ID,
-            employmentId: reporteeId,
-            managerEmploymentId: priyaEmp,
-            effectiveFrom: "2025-01-15",
-          }).onConflictDoNothing();
+          const existingLine = await db
+            .select({ id: hrReportingLines.id })
+            .from(hrReportingLines)
+            .where(and(
+              eq(hrReportingLines.orgId, ORG_ID),
+              eq(hrReportingLines.employmentId, reporteeId),
+              eq(hrReportingLines.managerEmploymentId, priyaEmp),
+              eq(hrReportingLines.effectiveFrom, "2025-01-15"),
+            ))
+            .limit(1);
+          if (!existingLine.length) {
+            await db.insert(hrReportingLines).values({
+              orgId: ORG_ID,
+              employmentId: reporteeId,
+              managerEmploymentId: priyaEmp,
+              effectiveFrom: "2025-01-15",
+            });
+          }
         }
       }
     }
@@ -339,21 +353,43 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
 
   const leaveTypeId = leaveType?.id ?? (await db.select({ id: leaveTypes.id }).from(leaveTypes).where(eq(leaveTypes.orgId, ORG_ID)).limit(1))[0]?.id;
   if (leaveTypeId) {
-    await db.insert(leavePolicies).values({
-      orgId: ORG_ID,
-      leaveTypeId,
-      name: "Standard Annual Leave",
-      accrualRate: "1.5",
-      effectiveFrom: "2026-01-01",
-    }).onConflictDoNothing();
+    const existingPolicy = await db
+      .select({ id: leavePolicies.id })
+      .from(leavePolicies)
+      .where(and(
+        eq(leavePolicies.orgId, ORG_ID),
+        eq(leavePolicies.leaveTypeId, leaveTypeId),
+        eq(leavePolicies.name, "Standard Annual Leave"),
+      ))
+      .limit(1);
+    if (!existingPolicy.length) {
+      await db.insert(leavePolicies).values({
+        orgId: ORG_ID,
+        leaveTypeId,
+        name: "Standard Annual Leave",
+        accrualRate: "1.5",
+        effectiveFrom: "2026-01-01",
+      });
+    }
   }
 
-  await db.insert(holidays).values({
-    orgId: ORG_ID,
-    name: "Independence Day",
-    date: "2026-08-15",
-    isPublic: true,
-  }).onConflictDoNothing();
+  const existingHoliday = await db
+    .select({ id: holidays.id })
+    .from(holidays)
+    .where(and(
+      eq(holidays.orgId, ORG_ID),
+      eq(holidays.name, "Independence Day"),
+      eq(holidays.date, "2026-08-15"),
+    ))
+    .limit(1);
+  if (!existingHoliday.length) {
+    await db.insert(holidays).values({
+      orgId: ORG_ID,
+      name: "Independence Day",
+      date: "2026-08-15",
+      isPublic: true,
+    });
+  }
 
   const [shift] = await db.insert(shiftTemplates).values({
     orgId: ORG_ID,
@@ -373,92 +409,168 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
 
   const checkIn = new Date(`${today}T09:15:00`);
   const checkOut = new Date(`${today}T18:05:00`);
-  await db.insert(attendance).values({
-    orgId: ORG_ID,
-    userId: PEOPLE[2].id,
-    date: today,
-    checkIn,
-    checkOut,
-    status: "PRESENT",
-    workHours: "8.50",
-  }).onConflictDoNothing();
-
-  const [job] = await db.insert(jobPostings).values({
-    orgId: ORG_ID,
-    title: "Senior Software Engineer",
-    orgDepartmentId: deptIds.get("Engineering") ?? null,
-    location: "Mumbai / Remote",
-    type: "FULL_TIME",
-    description: "Build scalable HR and enterprise products.",
-    status: "OPEN",
-    postedBy: ADMIN_ID,
-  }).onConflictDoNothing().returning({ id: jobPostings.id });
-
-  const [candidate] = await db.insert(candidates).values({
-    orgId: ORG_ID,
-    firstName: "Arjun",
-    lastName: "Iyer",
-    email: "arjun.iyer.candidate@example.com",
-    phone: "+91-9876543210",
-    source: "LINKEDIN",
-    status: "SCREENING",
-    currentRole: "Software Engineer",
-    currentCompany: "Acme Tech",
-  }).onConflictDoNothing().returning({ id: candidates.id });
-
-  if (job && candidate) {
-    await db.insert(candidateApplications).values({
+  const existingAttendance = await db
+    .select({ id: attendance.id })
+    .from(attendance)
+    .where(and(
+      eq(attendance.orgId, ORG_ID),
+      eq(attendance.userId, PEOPLE[2].id),
+      eq(attendance.date, today),
+    ))
+    .limit(1);
+  if (!existingAttendance.length) {
+    await db.insert(attendance).values({
       orgId: ORG_ID,
-      candidateId: candidate.id,
-      jobPostingId: job.id,
-      status: "APPLIED",
-    }).onConflictDoNothing();
+      userId: PEOPLE[2].id,
+      date: today,
+      checkIn,
+      checkOut,
+      status: "PRESENT",
+      workHours: "8.50",
+    });
   }
 
-  await db.insert(documents).values({
-    orgId: ORG_ID,
-    userId: PEOPLE[2].id,
-    name: "Offer Letter - Anita Kapoor",
-    type: "OFFER_LETTER",
-    fileUrl: "https://example.com/docs/offer-anita.pdf",
-    fileName: "offer-anita.pdf",
-    uploadedBy: ADMIN_ID,
-  }).onConflictDoNothing();
+  const existingJob = await db
+    .select({ id: jobPostings.id })
+    .from(jobPostings)
+    .where(and(eq(jobPostings.orgId, ORG_ID), eq(jobPostings.title, "Senior Software Engineer")))
+    .limit(1);
+  let jobPostingId: number | undefined = existingJob[0]?.id;
+  if (jobPostingId === undefined) {
+    const [job] = await db.insert(jobPostings).values({
+      orgId: ORG_ID,
+      title: "Senior Software Engineer",
+      orgDepartmentId: deptIds.get("Engineering") ?? null,
+      location: "Mumbai / Remote",
+      type: "FULL_TIME",
+      description: "Build scalable HR and enterprise products.",
+      status: "OPEN",
+      postedBy: ADMIN_ID,
+    }).returning({ id: jobPostings.id });
+    jobPostingId = job?.id;
+  }
 
-  await db.insert(assets).values({
-    orgId: ORG_ID,
-    name: "MacBook Pro 14",
-    type: "LAPTOP",
-    brand: "Apple",
-    model: "M3 Pro",
-    serialNumber: "MBP-ENT-001",
-    assignedTo: PEOPLE[2].id,
-    status: "ASSIGNED",
-    purchaseDate: "2025-06-01",
-    location: "Mumbai HQ",
-  }).onConflictDoNothing();
+  const existingCandidate = await db
+    .select({ id: candidates.id })
+    .from(candidates)
+    .where(and(eq(candidates.orgId, ORG_ID), eq(candidates.email, "arjun.iyer.candidate@example.com")))
+    .limit(1);
+  let candidateId: number | undefined = existingCandidate[0]?.id;
+  if (candidateId === undefined) {
+    const [ins] = await db.insert(candidates).values({
+      orgId: ORG_ID,
+      firstName: "Arjun",
+      lastName: "Iyer",
+      email: "arjun.iyer.candidate@example.com",
+      phone: "+91-9876543210",
+      source: "LINKEDIN",
+      status: "SCREENING",
+      currentRole: "Software Engineer",
+      currentCompany: "Acme Tech",
+    }).returning({ id: candidates.id });
+    candidateId = ins?.id;
+  }
 
-  await db.insert(helpdeskTickets).values({
-    orgId: ORG_ID,
-    userId: PEOPLE[2].id,
-    title: "Laptop fan noise issue",
-    description: "Fan runs loudly during video calls.",
-    category: "IT",
-    priority: "MEDIUM",
-    status: "TODO",
-    assigneeId: ADMIN_ID,
-  }).onConflictDoNothing();
+  if (jobPostingId !== undefined && candidateId !== undefined) {
+    const existingApp = await db
+      .select({ id: candidateApplications.id })
+      .from(candidateApplications)
+      .where(and(
+        eq(candidateApplications.orgId, ORG_ID),
+        eq(candidateApplications.candidateId, candidateId),
+        eq(candidateApplications.jobPostingId, jobPostingId),
+      ))
+      .limit(1);
+    if (!existingApp.length) {
+      await db.insert(candidateApplications).values({
+        orgId: ORG_ID,
+        candidateId,
+        jobPostingId,
+        status: "APPLIED",
+      });
+    }
+  }
 
-  await db.insert(reviewCycles).values({
-    orgId: ORG_ID,
-    name: "H1 2026 Performance Review",
-    type: "HALF_YEARLY",
-    periodStart: "2026-01-01",
-    periodEnd: "2026-06-30",
-    deadline: "2026-07-15",
-    status: "ACTIVE",
-    createdBy: ADMIN_ID,
-  }).onConflictDoNothing();
+  const existingDoc = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(
+      eq(documents.orgId, ORG_ID),
+      eq(documents.userId, PEOPLE[2].id),
+      eq(documents.name, "Offer Letter - Anita Kapoor"),
+    ))
+    .limit(1);
+  if (!existingDoc.length) {
+    await db.insert(documents).values({
+      orgId: ORG_ID,
+      userId: PEOPLE[2].id,
+      name: "Offer Letter - Anita Kapoor",
+      type: "OFFER_LETTER",
+      fileUrl: "https://example.com/docs/offer-anita.pdf",
+      fileName: "offer-anita.pdf",
+      uploadedBy: ADMIN_ID,
+    });
+  }
+
+  const existingAsset = await db
+    .select({ id: assets.id })
+    .from(assets)
+    .where(and(eq(assets.orgId, ORG_ID), eq(assets.serialNumber, "MBP-ENT-001")))
+    .limit(1);
+  if (!existingAsset.length) {
+    await db.insert(assets).values({
+      orgId: ORG_ID,
+      name: "MacBook Pro 14",
+      type: "LAPTOP",
+      brand: "Apple",
+      model: "M3 Pro",
+      serialNumber: "MBP-ENT-001",
+      assignedTo: PEOPLE[2].id,
+      status: "ASSIGNED",
+      purchaseDate: "2025-06-01",
+      location: "Mumbai HQ",
+    });
+  }
+
+  const existingTicket = await db
+    .select({ id: helpdeskTickets.id })
+    .from(helpdeskTickets)
+    .where(and(
+      eq(helpdeskTickets.orgId, ORG_ID),
+      eq(helpdeskTickets.userId, PEOPLE[2].id),
+      eq(helpdeskTickets.title, "Laptop fan noise issue"),
+    ))
+    .limit(1);
+  if (!existingTicket.length) {
+    await db.insert(helpdeskTickets).values({
+      orgId: ORG_ID,
+      userId: PEOPLE[2].id,
+      title: "Laptop fan noise issue",
+      description: "Fan runs loudly during video calls.",
+      category: "IT",
+      priority: "MEDIUM",
+      status: "TODO",
+      assigneeId: ADMIN_ID,
+    });
+  }
+
+  const existingCycle = await db
+    .select({ id: reviewCycles.id })
+    .from(reviewCycles)
+    .where(and(eq(reviewCycles.orgId, ORG_ID), eq(reviewCycles.name, "H1 2026 Performance Review")))
+    .limit(1);
+  if (!existingCycle.length) {
+    await db.insert(reviewCycles).values({
+      orgId: ORG_ID,
+      name: "H1 2026 Performance Review",
+      type: "HALF_YEARLY",
+      periodStart: "2026-01-01",
+      periodEnd: "2026-06-30",
+      deadline: "2026-07-15",
+      status: "ACTIVE",
+      createdBy: ADMIN_ID,
+    });
+  }
 
   const [wfDef] = await db.insert(hrWorkflowDefinitions).values({
     orgId: ORG_ID,
