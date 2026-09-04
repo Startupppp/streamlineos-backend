@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { aliasedTable, and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
+import { aliasedTable, and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import {
   calendarEvents,
   calendarProviderSyncQueue,
@@ -120,6 +120,73 @@ export class CalendarSyncStatusService {
     return { createdByMembershipId: null };
   }
 
+  /**
+   * The newest job for this event, among `states`, that a later success has NOT made
+   * irrelevant.
+   *
+   * One `event_id` names SEVERAL provider targets: the series itself, and one per edited
+   * occurrence (`CalendarRecurrenceService.enqueueOccurrenceSync` stamps the parent's id
+   * on an occurrence row). Reading only the newest row therefore buried a refused — or
+   * merely still-queued — occurrence write under any later series write that succeeded:
+   * the endpoint answered `synced`, `retryable` was false, and the provider kept the
+   * un-moved occurrence for ever with nothing anywhere reporting the two copies had
+   * parted. That is the divergence PRD-C129 forbids, reached through the read side.
+   *
+   * A job is resolved only by a later PROCESSED row that wrote THE SAME provider object —
+   * the same `occurrenceStart`, or none on both sides for a series write — or by a later
+   * PROCESSED whole-series delete, after which there is no provider copy left to diverge
+   * from. A later success on a DIFFERENT target says nothing about this one.
+   */
+  private async findUnresolved(
+    orgId: string,
+    eventId: number,
+    states: readonly ["PENDING" | "IN_FLIGHT" | "FAILED", ...("PENDING" | "IN_FLIGHT" | "FAILED")[]],
+  ): Promise<{
+    state: "PENDING" | "IN_FLIGHT" | "PROCESSED" | "FAILED";
+    attemptCount: number;
+    lastError: string | null;
+    operation: "create" | "update" | "delete";
+    createdAt: Date;
+    processedAt: Date | null;
+  } | null> {
+    const rows = await this.db
+      .select({
+        state: calendarProviderSyncQueue.state,
+        attemptCount: calendarProviderSyncQueue.attemptCount,
+        lastError: calendarProviderSyncQueue.lastError,
+        operation: calendarProviderSyncQueue.operation,
+        createdAt: calendarProviderSyncQueue.createdAt,
+        processedAt: calendarProviderSyncQueue.processedAt,
+      })
+      .from(calendarProviderSyncQueue)
+      .where(
+        and(
+          eq(calendarProviderSyncQueue.orgId, orgId),
+          eq(calendarProviderSyncQueue.eventId, eventId),
+          inArray(calendarProviderSyncQueue.state, [...states]),
+          sql`not exists (
+            select 1
+            from ${calendarProviderSyncQueue} later_sync
+            where later_sync.org_id = ${orgId}
+              and later_sync.event_id = ${eventId}
+              and later_sync.id > ${calendarProviderSyncQueue.id}
+              and later_sync.state = 'PROCESSED'
+              and (
+                coalesce(later_sync.payload ->> 'occurrenceStart', '')
+                  = coalesce(${calendarProviderSyncQueue.payload} ->> 'occurrenceStart', '')
+                or (
+                  later_sync.operation = 'delete'
+                  and later_sync.payload ->> 'occurrenceStart' is null
+                )
+              )
+          )`,
+        ),
+      )
+      .orderBy(desc(calendarProviderSyncQueue.id))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async getSyncStatus(
     orgId: string,
     userId: string,
@@ -127,6 +194,24 @@ export class CalendarSyncStatusService {
   ): Promise<SyncStatusResponse> {
     const callerMembershipId = await this.resolveCallerMembershipId(orgId, userId);
     await this.assertReadable(orgId, eventId, userId, callerMembershipId);
+
+    // A live failure outranks a live queued job, which outranks the newest row: the
+    // headline has to describe the WORST outstanding target, never the luckiest one.
+    const outstanding =
+      (await this.findUnresolved(orgId, eventId, ["FAILED"])) ??
+      (await this.findUnresolved(orgId, eventId, ["PENDING", "IN_FLIGHT"]));
+    if (outstanding) {
+      const status = mapState(outstanding.state);
+      return {
+        status,
+        attemptCount: outstanding.attemptCount,
+        lastError: outstanding.lastError,
+        operation: outstanding.operation,
+        queuedAt: outstanding.createdAt.toISOString(),
+        processedAt: outstanding.processedAt ? outstanding.processedAt.toISOString() : null,
+        retryable: status === "failed",
+      };
+    }
 
     const rows = await this.db
       .select({

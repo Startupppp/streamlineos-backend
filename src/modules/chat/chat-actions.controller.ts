@@ -18,6 +18,7 @@ import { EntityReferenceService } from "../entity-reference/entity-reference.ser
 import { actorOf } from "../entity-reference/entity-actor";
 import type { EntityActionResult } from "../entity-reference/entity-reference.types";
 import { Validate } from "../../common/validation/validate.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 @Controller("chat/actions")
 @UseGuards(JwtAuthGuard)
@@ -31,6 +32,7 @@ export class ChatActionsController {
   ) {}
 
   @Post("create-task-from-message")
+  @Idempotent("chat.action.create-task-from-message")
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: createTaskFromMessageSchema })
   async createTaskFromMessage(

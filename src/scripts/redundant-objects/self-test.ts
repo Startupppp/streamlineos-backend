@@ -12,6 +12,7 @@
 
 import type { LiveConstraint, LiveIndex } from "./catalog";
 import { detectConstraintDuplicates, detectIndexOverlaps, preserved, redundant, statisticsAreInert } from "./detect";
+import { isPlanEvidence } from "./plan-evidence-guard";
 
 export function index(over: Partial<LiveIndex> & Pick<LiveIndex, "tbl" | "name" | "keydef">): LiveIndex {
   return {
@@ -154,6 +155,19 @@ export function runSelfTest(): never {
     detectIndexOverlaps([index({ tbl: "t", name: "idx_lonely", keydef: "org_id:0,kind:0", idx_scan: 0 })]).length === 0,
   );
   assert("statisticsAreInert agrees over the whole fixture set", statisticsAreInert([...TENANT_PREFIX_PAIR, ...DESC_TRAILING_PAIR], DUPLICATE_FKS));
+
+  const wholePlan = { id: "idx_a>idx_b", probe: "select 1", withCandidate: "Index Scan", withoutCandidate: "Seq Scan" };
+  assert("a plan entry carrying all four captured fields is accepted", isPlanEvidence(wholePlan));
+  for (const missing of ["probe", "withCandidate", "withoutCandidate"] as const) {
+    const incomplete: Record<string, unknown> = { ...wholePlan };
+    delete incomplete[missing];
+    assert(
+      `a plan entry with a well-formed id but no ${missing} is REJECTED — the cast this replaced accepted it and read undefined as a string`,
+      !isPlanEvidence(incomplete),
+    );
+  }
+  assert("a non-string id is rejected", !isPlanEvidence({ ...wholePlan, id: 7 }));
+  assert("a null entry is rejected without throwing", !isPlanEvidence(null));
 
   for (const failure of failures) console.error(`  FAIL ${failure}`);
   console.log(`check-redundant-objects --self-test: ${String(passed)} passed, ${String(failures.length)} failed`);

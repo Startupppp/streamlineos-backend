@@ -28,7 +28,10 @@ import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import {
+  CACHE_KEYS,
+  DASHBOARD_PENDING_APPROVALS_NAMESPACE,
+} from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
@@ -65,7 +68,10 @@ export class LeavesWriteService {
   ) {}
 
   private async invalidateLeaveAnalytics(orgId: string): Promise<void> {
-    await this.cache.invalidateNamespace(CACHE_KEYS.leaveAnalyticsNamespace(orgId));
+    await Promise.all([
+      this.cache.invalidateNamespace(CACHE_KEYS.leaveAnalyticsNamespace(orgId)),
+      this.cache.invalidateNamespaceForOrg(orgId, DASHBOARD_PENDING_APPROVALS_NAMESPACE),
+    ]);
   }
 
   async create(currentUser: CurrentUserContext, body: CreateLeaveInput) {

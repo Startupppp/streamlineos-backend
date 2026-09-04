@@ -24,7 +24,11 @@
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Repository root — this file lives at `<root>/src/scripts/`. */
+const ROOT_DIR = fileURLToPath(new URL("../../", import.meta.url));
 
 const ORG = "<ORG>";
 
@@ -336,4 +340,164 @@ export function resolveAllSites(srcDir, cacheKeysPath) {
     invalidates.push(...sites.invalidates);
   }
   return { writes, invalidates, cacheKeyFactories, fileCount: files.length };
+}
+
+// ---------------------------------------------------------------------------
+// Entrypoint
+//
+// This file is BOTH a library (check-cache-invalidation.mjs imports
+// `resolveAllSites`, `findFalsePrefixDeletes` and `findNamespaceCounterMismatches`
+// from it) and, since v2 ticket 24, a gate in its own right.
+//
+// It had no entrypoint at all, while `package.json` exposed
+// `check:cache-key-shapes` and `check:cache-key-shapes:self-test` and CI ran
+// both. `node src/scripts/check-cache-key-shapes.mjs` therefore printed nothing
+// and exited 0 — for every input, forever — and `check:gate-wiring` counted two
+// more gates "able to FAIL the job" than actually exist. A green line in a CI
+// log that no state of the codebase can turn red is worse than no line: the
+// v2 evidence file banked `0 check:cache-key-shapes` as a pass.
+//
+// What this gate checks is deliberately NOT what check:cache-invalidation
+// checks. That gate consumes the resolver and reports mismatches; this one
+// guards the RESOLVER'S REACH, because the resolver is that gate's only input.
+// If a regex drifts or the prefilter narrows, the resolver quietly returns
+// fewer sites, check:cache-invalidation finds no mismatches in what is left,
+// and passes over a shrunken corpus. That exact failure has happened in this
+// repository (the `cachedVersioned(` prefilter that skipped every
+// `cachedVersionedForOrg(` site, three whole HR read families). A scan that
+// suddenly finds nothing is far more likely to be broken than the codebase is
+// to be clean, so this gate fails below a floor instead of passing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Below any of these the resolution is treated as broken rather than as a clean
+ * codebase. Head measures 3687 files / 131 factories / 186 writes / 475
+ * invalidates; the floors sit well under that so ordinary churn never trips
+ * them, and a resolver that loses a whole call family does.
+ */
+const REACH_FLOOR = { files: 1500, factories: 80, writes: 100, invalidates: 250 };
+
+let assertionsRun = 0;
+function assert(cond, msg) {
+  assertionsRun++;
+  if (!cond) {
+    console.error("SELF-TEST FAIL:", msg);
+    process.exit(1);
+  }
+}
+
+function runSelfTest() {
+  console.log("Running self-test...\n");
+
+  assert(templateToShape("hr:headcount:${orgId}:${scope}") === "hr:headcount:*:*",
+    "(a) every interpolation must collapse to `*` — shape comparison is the whole point");
+  assert(templateToShape("plain:key") === "plain:key",
+    "(b) a key with no interpolation is its own shape");
+
+  const factories = parseCacheKeyFactories(
+    "export const CACHE_KEYS = {\n" +
+    "  hrHeadcount: (orgId) => namespace(`hr:headcount:${orgId}`),\n" +
+    "  ticketRow: (orgId, id) => `tickets:open:${orgId}:${id}`,\n" +
+    "};\n",
+  );
+  assert(factories.get("hrHeadcount")?.isNamespace === true,
+    "(c) a factory wrapped in namespace() must be recorded as a namespace — a bump and an exact delete are different defects");
+  assert(factories.get("ticketRow")?.isNamespace === false && factories.get("ticketRow")?.shape === "tickets:open:*:*",
+    "(d) a plain factory is an exact key, resolved to its shape");
+
+  // The historical defect this file's own header records: the cheap prefilter
+  // was narrower than the real matcher, so whole call families were skipped
+  // before they were ever parsed. Pin it for every method, not just the one.
+  for (const method of CACHE_METHOD_NAMES)
+    assert(PREFILTER_RE.test(`await this.cache.${method}(x)`),
+      `(e) PREFILTER_RE must not be narrower than the matcher — it skips every file whose only cache call is .${method}()`);
+
+  const source =
+    "await this.cache.cachedVersionedForOrg(orgId, CACHE_KEYS.hrHeadcount(orgId), `sub:${x}`, fn);\n" +
+    "await this.cache.invalidateNamespaceForOrg(orgId, CACHE_KEYS.hrHeadcount(orgId));\n" +
+    "await this.cache.set(CACHE_KEYS.ticketRow(orgId, id), row);\n" +
+    "await this.cache.del(`tickets:open`);\n";
+  const sites = resolveFileSites(source, "src/fixture.ts", factories);
+  assert(sites.writes.length === 2, `(f) both write sites must resolve, got ${sites.writes.length}`);
+  assert(sites.invalidates.length === 2, `(g) both invalidate sites must resolve, got ${sites.invalidates.length}`);
+  assert(sites.writes.some((w) => w.kind === "namespace-read"),
+    "(h) a cachedVersionedForOrg read must be recorded as a namespace read, not an exact key");
+  assert(sites.invalidates.some((i) => i.kind === "namespace"),
+    "(i) a namespace bump must be recorded as a namespace, not an exact delete");
+
+  const falsePrefix = findFalsePrefixDeletes(sites.writes, sites.invalidates);
+  assert(falsePrefix.length === 1 && falsePrefix[0].shape === "tickets:open",
+    `(j) a del() of a strict segment prefix of a real write cannot reach it and must be reported, got ${falsePrefix.length}`);
+
+  const mismatch = findNamespaceCounterMismatches(sites.writes, sites.invalidates);
+  assert(mismatch.length === 0,
+    `(k) a bump whose namespace IS read must not be reported, got ${mismatch.length}`);
+
+  const orphanBump = resolveFileSites(
+    "await this.cache.invalidateNamespaceForOrg(orgId, CACHE_KEYS.hrHeadcount(orgId));\n",
+    "src/fixture2.ts", factories);
+  assert(findNamespaceCounterMismatches(orphanBump.writes, orphanBump.invalidates).length === 1,
+    "(l) a generation counter nobody reads must be reported — two counters on two Redis cells is the defect this gate exists for");
+
+  assert(segmentPrefix("a:b", "a:b:c") && !segmentPrefix("a:b", "a:b"),
+    "(m) segmentPrefix must be strict — a shape is not a prefix of itself");
+  assert(hasEnoughLiteralSegments("hr:analytics:*") && !hasEnoughLiteralSegments("hr:*"),
+    "(n) the noise filter needs two literal segments before two shapes are compared");
+
+  console.log(`PASS: self-test (${assertionsRun} assertions)\n`);
+  for (const line of [
+    "  (a) interpolation collapses to `*`",
+    "  (b) a literal key is its own shape",
+    "  (c) namespace() factory              -> isNamespace",
+    "  (d) plain factory                    -> exact shape",
+    "  (e) PREFILTER_RE covers every one of the matcher's methods",
+    "  (f) both write sites resolve",
+    "  (g) both invalidate sites resolve",
+    "  (h) cachedVersionedForOrg            -> namespace-read",
+    "  (i) invalidateNamespaceForOrg        -> namespace",
+    "  (j) del() of a strict prefix of a write -> reported",
+    "  (k) bump whose namespace IS read     -> not reported",
+    "  (l) bump nobody reads                -> reported",
+    "  (m) segmentPrefix is strict",
+    "  (n) noise filter needs two literal segments",
+  ]) console.log(line);
+}
+
+function main() {
+  const srcDir = join(ROOT_DIR, "src");
+  const { writes, invalidates, cacheKeyFactories, fileCount } =
+    resolveAllSites(srcDir, join(srcDir, "common", "cache", "cache-keys.ts"));
+
+  const reach = {
+    files: fileCount,
+    factories: cacheKeyFactories.size,
+    writes: writes.length,
+    invalidates: invalidates.length,
+  };
+
+  console.log(
+    `=== cache key shapes: ${reach.files} file(s) walked | ${reach.factories} factory shape(s) | ` +
+    `${reach.writes} write site(s) | ${reach.invalidates} invalidate site(s) ===`,
+  );
+
+  const broken = Object.entries(REACH_FLOOR).filter(([k, floor]) => reach[k] < floor);
+  if (broken.length) {
+    for (const [k, floor] of broken)
+      console.error(`FAIL: resolved only ${reach[k]} ${k}, below the floor of ${floor}.`);
+    console.error(
+      "The resolver is broken, not the codebase clean. check:cache-invalidation reads these sites and " +
+      "nothing else, so a shrunken corpus makes that gate pass over the part it can no longer see.",
+    );
+    process.exit(1);
+  }
+
+  console.log("PASS: the cache-key resolver still reaches the codebase.");
+}
+
+const invokedDirectly =
+  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  if (process.argv.includes("--self-test")) runSelfTest();
+  else main();
 }

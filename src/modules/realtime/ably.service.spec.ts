@@ -74,14 +74,68 @@ describe("AblyService capabilities", () => {
     expect(capability["cell:legacy-1:notifications:org-1:user-2"]).toBeUndefined();
   });
 
-  it("issues no channel capability when the user belongs to nothing", () => {
+  it("issues no per-channel capability when the user belongs to nothing", () => {
     const { capability } = capabilityFor(service, () =>
       service.createChatTokenRequest("user-1", "org-1", []),
     );
 
+    // The org-wide presence channel is not a per-channel grant and is deliberately
+    // excluded: it carries no messages, only the presence set, and a member with no
+    // channels still has to be able to appear online.
     expect(
-      Object.keys(capability).filter((r) => r.includes(":chat:")),
+      Object.keys(capability).filter(
+        (r) => r.includes(":chat:") && r !== "cell:legacy-1:chat:org-1:presence",
+      ),
     ).toEqual([]);
+  });
+
+  /**
+   * `useChatPresence` (frontend/features/chat/use-chat-presence.ts) enters the presence
+   * set on `chat:{orgId}:presence`. Ably requires the `presence` operation to ENTER a
+   * presence set — `subscribe` only reads it — and this capability map carried no key for
+   * that channel at all, so every `presence.enter` was refused with a 403 the hook
+   * swallows in its `.catch(() => {})`. Nobody ever appeared online and nothing said so.
+   */
+  it("grants the org-wide chat presence channel with the presence operation", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createChatTokenRequest("user-1", "org-1", [7]),
+    );
+
+    expect(capability["cell:legacy-1:chat:org-1:presence"]).toEqual([
+      "subscribe",
+      "presence",
+    ]);
+  });
+
+  it("scopes chat presence to the caller's own org and never lets it publish", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createChatTokenRequest("user-1", "org-1", [7]),
+    );
+
+    expect(capability["cell:legacy-1:chat:org-2:presence"]).toBeUndefined();
+    expect(capability["cell:legacy-1:chat:org-1:presence"]).not.toContain(
+      "publish",
+    );
+    expect(capability["cell:legacy-1:chat:org-1:presence"]).not.toContain(
+      "history",
+    );
+  });
+
+  it("grants presence even when the caller belongs to no channel", () => {
+    const { capability } = capabilityFor(service, () =>
+      service.createChatTokenRequest("user-1", "org-1", []),
+    );
+
+    expect(capability["cell:legacy-1:chat:org-1:presence"]).toEqual([
+      "subscribe",
+      "presence",
+    ]);
+  });
+
+  it("builds the presence channel name the frontend asks Ably for", () => {
+    expect(service.presenceChannelName("org-1")).toBe(
+      "cell:legacy-1:chat:org-1:presence",
+    );
   });
 
   it("does not let a support client publish", () => {

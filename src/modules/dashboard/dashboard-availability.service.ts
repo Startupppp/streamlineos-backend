@@ -19,7 +19,7 @@ import { applyScope } from "../access/apply-scope";
 import { formatInTimeZone } from "date-fns-tz";
 import { getTodayString } from "../../common/date";
 import { resolveAttendanceReadScope } from "../hr/time/attendance-scope";
-import { buildScopedDashboardCacheKey } from "./dashboard-cache-key";
+import { buildScopedSectionCacheKey } from "./dashboard-cache-key";
 import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
@@ -44,10 +44,10 @@ export class DashboardAvailabilityService {
     });
     const orgTz = org?.timezone ?? "UTC";
     const today = formatInTimeZone(new Date(), orgTz, "yyyy-MM-dd");
-    const key = await buildScopedDashboardCacheKey(
+    const key = await buildScopedSectionCacheKey(
       this.access,
       u,
-      "availability",
+      "team-availability",
       scope,
       `${orgTz}:${today}`,
     );
@@ -135,10 +135,10 @@ export class DashboardAvailabilityService {
         hasMore: false,
       };
     const today = getTodayString();
-    const key = await buildScopedDashboardCacheKey(
+    const key = await buildScopedSectionCacheKey(
       this.access,
       u,
-      "attendance",
+      "team-attendance",
       scope,
       today,
     );

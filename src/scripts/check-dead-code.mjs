@@ -76,7 +76,39 @@ const SCHEMA_RE = /^src\/db\/(?:schema|seeds)\//;
 /** Generated, vendored or scratch paths — knip's verdict on them says nothing about this codebase. */
 const OUT_OF_SCOPE_SEGMENTS = new Set([
   "node_modules", "dist", "coverage", ".git", "migrations", ".scratch", ".scan", "graphify-out",
+  ".claude",
 ]);
+
+/**
+ * A path segment the module graph must not walk.
+ *
+ * `.claude` is named above and the dot rule below generalises it, because the
+ * failure it fixes was not hypothetical: agent worktrees live at
+ * `.claude/worktrees/<name>/` and are full checkouts of this repository. Walking
+ * them put 8,608 foreign `.ts` files into the importer map — 57.7% of the graph
+ * — and every one of them counted as a live importer. The gate printed the
+ * consequence out loud: the inferred meeting-prep input type in
+ * `src/modules/ai/core/dto/request.schemas.ts` was RETAINED-BY-CONTRACT on the
+ * grounds that its schema is "parsed at a live boundary in
+ * .claude/worktrees/bold-napier-7a4a41/src/modules/ai/core/controllers/crm-ai.controller.ts`
+ * — a path that does not exist in CI, on another machine, or after that worktree
+ * is removed. A RETAIN verdict justified by a file CI cannot see is a false
+ * negative: the symbol survives the gate locally and is dead everywhere else.
+ *
+ * The rule is "no dot-directory", not "not `.claude`", because the next agent
+ * harness will pick a different dot-name and the contamination would return
+ * silently. Nothing under a dot-directory is authored product source; every
+ * previously-listed dot entry (`.git`, `.scratch`, `.scan`) is subsumed by it.
+ *
+ * Do NOT name a real schema constant in prose anywhere in this file:
+ * `buildSymbolIndex` is a text scan over every walked file, this file included,
+ * so a mention in a comment is itself enough to rescue a symbol. Writing the
+ * identifier here re-created the exact false RETAIN this block describes, with
+ * the citation pointing at this script. See assertion (y).
+ */
+function isOutOfScopeDir(name) {
+  return OUT_OF_SCOPE_SEGMENTS.has(name) || name.startsWith(".");
+}
 
 /**
  * The classification ledger.
@@ -102,6 +134,18 @@ const FINDING_VERDICTS = new Map([
 
   // ---- src/modules/notifications -------------------------------------------
   ["src/modules/notifications/dto/provider-result.schemas.ts:providerValidationResultSchema", { verdict: "REMOVE", reason: "surfaced when its only reader — the inferred type `ProviderValidationResultParsed` — was removed as dead. It is the Zod contract for `NotificationProvider.validateConfig()`, the sibling of `providerSendResultSchema`, which IS parsed at `notification-delivery-worker.service.ts:347`. The deeper finding: `validateConfig` is declared on `providers/notification-provider.interface.ts:11` and implemented by five providers, and NOTHING calls it anywhere in `src/` — the seam has no caller, so the schema has no boundary to guard. Removing the schema (and deciding the fate of the uncalled seam) belongs to the notifications workstream, which holds this module" }],
+
+  // ---- src/modules/ai/core/dto ---------------------------------------------
+  // Surfaced by fixing the module graph, not by new code: this finding was
+  // previously RETAINED-BY-CONTRACT on the strength of a controller inside
+  // `.claude/worktrees/bold-napier-7a4a41/`, another agent's checkout. With
+  // dot-directories out of the graph the real reference count is visible.
+  ["src/modules/ai/core/dto/request.schemas.ts:MeetingPrepInput", { verdict: "REMOVE", reason: "the inferred type of the meeting-prep request schema declared immediately above it. Measured at head with `grep -rn` over src/ and test/: the type has exactly ONE occurrence repo-wide (its own declaration) and the schema it infers from has exactly TWO (its declaration and that same line) — no controller, service, spec or barrel names either. It is not an inferred-type-of-a-live-schema retain, because the schema is parsed at no boundary at all. The only file in this checkout that parses it is `.claude/worktrees/bold-napier-7a4a41/src/modules/ai/core/controllers/crm-ai.controller.ts`, an uncommitted worktree that does not exist in CI — which is precisely why the gate used to pass on it. Both the type and its schema are dead, but the surface they belong to (a CRM meeting-prep AI endpoint) is being built in that lane right now, so the delete belongs to the AI/CRM workstream that lands the controller or abandons it — not to this gate's ticket. Concrete failure prevented by deleting them: a wire contract with no handler, which reads as an implemented endpoint to anyone grepping the DTO file" }],
+
+  // ---- src/modules/calendar/dto --------------------------------------------
+  // Only classifiable at all since the duplicate-group key was fixed; it used to
+  // be reported as `[object Object],[object Object]`.
+  ["src/modules/calendar/dto/calendar-response.schemas.ts:calendarMutatedEventSchema|calendarUpdateEventResponseSchema", { verdict: "KEEP", reason: "not a duplicate implementation — the second is a one-line alias of the first (`export const calendarUpdateEventResponseSchema = calendarMutatedEventSchema;`), and knip reports it because two exported names bind one value. Both names are live and neither is redundant: `calendarUpdateEventResponseSchema` is what `calendar.controller.ts:156` declares as the `@ResponseSchema` of the update route and what `calendar-mutate-projection.spec.ts:245` asserts against, while the shared name states that create and update project the SAME row shape. Collapsing them to one name would make a future divergence of the two routes invisible at the call site; deleting the alias would move a per-route wire contract into a shared constant. Kept as a named contract, not as debt" }],
 
   // ---- dependencies --------------------------------------------------------
   ["dep:@jitl/quickjs-wasmfile-release-sync", { verdict: "KEEP", reason: "not a direct dependency by design. `script.executor.ts` resolves it with `require.resolve(spec, { paths: [dirname(require.resolve(\"quickjs-emscripten\"))] })`, i.e. from the declared dependency's own directory, to get a CJS build of the WASM module that Jest can load. Verified resolvable; knip reports it because it does not model the `paths` option" }],
@@ -152,7 +196,8 @@ function* walkSource(dir) {
     return;
   }
   for (const entry of entries) {
-    if (OUT_OF_SCOPE_SEGMENTS.has(entry.name)) continue;
+    if (entry.isDirectory() && isOutOfScopeDir(entry.name)) continue;
+    if (!entry.isDirectory() && OUT_OF_SCOPE_SEGMENTS.has(entry.name)) continue;
     const full = join(dir, entry.name);
     if (entry.isDirectory()) yield* walkSource(full);
     else if (/\.(ts|mts|mjs)$/.test(entry.name)) yield full;
@@ -202,7 +247,7 @@ function buildImporterMap(root) {
 // ---------------------------------------------------------------------------
 
 function classifyFile(relPath, knipDeadSet, importerMap, root) {
-  if (relPath.split("/").some((seg) => OUT_OF_SCOPE_SEGMENTS.has(seg)))
+  if (relPath.split("/").some((seg) => isOutOfScopeDir(seg)))
     return { cls: "OUT-OF-SCOPE", reason: "generated, vendored or scratch path — not authored product source" };
 
   if (EXCLUDED_MODULE_RE.test(relPath))
@@ -254,7 +299,16 @@ function classifyFile(relPath, knipDeadSet, importerMap, root) {
  * schema constant is referenced from ANOTHER file. A schema nothing parses with
  * is a contract nobody enforces, and that stays a finding — which is exactly
  * how `gdpr-export-outbox.schemas.ts` is caught.
+ *
+ * `NOT_A_BOUNDARY_RE` is the second half of that condition. `buildSymbolIndex`
+ * is a text scan, so ANY file naming the constant counts as a reference — and a
+ * gate script under `src/scripts/` naming it in a comment is not a boundary that
+ * parses anything. This is not hypothetical either: writing the constant's name
+ * into a comment in THIS file made the gate report the type as "parsed at a live
+ * boundary in src/scripts/check-dead-code.mjs". A retain has to point at code
+ * that runs.
  */
+const NOT_A_BOUNDARY_RE = /^(?:src\/)?scripts\//;
 function inferredTypeOfLiveSchema(file, name, root, sourceIndex) {
   if (!file || !/\.schemas?\.ts$/.test(file)) return null;
   let src;
@@ -268,9 +322,11 @@ function inferredTypeOfLiveSchema(file, name, root, sourceIndex) {
   ).exec(src);
   if (!declared) return null;
   const schema = declared[1];
-  const users = (sourceIndex.get(schema) ?? []).filter((p) => toFwd(relative(root, p)) !== file);
+  const users = (sourceIndex.get(schema) ?? [])
+    .map((p) => toFwd(relative(root, p)))
+    .filter((rel) => rel !== file && !NOT_A_BOUNDARY_RE.test(rel));
   if (!users.length) return null;
-  return `inferred type of \`${schema}\`, which is parsed at a live boundary in ${toFwd(relative(root, users[0]))}`;
+  return `inferred type of \`${schema}\`, which is parsed at a live boundary in ${users[0]}`;
 }
 
 function classifyFinding(key, file, verdicts = FINDING_VERDICTS, root = ROOT, sourceIndex = new Map(), name = null) {
@@ -431,6 +487,56 @@ function runSelfTest() {
     assert(built.get(join(fixture, "b.ts"))?.sideEffect.has(entryAbs), "(o) side-effect import edge not recorded");
     assert(built.get(join(fixture, "c.ts"))?.reexport.has(entryAbs), "(p) re-export edge not recorded");
     assert(built.get(join(fixture, "d.ts"))?.dynamic.has(entryAbs), "(q) dynamic import edge not recorded");
+
+    // ---- agent-worktree contamination ------------------------------------
+    // Both halves of the graph read the same walker, so both are asserted. The
+    // one-line `.claude` exclusion regresses silently without these: the gate
+    // still exits 0, it just starts believing another agent's checkout.
+    mkdirSync(join(fixture, "src"), { recursive: true });
+    mkdirSync(join(fixture, ".claude", "worktrees", "agent-x", "src"), { recursive: true });
+    writeFileSync(join(fixture, "src", "orphan.ts"), "export const Orphan = 1;\n");
+    writeFileSync(join(fixture, ".claude", "worktrees", "agent-x", "src", "importer.ts"),
+      'import { Orphan } from "../../../../src/orphan";\nconsole.log(Orphan, foreignOnlySchema);\n');
+
+    const contaminated = buildImporterMap(fixture);
+    assert(!contaminated.has(join(fixture, "src", "orphan.ts")),
+      "(u) an importer under .claude/worktrees must not appear in the module graph at all");
+    assert(classifyFile("src/orphan.ts", new Set(["src/orphan.ts"]), contaminated, fixture).cls === "DEAD",
+      "(v) a file whose ONLY importer is another agent's worktree must stay DEAD — that importer does not exist in CI");
+    assert(classifyFile(".claude/worktrees/agent-x/src/importer.ts", new Set(), new Map(), fixture).cls === "OUT-OF-SCOPE",
+      "(w) a path inside an agent worktree is out of scope, never authored product source");
+
+    writeFileSync(join(fixture, "src", "foreign.schemas.ts"),
+      "export const foreignOnlySchema = z.object({});\nexport type ForeignOnly = z.infer<typeof foreignOnlySchema>;\n");
+    const foreignIdx = buildSymbolIndex(fixture, new Set(["foreignOnlySchema"]));
+    const foreignVerdict = classifyFinding(
+      "src/foreign.schemas.ts:ForeignOnly", "src/foreign.schemas.ts", new Map(), fixture, foreignIdx, "ForeignOnly");
+    assert(foreignVerdict.cls === "UNCLASSIFIED",
+      `(x) a schema parsed ONLY inside an agent worktree must not be RETAINED-BY-CONTRACT — this is exactly how the meeting-prep input type was rescued by .claude/worktrees/bold-napier-7a4a41; got ${foreignVerdict.cls}`);
+
+    mkdirSync(join(fixture, "src", "scripts"), { recursive: true });
+    writeFileSync(join(fixture, "src", "scripts", "some-gate.mjs"),
+      "// prose mentioning scriptOnlySchema in a comment, which parses nothing\n");
+    writeFileSync(join(fixture, "src", "script-only.schemas.ts"),
+      "export const scriptOnlySchema = z.object({});\nexport type ScriptOnly = z.infer<typeof scriptOnlySchema>;\n");
+    const scriptIdx = buildSymbolIndex(fixture, new Set(["scriptOnlySchema"]));
+    const scriptVerdict = classifyFinding(
+      "src/script-only.schemas.ts:ScriptOnly", "src/script-only.schemas.ts", new Map(), fixture, scriptIdx, "ScriptOnly");
+    assert(scriptVerdict.cls === "UNCLASSIFIED",
+      `(y) a schema named only inside a gate script is not "parsed at a live boundary" — a comment is not a caller; got ${scriptVerdict.cls}`);
+
+    // Real knip shape, copied from `pnpm exec knip --reporter json` at head:
+    // `duplicates` is an array of GROUPS, not an array of symbols.
+    const dupNormalised = normalizeKnip([{
+      file: "src/modules/calendar/dto/calendar-response.schemas.ts",
+      duplicates: [[{ name: "alphaSchema", line: 159 }, { name: "betaSchema", line: 211 }]],
+    }]);
+    assert(dupNormalised.findings.length === 1,
+      `(z) a duplicate group is one finding, got ${dupNormalised.findings.length}`);
+    assert(dupNormalised.findings[0].name === "alphaSchema|betaSchema",
+      `(aa) a duplicate group must be named by its members so the finding can be classified — an unnameable finding keeps the gate permanently red; got ${dupNormalised.findings[0].name}`);
+    assert(!/\[object Object\]/.test(dupNormalised.findings[0].name),
+      "(ab) no finding name may stringify an object");
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -457,6 +563,14 @@ function runSelfTest() {
     "  (r) schemaNamesFor finds the schema behind an inferred type",
     "  (s) inferred type of a schema parsed elsewhere    -> RETAINED-BY-CONTRACT",
     "  (t) inferred type of a schema nobody parses with  -> UNCLASSIFIED (gate bites)",
+    "  (u) importer under .claude/worktrees             -> absent from the graph",
+    "  (v) file whose only importer is a worktree       -> DEAD (not rescued)",
+    "  (w) path inside an agent worktree                -> OUT-OF-SCOPE",
+    "  (x) schema parsed only inside a worktree         -> UNCLASSIFIED (gate bites)",
+    "  (y) schema named only in a gate script           -> UNCLASSIFIED (gate bites)",
+    "  (z) duplicate group                              -> exactly one finding",
+    "  (aa) duplicate finding named by its members       -> classifiable key",
+    "  (ab) no finding name stringifies an object",
   ]) console.log(line);
 }
 
@@ -494,24 +608,58 @@ function runKnip() {
   process.exit(1);
 }
 
-function main() {
-  const knip = runKnip();
-  const issues = knip.issues ?? [];
-
+/**
+ * knip's JSON document -> the flat `{kind, file, name}` findings this gate
+ * classifies.
+ *
+ * `duplicates` is the shape that has to be handled deliberately. Every other
+ * category is an array of `{name, line, col}`; `duplicates` is an array of
+ * GROUPS, each group an array of those objects, because a duplicate is a
+ * relationship between two or more exports rather than a single symbol. Reading
+ * it like the others produced `item.name === undefined`, fell through to
+ * `String(item)` on an array of objects, and named the finding
+ * `[object Object],[object Object]`.
+ *
+ * That is not cosmetic. A finding's key is `<file>:<name>` and the key is what a
+ * `FINDING_VERDICTS` entry is written against, so a finding named
+ * `[object Object],[object Object]` can never be classified by anyone reading
+ * the output: it does not say which two exports are duplicated, and it collides
+ * with every other duplicate group in the same file. The gate is then
+ * permanently and unfixably red on that finding — the one failure mode a
+ * fail-closed gate cannot afford, because "always red" and "red for a reason"
+ * become indistinguishable and the whole gate gets ignored.
+ *
+ * Joining the group's member names gives a key that names the actual defect
+ * (`a|b`), is stable across runs, and can be written into the ledger.
+ */
+export function normalizeKnip(issues) {
   const deadFiles = [];
   const findings = [];
 
+  const nameOf = (item) => {
+    if (Array.isArray(item)) return item.map((member) => nameOf(member)).join("|");
+    if (item && typeof item === "object" && typeof item.name === "string") return item.name;
+    return String(item);
+  };
+
   for (const issue of issues) {
-    for (const file of issue.files ?? []) deadFiles.push(file.name ?? file);
-    for (const item of issue.exports ?? []) findings.push({ kind: "export", file: issue.file, name: item.name });
-    for (const item of issue.types ?? []) findings.push({ kind: "type", file: issue.file, name: item.name });
-    for (const item of issue.enumMembers ?? []) findings.push({ kind: "enum-member", file: issue.file, name: item.name });
-    for (const item of issue.namespaceMembers ?? []) findings.push({ kind: "namespace-member", file: issue.file, name: item.name });
-    for (const item of issue.duplicates ?? []) findings.push({ kind: "duplicate", file: issue.file, name: item.name ?? String(item) });
+    for (const file of issue.files ?? []) deadFiles.push(nameOf(file));
+    for (const item of issue.exports ?? []) findings.push({ kind: "export", file: issue.file, name: nameOf(item) });
+    for (const item of issue.types ?? []) findings.push({ kind: "type", file: issue.file, name: nameOf(item) });
+    for (const item of issue.enumMembers ?? []) findings.push({ kind: "enum-member", file: issue.file, name: nameOf(item) });
+    for (const item of issue.namespaceMembers ?? []) findings.push({ kind: "namespace-member", file: issue.file, name: nameOf(item) });
+    for (const group of issue.duplicates ?? []) findings.push({ kind: "duplicate", file: issue.file, name: nameOf(group) });
     for (const group of ["unlisted", "dependencies", "devDependencies", "optionalPeerDependencies", "unresolved", "binaries"])
       for (const item of issue[group] ?? [])
-        findings.push({ kind: `dependency:${group}`, file: issue.file, name: item.name ?? String(item), depKey: true });
+        findings.push({ kind: `dependency:${group}`, file: issue.file, name: nameOf(item), depKey: true });
   }
+
+  return { deadFiles, findings };
+}
+
+function main() {
+  const knip = runKnip();
+  const { deadFiles, findings } = normalizeKnip(knip.issues ?? []);
 
   const knipTotal = deadFiles.length + findings.length;
   if (knipTotal < SCAN_FLOOR.knipTotal) {

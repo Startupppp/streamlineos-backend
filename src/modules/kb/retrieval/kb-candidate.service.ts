@@ -238,6 +238,19 @@ export class KbCandidateService {
     }
   }
 
+  /**
+   * The role half is `inArray`, not `= ANY(${roleSlugs})`.
+   *
+   * A bare JS array interpolated into a drizzle `sql` template does NOT become one array
+   * parameter — it expands to a parenthesised parameter LIST. `ANY(($1, $2))` is
+   * `op ANY/ALL (array) requires array on right side` and the one-slug case `ANY(($1))`
+   * is `malformed array literal`, so this predicate threw for every non-admin caller
+   * holding at least one role assignment, which is nearly every real user. It took down
+   * `GET /kb/search` and `POST /kb/ask` outright through `articleKeywordCandidates` and
+   * `resolveVisibleArticles`, and — worse, because it is silent — `articleVectorCandidates`
+   * swallowed the same throw in its own catch and answered with an empty candidate list,
+   * so semantic retrieval over restricted articles quietly returned nothing.
+   */
   articleRestrictionFilter(
     orgId: string,
     principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
@@ -261,7 +274,7 @@ export class KbCandidateService {
           AND ${kar.level} = 'view'
           AND (${membershipMatch}${
             principal.roleSlugs.length > 0
-              ? sql`${kar.role} = ANY(${principal.roleSlugs})`
+              ? inArray(kar.role, principal.roleSlugs)
               : sql`false`
           })
       )

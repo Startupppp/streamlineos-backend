@@ -14,7 +14,7 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { resolveDashboardStatsFlags } from "./dashboard-scope";
-import { buildOrgDashboardCacheKey } from "./dashboard-cache-key";
+import { buildOrgSectionCacheKey } from "./dashboard-cache-key";
 import { settleSection } from "./dashboard-section-settle";
 
 @Injectable()
@@ -32,13 +32,13 @@ export class DashboardStatsService {
       settleSection({ name, run, fallback, logger: this.logger, context: `org ${orgId}` });
 
     const flagsPromise = resolveDashboardStatsFlags(this.access, u);
-    const employeesKeyPromise = buildOrgDashboardCacheKey(this.access, orgId, "stats-employees");
-    const projectsKeyPromise = buildOrgDashboardCacheKey(this.access, orgId, "stats-projects");
+    const employeesKeyPromise = buildOrgSectionCacheKey(this.access, orgId, "stats-employees");
+    const projectsKeyPromise = buildOrgSectionCacheKey(this.access, orgId, "stats-projects");
 
     const orgDataPromise = settle(
       "org",
       async () => {
-        const orgKey = await buildOrgDashboardCacheKey(this.access, orgId, "stats-org");
+        const orgKey = await buildOrgSectionCacheKey(this.access, orgId, "stats", "org");
         return this.cache.cachedForOrg(
           orgId,
           orgKey,
@@ -134,7 +134,7 @@ export class DashboardStatsService {
             async () => {
               const orgTz = (await orgDataPromise).orgTz;
               const localDate = formatInTimeZone(new Date(), orgTz, "yyyy-MM-dd");
-              const attendanceKey = await buildOrgDashboardCacheKey(
+              const attendanceKey = await buildOrgSectionCacheKey(
                 this.access,
                 orgId,
                 "stats-attendance",

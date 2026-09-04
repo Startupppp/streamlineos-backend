@@ -37,11 +37,35 @@ function makeSelectChain(rows: unknown[] = []) {
   return { where, chain };
 }
 
+/**
+ * `loadCheckpoints` opens its own tenant transaction — `kb_ingestion_checkpoints` is
+ * RLS-enabled under the RAISING `org_id = current_org_id()` and both reindex routes enter
+ * the service with no ambient context, so the read has to supply one. A mock `db` with no
+ * `transaction` therefore no longer models the seam. It gets one here that INVOKES its
+ * callback (backend CLAUDE.md 8: a bare `jest.fn()` silently voids every assertion inside),
+ * handing back a tx that carries the same select chain, so the predicate assertions below
+ * still inspect the real `where` argument.
+ */
+function makeCheckpointDb(rows: unknown[]) {
+  const { where } = makeSelectChain(rows);
+  const txSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) });
+  const tx = { select: txSelect, execute: jest.fn().mockResolvedValue([]) };
+  // `withTenant` fires `refreshRelocationTargets(db, …)` against the OUTER handle, so the
+  // instrumented chain belongs to the transaction only — sharing one would make
+  // `where.mock.calls[0]` the relocation probe and the predicate assertion vacuous.
+  const outerSelect = jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+  });
+  const db = {
+    select: outerSelect,
+    transaction: jest.fn().mockImplementation(async (fn: (t: typeof tx) => unknown) => fn(tx)),
+  } as unknown as Db;
+  return { db, where };
+}
+
 describe("KbIngestionCheckpointService — cross-tenant isolation", () => {
   it("loadCheckpoints: where predicate carries attacker orgId (deny — scoped to caller)", async () => {
-    const { where } = makeSelectChain([]);
-    const from = jest.fn().mockReturnValue({ where });
-    const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
+    const { db, where } = makeCheckpointDb([]);
     const svc = new KbIngestionCheckpointService(db);
     const result = await svc.loadCheckpoints(ATTACKER, "article", 1, "hash");
     expect(result.size).toBe(0);
@@ -52,9 +76,7 @@ describe("KbIngestionCheckpointService — cross-tenant isolation", () => {
   });
 
   it("loadCheckpoints: returns checkpoints for the owning org (control)", async () => {
-    const { where } = makeSelectChain([{ chunkIndex: 0, embedding: [0.1, 0.2] }]);
-    const from = jest.fn().mockReturnValue({ where });
-    const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
+    const { db, where } = makeCheckpointDb([{ chunkIndex: 0, embedding: [0.1, 0.2] }]);
     const svc = new KbIngestionCheckpointService(db);
     const result = await svc.loadCheckpoints(OWNER, "article", 1, "hash");
     expect(result.size).toBe(1);

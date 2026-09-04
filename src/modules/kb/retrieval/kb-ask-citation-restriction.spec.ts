@@ -90,8 +90,14 @@ function makeUser(): CurrentUserContext {
 describe("KbAskService — citation re-verification re-applies the article-restriction ACL", () => {
   const articleWheres: CompiledWhere[] = [];
 
-  const makeDb = () => {
-    const db = {
+  type DbMock = {
+    execute: jest.Mock;
+    select: jest.Mock;
+    transaction: jest.Mock;
+  };
+
+  const makeDb = (): DbMock => {
+    const db: DbMock = {
       execute: jest.fn().mockResolvedValue([{ one: 1 }]),
       select: jest.fn(() => ({
         from: jest.fn((table: unknown) => ({

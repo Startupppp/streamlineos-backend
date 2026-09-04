@@ -36,8 +36,17 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
   }
 
   /**
-   * Realtime delivery is the latency-sensitive part of sending a message. It runs once from the
-   * post-commit send hook; the durable outbox consumer deliberately does not repeat it.
+   * Realtime delivery is the latency-sensitive part of sending a message, so it runs from the
+   * post-commit send hook rather than waiting for the outbox relay.
+   *
+   * The durable outbox consumer DOES call this again — `chat-fanout-outbox.consumer.ts` invokes
+   * `dispatchRealtime` before `dispatchDeferred` — and that is deliberate: if the process died
+   * between commit and the post-commit hook, the relay is the only thing that will ever publish
+   * the message. What stops the two paths from double-publishing is the `ExternalEffectLedger`,
+   * which both paths consult under the same `effectKey`, not an assumption that only one of them
+   * runs. The comment that used to sit here said the opposite ("the durable outbox consumer
+   * deliberately does not repeat it") and would have led the next reader to remove the ledger
+   * guard as redundant.
    */
   async dispatchRealtime(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
     const {

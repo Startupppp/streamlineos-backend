@@ -49,6 +49,7 @@ import {
   redundant,
   statisticsAreInert,
 } from "./redundant-objects/detect";
+import { isPlanEvidence, type PlanEvidence } from "./redundant-objects/plan-evidence-guard";
 import { runSelfTest } from "./redundant-objects/self-test";
 
 const SELF_TEST = process.argv.includes("--self-test");
@@ -62,13 +63,6 @@ const MIN_LIVE_INDEXES = 3_000;
 const MIN_LIVE_CONSTRAINTS = 3_000;
 const MIN_DECLARED_TABLES = 700;
 
-interface PlanEvidence {
-  readonly id: string;
-  readonly probe: string;
-  readonly withCandidate: string;
-  readonly withoutCandidate: string;
-}
-
 function readPlanEvidence(): Map<string, PlanEvidence> {
   if (!existsSync(PLAN_EVIDENCE_PATH)) return new Map();
   try {
@@ -78,8 +72,7 @@ function readPlanEvidence(): Map<string, PlanEvidence> {
     if (!Array.isArray(plans)) return new Map();
     const out = new Map<string, PlanEvidence>();
     for (const entry of plans) {
-      if (entry !== null && typeof entry === "object" && "id" in entry && typeof entry.id === "string")
-        out.set(entry.id, entry as PlanEvidence);
+      if (isPlanEvidence(entry)) out.set(entry.id, entry);
     }
     return out;
   } catch {

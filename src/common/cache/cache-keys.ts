@@ -258,6 +258,15 @@ export const CACHE_KEYS = {
     `ownership:incoming:${orgId}:${userId}`,
 } as const;
 
+/**
+ * Home's pending-approvals section is keyed per approver, so a leave decision
+ * cannot name the entries it invalidates. The generation counter retires every
+ * approver's entry in one O(1) bump.
+ */
+export const DASHBOARD_PENDING_APPROVALS_NAMESPACE = namespace(
+  "dashboard-home:pending-approvals",
+);
+
 export const CACHE_TTL = {
   SHORT: 30,
   MEDIUM: 300,

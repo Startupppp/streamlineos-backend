@@ -60,19 +60,34 @@ describe("Calendar source production graph (e2e)", () => {
       .set("Authorization", `Bearer ${auth}`);
   }
 
-  it("registers the production HR calendar sources through the real module graph", async () => {
+  it("registers the production calendar sources through the real module graph", async () => {
     const auth = await token("calendar-owner", "calendar-org-registration");
 
     const response = await listSources(auth);
 
     expect(response.status).toBe(200);
+    // Exhaustive on purpose: a source that registers itself and is never named here is a
+    // toggle the unified calendar shows without anyone having decided it should.
     expect(response.body.map((source: { key: string }) => source.key).sort()).toEqual([
+      "calendar-events",
       "hr-attendance",
       "hr-holidays",
       "hr-interviews",
       "hr-leaves",
+      "tasks",
     ]);
-    expect(response.body.every((source: { module: string }) => source.module === "hr")).toBe(true);
+    expect(
+      response.body
+        .map((source: { key: string; module: string }) => `${source.key}:${source.module}`)
+        .sort(),
+    ).toEqual([
+      "calendar-events:calendar",
+      "hr-attendance:hr",
+      "hr-holidays:hr",
+      "hr-interviews:hr",
+      "hr-leaves:hr",
+      "tasks:tasks",
+    ]);
   });
 
   it("persists source preferences per user and organization", async () => {
@@ -108,12 +123,26 @@ describe("Calendar source production graph (e2e)", () => {
     });
   });
 
+  /**
+   * The assertion is exhaustive, not merely "no hr-* key": `resolveAvailable` is the only
+   * thing standing between a registered source and the toggle list, and a set-difference
+   * assertion would keep passing if it started letting a THIRD module's source through.
+   * `calendar` and `tasks` survive because `isCoreModuleKey` reports them core — calendar
+   * is registered `planGated: false`, and `tasks` has no registry entry at all — so those
+   * two are the whole of what an org with no enabled modules may see.
+   */
   it("does not expose registered HR sources when the HR module is unavailable", async () => {
     const auth = await token("calendar-no-hr", "calendar-org-no-hr", []);
 
     const response = await listSources(auth);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual([]);
+    expect(response.body.map((source: { key: string }) => source.key).sort()).toEqual([
+      "calendar-events",
+      "tasks",
+    ]);
+    expect(
+      response.body.filter((source: { module: string }) => source.module === "hr"),
+    ).toEqual([]);
   });
 });
