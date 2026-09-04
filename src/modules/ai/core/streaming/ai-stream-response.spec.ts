@@ -6,7 +6,6 @@ import {
 } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import {
-  encodeStreamSourcesHeader,
   encodeStreamSources,
   sourcesTruncatedHeaderName,
   pipeAiTextStream,
@@ -145,34 +144,6 @@ describe("rethrowStreamRouteError — a route catch must not flatten every failu
       expect(error).toBeInstanceOf(InternalServerErrorException);
       expect((error as Error).message).toBe("Internal server error");
     }
-  });
-});
-
-describe("encodeStreamSourcesHeader — citations survive a truncated stream", () => {
-  it("returns null for an empty source list", () => {
-    expect(encodeStreamSourcesHeader([])).toBeNull();
-  });
-
-  it("round-trips through decodeURIComponent + JSON.parse", () => {
-    const sources = [{ articleId: 10, title: "Getting Started, v2", slug: "getting-started" }];
-
-    const encoded = encodeStreamSourcesHeader(sources);
-
-    expect(encoded).not.toBeNull();
-    expect(JSON.parse(decodeURIComponent(encoded as string))).toEqual(sources);
-  });
-
-  it("drops trailing sources rather than emitting a header the server will reject", () => {
-    const big = Array.from({ length: 40 }, (_, i) => ({
-      articleId: i,
-      title: "x".repeat(400),
-    }));
-
-    const encoded = encodeStreamSourcesHeader(big);
-
-    expect(encoded).not.toBeNull();
-    expect(Buffer.byteLength(encoded as string, "utf8")).toBeLessThanOrEqual(4_096);
-    expect((JSON.parse(decodeURIComponent(encoded as string)) as unknown[]).length).toBeLessThan(40);
   });
 });
 

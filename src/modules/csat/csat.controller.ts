@@ -17,6 +17,8 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { Public } from "../../common/auth/public.decorator";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
@@ -116,6 +118,8 @@ export class CsatController {
   @Public()
   @Post(":surveyId/responses")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("csat:submit")
   @Validate({ params: surveyIdParams, body: submitResponseSchema })
   async submitResponse(
     @Param("surveyId", ParseIntPipe) surveyId: number,

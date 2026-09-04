@@ -165,11 +165,3 @@ export function encodeStreamSources(
   });
   return { encoded: encodeURIComponent("[]"), included: 0, dropped: capped.length };
 }
-
-/**
- * The pre-existing string-only shape, kept for callers that publish the header
- * themselves. Prefer `encodeStreamSources`: this one cannot report what it lost.
- */
-export function encodeStreamSourcesHeader(sources: readonly unknown[]): string | null {
-  return encodeStreamSources(sources)?.encoded ?? null;
-}

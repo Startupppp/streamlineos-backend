@@ -1,19 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, inArray, isNull, lt } from "drizzle-orm";
-import { notifications, projectApprovals, users, organizationMembers } from "../../db/schema";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { notifications, projectApprovals, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import { actingMembershipId } from "../../common/auth/principal";
 import { MailService } from "../mail/mail.service";
-import {
-  ACTOR_COLUMNS,
-  KIND_ORDER,
-  NOTIF_COLUMNS,
-  deduplicate,
-  stableSortItems,
-} from "./unified-inbox-projections";
+import { KIND_ORDER, deduplicate, stableSortItems } from "./unified-inbox-projections";
 import { BroadcastsService } from "./broadcasts.service";
+import { fetchBroadcastItems, fetchNotificationItems } from "./unified-inbox-sources";
 import { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
@@ -104,7 +99,8 @@ export class UnifiedInboxService {
     const [notifItems, broadcastItems, mailResult, approvalItems] =
       await Promise.all([
         wantsNotifications
-          ? this.fetchNotifications(
+          ? fetchNotificationItems(
+              this.db,
               orgId,
               actingMembershipId(user.principal),
               limit + 1,
@@ -113,7 +109,7 @@ export class UnifiedInboxService {
             )
           : ([] as NotificationInboxItem[]),
         wantsBroadcasts
-          ? this.fetchBroadcasts(orgId, userId, limit + 1, cursorState.b, actingMembershipId(user.principal))
+          ? fetchBroadcastItems(this.broadcasts, orgId, userId, limit + 1, cursorState.b, actingMembershipId(user.principal))
           : ([] as BroadcastInboxItem[]),
         wantsMail && canViewMail
           ? this.fetchMail(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.m)
@@ -215,98 +211,6 @@ export class UnifiedInboxService {
       default:
         return assertNever(item);
     }
-  }
-
-  /**
-   * Also keyed on `membership_id` — see `countNotificationUnread` for the numbers.
-   * `idx_notifications_list_cursor` is `(org_id, membership_id, id DESC)
-   * WHERE deleted_at IS NULL AND archived_at IS NULL`, which is this query exactly;
-   * on `user_id` it cost 2,043 blocks to return 20 rows and grew with the tenant.
-   */
-  private async fetchNotifications(
-    orgId: string,
-    membershipId: number | null,
-    fetchLimit: number,
-    cursor: number | null,
-    unreadOnly: boolean,
-  ): Promise<NotificationInboxItem[]> {
-    if (membershipId === null) return [];
-    const rows = await this.db
-      .select({ ...NOTIF_COLUMNS, ...ACTOR_COLUMNS })
-      .from(notifications)
-      .leftJoin(users, eq(users.id, notifications.actorUserId))
-      .where(
-        and(
-          eq(notifications.orgId, orgId),
-          eq(notifications.membershipId, membershipId),
-          isNull(notifications.deletedAt),
-          isNull(notifications.archivedAt),
-          cursor !== null ? lt(notifications.id, cursor) : undefined,
-          unreadOnly ? eq(notifications.isRead, false) : undefined,
-        ),
-      )
-      .orderBy(desc(notifications.id))
-      .limit(fetchLimit);
-
-    return rows.map(
-      (row): NotificationInboxItem => ({
-        kind: "notification",
-        id: Number(row.id),
-        notifType: row.type,
-        priority: row.priority,
-        category: row.category,
-        sourceModule: row.sourceModule ?? "system",
-        eventKey: row.eventKey ?? null,
-        subject: row.title,
-        body: row.message,
-        deepLink: row.link ?? null,
-        isRead: row.isRead,
-        pinned: row.pinned,
-        timestamp: row.createdAt.toISOString(),
-        dedupKey: `notification:${String(row.id)}`,
-        actor: row.actorId
-          ? {
-              id: row.actorId,
-              name: row.actorName ?? null,
-              image: row.actorImage ?? null,
-            }
-          : null,
-      }),
-    );
-  }
-
-  private async fetchBroadcasts(
-    orgId: string,
-    userId: string,
-    fetchLimit: number,
-    cursor: number | null,
-    membershipId?: number | null,
-  ): Promise<BroadcastInboxItem[]> {
-    const rows = await this.broadcasts.listInboxPage(
-      orgId,
-      userId,
-      fetchLimit,
-      cursor,
-      membershipId,
-    );
-
-    return rows.map(
-      (row): BroadcastInboxItem => ({
-        kind: "broadcast",
-        id: row.id,
-        notifType: row.type,
-        priority: row.priority,
-        category: row.category,
-        sourceModule: "notification",
-        subject: row.title,
-        body: row.message,
-        deepLink: null,
-        isRead: false,
-        dedupKey: `broadcast:${String(row.id)}`,
-        timestamp: (row.sentAt ?? row.createdAt).toISOString(),
-        actor: null,
-      }),
-    );
   }
 
   /**

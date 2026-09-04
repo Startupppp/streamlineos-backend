@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { Body, Controller, Headers, HttpCode, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Headers, HttpCode, Post, UnauthorizedException, UseGuards } from "@nestjs/common";
 import { Public } from "../auth/public.decorator";
+import { RateLimitGuard } from "../ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../ratelimit/use-rate-limit.decorator";
 import { Validate } from "../validation/validate.decorator";
 import { auditEntrySchema } from "./audit-entry.schema";
 import { AuditService, type AuditEntry } from "./audit.service";
@@ -12,6 +14,8 @@ export class InternalAuditController {
   @Public()
   @Post("audit")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("internal:audit")
   @Validate({ body: auditEntrySchema })
   logAudit(
     @Headers("x-internal-secret") secret: string | undefined,

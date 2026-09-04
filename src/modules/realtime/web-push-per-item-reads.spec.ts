@@ -22,11 +22,8 @@
 import type { SQL } from "drizzle-orm";
 import * as webpush from "web-push";
 import { PgDialect } from "drizzle-orm/pg-core";
-import {
-  WebPushService,
-  PUSH_SUBSCRIPTION_BATCH,
-  PUSH_FANOUT_CONCURRENCY,
-} from "./web-push.service";
+import { WebPushService, PUSH_FANOUT_CONCURRENCY } from "./web-push.service";
+import { PUSH_SUBSCRIPTION_BATCH } from "./push-subscription-store";
 import type { Db } from "../../db/drizzle.module";
 import type { AppConfig } from "../../config/env.validation";
 import type { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";

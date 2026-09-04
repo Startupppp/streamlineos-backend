@@ -1,4 +1,5 @@
-import { EXCLUDED_FOLDERS, PRIVATE_LABELS, type MailMessageForIngress, type PrivateLabelRule } from "./mail-to-inbound-event";
+import { EXCLUDED_FOLDERS, PRIVATE_LABELS } from "./mail-ingress-privacy";
+import { type MailMessageForIngress, type PrivateLabelRule } from "./mail-to-inbound-event";
 import type { MailMessageSummary } from "../../mail/dto/mail-schemas";
 
 export const MAX_PER_PAGE = 100;

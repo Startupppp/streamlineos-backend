@@ -44,6 +44,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { resolveClientIpOr } from "../../../common/http/client-ip";
 
 /**
  * The pre-authentication limit is keyed on the caller's own address, never on the
@@ -52,10 +53,7 @@ import { z } from "zod";
  * quota is still enforced, after the shared secret has been proved.
  */
 function clientIp(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const candidate = raw?.split(",")[0]?.trim() || req.ip;
-  return candidate ? candidate.slice(0, 100) : "unknown";
+  return resolveClientIpOr(req, "unknown");
 }
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();

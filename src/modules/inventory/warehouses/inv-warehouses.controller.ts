@@ -6,6 +6,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { InvWarehousesService } from "./inv-warehouses.service";
+import { InvWarehouseLocationsService } from "./inv-warehouse-locations.service";
 import {
   createWarehouseSchema, updateWarehouseSchema, createLocationSchema, updateLocationSchema, listWarehouseStockSchema, listWarehousesSchema,
   type CreateWarehouseInput, type UpdateWarehouseInput, type CreateLocationInput, type UpdateLocationInput, type ListWarehouseStockInput, type ListWarehousesInput,
@@ -21,7 +22,10 @@ const warehouseIdlocationIdParams = z.object({ warehouseId: z.coerce.number().in
 @Controller("inventory/warehouses")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvWarehousesController {
-  constructor(private readonly warehouses: InvWarehousesService) {}
+  constructor(
+    private readonly warehouses: InvWarehousesService,
+    private readonly locations: InvWarehouseLocationsService,
+  ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
@@ -74,7 +78,7 @@ export class InvWarehousesController {
     @Query() filters: ListWarehouseStockInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.warehouses.getWarehouseStock(u.orgId, warehouseId, filters.page, filters.limit);
+    return this.locations.getWarehouseStock(u.orgId, warehouseId, filters.page, filters.limit);
   }
 
   @Get(":warehouseId/locations")
@@ -82,7 +86,7 @@ export class InvWarehousesController {
   @RequirePermission("inventory:warehouses:read")
   @Validate({ params: warehouseIdParams })
   listLocations(@Param("warehouseId", ParseIntPipe) warehouseId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.warehouses.listLocations(u.orgId, warehouseId);
+    return this.locations.listLocations(u.orgId, warehouseId);
   }
 
   @Post(":warehouseId/locations")
@@ -94,7 +98,7 @@ export class InvWarehousesController {
     @Body() body: CreateLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.warehouses.createLocation(u.orgId, warehouseId, body);
+    return this.locations.createLocation(u.orgId, warehouseId, body);
   }
 
   @Patch(":warehouseId/locations/:locationId")
@@ -107,6 +111,6 @@ export class InvWarehousesController {
     @Body() body: UpdateLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.warehouses.updateLocation(u.orgId, locationId, body);
+    return this.locations.updateLocation(u.orgId, locationId, body);
   }
 }

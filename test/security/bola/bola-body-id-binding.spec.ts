@@ -130,10 +130,16 @@ describe("the surface, enumerated from the committed contract", () => {
     //   +1  GET /blog/admin/categories
     //   +1  GET /finance/bank-accounts/{bankAccountId}
     //   +2  GET /v2/users, GET /v2/users/{userId}
-    // What this file actually guards is unmoved: `bodyFields`, `queryFields`, `idFields`
-    // and `operationsWithIdFields` below all hold at their existing numbers, so six
-    // operations arrived and brought no id-shaped request field with them. This census
-    // tracks `openapi.json`, so it has to be re-read after the release's final
+    //
+    // CORRECTED. The comment that stood here claimed `queryFields`, `idFields` and
+    // `operationsWithIdFields` were unmoved because "six operations arrived and brought no
+    // id-shaped request field with them". That was FALSE and it was hiding the one operation
+    // of the six that matters: `GET /v2/users` declares FOUR id-shaped query filters —
+    // departmentId, branchId, teamId, managerUserId — every one of which widens or narrows the
+    // set of people returned. So the census moves 239 -> 243, 1052 -> 1056 and 671 -> 672, and
+    // the four fields are asserted individually below rather than absorbed into a number: a
+    // route with four org-scoping id filters is either swept or it is a blind spot.
+    // This census tracks `openapi.json`, so it has to be re-read after the release's final
     // `pnpm openapi:generate` rather than assumed.
     expect(counts.operations).toBe(3648);
     // 815 -> 813 and 1054 -> 1052 at `25a87768` / `1400ca6c`, which removed four request fields
@@ -141,9 +147,27 @@ describe("the surface, enumerated from the committed contract", () => {
     // and `kbAskSchema.articleId` — so two body sites and two id sites went with them, on two
     // operations. The ratchet moved DOWN, which is the direction it is allowed to move.
     expect(counts.bodyFields).toBe(813);
-    expect(counts.queryFields).toBe(239);
-    expect(counts.idFields).toBe(1052);
-    expect(counts.operationsWithIdFields).toBe(671);
+    expect(counts.queryFields).toBe(243);
+    expect(counts.idFields).toBe(1056);
+    expect(counts.operationsWithIdFields).toBe(672);
+  });
+
+  /**
+   * The four the census moved for, read individually rather than counted.
+   *
+   * `GET /v2/users` is the versioned list route added by the API-versioning pass. It collides
+   * with the unversioned `UsersController.listUsers` on `@Get()`, which is why its operation
+   * resolved to `handler-not-found` when it first appeared — a route carrying four id-shaped
+   * org-scoping filters that nothing swept. It resolves now, and this asserts what it resolves
+   * TO: putting it in the named-exception set below instead would have been the allowlist
+   * widening this release forbids.
+   */
+  it("sweeps the four org-scoping id filters GET /v2/users brought, rather than excusing them", () => {
+    const v2 = bindings.filter((b) => b.path === "/v2/users" && b.location === "query");
+    const byField = new Map(v2.map((b) => [b.field, b.verdict]));
+    expect([...byField.keys()].sort()).toEqual(["branchId", "departmentId", "managerUserId", "teamId"]);
+    for (const [field, verdict] of byField)
+      expect([field, verdict]).toEqual([field, expect.stringMatching(/^(?:org-predicate|filter-in-org-query)$/)]);
   });
 
   it("splits out the tenant and actor selectors rather than analysing them as object references", () => {
@@ -236,7 +260,35 @@ const NEWLY_VISIBLE_BY_FORWARDED_CARRIER: readonly string[] = [
   "RecruitmentSourcingController_createSubmission|jobPostingId",
 ];
 
+/**
+ * NOT raised for these. `1cddeadea` deleted a `body as InboundCommunicationEvent` cast from
+ * `InboundIngressController.accept`, which is what had been stopping the trace at the controller
+ * boundary: both fields went `never-read` -> `written-unresolved` on that commit and pushed the
+ * count to 224 against a baseline of 223. Raising the baseline to absorb them is the move
+ * CLOSURE-DEFINITION forbids, so it was not made — the count came back UNDER the unchanged
+ * baseline because a real finding was repaired instead (calendar's linked deal and lead, below).
+ *
+ * They are named here so they stay visible, and so the next reader knows what they are: both are
+ * `z.string().trim().max(500)` in `inbound-event.schemas.ts` — a provider's OWN opaque identifier
+ * for a message and a thread, not a reference to any row of ours. `eventIdentity` and
+ * `threadIdentity` already prefix both with `organizationId` before they are used as a dedupe key,
+ * so one tenant's provider id cannot collide with another's.
+ */
+const NEWLY_VISIBLE_BY_CAST_REMOVAL: readonly string[] = [
+  "InboundIngressController_accept|providerMessageId",
+  "InboundIngressController_accept|providerThreadId",
+];
+
 describe("findings", () => {
+  it("still holds the two sites the deleted type cast made visible", () => {
+    const present = new Set(
+      bindings
+        .filter((b) => b.verdict === "written-unresolved")
+        .map((b) => `${b.operationId}|${b.field}`),
+    );
+    expect(NEWLY_VISIBLE_BY_CAST_REMOVAL.filter((site) => !present.has(site))).toEqual([]);
+  });
+
   it("does not add an unresolved body or query id", () => {
     const counts = summarize(bindings);
     expect(counts["written-unresolved"]).toBeLessThanOrEqual(WRITTEN_UNRESOLVED_BASELINE);
@@ -317,12 +369,31 @@ describe("findings", () => {
  * so a repair shows up as a failure that has to be acknowledged, rather than
  * quietly shrinking a number.
  */
-describe("cross-territory findings, recorded rather than repaired", () => {
-  it("calendar stores another organisation's deal and lead id on an event", () => {
-    const calendar = bindings.filter((b) => b.path === "/calendar/events" && b.method === "POST");
-    const byField = new Map(calendar.map((b) => [b.field, b.verdict]));
-    expect(byField.get("linkedDealId")).toBe("written-unresolved");
-    expect(byField.get("linkedLeadId")).toBe("written-unresolved");
+describe("cross-territory findings, recorded rather than repaired — except where noted", () => {
+  /**
+   * REPAIRED, and the pin is flipped to hold the repair rather than the defect.
+   *
+   * `calendar_events.linked_deal_id` and `.linked_lead_id` are `bare-fk` in
+   * `body-id-integrity.json` — a single-column reference to `deals(id)` / `leads(id)` with no
+   * `org_id` in it — so another organisation's deal id LANDED while an id belonging to nobody
+   * raised a foreign-key error. Both consequences followed: a cross-tenant write, and an
+   * existence oracle in the difference between the two answers. `assertLinkedCrmRecordsInOrg`
+   * now resolves both references under the caller's org inside the mutation's own transaction,
+   * on POST /calendar/events AND on PUT /calendar/events/{eventId} — the update path carried the
+   * same two fields and this census never saw it, so fixing only what the census flagged would
+   * have left half the defect standing.
+   */
+  it("calendar resolves a linked deal and lead under the caller's org before writing them", () => {
+    for (const [path, method] of [
+      ["/calendar/events", "POST"],
+      ["/calendar/events/{eventId}", "PUT"],
+    ] as const) {
+      const byField = new Map(
+        bindings.filter((b) => b.path === path && b.method === method).map((b) => [b.field, b.verdict]),
+      );
+      expect([path, byField.get("linkedDealId")]).toEqual([path, "object-assertion"]);
+      expect([path, byField.get("linkedLeadId")]).toEqual([path, "object-assertion"]);
+    }
   });
 
   it("timesheets stores another organisation's client id on a rate", () => {

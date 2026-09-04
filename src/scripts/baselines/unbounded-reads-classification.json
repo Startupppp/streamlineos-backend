@@ -763,11 +763,6 @@
       "note": "All reads are groupBy/count/avg aggregates for time-series reports; no unbounded row-returning scan",
       "justification": "L82 sprint scope events bounded by sprintId (one sprint); L217 daily snapshots bounded by date-range window (query.days rows); L262 sprint velocity bounded by sprint count; L450/L462 grouped per-sprint ticket aggregates 2026-09-01"
     },
-    "/build/core/projects-search.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Extracted verbatim from projects-work-query.service.ts, which carries the same verdict; the gate is path-keyed, so the split uncovered it rather than changing it",
-      "justification": "the only uncapped select reads the caller's own project memberships to build an inArray filter, bounded by how many projects one person belongs to; the ticket read that follows carries an explicit .limit(limit) 2026-09-02"
-    },
     "/build/core/projects-ticket-comments.service.ts": {
       "verdict": "BOUNDED",
       "note": "Has explicit .limit() on comment reads; per-ticket comments are a small dataset",

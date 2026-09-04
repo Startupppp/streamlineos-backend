@@ -4,12 +4,11 @@ import {
   calendarEvents,
   calendarProviderSyncQueue,
   eventAttendees,
-  users,
   organizationMembers,
   notificationOutbox,
 } from "../../db/schema";
 import { assertOwnedCalendarConnection } from "./calendar-sync-connection";
-import type { TenantTx } from "../../db/drizzle.types";
+import { assertLinkedCrmRecordsInOrg } from "./calendar-linked-crm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, UpdateEventInput } from "./dto/calendar.schemas";
@@ -23,84 +22,12 @@ import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
 import type { RsvpInput } from "./dto/calendar.schemas";
 import type { DataScope } from "../access/access.types";
-
-/**
- * The wire shape of a mutated calendar event — PRD-C086/C088.
- *
- * `createEvent` and `updateEvent` both used a bare `.returning()`, which is every one
- * of the 26 columns on `calendar_events`. Nine of them are not the caller's business:
- * `createdByMembershipId` and `reminder15MinSent` are internal bookkeeping,
- * `integrationConnectionId` and `externalEventId` name a provider connection the
- * caller never sees, and `agenda`, `postMeetingNotes`, `visibility`, `linkedDealId`
- * and `linkedLeadId` are other domains riding along on a calendar response. The
- * browser client declared none of them, so every one was bytes on the wire with no
- * reader — and two of them leaked integration internals to any attendee.
- *
- * This is the projection the client actually consumes (`frontend/hooks/api/calendar.ts`
- * `CalendarEvent`), plus `localVersion`, which is the event's concurrency token and the
- * one internal field a caller has a use for.
- */
-const calendarEventWireColumns = {
-  id: calendarEvents.id,
-  orgId: calendarEvents.orgId,
-  title: calendarEvents.title,
-  description: calendarEvents.description,
-  location: calendarEvents.location,
-  meetingUrl: calendarEvents.meetingUrl,
-  startDate: calendarEvents.startDate,
-  endDate: calendarEvents.endDate,
-  timezone: calendarEvents.timezone,
-  allDay: calendarEvents.allDay,
-  color: calendarEvents.color,
-  category: calendarEvents.category,
-  entityType: calendarEvents.entityType,
-  entityId: calendarEvents.entityId,
-  rrule: calendarEvents.rrule,
-  recurrenceEnd: calendarEvents.recurrenceEnd,
-  localVersion: calendarEvents.localVersion,
-  createdAt: calendarEvents.createdAt,
-  updatedAt: calendarEvents.updatedAt,
-};
-
-/**
- * `updateEvent` needs the two provider-sync columns to decide whether to enqueue a
- * push, and must not put them on the wire. Reading them here and dropping them in
- * `toWireEvent` keeps the decision on one row read instead of a second SELECT.
- */
-const calendarEventUpdateReturning = {
-  ...calendarEventWireColumns,
-  integrationConnectionId: calendarEvents.integrationConnectionId,
-  externalEventId: calendarEvents.externalEventId,
-};
-
-type CalendarEventUpdateRow = Pick<
-  typeof calendarEvents.$inferSelect,
-  keyof typeof calendarEventUpdateReturning
->;
-
-function toWireEvent(row: CalendarEventUpdateRow) {
-  return {
-    id: row.id,
-    orgId: row.orgId,
-    title: row.title,
-    description: row.description,
-    location: row.location,
-    meetingUrl: row.meetingUrl,
-    startDate: row.startDate,
-    endDate: row.endDate,
-    timezone: row.timezone,
-    allDay: row.allDay,
-    color: row.color,
-    category: row.category,
-    entityType: row.entityType,
-    entityId: row.entityId,
-    rrule: row.rrule,
-    recurrenceEnd: row.recurrenceEnd,
-    localVersion: row.localVersion,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
+import {
+  calendarEventUpdateReturning,
+  calendarEventWireColumns,
+  toWireEvent,
+} from "./calendar-event-wire";
+import { attendeeEmails, updateAttendeesInTx } from "./calendar-attendee-sync";
 
 @Injectable()
 export class CalendarService {
@@ -201,6 +128,8 @@ export class CalendarService {
         if (syncConnectionId !== undefined)
           await assertOwnedCalendarConnection(tx, orgId, userId, creatorMembership.id, syncConnectionId);
 
+        await assertLinkedCrmRecordsInOrg(tx, orgId, input.linkedDealId, input.linkedLeadId);
+
         const conflicts = await this.conflict.checkConflictsInTx(
           tx,
           orgId,
@@ -267,7 +196,7 @@ export class CalendarService {
           }).onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] });
 
         if (event && input.syncConnectionId) {
-          const attendeeEmailList = await this.attendeeEmails(orgId, attendeeIds);
+          const attendeeEmailList = await attendeeEmails(this.db, orgId, attendeeIds);
           await tx.insert(calendarProviderSyncQueue).values({
             orgId,
             eventId: event.id,
@@ -343,6 +272,7 @@ export class CalendarService {
         ),
       });
       if (!memberRow) return null;
+      await assertLinkedCrmRecordsInOrg(tx, orgId, input.linkedDealId, input.linkedLeadId);
       const rows = await tx
         .update(calendarEvents)
         .set({ ...updateData, updatedAt: new Date() })
@@ -371,7 +301,7 @@ export class CalendarService {
 
       const newAttendeeIds =
         input.attendeeIds !== undefined
-          ? await this.updateAttendeesInTx(tx, orgId, id, input.attendeeIds, userId)
+          ? await updateAttendeesInTx(tx, orgId, id, input.attendeeIds, userId)
           : [];
 
       if (newAttendeeIds.length > 0)
@@ -414,72 +344,6 @@ export class CalendarService {
     });
 
     return event;
-  }
-
-  private async updateAttendeesInTx(
-    tx: TenantTx,
-    orgId: string,
-    eventId: number,
-    attendeeIds: string[],
-    actorUserId: string,
-  ): Promise<string[]> {
-    const current = await tx
-      .select({ userId: organizationMembers.userId })
-      .from(eventAttendees)
-      .innerJoin(
-        organizationMembers,
-        and(eq(eventAttendees.orgId, organizationMembers.orgId), eq(eventAttendees.membershipId, organizationMembers.id)),
-      )
-      .where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, eventId)));
-
-    const currentUserIds = new Set(current.map((a) => a.userId));
-
-    const memberships =
-      attendeeIds.length === 0
-        ? []
-        : await tx
-            .select({ id: organizationMembers.id, userId: organizationMembers.userId })
-            .from(organizationMembers)
-            .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, attendeeIds)));
-
-    const newUserIdSet = new Set(memberships.map((m) => m.userId));
-    const anyRemoved = [...currentUserIds].some((uid) => !newUserIdSet.has(uid));
-
-    await tx
-      .delete(eventAttendees)
-      .where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, eventId)));
-
-    if (memberships.length > 0)
-      await tx
-        .insert(eventAttendees)
-        .values(memberships.map((m) => ({ orgId, eventId, membershipId: m.id })))
-        .onConflictDoNothing();
-
-    if (anyRemoved) {
-      await tx
-        .delete(notificationOutbox)
-        .where(
-          and(
-            eq(notificationOutbox.orgId, orgId),
-            eq(notificationOutbox.state, "PENDING"),
-            like(notificationOutbox.dedupeKey, `calendar:reminder:${eventId}:%`),
-          ),
-        );
-      await tx
-        .update(calendarEvents)
-        .set({ reminder15MinSent: false })
-        .where(
-          and(
-            eq(calendarEvents.orgId, orgId),
-            eq(calendarEvents.id, eventId),
-            eq(calendarEvents.reminder15MinSent, true),
-          ),
-        );
-    }
-
-    return memberships
-      .filter((m) => !currentUserIds.has(m.userId) && m.userId !== actorUserId)
-      .map((m) => m.userId);
   }
 
   async deleteEvent(orgId: string, userId: string, id: number) {
@@ -540,22 +404,6 @@ export class CalendarService {
 
     if (removed === 0) return null;
     return { deleted: true };
-  }
-
-  private async attendeeEmails(orgId: string, attendeeIds: string[]): Promise<string[]> {
-    if (attendeeIds.length === 0) return [];
-    const rows = await this.db
-      .select({ email: users.email })
-      .from(users)
-      .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-      .where(
-        and(
-          inArray(users.id, attendeeIds),
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      );
-    return rows.map((r) => r.email);
   }
 
   rsvp(orgId: string, userId: string, id: number, input: RsvpInput) {

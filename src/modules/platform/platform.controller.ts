@@ -21,6 +21,7 @@ import {
   contactFormSchema,
   type ContactFormInput,
   } from "./dto/platform.schemas";
+import { resolveClientIpOr } from "../../common/http/client-ip";
 
 function headerValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) return value[0] ?? null;
@@ -38,11 +39,7 @@ export class PlatformController {
   @Post("visit")
   @Validate({ body: visitSchema })
   async visit(@Req() req: Request, @Res() res: Response) {
-    const forwardedFor = headerValue(req.headers["x-forwarded-for"]);
-    const ip =
-      forwardedFor?.split(",")[0]?.trim() ??
-      headerValue(req.headers["x-real-ip"]) ??
-      "unknown";
+    const ip = resolveClientIpOr(req, "unknown");
 
     const rl = await this.rateLimit.check("platform-visit", ip);
     if (!rl.allowed) {

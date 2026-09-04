@@ -110,17 +110,36 @@ function publicWriteHandlers(): Handler[] {
 }
 
 /**
+ * Every unauthenticated write that has EVER been recorded here as carrying no
+ * limiter. Frozen: this list may not gain a member. It is what makes the gap map
+ * below SHRINK-ONLY — a fifth gap cannot be quietly appended to
+ * `UNLIMITED_PUBLIC_WRITES`, because a key that is not in this list fails the
+ * shrink-only case regardless of what comment is attached to it.
+ */
+const EVER_RECORDED_AS_UNLIMITED: readonly string[] = [
+  "common/audit/internal-audit.controller.ts:Post audit",
+  "modules/careers/careers.controller.ts:Post apply",
+  "modules/csat/csat.controller.ts:Post :surveyId/responses",
+  "modules/ingress/adapters/crm-mailbox.controller.ts:Post push",
+];
+
+/**
+ * The three closed here, with the tier each was wired to. Named rather than
+ * deleted outright, so the shrink is auditable and so the "every gap is closed
+ * for the reason it was recorded" case can re-derive it from the source.
+ */
+const CLOSED_PUBLIC_WRITE_GAPS: Readonly<Record<string, string>> = {
+  "modules/careers/careers.controller.ts:Post apply": "public:job-apply",
+  "modules/csat/csat.controller.ts:Post :surveyId/responses": "csat:submit",
+  "common/audit/internal-audit.controller.ts:Post audit": "internal:audit",
+};
+
+/**
  * Unauthenticated writes that carry no limiter of any kind today. Each is a
  * real gap, not an exemption — they are listed so the count cannot grow
  * silently, and each names the owner who has to close it.
  */
 const UNLIMITED_PUBLIC_WRITES: Readonly<Record<string, string>> = {
-  "common/audit/internal-audit.controller.ts:Post audit":
-    "POST /internal/audit — the FOURTH INTERNAL_API_SECRET route. The TIERS table records that the other three (auth:google, auth:session-exchange, auth:session-data) were limited precisely because a leaked shared secret was otherwise unbounded; this one was missed, so a leaked secret floods the audit log. Owner: audit/platform owner.",
-  "modules/careers/careers.controller.ts:Post apply":
-    'POST /careers/apply — TIERS already declares "public:job-apply" at 3/hour and no route references it, so the limit exists and is not wired. Owner: careers owner.',
-  "modules/csat/csat.controller.ts:Post :surveyId/responses":
-    'POST /csat/:surveyId/responses — the sibling surface (support-csat.controller.ts) is limited by "support:csat-submit" at 5/hour; this second CSAT controller is not. Owner: csat owner.',
   "modules/ingress/adapters/crm-mailbox.controller.ts:Post push":
     'POST /crm/mailboxes/push — an HMAC-signed inbound webhook. Every comparable one is limited ("webhook:email" 600/60, "billing:webhook" 600/60, "support:inbound-email" 120/60). Owner: crm ingress owner.',
 };
@@ -172,6 +191,25 @@ describe("rate limiting is targeted, not ambient — and the targeting is enforc
     }
 
     expect(unlimited.sort()).toEqual(Object.keys(UNLIMITED_PUBLIC_WRITES).sort());
+  });
+
+  it("keeps the gap map SHRINK-ONLY — a new unlimited public write cannot be appended", () => {
+    for (const declared of Object.keys(UNLIMITED_PUBLIC_WRITES))
+      expect([declared, EVER_RECORDED_AS_UNLIMITED.includes(declared)]).toEqual([declared, true]);
+    expect(Object.keys(UNLIMITED_PUBLIC_WRITES)).toHaveLength(
+      EVER_RECORDED_AS_UNLIMITED.length - Object.keys(CLOSED_PUBLIC_WRITE_GAPS).length,
+    );
+  });
+
+  it("closed each named gap by wiring a real tier, not by deleting the entry", () => {
+    for (const [id, tier] of Object.entries(CLOSED_PUBLIC_WRITE_GAPS)) {
+      expect([id, tiers.includes(tier)]).toEqual([id, true]);
+      const handler = handlers.find((candidate) => candidate.id === id);
+      expect([id, handler !== undefined]).toEqual([id, true]);
+      expect([id, handler?.decorators.includes(`@UseRateLimit("${tier}")`)]).toEqual([id, true]);
+      expect([id, handler?.decorators.includes("RateLimitGuard")]).toEqual([id, true]);
+      expect([id, id in UNLIMITED_PUBLIC_WRITES]).toEqual([id, false]);
+    }
   });
 
   it("names no gap that has since been closed or moved", () => {

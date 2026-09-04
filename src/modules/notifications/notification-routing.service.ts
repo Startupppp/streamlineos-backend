@@ -26,41 +26,18 @@ import {
   type SuppressionReason,
 } from "./notification.types";
 import {
-  isWithinQuietHours,
-  quietHoursEndAt,
-  type QuietHoursConfig,
-} from "./quiet-hours.util";
+  computeRouting,
+  CONSENT_REQUIRED_CHANNELS,
+  type RouteContext,
+} from "./notification-routing-computation";
+
 import {
-  computeRouting,
-  CONSENT_REQUIRED_CHANNELS,
-  type RouteContext,
-} from "./notification-routing-computation";
+  resolvePrefs,
+  type NotificationPreferenceRuleProjection,
+  type ResolvedPreferences,
+} from "./notification-preference-resolution";
 
-export {
-  computeRouting,
-  CONSENT_REQUIRED_CHANNELS,
-  requiresConsent,
-  type RouteContext,
-} from "./notification-routing-computation";
-
-interface ResolvedPreferences {
-  channelEnabled: Record<NotificationChannel, boolean>;
-  quietHours: QuietHoursConfig;
-  categories: Record<string, boolean>;
-  modulePreferences: Record<string, { mode?: string; muted?: boolean }>;
-  eventPreferences: Record<
-    string,
-    { channels?: Record<string, boolean>; muted?: boolean; mode?: string }
-  >;
-  allowCriticalOverride: boolean;
-}
-
-type NotificationPreferenceRuleProjection = {
-  scopeType: "EVENT" | "MODULE" | "CATEGORY";
-  scopeKey: string;
-  channel: NotificationChannel;
-  mode: "ON" | "OFF" | "DIGEST";
-};
+export { computeRouting, type RouteContext } from "./notification-routing-computation";
 
 interface OrgPolicyResolved {
   defaultChannels: NotificationChannel[];
@@ -104,72 +81,6 @@ export class NotificationRoutingService {
       CACHE_TTL.MEDIUM,
     );
     return new Set<NotificationChannel>(["IN_APP", "EMAIL", ...enabled]);
-  }
-
-  /**
-   * SCH-003. `computeRouting` is correct and spec-covered, so its input shape is
-   * unchanged; only the source moved. Per-event, per-module and per-category settings
-   * now come from `notification_preference_rules` instead of four JSONB blobs on the
-   * header row. The header still carries the channel toggles, quiet hours and digest
-   * mode, which are genuinely one-per-user and not lifecycle state.
-   */
-  private resolvePrefs(
-    row: Partial<Pick<
-      typeof notificationPreferences.$inferSelect,
-      | "inAppEnabled"
-      | "emailEnabled"
-      | "pushEnabled"
-      | "smsEnabled"
-      | "whatsappEnabled"
-      | "quietHoursStart"
-      | "quietHoursEnd"
-      | "quietHoursWeekends"
-      | "allowCriticalOverride"
-    >> | undefined,
-    userTimezone: string | undefined,
-    rules: NotificationPreferenceRuleProjection[],
-  ): ResolvedPreferences {
-    const eventPreferences: ResolvedPreferences["eventPreferences"] = {};
-    const modulePreferences: ResolvedPreferences["modulePreferences"] = {};
-    const categories: Record<string, boolean> = {};
-
-    for (const rule of rules) {
-      const on = rule.mode !== "OFF";
-      if (rule.scopeType === "EVENT") {
-        const entry = (eventPreferences[rule.scopeKey] ??= { channels: {} });
-        (entry.channels ??= {})[rule.channel] = on;
-        // Muted only when every channel the user has an opinion about is off.
-        entry.muted = Object.values(entry.channels).every((v) => v === false);
-      } else if (rule.scopeType === "MODULE") {
-        const entry = (modulePreferences[rule.scopeKey] ??= {});
-        if (!on) entry.muted = true;
-      } else if (rule.scopeType === "CATEGORY") {
-        // A category is on unless some channel rule turns it off.
-        categories[rule.scopeKey] = (categories[rule.scopeKey] ?? true) && on;
-      }
-    }
-
-    const channelEnabled: Record<NotificationChannel, boolean> = {
-      IN_APP: row?.inAppEnabled ?? true,
-      EMAIL: row?.emailEnabled ?? true,
-      PUSH: row?.pushEnabled ?? true,
-      SMS: row?.smsEnabled ?? false,
-      WHATSAPP: row?.whatsappEnabled ?? false,
-      WEBHOOK: true,
-    };
-    return {
-      channelEnabled,
-      quietHours: {
-        start: row?.quietHoursStart ?? null,
-        end: row?.quietHoursEnd ?? null,
-        timezone: userTimezone ?? "UTC",
-        includeWeekends: row?.quietHoursWeekends ?? true,
-      },
-      categories,
-      modulePreferences,
-      eventPreferences,
-      allowCriticalOverride: row?.allowCriticalOverride ?? true,
-    };
   }
 
   private async loadOrgPolicyData(orgId: string): Promise<CachedPolicy | null> {
@@ -503,7 +414,7 @@ export class NotificationRoutingService {
         definition: routingDefinition,
         priority,
         now,
-        prefs: this.resolvePrefs(
+        prefs: resolvePrefs(
           prefsByUser.get(userId),
           tzByUser.get(userId),
           rulesByUser.get(userId) ?? [],

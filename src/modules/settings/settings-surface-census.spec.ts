@@ -175,8 +175,8 @@ const GLOBAL_SETTINGS_SURFACE: Readonly<Record<string, SurfaceEntry>> = {
    *
    * The exposure that makes it more than tidiness: settings:email-templates:manage
    * is carried by the shipped BRANCH_HR role template
-   * (role-templates-crm-hr.constants.ts:221, inside BRANCH_HR which spans
-   * 175-279), so an org HR role can read the platform's whole email vocabulary,
+   * (role-templates-hr.constants.ts:148, inside BRANCH_HR which spans
+   * 99-203), so an org HR role can read the platform's whole email vocabulary,
    * Auth and Payroll templates included. No tenant data crosses - the templates
    * are static - and the unscoped-send hole is separately closed
    * (email-template-test-scoping.spec.ts). Neither route has any frontend

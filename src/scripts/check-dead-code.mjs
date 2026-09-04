@@ -50,11 +50,31 @@ import { fileURLToPath } from "node:url";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 /**
- * Below this the scan is treated as broken rather than clean. Today's head
- * reports 35; a run that finds fewer than five findings across every category
- * has almost certainly lost its module graph.
+ * Below this the scan is treated as broken rather than clean.
+ *
+ * `graphFiles: 500` was 7.5x below what the graph actually reaches, so a
+ * collapse to a seventh of the repository would still have read as clean — the
+ * exact false green PRD-C035 names ("a broken or under-scanning analyzer cannot
+ * report a false green result"). The floors are now derived from head with
+ * roughly 20% headroom for a legitimate deletion wave, and `graphCoverage` makes
+ * the check RELATIVE as well as absolute: the importer map has to reach at least
+ * half of the files `walkSource` actually handed it, so a walker that keeps
+ * finding files while the parser stops recording edges fails too. A ratio alone
+ * would not catch a broken walker (both numbers fall together), which is why
+ * `sourceFiles` keeps its own absolute floor.
+ *
+ * Measured at head: 6,355 source files walked, 3,755 graph files, 29,731 edges,
+ * 59.1% coverage.
+ * These floors may be TIGHTENED as the numbers rise. Loosening one to make a run
+ * pass is the defect this constant exists to catch.
  */
-const SCAN_FLOOR = { knipTotal: 5, graphFiles: 500, graphEdges: 2000 };
+const SCAN_FLOOR = {
+  knipTotal: 5,
+  sourceFiles: 5000,
+  graphFiles: 3000,
+  graphEdges: 23000,
+  graphCoverage: 0.5,
+};
 
 /** Excluded from the PRD's dead-code scope. Reported separately, never deleted here. */
 const EXCLUDED_MODULE_RE = /^src\/modules\/(crm|inventory)\//;
@@ -140,7 +160,6 @@ const FINDING_VERDICTS = new Map([
   // previously RETAINED-BY-CONTRACT on the strength of a controller inside
   // `.claude/worktrees/bold-napier-7a4a41/`, another agent's checkout. With
   // dot-directories out of the graph the real reference count is visible.
-  ["src/modules/ai/core/dto/request.schemas.ts:MeetingPrepInput", { verdict: "REMOVE", reason: "the inferred type of the meeting-prep request schema declared immediately above it. Measured at head with `grep -rn` over src/ and test/: the type has exactly ONE occurrence repo-wide (its own declaration) and the schema it infers from has exactly TWO (its declaration and that same line) — no controller, service, spec or barrel names either. It is not an inferred-type-of-a-live-schema retain, because the schema is parsed at no boundary at all. The only file in this checkout that parses it is `.claude/worktrees/bold-napier-7a4a41/src/modules/ai/core/controllers/crm-ai.controller.ts`, an uncommitted worktree that does not exist in CI — which is precisely why the gate used to pass on it. Both the type and its schema are dead, but the surface they belong to (a CRM meeting-prep AI endpoint) is being built in that lane right now, so the delete belongs to the AI/CRM workstream that lands the controller or abandons it — not to this gate's ticket. Concrete failure prevented by deleting them: a wire contract with no handler, which reads as an implemented endpoint to anyone grepping the DTO file" }],
 
   // ---- src/modules/calendar/dto --------------------------------------------
   // Only classifiable at all since the duplicate-group key was fixed; it used to
@@ -206,6 +225,7 @@ function* walkSource(dir) {
 
 function buildImporterMap(root) {
   const map = new Map();
+  let filesWalked = 0;
 
   const record = (target, importer, kind) => {
     if (!target) return;
@@ -215,6 +235,7 @@ function buildImporterMap(root) {
   };
 
   for (const file of walkSource(root)) {
+    filesWalked += 1;
     let src;
     try {
       src = readFileSync(file, "utf8");
@@ -239,7 +260,7 @@ function buildImporterMap(root) {
     while ((m = dynamic.exec(src)) !== null) record(findFile(m[1], fromDir, root), file, "dynamic");
   }
 
-  return map;
+  return { map, filesWalked };
 }
 
 // ---------------------------------------------------------------------------
@@ -481,12 +502,16 @@ function runSelfTest() {
     writeFileSync(join(fixture, "c.ts"), "export const C = 1;\n");
     writeFileSync(join(fixture, "d.ts"), "export const D = 1;\n");
 
-    const built = buildImporterMap(fixture);
+    const { map: built, filesWalked: builtWalked } = buildImporterMap(fixture);
     const entryAbs = join(fixture, "entry.ts");
     assert(built.get(join(fixture, "a.ts"))?.named.has(entryAbs), "(n) named import edge not recorded");
     assert(built.get(join(fixture, "b.ts"))?.sideEffect.has(entryAbs), "(o) side-effect import edge not recorded");
     assert(built.get(join(fixture, "c.ts"))?.reexport.has(entryAbs), "(p) re-export edge not recorded");
     assert(built.get(join(fixture, "d.ts"))?.dynamic.has(entryAbs), "(q) dynamic import edge not recorded");
+    let expectedWalked = 0;
+    for (const _walked of walkSource(fixture)) expectedWalked += 1;
+    assert(builtWalked === expectedWalked && expectedWalked >= 5,
+      `(q2) the walker must report how many source files it handed the parser — got ${builtWalked}, walkSource yields ${expectedWalked}. SCAN_FLOOR.graphCoverage is measured against this number, so a counter that never moves turns the coverage floor into a no-op`);
 
     // ---- agent-worktree contamination ------------------------------------
     // Both halves of the graph read the same walker, so both are asserted. The
@@ -498,13 +523,15 @@ function runSelfTest() {
     writeFileSync(join(fixture, ".claude", "worktrees", "agent-x", "src", "importer.ts"),
       'import { Orphan } from "../../../../src/orphan";\nconsole.log(Orphan, foreignOnlySchema);\n');
 
-    const contaminated = buildImporterMap(fixture);
+    const { map: contaminated, filesWalked: contaminatedWalked } = buildImporterMap(fixture);
     assert(!contaminated.has(join(fixture, "src", "orphan.ts")),
       "(u) an importer under .claude/worktrees must not appear in the module graph at all");
     assert(classifyFile("src/orphan.ts", new Set(["src/orphan.ts"]), contaminated, fixture).cls === "DEAD",
       "(v) a file whose ONLY importer is another agent's worktree must stay DEAD — that importer does not exist in CI");
     assert(classifyFile(".claude/worktrees/agent-x/src/importer.ts", new Set(), new Map(), fixture).cls === "OUT-OF-SCOPE",
       "(w) a path inside an agent worktree is out of scope, never authored product source");
+    assert(contaminatedWalked === builtWalked + 1,
+      `(w2) walkSource must count the in-scope file it added and NOT the one under .claude/worktrees — got ${contaminatedWalked}, expected ${builtWalked + 1}`);
 
     writeFileSync(join(fixture, "src", "foreign.schemas.ts"),
       "export const foreignOnlySchema = z.object({});\nexport type ForeignOnly = z.infer<typeof foreignOnlySchema>;\n");
@@ -560,12 +587,14 @@ function runSelfTest() {
     "  (o) importer map: side-effect import edge",
     "  (p) importer map: re-export edge",
     "  (q) importer map: dynamic import edge",
+    "  (q2) walkSource reports its file count (SCAN_FLOOR.graphCoverage rests on it)",
     "  (r) schemaNamesFor finds the schema behind an inferred type",
     "  (s) inferred type of a schema parsed elsewhere    -> RETAINED-BY-CONTRACT",
     "  (t) inferred type of a schema nobody parses with  -> UNCLASSIFIED (gate bites)",
     "  (u) importer under .claude/worktrees             -> absent from the graph",
     "  (v) file whose only importer is a worktree       -> DEAD (not rescued)",
     "  (w) path inside an agent worktree                -> OUT-OF-SCOPE",
+    "  (w2) a worktree file is not counted by the walker",
     "  (x) schema parsed only inside a worktree         -> UNCLASSIFIED (gate bites)",
     "  (y) schema named only in a gate script           -> UNCLASSIFIED (gate bites)",
     "  (z) duplicate group                              -> exactly one finding",
@@ -671,16 +700,24 @@ function main() {
     process.exit(1);
   }
 
-  const importerMap = buildImporterMap(ROOT);
+  const { map: importerMap, filesWalked } = buildImporterMap(ROOT);
   const graphFiles = importerMap.size;
   let graphEdges = 0;
   for (const entry of importerMap.values())
     graphEdges += entry.sideEffect.size + entry.named.size + entry.reexport.size + entry.dynamic.size;
 
-  if (graphFiles < SCAN_FLOOR.graphFiles || graphEdges < SCAN_FLOOR.graphEdges) {
+  const coverage = filesWalked === 0 ? 0 : graphFiles / filesWalked;
+  if (
+    filesWalked < SCAN_FLOOR.sourceFiles ||
+    graphFiles < SCAN_FLOOR.graphFiles ||
+    graphEdges < SCAN_FLOOR.graphEdges ||
+    coverage < SCAN_FLOOR.graphCoverage
+  ) {
     console.error(
-      `FAIL: the importer map found ${graphFiles} file(s) and ${graphEdges} edge(s), below the floor of ` +
-      `${SCAN_FLOOR.graphFiles}/${SCAN_FLOOR.graphEdges}. The graph is broken, not the codebase clean.`,
+      `FAIL: the importer map walked ${filesWalked} source file(s) and found ${graphFiles} file(s) ` +
+      `(${(coverage * 100).toFixed(1)}% coverage) and ${graphEdges} edge(s), below the floor of ` +
+      `${SCAN_FLOOR.sourceFiles} walked / ${SCAN_FLOOR.graphFiles} files / ${SCAN_FLOOR.graphEdges} edges / ` +
+      `${(SCAN_FLOOR.graphCoverage * 100).toFixed(0)}% coverage. The graph is broken, not the codebase clean.`,
     );
     process.exit(1);
   }
@@ -722,7 +759,7 @@ function main() {
 
   console.log(
     `\n=== knip: ${deadFiles.length} unused file(s), ${findings.length} other finding(s) ` +
-    `| importer graph: ${graphFiles} files, ${graphEdges} edges ===`,
+    `| importer graph: ${graphFiles} files, ${graphEdges} edges over ${filesWalked} source files walked (${(coverage * 100).toFixed(1)}% coverage) ===`,
   );
   console.log(
     `=== ledger: ${FINDING_VERDICTS.size} verdict(s) — ` +

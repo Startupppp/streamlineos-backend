@@ -39,6 +39,8 @@ import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
 import { OrgPurgeService } from "./org-purge.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
+import { OrgHolidaysService } from "./org-holidays.service";
+import { OrgCustomDomainsService } from "./org-custom-domains.service";
 import { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
 import { InvitationsReadService } from "./invitations-read.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
@@ -76,6 +78,7 @@ import {
 } from "./dto/organization.schemas";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import { resolveClientIpOr } from "../../../common/http/client-ip";
 
 const memberIdParams = z.object({ memberId: z.string().min(1) }).strict();
 const domainIdParams = z.object({ domainId: z.string().min(1) }).strict();
@@ -94,6 +97,8 @@ export class OrganizationController {
     private readonly orgLifecycle: OrgLifecycleService,
     private readonly orgPurge: OrgPurgeService,
     private readonly settings: OrganizationSettingsService,
+    private readonly holidays: OrgHolidaysService,
+    private readonly customDomains: OrgCustomDomainsService,
     private readonly invitationsRead: InvitationsReadService,
     private readonly invitationAcceptance: InvitationAcceptanceService,
     private readonly rateLimit: RateLimitService,
@@ -101,7 +106,7 @@ export class OrganizationController {
   ) {}
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
-    return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
+    return resolveClientIpOr(req, "unknown");
   }
 
   private async enforceRateLimit(tier: string, identifier: string): Promise<void> {
@@ -294,7 +299,7 @@ export class OrganizationController {
   @RequirePermission("settings:view")
   @Get("custom-domains")
   listCustomDomains(@CurrentUser() u: CurrentUserContext) {
-    return this.settings.listCustomDomains(u.orgId);
+    return this.customDomains.listCustomDomains(u.orgId);
   }
 
   @Post("custom-domains")
@@ -305,7 +310,7 @@ export class OrganizationController {
     @Body() body: AddCustomDomainInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.addCustomDomain(u.orgId, u.userId, body);
+    return this.customDomains.addCustomDomain(u.orgId, u.userId, body);
   }
 
   @Post("custom-domains/:domainId/verify")
@@ -317,7 +322,7 @@ export class OrganizationController {
     @Param("domainId") domainId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.verifyCustomDomain(u.orgId, u.userId, domainId);
+    return this.customDomains.verifyCustomDomain(u.orgId, u.userId, domainId);
   }
 
   @Delete("custom-domains/:domainId")
@@ -329,14 +334,14 @@ export class OrganizationController {
     @Param("domainId") domainId: string,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<void> {
-    await this.settings.removeCustomDomain(u.orgId, u.userId, domainId);
+    await this.customDomains.removeCustomDomain(u.orgId, u.userId, domainId);
   }
 
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("holidays")
   listHolidays(@CurrentUser() u: CurrentUserContext) {
-    return this.settings.listHolidays(u.orgId);
+    return this.holidays.listHolidays(u.orgId);
   }
 
   @Post("holidays")
@@ -347,7 +352,7 @@ export class OrganizationController {
     @Body() body: CreateHolidayInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.createHoliday(u.orgId, u.userId, body);
+    return this.holidays.createHoliday(u.orgId, u.userId, body);
   }
 
   @Delete("holidays/:holidayId")
@@ -356,7 +361,7 @@ export class OrganizationController {
   @RequirePermission("settings:manage")
   @Validate({ params: holidayIdParams })
   async deleteHoliday(@Param("holidayId") holidayId: string, @CurrentUser() u: CurrentUserContext): Promise<void> {
-    await this.settings.deleteHoliday(u.orgId, u.userId, holidayId);
+    await this.holidays.deleteHoliday(u.orgId, u.userId, holidayId);
   }
 
   @Post("archive")

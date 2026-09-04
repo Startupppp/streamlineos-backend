@@ -10,7 +10,13 @@ jest.mock("../../../../common/tenant/for-each-org", () => ({
 }));
 
 import { computeNextCronDate } from "../cron-next";
-import { WorkflowScheduleTickService } from "../workflow-schedule-tick.service";
+import { Logger } from "@nestjs/common";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
+import {
+  SCHEDULE_TICK_MAX_PER_ORG,
+  WorkflowScheduleTickService,
+} from "../workflow-schedule-tick.service";
 import type { Db } from "../../../../db/drizzle.module";
 
 describe("computeNextCronDate", () => {
@@ -280,5 +286,95 @@ describe("WorkflowScheduleTickService — triggeredBy is always null for schedul
     expect(insertValues).toHaveBeenCalledWith(
       expect.objectContaining({ triggeredBy: null }),
     );
+  });
+});
+
+describe("WorkflowScheduleTickService — the due-schedule read is bounded", () => {
+  /**
+   * `tickOrg` runs once per organisation inside `forEachOrg`. Its first read used to
+   * be `select … from workflow_schedules where org_id = … and is_enabled and
+   * next_run_at <= now` with no ORDER BY and no LIMIT, so a single tenant whose
+   * schedules were all overdue — the state every tenant is in after any cron outage —
+   * decided how much memory the tick allocated and how long every organisation behind
+   * it waited.
+   *
+   * This asserts the cap and the ordering on the emitted query, not on the row count
+   * the mock happens to return: a spec that only counted returned rows would pass
+   * against the unbounded read it is meant to forbid.
+   */
+  function makeCapturingDb(dueRows: unknown[]) {
+    const limit = jest.fn().mockResolvedValue(dueRows);
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const dueWhere = jest.fn().mockReturnValue({ orderBy });
+
+    let selectCall = 0;
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        selectCall += 1;
+        if (selectCall === 1)
+          return { from: jest.fn().mockReturnValue({ where: dueWhere }) };
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+              orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+            }),
+          }),
+        };
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+        }),
+      }),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+      query: {},
+    } as unknown as Db;
+
+    return { db, limit, orderBy };
+  }
+
+  it("caps the per-org due read at SCHEDULE_TICK_MAX_PER_ORG", async () => {
+    const { db, limit } = makeCapturingDb([]);
+    await new WorkflowScheduleTickService(db).schedulesTick();
+
+    expect(limit).toHaveBeenCalledTimes(1);
+    expect(limit).toHaveBeenCalledWith(SCHEDULE_TICK_MAX_PER_ORG);
+    expect(SCHEDULE_TICK_MAX_PER_ORG).toBeLessThanOrEqual(1000);
+  });
+
+  it("orders the due read so the most overdue schedules claim the page first", async () => {
+    const { db, orderBy } = makeCapturingDb([]);
+    await new WorkflowScheduleTickService(db).schedulesTick();
+
+    expect(orderBy).toHaveBeenCalledTimes(1);
+    const dialect = new PgDialect();
+    const chunks = (orderBy.mock.calls[0] ?? []) as SQL[];
+    const clauses = chunks.map((chunk) => dialect.sqlToQuery(chunk).sql);
+    expect(clauses[0]).toContain("next_run_at");
+    expect(clauses[0]).toContain("ASC NULLS FIRST");
+    expect(clauses.join(" ")).toContain("id");
+  });
+
+  it("warns rather than silently dropping the remainder when the page saturates", async () => {
+    const full = Array.from({ length: SCHEDULE_TICK_MAX_PER_ORG }, (_unused, index) => ({
+      id: `sched-${String(index)}`,
+      workflowId: "wf-1",
+      cronExpression: "0 * * * *",
+      timezone: "UTC",
+      nextRunAt: new Date("2026-08-31T09:00:00.000Z"),
+    }));
+    const { db } = makeCapturingDb(full);
+    const warn = jest
+      .spyOn(Logger.prototype, "warn")
+      .mockImplementation(() => undefined);
+
+    await new WorkflowScheduleTickService(db).schedulesTick();
+
+    const saturationWarnings = warn.mock.calls.filter((call) =>
+      String(call[0]).includes("per-org cap"),
+    );
+    expect(saturationWarnings).toHaveLength(1);
+    warn.mockRestore();
   });
 });

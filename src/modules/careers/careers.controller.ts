@@ -5,8 +5,11 @@ import {
   HttpCode,
   NotFoundException,
   Post,
+  UseGuards,
 } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { CareersService, isApplyJobNotFound } from "./careers.service";
 import { applySchema, type ApplyInput } from "./dto/careers.schemas";
@@ -24,6 +27,8 @@ export class CareersController {
   @Public()
   @Post("apply")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:job-apply")
   @Validate({ body: applySchema })
   async apply(@Body() body: ApplyInput) {
     const result = await this.careers.apply(body);

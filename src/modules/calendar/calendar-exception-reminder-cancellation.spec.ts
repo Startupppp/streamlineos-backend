@@ -5,6 +5,7 @@ import { getTableName, type SQL } from "drizzle-orm";
 import { CalendarService } from "./calendar.service";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
+import { updateAttendeesInTx } from "./calendar-attendee-sync";
 import type { Db } from "../../db/drizzle.module";
 
 const dialect = new PgDialect();
@@ -296,10 +297,13 @@ describe("updateAttendeesInTx — deletes PENDING reminders when attendees are r
       }),
     };
 
-    const db = {} as unknown as Db;
-    const svc = makeService(db);
-    await (svc as unknown as { updateAttendeesInTx: (...args: unknown[]) => Promise<string[]> })
-      .updateAttendeesInTx(tx, ORG, EVENT_ID, [ALICE], "actor-user-id");
+    await updateAttendeesInTx(
+      tx as unknown as Parameters<typeof updateAttendeesInTx>[0],
+      ORG,
+      EVENT_ID,
+      [ALICE],
+      "actor-user-id",
+    );
 
     expect(tx.delete).toHaveBeenCalledTimes(2);
     expect(tx.update).toHaveBeenCalledTimes(1);
@@ -345,10 +349,13 @@ describe("updateAttendeesInTx — deletes PENDING reminders when attendees are r
       }),
     };
 
-    const db = {} as unknown as Db;
-    const svc = makeService(db);
-    await (svc as unknown as { updateAttendeesInTx: (...args: unknown[]) => Promise<string[]> })
-      .updateAttendeesInTx(tx, ORG, EVENT_ID, [ALICE, BOB], "actor-user-id");
+    await updateAttendeesInTx(
+      tx as unknown as Parameters<typeof updateAttendeesInTx>[0],
+      ORG,
+      EVENT_ID,
+      [ALICE, BOB],
+      "actor-user-id",
+    );
 
     expect(tx.delete).toHaveBeenCalledTimes(1);
   });

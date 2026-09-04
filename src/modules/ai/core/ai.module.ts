@@ -27,6 +27,7 @@ import { OrgFeaturesService } from "./services/org-features.service";
 import { ProjectsAiService } from "./services/projects-ai.service";
 import { TicketInsightsAiService } from "./services/ticket-insights-ai.service";
 import { TicketTriageAiService } from "./services/ticket-triage-ai.service";
+import { TicketDraftAiService } from "./services/ticket-draft-ai.service";
 import { MeetingActionAiService } from "./services/meeting-action-ai.service";
 import { HrCopilotTools } from "./hr-copilot-tools";
 import { WorkspaceCopilotTools } from "./workspace-copilot-tools";
@@ -81,6 +82,7 @@ import { AiRequestAbortInterceptor } from "./streaming";
     ProjectsAiService,
     TicketInsightsAiService,
     TicketTriageAiService,
+    TicketDraftAiService,
     MeetingActionAiService,
     HrCopilotTools,
     WorkspaceCopilotTools,

@@ -24,6 +24,11 @@ import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { AblyService } from "../realtime/ably.service";
 import { randomUUID } from "node:crypto";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import {
+  assertChannelAdmin,
+  assertChannelMember,
+  resolveOrgMembership,
+} from "./chat-channel-authorization";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { REALTIME_TOKEN_REVOCATION_EVENT } from "../realtime/realtime-token-revocation";
 import {
@@ -41,57 +46,12 @@ export class ChatChannelMembersImplementation {
     private readonly ably: AblyService,
   ) {}
 
-  private async resolveMembership(orgId: string, userId: string): Promise<number> {
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true },
-    });
-    if (!membership) throw new ForbiddenException("User is not an active organization member");
-    return membership.id;
-  }
-
-  private async assertMember(
-    channelId: number,
-    userId: string,
-    orgId: string,
-  ): Promise<{ membershipId: number; role: string }> {
-    const channel = await this.db.query.chatChannels.findFirst({
-      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
-      columns: { id: true, isPrivate: true },
-    });
-    if (!channel) throw new NotFoundException("Channel not found");
-    const membershipId = await this.resolveMembership(orgId, userId);
-    const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(
-        eq(chatChannelMembers.orgId, orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.membershipId, membershipId),
-      ),
-      columns: { role: true },
-    });
-    if (!member) {
-      if (channel.isPrivate) throw new NotFoundException("Channel not found");
-      throw new ForbiddenException("You are not a member of this channel");
-    }
-    return { membershipId, role: member.role };
-  }
-
   async assertChannelMembership(channelId: number, userId: string, orgId: string): Promise<void> {
-    await this.assertMember(channelId, userId, orgId);
-  }
-
-  private async assertAdmin(channelId: number, userId: string, orgId: string): Promise<number> {
-    const { membershipId, role } = await this.assertMember(channelId, userId, orgId);
-    if (role !== "ADMIN") throw new ForbiddenException("Only channel admins can perform this action");
-    return membershipId;
+    await assertChannelMember(this.db, channelId, userId, orgId);
   }
 
   async getChannel(channelId: number, userId: string, orgId: string) {
-    await this.assertMember(channelId, userId, orgId);
+    await assertChannelMember(this.db, channelId, userId, orgId);
 
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
@@ -108,7 +68,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async listMembers(channelId: number, userId: string, orgId: string, cursor?: number, limit?: number) {
-    await this.assertMember(channelId, userId, orgId);
+    await assertChannelMember(this.db, channelId, userId, orgId);
 
     const PAGE_SIZE = Math.min(limit ?? 50, PAGE_SIZE_CAP);
 
@@ -131,10 +91,10 @@ export class ChatChannelMembersImplementation {
   }
 
   async addMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) {
-    await this.assertAdmin(channelId, requesterId, orgId);
+    await assertChannelAdmin(this.db, channelId, requesterId, orgId);
 
     await assertUsersInOrg(this.db, orgId, [targetUserId]);
-    const targetMembershipId = await this.resolveMembership(orgId, targetUserId);
+    const targetMembershipId = await resolveOrgMembership(this.db, orgId, targetUserId);
 
     const existing = await this.db.query.chatChannelMembers.findFirst({
       columns: { id: true },
@@ -158,12 +118,12 @@ export class ChatChannelMembersImplementation {
   }
 
   async removeMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) {
-    const { role } = await this.assertMember(channelId, requesterId, orgId);
+    const { role } = await assertChannelMember(this.db, channelId, requesterId, orgId);
 
     if (requesterId !== targetUserId && role !== "ADMIN")
       throw new ForbiddenException("Only channel admins can remove other members");
 
-    const targetMembershipId = await this.resolveMembership(orgId, targetUserId);
+    const targetMembershipId = await resolveOrgMembership(this.db, orgId, targetUserId);
     await runInTenantTransaction(
       this.db,
       async (tx) => {
@@ -192,7 +152,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async updateChannel(channelId: number, userId: string, body: UpdateChannelInput, orgId: string) {
-    const membershipId = await this.resolveMembership(orgId, userId);
+    const membershipId = await resolveOrgMembership(this.db, orgId, userId);
     const membership = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
@@ -230,7 +190,7 @@ export class ChatChannelMembersImplementation {
     });
 
     if (!channel) throw new NotFoundException("Channel not found");
-    const actorMembershipId = await this.resolveMembership(actor.orgId, actor.userId);
+    const actorMembershipId = await resolveOrgMembership(this.db, actor.orgId, actor.userId);
 
     if (channel.type !== "PUBLIC") {
       if (!channel.entityType || !channel.entityId)
@@ -264,7 +224,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async leaveChannel(channelId: number, userId: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
 
     await runInTenantTransaction(
       this.db,
@@ -294,7 +254,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async archiveChannel(channelId: number, userId: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ archivedAt: new Date() })
@@ -309,7 +269,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async unarchiveChannel(channelId: number, userId: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ archivedAt: null })
@@ -324,7 +284,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async markRead(channelId: number, userId: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     // GREATEST, not assignment: two marks in flight together commit in either order,
     // and a plain write lets the older one rewind the cursor and resurrect read messages.
     const readAt = new Date().toISOString();
@@ -345,7 +305,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async markChannelUnread(channelId: number, userId: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     const latestMessage = await this.db
       .select({ createdAt: chatMessages.createdAt })
       .from(chatMessages)
@@ -373,7 +333,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async muteChannel(channelId: number, userId: string, duration: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     const until =
       duration === "forever"
         ? new Date("2099-12-31")
@@ -398,7 +358,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async unmuteChannel(channelId: number, userId: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ mutedUntil: null })
@@ -413,7 +373,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async favoriteChannel(channelId: number, userId: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ isFavorite: true })
@@ -428,7 +388,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async unfavoriteChannel(channelId: number, userId: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ isFavorite: false })
@@ -443,7 +403,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async setNotificationPreference(channelId: number, userId: string, preference: string, orgId: string) {
-    const { membershipId } = await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ notificationPreference: preference })
@@ -458,7 +418,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async listChannelFiles(channelId: number, userId: string, orgId: string, cursor?: number, limit = 20) {
-    await this.assertMember(channelId, userId, orgId);
+    await assertChannelMember(this.db, channelId, userId, orgId);
     const safeLimit = Math.min(Math.max(1, limit), 100);
 
     const rows = await this.db
@@ -498,7 +458,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async updateMemberRole(channelId: number, targetUserId: string, requesterId: string, orgId: string, role: string) {
-    const requesterMembershipId = await this.resolveMembership(orgId, requesterId);
+    const requesterMembershipId = await resolveOrgMembership(this.db, orgId, requesterId);
     const requester = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
@@ -509,7 +469,7 @@ export class ChatChannelMembersImplementation {
     });
     if (!requester || requester.role !== "ADMIN") throw new ForbiddenException("Only admins can change roles");
 
-    const targetMembershipId = await this.resolveMembership(orgId, targetUserId);
+    const targetMembershipId = await resolveOrgMembership(this.db, orgId, targetUserId);
     if (!targetMembershipId) return { ok: true };
 
     await this.db.update(chatChannelMembers).set({ role }).where(

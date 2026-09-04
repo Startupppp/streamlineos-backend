@@ -1,16 +1,23 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import * as webpush from "web-push";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { chatChannelMembers, organizationMembers, pushSubscriptions } from "../../db/schema";
+import { chatChannelMembers, organizationMembers } from "../../db/schema";
 import type { PushPayload } from "./dto/realtime.schemas";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { boundedMap } from "../../common/async/bounded-map";
 import { logger } from "../../common/logger/logger.service";
+import {
+  PUSH_SUBSCRIPTION_BATCH,
+  deleteExpiredSubscriptions,
+  loadSubscriptionsForPage,
+  loadSubscriptionsForUser,
+  type PushSubscriptionRow,
+} from "./push-subscription-store";
 
 const EXPIRED_STATUS = new Set([404, 410]);
 
@@ -31,22 +38,6 @@ const PUSH_SUPPRESSING_PREFERENCES = new Set(["NOTHING", "MENTIONS"]);
  */
 export const PUSH_FANOUT_CONCURRENCY = 16;
 
-/**
- * How many recipients one `push_subscriptions` read covers. The fan-out used to
- * issue one SELECT per recipient — 5,000 members meant 5,000 round trips for a
- * single message — which is the per-item database call
- * `check:db-call-count` and PRD-C145 both forbid. One read per page of this size
- * replaces them; the page is kept well inside Postgres' bind-parameter ceiling
- * so the `IN (…)` list never has to be split again downstream.
- */
-export const PUSH_SUBSCRIPTION_BATCH = 200;
-
-export interface PushSubscriptionRow {
-  endpoint: string;
-  p256dh: string;
-  auth: string;
-}
-
 @Injectable()
 export class WebPushService {
   private readonly publicKey: string | undefined;
@@ -65,26 +56,6 @@ export class WebPushService {
 
   get configured(): boolean {
     return Boolean(this.publicKey && this.privateKey);
-  }
-
-  /**
-   * Org-led: a person in two organizations has a subscription row per organization,
-   * so matching on user alone pushes one tenant's notification to the other's device
-   * registration and leaves the (org_id, membership_id) index unusable.
-   */
-  private subscriptionPredicate(
-    orgId: string,
-    userId: string,
-    membershipId: number | null | undefined,
-  ) {
-    const owner =
-      membershipId != null
-        ? or(
-            eq(pushSubscriptions.membershipId, membershipId),
-            and(isNull(pushSubscriptions.membershipId), eq(pushSubscriptions.userId, userId)),
-          )
-        : eq(pushSubscriptions.userId, userId);
-    return and(eq(pushSubscriptions.orgId, orgId), owner);
   }
 
   /**
@@ -117,14 +88,7 @@ export class WebPushService {
 
     const subs =
       preloadedSubscriptions ??
-      (await this.db
-        .select({
-          endpoint: pushSubscriptions.endpoint,
-          p256dh: pushSubscriptions.p256dh,
-          auth: pushSubscriptions.auth,
-        })
-        .from(pushSubscriptions)
-        .where(this.subscriptionPredicate(orgId, userId, membershipId)));
+      (await loadSubscriptionsForUser(this.db, orgId, userId, membershipId));
 
     if (subs.length === 0) return;
 
@@ -159,15 +123,7 @@ export class WebPushService {
       return [error];
     });
 
-    if (expiredEndpoints.length > 0)
-      await this.db
-        .delete(pushSubscriptions)
-        .where(
-          and(
-            eq(pushSubscriptions.orgId, orgId),
-            inArray(pushSubscriptions.endpoint, expiredEndpoints),
-          ),
-        );
+    await deleteExpiredSubscriptions(this.db, orgId, expiredEndpoints);
 
     if (failures.length > 0)
       throw new AggregateError(failures, `push delivery failed for ${failures.length} subscription(s)`);
@@ -242,7 +198,7 @@ export class WebPushService {
     const failures: unknown[] = [];
     for (let offset = 0; offset < recipients.length; offset += PUSH_SUBSCRIPTION_BATCH) {
       const page = recipients.slice(offset, offset + PUSH_SUBSCRIPTION_BATCH);
-      const byUser = await this.loadSubscriptionsForPage(orgId, page.map((m) => m.userId));
+      const byUser = await loadSubscriptionsForPage(this.db, orgId, page.map((m) => m.userId));
       const results = await boundedMap(page, PUSH_FANOUT_CONCURRENCY, (m) =>
         this.sendToUser(
           orgId,
@@ -258,35 +214,6 @@ export class WebPushService {
     }
     if (failures.length > 0)
       throw new AggregateError(failures, `push fan-out failed for ${failures.length} member(s)`);
-  }
-
-  /**
-   * One read for a whole page of recipients. Org-scoped for the same reason
-   * `subscriptionPredicate` is: a person in two organizations holds a row per
-   * organization, and matching on user alone crosses the tenant boundary.
-   */
-  private async loadSubscriptionsForPage(
-    orgId: string,
-    userIds: readonly string[],
-  ): Promise<Map<string, PushSubscriptionRow[]>> {
-    const byUser = new Map<string, PushSubscriptionRow[]>();
-    if (userIds.length === 0) return byUser;
-    const rows = await this.db
-      .select({
-        userId: pushSubscriptions.userId,
-        endpoint: pushSubscriptions.endpoint,
-        p256dh: pushSubscriptions.p256dh,
-        auth: pushSubscriptions.auth,
-      })
-      .from(pushSubscriptions)
-      .where(and(eq(pushSubscriptions.orgId, orgId), inArray(pushSubscriptions.userId, [...userIds])));
-    for (const row of rows) {
-      const existing = byUser.get(row.userId);
-      const sub = { endpoint: row.endpoint, p256dh: row.p256dh, auth: row.auth };
-      if (existing) existing.push(sub);
-      else byUser.set(row.userId, [sub]);
-    }
-    return byUser;
   }
 
   private vapidSubject(): string {

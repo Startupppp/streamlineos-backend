@@ -22,6 +22,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { subMonths } from "../../common/date";
 import { AccessService } from "../access/access.service";
+import { SalesPlaybookService } from "./sales-playbook.service";
 import { SalesService, isForbidden, isNotFound, isConflict } from "./sales.service";
 import { SalesDashboardService, type DateRange } from "./sales-dashboard.service";
 import { SalesAnalyticsService, isRepNotFound } from "./sales-analytics.service";
@@ -75,6 +76,7 @@ function toRange(input: { from?: string; to?: string }): DateRange {
 export class SalesController {
   constructor(
     private readonly sales: SalesService,
+    private readonly playbook: SalesPlaybookService,
     private readonly dashboard: SalesDashboardService,
     private readonly analytics: SalesAnalyticsService,
     private readonly access: AccessService,
@@ -162,7 +164,7 @@ export class SalesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("sales:view")
   listPlaybook(@CurrentUser() u: CurrentUserContext) {
-    return this.sales.listPlaybook(u.orgId);
+    return this.playbook.listPlaybook(u.orgId);
   }
 
   @Post("playbook")
@@ -174,7 +176,7 @@ export class SalesController {
     @Body() body: PlaybookCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sales.createPlaybookEntry(u.orgId, u.userId, body);
+    return this.playbook.createPlaybookEntry(u.orgId, u.userId, body);
   }
 
   @Patch("playbook/:entryId")
@@ -186,7 +188,7 @@ export class SalesController {
     @Body() body: PlaybookUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const updated = await this.sales.updatePlaybookEntry(u.orgId, entryId, body);
+    const updated = await this.playbook.updatePlaybookEntry(u.orgId, entryId, body);
     if (!updated) throw new NotFoundException("Playbook entry not found");
     return updated;
   }
@@ -199,7 +201,7 @@ export class SalesController {
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.sales.removePlaybookEntry(u.orgId, entryId);
+    const result = await this.playbook.removePlaybookEntry(u.orgId, entryId);
     if (!result) throw new NotFoundException("Playbook entry not found");
     return result;
   }

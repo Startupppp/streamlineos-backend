@@ -124,6 +124,52 @@ export function parseExceptions(doc) {
   return { entries, errors };
 }
 
+/**
+ * A row's `Public interface` cell is prose, and prose goes stale silently: three of
+ * the eight rows on this registry recorded a surface the file had already outgrown
+ * (`CrmScoringService` "5 public methods" against six, `check-referential-action-drift`
+ * "main() plus the --self-test harness" against twenty exports). The line count was
+ * machine-checked and the interface was not, so the gate stayed green over a record
+ * that was false.
+ *
+ * Only a cell that STATES a count is checkable, so only a stated count is checked:
+ * "N public methods" is compared against the class members that are neither
+ * `private`, `protected`, `#`-prefixed nor the constructor, and "N exports" against
+ * the top-level `export` declarations. A cell that names its surface in words
+ * ("`main()` entry point") makes no claim this can measure and is left alone —
+ * refusing those would push authors toward vaguer records, which is the opposite of
+ * the criterion.
+ */
+export function statedSurface(interfaceCell) {
+  const methods = /(\d+)\s+public\s+methods?\b/i.exec(interfaceCell);
+  if (methods) return { kind: "public methods", count: Number(methods[1]) };
+  const exports = /(\d+)\s+exports?\b/i.exec(interfaceCell);
+  if (exports) return { kind: "exports", count: Number(exports[1]) };
+  return null;
+}
+
+export function measureSurface(source, kind) {
+  const lines = source.split("\n");
+  if (kind === "exports")
+    return lines.filter((line) => /^export\s/.test(line)).length;
+  // A statement inside a module-level function body sits at the same two-space
+  // indent as a class member, so `if (…)` and `return f(…)` look exactly like a
+  // method declaration to a line regex. The keyword blocklist is what keeps the
+  // count honest — without it `crm-scoring.service.ts` measured 7 against 6.
+  const NOT_A_MEMBER = new Set([
+    "if", "for", "while", "switch", "catch", "return", "do", "else", "try",
+    "with", "function", "new", "await", "typeof", "super", "throw", "yield",
+    "constructor",
+  ]);
+  return lines.filter((line) => {
+    const match = /^ {2}(?:(?:public|async|static|readonly)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(/.exec(line);
+    if (!match) return false;
+    if (NOT_A_MEMBER.has(match[1])) return false;
+    if (/^ {2}(?:private|protected)\b/.test(line)) return false;
+    return !/^ {2}#/.test(line);
+  }).length;
+}
+
 function collectFiles(dir, files = [], readdir = readdirSync) {
   let entries;
   try {
@@ -161,7 +207,7 @@ export function runCheck(
   srcDir,
   rootDir,
   exceptionsPath,
-  { minFiles = MIN_FILES, requiredSubtrees = REQUIRED_SUBTREES, readdir } = {},
+  { minFiles = MIN_FILES, requiredSubtrees = REQUIRED_SUBTREES, readdir, today = new Date().toISOString().slice(0, 10) } = {},
 ) {
   let doc;
   try {
@@ -198,6 +244,24 @@ export function runCheck(
         path: regPath,
         error: `exception no longer needed — file is at ${actualLines} lines (within the ${LIMIT}-line limit)`,
       });
+      continue;
+    }
+    if (record.reviewDate < today) {
+      registryErrors.push({
+        path: regPath,
+        error: `review date ${record.reviewDate} has passed (today is ${today}) — re-review the exception or retire it`,
+      });
+      continue;
+    }
+    const stated = statedSurface(record.interface);
+    if (stated) {
+      const measured = measureSurface(readFileSync(fullPath, "utf8"), stated.kind);
+      if (measured !== stated.count) {
+        registryErrors.push({
+          path: regPath,
+          error: `stale interface record — registered ${stated.count} ${stated.kind}, actual ${measured}`,
+        });
+      }
     }
   }
 
@@ -422,6 +486,91 @@ function runSelfTests() {
     assert(
       "an unreadable subtree never reports zero violations as a pass",
       unreadableRes.violations.length === 0 && unreadableRes.ok === false,
+    );
+
+    // --- the interface record and the review date must be machine-checked ---
+    // Both were prose-only before: the gate compared the LINE COUNT against disk and
+    // nothing else, so a row could record five public methods over a class with six
+    // (which `crm-scoring.service.ts` did) or a review date years past and still be
+    // green. `rowWith` writes a row whose interface cell and review date are chosen
+    // per case; everything else is the standard fixture.
+    const rowWith = (path, lines, iface, reviewDate = "2099-01-01") =>
+      `| \`${path}\` | ${lines} | Cohesive service | Platform | ${iface} | one class | split rejected | ${reviewDate} | drops to 500 |`;
+    const surfaceRegistry = (rows) =>
+      [
+        "## Exceptions", "",
+        "| Path | Lines | Category | Owner | Interface | Cohesion | Alternatives | Review date | Removal trigger |",
+        "|---|---|---|---|---|---|---|---|---|",
+        ...rows,
+      ].join("\n") + "\n";
+    const buildSurface = (name, source, rowLine) => {
+      const dir = join(tmpRoot, name);
+      mkdirSync(join(dir, "src", "modules"), { recursive: true });
+      writeFileSync(join(dir, "src", "modules", "svc.ts"), source);
+      writeFileSync(join(dir, "exc.md"), surfaceRegistry([rowLine]));
+      return dir;
+    };
+    const serviceSource = (methodCount, padTo) => {
+      const head = [
+        "export class Svc {",
+        "  constructor(private readonly db: unknown) {}",
+        ...Array.from({ length: methodCount }, (_, i) => `  async m${i}(a: number): Promise<number> {\n    return a;\n  }`),
+        "  private helper(a: number): number {",
+        "    if (a) return a;",
+        "    return 0;",
+        "  }",
+        "}",
+      ].join("\n");
+      const lines = head.split("\n");
+      const pad = Array.from({ length: Math.max(0, padTo - lines.length) }, (_, i) => `// pad ${i}`);
+      return [...lines, ...pad].join("\n") + "\n";
+    };
+
+    assert(
+      "measureSurface counts public methods, not privates, the constructor or `if (…)` statements",
+      measureSurface(serviceSource(6, 0), "public methods") === 6,
+    );
+    assert(
+      "measureSurface counts top-level export declarations",
+      measureSurface("export const a = 1;\nconst b = 2;\nexport function c() {}\n  export const d = 3;\n", "exports") === 2,
+    );
+    assert("statedSurface reads an N-public-methods claim", statedSurface("`Svc` (6 public methods)")?.count === 6);
+    assert("statedSurface reads an N-exports claim", statedSurface("20 exports: main() plus helpers")?.kind === "exports");
+    assert(
+      "statedSurface makes no claim of a prose interface cell",
+      statedSurface("`main()` entry point plus the --self-test harness") === null,
+    );
+
+    const trueSurface = buildSurface("surface-true", serviceSource(6, 510), rowWith("src/modules/svc.ts", 510, "`Svc` (6 public methods)"));
+    const trueRes = runCheck(join(trueSurface, "src"), trueSurface, join(trueSurface, "exc.md"), { minFiles: 1, requiredSubtrees: [], today: "2026-09-04" });
+    assert("an accurate interface record passes", trueRes.ok === true);
+
+    const driftSurface = buildSurface("surface-drift", serviceSource(6, 510), rowWith("src/modules/svc.ts", 510, "`Svc` (5 public methods)"));
+    const driftRes = runCheck(join(driftSurface, "src"), driftSurface, join(driftSurface, "exc.md"), { minFiles: 1, requiredSubtrees: [], today: "2026-09-04" });
+    assert("an interface record that understates the public surface FAILS the gate", driftRes.ok === false);
+    assert("interface drift reports reason=stale-registry", driftRes.reason === "stale-registry");
+    assert(
+      "interface drift names the registered and the measured count",
+      driftRes.registryErrors.some((e) => e.error.includes("stale interface record") && e.error.includes("registered 5 public methods, actual 6")),
+    );
+
+    const proseSurface = buildSurface("surface-prose", serviceSource(6, 510), rowWith("src/modules/svc.ts", 510, "`main()` entry point"));
+    const proseRes = runCheck(join(proseSurface, "src"), proseSurface, join(proseSurface, "exc.md"), { minFiles: 1, requiredSubtrees: [], today: "2026-09-04" });
+    assert("a prose interface cell is not treated as a false claim", proseRes.ok === true);
+
+    const expired = buildSurface("review-expired", serviceSource(6, 510), rowWith("src/modules/svc.ts", 510, "`Svc` (6 public methods)", "2020-01-01"));
+    const expiredRes = runCheck(join(expired, "src"), expired, join(expired, "exc.md"), { minFiles: 1, requiredSubtrees: [], today: "2026-09-04" });
+    assert("a review date in the past FAILS the gate", expiredRes.ok === false);
+    assert("an expired review date reports reason=stale-registry", expiredRes.reason === "stale-registry");
+    assert(
+      "an expired review date names the date and today",
+      expiredRes.registryErrors.some((e) => e.error.includes("review date 2020-01-01 has passed") && e.error.includes("2026-09-04")),
+    );
+
+    const dueToday = buildSurface("review-today", serviceSource(6, 510), rowWith("src/modules/svc.ts", 510, "`Svc` (6 public methods)", "2026-09-04"));
+    assert(
+      "a review date landing exactly on today still passes — the review is due, not overdue",
+      runCheck(join(dueToday, "src"), dueToday, join(dueToday, "exc.md"), { minFiles: 1, requiredSubtrees: [], today: "2026-09-04" }).ok === true,
     );
 
     const belowFloor = build("below-floor", anchorFiles, []);
