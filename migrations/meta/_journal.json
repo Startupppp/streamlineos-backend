@@ -4796,6 +4796,48 @@
       "when": 1803000010136,
       "tag": "1061_push_endpoint_cross_tenant_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 818,
+      "version": "7",
+      "when": 1803000010137,
+      "tag": "1062_mail_metadata_unread_count_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 819,
+      "version": "7",
+      "when": 1803000010138,
+      "tag": "1063_invoice_item_immutability_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 820,
+      "version": "7",
+      "when": 1803000010139,
+      "tag": "1064_revenue_events_currency",
+      "breakpoints": true
+    },
+    {
+      "idx": 821,
+      "version": "7",
+      "when": 1803000010140,
+      "tag": "1065_t02_survey_live_session_metadata_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 822,
+      "version": "7",
+      "when": 1803000010141,
+      "tag": "1066_chat_reactions_org_id_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 823,
+      "version": "7",
+      "when": 1803000010142,
+      "tag": "1067_t07_hr_identity_and_search_keys",
+      "breakpoints": true
     }
   ]
 }
