@@ -49,6 +49,17 @@
 -- choosing between RESTRICT (refuse the location delete honestly) and exempting
 -- location_id from the append-only set, and that is an inventory ledger decision.
 
+-- AMENDED 2026-09-04, resealed deliberately under check:migration-immutability --reseal.
+-- The closing assertion demanded a total of 7 foreign keys and could therefore never
+-- succeed on an empty database: a cold build carries 8 here, this file drops 2, and 6
+-- remain -- which is exactly the "six are load-bearing" this file's own header opens with.
+-- It passed only against a warm database carrying inv_stock_transactions.handling_unit_id
+-- and its foreign key to inv_handling_units, which no migration creates, no Drizzle schema
+-- declares and nothing under src/ references: db:push residue, counted as if it were schema.
+-- Four clean bootstraps stopped here at 654/685. A total-count assertion breaks on any
+-- unrelated extra key, so the check now names the six load-bearing constraints it actually
+-- depends on and no longer cares what else the table carries.
+
 SET lock_timeout = '5s';
 --> statement-breakpoint
 
@@ -93,7 +104,6 @@ ALTER TABLE inv_stock_transactions VALIDATE CONSTRAINT fk_inv_stock_transactions
 DO $$
 DECLARE
   offenders text;
-  fk_count bigint;
 BEGIN
   SELECT string_agg(con.conname, ', ' ORDER BY con.conname)
     INTO offenders
@@ -125,12 +135,25 @@ BEGIN
     RAISE EXCEPTION 'composite foreign keys left in an unusable shape: %', offenders;
   END IF;
 
-  SELECT count(*) INTO fk_count
-    FROM pg_constraint con
-    JOIN pg_class c ON c.oid = con.conrelid
-   WHERE con.contype = 'f' AND c.relname = 'inv_stock_transactions';
+  SELECT string_agg(required.conname, ', ' ORDER BY required.conname)
+    INTO offenders
+    FROM unnest(ARRAY[
+           'fk_inv_stock_transactions_correction_of_org',
+           'fk_inv_stock_transactions_location_id_org',
+           'fk_inv_stock_transactions_product_variant_id_org',
+           'fk_inv_stock_txn_cre_mbr',
+           'inv_stock_transactions_created_by_users_id_fk',
+           'inv_stock_transactions_org_id_organizations_id_fk'
+         ]) AS required(conname)
+   WHERE NOT EXISTS (
+           SELECT 1
+             FROM pg_constraint con
+             JOIN pg_class c ON c.oid = con.conrelid
+            WHERE con.contype = 'f'
+              AND c.relname = 'inv_stock_transactions'
+              AND con.conname = required.conname);
 
-  IF fk_count <> 7 THEN
-    RAISE EXCEPTION 'inv_stock_transactions should carry 7 foreign keys, found %', fk_count;
+  IF offenders IS NOT NULL THEN
+    RAISE EXCEPTION 'load-bearing foreign keys missing from inv_stock_transactions: %', offenders;
   END IF;
 END $$;

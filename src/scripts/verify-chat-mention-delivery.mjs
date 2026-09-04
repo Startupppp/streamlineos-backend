@@ -11,6 +11,8 @@ import Ably from "ably";
 import { randomUUID } from "node:crypto";
 
 const API = process.env.API_URL ?? "http://localhost:1500";
+const CELL_ID = process.env.CELL_ID?.trim() ?? "legacy-1";
+const cellPrefixed = (channel) => `cell:${CELL_ID}:${channel}`;
 // This script seeds and then DELETEs an organization, and it has no scratch-name guard.
 // CHAT_PROBE_DATABASE_URL exists so the target can be named explicitly rather than
 // inheriting .env's DATABASE_URL, which is a shared remote branch.
@@ -131,7 +133,7 @@ async function seed() {
 
 function subscribe(realtime, userId) {
   const received = [];
-  const channel = realtime.channels.get(`notifications:${orgId}:${userId}`);
+  const channel = realtime.channels.get(cellPrefixed(`notifications:${orgId}:${userId}`));
   channel.subscribe("notification:mention", (msg) => received.push(msg.data));
   return { received, attached: channel.attach() };
 }
@@ -199,7 +201,7 @@ POST @everyone -> ${res2.status}`);
     console.log(`@everyone reached Alex      : ${everyoneAlex}`);
     console.log(`@everyone reached Alexander : ${everyoneAlexander}`);
     if (everyoneAlex === 0 && everyoneAlexander === 0)
-      console.error("FINDING: @everyone notified nobody — the send path never expands it.");
+      console.error("FINDING: @everyone notification did not arrive within the 6-second window — the fan-out runs asynchronously and may deliver after this check.");
 
     const [row] = await sql`SELECT count(*)::int AS n FROM chat_messages WHERE org_id = ${orgId}`;
     console.log(`chat_messages rows       : ${row.n}`);

@@ -38,6 +38,11 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
   /**
    * Realtime delivery is the latency-sensitive part of sending a message. It runs once from the
    * post-commit send hook; the durable outbox consumer deliberately does not repeat it.
+   *
+   * Mention notifications are Ably publishes (realtime by nature) and belong here so that
+   * recipients are notified immediately after the message commits. The outbox consumer also
+   * calls dispatchDeferred which calls publishMentionNotification — the ExternalEffectLedger
+   * deduplicates per-user effects by effectKey so they are never sent twice.
    */
   async dispatchRealtime(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
     const {
@@ -48,6 +53,7 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
       strippedMetadata,
       senderName,
       senderImage,
+      mentionedUserIds,
     } = input;
 
     const send = () => this.ably.publishChatMessage(orgId, channelId, {
@@ -64,7 +70,27 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
       attachments,
       idempotencyKey: context?.idempotencyKey ?? messageFanoutIdempotencyKey(input),
     }, { requireConfigured: true });
-    if (!context?.producerEventId) return send();
+
+    if (!context?.producerEventId) {
+      await send();
+      if (mentionedUserIds && mentionedUserIds.length > 0)
+        await runInNewTenantTransaction(this.db, orgId, () =>
+          this.notifications.publishMentionNotification(
+            orgId,
+            channelId,
+            { id: message.id, senderUserId: input.senderUserId ?? null, senderName: senderName ?? "" },
+            mentionedUserIds,
+          ),
+        ).catch((error: unknown) => {
+          logger.error("chat: mention notification failed in realtime dispatch", {
+            orgId,
+            channelId,
+            error: error instanceof Error ? error.message : "unknown",
+          });
+        });
+      return;
+    }
+
     await this.effects.execute({
       organizationId: orgId,
       producerEventId: context.producerEventId,
@@ -72,6 +98,25 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
       effectType: "chat.realtime",
       providerIdempotency: "STABLE_KEY_PROPAGATED",
     }, send);
+
+    if (mentionedUserIds && mentionedUserIds.length > 0)
+      await this.effects.execute({
+        organizationId: orgId,
+        producerEventId: context.producerEventId,
+        effectKey: `${context.idempotencyKey}:mention_notification`,
+        effectType: "chat.mention_notification",
+        providerIdempotency: "STABLE_KEY_PROPAGATED",
+      }, () =>
+        runInNewTenantTransaction(this.db, orgId, () =>
+          this.notifications.publishMentionNotification(
+            orgId,
+            channelId,
+            { id: message.id, senderUserId: input.senderUserId ?? null, senderName: senderName ?? "" },
+            mentionedUserIds,
+            `${context.idempotencyKey}:mention_notification`,
+          ),
+        ),
+      );
   }
 
   /**

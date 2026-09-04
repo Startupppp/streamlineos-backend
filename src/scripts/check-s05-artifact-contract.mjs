@@ -130,9 +130,137 @@ function main() {
   process.stdout.write("S05 approval/evidence artifact contract passed.\n");
 }
 
-try {
-  main();
-} catch (error) {
-  process.stderr.write(`${error?.stack ?? error}\n`);
-  process.exitCode = 1;
+function buildSyntheticBundle(overrides = {}) {
+  const base = {
+    schemaVersion: 1,
+    evidenceId: "S05",
+    evidenceStatus: "repository-only",
+    deployedEvidenceClaim: false,
+    claimRefusal: "This collector runs in the repository and has no access to a deployed environment.",
+    deployment: { environment: "repository-only" },
+    checks: REQUIRED_CHECKS.map((id) => ({
+      id,
+      command: `pnpm check:${id}`,
+      startedAt: "2026-09-04T00:00:00.000Z",
+      endedAt: "2026-09-04T00:00:01.000Z",
+      exitCode: 0,
+      output: "ok",
+    })),
+    summary: { total: REQUIRED_CHECKS.length, passed: REQUIRED_CHECKS.length, failed: 0 },
+    artifactHashes: [
+      { path: "contracts/benchmark-manifest.json", sha256: "a".repeat(64) },
+    ],
+  };
+  return { ...base, ...overrides };
+}
+
+function expectFail(description, fn, expectedFragment) {
+  let threw = null;
+  try {
+    fn();
+  } catch (e) {
+    threw = e;
+  }
+  if (!threw) {
+    process.stderr.write(`[FAIL] ${description} — expected a throw but got none\n`);
+    return false;
+  }
+  const msg = threw.message ?? String(threw);
+  if (!msg.includes(expectedFragment)) {
+    process.stderr.write(
+      `[FAIL] ${description} — threw "${msg}" but expected to contain "${expectedFragment}"\n`,
+    );
+    return false;
+  }
+  process.stdout.write(`[pass] ${description}\n`);
+  return true;
+}
+
+function expectPass(description, fn) {
+  try {
+    fn();
+    process.stdout.write(`[pass] ${description}\n`);
+    return true;
+  } catch (e) {
+    process.stderr.write(`[FAIL] ${description} — unexpected throw: ${e?.message ?? e}\n`);
+    return false;
+  }
+}
+
+function selfTest() {
+  const results = [];
+
+  results.push(expectPass("a valid synthetic bundle passes validateBundle", () =>
+    validateBundle(buildSyntheticBundle()),
+  ));
+
+  results.push(expectFail(
+    "deployedEvidenceClaim: true is rejected with the exact claim-refusal message",
+    () => validateBundle(buildSyntheticBundle({ deployedEvidenceClaim: true })),
+    "repository collector cannot claim deployed evidence",
+  ));
+
+  results.push(expectFail(
+    "schemaVersion 2 is rejected (unsupported version)",
+    () => validateBundle(buildSyntheticBundle({ schemaVersion: 2 })),
+    "evidence bundle schema version is supported",
+  ));
+
+  results.push(expectFail(
+    "wrong evidenceId is rejected",
+    () => validateBundle(buildSyntheticBundle({ evidenceId: "S99" })),
+    "evidence bundle identifies S05",
+  ));
+
+  results.push(expectFail(
+    "a bundle claiming operator-verified deployment is rejected as deployed evidence",
+    () => validateBundle(buildSyntheticBundle({ evidenceStatus: "deployed-verified" })),
+    "evidence status cannot claim deployed verification",
+  ));
+
+  const missingCheck = buildSyntheticBundle();
+  missingCheck.checks = missingCheck.checks.filter((c) => c.id !== "compliance");
+  missingCheck.summary = {
+    total: missingCheck.checks.length,
+    passed: missingCheck.checks.length,
+    failed: 0,
+  };
+  results.push(expectFail(
+    "a bundle missing a required check ('compliance') is rejected",
+    () => validateBundle(missingCheck),
+    "check set has no missing or unexpected records",
+  ));
+
+  const wrongSummary = buildSyntheticBundle();
+  wrongSummary.summary = { total: REQUIRED_CHECKS.length, passed: REQUIRED_CHECKS.length - 1, failed: 2 };
+  results.push(expectFail(
+    "a bundle with inconsistent summary counts is rejected",
+    () => validateBundle(wrongSummary),
+    "summary counts reconcile",
+  ));
+
+  results.push(expectFail(
+    "a bundle with a malformed artifact hash is rejected",
+    () => validateBundle(buildSyntheticBundle({ artifactHashes: [{ path: "x", sha256: "not-a-hash" }] })),
+    "artifact hash is valid",
+  ));
+
+  const passed = results.filter(Boolean).length;
+  const failed = results.filter((r) => !r).length;
+  process.stdout.write(`\n${passed}/${results.length} checks passed\n`);
+  if (failed > 0) {
+    process.stderr.write(`${failed} self-test check(s) failed\n`);
+    process.exitCode = 1;
+  }
+}
+
+if (process.argv.includes("--self-test")) {
+  selfTest();
+} else {
+  try {
+    main();
+  } catch (error) {
+    process.stderr.write(`${error?.stack ?? error}\n`);
+    process.exitCode = 1;
+  }
 }

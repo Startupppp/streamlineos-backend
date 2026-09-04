@@ -64,6 +64,21 @@ export function databaseName(url) {
   }
 }
 
+/**
+ * `ssl: false` was hardcoded here, so this script could never reach a managed
+ * Postgres that requires TLS — it failed with "connection is insecure" before
+ * writing a row, which reads as a seed problem rather than a harness one.
+ */
+export function sslModeOf(url) {
+  try {
+    const mode = new URL(url).searchParams.get("sslmode");
+    if (mode === "disable") return false;
+    return mode ? "require" : false;
+  } catch {
+    return false;
+  }
+}
+
 /** The same rule `assertDisposableDatabase` applies, plus an explicit cornerstone refusal. */
 export function assertWritable(url) {
   const database = databaseName(url);
@@ -171,7 +186,7 @@ async function main() {
     process.exit(1);
   }
 
-  const sql = postgres(url, { max: 1, prepare: false, ssl: false, onnotice: () => {} });
+  const sql = postgres(url, { max: 1, prepare: false, ssl: sslModeOf(url), onnotice: () => {} });
   try {
     process.stdout.write(`[prepare-perf-http-seed] database=${guard.database}\n`);
     const placed = await placeOrganizations(sql, write);
@@ -196,6 +211,9 @@ function selfTest() {
   check("refuses cornerstone by name", assertWritable("postgres://u@h/cornerstone_scratch").ok === false);
   check("accepts a scratch database", assertWritable("postgres://u@h/scratch_perf_seed").ok === true);
   check("reads the database name out of the path", databaseName("postgres://u@h/scratch_x?sslmode=disable") === "scratch_x");
+  check("sslmode=require asks postgres for TLS", sslModeOf("postgres://u@h/scratch_x?sslmode=require") === "require");
+  check("sslmode=disable stays plaintext", sslModeOf("postgres://u@h/scratch_x?sslmode=disable") === false);
+  check("no sslmode stays plaintext", sslModeOf("postgres://u@h/scratch_x") === false);
   check("refuses an unparseable url", assertWritable("not a url").ok === false);
 
   const row = placementRow("org-1", 0);

@@ -3929,8 +3929,8 @@
     {
       "tag": "1009_s09_inv_stock_transactions_single_column_fks",
       "when": 1803000010105,
-      "sha256": "1668e11a0a612dd78698f62f7bfc03ba985a81a3cfa00726c7b4e48a3cb4b28e",
-      "effective": "668ca7053366927d80b38723a27ea56d65f0594ef3dfea1e49b466bb1c30c7b9"
+      "sha256": "6c0ab7ec8ae9ea230de33262d2c43c69ddc8b7c298b0bf53507cbab1766062c1",
+      "effective": "7bf1fd940de9c38ebad805e60bea589cbdb7852f2ad43532802e4f01caed9c13"
     },
     {
       "tag": "1021_t29_kb_page_links_record_unique",
