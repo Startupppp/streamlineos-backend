@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Headers,
   HttpCode,
   Param,
@@ -19,6 +20,7 @@ import type { Observable } from "rxjs";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { Universal } from "../../common/auth/universal.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -70,6 +72,10 @@ export class NotificationsController {
   @Post("events/token")
   @BodylessAction()
   @Universal()
+  // PRD-C089 (BREACH) — this body is a bearer token, `app.enableCors({ credentials: true })`
+  // is live, and a compressed length is a cross-origin size oracle. `shouldCompress` checks
+  // this opt-out first, so no content type can overrule it.
+  @Header(NO_COMPRESSION_HEADER, "1")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("notifications:stream-token")
   @HttpCode(200)

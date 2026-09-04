@@ -206,17 +206,28 @@ describe("Brute force and credential stuffing", () => {
     expect(await statusOf(guard, nextAddress.context)).toBe(HttpStatus.TOO_MANY_REQUESTS);
   });
 
-  it("x-forwarded-for spoofing with a list uses the first hop, not the whole header", async () => {
+  /**
+   * REPLACED, because the property this pinned was the wrong sign.
+   *
+   * It asserted that the SAME first hop with a DIFFERENT tail shares a bucket — true under the
+   * defect and true under the fix, and never the direction an attacker moves. A proxy APPENDS
+   * to the header, so the leftmost entry is the one the CLIENT writes; rotating it was what
+   * bought a fresh budget, and nothing here rotated it. The guard no longer reads the header at
+   * all, so what is pinned now is that the header cannot SPLIT a bucket either. The full
+   * reproduction, the trust-proxy hop arithmetic and the source backstop live in
+   * `client-ip-forgery.spec.ts`.
+   */
+  it("a forwarded-for list cannot split one caller into two buckets, whatever hop it names", async () => {
     const svc = service();
     const limit = effectiveRateLimit("auth:login");
     const guard = guardFor("auth:login", svc);
-    const first = contextFor({ forwardedFor: "203.0.113.5, 70.41.3.18" });
-    const sameFirstDifferentTail = contextFor({ forwardedFor: "203.0.113.5, 9.9.9.9" });
+    const first = contextFor({ ip: "203.0.113.5", forwardedFor: "203.0.113.5, 70.41.3.18" });
+    const differentFirstHop = contextFor({ ip: "203.0.113.5", forwardedFor: "8.8.8.8, 9.9.9.9" });
+    const noHeaderAtAll = contextFor({ ip: "203.0.113.5" });
 
     for (let i = 0; i < limit; i += 1) await statusOf(guard, first.context);
-    expect(await statusOf(guard, sameFirstDifferentTail.context)).toBe(
-      HttpStatus.TOO_MANY_REQUESTS,
-    );
+    expect(await statusOf(guard, differentFirstHop.context)).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    expect(await statusOf(guard, noHeaderAtAll.context)).toBe(HttpStatus.TOO_MANY_REQUESTS);
   });
 
   it("no controller declares @UseRateLimit without also mounting RateLimitGuard — the decorator alone is inert", () => {

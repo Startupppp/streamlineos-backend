@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { SQL, and, asc, count, eq, getTableColumns, ilike, or, sql } from "drizzle-orm";
+import { SQL, and, asc, eq, getTableColumns, ilike, or, sql } from "drizzle-orm";
 import { salaryComponents, employeeSalaryProfileComponents } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -140,17 +140,18 @@ export class PayrollComponentsService {
   async remove(u: CurrentUserContext, componentId: number): Promise<{ success: boolean; softDeleted: boolean }> {
     await this.assertBelongsToOrg(u.orgId, componentId);
 
-    const [usageRow] = await this.db
-      .select({ total: count() })
+    const inUse = await this.db
+      .select({ one: sql`1` })
       .from(employeeSalaryProfileComponents)
       .where(
         and(
           eq(employeeSalaryProfileComponents.componentId, componentId),
           eq(employeeSalaryProfileComponents.orgId, u.orgId),
         ),
-      );
+      )
+      .limit(1);
 
-    if ((usageRow?.total ?? 0) > 0) {
+    if (inUse.length > 0) {
       await this.db
         .update(salaryComponents)
         .set({ isActive: false })

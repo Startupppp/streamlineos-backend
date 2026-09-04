@@ -30,7 +30,10 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
     private readonly effects: ExternalEffectLedger,
   ) {}
 
-  async dispatch(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
+  async dispatch(
+    input: FanoutInput,
+    context?: FanoutDeliveryContext,
+  ): Promise<void> {
     await this.dispatchRealtime(input, context);
     await this.dispatchDeferred(input, context);
   }
@@ -44,7 +47,10 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
    * calls dispatchDeferred which calls publishMentionNotification — the ExternalEffectLedger
    * deduplicates per-user effects by effectKey so they are never sent twice.
    */
-  async dispatchRealtime(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
+  async dispatchRealtime(
+    input: FanoutInput,
+    context?: FanoutDeliveryContext,
+  ): Promise<void> {
     const {
       orgId,
       channelId,
@@ -56,20 +62,27 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
       mentionedUserIds,
     } = input;
 
-    const send = () => this.ably.publishChatMessage(orgId, channelId, {
-      id: message.id,
-      channelId: message.channelId,
-      senderId: input.senderUserId ?? "",
-      senderName,
-      senderImage,
-      content: message.content,
-      createdAt: message.createdAt,
-      replyToId: message.replyToId,
-      metadata: strippedMetadata,
-      messageType: message.messageType,
-      attachments,
-      idempotencyKey: context?.idempotencyKey ?? messageFanoutIdempotencyKey(input),
-    }, { requireConfigured: true });
+    const send = () =>
+      this.ably.publishChatMessage(
+        orgId,
+        channelId,
+        {
+          id: message.id,
+          channelId: message.channelId,
+          senderId: input.senderUserId ?? "",
+          senderName,
+          senderImage,
+          content: message.content,
+          createdAt: message.createdAt,
+          replyToId: message.replyToId,
+          metadata: strippedMetadata,
+          messageType: message.messageType,
+          attachments,
+          idempotencyKey:
+            context?.idempotencyKey ?? messageFanoutIdempotencyKey(input),
+        },
+        { requireConfigured: true },
+      );
 
     if (!context?.producerEventId) {
       await send();
@@ -78,44 +91,60 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
           this.notifications.publishMentionNotification(
             orgId,
             channelId,
-            { id: message.id, senderUserId: input.senderUserId ?? null, senderName: senderName ?? "" },
+            {
+              id: message.id,
+              senderUserId: input.senderUserId ?? null,
+              senderName: senderName ?? "",
+            },
             mentionedUserIds,
           ),
         ).catch((error: unknown) => {
-          logger.error("chat: mention notification failed in realtime dispatch", {
-            orgId,
-            channelId,
-            error: error instanceof Error ? error.message : "unknown",
-          });
+          logger.error(
+            "chat: mention notification failed in realtime dispatch",
+            {
+              orgId,
+              channelId,
+              error: error instanceof Error ? error.message : "unknown",
+            },
+          );
         });
       return;
     }
 
-    await this.effects.execute({
-      organizationId: orgId,
-      producerEventId: context.producerEventId,
-      effectKey: `${context.idempotencyKey}:realtime`,
-      effectType: "chat.realtime",
-      providerIdempotency: "STABLE_KEY_PROPAGATED",
-    }, send);
-
-    if (mentionedUserIds && mentionedUserIds.length > 0)
-      await this.effects.execute({
+    await this.effects.execute(
+      {
         organizationId: orgId,
         producerEventId: context.producerEventId,
-        effectKey: `${context.idempotencyKey}:mention_notification`,
-        effectType: "chat.mention_notification",
+        effectKey: `${context.idempotencyKey}:realtime`,
+        effectType: "chat.realtime",
         providerIdempotency: "STABLE_KEY_PROPAGATED",
-      }, () =>
-        runInNewTenantTransaction(this.db, orgId, () =>
-          this.notifications.publishMentionNotification(
-            orgId,
-            channelId,
-            { id: message.id, senderUserId: input.senderUserId ?? null, senderName: senderName ?? "" },
-            mentionedUserIds,
-            `${context.idempotencyKey}:mention_notification`,
+      },
+      send,
+    );
+
+    if (mentionedUserIds && mentionedUserIds.length > 0)
+      await this.effects.execute(
+        {
+          organizationId: orgId,
+          producerEventId: context.producerEventId,
+          effectKey: `${context.idempotencyKey}:mention_notification`,
+          effectType: "chat.mention_notification",
+          providerIdempotency: "STABLE_KEY_PROPAGATED",
+        },
+        () =>
+          runInNewTenantTransaction(this.db, orgId, () =>
+            this.notifications.publishMentionNotification(
+              orgId,
+              channelId,
+              {
+                id: message.id,
+                senderUserId: input.senderUserId ?? null,
+                senderName: senderName ?? "",
+              },
+              mentionedUserIds,
+              `${context.idempotencyKey}:mention_notification`,
+            ),
           ),
-        ),
       );
   }
 
@@ -124,7 +153,10 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
    * calls this method, so a rejected task causes the event to be retried or dead-lettered by the
    * common relay instead of being lost behind a log line.
    */
-  async dispatchDeferred(input: FanoutInput, context?: FanoutDeliveryContext): Promise<void> {
+  async dispatchDeferred(
+    input: FanoutInput,
+    context?: FanoutDeliveryContext,
+  ): Promise<void> {
     const {
       orgId,
       channelId,
@@ -135,75 +167,119 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
     } = input;
 
     const failures: unknown[] = [];
-    const idempotencyKey = context?.idempotencyKey ?? messageFanoutIdempotencyKey(input);
+    const idempotencyKey =
+      context?.idempotencyKey ?? messageFanoutIdempotencyKey(input);
     const producerEventId = context?.producerEventId ?? idempotencyKey;
     const runEffect = (channel: FanoutChannel, send: () => Promise<void>) =>
-      this.effects.execute({
-        organizationId: orgId,
-        producerEventId,
-        effectKey: `${idempotencyKey}:${channel}`,
-        effectType: `chat.${channel}`,
-        providerIdempotency: "STABLE_KEY_PROPAGATED",
-      }, () => runInNewTenantTransaction(this.db, orgId, async () => send())).then(() => undefined);
+      this.effects
+        .execute(
+          {
+            organizationId: orgId,
+            producerEventId,
+            effectKey: `${idempotencyKey}:${channel}`,
+            effectType: `chat.${channel}`,
+            providerIdempotency: "STABLE_KEY_PROPAGATED",
+          },
+          () => runInNewTenantTransaction(this.db, orgId, async () => send()),
+        )
+        .then(() => undefined);
     const tasks: Promise<void>[] = [
-      runEffect("push", () => this.webPush
-        .sendToChannelMembers(orgId, channelId, input.senderUserId ?? "", { category: "CHAT" }, `${idempotencyKey}:push`))
-        .catch((err: unknown) => {
-          logger.error("chat: push fan-out failed", {
-            orgId,
-            channelId,
-            error: err instanceof Error ? err.message : "unknown",
-          });
-          this.recordFailure(orgId, channelId, input.senderUserId ?? "", message.id, "push", err);
-          failures.push(err);
-        }),
+      runEffect("push", () =>
+        this.webPush.sendToChannelMembers(
+          orgId,
+          channelId,
+          input.senderUserId ?? "",
+          { category: "CHAT" },
+          `${idempotencyKey}:push`,
+        ),
+      ).catch((err: unknown) => {
+        logger.error("chat: push fan-out failed", {
+          orgId,
+          channelId,
+          error: err instanceof Error ? err.message : "unknown",
+        });
+        this.recordFailure(
+          orgId,
+          channelId,
+          input.senderUserId ?? "",
+          message.id,
+          "push",
+          err,
+        );
+        failures.push(err);
+      }),
     ];
 
     if (channelType === "DIRECT")
       tasks.push(
-        runEffect("dm_notification", () => this.notifications
-          .publishNewMessageNotification(
+        runEffect("dm_notification", () =>
+          this.notifications.publishNewMessageNotification(
             orgId,
             channelId,
-            { id: message.id, senderUserId: input.senderUserId ?? null, senderName },
+            {
+              id: message.id,
+              senderUserId: input.senderUserId ?? null,
+              senderName,
+            },
             channelType,
             `${idempotencyKey}:dm_notification`,
-          ))
-          .catch((err: unknown) => {
-            logger.error("chat: DM notification failed", {
-              orgId,
-              channelId,
-              error: err instanceof Error ? err.message : "unknown",
-            });
-            this.recordFailure(orgId, channelId, input.senderUserId ?? "", message.id, "dm_notification", err);
-            failures.push(err);
-          }),
+          ),
+        ).catch((err: unknown) => {
+          logger.error("chat: DM notification failed", {
+            orgId,
+            channelId,
+            error: err instanceof Error ? err.message : "unknown",
+          });
+          this.recordFailure(
+            orgId,
+            channelId,
+            input.senderUserId ?? "",
+            message.id,
+            "dm_notification",
+            err,
+          );
+          failures.push(err);
+        }),
       );
 
     if (mentionedUserIds && mentionedUserIds.length > 0)
       tasks.push(
-        runEffect("mention_notification", () => this.notifications
-          .publishMentionNotification(
+        runEffect("mention_notification", () =>
+          this.notifications.publishMentionNotification(
             orgId,
             channelId,
-            { id: message.id, senderUserId: input.senderUserId ?? null, senderName: senderName ?? "" },
+            {
+              id: message.id,
+              senderUserId: input.senderUserId ?? null,
+              senderName: senderName ?? "",
+            },
             mentionedUserIds,
             `${idempotencyKey}:mention_notification`,
-          ))
-          .catch((err: unknown) => {
-            logger.error("chat: mention notification failed", {
-              orgId,
-              channelId,
-              error: err instanceof Error ? err.message : "unknown",
-            });
-            this.recordFailure(orgId, channelId, input.senderUserId ?? "", message.id, "mention_notification", err);
-            failures.push(err);
-          }),
+          ),
+        ).catch((err: unknown) => {
+          logger.error("chat: mention notification failed", {
+            orgId,
+            channelId,
+            error: err instanceof Error ? err.message : "unknown",
+          });
+          this.recordFailure(
+            orgId,
+            channelId,
+            input.senderUserId ?? "",
+            message.id,
+            "mention_notification",
+            err,
+          );
+          failures.push(err);
+        }),
       );
 
     await Promise.all(tasks);
     if (failures.length > 0) {
-      throw new AggregateError(failures, `chat fan-out failed in ${failures.length} channel(s)`);
+      throw new AggregateError(
+        failures,
+        `chat fan-out failed in ${failures.length} channel(s)`,
+      );
     }
   }
 

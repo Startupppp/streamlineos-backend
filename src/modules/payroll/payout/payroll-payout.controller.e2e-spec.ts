@@ -1,4 +1,5 @@
 import type { INestApplication } from "@nestjs/common";
+import { Readable } from "node:stream";
 import request from "supertest";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
@@ -68,7 +69,14 @@ const mockLockingService = {
 const mockPayoutBatchesService = {
   listBatches: jest.fn().mockResolvedValue([mockBatch]),
   getBatch: jest.fn().mockResolvedValue(mockBatch),
-  getFile: jest.fn().mockResolvedValue({ content: "", filename: "batch.csv" }),
+  downloadFile: jest.fn().mockResolvedValue({
+    file: {
+      body: Readable.from([Buffer.from("account,amount\n")]),
+      contentType: "text/csv",
+      contentLength: 15,
+    },
+    fileName: "PB-2026-01-001.csv",
+  }),
   getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
 };
 
@@ -81,6 +89,15 @@ const mockBatchStatusService = {
   markBatchPaid: jest.fn().mockResolvedValue({ ok: true }),
   markItemPaid: jest.fn().mockResolvedValue({ ok: true }),
   markItemFailed: jest.fn().mockResolvedValue({ ok: true }),
+  importBankReturn: jest.fn().mockResolvedValue({
+    success: true,
+    paid: 1,
+    failed: 0,
+    skipped: 0,
+    parseErrors: [],
+    honestyNote: "Manual export/import only.",
+    mode: "export_manual",
+  }),
 };
 
 const mockPayoutValidationService = {
@@ -268,6 +285,85 @@ describe("payroll-payout RBAC — specific permission key enforcement (e2e)", ()
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
+});
+
+/**
+ * The bank file is a CSV of every payee's UNMASKED account number and IFSC.
+ *
+ * The route used to answer `{ url, batchNumber }` — a presigned S3 link valid
+ * for 3600 s — which the table then opened with `window.open`. That put the
+ * most sensitive artefact payroll produces behind a bearer-free URL that
+ * outlived the screen, survived in browser history and could be forwarded.
+ *
+ * It streams under the caller's own credential now. These assertions pin the
+ * three properties that make that true: the body is the file's bytes and not a
+ * JSON envelope, no URL is minted anywhere in the response, and the response is
+ * marked private and non-storable.
+ */
+describe("payroll-payout — the bank file streams, it is not a presigned URL (e2e)", () => {
+  let app: INestApplication;
+  beforeAll(async () => { app = await buildApp(permittedAccess); });
+  afterAll(async () => app.close());
+
+  it("GET /payroll/payout/batches/1/file returns the CSV bytes, not a link to them", async () => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .get("/payroll/payout/batches/1/file")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+    expect(res.headers["content-disposition"]).toContain("attachment");
+    expect(res.headers["cache-control"]).toBe("private, no-store");
+    expect(res.text).toContain("account,amount");
+    expect(res.body).not.toHaveProperty("url");
+    expect(JSON.stringify(res.headers) + res.text).not.toMatch(/X-Amz-Signature|Expires=/i);
+  });
+});
+
+/**
+ * Every payout command that moves money is `@Idempotent`. A missing
+ * `Idempotency-Key` is rejected by the global interceptor before the handler
+ * runs — that 400 IS the fence, and its absence is what let a double-clicked
+ * "Mark Paid" settle the same batch twice. `check:idempotent-commands` could
+ * not see these four handlers because it matched the string on the method
+ * decorator ("mark-paid") rather than the full path under
+ * `@Controller("payroll/payout")`.
+ */
+describe("payroll-payout — money-moving commands are idempotency-fenced (e2e)", () => {
+  let app: INestApplication;
+  beforeAll(async () => { app = await buildApp(permittedAccess); });
+  afterAll(async () => app.close());
+
+  const fencedCommands: ReadonlyArray<[string, Record<string, unknown>]> = [
+    ["/payroll/payout/batches/1/mark-sent", {}],
+    ["/payroll/payout/batches/1/mark-paid", { transactionRef: "NEFT001" }],
+    ["/payroll/payout/batches/1/items/1/mark-paid", { transactionRef: "NEFT002" }],
+    ["/payroll/payout/batches/1/items/1/mark-failed", { failureReason: "Account closed" }],
+    ["/payroll/payout/batches/1/import-return", { csv: "ref,status\nNEFT001,PAID" }],
+  ];
+
+  it.each(fencedCommands)("POST %s → 400 without an Idempotency-Key", async (path, body) => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .post(path)
+      .set("Authorization", `Bearer ${token}`)
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toMatch(/Idempotency-Key/i);
+  });
+
+  it.each(fencedCommands)("POST %s → 200 once a key is supplied", async (path, body) => {
+    const token = await signToken({ permissions: [], enabledModules: [] });
+    const res = await request(app.getHttpServer())
+      .post(path)
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", `e2e-${path.replace(/\W+/g, "-")}-${Date.now()}`)
+      .send(body);
+
+    expect(res.status).toBe(200);
   });
 });
 

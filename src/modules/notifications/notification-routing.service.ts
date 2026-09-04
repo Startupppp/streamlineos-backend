@@ -6,6 +6,7 @@ import {
   notificationPolicyDefaults,
   notificationProviderAccounts,
   notificationSuppressionRules,
+  notificationConsents,
   notificationDeliveries,
   organizationMembers,
   userPreferences,
@@ -25,32 +26,18 @@ import {
   type SuppressionReason,
 } from "./notification.types";
 import {
-  isWithinQuietHours,
-  quietHoursEndAt,
-  type QuietHoursConfig,
-} from "./quiet-hours.util";
-import { computeRouting, type RouteContext } from "./notification-routing-computation";
+  computeRouting,
+  CONSENT_REQUIRED_CHANNELS,
+  type RouteContext,
+} from "./notification-routing-computation";
+
+import {
+  resolvePrefs,
+  type NotificationPreferenceRuleProjection,
+  type ResolvedPreferences,
+} from "./notification-preference-resolution";
 
 export { computeRouting, type RouteContext } from "./notification-routing-computation";
-
-interface ResolvedPreferences {
-  channelEnabled: Record<NotificationChannel, boolean>;
-  quietHours: QuietHoursConfig;
-  categories: Record<string, boolean>;
-  modulePreferences: Record<string, { mode?: string; muted?: boolean }>;
-  eventPreferences: Record<
-    string,
-    { channels?: Record<string, boolean>; muted?: boolean; mode?: string }
-  >;
-  allowCriticalOverride: boolean;
-}
-
-type NotificationPreferenceRuleProjection = {
-  scopeType: "EVENT" | "MODULE" | "CATEGORY";
-  scopeKey: string;
-  channel: NotificationChannel;
-  mode: "ON" | "OFF" | "DIGEST";
-};
 
 interface OrgPolicyResolved {
   defaultChannels: NotificationChannel[];
@@ -94,72 +81,6 @@ export class NotificationRoutingService {
       CACHE_TTL.MEDIUM,
     );
     return new Set<NotificationChannel>(["IN_APP", "EMAIL", ...enabled]);
-  }
-
-  /**
-   * SCH-003. `computeRouting` is correct and spec-covered, so its input shape is
-   * unchanged; only the source moved. Per-event, per-module and per-category settings
-   * now come from `notification_preference_rules` instead of four JSONB blobs on the
-   * header row. The header still carries the channel toggles, quiet hours and digest
-   * mode, which are genuinely one-per-user and not lifecycle state.
-   */
-  private resolvePrefs(
-    row: Partial<Pick<
-      typeof notificationPreferences.$inferSelect,
-      | "inAppEnabled"
-      | "emailEnabled"
-      | "pushEnabled"
-      | "smsEnabled"
-      | "whatsappEnabled"
-      | "quietHoursStart"
-      | "quietHoursEnd"
-      | "quietHoursWeekends"
-      | "allowCriticalOverride"
-    >> | undefined,
-    userTimezone: string | undefined,
-    rules: NotificationPreferenceRuleProjection[],
-  ): ResolvedPreferences {
-    const eventPreferences: ResolvedPreferences["eventPreferences"] = {};
-    const modulePreferences: ResolvedPreferences["modulePreferences"] = {};
-    const categories: Record<string, boolean> = {};
-
-    for (const rule of rules) {
-      const on = rule.mode !== "OFF";
-      if (rule.scopeType === "EVENT") {
-        const entry = (eventPreferences[rule.scopeKey] ??= { channels: {} });
-        (entry.channels ??= {})[rule.channel] = on;
-        // Muted only when every channel the user has an opinion about is off.
-        entry.muted = Object.values(entry.channels).every((v) => v === false);
-      } else if (rule.scopeType === "MODULE") {
-        const entry = (modulePreferences[rule.scopeKey] ??= {});
-        if (!on) entry.muted = true;
-      } else if (rule.scopeType === "CATEGORY") {
-        // A category is on unless some channel rule turns it off.
-        categories[rule.scopeKey] = (categories[rule.scopeKey] ?? true) && on;
-      }
-    }
-
-    const channelEnabled: Record<NotificationChannel, boolean> = {
-      IN_APP: row?.inAppEnabled ?? true,
-      EMAIL: row?.emailEnabled ?? true,
-      PUSH: row?.pushEnabled ?? true,
-      SMS: row?.smsEnabled ?? false,
-      WHATSAPP: row?.whatsappEnabled ?? false,
-      WEBHOOK: true,
-    };
-    return {
-      channelEnabled,
-      quietHours: {
-        start: row?.quietHoursStart ?? null,
-        end: row?.quietHoursEnd ?? null,
-        timezone: userTimezone ?? "UTC",
-        includeWeekends: row?.quietHoursWeekends ?? true,
-      },
-      categories,
-      modulePreferences,
-      eventPreferences,
-      allowCriticalOverride: row?.allowCriticalOverride ?? true,
-    };
   }
 
   private async loadOrgPolicyData(orgId: string): Promise<CachedPolicy | null> {
@@ -267,6 +188,54 @@ export class NotificationRoutingService {
           if (!m.has(ch)) m.set(ch, r.reason as SuppressionReason);
       }
     }
+    return perUser;
+  }
+
+  /**
+   * COMP-003. `notification_consents` had no reader outside the GDPR export, so
+   * SMS and WhatsApp routed with no regard for whether a legal basis was ever
+   * recorded. One batched query, shaped like the preference-rule fetch beside it:
+   * the consent row is keyed on membership, and routing works in user ids.
+   *
+   * "Any GRANTED row for this channel" is the right question at routing time. The
+   * destination is not known until the delivery worker resolves it, so the row's
+   * `destination` is what the consent was given FOR, and the gate here is whether
+   * consent exists at all. A withdrawal flips `state`, so a WITHDRAWN row does not
+   * match and the channel closes again.
+   */
+  private async loadConsentBatch(
+    orgId: string,
+    userIds: string[],
+  ): Promise<Map<string, Set<NotificationChannel>>> {
+    const perUser = new Map<string, Set<NotificationChannel>>();
+    for (const u of userIds) perUser.set(u, new Set());
+    if (userIds.length === 0) return perUser;
+
+    const rows = await this.db
+      .select({
+        userId: organizationMembers.userId,
+        channel: notificationConsents.channel,
+      })
+      .from(notificationConsents)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, notificationConsents.orgId),
+          eq(organizationMembers.id, notificationConsents.membershipId),
+        ),
+      )
+      .where(
+        and(
+          eq(notificationConsents.orgId, orgId),
+          eq(notificationConsents.state, "GRANTED"),
+          inArray(notificationConsents.channel, [...CONSENT_REQUIRED_CHANNELS]),
+          eq(organizationMembers.status, "ACTIVE"),
+          inArray(organizationMembers.userId, userIds),
+        ),
+      )
+      .limit(Math.max(1, userIds.length * CONSENT_REQUIRED_CHANNELS.length * 4));
+
+    for (const row of rows) perUser.get(row.userId)?.add(row.channel);
     return perUser;
   }
 
@@ -428,11 +397,10 @@ export class NotificationRoutingService {
     const routingDefinition = channels
       ? { ...definition, defaultChannels: channels, allowedChannels: channels }
       : definition;
-    const suppressionByUser = await this.loadSuppressionBatch(
-      orgId,
-      userIds,
-      routingDefinition,
-    );
+    const [suppressionByUser, consentByUser] = await Promise.all([
+      this.loadSuppressionBatch(orgId, userIds, routingDefinition),
+      this.loadConsentBatch(orgId, userIds),
+    ]);
     await this.applyRateLimitsBatch(
       orgId,
       userIds,
@@ -446,7 +414,7 @@ export class NotificationRoutingService {
         definition: routingDefinition,
         priority,
         now,
-        prefs: this.resolvePrefs(
+        prefs: resolvePrefs(
           prefsByUser.get(userId),
           tzByUser.get(userId),
           rulesByUser.get(userId) ?? [],
@@ -454,6 +422,7 @@ export class NotificationRoutingService {
         orgPolicy,
         availableChannels,
         suppressedChannels: suppressionByUser.get(userId) ?? new Map(),
+        consentedChannels: consentByUser.get(userId) ?? new Set(),
       });
       results.set(userId, { ...result, userId });
     }

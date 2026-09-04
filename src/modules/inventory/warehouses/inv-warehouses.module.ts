@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { InvWarehousesController } from "./inv-warehouses.controller";
 import { InvWarehousesService } from "./inv-warehouses.service";
+import { InvWarehouseLocationsService } from "./inv-warehouse-locations.service";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
 
 @Module({
@@ -9,7 +10,7 @@ import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
   // application fails to boot — typecheck cannot see it, because DI is resolved at runtime.
   imports: [InvStockEngineModule],
   controllers: [InvWarehousesController],
-  providers: [InvWarehousesService],
-  exports: [InvWarehousesService],
+  providers: [InvWarehousesService, InvWarehouseLocationsService],
+  exports: [InvWarehousesService, InvWarehouseLocationsService],
 })
 export class InvWarehousesModule {}

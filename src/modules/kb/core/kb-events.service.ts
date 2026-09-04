@@ -3,6 +3,8 @@ import { kbEvents, type KbEventType } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { logger } from "../../../common/logger/logger.service";
 
 export interface RecordKbEventOptions {
   actorMembershipId?: number | null;
@@ -46,5 +48,48 @@ export class KbEventsService {
       },
       { orgId },
     );
+  }
+
+  /**
+   * The same event, taken OFF the request path — for the read routes only.
+   *
+   * `recordView` (every article GET) and `search` (every search) each awaited an insert
+   * into `kb_events` on the request's own tenant transaction. That is a write on the two
+   * hottest read paths in the module, and it costs three separate things: the reader waits
+   * on it, a WAL record is produced for a page view, and — the one that cannot be tuned
+   * away — neither route can ever be served from a read replica, because a replica cannot
+   * take the insert at all. `runInReplicaTenantRead` exists precisely for reads like these.
+   *
+   * `registerAfterCommit` is the right one of the three mechanisms here. The event is
+   * analytics: it must not be recorded if the read itself rolled back, and losing one to a
+   * crash costs a row in a usage chart, not correctness — so the durability of the outbox
+   * would be paying for something nobody needs, and staying inside the transaction is what
+   * we are removing. `TenantContextInterceptor` drains each hook in its own
+   * `runInNewTenantTransaction`, does not await it before answering, and logs and reports
+   * a failure rather than swallowing it.
+   *
+   * The fallback is not decoration. `registerAfterCommit` returns false when there is no
+   * ambient context — the state every `@NoTenantTransaction()` KB route is in — and
+   * dropping the event there would be a silent hole that only shows up as a suspiciously
+   * quiet analytics table. It runs inline instead, which is exactly what these callers did
+   * before.
+   */
+  recordDetached(
+    orgId: string,
+    eventType: KbEventType,
+    options: RecordKbEventOptions = {},
+  ): Promise<void> {
+    const deferred = registerAfterCommit(async () => {
+      await this.record(orgId, eventType, options);
+    });
+    if (deferred) return Promise.resolve();
+
+    return this.record(orgId, eventType, options).catch((error: unknown) => {
+      logger.error("[kb] could not record a KB event on the inline fallback path", {
+        orgId,
+        eventType,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 }

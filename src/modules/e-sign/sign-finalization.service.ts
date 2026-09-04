@@ -287,7 +287,9 @@ export class SignFinalizationService {
     const envelope = await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "Final PDF is not available yet");
     if (!envelope.finalPdfFileKey) throw new NotFoundException("Final PDF is not available yet");
 
-    const url = await this.storage.getFileUrl(orgId, envelope.finalPdfFileKey, SIGNED_URL_EXPIRY_SECONDS);
+    const url = await this.storage.getFileUrl(orgId, envelope.finalPdfFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+      preauthorized: true,
+    });
     await this.audit.record({
       orgId,
       envelopeId,
@@ -303,7 +305,9 @@ export class SignFinalizationService {
   async getCertificateUrl(orgId: string, envelopeId: number, scope: EnvelopeViewScope) {
     await mustGetVisibleEnvelope(this.db, orgId, envelopeId, scope, "This envelope has not been completed yet");
     const cert = await this.getCertificate(orgId, envelopeId);
-    const url = await this.storage.getFileUrl(orgId, cert.certificateFileKey, SIGNED_URL_EXPIRY_SECONDS);
+    const url = await this.storage.getFileUrl(orgId, cert.certificateFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
+      preauthorized: true,
+    });
     return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS, certificate: cert };
   }
 

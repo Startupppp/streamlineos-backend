@@ -1,19 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, inArray, isNull, lt } from "drizzle-orm";
-import { notifications, projectApprovals, users, organizationMembers } from "../../db/schema";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { notifications, projectApprovals, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import { actingMembershipId } from "../../common/auth/principal";
 import { MailService } from "../mail/mail.service";
-import {
-  ACTOR_COLUMNS,
-  KIND_ORDER,
-  NOTIF_COLUMNS,
-  deduplicate,
-  stableSortItems,
-} from "./unified-inbox-projections";
+import { KIND_ORDER, deduplicate, stableSortItems } from "./unified-inbox-projections";
 import { BroadcastsService } from "./broadcasts.service";
+import { fetchBroadcastItems, fetchNotificationItems } from "./unified-inbox-sources";
 import { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
@@ -104,7 +99,8 @@ export class UnifiedInboxService {
     const [notifItems, broadcastItems, mailResult, approvalItems] =
       await Promise.all([
         wantsNotifications
-          ? this.fetchNotifications(
+          ? fetchNotificationItems(
+              this.db,
               orgId,
               actingMembershipId(user.principal),
               limit + 1,
@@ -113,7 +109,7 @@ export class UnifiedInboxService {
             )
           : ([] as NotificationInboxItem[]),
         wantsBroadcasts
-          ? this.fetchBroadcasts(orgId, userId, limit + 1, cursorState.b, actingMembershipId(user.principal))
+          ? fetchBroadcastItems(this.broadcasts, orgId, userId, limit + 1, cursorState.b, actingMembershipId(user.principal))
           : ([] as BroadcastInboxItem[]),
         wantsMail && canViewMail
           ? this.fetchMail(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.m)
@@ -150,12 +146,50 @@ export class UnifiedInboxService {
       .reverse()
       .find((i): i is BuildApprovalInboxItem => i.kind === "build_approval");
 
+    // Mail resumes from the last message actually DELIVERED, the way n/b/a do.
+    //
+    // It used to resume from `nextMailCursor` — the end of the batch it FETCHED.
+    // The merge keeps `limit` items out of four sources fetched at `limit + 1`
+    // each, so on any mixed page most of the mail batch is trimmed, and stepping
+    // the cursor past the whole batch meant those messages were never delivered
+    // to anyone. Silently: the reader sees a full page and scrolls on, and the
+    // gap widens by up to a page every time.
+    //
+    // A mail cursor cannot address a message inside its own batch — it is a map
+    // of per-account provider page tokens and skips — so the position after the
+    // delivered prefix is asked for rather than computed: one more read of
+    // exactly that prefix, whose `nextCursor` is the boundary wanted. It runs
+    // only on a page that actually trimmed mail, is bounded by `limit`, and on
+    // the mirror path it is the same indexed keyset walk the page itself used.
+    //
+    // The delivered count is the leading run that reached the page, not the
+    // total: the merge orders on (timestamp, kind, id) while the provider orders
+    // on date alone, so a timestamp tie could in principle place a later message
+    // ahead of an earlier one. Counting the prefix re-delivers that one message
+    // rather than skipping the one behind it.
+    const deliveredMailKeys = new Set(
+      page
+        .filter((i): i is MailInboxItem => i.kind === "mail")
+        .map((i) => i.dedupKey),
+    );
+    let deliveredMail = 0;
+    while (
+      deliveredMail < mailResult.items.length &&
+      deliveredMailKeys.has(mailResult.items[deliveredMail].dedupKey)
+    )
+      deliveredMail++;
+
     const nextState: InboxCursorState = {
       n: lastNotif ? lastNotif.id : cursorState.n,
       b: lastBroadcast ? lastBroadcast.id : cursorState.b,
-      m: lastMail
-        ? (mailResult.nextMailCursor ?? cursorState.m)
-        : cursorState.m,
+      m: await this.nextMailPosition(
+        orgId,
+        userId,
+        actingMembershipId(user.principal),
+        cursorState.m,
+        mailResult,
+        deliveredMail,
+      ),
       a: lastApproval ? lastApproval.id : cursorState.a,
     };
 
@@ -180,95 +214,36 @@ export class UnifiedInboxService {
   }
 
   /**
-   * Also keyed on `membership_id` — see `countNotificationUnread` for the numbers.
-   * `idx_notifications_list_cursor` is `(org_id, membership_id, id DESC)
-   * WHERE deleted_at IS NULL AND archived_at IS NULL`, which is this query exactly;
-   * on `user_id` it cost 2,043 blocks to return 20 rows and grew with the tenant.
+   * Where the mail source should resume, given how much of the batch it fetched
+   * was actually delivered.
+   *
+   * Fully delivered — or nothing fetched at all — and the batch's own
+   * `nextMailCursor` is the answer. Partly delivered, and the boundary is
+   * re-read: `limit`-bounded, one read, and never on a page that trimmed no
+   * mail. Nothing delivered leaves the position untouched, so the same batch is
+   * offered again on the next page rather than being skipped.
    */
-  private async fetchNotifications(
-    orgId: string,
-    membershipId: number | null,
-    fetchLimit: number,
-    cursor: number | null,
-    unreadOnly: boolean,
-  ): Promise<NotificationInboxItem[]> {
-    if (membershipId === null) return [];
-    const rows = await this.db
-      .select({ ...NOTIF_COLUMNS, ...ACTOR_COLUMNS })
-      .from(notifications)
-      .leftJoin(users, eq(users.id, notifications.actorUserId))
-      .where(
-        and(
-          eq(notifications.orgId, orgId),
-          eq(notifications.membershipId, membershipId),
-          isNull(notifications.deletedAt),
-          isNull(notifications.archivedAt),
-          cursor !== null ? lt(notifications.id, cursor) : undefined,
-          unreadOnly ? eq(notifications.isRead, false) : undefined,
-        ),
-      )
-      .orderBy(desc(notifications.id))
-      .limit(fetchLimit);
-
-    return rows.map(
-      (row): NotificationInboxItem => ({
-        kind: "notification",
-        id: Number(row.id),
-        notifType: row.type,
-        priority: row.priority,
-        category: row.category,
-        sourceModule: row.sourceModule ?? "system",
-        eventKey: row.eventKey ?? null,
-        subject: row.title,
-        body: row.message,
-        deepLink: row.link ?? null,
-        isRead: row.isRead,
-        pinned: row.pinned,
-        timestamp: row.createdAt.toISOString(),
-        dedupKey: `notification:${String(row.id)}`,
-        actor: row.actorId
-          ? {
-              id: row.actorId,
-              name: row.actorName ?? null,
-              image: row.actorImage ?? null,
-            }
-          : null,
-      }),
-    );
-  }
-
-  private async fetchBroadcasts(
+  private async nextMailPosition(
     orgId: string,
     userId: string,
-    fetchLimit: number,
-    cursor: number | null,
-    membershipId?: number | null,
-  ): Promise<BroadcastInboxItem[]> {
-    const rows = await this.broadcasts.listInboxPage(
+    membershipId: number | null,
+    current: string | null,
+    fetched: { items: MailInboxItem[]; nextMailCursor: string | null },
+    delivered: number,
+  ): Promise<string | null> {
+    if (fetched.items.length === 0) return current;
+    if (delivered === fetched.items.length) return fetched.nextMailCursor ?? current;
+    if (delivered === 0) return current;
+    const boundary = await this.mail.listMessages(
       orgId,
       userId,
-      fetchLimit,
-      cursor,
       membershipId,
+      "inbox",
+      "all",
+      delivered,
+      current ?? undefined,
     );
-
-    return rows.map(
-      (row): BroadcastInboxItem => ({
-        kind: "broadcast",
-        id: row.id,
-        notifType: row.type,
-        priority: row.priority,
-        category: row.category,
-        sourceModule: "notification",
-        subject: row.title,
-        body: row.message,
-        deepLink: null,
-        isRead: false,
-        dedupKey: `broadcast:${String(row.id)}`,
-        timestamp: (row.sentAt ?? row.createdAt).toISOString(),
-        actor: null,
-      }),
-    );
+    return boundary.nextCursor ?? current;
   }
 
   private async fetchMail(
@@ -382,24 +357,20 @@ export class UnifiedInboxService {
     return Number(rows[0]?.cnt ?? 0);
   }
 
+  /**
+   * Counted against `mail_message_metadata` when every connected mailbox's copy
+   * of the inbox is fresh, and only then fanned out to the providers — see
+   * `MailService.countUnread`. This used to be the fanout unconditionally: a live
+   * Gmail/Graph fetch of `MAIL_COUNT_SCAN_LIMIT` messages per account, on a badge
+   * every authenticated page renders. The scan limit is now only the cold path's
+   * sample size.
+   */
   private async countMailUnread(
     orgId: string,
     userId: string,
     membershipId: number | null,
   ): Promise<{ unread: number; exact: boolean }> {
-    const result = await this.mail.listMessages(
-      orgId,
-      userId,
-      membershipId,
-      "inbox",
-      "all",
-      MAIL_COUNT_SCAN_LIMIT,
-      undefined,
-    );
-    return {
-      unread: result.messages.filter((m) => !m.isRead).length,
-      exact: result.messages.length < MAIL_COUNT_SCAN_LIMIT,
-    };
+    return this.mail.countUnread(orgId, userId, membershipId, "inbox", MAIL_COUNT_SCAN_LIMIT);
   }
 
   private async countApprovalPending(orgId: string, userId: string): Promise<number> {

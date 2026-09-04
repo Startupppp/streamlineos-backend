@@ -23,7 +23,6 @@ import { HrPolicyEvaluationService } from "./hr-policy-evaluation.service";
 import { HrPolicyConflictService } from "./hr-policy-conflict.service";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 
-const POLICIES_CACHE = (orgId: string) => `hr:policies:list:${orgId}`;
 const POLICY_CACHE = (orgId: string, id: number) => `hr:policies:detail:${orgId}:${id}`;
 const POLICY_SEARCH_CAP = 500;
 
@@ -127,7 +126,6 @@ export class HrPoliciesService {
       });
 
     await this.upsertScopes(orgId, policy.id, input.scopes);
-    await this.cache.invalidate(POLICIES_CACHE(orgId));
     return this.getById(orgId, policy.id);
   }
 
@@ -162,10 +160,7 @@ export class HrPoliciesService {
       await this.upsertScopes(orgId, policyId, input.scopes);
     }
 
-    await Promise.all([
-      this.cache.invalidate(POLICIES_CACHE(orgId)),
-      this.cache.invalidate(POLICY_CACHE(orgId, policyId)),
-    ]);
+    await this.cache.invalidate(POLICY_CACHE(orgId, policyId));
     return this.getById(orgId, policyId);
   }
 
@@ -211,7 +206,6 @@ export class HrPoliciesService {
       scopeValue: s.scopeValue,
     }));
     await this.upsertScopes(orgId, newPolicy.id, scopesToCopy);
-    await this.cache.invalidate(POLICIES_CACHE(orgId));
     return this.getById(orgId, newPolicy.id);
   }
 
@@ -251,10 +245,7 @@ export class HrPoliciesService {
         );
     });
 
-    await Promise.all([
-      this.cache.invalidate(POLICIES_CACHE(orgId)),
-      this.cache.invalidate(POLICY_CACHE(orgId, policyId)),
-    ]);
+    await this.cache.invalidate(POLICY_CACHE(orgId, policyId));
     return this.getById(orgId, policyId);
   }
 
@@ -301,10 +292,7 @@ export class HrPoliciesService {
       .returning({ id: hrPolicies.id });
     if (archived.length === 0) throw new NotFoundException("Policy not found");
 
-    await Promise.all([
-      this.cache.invalidate(POLICIES_CACHE(orgId)),
-      this.cache.invalidate(POLICY_CACHE(orgId, policyId)),
-    ]);
+    await this.cache.invalidate(POLICY_CACHE(orgId, policyId));
     return { success: true };
   }
 
@@ -355,7 +343,6 @@ export class HrPoliciesService {
       );
     }
 
-    await this.cache.invalidate(POLICIES_CACHE(orgId));
     return { seeded: true, count: insertedPolicies.length };
   }
 

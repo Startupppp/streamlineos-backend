@@ -8,6 +8,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -21,7 +22,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbSourcesService } from "./kb-sources.service";
 import {
   createKbSourceNoteSchema,
+  kbSourcesListQuerySchema,
   type CreateKbSourceNoteInput,
+  type KbSourcesListQuery,
 } from "./dto/kb-sources.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -37,8 +40,12 @@ export class KbSourcesController {
 
   @Get("sources")
   @RequirePermission("kb:pages:view")
-  async list(@CurrentUser() u: CurrentUserContext) {
-    return this.sources.list(u.orgId);
+  @Validate({ query: kbSourcesListQuerySchema })
+  async list(
+    @CurrentUser() u: CurrentUserContext,
+    @Query() query: KbSourcesListQuery,
+  ) {
+    return this.sources.list(u.orgId, query);
   }
 
   /**

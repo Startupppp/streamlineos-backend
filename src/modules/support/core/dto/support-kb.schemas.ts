@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isWellFormedStorageKey } from "../../../storage/storage-key";
 
 export const createKbCategorySchema = z.object({
   name: z.string().min(1).max(200),
@@ -63,7 +64,12 @@ const KB_ATTACHMENT_ALLOWED_MIME_TYPES = [
 
 export const createKbAttachmentSchema = z.object({
   fileName: z.string().trim().min(1, "File name is required").max(255),
-  fileKey: z.string().trim().min(1, "File key is required").max(1024),
+  fileKey: z
+    .string()
+    .trim()
+    .min(1, "File key is required")
+    .max(1024)
+    .refine(isWellFormedStorageKey, "Invalid file key"),
   fileUrl: z.string().trim().max(2048).optional(),
   fileSize: z.number().int().positive().max(KB_ATTACHMENT_MAX_FILE_SIZE, "File too large (max 10MB)"),
   mimeType: z.enum(KB_ATTACHMENT_ALLOWED_MIME_TYPES, {

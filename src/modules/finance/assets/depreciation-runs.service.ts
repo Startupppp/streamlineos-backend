@@ -1,21 +1,15 @@
-import {
-  BadRequestException, Inject, Injectable,
-  UnprocessableEntityException,
-} from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBefore } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import {
-  bulkUpdateFromValues,
-  type BulkUpdateRow,
-} from "../../../common/db/bulk-update";
+import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { JournalPostingService, type DraftLine } from "../../accounting/posting/journal-posting.service";
+import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 import {
   accFixedAssets, accAssetCategories, accDepreciationRuns, accDepreciationSchedules,
 } from "../../../db/schema/accounting/finance-assets";
@@ -24,6 +18,12 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { systemActor } from "../../../common/auth/system-actor";
 import type { ListRunsQuery } from "./dto/assets.schemas";
 import { DepreciationReverseService } from "./depreciation-reverse.service";
+import {
+  buildAssetAccumulationRows,
+  buildDepreciationLines,
+  categoryAccountIds,
+  groupSchedulesByCategory,
+} from "./depreciation-posting-lines";
 
 @Injectable()
 export class DepreciationRunsService {
@@ -87,66 +87,15 @@ export class DepreciationRunsService {
       throw new BadRequestException(`No scheduled depreciation rows found for period ${periodKey}`);
     }
 
-    const categoryAmounts = new Map<number, {
-      depExpAccountId: number;
-      accumDepAccountId: number;
-      total: number;
-      scheduleIds: number[];
-    }>();
+    const categoryAmounts = groupSchedulesByCategory(scheduleRows);
 
-    for (const row of scheduleRows) {
-      const catId = row.category.id;
-      const entry = categoryAmounts.get(catId);
-      const amount = Number(row.schedule.amount);
-      if (entry) {
-        entry.total += amount;
-        entry.scheduleIds.push(row.schedule.id);
-      } else {
-        categoryAmounts.set(catId, {
-          depExpAccountId: row.category.depreciationExpenseAccountId,
-          accumDepAccountId: row.category.accumulatedDepreciationAccountId,
-          total: amount,
-          scheduleIds: [row.schedule.id],
-        });
-      }
-    }
-
-    const allAccountIds = Array.from(categoryAmounts.values()).flatMap((c) => [
-      c.depExpAccountId,
-      c.accumDepAccountId,
-    ]);
     const accountRows = await this.db
       .select({ id: ledgerAccounts.id, code: ledgerAccounts.code })
       .from(ledgerAccounts)
-      .where(and(inArray(ledgerAccounts.id, [...new Set(allAccountIds)]), eq(ledgerAccounts.orgId, u.orgId)));
+      .where(and(inArray(ledgerAccounts.id, categoryAccountIds(categoryAmounts)), eq(ledgerAccounts.orgId, u.orgId)));
     const codeMap = new Map(accountRows.map((a) => [a.id, a.code]));
 
-    const lines: DraftLine[] = [];
-    let totalAmount = 0;
-
-    for (const cat of categoryAmounts.values()) {
-      const depExpCode = codeMap.get(cat.depExpAccountId);
-      const accumDepCode = codeMap.get(cat.accumDepAccountId);
-      if (!depExpCode || !accumDepCode) {
-        throw new UnprocessableEntityException(
-          "Depreciation expense or accumulated depreciation account not found in CoA",
-        );
-      }
-      const amt = Math.round(cat.total * 10000) / 10000;
-      totalAmount += amt;
-      lines.push({
-        accountCode: depExpCode,
-        debit: amt,
-        credit: 0,
-        description: `Depreciation for ${periodKey}`,
-      });
-      lines.push({
-        accountCode: accumDepCode,
-        debit: 0,
-        credit: amt,
-        description: `Accumulated depreciation for ${periodKey}`,
-      });
-    }
+    const { lines, totalAmount: roundedTotal } = buildDepreciationLines(categoryAmounts, codeMap, periodKey);
 
     const entry = await this.posting.persistJournalEntry({
       orgId: u.orgId,
@@ -158,8 +107,6 @@ export class DepreciationRunsService {
       createdBy: u.userId,
       lines,
     });
-
-    const roundedTotal = Math.round(totalAmount * 10000) / 10000;
 
     const run = await this.db.transaction(async (tx) => {
       const [insertedRun] = await tx
@@ -197,32 +144,10 @@ export class DepreciationRunsService {
           ),
         );
 
-      const assetAmounts = new Map<number, number>();
-      for (const row of scheduleRows) {
-        const prev = assetAmounts.get(row.asset.id) ?? 0;
-        assetAmounts.set(row.asset.id, prev + Number(row.schedule.amount));
-      }
-
       /*
-       * One statement for the whole register. The per-asset accumulated figure
-       * differs, so this is the `UPDATE … FROM (VALUES …)` shape rather than an
-       * `inArray`, and the tenant predicate the per-row update was missing is
-       * now in the WHERE.
+       * One statement for the whole register. The tenant predicate the per-row
+       * update was missing is in the WHERE.
        */
-      const assetRows: BulkUpdateRow[] = [];
-      for (const [assetId, amt] of assetAmounts) {
-        const asset = scheduleRows.find((r) => r.asset.id === assetId)?.asset;
-        if (!asset) continue;
-        const newAccum = Math.round((Number(asset.accumulatedDepreciation) + amt) * 10000) / 10000;
-        const depreciable = Number(asset.acquisitionCost) - Number(asset.salvageValue);
-        assetRows.push({
-          key: assetId,
-          values: [
-            String(newAccum),
-            newAccum >= depreciable - 0.0001 ? "FULLY_DEPRECIATED" : "ACTIVE",
-          ],
-        });
-      }
       await bulkUpdateFromValues(tx, {
         table: accFixedAssets,
         orgId: u.orgId,
@@ -232,7 +157,7 @@ export class DepreciationRunsService {
           { column: "status", type: "acc_asset_status" },
         ],
         touch: ["updated_at"],
-        rows: assetRows,
+        rows: buildAssetAccumulationRows(scheduleRows),
       });
 
       return insertedRun;

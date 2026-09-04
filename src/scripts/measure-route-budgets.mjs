@@ -31,6 +31,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveMeasurementRole } from "./benchmark-role-guard.mjs";
 
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const BUDGETS_PATH = join(BACKEND_ROOT, "contracts", "route-budgets.json");
@@ -200,6 +201,20 @@ function selfTest() {
     fail("tally", `expected 2 written / 3 refused, got ${written.length}/${refused.length}`);
   else pass("tally — 2 written, 3 refused, 1 unlinked");
 
+  // PRD-C079: the manifest may only record the role its input artifact observed.
+  if (resolveMeasurementRole({ tenant: "org-1" }).ok)
+    fail("role-absent-is-refused", "an artifact with no observed role was accepted");
+  else pass("role-absent-is-refused — an artifact carrying no `role` cannot populate measurement.role");
+
+  if (resolveMeasurementRole({ role: "neondb_owner (rolbypassrls = true)" }).ok)
+    fail("owner-role-is-refused", "a BYPASSRLS role string was accepted as provenance");
+  else pass("owner-role-is-refused — a role not proven non-BYPASSRLS is refused");
+
+  const proven = resolveMeasurementRole({ role: "streamline_app (rolbypassrls = false, tenant GUC set)" });
+  if (!proven.ok || proven.role !== "streamline_app (rolbypassrls = false, tenant GUC set)")
+    fail("proven-role-is-carried", `an observed non-BYPASSRLS role was not carried through: ${String(proven.why)}`);
+  else pass("proven-role-is-carried — an observed non-BYPASSRLS role reaches measurement.role verbatim");
+
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
     process.exit(1);
@@ -261,6 +276,16 @@ if (dbCallsPath) {
   }
 }
 
+// PRD-C079: the role provenance is READ off the artifact that was actually measured. It used to
+// be a string literal here, which survives being pointed at the owner and turns the manifest's own
+// RLS claim into an assertion nobody took. run-read-cost-budgets.mjs records what pg_roles said.
+const measuredRoleResolution = resolveMeasurementRole(artifact);
+if (!measuredRoleResolution.ok) {
+  process.stderr.write(`measure-route-budgets: REFUSING TO WRITE — ${measuredRoleResolution.why}\n`);
+  process.exit(1);
+}
+const measuredRole = measuredRoleResolution.role;
+
 manifest.measurement = {
   method: "read-path-explain",
   commit: gitCommit(),
@@ -270,7 +295,7 @@ manifest.measurement = {
     "measured route so the recorded commit stays the one the numbers describe.",
   takenAt: artifact.generatedAt ?? new Date().toISOString(),
   database: arg("database") ?? "scratch_perf_seed",
-  role: "streamline_app (rolbypassrls = false, tenant GUC set)",
+  role: measuredRole,
   referenceTenant: artifact.tenant,
   referenceProfile: artifact.profile,
   minorityTenant: minority?.tenant ?? null,

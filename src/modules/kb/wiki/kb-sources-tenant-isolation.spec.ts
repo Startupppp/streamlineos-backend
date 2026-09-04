@@ -1,5 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { KbSourcesService } from "./kb-sources.service";
+import { kbSourcesListQuerySchema } from "./dto/kb-sources.schemas";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -13,6 +14,8 @@ function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
 describe("KbSourcesService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
+  /* The list is a keyset page now; the tenant predicate this file guards is unchanged. */
+  const FIRST_PAGE = kbSourcesListQuerySchema.parse({});
 
   const storage = {} as never;
   const indexing = {} as never;
@@ -28,6 +31,7 @@ describe("KbSourcesService — cross-tenant isolation", () => {
               wheres.push(w);
               return Object.assign(Promise.resolve([]), {
                 orderBy: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([]) })),
+                limit: jest.fn().mockResolvedValue([]),
               });
             }),
           }),
@@ -41,7 +45,7 @@ describe("KbSourcesService — cross-tenant isolation", () => {
     const { db, wheres } = makeDb();
     const svc = new KbSourcesService(db, storage, indexing, config);
 
-    await svc.list(ATTACKER);
+    await svc.list(ATTACKER, FIRST_PAGE);
 
     expect(wheres.length).toBeGreaterThan(0);
     const vals = wheres.flatMap(w => sqlValues(w));
@@ -53,8 +57,8 @@ describe("KbSourcesService — cross-tenant isolation", () => {
     const { db } = makeDb();
     const svc = new KbSourcesService(db, storage, indexing, config);
 
-    const result = await svc.list(OWNER);
+    const page = await svc.list(OWNER, FIRST_PAGE);
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(Array.isArray(page.data)).toBe(true);
   });
 });

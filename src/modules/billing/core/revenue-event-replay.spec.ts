@@ -156,7 +156,7 @@ describe("a re-settled provider event cannot post a second revenue row", () => {
     const { db, rows } = makeOutboxCapturingDb();
     const revenue = await buildRevenueService(db);
 
-    const entry = { type: "refund" as const, orgId: ORG, mrr: 0, amount: 49900 };
+    const entry = { type: "refund" as const, orgId: ORG, mrr: 0, amount: 49900, currency: "INR" };
     await revenue.emit(db, entry);
     await revenue.emit(db, entry);
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { isWellFormedStorageKey } from "../../../storage/storage-key";
 
 export const createCalibrationSchema = z.object({
   jobPostingId: z.number().int().positive().optional(),
@@ -78,7 +79,7 @@ const VAULT_DOCUMENT_TYPES = ["AADHAR", "PAN", "PASSPORT", "CERTIFICATE", "OFFER
 
 export const addVaultDocumentSchema = z.object({
   filename: z.string().min(1),
-  s3Key: z.string().min(1),
+  s3Key: z.string().min(1).max(1024).refine(isWellFormedStorageKey, "Invalid file key"),
   fileUrl: z.string().url(),
   fileType: z.string().min(1),
   fileSize: z.number().int().nonnegative(),

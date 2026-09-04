@@ -90,6 +90,12 @@ const TIERS: Record<string, Tier> = {
   "settings:email-template-test": { limit: 5, windowSecs: 3600 },
   "mail:send": { limit: 30, windowSecs: 60 },
   "mail:reply": { limit: 30, windowSecs: 60 },
+  // An arbitrary To:, an arbitrary subject and arbitrary HTML, sent from the
+  // platform's own sender. Its sibling settings/email-templates/test has been
+  // limited since it could aim the sender anywhere; this route could do the same
+  // thing with a free-form body and carried no limiter at all. 60/hour is more
+  // than a recruiter working a pipeline needs and far short of a flood.
+  "hr:communications-send": { limit: 60, windowSecs: 3600 },
   "hr:attendance-report": { limit: 5, windowSecs: 3600 },
   "hr:employee-backfill": { limit: 3, windowSecs: 3600 },
   "hr:employee-bulk-onboard": { limit: 10, windowSecs: 3600 },
@@ -128,6 +134,17 @@ const TIERS: Record<string, Tier> = {
   // without letting a single user monopolise the embedding + ANN budget.
   "search:global": { limit: 30, windowSecs: 60 },
   "public:job-apply": { limit: 3, windowSecs: 3600 },
+  // POST /csat/:surveyId/responses is @Public and unauthenticated, and it is the
+  // SECOND CSAT submit surface in the repository. The first, support-csat, is
+  // "support:csat-submit" at 5/hour; this one carried nothing, so a survey id is
+  // an unbounded write. Matched to the sibling rather than invented.
+  "csat:submit": { limit: 5, windowSecs: 3600 },
+  // POST /internal/audit is the FOURTH INTERNAL_API_SECRET route. The other three
+  // (auth:google, auth:session-exchange, auth:session-data) were limited precisely
+  // because a leaked shared secret is otherwise unbounded; this one was missed, so
+  // a leaked secret floods the audit log. Webhook order, because a real internal
+  // caller bursts: the same 600/60 as "webhook:email" and "billing:webhook".
+  "internal:audit": { limit: 600, windowSecs: 60 },
   "public:referrer-register": { limit: 3, windowSecs: 3600 },
   "public:intake": { limit: 5, windowSecs: 3600 },
   "public:form-submit": { limit: 5, windowSecs: 3600 },

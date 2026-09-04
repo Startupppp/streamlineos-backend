@@ -54,29 +54,63 @@ interface MemberRow {
   notificationPreference: string;
 }
 
-function makeService(members: MemberRow[]): {
+interface SubscriptionRow {
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+interface QueryBuilder {
+  from: () => QueryBuilder;
+  innerJoin: () => QueryBuilder;
+  where: (clause: SQL) => Promise<unknown[]>;
+}
+
+/**
+ * The fan-out issues two shapes of read: the member lookup (which joins
+ * `organization_members`) and the subscription lookup (which does not). The
+ * builder distinguishes them by whether `innerJoin` was called, so a test can
+ * count subscription reads without the member lookup polluting the tally.
+ * `where` keeps every clause in call order, member lookup first.
+ */
+function makeService(
+  members: MemberRow[],
+  subscriptions: SubscriptionRow[] = [],
+): {
   service: WebPushService;
   where: SQL[];
+  subscriptionReads: () => number;
+  subscriptionWhere: SQL[];
 } {
   const where: SQL[] = [];
+  const subscriptionWhere: SQL[] = [];
   const db = {
-    select: jest.fn(() => ({
-      from: jest.fn(() => ({
-        innerJoin: jest.fn(() => ({
-          where: jest.fn((clause: SQL) => {
-            where.push(clause);
-            return Promise.resolve(members);
-          }),
-        })),
-      })),
-    })),
+    select: jest.fn(() => {
+      let joined = false;
+      const builder: QueryBuilder = {
+        from: () => builder,
+        innerJoin: () => {
+          joined = true;
+          return builder;
+        },
+        where: (clause: SQL) => {
+          where.push(clause);
+          if (joined) return Promise.resolve(members);
+          subscriptionWhere.push(clause);
+          return Promise.resolve(subscriptions);
+        },
+      };
+      return builder;
+    }),
+    delete: jest.fn(() => ({ where: jest.fn(() => Promise.resolve()) })),
   };
   const service = new WebPushService(
     db as unknown as Db,
     config,
     { execute: jest.fn() } as unknown as ExternalEffectLedger,
   );
-  return { service, where };
+  return { service, where, subscriptionReads: () => subscriptionWhere.length, subscriptionWhere };
 }
 
 function member(userId: string, overrides: Partial<MemberRow> = {}): MemberRow {

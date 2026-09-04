@@ -28,7 +28,7 @@ import {
   dealPredictionPrompt,
   leadScoringPrompt,
   nextActionPrompt,
-} from "../prompts/crm.prompts";
+} from "../prompts/crm-scoring.prompts";
 import {
   ChurnRiskSchema,
   DealPredictionSchema,

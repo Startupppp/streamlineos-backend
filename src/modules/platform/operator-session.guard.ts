@@ -11,11 +11,10 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { OPERATOR_GRANT_KEY } from "./require-operator-grant.decorator";
 import type { OperatorScope } from "./platform-operator-access.service";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
+import { resolveClientIp } from "../../common/http/client-ip";
 
 function ipOf(req: Request): string | undefined {
-  const fwd = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(fwd) ? fwd[0] : fwd;
-  return raw?.split(",")[0]?.trim() ?? req.ip ?? undefined;
+  return resolveClientIp(req);
 }
 
 @Injectable()

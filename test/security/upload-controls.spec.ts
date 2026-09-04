@@ -290,8 +290,20 @@ describe("StorageController upload and download controls", () => {
       }
     });
 
-    it("F2 — an unlisted mime passes validateMagicBytes, and the type allowlist is what stops it", async () => {
-      expect(validateMagicBytes(Buffer.from("MZ\x90\x00"), "application/x-msdownload")).toBe(true);
+    /**
+     * REWRITTEN, and it now asserts the STRONGER behaviour rather than the one it found.
+     *
+     * This case used to pin `validateMagicBytes(…, "application/x-msdownload") === true` — an
+     * unlisted MIME skipped magic-byte validation entirely, so the type allowlist was the only
+     * thing standing in front of a declared `application/x-anything`, and the declared type is
+     * the one input the caller fully controls. `299cd1009` made the table fail CLOSED. The
+     * assertion is flipped to `false` to hold that, not relaxed: an accepted type must be one
+     * this file can actually verify, and the allowlist is now the SECOND refusal rather than
+     * the only one. The defence-in-depth half is asserted below it.
+     */
+    it("F2 — an unlisted mime fails validateMagicBytes closed, and the type allowlist refuses it too", async () => {
+      expect(validateMagicBytes(Buffer.from("MZ\x90\x00"), "application/x-msdownload")).toBe(false);
+      expect(validateMagicBytes(MAGIC["application/pdf"]!, "application/x-anything")).toBe(false);
 
       await expect(
         controller.upload(fileOf("application/x-msdownload", Buffer.from("MZ\x90\x00")), "uploads", user()),
@@ -392,7 +404,16 @@ describe("StorageController upload and download controls", () => {
     it("CONTROL: an ordinary same-org key is served, so the denials above are not a blanket 404", async () => {
       const res = mockRes();
       await controller.download({ key: `${ORG}/uploads/x.png`, expiresIn: 3600 }, user(), res);
-      expect(storage.getFileUrl).toHaveBeenCalledWith(ORG, `${ORG}/uploads/x.png`, 3600);
+      /**
+       * The full argument list, not a prefix. `299cd1009` added the `{ preauthorized: true }`
+       * option, which tells `StorageService.getFileUrl` that the controller has ALREADY run
+       * `assertKeyReadable` and it need not repeat the check. That flag is an authorization
+       * claim, so it is asserted here rather than allowed to arrive unobserved: a handler that
+       * set it without the preceding assertion would be signing any key in the org.
+       */
+      expect(storage.getFileUrl).toHaveBeenCalledWith(ORG, `${ORG}/uploads/x.png`, 3600, undefined, {
+        preauthorized: true,
+      });
       expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example/x" });
     });
   });

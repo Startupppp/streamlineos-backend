@@ -107,9 +107,9 @@ describe("stored module keys", () => {
 });
 
 describe("money and surface are two facts, not one", () => {
-  const TODAYS_CORE = ["kb","home","chat","mail","calendar","notifications","workflows","blog","directory"];
+  const TODAYS_CORE = ["kb","home","chat","mail","calendar","notifications","workflows","blog","directory","tasks"];
 
-  it("derives exactly the nine keys that were compiled into the service", () => {
+  it("derives exactly the keys that were compiled into the service", () => {
     expect(coreModuleIds().sort()).toEqual([...TODAYS_CORE].sort());
   });
 

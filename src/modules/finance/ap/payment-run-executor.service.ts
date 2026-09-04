@@ -21,9 +21,9 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
-import { roundDecimal, toDecimal } from "../../accounting/core/money.util";
+import { multiplyDecimals, roundDecimal, toDecimal } from "../../accounting/core/money.util";
 import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
-import { RateResolverService } from "../controls/rate-resolver.service";
+import { ExchangeRateNotFoundError, RateResolverService } from "../controls/rate-resolver.service";
 import { FxService } from "../controls/fx.service";
 import { systemActor } from "../../../common/auth/system-actor";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -97,7 +97,8 @@ export class PaymentRunExecutorService {
         vendorPaymentId: number;
         currency: string;
         exchangeRate: string;
-        amount: number;
+        /** The scale-2 quantity `vendor_payments.amount` actually recorded. */
+        settledAmount: string;
         userId: string;
       };
       let fxCapture: FxCapture | null = null;
@@ -183,7 +184,7 @@ export class PaymentRunExecutorService {
                 vendorPaymentId: payment.id,
                 currency: billRow.currency,
                 exchangeRate: billRow.exchangeRate,
-                amount: Number(paidAmount),
+                settledAmount: paidAmount,
                 userId,
               };
             }
@@ -244,22 +245,22 @@ export class PaymentRunExecutorService {
       vendorPaymentId: number;
       currency: string;
       exchangeRate: string;
-      amount: number;
+      settledAmount: string;
       userId: string;
     },
     paymentDateIso: string,
   ): Promise<void> {
-    const bookedRate = Number(capture.exchangeRate ?? 1);
-    const baseAmountBooked = (capture.amount * bookedRate).toFixed(4);
+    const bookedRate = capture.exchangeRate ? toDecimal(capture.exchangeRate) : "1";
+    const baseAmountBooked = multiplyDecimals(capture.settledAmount, bookedRate);
 
     try {
-      const settledRate = await this.rateResolver.getRate(
+      const settledRate = await this.rateResolver.getRateString(
         orgId,
         capture.currency,
         baseCurrency,
         new Date(`${paymentDateIso}T00:00:00.000Z`),
       );
-      const baseAmountSettled = (capture.amount * settledRate).toFixed(4);
+      const baseAmountSettled = multiplyDecimals(capture.settledAmount, toDecimal(settledRate));
       const user = systemActor("finance.payment-run.fx-posting", orgId, capture.userId);
 
       await this.fx.postRealizedGainLoss(user, {
@@ -271,8 +272,9 @@ export class PaymentRunExecutorService {
         counterPurpose: "AP",
       });
     } catch (err: unknown) {
+      if (!(err instanceof ExchangeRateNotFoundError)) throw err;
       this.logger.warn(
-        `FX gain/loss post failed for purchase_bill ${capture.billId}: ${err instanceof Error ? err.message : String(err)}`,
+        `No exchange rate for FX on purchase_bill ${capture.billId}: ${err.message}`,
       );
     }
   }

@@ -108,8 +108,7 @@ export class NotificationRetentionService {
       const probe = await this.db.execute(
         sql`SELECT to_regclass(${partition}) IS NOT NULL AS present`,
       );
-      const rows = probe as unknown as Array<Record<string, unknown>>;
-      if (rows[0]?.["present"] !== true) return { detached: 0, dropped: 0 };
+      if (probe[0]?.["present"] !== true) return { detached: 0, dropped: 0 };
 
       await this.db.execute(
         sql`ALTER TABLE IF EXISTS ${sql.raw(parentTable)} DETACH PARTITION ${sql.raw(partition)} CONCURRENTLY`,

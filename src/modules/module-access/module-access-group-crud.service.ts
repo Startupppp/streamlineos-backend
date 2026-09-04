@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, ilike, inArray, ne } from "drizzle-orm";
+import { and, asc, count, eq, ilike, inArray, ne, sql } from "drizzle-orm";
 import { roleAssignments, rolePermissionGrants, roles } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -183,8 +183,8 @@ export class ModuleAccessGroupCrudService {
     const existing = await this.db.query.roles.findFirst({ where: and(eq(roles.id, groupId), eq(roles.orgId, actor.orgId), eq(roles.moduleKey, moduleKey)) });
     if (!existing) throw new NotFoundException("Group not found");
     if (existing.isSystem) throw new ForbiddenException("System groups cannot be deleted");
-    const [assignmentCountRow] = await this.db.select({ cnt: count() }).from(roleAssignments).where(and(eq(roleAssignments.orgId, actor.orgId), eq(roleAssignments.roleId, groupId)));
-    if (Number(assignmentCountRow?.cnt ?? 0) > 0) throw new ConflictException("Cannot delete a group with active member assignments. Remove all members first.");
+    const assigned = await this.db.select({ one: sql`1` }).from(roleAssignments).where(and(eq(roleAssignments.orgId, actor.orgId), eq(roleAssignments.roleId, groupId))).limit(1);
+    if (assigned.length > 0) throw new ConflictException("Cannot delete a group with active member assignments. Remove all members first.");
     await runInTenantTransaction(this.db, async (tx): Promise<void> => {
       await tx.delete(rolePermissionGrants).where(and(eq(rolePermissionGrants.orgId, actor.orgId), eq(rolePermissionGrants.roleId, groupId)));
       await tx.delete(roles).where(and(eq(roles.id, groupId), eq(roles.orgId, actor.orgId)));

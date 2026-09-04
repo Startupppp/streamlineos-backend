@@ -9,8 +9,17 @@ import { NotificationDispatchService } from "../notifications/notification-dispa
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { systemActor } from "../../common/auth/system-actor";
+import { compareDecimals, subtractDecimals, toDecimal } from "../accounting/core/money.util";
 
 type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
+
+/**
+ * `payments.amount` is `numeric(12,2)` while `invoices.total` is `numeric(18,4)`,
+ * so an invoice whose total carries sub-paisa components can never be settled to
+ * the last 0.0050 by any sequence of receipts. That half-paisa is the entire
+ * tolerance — it is a scale reconciliation, not slack for arithmetic error.
+ */
+const PAID_TOLERANCE = "0.0050";
 
 @Injectable()
 export class InvoicesLifecycleService {
@@ -23,7 +32,7 @@ export class InvoicesLifecycleService {
 
   async recomputeInvoiceBalance(invoiceId: number, tx: DbOrTx): Promise<void> {
     const [{ totalPaid }] = await tx
-      .select({ totalPaid: sql<number>`COALESCE(sum(${payments.amount}::numeric), 0)::float` })
+      .select({ totalPaid: sql<string>`COALESCE(sum(${payments.amount}), 0)::text` })
       .from(payments)
       .where(eq(payments.invoiceId, invoiceId));
 
@@ -34,13 +43,14 @@ export class InvoicesLifecycleService {
 
     if (!invoice) return;
 
-    const invTotal = Number(invoice.total);
+    const paid = toDecimal(totalPaid);
+    const outstanding = subtractDecimals(toDecimal(invoice.total), paid);
     const today = new Date().toISOString().slice(0, 10);
     let newStatus = invoice.status;
 
-    if (totalPaid >= invTotal - 0.005) {
+    if (compareDecimals(outstanding, PAID_TOLERANCE) <= 0) {
       newStatus = "PAID";
-    } else if (totalPaid > 0) {
+    } else if (compareDecimals(paid, "0") > 0) {
       newStatus = "PARTIALLY_PAID";
     } else if (invoice.dueDate && invoice.dueDate < today && invoice.status === "ISSUED") {
       newStatus = "OVERDUE";
@@ -49,7 +59,7 @@ export class InvoicesLifecycleService {
     await tx
       .update(invoices)
       .set({
-        amountPaid: totalPaid.toFixed(4),
+        amountPaid: paid,
         status: newStatus,
         ...(newStatus === "PAID" ? { paidAt: new Date() } : {}),
         updatedAt: new Date(),

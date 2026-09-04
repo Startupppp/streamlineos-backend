@@ -1,5 +1,5 @@
 import { boolean, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { surveyForms, surveyVersions } from "./forms";
 import { surveyQuestions } from "./structure";
@@ -36,6 +36,7 @@ export const surveyResponseSessions = pgTable("survey_response_sessions", {
   foreignKey({ columns: [table.orgId, table.versionId], foreignColumns: [surveyVersions.orgId, surveyVersions.id], name: "fk_survey_response_sessions_version_id_org" }).onDelete("cascade"),
   index("idx_survey_response_sessions_survey_submitted").on(table.orgId, table.surveyId, table.submittedAt),
   index("idx_survey_response_sessions_collector").on(table.collectorId),
+  index("idx_survey_response_sessions_org_live_session").on(table.orgId, sql`((metadata->>'liveSessionId'))`),
   unique("uniq_survey_response_sessions_org_id").on(table.orgId, table.id),
 ]);
 

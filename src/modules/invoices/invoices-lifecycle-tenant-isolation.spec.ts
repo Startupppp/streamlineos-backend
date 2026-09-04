@@ -1,5 +1,9 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import { stubService } from "../../test/service-stub.spec-fixtures";
+import type { FinancePostingService } from "../accounting/posting/finance-posting.service";
+import type { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
+import type { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 
 describe("InvoicesLifecycleService — cross-tenant isolation", () => {
@@ -25,9 +29,9 @@ describe("InvoicesLifecycleService — cross-tenant isolation", () => {
 
   it("throws NotFoundException when invoice belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const mockPosting = {} as any;
-    const mockDispatch = { emit: jest.fn() } as any;
-    const mockBus = { trigger: jest.fn() } as any;
+    const mockPosting = stubService<FinancePostingService>({});
+    const mockDispatch = stubService<NotificationDispatchService>({ emit: jest.fn() });
+    const mockBus = stubService<CrmAutomationBusService>({ emit: jest.fn() });
     const svc = new InvoicesLifecycleService(db, mockPosting, mockDispatch, mockBus);
     await expect(svc.voidInvoice(ATTACKER, USER_ID, INVOICE_ID)).rejects.toThrow(NotFoundException);
   });
@@ -35,9 +39,9 @@ describe("InvoicesLifecycleService — cross-tenant isolation", () => {
   it("voids an invoice for the owning org (control — same-tenant)", async () => {
     const invoiceRow = { id: INVOICE_ID, orgId: OWNER, status: "SENT", invoiceNumber: "INV-001" };
     const db = makeDb(invoiceRow);
-    const mockPosting = {} as any;
-    const mockDispatch = { emit: jest.fn() } as any;
-    const mockBus = { trigger: jest.fn() } as any;
+    const mockPosting = stubService<FinancePostingService>({});
+    const mockDispatch = stubService<NotificationDispatchService>({ emit: jest.fn() });
+    const mockBus = stubService<CrmAutomationBusService>({ emit: jest.fn() });
     const svc = new InvoicesLifecycleService(db, mockPosting, mockDispatch, mockBus);
     const result = await svc.voidInvoice(OWNER, USER_ID, INVOICE_ID);
     expect(result).toEqual({ success: true });

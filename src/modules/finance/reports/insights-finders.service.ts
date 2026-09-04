@@ -13,6 +13,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { baseCreditAmount, baseDebitAmount } from "../../accounting/core/journal-base-amount";
 import type { AnomalyFinding } from "./dto/insights.schemas";
 
 export function stableHash(s: string): string {
@@ -184,7 +185,7 @@ export class InsightsFindersService {
       this.db
         .select({
           entryId: journalEntries.id,
-          total: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+          total: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
         })
         .from(journalEntries)
         .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
@@ -204,7 +205,7 @@ export class InsightsFindersService {
           entryId: journalEntries.id,
           entryNumber: journalEntries.entryNumber,
           entryDate: journalEntries.entryDate,
-          total: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+          total: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
         })
         .from(journalEntries)
         .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
@@ -334,8 +335,8 @@ export class InsightsFindersService {
 
       this.db
         .select({
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))

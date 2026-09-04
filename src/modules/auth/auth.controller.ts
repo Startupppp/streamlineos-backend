@@ -1,5 +1,6 @@
 import {
   Body,
+  Header,
   Controller,
   Get,
   HttpCode,
@@ -16,6 +17,7 @@ import { jwtVerify } from "jose";
 import type { Redis } from "@upstash/redis";
 import { REDIS } from "../../common/cache/cache.service";
 import { SESSION_PROOF_ISSUER, SESSION_PROOF_AUDIENCE } from "../../common/auth/backend-claims";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { JwtKeyringService } from "../../common/auth/jwt-keyring.service";
 import { MembershipStateService } from "../../common/auth/membership-state.service";
@@ -53,6 +55,7 @@ import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { resolveClientIpOr } from "../../common/http/client-ip";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
@@ -84,21 +87,32 @@ export class AuthController {
   }
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
-    return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
+    return resolveClientIpOr(req, "unknown");
   }
 
-  private resolveClientContext(req: { ip?: string; headers: Record<string, string> }): {
+  /**
+   * `x-client-ip` is the web tier telling us the browser's address, because the auth bridge
+   * is a server-side fetch and no proxy appends a forwarded-for header to it.
+   *
+   * It is only believed AFTER `internalSecretMatches` has passed. It used to be believed on
+   * every route that called this, including `POST /auth/magic-link/verify`, which is
+   * `@Public()` and carries no secret — so any caller could write any address they liked into
+   * the session record the user later reads as "where you are signed in". `trusted` is not
+   * defaulted: each call site has to say which it is.
+   */
+  private resolveClientContext(
+    req: { ip?: string; headers: Record<string, string> },
+    trusted: "internal-secret-verified" | "untrusted",
+  ): {
     userAgent: string;
     ipAddress: string;
   } {
     const rawUa = req.headers["x-client-user-agent"] ?? req.headers["user-agent"] ?? "";
     const clientApp = req.headers["x-client-app"] ?? req.headers["x-streamlineos-client"] ?? null;
     const userAgent = enrichUserAgent(rawUa, { clientApp });
-    const ipAddress =
-      req.headers["x-client-ip"] ??
-      req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ??
-      req.ip ??
-      "unknown";
+    const declared =
+      trusted === "internal-secret-verified" ? req.headers["x-client-ip"]?.trim() : undefined;
+    const ipAddress = declared || resolveClientIpOr(req, "unknown");
     return { userAgent, ipAddress };
   }
 
@@ -213,7 +227,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link-verify", this.getIp(req));
-    return this.authTokensService.verifyMagicLink(body.token, this.resolveClientContext(req));
+    return this.authTokensService.verifyMagicLink(body.token, this.resolveClientContext(req, "untrusted"));
   }
 
   @Post("google")
@@ -228,7 +242,7 @@ export class AuthController {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
     }
     await this.enforceRateLimit("auth:google", body.email.toLowerCase());
-    return this.authTokensService.googleOAuth(body, this.resolveClientContext(req));
+    return this.authTokensService.googleOAuth(body, this.resolveClientContext(req, "internal-secret-verified"));
   }
 
   @Post("email-otp")
@@ -259,6 +273,10 @@ export class AuthController {
   @Post("session-exchange")
   @Public()
   @HttpCode(200)
+  // PRD-C089 (BREACH) — this body is a bearer token, `app.enableCors({ credentials: true })`
+  // is live, and a compressed length is a cross-origin size oracle. `shouldCompress` checks
+  // this opt-out first, so no content type can overrule it.
+  @Header(NO_COMPRESSION_HEADER, "1")
   @Validate({ body: sessionExchangeSchema })
   async sessionExchange(
     @Body() body: SessionExchangeInput,

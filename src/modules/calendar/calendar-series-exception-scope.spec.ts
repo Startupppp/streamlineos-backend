@@ -28,7 +28,11 @@ const dialect = new PgDialect();
  */
 function makeUpdateChain() {
   const targets: string[] = [];
-  const updateWhere = jest.fn().mockResolvedValue(undefined);
+  const updateWhere = jest
+    .fn()
+    .mockImplementation(() =>
+      Object.assign(Promise.resolve(undefined), { returning: jest.fn().mockResolvedValue([]) }),
+    );
   const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
   const updateFn = jest.fn().mockImplementation((table: unknown) => {
     targets.push(getTableName(table as Parameters<typeof getTableName>[0]));

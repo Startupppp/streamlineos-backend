@@ -255,10 +255,25 @@ export class KbAskService {
     return new Set(rows.map((r) => r.id));
   }
 
+  /**
+   * Re-verification, not a second retrieval — so it has to re-apply BOTH article ACL
+   * dimensions, or it is blind to a revocation in exactly the window it exists to cover.
+   *
+   * It used to re-apply only org, accessible spaces, `status='published'` and the owner
+   * DataScope. `kb_article_restrictions` — the per-article ACL that
+   * `KbCandidateService.article{Keyword,Vector}Candidates` and
+   * `KbSearchService.retrieveTopArticles` all push into the retrieval predicate — was
+   * missing. An article restricted to another membership between the moment retrieval
+   * picked it and the moment the model answered was still cited by title, slug and
+   * space to a reader who could no longer open it.
+   */
   private async resolveVisibleArticles(user: CurrentUserContext, ids: number[]): Promise<Set<number>> {
     const spaceIds = await this.access.getAccessibleSpaceIds(user);
     if (spaceIds.length === 0) return new Set();
-    const ownerFilter = await this.search.articleOwnerFilterFor(user);
+    const [ownerFilter, restrictionFilter] = await Promise.all([
+      this.search.articleOwnerFilterFor(user),
+      this.search.articleRestrictionFilterFor(user),
+    ]);
     const conditions: SQL[] = [
       eq(kbArticles.orgId, user.orgId),
       inArray(kbArticles.id, ids),
@@ -266,6 +281,7 @@ export class KbAskService {
       eq(kbArticles.status, "published"),
     ];
     if (ownerFilter) conditions.push(ownerFilter);
+    if (restrictionFilter) conditions.push(restrictionFilter);
     const rows = await this.db
       .select({ id: kbArticles.id })
       .from(kbArticles)

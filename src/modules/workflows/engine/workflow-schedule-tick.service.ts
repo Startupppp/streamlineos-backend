@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, desc, eq, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -11,6 +11,23 @@ import {
 } from "../../../db/schema";
 import { forEachOrg, type ForEachOrgResult } from "../../../common/tenant/for-each-org";
 import { computeNextCronDate } from "./cron-next";
+
+/**
+ * Most due schedules one organisation may claim in a single tick.
+ *
+ * The read was uncapped: every enabled schedule whose `next_run_at` had passed was
+ * pulled into memory for every organisation in the deployment, on a cron that runs
+ * on a fixed interval. One tenant with a large schedule table — or any tenant after
+ * an outage, when every schedule is simultaneously overdue — decided the tick's
+ * memory and duration for everyone behind it in `forEachOrg`.
+ *
+ * The cap is not a truncation: the read is ordered by `next_run_at` ascending with
+ * NULLs first, so the most overdue schedules claim first and the remainder are still
+ * due on the next tick. A saturated page is logged rather than passed over in
+ * silence, because a tenant permanently at the cap is a capacity signal, not a
+ * steady state.
+ */
+export const SCHEDULE_TICK_MAX_PER_ORG = 500;
 
 export interface SchedulesTickResult {
   orgsScanned: number;
@@ -79,6 +96,14 @@ export class WorkflowScheduleTickService {
           eq(workflowSchedules.isEnabled, true),
           or(isNull(workflowSchedules.nextRunAt), lte(workflowSchedules.nextRunAt, now)),
         ),
+      )
+      .orderBy(sql`${workflowSchedules.nextRunAt} ASC NULLS FIRST`, asc(workflowSchedules.id))
+      .limit(SCHEDULE_TICK_MAX_PER_ORG);
+
+    if (dueSchedules.length === SCHEDULE_TICK_MAX_PER_ORG)
+      this.logger.warn(
+        `Schedule tick hit the per-org cap of ${String(SCHEDULE_TICK_MAX_PER_ORG)}; the remainder stay due for the next tick`,
+        { orgId },
       );
 
     let triggered = 0;

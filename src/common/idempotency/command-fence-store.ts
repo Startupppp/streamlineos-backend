@@ -6,6 +6,7 @@ import { commandFences } from "../../db/schema";
 import { logger } from "../logger/logger.service";
 import { getPostgresErrorDetails } from "../db/postgres-error";
 import { IDEMPOTENCY_LEASE_MS, IDEMPOTENCY_TTL_MS } from "./idempotency.constants";
+import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
 
 export interface ClaimParams {
   orgId: string;
@@ -27,10 +28,18 @@ export type ClaimResult =
   | { kind: "inflight" }
   | { kind: "mismatch" };
 
+/**
+ * `orgId` is on every method because the fence is a tenant row and `command_fences`
+ * is RLS-enabled with `organization_id = current_org_id()` — a function that RAISES
+ * `42501` rather than returning NULL when the GUC is absent. `claim` always carried
+ * it; `complete` and `fail` did not, and had no way to open a transaction of their
+ * own, so all three depended on an ambient tenant transaction being open around them.
+ * That is what made `@Idempotent` unusable on a `@NoTenantTransaction()` route.
+ */
 export interface CommandFenceStore {
   claim(params: ClaimParams): Promise<ClaimResult>;
-  complete(fenceId: number, responseStatus: number, data: unknown): Promise<void>;
-  fail(fenceId: number): Promise<void>;
+  complete(fenceId: number, responseStatus: number, data: unknown, orgId: string): Promise<void>;
+  fail(fenceId: number, orgId: string): Promise<void>;
 }
 
 export const COMMAND_FENCE_STORE = "COMMAND_FENCE_STORE";
@@ -73,11 +82,46 @@ function describe(error: unknown): Record<string, unknown> {
   };
 }
 
+/**
+ * Every fence statement runs through here, and this is the whole reason `@Idempotent`
+ * composes with `@NoTenantTransaction()`.
+ *
+ * `command_fences` carries the RLS policy `organization_id = current_org_id()`, and
+ * `current_org_id()` RAISES `42501` when `app.organization_id` is unset — it is not the
+ * `_or_null` variant, so there is no quiet zero-row answer to mistake for success. The
+ * store used to issue all three statements through the bare injected `DRIZZLE` proxy,
+ * which routes to the ambient tenant transaction when there is one and falls through to
+ * the pool with no GUC when there is not. Measured against the live schema as
+ * `streamline_app`: the insert without a GUC fails
+ * `ERROR: no tenant context: app.organization_id is not set for this transaction`, and
+ * the identical insert inside `set_config('app.organization_id', ...)` passes the policy.
+ *
+ * So a fenced handler that also carried `@NoTenantTransaction()` did not merely lose its
+ * fence — it 500'd on the very first statement, before the handler ran at all. That is why
+ * `POST /kb/ask` and the two reindex routes could not simply be decorated: they must run
+ * outside the request transaction, because each awaits a provider round trip that would
+ * otherwise pin a pooled connection idle-in-transaction past the 60s
+ * `idle_in_transaction_session_timeout` that `withTenant` sets.
+ *
+ * `runInTenantTransaction` with an explicit `orgId` returns the ambient transaction
+ * unchanged when one is open, so every fenced route that already worked behaves exactly as
+ * before — including the property the money commands depend on, that a failed completion
+ * write rolls the command back with it. Only the no-ambient-context case changes, and it
+ * changes from "guaranteed 42501" to "a short transaction of its own".
+ */
 @Injectable()
 export class DrizzleCommandFenceStore implements CommandFenceStore {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  private fenced<T>(orgId: string, fn: () => Promise<T>): Promise<T> {
+    return runInTenantTransaction(this.db, fn, { orgId });
+  }
+
   async claim(params: ClaimParams): Promise<ClaimResult> {
+    return this.fenced(params.orgId, () => this.claimStatements(params));
+  }
+
+  private async claimStatements(params: ClaimParams): Promise<ClaimResult> {
     const now = Date.now();
     const leaseExpiresAt = new Date(now + IDEMPOTENCY_LEASE_MS);
     const expiresAt = new Date(now + IDEMPOTENCY_TTL_MS);
@@ -182,11 +226,18 @@ export class DrizzleCommandFenceStore implements CommandFenceStore {
    * that is not true: a handler running outside a tenant transaction, where the
    * command has already committed and the completion is retried and logged instead.
    */
-  async complete(fenceId: number, responseStatus: number, data: unknown): Promise<void> {
-    await this.db
-      .update(commandFences)
-      .set({ status: "COMPLETED", responseBody: data ?? null, responseStatus })
-      .where(eq(commandFences.commandFenceId, fenceId));
+  async complete(
+    fenceId: number,
+    responseStatus: number,
+    data: unknown,
+    orgId: string,
+  ): Promise<void> {
+    await this.fenced(orgId, async () => {
+      await this.db
+        .update(commandFences)
+        .set({ status: "COMPLETED", responseBody: data ?? null, responseStatus })
+        .where(eq(commandFences.commandFenceId, fenceId));
+    });
   }
 
   /**
@@ -196,12 +247,14 @@ export class DrizzleCommandFenceStore implements CommandFenceStore {
    * is nothing left to stamp. A failure here is logged rather than propagated: the
    * command has already failed and the client is already getting an error.
    */
-  async fail(fenceId: number): Promise<void> {
+  async fail(fenceId: number, orgId: string): Promise<void> {
     try {
-      await this.db
-        .update(commandFences)
-        .set({ status: "FAILED" })
-        .where(eq(commandFences.commandFenceId, fenceId));
+      await this.fenced(orgId, async () => {
+        await this.db
+          .update(commandFences)
+          .set({ status: "FAILED" })
+          .where(eq(commandFences.commandFenceId, fenceId));
+      });
     } catch (error: unknown) {
       logger.error("[idempotency] could not stamp the fence FAILED", {
         fenceId,

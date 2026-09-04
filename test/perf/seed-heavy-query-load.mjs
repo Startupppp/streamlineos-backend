@@ -30,6 +30,64 @@ dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 export const PRIVATE_ANCHOR_TITLE = "Private upcoming anchor (plan fixture)";
 
+export const UPCOMING_WINDOW_TITLE = "Upcoming window event (dashboard fixture)";
+
+/**
+ * How many org-visible, single-occurrence events every tenant keeps AHEAD of now(),
+ * and how far ahead they are spread.
+ *
+ * `seedCalendarEvents` generates every event at `now() - ((g % 730) || ' days')`, so the
+ * whole 60,025-event history of the majority tenant sits in the PAST of the moment the
+ * seed ran. `DashboardPersonalService.upcomingEvents` reads `start_date >= NOW()`, so on
+ * any day after the seed the only rows it can see are the 12 reminder-window events (which
+ * are minutes ahead of the seed clock and expire the same hour) and the private anchor
+ * (`visibility = 'private'`, no attendee row, created by the first member — deliberately
+ * invisible to the fixture participant). Measured on `scratch_perf_seed` on 2026-09-04:
+ * `start_date >= now()` returned exactly ONE row for the reference tenant and it was the
+ * private anchor, so `dashboard-personal-calendar-events` measured an empty result set and
+ * `run-read-cost-budgets.mjs` reported it vacuous — a ceiling and two plan assertions that
+ * could not fail.
+ *
+ * The window is not a fixed set of rows, it is a fixed SHAPE: `topUp`'s predicate counts
+ * only events that are still upcoming, so re-running the seed on any later day refills
+ * whatever the wall clock consumed. That is what stops this from becoming the same time
+ * bomb a second time — the same reasoning `dashboard-team-attendance` records for anchoring
+ * its date to the seed rather than to `CURRENT_DATE`.
+ */
+export const UPCOMING_WINDOW_EVENTS = 60;
+export const UPCOMING_WINDOW_DAYS = 180;
+
+/**
+ * The window starts a day out, not at `now()`. `seedReminderWindow` writes 12 events
+ * `now() + (g % 18) minutes` ahead, and they satisfy a bare `start_date >= now()` for the
+ * few minutes they exist. Counting them toward the target let the seed report a full window
+ * that was two events short an hour later — the same decay this section exists to stop, one
+ * layer up. Everything counted here has to survive a day.
+ */
+export const UPCOMING_WINDOW_MIN_LEAD_DAYS = 1;
+
+/**
+ * The post-conditions of the upcoming window, as a value rather than a side effect, so the
+ * check itself is testable. Each entry is a way the window stops being able to answer an
+ * "upcoming events" read while still holding rows.
+ */
+export function upcomingWindowDefects(row) {
+  const defects = [];
+  if (row.upcoming_org_events < UPCOMING_WINDOW_EVENTS)
+    defects.push(`${row.upcoming_org_events} upcoming org-visible events, want ${UPCOMING_WINDOW_EVENTS}`);
+  if (row.nearest_days_ahead === null) defects.push("no upcoming org-visible event at all");
+  else if (row.nearest_days_ahead > 14)
+    defects.push(`nearest upcoming event is ${row.nearest_days_ahead} days out`);
+  if (row.recurring > 0) defects.push(`${row.recurring} of them recur`);
+  return defects;
+}
+
+const SOUND_UPCOMING_WINDOW = {
+  upcoming_org_events: UPCOMING_WINDOW_EVENTS,
+  nearest_days_ahead: 0,
+  recurring: 0,
+};
+
 /**
  * The post-conditions of the private upcoming anchor, as a value rather than as a
  * side effect, so that the check itself can be tested. Each one is a way the fixture
@@ -66,6 +124,11 @@ if (process.argv.includes("--self-test")) {
     ["an anchor that has drifted into the past is reported vacuous", anchorDefects({ ...SOUND_ANCHOR, is_upcoming: false }).join(), "not upcoming"],
     ["an anchor that is no longer private is reported vacuous", anchorDefects({ ...SOUND_ANCHOR, is_private: false }).join(), "not private"],
     ["an attended anchor is reported vacuous", anchorDefects({ ...SOUND_ANCHOR, attendees: 2 }).join(), "2 attendee rows"],
+    ["a sound upcoming window reports no defect", upcomingWindowDefects(SOUND_UPCOMING_WINDOW).length, 0],
+    ["an empty upcoming window is reported vacuous", upcomingWindowDefects({ ...SOUND_UPCOMING_WINDOW, upcoming_org_events: 0, nearest_days_ahead: null }).join(), "0 upcoming org-visible events, want 60,no upcoming org-visible event at all"],
+    ["an upcoming window that has drained below target is reported vacuous", upcomingWindowDefects({ ...SOUND_UPCOMING_WINDOW, upcoming_org_events: 59 }).join(), "59 upcoming org-visible events, want 60"],
+    ["an upcoming window whose nearest event has drifted away is reported vacuous", upcomingWindowDefects({ ...SOUND_UPCOMING_WINDOW, nearest_days_ahead: 90 }).join(), "nearest upcoming event is 90 days out"],
+    ["a recurring upcoming window is reported vacuous", upcomingWindowDefects({ ...SOUND_UPCOMING_WINDOW, recurring: 3 }).join(), "3 of them recur"],
   ];
   let failed = false;
   for (const [label, actual, wanted] of cases) {
@@ -234,6 +297,61 @@ async function seedReminderWindow(orgId, label) {
     [orgId, creator, 12 - due],
   );
   log(`  ${label}: reminder-window events -> 12`);
+}
+
+/**
+ * The forward half of the tenant's calendar. See `UPCOMING_WINDOW_EVENTS`.
+ *
+ * `topUp`-shaped: the count predicate is the same predicate the dashboard read issues
+ * (`start_date >= now()`), so a window that time has drained is refilled and a window that
+ * is already full costs one COUNT. The events are `org`-visible and single-occurrence
+ * because that is the arm of `DashboardPersonalService.upcomingEvents` a tenant's ordinary
+ * traffic exercises; the private anchor next to it still holds the non-'org' arm open.
+ */
+async function seedUpcomingWindow(orgId, label) {
+  const have = await count(
+    "calendar_events",
+    "org_id = $1 AND visibility = 'org' AND rrule IS NULL" +
+      ` AND start_date >= now() + interval '${UPCOMING_WINDOW_MIN_LEAD_DAYS} days'` +
+      ` AND start_date <= now() + interval '${UPCOMING_WINDOW_DAYS} days'`,
+    [orgId],
+  );
+  if (have < UPCOMING_WINDOW_EVENTS) {
+    const [creatorRow] = await sql.unsafe(
+      `SELECT id FROM organization_members WHERE org_id = $1 ORDER BY id LIMIT 1`,
+      [orgId],
+    );
+    if (!creatorRow) throw new Error(`${label}: no organization_members row to author upcoming events`);
+    await sql.unsafe(
+      `INSERT INTO calendar_events
+         (org_id, title, description, location, start_date, end_date, all_day, category,
+          timezone, rrule, recurrence_end, reminder_15min_sent, created_by_membership_id,
+          visibility, color)
+       SELECT $1, $2 || ' ' || g, 'Keeps the upcoming-events read non-vacuous', 'Room ' || (g % 40),
+              now() + ((g % $5::int) + $6::int || ' days')::interval + ((g % 9) || ' hours')::interval,
+              now() + ((g % $5::int) + $6::int || ' days')::interval + ((g % 9) || ' hours')::interval + interval '45 minutes',
+              false, (ARRAY['meeting','review','interview','standup'])[1 + (g % 4)],
+              'UTC', NULL, NULL, false, $3::int, 'org', '#0ea5e9'
+       FROM generate_series(1, $4::int) g`,
+      [orgId, UPCOMING_WINDOW_TITLE, creatorRow.id, UPCOMING_WINDOW_EVENTS - have,
+       UPCOMING_WINDOW_DAYS - UPCOMING_WINDOW_MIN_LEAD_DAYS, UPCOMING_WINDOW_MIN_LEAD_DAYS],
+    );
+  }
+
+  const [check] = await sql.unsafe(
+    `SELECT count(*)::int AS upcoming_org_events,
+            count(*) FILTER (WHERE rrule IS NOT NULL)::int AS recurring,
+            min(EXTRACT(EPOCH FROM (start_date - now())) / 86400)::int AS nearest_days_ahead
+     FROM calendar_events
+     WHERE org_id = $1 AND visibility = 'org' AND rrule IS NULL
+       AND start_date >= now() + interval '${UPCOMING_WINDOW_MIN_LEAD_DAYS} days'
+       AND start_date <= now() + interval '${UPCOMING_WINDOW_DAYS} days'`,
+    [orgId],
+  );
+  const defects = upcomingWindowDefects(check ?? { upcoming_org_events: 0, nearest_days_ahead: null, recurring: 0 });
+  if (defects.length > 0)
+    throw new Error(`${label}: upcoming window is not usable — ${defects.join("; ")}`);
+  log(`  ${label}: upcoming org events ${have} -> ${check.upcoming_org_events} (nearest +${check.nearest_days_ahead}d)`);
 }
 
 /**
@@ -591,6 +709,7 @@ async function main() {
     await section(`${profile.label}/members`, () => ensureMembers(profile.id, profile.label, profile.members));
     await section(`${profile.label}/calendar_events`, () => seedCalendarEvents(profile.id, profile.label, events));
     await section(`${profile.label}/reminder_window`, () => seedReminderWindow(profile.id, profile.label));
+    await section(`${profile.label}/upcoming_window`, () => seedUpcomingWindow(profile.id, profile.label));
     await section(`${profile.label}/attendees`, () => seedAttendees(profile.id, profile.label, 2));
     await section(`${profile.label}/private_anchor`, () => seedPrivateUpcomingAnchor(profile.id, profile.label));
     await section(`${profile.label}/exceptions`, () => seedExceptions(profile.id, profile.label, Math.max(40, Math.round(events / 8))));

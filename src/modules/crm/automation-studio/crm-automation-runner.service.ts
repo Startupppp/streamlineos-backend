@@ -20,6 +20,7 @@ import type { StudioEventPayload, RunStepLog } from "./types";
 import { evaluateConditions, type StudioCondition } from "./crm-automation-condition-evaluator";
 import { updateMirroredLeads } from "../../party/party-legacy-leads";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
+import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
 
 const ALLOWLISTED_LEAD_FIELDS = ["status", "priority", "source", "assignedToId", "score"];
 const ALLOWLISTED_DEAL_FIELDS = ["stage", "priority", "assignedToId"];
@@ -233,7 +234,7 @@ export class CrmAutomationRunnerService {
             const body = JSON.stringify({ event: payload.entityType, entityId: payload.entityId, data: payload.data });
             await fetch(url, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...outboundTraceHeaders() },
               body,
               signal: AbortSignal.timeout(10_000),
             });

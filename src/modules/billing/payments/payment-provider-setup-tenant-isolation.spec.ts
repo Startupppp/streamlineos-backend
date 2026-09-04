@@ -1,4 +1,8 @@
 import type { Db } from "../../../db/drizzle.module";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { PaymentAnalyticsService } from "./payment-analytics.service";
+import type { PaymentAuditService } from "./payment-audit.service";
+import type { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
 import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -23,9 +27,9 @@ describe("PaymentProviderSetupService — cross-tenant isolation", () => {
         paymentProviderCredentials: { findMany: jest.fn().mockResolvedValue([]) },
       },
     } as unknown as Db;
-    const mockRegistry = { get: jest.fn() } as any;
-    const mockAudit = { log: jest.fn() } as any;
-    const mockAnalytics = {} as any;
+    const mockRegistry = stubService<PaymentProviderAdapterRegistry>({ get: jest.fn() });
+    const mockAudit = stubService<PaymentAuditService>({ log: jest.fn() });
+    const mockAnalytics = stubService<PaymentAnalyticsService>({});
     const svc = new PaymentProviderSetupService(db, mockRegistry, mockAudit, mockAnalytics);
     const result = await svc.listProviders(ATTACKER);
     expect(result).toHaveLength(0);
@@ -42,9 +46,9 @@ describe("PaymentProviderSetupService — cross-tenant isolation", () => {
         paymentProviderCredentials: { findMany: findManyCredentials },
       },
     } as unknown as Db;
-    const mockRegistry = { get: jest.fn().mockReturnValue({ publicKeyId: jest.fn() }) } as any;
-    const mockAudit = { log: jest.fn() } as any;
-    const mockAnalytics = {} as any;
+    const mockRegistry = stubService<PaymentProviderAdapterRegistry>({ get: jest.fn().mockReturnValue({ publicKeyId: jest.fn() }) });
+    const mockAudit = stubService<PaymentAuditService>({ log: jest.fn() });
+    const mockAnalytics = stubService<PaymentAnalyticsService>({});
     const svc = new PaymentProviderSetupService(db, mockRegistry, mockAudit, mockAnalytics);
     const result = await svc.listProviders(OWNER);
     expect(result).toHaveLength(1);

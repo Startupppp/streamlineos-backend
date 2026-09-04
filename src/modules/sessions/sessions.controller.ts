@@ -8,6 +8,7 @@ import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { SessionsService } from "./sessions.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { resolveClientIp } from "../../common/http/client-ip";
 
 const sessionIdParams = z.object({ sessionId: z.string().min(1) }).strict();
 
@@ -33,10 +34,7 @@ export class SessionsController {
       headerString(req.headers["x-streamlineos-client"]) ??
       null;
     const userAgent = enrichUserAgent(rawUa, { clientApp });
-    const raw = req.headers["x-forwarded-for"];
-    const ipAddress =
-      (Array.isArray(raw) ? raw[0] : raw)?.split(",")[0]?.trim() ??
-      (req.headers["x-real-ip"] as string | undefined);
+    const ipAddress = resolveClientIp(req);
     return this.sessions.list(u.userId, u.sessionId, userAgent, ipAddress);
   }
 

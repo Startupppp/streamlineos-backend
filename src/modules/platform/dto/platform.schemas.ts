@@ -1,4 +1,5 @@
 ﻿import { z } from "zod";
+import { wireDate } from "../../../common/openapi/wire-types";
 
 export const operatorScopeSchema = z.enum([
   "read_customer_data",
@@ -86,3 +87,48 @@ export const listCustomersQuerySchema = z.object({
 );
 type ListCustomersQuery = z.infer<typeof listCustomersQuerySchema>;
 
+
+/**
+ * PRD-C049 — the response half of the operator-access contract.
+ *
+ * `check:openapi-coverage` measures how many operations publish a 2xx CONTENT schema.
+ * Every operation on this controller published a bare auto-generated `"200": {}`, which
+ * NestJS emits for every handler and which the gate's own header calls "not a contract".
+ * These four handlers return a literal declared in the controller itself, so the schema
+ * is read off the `return` statement rather than inferred — and
+ * `ResponseContractInterceptor` compares it against the real value on every request
+ * under `NODE_ENV=test`, so a wrong one fails the suite instead of becoming decoration.
+ *
+ * NOT `.strict()`, matching the repository's response-schema policy: an added field is a
+ * backward-compatible deploy, a removed or retyped one is the drift these exist to catch.
+ */
+export const operatorAccessAckResponseSchema = z.object({ ok: z.literal(true) });
+
+export const operatorAccessGrantCreatedResponseSchema = z.object({ grantId: z.string() });
+
+/** `PlatformOperatorAccessService.listGrants` — the nine-column projection at :415. */
+export const operatorAccessGrantListResponseSchema = z.array(
+  z.object({
+    grantId: z.string(),
+    operatorUserId: z.string(),
+    incidentRef: z.string(),
+    grantedBy: z.string(),
+    approverId: z.string().nullable(),
+    scope: z.string(),
+    status: z.string(),
+    expiresAt: wireDate(),
+    createdAt: wireDate(),
+  }),
+);
+
+/** `PlatformOperatorAccessService.listLogs` — the six-column projection at :432. */
+export const operatorAccessLogListResponseSchema = z.array(
+  z.object({
+    logId: z.string(),
+    grantId: z.string(),
+    operatorUserId: z.string(),
+    action: z.string(),
+    ipAddress: z.string().nullable(),
+    accessedAt: wireDate(),
+  }),
+);

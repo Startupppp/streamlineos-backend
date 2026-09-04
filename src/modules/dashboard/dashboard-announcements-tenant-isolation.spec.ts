@@ -39,7 +39,11 @@ describe("DashboardAnnouncementsService — cross-tenant isolation", () => {
 
   it("scopes announcement list to the requesting org (tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const cache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()) } as never;
+    const cache = {
+      cachedForOrg: jest
+        .fn()
+        .mockImplementation((_orgId: unknown, _k: unknown, fn: () => unknown) => fn()),
+    } as never;
     const access = { holds: jest.fn().mockResolvedValue(true) } as never;
     const svc = new DashboardAnnouncementsService(db, cache, access);
 
@@ -51,7 +55,11 @@ describe("DashboardAnnouncementsService — cross-tenant isolation", () => {
 
   it("returns announcements for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const cache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()) } as never;
+    const cache = {
+      cachedForOrg: jest
+        .fn()
+        .mockImplementation((_orgId: unknown, _k: unknown, fn: () => unknown) => fn()),
+    } as never;
     const access = { holds: jest.fn().mockResolvedValue(true) } as never;
     const svc = new DashboardAnnouncementsService(db, cache, access);
 

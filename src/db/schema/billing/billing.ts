@@ -272,6 +272,7 @@ export const revenueEvents = pgTable(
     previousPlan: varchar("previous_plan", { length: 20 }),
     mrr: integer("mrr").notNull(),
     amount: integer("amount"),
+    currency: varchar("currency", { length: 3 }),
     metadata: jsonb("metadata"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

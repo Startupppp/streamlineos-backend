@@ -12,7 +12,6 @@ import {
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
@@ -26,7 +25,6 @@ import { z } from "zod";
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
-@RequireModule("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class KbPageTemplatesController {
   constructor(private readonly templates: KbPageTemplatesService) {}

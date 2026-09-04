@@ -18,7 +18,8 @@ export class DashboardAnnouncementsService {
   ) {}
 
   getActiveAnnouncements(orgId: string) {
-    return this.cache.cached(
+    return this.cache.cachedForOrg(
+      orgId,
       CACHE_KEYS.announcementsList(orgId),
       () => {
         const now = new Date();
@@ -73,7 +74,7 @@ export class DashboardAnnouncementsService {
       })
       .returning();
 
-    await this.cache.invalidate(CACHE_KEYS.announcementsList(orgId));
+    await this.cache.invalidateForOrg(orgId, CACHE_KEYS.announcementsList(orgId));
     return row;
   }
 
@@ -86,7 +87,7 @@ export class DashboardAnnouncementsService {
       .delete(announcements)
       .where(and(eq(announcements.id, id), eq(announcements.orgId, orgId)));
 
-    await this.cache.invalidate(CACHE_KEYS.announcementsList(orgId));
+    await this.cache.invalidateForOrg(orgId, CACHE_KEYS.announcementsList(orgId));
     return { success: true };
   }
 }

@@ -30,7 +30,7 @@
  *   node test/perf/measure-benchmark-manifest.mjs --self-test
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,6 +46,7 @@ import {
   selfTest as environmentSelfTest,
 } from "./benchmark-environment.mjs";
 import { METRICS, noiseEnvelope, summarise } from "../../src/scripts/benchmark-regression.mjs";
+import { applyRequestLevel } from "./merge-http-measurement.mjs";
 import { pickMetrics, runNoiseStudy } from "./benchmark-noise-study.mjs";
 
 import {
@@ -460,10 +461,18 @@ async function main() {
   };
 
   const outPath = arg("out", MANIFEST_PATH);
+  const carried = carryForwardRequestLevel(manifest, outPath);
   if (write) {
     mkdirSync(dirname(outPath), { recursive: true });
     writeFileSync(outPath, `${JSON.stringify(manifest, null, 2)}\n`);
     console.log(`\nWrote ${outPath}`);
+    console.log(
+      carried
+        ? `Carried the existing requestLevel block forward: ${String(manifest.requestLevel.tally.measured)} measured ` +
+            `route×tenant slot(s) captured at ${String(manifest.requestLevel.commit)}. This run did NOT re-measure ` +
+            `them — re-run the HTTP harness and \`pnpm perf:merge-route-budgets\` to refresh them.`
+        : "No requestLevel block existed to carry forward; the request half of this manifest is unmeasured.",
+    );
   } else {
     console.log(`\n(dry run — pass --write to update ${outPath})`);
   }
@@ -471,6 +480,31 @@ async function main() {
     `${modules.length} modules · ${allBenchmarks.length} benchmarks · ` +
       `${measuredOn("large")} measured on the reference tenant`,
   );
+}
+
+/**
+ * This runner rebuilds the STATEMENT half of the manifest and nothing else. The object it assembles
+ * has no `requestLevel` key, so writing it over an existing manifest deleted the entire HTTP
+ * capture — 137 measured route×tenant slots and both sentences saying they had been measured — and
+ * left a file that read as though no HTTP harness had ever run. That made the statement half
+ * un-rerunnable in practice: refreshing a stale statement capture cost the request capture.
+ *
+ * The block is carried forward verbatim, through the same function `merge-http-measurement.mjs`
+ * uses, so it keeps its own commit, dirty-tree flag and journal count. It is NOT re-measured here
+ * and never presented as if it were; `check-benchmark-manifest.mjs` reads that provenance and says
+ * how stale it is.
+ */
+function carryForwardRequestLevel(manifest, outPath) {
+  if (!existsSync(outPath)) return false;
+  let prior;
+  try {
+    prior = JSON.parse(readFileSync(outPath, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!prior || typeof prior.requestLevel !== "object" || prior.requestLevel === null) return false;
+  applyRequestLevel(manifest, prior.requestLevel);
+  return true;
 }
 
 function selfTest() {
@@ -517,11 +551,53 @@ function selfTest() {
     statementVerdict({ class: "ordinary" }, { status: "unmeasured" }).verdict === "unmeasured",
   );
 
+  const priorPath = join(mkdtempSync(join(tmpdir(), "carry-forward-")), "benchmark-manifest.json");
+  const priorRequestLevel = {
+    instrument: "test/perf/route-budget-http.seeded-e2e-spec.ts",
+    commit: "2f37e1bb0",
+    database: "scratch_t23_bm",
+    tally: { measured: 137, total: 164, refused: 27, failed: 0 },
+    routes: {},
+  };
+  writeFileSync(
+    priorPath,
+    JSON.stringify({ requestLevel: priorRequestLevel, prd: { requestCeilingsMs: {} }, coverage: { notMeasured: [] } }),
+  );
+  const rebuilt = { prd: { requestCeilingsMs: { note: "not measured" } }, coverage: { notMeasured: [] } };
+  const carried = carryForwardRequestLevel(rebuilt, priorPath);
+  check(
+    "a statement-half rewrite carries the existing HTTP capture forward instead of deleting it",
+    carried === true && rebuilt.requestLevel?.tally?.measured === 137,
+    `carried=${String(carried)} measured=${String(rebuilt.requestLevel?.tally?.measured)}`,
+  );
+  check(
+    "the carried block brings its own description with it, so the manifest cannot say it is unmeasured",
+    typeof rebuilt.prd.requestCeilingsMs.note === "string" &&
+      rebuilt.prd.requestCeilingsMs.note.includes("ARE measured") &&
+      rebuilt.coverage.notMeasured.some((l) => l.startsWith("Request-level figures cover")),
+  );
+  check(
+    "no prior manifest is not a carry-forward, and never invents a requestLevel block",
+    carryForwardRequestLevel({}, join(priorPath, "does-not-exist.json")) === false,
+  );
+
   const rc = BUDGET_IDS_FOR_SELF_TEST();
   check(
     "every declared read-cost benchmark exists in the catalog",
     rc.errors.length === 0,
     rc.errors.join("; ") || `${rc.declared} declared`,
+  );
+  const claimed = new Set(MODULES.flatMap((m) => Object.keys(m.readCostBudgets ?? {})));
+  check(
+    "a read-cost budget the catalog holds but no module claims is a validation ERROR, not silent lost coverage",
+    validateModules(MODULES, new Set([...claimed, "unclaimed-probe-budget"]), null).some((e) =>
+      e.includes('"unclaimed-probe-budget" exists in read-cost-budgets.mjs but no module claims it'),
+    ),
+  );
+  check(
+    "the declared corpus is exactly the catalog, so the manifest cannot describe a smaller one",
+    validateModules(MODULES, claimed, null).length === 0,
+    `${String(claimed.size)} claimed`,
   );
   check(
     "summarise and noiseEnvelope agree on a constant series",

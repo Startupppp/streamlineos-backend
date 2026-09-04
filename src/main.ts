@@ -8,6 +8,7 @@ import type { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import compression from "compression";
 import { httpCompressionOptions } from "./common/http/compression.config";
+import { trustProxySetting } from "./common/http/trust-proxy";
 import { SwaggerModule } from "@nestjs/swagger";
 import { buildOpenApiDocument } from "./common/openapi/build-openapi-document";
 import { configureApiVersioning } from "./common/openapi/configure-api-versioning";
@@ -85,6 +86,13 @@ async function bootstrap(): Promise<void> {
   // Shared with `src/scripts/generate-openapi.ts`, which had no versioning at
   // all — so `/v2/users` was served here and documented nowhere.
   configureApiVersioning(app, { runtimeAliases: true });
+
+  // Declared, never guessed. Until this line existed nothing in the process set
+  // `trust proxy`, so `req.ip` was the socket address while the rate limiter and every
+  // abuse counter read the forwarded-for header's leftmost hop instead — the one entry the
+  // CLIENT writes. Express counts trusted hops from the RIGHT, so with this set the header
+  // can no longer move `req.ip`, and with no hops declared it is ignored entirely.
+  app.set("trust proxy", trustProxySetting());
 
   app.use(helmet());
   app.use((_req: Request, res: Response, next: NextFunction) => {

@@ -77,7 +77,7 @@ describe("InvoicesPaymentService — cross-tenant isolation", () => {
       select: makeSelect(
         [
           [{ total: "500", status: "SENT" }],
-          [{ totalPaid: 0 }],
+          [{ totalPaid: "0" }],
           [{ id: INVOICE_ID, status: "SENT" }],
         ],
         txWhereArgs,
@@ -93,7 +93,7 @@ describe("InvoicesPaymentService — cross-tenant isolation", () => {
         accountingSettings: { findFirst: jest.fn().mockResolvedValue(null) },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      select: makeSelect([[{ totalPaid: 0 }], [], [{ userId: USER_ID }]], whereArgs),
+      select: makeSelect([[{ totalPaid: "0" }], [], [{ userId: USER_ID }]], whereArgs),
       transaction,
     } as unknown as Db;
 

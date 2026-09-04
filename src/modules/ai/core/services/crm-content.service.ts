@@ -13,7 +13,7 @@ import {
   emailGeneratorPrompt,
   leadEnrichmentPrompt,
   type EmailGeneratorInput,
-} from "../prompts/crm.prompts";
+} from "../prompts/crm-content.prompts";
 import {
   ConversationSummarySchema,
   GeneratedEmailSchema,

@@ -75,6 +75,16 @@ export const MONITORED_SWEEPS = [
     maxAgeMs: 26 * 3_600_000,
   },
   {
+    jobKey: "kb-telemetry-retention-sweep",
+    label: "KB telemetry retention (kb_events past 365 days, orphaned ingestion checkpoints past 30)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
+    jobKey: "kb-trash-purge",
+    label: "KB trash purge (soft-deleted pages past the org's trash_retention_days)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
     jobKey: "build-retention-prune",
     label: "Build webhook delivery retention (completed attempts older than 90 days)",
     maxAgeMs: 26 * 3_600_000,

@@ -64,6 +64,7 @@ import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronKbChatRetentionService } from "./cron-kb-chat-retention.service";
+import { CronKbTelemetryRetentionService } from "./cron-kb-telemetry-retention.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -166,6 +167,7 @@ import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.ser
     CronBuildSnapshotsService,
     CronKbChunkRetentionService,
     CronKbChatRetentionService,
+    CronKbTelemetryRetentionService,
     CronOrganizationService,
     CronOrgPurgeWorkerService,
     CronLeaseService,

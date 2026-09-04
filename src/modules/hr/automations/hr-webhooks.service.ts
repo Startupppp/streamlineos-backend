@@ -22,6 +22,7 @@ import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
 import { boundHrReadLimit } from "../hr-read-limits";
 import { buildListResponse } from "../../../common/pagination/pagination";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 5;
@@ -320,6 +321,7 @@ export class HrWebhooksService {
           "X-StreamlineOS-Signature": signature,
           "X-Webhook-Event": event,
           "X-Webhook-Timestamp": timestamp,
+          ...outboundTraceHeaders(),
         },
         body,
         signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),

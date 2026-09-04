@@ -7,6 +7,7 @@ import { invWebhooks, invWebhookEvents, invWebhookEventSubscriptions } from "../
 import { createHmac } from "crypto";
 import type { WebhookEventType } from "./dto/webhooks.schemas";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
+import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
 
 @Injectable()
 export class InventoryWebhookEmitter {
@@ -98,6 +99,7 @@ export class InventoryWebhookEmitter {
                 headers: {
                   "Content-Type": "application/json",
                   "X-Inventory-Signature": `sha256=${sig}`,
+                  ...outboundTraceHeaders(),
                 },
                 body: payloadStr,
                 signal: controller.signal,

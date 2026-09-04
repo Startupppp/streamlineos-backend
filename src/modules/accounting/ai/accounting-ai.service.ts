@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException, ServiceUnavailableException } fr
 import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { baseCreditAmount, baseDebitAmount } from "../core/journal-base-amount";
 import {
   finReconciliationMatches,
   finBankTransactions,
@@ -97,8 +98,8 @@ export class AccountingAiService {
     const jeLinesRow = je
       ? await this.db
           .select({
-            totalDebit: sql<string>`COALESCE(SUM(${journalLines.debit}::numeric), 0)::text`,
-            totalCredit: sql<string>`COALESCE(SUM(${journalLines.credit}::numeric), 0)::text`,
+            totalDebit: sql<string>`COALESCE(SUM(${baseDebitAmount}::numeric), 0)::text`,
+            totalCredit: sql<string>`COALESCE(SUM(${baseCreditAmount}::numeric), 0)::text`,
           })
           .from(journalLines)
           .where(eq(journalLines.entryId, je.id))

@@ -45,7 +45,7 @@ function service(): StorageService {
     R2_ENDPOINT: "https://default.r2.example",
     NEXT_PUBLIC_R2_PUBLIC_URL: "https://files.example",
   };
-  return new StorageService({} as MediaCompressionService, config);
+  return new StorageService({} as MediaCompressionService, config, { isKeyBlocked: async () => false });
 }
 
 describe("StorageService region placement", () => {
@@ -125,7 +125,7 @@ describe("StorageService region placement", () => {
       R2_SECRET_ACCESS_KEY: "test-secret",
       R2_ENDPOINT: "https://default.r2.example",
       NEXT_PUBLIC_R2_PUBLIC_URL: "https://files.example",
-    } as StorageConfig);
+    } as StorageConfig, { isKeyBlocked: async () => false });
 
     expect(withoutBucket.isConfigured()).toBe(false);
   });

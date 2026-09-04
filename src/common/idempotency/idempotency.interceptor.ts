@@ -169,14 +169,14 @@ export class IdempotencyInterceptor implements NestInterceptor {
            * is durable and must be stamped, or the retry waits out a stale lease.
            */
           if (getTenantContext()) return;
-          void this.store.fail(fenceId);
+          void this.store.fail(fenceId, user.orgId);
         },
       }),
       concatMap(async (data: unknown) => {
         const res = context
           .switchToHttp()
           .getResponse<{ statusCode?: number }>();
-        await this.recordCompletion(fenceId, res?.statusCode ?? 200, data, commandName);
+        await this.recordCompletion(fenceId, res?.statusCode ?? 200, data, commandName, user.orgId);
         return data;
       }),
     );
@@ -201,15 +201,16 @@ export class IdempotencyInterceptor implements NestInterceptor {
     responseStatus: number,
     data: unknown,
     commandName: string,
+    orgId: string,
   ): Promise<void> {
     if (getTenantContext()) {
-      await this.store.complete(fenceId, responseStatus, data);
+      await this.store.complete(fenceId, responseStatus, data, orgId);
       return;
     }
 
     for (let attempt = 1; attempt <= COMPLETION_ATTEMPTS; attempt++) {
       try {
-        await this.store.complete(fenceId, responseStatus, data);
+        await this.store.complete(fenceId, responseStatus, data, orgId);
         return;
       } catch (error: unknown) {
         if (attempt === COMPLETION_ATTEMPTS) {

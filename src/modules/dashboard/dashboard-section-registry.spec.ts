@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import "reflect-metadata";
 import { PATH_METADATA, METHOD_METADATA } from "@nestjs/common/constants";
 import { DashboardController } from "./dashboard.controller";
@@ -6,6 +8,8 @@ import { REQUIRE_MODULE } from "../../common/rbac/require-module.decorator";
 import { IS_UNIVERSAL } from "../../common/auth/universal.decorator";
 import {
   DASHBOARD_HOME_SECTIONS,
+  cacheNamespaceOf,
+  cacheScopeOf,
   isModuleSection,
   isPermissionSection,
   permissionOf,
@@ -52,13 +56,18 @@ describe("DASHBOARD_HOME_SECTIONS — authoritative section registry (ITEMS A+B)
     }
   });
 
-  it("every permission section declares a permission string and cacheScope", () => {
+  it("every permission section declares a permission string", () => {
     const perms = DASHBOARD_HOME_SECTIONS.filter(isPermissionSection) as PermissionSection[];
     expect(perms.length).toBeGreaterThan(0);
     for (const s of perms) {
       expect(typeof s.permission).toBe("string");
       expect(s.permission.length).toBeGreaterThan(0);
-      expect(["org", "scoped"]).toContain(s.cacheScope);
+    }
+  });
+
+  it("every section — not just permission ones — declares a cache scope", () => {
+    for (const section of DASHBOARD_HOME_SECTIONS) {
+      expect(["org", "scoped", "none"]).toContain(section.cacheScope);
     }
   });
 
@@ -246,5 +255,91 @@ describe("registry ↔ controller cross-check", () => {
         );
     }
     expect(mismatches).toEqual([]);
+  });
+});
+
+/**
+ * `cacheNs` and `cacheScope` were declared and read by nothing: every Home cache
+ * key was a free string at the call site, so a section could claim "scoped" while
+ * its read cached org-wide, or claim a namespace it never used. These assertions
+ * fail in BOTH directions — a section that declares a family it does not use, and
+ * a read that uses a family its section does not declare.
+ */
+describe("the registry's cache declarations are what production actually uses", () => {
+  const SERVICE_DIR = __dirname;
+  const serviceFiles = readdirSync(SERVICE_DIR).filter(
+    (name) => name.endsWith(".service.ts") && !name.includes(".spec."),
+  );
+  const sources = serviceFiles.map((name) => ({
+    name,
+    text: readFileSync(join(SERVICE_DIR, name), "utf8"),
+  }));
+
+  function usesBuilder(builder: string, sectionKey: string): boolean {
+    const call = new RegExp(
+      `${builder}\\(\\s*this\\.access,\\s*[A-Za-z.]+,\\s*"${sectionKey}"`,
+      "s",
+    );
+    return sources.some((file) => call.test(file.text));
+  }
+
+  it("scans the real service corpus, so a clean result is not an unscanned one", () => {
+    expect(serviceFiles.length).toBeGreaterThanOrEqual(5);
+    const builderCalls = sources.flatMap((file) => [
+      ...file.text.matchAll(/build(?:Org|Scoped)SectionCacheKey\(/g),
+    ]);
+    expect(builderCalls.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("every section declaring cacheScope 'org' reads through the org builder", () => {
+    const declared = DASHBOARD_HOME_SECTIONS.filter((s) => s.cacheScope === "org");
+    expect(declared.length).toBeGreaterThan(0);
+    const missing = declared
+      .filter((s) => !usesBuilder("buildOrgSectionCacheKey", s.key))
+      .map((s) => s.key);
+    expect(missing).toEqual([]);
+  });
+
+  it("every section declaring cacheScope 'scoped' reads through the scoped builder", () => {
+    const declared = DASHBOARD_HOME_SECTIONS.filter((s) => s.cacheScope === "scoped");
+    expect(declared.length).toBeGreaterThan(0);
+    const missing = declared
+      .filter((s) => !usesBuilder("buildScopedSectionCacheKey", s.key))
+      .map((s) => s.key);
+    expect(missing).toEqual([]);
+  });
+
+  it("no section declaring 'none' secretly reads through either builder", () => {
+    const declared = DASHBOARD_HOME_SECTIONS.filter((s) => s.cacheScope === "none");
+    expect(declared.length).toBeGreaterThan(0);
+    const lying = declared
+      .filter(
+        (s) =>
+          usesBuilder("buildOrgSectionCacheKey", s.key) ||
+          usesBuilder("buildScopedSectionCacheKey", s.key),
+      )
+      .map((s) => s.key);
+    expect(lying).toEqual([]);
+  });
+
+  it("no dashboard service builds a Home cache key from a free string any more", () => {
+    const offenders: string[] = [];
+    for (const file of sources)
+      for (const match of file.text.matchAll(
+        /build(?:Org|Scoped)DashboardCacheKey\(/g,
+      )) {
+        const line = file.text.slice(0, match.index).split("\n").length;
+        offenders.push(`${file.name}:${String(line)}`);
+      }
+    expect(offenders).toEqual([]);
+  });
+
+  it("resolves each section's namespace from the registry, and refuses an unknown one", () => {
+    expect(cacheNamespaceOf("upcoming-holidays")).toBe("holidays");
+    expect(cacheNamespaceOf("team-availability")).toBe("availability");
+    expect(cacheScopeOf("leaves-today")).toBe("none");
+    expect(() => cacheNamespaceOf("not-a-section" as never)).toThrow(
+      /unknown section/,
+    );
   });
 });

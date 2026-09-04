@@ -7,7 +7,6 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbMembersService } from "./kb-members.service";
 import { addMemberSchema, type AddMemberInput } from "./dto/kb-members.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
 const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();
@@ -15,7 +14,6 @@ const spaceIdmemberIdParams = z.object({ spaceId: z.coerce.number().int().positi
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbMembersController {
   constructor(private readonly members: KbMembersService) {}
 

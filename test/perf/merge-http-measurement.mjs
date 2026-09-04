@@ -90,6 +90,46 @@ export function tenantIsScorable(tenant) {
   return { ok: true, reason: null };
 }
 
+/**
+ * Folds a requestLevel block into a manifest object, together with the two prose fields that
+ * describe it.
+ *
+ * Exported because this script is not the only writer of the manifest.
+ * `measure-benchmark-manifest.mjs` rebuilds the statement half from scratch, and the object it
+ * builds has no `requestLevel` key at all — so before this existed, a `--write` there silently
+ * DELETED every measured route×tenant slot along with both sentences saying they were measured, and
+ * the next reader saw a manifest that had simply never had an HTTP capture. Carrying the block
+ * forward through the same function keeps the block and its description from disagreeing about
+ * which capture is being described.
+ */
+export function applyRequestLevel(manifest, requestLevel) {
+  manifest.requestLevel = requestLevel;
+  manifest.prd.requestCeilingsMs.note =
+    `Request-level ceilings ARE measured, by ${requestLevel.instrument}, and recorded under ` +
+    `\`requestLevel\`. The cache-hit ceiling remains unmeasured — no Redis runs against this seed.`;
+  // Drop the lines this script itself wrote last time, as well as the original "no HTTP harness
+  // exists" line. Without this a second capture stacks a stale coverage claim on top of a fresh
+  // one, and the reader cannot tell which database either sentence is about.
+  manifest.coverage.notMeasured = (manifest.coverage.notMeasured ?? []).filter(
+    (line) =>
+      !line.startsWith("End-to-end request latency") &&
+      !line.startsWith("Request-level figures cover") &&
+      !line.startsWith("Request-level MUTATION latency"),
+  );
+  manifest.coverage.notMeasured.unshift(
+    `Request-level figures cover ${String(requestLevel.tally.measured)} of ` +
+      `${String(requestLevel.tally.total)} route×tenant slots on ${String(requestLevel.database)}; ` +
+      `${String(requestLevel.tally.refused)} were declined and ${String(requestLevel.tally.failed)} failed. ` +
+      `See requestLevel.tally.refusalsByReason for why each was not measured.`,
+  );
+  if (requestLevel.readOnly === true)
+    manifest.coverage.notMeasured.push(
+      "Request-level MUTATION latency: the capture was read-only, so the plan's POST entries were " +
+        "declined rather than measured against a database other reports quote.",
+    );
+  return manifest;
+}
+
 export function buildRequestLevel(artifacts, budgets, budgetsHash) {
   const routes = {};
   const tenants = [];
@@ -307,34 +347,16 @@ function main() {
     return;
   }
 
-  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
-  manifest.requestLevel = requestLevel;
-  manifest.prd.requestCeilingsMs.note =
-    `Request-level ceilings ARE measured, by ${requestLevel.instrument}, and recorded under ` +
-    `\`requestLevel\`. The cache-hit ceiling remains unmeasured — no Redis runs against this seed.`;
-  // Drop the lines this script itself wrote last time, as well as the original "no HTTP harness
-  // exists" line. Without this a second capture stacks a stale coverage claim on top of a fresh
-  // one, and the reader cannot tell which database either sentence is about.
-  manifest.coverage.notMeasured = (manifest.coverage.notMeasured ?? []).filter(
-    (line) =>
-      !line.startsWith("End-to-end request latency") &&
-      !line.startsWith("Request-level figures cover") &&
-      !line.startsWith("Request-level MUTATION latency"),
-  );
-  manifest.coverage.notMeasured.unshift(
-    `Request-level figures cover ${String(requestLevel.tally.measured)} of ` +
-      `${String(requestLevel.tally.total)} route×tenant slots on ${String(requestLevel.database)}; ` +
-      `${String(requestLevel.tally.refused)} were declined and ${String(requestLevel.tally.failed)} failed. ` +
-      `See requestLevel.tally.refusalsByReason for why each was not measured.`,
-  );
-  if (requestLevel.readOnly === true)
-    manifest.coverage.notMeasured.push(
-      "Request-level MUTATION latency: the capture was read-only, so the plan's POST entries were " +
-        "declined rather than measured against a database other reports quote.",
-    );
+  const manifest = applyRequestLevel(JSON.parse(readFileSync(MANIFEST_PATH, "utf8")), requestLevel);
   writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
   process.stdout.write(`[merge-http-measurement] wrote requestLevel into contracts/benchmark-manifest.json\n`);
 }
 
-if (process.argv.includes("--self-test")) selfTest();
-else main();
+// Guarded, so importing `applyRequestLevel` from another writer of the manifest does not run this
+// script's CLI. Unguarded, a bare import executed `main()`, which exits 1 on the missing
+// `--artifact=` argument — the import alone would have killed its caller.
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) {
+  if (process.argv.includes("--self-test")) selfTest();
+  else main();
+}

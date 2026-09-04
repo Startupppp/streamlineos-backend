@@ -1,9 +1,10 @@
 import type { Request, Response } from "express";
 import { createStreamAbortSignal } from "../../../../common/http/stream-abort";
 import {
-  encodeStreamSourcesHeader,
+  encodeStreamSources,
   pipeAiTextStream,
   rethrowStreamRouteError,
+  sourcesTruncatedHeaderName,
   type PipeableAiTextStream,
 } from "./ai-stream-response";
 
@@ -27,16 +28,33 @@ export interface AiTextStreamProduct {
   sources?: readonly unknown[];
 }
 
+/**
+ * A truncated citation list is published WITH its shortfall. The client can then
+ * say "12 of 30 sources" instead of presenting a partial list as the whole
+ * grounding, which is the only difference between an elided answer and a
+ * misleading one.
+ */
 function sourceHeaders(
   options: AiTextStreamRouteOptions,
   sources: readonly unknown[] | undefined,
 ): Record<string, string> | undefined {
   if (options.sourcesHeader === undefined || sources === undefined) return undefined;
-  const encoded = encodeStreamSourcesHeader(sources);
+  const encoded = encodeStreamSources(sources, {
+    feature: options.feature,
+    orgId: options.orgId,
+  });
   if (encoded === null) return undefined;
+
+  const truncatedHeader = sourcesTruncatedHeaderName(options.sourcesHeader);
+  const exposed =
+    encoded.dropped > 0
+      ? `${options.sourcesHeader}, ${truncatedHeader}`
+      : options.sourcesHeader;
+
   return {
-    [options.sourcesHeader]: encoded,
-    "access-control-expose-headers": options.sourcesHeader,
+    [options.sourcesHeader]: encoded.encoded,
+    ...(encoded.dropped > 0 ? { [truncatedHeader]: String(encoded.dropped) } : {}),
+    "access-control-expose-headers": exposed,
   };
 }
 

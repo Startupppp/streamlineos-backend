@@ -2,6 +2,7 @@ import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { moduleDefinition } from "src/common/rbac/module-registry";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
 
 type PreferenceStore = Map<string, Set<string>>;
@@ -60,19 +61,34 @@ describe("Calendar source production graph (e2e)", () => {
       .set("Authorization", `Bearer ${auth}`);
   }
 
-  it("registers the production HR calendar sources through the real module graph", async () => {
+  it("registers the production calendar sources through the real module graph", async () => {
     const auth = await token("calendar-owner", "calendar-org-registration");
 
     const response = await listSources(auth);
 
     expect(response.status).toBe(200);
+    // Exhaustive on purpose: a source that registers itself and is never named here is a
+    // toggle the unified calendar shows without anyone having decided it should.
     expect(response.body.map((source: { key: string }) => source.key).sort()).toEqual([
+      "calendar-events",
       "hr-attendance",
       "hr-holidays",
       "hr-interviews",
       "hr-leaves",
+      "tasks",
     ]);
-    expect(response.body.every((source: { module: string }) => source.module === "hr")).toBe(true);
+    expect(
+      response.body
+        .map((source: { key: string; module: string }) => `${source.key}:${source.module}`)
+        .sort(),
+    ).toEqual([
+      "calendar-events:calendar",
+      "hr-attendance:hr",
+      "hr-holidays:hr",
+      "hr-interviews:hr",
+      "hr-leaves:hr",
+      "tasks:tasks",
+    ]);
   });
 
   it("persists source preferences per user and organization", async () => {
@@ -108,12 +124,69 @@ describe("Calendar source production graph (e2e)", () => {
     });
   });
 
+  /**
+   * Exhaustive, not "no hr-* key": `resolveAvailable` is the only thing standing between
+   * a registered source and the toggle list, and a set-difference assertion would keep
+   * passing if it started letting a THIRD module's source through.
+   *
+   * Every key named here survives for a DECLARED reason — its module holds a
+   * MODULE_REGISTRY entry that is not plan-gated. That is asserted below against the
+   * registry itself rather than trusted from this list, because the list alone cannot
+   * tell "declared core" from the failure this test exists to catch: a source whose
+   * module has no registry entry at all, which `isCoreModuleKey` reports core by default
+   * and which therefore appears on the calendar of an organisation that enabled nothing.
+   */
   it("does not expose registered HR sources when the HR module is unavailable", async () => {
     const auth = await token("calendar-no-hr", "calendar-org-no-hr", []);
 
     const response = await listSources(auth);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual([]);
+    expect(response.body.map((source: { key: string }) => source.key).sort()).toEqual([
+      "calendar-events",
+      "tasks",
+    ]);
+    expect(
+      response.body
+        .map((source: { key: string; module: string }) => `${source.key}:${source.module}`)
+        .sort(),
+    ).toEqual(["calendar-events:calendar", "tasks:tasks"]);
+    expect(
+      response.body.filter((source: { module: string }) => source.module === "hr"),
+    ).toEqual([]);
+
+    for (const source of response.body as Array<{ key: string; module: string }>) {
+      expect(moduleDefinition(source.module)).toBeDefined();
+      expect(moduleDefinition(source.module)?.planGated).toBe(false);
+    }
+  });
+
+  /**
+   * The corpus check the per-request assertions cannot make. `/calendar/sources` shows
+   * only what one token may see, so a mis-declared source in a module this token has
+   * disabled stays invisible to it. The admin list is every source the production graph
+   * registered, so this counts the whole set — the property that was FALSE at head, where
+   * `tasks` declared a module the registry did not hold.
+   */
+  it("declares every registered source against a module the registry holds", async () => {
+    const auth = await signToken({
+      sub: "calendar-admin",
+      orgId: "calendar-org-admin",
+      enabledModules: [],
+      permissions: ["calendar:admin:manage"],
+    });
+
+    const response = await request(app.getHttpServer())
+      .get("/calendar/admin/settings")
+      .set("Authorization", `Bearer ${auth}`);
+
+    expect(response.status).toBe(200);
+    const sources = response.body.sources as Array<{ key: string; module: string }>;
+    expect(sources.length).toBeGreaterThan(0);
+
+    const undeclared = sources
+      .filter((source) => moduleDefinition(source.module) === undefined)
+      .map((source) => `${source.key}:${source.module}`);
+    expect(undeclared).toEqual([]);
   });
 });

@@ -72,7 +72,12 @@ export class InMemoryCommandFenceStore implements CommandFenceStore {
     return { kind: "proceed", fenceId };
   }
 
-  async complete(fenceId: number, responseStatus: number, data: unknown): Promise<void> {
+  async complete(
+    fenceId: number,
+    responseStatus: number,
+    data: unknown,
+    _orgId: string,
+  ): Promise<void> {
     for (const [k, fence] of this.fences.entries()) {
       if (fence.fenceId === fenceId) {
         this.fences.set(k, { ...fence, status: "COMPLETED", responseBody: data, responseStatus });
@@ -81,7 +86,7 @@ export class InMemoryCommandFenceStore implements CommandFenceStore {
     }
   }
 
-  async fail(fenceId: number): Promise<void> {
+  async fail(fenceId: number, _orgId: string): Promise<void> {
     for (const [k, fence] of this.fences.entries()) {
       if (fence.fenceId === fenceId) {
         this.fences.set(k, { ...fence, status: "FAILED" });

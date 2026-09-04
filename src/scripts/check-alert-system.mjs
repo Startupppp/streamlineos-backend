@@ -9,6 +9,7 @@ const ALERT_SCRIPTS = [
   "route-attribution.mjs",
   "alert-dead-outbox.mjs",
   "alert-dead-delivery.mjs",
+  "alert-dead-notification-outbox.mjs",
   "alert-sig-failures.mjs",
   "alert-tenant-ctx-errors.mjs",
   "alert-p95.mjs",

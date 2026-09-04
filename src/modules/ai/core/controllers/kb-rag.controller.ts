@@ -19,7 +19,8 @@ import { kbAskSchema, type KbAskInput } from "../dto/request.schemas";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import {
   createStreamAbortSignal,
-  encodeStreamSourcesHeader,
+  encodeStreamSources,
+  sourcesTruncatedHeaderName,
   pipeAiTextStream,
   rethrowStreamRouteError,
 } from "../streaming";
@@ -78,15 +79,25 @@ export class KbRagController {
         return;
       }
 
-      const encodedSources = encodeStreamSourcesHeader(result.sources);
+      const encodedSources = encodeStreamSources(result.sources, {
+        feature: "kb.public-ask",
+        orgId: body.org,
+      });
+      const truncatedHeader = sourcesTruncatedHeaderName(KB_SOURCES_HEADER);
       await pipeAiTextStream(res, result.stream, {
         feature: "kb.public-ask",
         orgId: body.org,
         ...(encodedSources !== null
           ? {
               headers: {
-                [KB_SOURCES_HEADER]: encodedSources,
-                "access-control-expose-headers": KB_SOURCES_HEADER,
+                [KB_SOURCES_HEADER]: encodedSources.encoded,
+                ...(encodedSources.dropped > 0
+                  ? { [truncatedHeader]: String(encodedSources.dropped) }
+                  : {}),
+                "access-control-expose-headers":
+                  encodedSources.dropped > 0
+                    ? `${KB_SOURCES_HEADER}, ${truncatedHeader}`
+                    : KB_SOURCES_HEADER,
               },
             }
           : {}),

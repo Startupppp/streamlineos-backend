@@ -35,39 +35,51 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
     return del;
   }
 
+  interface InsertedRow {
+    table: unknown;
+    values: Record<string, unknown>;
+  }
+
   function makeDb(opts: {
     articleRow?: unknown;
     selectRows?: unknown[];
     deleteRows?: unknown[];
     insertRows?: unknown[];
-  } = {}): Db {
+  } = {}): { db: Db; inserted: InsertedRow[] } {
     const findFirst = jest.fn().mockResolvedValue(opts.articleRow ?? null);
-    return {
+    const inserted: InsertedRow[] = [];
+    const db = {
       query: {
         kbArticles: { findFirst },
         users: { findFirst: jest.fn().mockResolvedValue(null) },
       },
       select: jest.fn().mockReturnValue(makeSelectChain(opts.selectRows ?? [])),
       delete: makeDeleteChain(opts.deleteRows ?? []),
-      insert: jest.fn().mockReturnValue({
-        values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue(opts.insertRows ?? []),
+      insert: jest.fn().mockImplementation((table: unknown) => ({
+        values: jest.fn().mockImplementation((values: Record<string, unknown>) => {
+          inserted.push({ table, values });
+          const settled = Promise.resolve(opts.insertRows ?? []);
+          return Object.assign(settled, {
+            returning: jest.fn().mockResolvedValue(opts.insertRows ?? []),
+            onConflictDoUpdate: jest.fn().mockReturnValue(settled),
+          });
         }),
-      }),
+      })),
     } as unknown as Db;
+    return { db, inserted };
   }
 
   const storage = { getFileUrl: jest.fn().mockResolvedValue("https://signed.example.com/file") };
 
   describe("listFeedback", () => {
     it("throws NotFoundException when the article belongs to a different org (cross-tenant isolation)", async () => {
-      const db = makeDb({ articleRow: null });
+      const { db } = makeDb({ articleRow: null });
       const svc = new SupportKbEngagementService(db, storage as never);
       await expect(svc.listFeedback(ATTACKER_ORG, ARTICLE_ID)).rejects.toThrow(NotFoundException);
     });
 
     it("returns feedback for the owning org (control — same-tenant)", async () => {
-      const db = makeDb({ articleRow: { id: ARTICLE_ID }, selectRows: [] });
+      const { db } = makeDb({ articleRow: { id: ARTICLE_ID }, selectRows: [] });
       const svc = new SupportKbEngagementService(db, storage as never);
       const result = await svc.listFeedback(OWNER_ORG, ARTICLE_ID);
       expect(result).toHaveLength(0);
@@ -76,13 +88,13 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
 
   describe("listComments", () => {
     it("throws NotFoundException when the article belongs to a different org (cross-tenant isolation)", async () => {
-      const db = makeDb({ articleRow: null });
+      const { db } = makeDb({ articleRow: null });
       const svc = new SupportKbEngagementService(db, storage as never);
       await expect(svc.listComments(ATTACKER_ORG, ARTICLE_ID)).rejects.toThrow(NotFoundException);
     });
 
     it("returns comments for the owning org (control — same-tenant)", async () => {
-      const db = makeDb({ articleRow: { id: ARTICLE_ID }, selectRows: [] });
+      const { db } = makeDb({ articleRow: { id: ARTICLE_ID }, selectRows: [] });
       const svc = new SupportKbEngagementService(db, storage as never);
       const result = await svc.listComments(OWNER_ORG, ARTICLE_ID);
       expect(result).toHaveLength(0);
@@ -91,7 +103,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
 
   describe("createComment", () => {
     it("throws NotFoundException when the article belongs to a different org (cross-tenant isolation)", async () => {
-      const db = makeDb({ articleRow: null });
+      const { db } = makeDb({ articleRow: null });
       const svc = new SupportKbEngagementService(db, storage as never);
       await expect(
         svc.createComment(ATTACKER_ORG, ARTICLE_ID, USER_ID, COMMENT_INPUT),
@@ -101,7 +113,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
 
   describe("deleteComment", () => {
     it("throws NotFoundException when the comment does not belong to the caller's org (cross-tenant isolation)", async () => {
-      const db = makeDb({ deleteRows: [] });
+      const { db } = makeDb({ deleteRows: [] });
       const svc = new SupportKbEngagementService(db, storage as never);
       await expect(
         svc.deleteComment(ATTACKER_ORG, ARTICLE_ID, COMMENT_ID),
@@ -109,7 +121,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
     });
 
     it("returns success when the comment belongs to the caller's org (control — same-tenant)", async () => {
-      const db = makeDb({ deleteRows: [{ id: COMMENT_ID }] });
+      const { db } = makeDb({ deleteRows: [{ id: COMMENT_ID }] });
       const svc = new SupportKbEngagementService(db, storage as never);
       const result = await svc.deleteComment(OWNER_ORG, ARTICLE_ID, COMMENT_ID);
       expect(result).toEqual({ success: true });
@@ -118,13 +130,13 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
 
   describe("listAttachments", () => {
     it("throws NotFoundException when the article belongs to a different org (cross-tenant isolation)", async () => {
-      const db = makeDb({ articleRow: null });
+      const { db } = makeDb({ articleRow: null });
       const svc = new SupportKbEngagementService(db, storage as never);
       await expect(svc.listAttachments(ATTACKER_ORG, ARTICLE_ID)).rejects.toThrow(NotFoundException);
     });
 
     it("returns attachments for the owning org (control — same-tenant)", async () => {
-      const db = makeDb({ articleRow: { id: ARTICLE_ID }, selectRows: [] });
+      const { db } = makeDb({ articleRow: { id: ARTICLE_ID }, selectRows: [] });
       const svc = new SupportKbEngagementService(db, storage as never);
       const result = await svc.listAttachments(OWNER_ORG, ARTICLE_ID);
       expect(result).toHaveLength(0);
@@ -133,7 +145,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
 
   describe("createAttachment", () => {
     it("throws NotFoundException when the article belongs to a different org (cross-tenant isolation)", async () => {
-      const db = makeDb({ articleRow: null });
+      const { db } = makeDb({ articleRow: null });
       const svc = new SupportKbEngagementService(db, storage as never);
       await expect(
         svc.createAttachment(ATTACKER_ORG, ARTICLE_ID, USER_ID, ATTACHMENT_INPUT),
@@ -143,7 +155,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
 
   describe("deleteAttachment", () => {
     it("throws NotFoundException when the attachment does not belong to the caller's org (cross-tenant isolation)", async () => {
-      const db = makeDb({ deleteRows: [] });
+      const { db } = makeDb({ deleteRows: [] });
       const svc = new SupportKbEngagementService(db, storage as never);
       await expect(
         svc.deleteAttachment(ATTACKER_ORG, ARTICLE_ID, ATTACHMENT_ID),
@@ -151,16 +163,39 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
     });
 
     it("returns success when the attachment belongs to the caller's org (control — same-tenant)", async () => {
-      const db = makeDb({ deleteRows: [{ fileKey: "org-owner/kb-attachments/uuid.pdf" }] });
+      const { db } = makeDb({ deleteRows: [{ fileKey: "org-owner/kb-attachments/uuid.pdf" }] });
       const svc = new SupportKbEngagementService(db, storage as never);
       const result = await svc.deleteAttachment(OWNER_ORG, ARTICLE_ID, ATTACHMENT_ID);
       expect(result).toEqual({ success: true });
+    });
+
+    /**
+     * PRD-C103, "deletion must clean database rows and objects without
+     * orphaning". The row was deleted with `.returning({ fileKey })` and the key
+     * it fetched was then thrown away, so every deleted attachment left its
+     * object behind with nothing left pointing at it.
+     */
+    it("enqueues the deleted attachment's object for purge instead of discarding the key", async () => {
+      const { db, inserted } = makeDb({
+        deleteRows: [{ fileKey: "org-owner/kb-attachments/uuid.pdf" }],
+      });
+      const svc = new SupportKbEngagementService(db, storage as never);
+      await svc.deleteAttachment(OWNER_ORG, ARTICLE_ID, ATTACHMENT_ID);
+
+      expect(inserted).toHaveLength(1);
+      expect(inserted[0]?.values).toEqual({
+        orgId: OWNER_ORG,
+        storageKey: "org-owner/kb-attachments/uuid.pdf",
+        purpose: "support:kb-attachment:delete",
+        bucket: "default",
+        status: "pending",
+      });
     });
   });
 
   describe("getAttachmentDownloadUrl", () => {
     it("throws NotFoundException when the attachment belongs to a different org (cross-tenant isolation)", async () => {
-      const db = makeDb({ selectRows: [] });
+      const { db } = makeDb({ selectRows: [] });
       const svc = new SupportKbEngagementService(db, storage as never);
       await expect(
         svc.getAttachmentDownloadUrl(ATTACKER_ORG, ARTICLE_ID, ATTACHMENT_ID),
@@ -168,7 +203,7 @@ describe("SupportKbEngagementService — cross-tenant isolation", () => {
     });
 
     it("returns the download URL when the attachment belongs to the caller's org (control — same-tenant)", async () => {
-      const db = makeDb({
+      const { db } = makeDb({
         selectRows: [
           {
             fileKey: "org-owner/kb-attachments/uuid.pdf",

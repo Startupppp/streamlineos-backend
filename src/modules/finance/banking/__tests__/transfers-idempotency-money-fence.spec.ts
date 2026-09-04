@@ -167,7 +167,12 @@ class JournalledFenceStore implements CommandFenceStore {
     return { kind: "proceed", fenceId: existing.fenceId };
   }
 
-  async complete(fenceId: number, responseStatus: number, data: unknown): Promise<void> {
+  async complete(
+    fenceId: number,
+    responseStatus: number,
+    data: unknown,
+    _orgId: string,
+  ): Promise<void> {
     if (this.failCompletions > 0) {
       this.failCompletions -= 1;
       throw new Error("Failed query: update command_fences");
@@ -177,7 +182,7 @@ class JournalledFenceStore implements CommandFenceStore {
         return this.put(key, { ...row, status: "COMPLETED", responseBody: data, responseStatus });
   }
 
-  async fail(fenceId: number): Promise<void> {
+  async fail(fenceId: number, _orgId: string): Promise<void> {
     for (const [key, row] of this.rows.entries())
       if (row.fenceId === fenceId) return this.put(key, { ...row, status: "FAILED" });
   }
@@ -440,7 +445,19 @@ describe("DrizzleCommandFenceStore.complete — the swallow is gone", () => {
     } as unknown as Db;
 
     const store = new DrizzleCommandFenceStore(db);
-    await expect(store.complete(7, 201, { created: true })).rejects.toBe(failure);
+    /*
+     * Run under an ambient tenant context, which is the state a money command is
+     * always in: `TenantContextInterceptor` has the request transaction open, so
+     * `runInTenantTransaction` hands the store that transaction rather than opening
+     * one. That is the case this test is about — the completion write is on the
+     * command's own transaction, so its failure has to propagate or the money moves
+     * with no fence stamped.
+     */
+    await expect(
+      runWithTenantContext({ orgId: ORG, audience: "INTERNAL", tx: db as unknown as TenantTx }, () =>
+        store.complete(7, 201, { created: true }, ORG),
+      ),
+    ).rejects.toBe(failure);
   });
 
   it("logs rather than swallows when the FAILED stamp cannot be written", async () => {
@@ -458,7 +475,10 @@ describe("DrizzleCommandFenceStore.complete — the swallow is gone", () => {
       });
 
     try {
-      await new DrizzleCommandFenceStore(db).fail(7);
+      await runWithTenantContext(
+        { orgId: ORG, audience: "INTERNAL", tx: db as unknown as TenantTx },
+        () => new DrizzleCommandFenceStore(db).fail(7, ORG),
+      );
     } finally {
       spy.mockRestore();
       void original;

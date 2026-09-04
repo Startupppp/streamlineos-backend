@@ -5,6 +5,7 @@ import { StorageService } from "../../storage/storage.service";
 import { FinanceReportExportService, type FinanceReportExportJobRow, REPORT_LINE_CAP } from "./finance-report-export.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { baseCreditAmount, baseDebitAmount } from "../../accounting/core/journal-base-amount";
 import {
   clients,
   expenses,
@@ -285,14 +286,14 @@ export class FinanceReportExportWorkerService implements OnModuleInit, OnModuleD
   private async buildProjectProfitability(orgId: string, f: FinanceReportExportFilters): Promise<{ lines: string[]; truncated: boolean }> {
     const [revenueRows, costJRows, costERows] = await Promise.all([
       this.db
-        .select({ projectId: journalLines.projectId, totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`, totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)` })
+        .select({ projectId: journalLines.projectId, totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`, totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)` })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
         .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
         .where(and(eq(journalEntries.orgId, orgId), eq(journalEntries.status, "POSTED"), eq(ledgerAccounts.accountType, "INCOME"), isNotNull(journalLines.projectId), gte(journalEntries.entryDate, f.from), lte(journalEntries.entryDate, f.to)))
         .groupBy(journalLines.projectId),
       this.db
-        .select({ projectId: journalLines.projectId, totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`, totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)` })
+        .select({ projectId: journalLines.projectId, totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`, totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)` })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
         .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
@@ -327,14 +328,14 @@ export class FinanceReportExportWorkerService implements OnModuleInit, OnModuleD
   private async buildDepartmentProfitability(orgId: string, f: FinanceReportExportFilters): Promise<{ lines: string[]; truncated: boolean }> {
     const [revenueRows, costRows] = await Promise.all([
       this.db
-        .select({ departmentId: journalLines.departmentId, totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`, totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)` })
+        .select({ departmentId: journalLines.departmentId, totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`, totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)` })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
         .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
         .where(and(eq(journalEntries.orgId, orgId), eq(journalEntries.status, "POSTED"), eq(ledgerAccounts.accountType, "INCOME"), gte(journalEntries.entryDate, f.from), lte(journalEntries.entryDate, f.to)))
         .groupBy(journalLines.departmentId),
       this.db
-        .select({ departmentId: journalLines.departmentId, totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`, totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)` })
+        .select({ departmentId: journalLines.departmentId, totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`, totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)` })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
         .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
@@ -372,7 +373,7 @@ export class FinanceReportExportWorkerService implements OnModuleInit, OnModuleD
     const accountIds = [...new Set(capped.map((l) => l.accountId))];
     const actualRows = accountIds.length > 0
       ? await this.db
-          .select({ accountId: journalLines.accountId, periodKey: sql<string>`to_char(date_trunc('month', ${journalEntries.entryDate}::date), 'YYYY-MM')`, totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`, totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`, accountType: ledgerAccounts.accountType })
+          .select({ accountId: journalLines.accountId, periodKey: sql<string>`to_char(date_trunc('month', ${journalEntries.entryDate}::date), 'YYYY-MM')`, totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`, totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`, accountType: ledgerAccounts.accountType })
           .from(journalLines)
           .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
           .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))

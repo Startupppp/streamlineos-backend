@@ -4,6 +4,7 @@ import { Public } from "../../../common/auth/public.decorator";
 import { KbPagesService } from "./kb-pages.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
+import { resolveClientIpOr } from "../../../common/http/client-ip";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
@@ -23,7 +24,7 @@ export class KbPublicPagesController {
     @Param("token") token: string,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ): Promise<unknown> {
-    const ip = req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
+    const ip = resolveClientIpOr(req, "unknown");
     const result = await this.rateLimit.check("public:kb", ip);
     if (!result.allowed)
       throw new HttpException({ message: "Too many requests. Try again later." }, HttpStatus.TOO_MANY_REQUESTS);

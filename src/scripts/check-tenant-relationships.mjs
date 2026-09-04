@@ -42,8 +42,18 @@
  *   drizzle.__replay holds fewer entries than the journal. Use TENANT_RELATIONSHIP_DB_URL to
  *   point at a fully bootstrapped database.
  *
+ * WHICH DATABASE ANSWERED
+ *   With TENANT_RELATIONSHIP_DB_URL unset the target fell back to DIRECT_DATABASE_URL and
+ *   then DATABASE_URL, which in this repository is the shared REMOTE branch, and the report
+ *   named only `current_database()` — so a remote scratch_boot_a and a local one printed the
+ *   same line. Every run now prints host:port/database and the variable that supplied it, and
+ *   a non-loopback target reached through the FALLBACK chain is INCONCLUSIVE (exit 2) rather
+ *   than a number. A remote target chosen deliberately through TENANT_RELATIONSHIP_DB_URL is
+ *   still allowed, as is TENANT_RELATIONSHIP_ALLOW_REMOTE=1.
+ *
  * Usage:  node src/scripts/check-tenant-relationships.mjs [--db-only|--static-only|--self-test]
- * Exit:   0 clean · 1 violations found · 2 parser/connection error
+ * Exit:   0 clean · 1 violations found · 2 parser/connection error, or a target this gate
+ *         will not measure blind
  */
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -129,24 +139,78 @@ async function runCatalogMode() {
   try { dotenv = await import("dotenv"); } catch { dotenv = null; }
   if (dotenv) dotenv.config({ path: resolve(BACKEND_ROOT, ".env") });
 
-  const rawUrl = process.env.TENANT_RELATIONSHIP_DB_URL
-    || process.env.DIRECT_DATABASE_URL
-    || process.env.DATABASE_URL;
-  if (!rawUrl) return null;
+  const resolved = resolveTarget(process.env);
+  if (!resolved) return null;
 
-  const cleanUrl = rawUrl.replace(/'/g, "");
+  // The refusal below, and the label printed with every result, exist because the
+  // fallback chain used to be silent. With TENANT_RELATIONSHIP_DB_URL unset this
+  // resolves DIRECT_DATABASE_URL and then DATABASE_URL, which in this repo is the
+  // shared remote branch — and the report said only `pg_catalog (scratch_boot_a)`,
+  // a database NAME. A remote scratch_boot_a and a local one printed identically,
+  // so "measured locally" was an assumption the output could never contradict.
+  const refusal = remoteFallbackRefusal(resolved, process.env);
+  if (refusal && !SELF_TEST) return { refused: refusal };
+
+  const cleanUrl = resolved.url;
   // Safety: never touch neondb or cell2
   if (/\/neondb(\?|$)/.test(cleanUrl) || /\/cell2(\?|$)/.test(cleanUrl)) {
     if (SELF_TEST) return null;
     const scratchUrl = cleanUrl.replace(/\/neondb(\?|$)/, "/scratch_boot_a$1");
-    return runQuery(postgres, scratchUrl);
+    return runQuery(postgres, scratchUrl, { ...resolved, url: scratchUrl, rewritten: true });
   }
-  return runQuery(postgres, cleanUrl);
+  return runQuery(postgres, cleanUrl, resolved);
+}
+
+/** Which variable answered, so the report can say where the target came from. */
+export function resolveTarget(env) {
+  for (const name of ["TENANT_RELATIONSHIP_DB_URL", "DIRECT_DATABASE_URL", "DATABASE_URL"]) {
+    const raw = env[name];
+    if (raw) return { url: String(raw).replace(/'/g, ""), source: name };
+  }
+  return null;
+}
+
+export function safeLabel(url) {
+  try {
+    const u = new URL(url);
+    const database = u.pathname.replace(/^\//, "").split("?")[0] || "?";
+    return `${u.hostname || "?"}:${u.port || "5432"}/${database}`;
+  } catch {
+    return "<unparseable url>";
+  }
+}
+
+export function isLoopbackHost(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host === "" || host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A remote target reached through the DEDICATED variable is a deliberate choice and
+ * is allowed. A remote target reached through the fallback chain is an accident, so
+ * it is INCONCLUSIVE (exit 2), never a pass — the same rule the mid-bootstrap guard
+ * below already follows. Returns null when the target is fine.
+ */
+export function remoteFallbackRefusal(resolved, env) {
+  if (resolved === null) return null;
+  if (isLoopbackHost(resolved.url)) return null;
+  if (resolved.source === "TENANT_RELATIONSHIP_DB_URL") return null;
+  if (env.TENANT_RELATIONSHIP_ALLOW_REMOTE === "1") return null;
+  return (
+    `INCONCLUSIVE — the target resolved to "${safeLabel(resolved.url)}" from ${resolved.source}, ` +
+    `which is not a loopback host and was not chosen for this gate. ` +
+    `Set TENANT_RELATIONSHIP_DB_URL to the database you mean to measure, ` +
+    `or TENANT_RELATIONSHIP_ALLOW_REMOTE=1 to accept this one.`
+  );
 }
 
 const MIN_TENANT_TABLES = 400;
 
-async function runQuery(postgres, url) {
+async function runQuery(postgres, url, resolved = null) {
   const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {}, connect_timeout: 10, idle_timeout: 15 });
   try {
     const [{ tenant_tables }] = await sql`
@@ -223,6 +287,9 @@ async function runQuery(postgres, url) {
     }
     result.midBootstrap = midBootstrap;
     result.target = target;
+    result.targetLabel = safeLabel(url);
+    result.targetSource = resolved?.source ?? "unknown";
+    result.targetRewritten = resolved?.rewritten === true;
     return result;
   } finally {
     await sql.end();
@@ -512,6 +579,41 @@ export const creditNotes = pgTable("credit_notes", {
     crm_file_path_excluded: crmFile.length === 0,
   };
 
+  // Target resolution. These exist because the fallback chain silently reached the
+  // shared remote branch and the report could not say so.
+  const LOCAL = "postgres://u@127.0.0.1:5432/scratch_gates_head?sslmode=disable";
+  const REMOTE = "postgres://u:pw@ep-orange-mode-a1b2.us-east-2.aws.neon.tech/scratch_boot_a";
+  const dedicated = resolveTarget({ TENANT_RELATIONSHIP_DB_URL: LOCAL, DATABASE_URL: REMOTE });
+  const fellBack = resolveTarget({ DATABASE_URL: REMOTE });
+  const viaDirect = resolveTarget({ DIRECT_DATABASE_URL: REMOTE, DATABASE_URL: LOCAL });
+  Object.assign(checks, {
+    dedicated_variable_wins_over_fallbacks:
+      dedicated?.url === LOCAL && dedicated?.source === "TENANT_RELATIONSHIP_DB_URL",
+    fallback_names_the_variable_that_answered: fellBack?.source === "DATABASE_URL",
+    direct_url_precedes_database_url: viaDirect?.source === "DIRECT_DATABASE_URL",
+    no_variable_set_resolves_to_null: resolveTarget({}) === null,
+    remote_via_fallback_is_refused: remoteFallbackRefusal(fellBack, {}) !== null,
+    remote_via_fallback_refusal_names_host_and_database:
+      String(remoteFallbackRefusal(fellBack, {})).includes(
+        "ep-orange-mode-a1b2.us-east-2.aws.neon.tech:5432/scratch_boot_a",
+      ),
+    refusal_never_prints_the_password: !String(remoteFallbackRefusal(fellBack, {})).includes("pw@"),
+    remote_via_dedicated_variable_is_allowed:
+      remoteFallbackRefusal({ url: REMOTE, source: "TENANT_RELATIONSHIP_DB_URL" }, {}) === null,
+    remote_via_fallback_allowed_on_explicit_opt_in:
+      remoteFallbackRefusal(fellBack, { TENANT_RELATIONSHIP_ALLOW_REMOTE: "1" }) === null,
+    opt_in_must_be_exactly_one:
+      remoteFallbackRefusal(fellBack, { TENANT_RELATIONSHIP_ALLOW_REMOTE: "true" }) !== null,
+    loopback_via_fallback_is_allowed:
+      remoteFallbackRefusal(resolveTarget({ DATABASE_URL: LOCAL }), {}) === null,
+    localhost_by_name_is_loopback: isLoopbackHost("postgres://localhost:5432/x"),
+    remote_host_is_not_loopback: !isLoopbackHost(REMOTE),
+    unparseable_url_is_not_loopback: !isLoopbackHost("not a url"),
+    safe_label_hides_credentials: !safeLabel(REMOTE).includes("pw"),
+    safe_label_is_host_port_database:
+      safeLabel(LOCAL) === "127.0.0.1:5432/scratch_gates_head",
+  });
+
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(JSON.stringify({ selfTest: true, pass, checks }, null, 2) + "\n");
   process.exit(pass ? 0 : 1);
@@ -534,6 +636,14 @@ async function main() {
     }
   }
 
+  if (catalogResult?.refused) {
+    console.error(`check-tenant-relationships: ${catalogResult.refused}`);
+    console.error("");
+    console.error("Nothing was measured. A number produced against a database you did not choose is");
+    console.error("not evidence, and this gate will not print one.");
+    process.exit(2);
+  }
+
   if (catalogResult?.vacuous) {
     console.error(
       `check-tenant-relationships: vacuity guard — the target has only ${catalogResult.tenant_tables} tenant table(s) (expected >= ${MIN_TENANT_TABLES}).`,
@@ -550,6 +660,7 @@ async function main() {
     const excl_total = excl_crm.length + excl_inv.length + excl_migrated.length;
 
     console.log(`Mode                   pg_catalog (${catalogResult.target ?? "unknown target"})`);
+    console.log(`Target                 ${catalogResult.targetLabel ?? "unknown"}  (from ${catalogResult.targetSource ?? "unknown"}${catalogResult.targetRewritten ? ", rewritten off neondb" : ""})`);
     console.log(`Ledger rows on target  ${catalogResult.midBootstrap ?? "none found"} of ${JOURNAL_ENTRY_COUNT} journal entries`);
     console.log(`Total single-col FKs   ${total}`);
     console.log(`EXCL: CRM              ${excl_crm.length} (child or parent is a CRM table — AR-02 scope exclusion)`);

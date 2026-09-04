@@ -20,6 +20,7 @@ import {
 } from "./dto/survey-live-session.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { resolveClientIpOr } from "../../common/http/client-ip";
 
 const collectorTokenParams = z.object({ collectorToken: z.string().min(1) }).strict();
 const collectorTokensessionIdParams = z.object({ collectorToken: z.string().min(1), sessionId: z.coerce.number().int().positive() }).strict();
@@ -35,7 +36,7 @@ export class SurveyPublicController {
   ) {}
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
-    return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
+    return resolveClientIpOr(req, "unknown");
   }
 
   private async enforceRateLimit(tier: string, identifier: string): Promise<void> {

@@ -6,7 +6,8 @@ import {
 } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import {
-  encodeStreamSourcesHeader,
+  encodeStreamSources,
+  sourcesTruncatedHeaderName,
   pipeAiTextStream,
   rethrowStreamRouteError,
   type PipeableAiTextStream,
@@ -146,30 +147,67 @@ describe("rethrowStreamRouteError — a route catch must not flatten every failu
   });
 });
 
-describe("encodeStreamSourcesHeader — citations survive a truncated stream", () => {
-  it("returns null for an empty source list", () => {
-    expect(encodeStreamSourcesHeader([])).toBeNull();
+/**
+ * PRD-C154's citation-integrity clause.
+ *
+ * The encoder walked the list shortest-first and returned `null` the moment
+ * nothing fit inside the 4 KB header budget, so ONE verbose source was enough to
+ * strip every citation off a grounded answer — silently, with no log line and no
+ * signal on the wire. The reader then saw a confident, apparently unsourced
+ * answer, which is exactly the failure citation integrity exists to prevent.
+ * Loss is now bounded (string fields are capped so one source cannot evict the
+ * rest) and REPORTED (the shortfall is returned, published on a companion header
+ * and warned about).
+ */
+describe("encodeStreamSources — a citation list never disappears silently", () => {
+  it("still reports nothing for an empty list", () => {
+    expect(encodeStreamSources([])).toBeNull();
   });
 
-  it("round-trips through decodeURIComponent + JSON.parse", () => {
-    const sources = [{ articleId: 10, title: "Getting Started, v2", slug: "getting-started" }];
+  it("reports a complete list as complete", () => {
+    const sources = [{ articleId: 1, title: "Getting Started" }];
 
-    const encoded = encodeStreamSourcesHeader(sources);
+    const result = encodeStreamSources(sources);
 
-    expect(encoded).not.toBeNull();
-    expect(JSON.parse(decodeURIComponent(encoded as string))).toEqual(sources);
+    expect(result).not.toBeNull();
+    expect(result?.dropped).toBe(0);
+    expect(result?.included).toBe(1);
+    expect(JSON.parse(decodeURIComponent(result?.encoded ?? ""))).toEqual(sources);
   });
 
-  it("drops trailing sources rather than emitting a header the server will reject", () => {
-    const big = Array.from({ length: 40 }, (_, i) => ({
+  it("publishes a single oversized source instead of abandoning the header", () => {
+    const result = encodeStreamSources([
+      { articleId: 1, title: "y".repeat(20_000), snippet: "z".repeat(20_000) },
+    ]);
+
+    expect(result).not.toBeNull();
+    expect(result?.included).toBe(1);
+    expect(result?.dropped).toBe(0);
+    const [only] = JSON.parse(decodeURIComponent(result?.encoded ?? "")) as Array<{
+      articleId: number;
+      title: string;
+    }>;
+    expect(only?.articleId).toBe(1);
+    expect(only?.title.length).toBeLessThanOrEqual(160);
+    expect(Buffer.byteLength(result?.encoded ?? "", "utf8")).toBeLessThanOrEqual(4_096);
+  });
+
+  it("counts what it had to drop rather than dropping it quietly", () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
       articleId: i,
-      title: "x".repeat(400),
+      title: `Source ${i} `.repeat(20),
     }));
 
-    const encoded = encodeStreamSourcesHeader(big);
+    const result = encodeStreamSources(many);
 
-    expect(encoded).not.toBeNull();
-    expect(Buffer.byteLength(encoded as string, "utf8")).toBeLessThanOrEqual(4_096);
-    expect((JSON.parse(decodeURIComponent(encoded as string)) as unknown[]).length).toBeLessThan(40);
+    expect(result).not.toBeNull();
+    expect(result?.dropped).toBeGreaterThan(0);
+    expect((result?.included ?? 0) + (result?.dropped ?? 0)).toBe(60);
+    expect(Buffer.byteLength(result?.encoded ?? "", "utf8")).toBeLessThanOrEqual(4_096);
+  });
+
+  it("names the companion header off the sources header", () => {
+    expect(sourcesTruncatedHeaderName("x-kb-sources")).toBe("x-kb-sources-truncated");
+    expect(sourcesTruncatedHeaderName("x-ai-sources")).toBe("x-ai-sources-truncated");
   });
 });

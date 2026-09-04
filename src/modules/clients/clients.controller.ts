@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { ClientAccountsService } from "./client-accounts.service";
 import { ClientsService } from "./clients.service";
+import { ClientTimelineService } from "./client-timeline.service";
 import { resolveClientsReadScope } from "./clients-scope";
 import { ClientOpportunitiesService } from "./client-opportunities.service";
 import { ClientOnboardingService } from "./client-onboarding.service";
@@ -69,6 +70,7 @@ export class ClientsController {
   constructor(
     private readonly accounts: ClientAccountsService,
     private readonly clients: ClientsService,
+    private readonly timeline: ClientTimelineService,
     private readonly opportunities: ClientOpportunitiesService,
     private readonly onboarding: ClientOnboardingService,
     private readonly access: AccessService,
@@ -331,7 +333,7 @@ export class ClientsController {
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.clients.getTimeline(u.orgId, clientId);
+    const result = await this.timeline.getTimeline(u.orgId, clientId);
     if (!result) throw new NotFoundException("Client not found");
     return result;
   }

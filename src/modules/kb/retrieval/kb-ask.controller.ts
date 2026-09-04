@@ -15,6 +15,7 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -37,7 +38,6 @@ import {
   type AskInput,
 } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
@@ -45,7 +45,6 @@ const conversationIdParams = z.object({ conversationId: z.coerce.number().int().
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbAskController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -69,6 +68,7 @@ export class KbAskController {
    */
   @Post("ask")
   @HttpCode(200)
+  @Idempotent("kb.ask")
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @UseGuards(RateLimitGuard)

@@ -36,7 +36,6 @@ import {
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
@@ -44,7 +43,6 @@ const articleIdversionNumberParams = z.object({ articleId: z.coerce.number().int
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbArticlesController {
   constructor(
     private readonly articles: KbArticlesService,

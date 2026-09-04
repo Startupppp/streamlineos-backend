@@ -4,6 +4,21 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { finExchangeRates } from "../../../db/schema";
 
+/**
+ * The one failure a settlement path may absorb. Everything else a realized-FX
+ * posting can raise — a closed period, an unseeded FX account, a replay conflict —
+ * means the ledger is wrong and must reach the caller, so those callers narrow
+ * their catch to this class rather than swallowing every error.
+ *
+ * It stays a `NotFoundException` so the HTTP shape of the routes that surface
+ * `getRate`/`getRateString` directly is unchanged.
+ */
+export class ExchangeRateNotFoundError extends NotFoundException {
+  constructor(from: string, to: string, isoDate: string) {
+    super(`No exchange rate found for ${from} → ${to} on or before ${isoDate}`);
+  }
+}
+
 @Injectable()
 export class RateResolverService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -53,9 +68,7 @@ export class RateResolverService {
 
     if (latestRow[0]) return latestRow[0].rate;
 
-    throw new NotFoundException(
-      `No exchange rate found for ${from} → ${to} on or before ${isoDate}`,
-    );
+    throw new ExchangeRateNotFoundError(from, to, isoDate);
   }
 
   async getRate(orgId: string, from: string, to: string, onDate: Date): Promise<number> {

@@ -12,6 +12,7 @@ import { submitCsatSchema, type SubmitCsatInput } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
+import { resolveClientIpOr } from "../../../common/http/client-ip";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
@@ -24,7 +25,7 @@ export class SupportCsatController {
   ) {}
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
-    return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
+    return resolveClientIpOr(req, "unknown");
   }
 
   private async enforceRateLimit(tier: string, identifier: string): Promise<void> {

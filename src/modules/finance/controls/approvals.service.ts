@@ -7,6 +7,7 @@ import {
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { baseDebitAmount } from "../../accounting/core/journal-base-amount";
 import {
   finApprovalRequests,
   users,
@@ -237,7 +238,7 @@ export class ApprovalsService {
               id: journalEntries.id,
               entryNumber: journalEntries.entryNumber,
               description: journalEntries.description,
-              total: sql<string>`COALESCE(SUM(${journalLines.debit}), '0')`,
+              total: sql<string>`COALESCE(SUM(${baseDebitAmount}), '0')`,
             })
             .from(journalEntries)
             .leftJoin(journalLines, eq(journalLines.entryId, journalEntries.id))

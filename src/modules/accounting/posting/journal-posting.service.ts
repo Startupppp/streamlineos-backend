@@ -3,28 +3,30 @@ import { and, desc, eq, inArray, like } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { ACCOUNT_CODES, type GstSplit, paymentMethodToAccountCode, splitTaxPool } from "../core/posting-rules";
+import { type GstSplit, splitTaxPool } from "../core/posting-rules";
 import {
   type DbOrTx,
   type DraftLine,
   type DraftEntry,
+  type DraftDecimalLine,
+  type DraftDecimalEntry,
   type PersistedEntry,
   type PostInvoiceInput,
   type PostPaymentInput,
   type PostPurchaseBillInput,
   type PostVendorPaymentInput,
-  ACCOUNTS_PAYABLE,
-  INPUT_CGST,
-  INPUT_SGST,
-  INPUT_IGST,
   DEFAULT_COA,
-  INVOICE_SOURCE_TYPE,
-  INVOICE_SEND_SOURCE_EVENT,
 } from "./journal-posting.data";
-import { compareDecimals, decimalFromNumber, sumDecimals } from "../core/money.util";
+import { compareDecimals, decimalFromNumber, sumDecimals, toDecimal } from "../core/money.util";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import {
+  invoiceSendDraft,
+  paymentReceiptDraft,
+  purchaseBillDraft,
+  vendorPaymentDraft,
+} from "./journal-posting-drafts";
 
-export type { DbOrTx, DraftLine, DraftEntry, PersistedEntry, PostInvoiceInput, PostPaymentInput, PostPurchaseBillInput, PostVendorPaymentInput };
+export type { DbOrTx, DraftLine, DraftEntry, DraftDecimalLine, DraftDecimalEntry, PersistedEntry, PostInvoiceInput, PostPaymentInput, PostPurchaseBillInput, PostVendorPaymentInput };
 
 @Injectable()
 export class JournalPostingService {
@@ -70,25 +72,48 @@ export class JournalPostingService {
     return `${prefix}${String(nextSeq).padStart(6, "0")}`;
   }
 
-  private assertBalanced(lines: DraftLine[]): void {
-    const totalDebit = sumDecimals(lines.map((l) => decimalFromNumber(l.debit)));
-    const totalCredit = sumDecimals(lines.map((l) => decimalFromNumber(l.credit)));
+  private toDecimalLines(lines: DraftLine[]): DraftDecimalLine[] {
+    return lines.map((line) => ({
+      accountCode: line.accountCode,
+      debit: decimalFromNumber(line.debit),
+      credit: decimalFromNumber(line.credit),
+      description: line.description,
+    }));
+  }
+
+  private assertBalanced(lines: DraftDecimalLine[]): void {
+    const totalDebit = sumDecimals(lines.map((l) => l.debit));
+    const totalCredit = sumDecimals(lines.map((l) => l.credit));
     if (compareDecimals(totalDebit, totalCredit) !== 0) {
       throw new Error(
         `Unbalanced journal entry: debit=${totalDebit} credit=${totalCredit} (ledger scale)`,
       );
     }
     for (const line of lines) {
-      if (line.debit < 0 || line.credit < 0) {
+      if (compareDecimals(line.debit, "0") < 0 || compareDecimals(line.credit, "0") < 0) {
         throw new Error(`Negative amount in journal line: ${JSON.stringify(line)}`);
       }
-      if ((line.debit > 0 && line.credit > 0) || (line.debit === 0 && line.credit === 0)) {
+      const hasDebit = compareDecimals(line.debit, "0") > 0;
+      const hasCredit = compareDecimals(line.credit, "0") > 0;
+      if (hasDebit === hasCredit) {
         throw new Error(`Journal line must have exactly one of debit or credit > 0: ${JSON.stringify(line)}`);
       }
     }
   }
 
-  async persistJournalEntry(draft: DraftEntry, tx?: DbOrTx): Promise<PersistedEntry> {
+  persistJournalEntry(draft: DraftEntry, tx?: DbOrTx): Promise<PersistedEntry> {
+    return this.persistDecimalJournalEntry(
+      { ...draft, lines: this.toDecimalLines(draft.lines) },
+      tx,
+    );
+  }
+
+  /**
+   * The single write path. Amounts arrive as exact ledger-scale strings, so a
+   * caller that already holds `numeric(18,4)` text — a reversal reading the
+   * entry it reverses — never round-trips money through a double.
+   */
+  async persistDecimalJournalEntry(draft: DraftDecimalEntry, tx?: DbOrTx): Promise<PersistedEntry> {
     this.assertBalanced(draft.lines);
     const executor: DbOrTx = tx ?? this.db;
 
@@ -160,8 +185,8 @@ export class JournalPostingService {
             orgId: draft.orgId,
             entryId: entry.id,
             accountId,
-            debit: decimalFromNumber(line.debit),
-            credit: decimalFromNumber(line.credit),
+            debit: toDecimal(line.debit),
+            credit: toDecimal(line.credit),
             description: line.description ?? null,
             lineOrder: idx,
           };
@@ -177,105 +202,18 @@ export class JournalPostingService {
   }
 
   postInvoiceSend(input: PostInvoiceInput, tx?: DbOrTx): Promise<PersistedEntry> {
-    const split = splitTaxPool(input.taxPool, {
-      supplierStateCode: input.supplierStateCode,
-      placeOfSupplyStateCode: input.placeOfSupplyStateCode,
-    });
-
-    const lines: DraftLine[] = [
-      { accountCode: ACCOUNT_CODES.accountsReceivable, debit: input.total, credit: 0, description: `Invoice ${input.invoiceNumber}` },
-      { accountCode: ACCOUNT_CODES.salesRevenue, debit: 0, credit: Math.max(0, input.subtotal - input.discount), description: `Invoice ${input.invoiceNumber}` },
-    ];
-    if (split.cgst > 0) lines.push({ accountCode: ACCOUNT_CODES.outputCgst, debit: 0, credit: split.cgst, description: `Invoice ${input.invoiceNumber} CGST` });
-    if (split.sgst > 0) lines.push({ accountCode: ACCOUNT_CODES.outputSgst, debit: 0, credit: split.sgst, description: `Invoice ${input.invoiceNumber} SGST` });
-    if (split.igst > 0) lines.push({ accountCode: ACCOUNT_CODES.outputIgst, debit: 0, credit: split.igst, description: `Invoice ${input.invoiceNumber} IGST` });
-
-    return this.persistJournalEntry(
-      {
-        orgId: input.orgId,
-        entryDate: input.invoiceDate,
-        description: `Invoice ${input.invoiceNumber} sent`,
-        sourceType: INVOICE_SOURCE_TYPE,
-        sourceId: String(input.invoiceId),
-        sourceEvent: INVOICE_SEND_SOURCE_EVENT,
-        createdBy: input.createdBy,
-        lines,
-      },
-      tx,
-    );
+    return this.persistJournalEntry(invoiceSendDraft(input), tx);
   }
 
   postPaymentReceipt(input: PostPaymentInput, tx?: DbOrTx): Promise<PersistedEntry> {
-    const cashCode = paymentMethodToAccountCode(input.paymentMethod);
-    const lines: DraftLine[] = [
-      { accountCode: cashCode, debit: input.amount, credit: 0, description: `Payment for ${input.invoiceNumber} (${input.paymentMethod})` },
-      { accountCode: ACCOUNT_CODES.accountsReceivable, debit: 0, credit: input.amount, description: `Payment for ${input.invoiceNumber}` },
-    ];
-
-    return this.persistJournalEntry(
-      {
-        orgId: input.orgId,
-        entryDate: input.paymentDate,
-        description: `Payment received for ${input.invoiceNumber}`,
-        sourceType: "payment",
-        sourceId: String(input.paymentId),
-        sourceEvent: "receipt",
-        createdBy: input.createdBy,
-        lines,
-      },
-      tx,
-    );
+    return this.persistJournalEntry(paymentReceiptDraft(input), tx);
   }
 
   postPurchaseBill(input: PostPurchaseBillInput, tx?: DbOrTx): Promise<PersistedEntry> {
-    const split = splitTaxPool(input.taxPool, {
-      supplierStateCode: input.supplierStateCode,
-      placeOfSupplyStateCode: input.placeOfSupplyStateCode,
-    });
-
-    const expenseAmount = Math.max(0, input.subtotal - input.discount);
-    const lines: DraftLine[] = [
-      { accountCode: input.expenseAccountCode, debit: expenseAmount, credit: 0, description: `Bill ${input.billNumber}` },
-      { accountCode: ACCOUNTS_PAYABLE, debit: 0, credit: input.total, description: `Bill ${input.billNumber}` },
-    ];
-    if (split.cgst > 0) lines.push({ accountCode: INPUT_CGST, debit: split.cgst, credit: 0, description: `Bill ${input.billNumber} CGST` });
-    if (split.sgst > 0) lines.push({ accountCode: INPUT_SGST, debit: split.sgst, credit: 0, description: `Bill ${input.billNumber} SGST` });
-    if (split.igst > 0) lines.push({ accountCode: INPUT_IGST, debit: split.igst, credit: 0, description: `Bill ${input.billNumber} IGST` });
-
-    return this.persistJournalEntry(
-      {
-        orgId: input.orgId,
-        entryDate: input.billDate,
-        description: `Purchase bill ${input.billNumber} posted`,
-        sourceType: "purchase_bill",
-        sourceId: String(input.billId),
-        sourceEvent: "post",
-        createdBy: input.createdBy,
-        lines,
-      },
-      tx,
-    );
+    return this.persistJournalEntry(purchaseBillDraft(input), tx);
   }
 
   postVendorPayment(input: PostVendorPaymentInput, tx?: DbOrTx): Promise<PersistedEntry> {
-    const cashCode = paymentMethodToAccountCode(input.paymentMethod);
-    const lines: DraftLine[] = [
-      { accountCode: ACCOUNTS_PAYABLE, debit: input.amount, credit: 0, description: `Payment to vendor for ${input.billNumber}` },
-      { accountCode: cashCode, debit: 0, credit: input.amount, description: `Payment to vendor for ${input.billNumber} (${input.paymentMethod})` },
-    ];
-
-    return this.persistJournalEntry(
-      {
-        orgId: input.orgId,
-        entryDate: input.paymentDate,
-        description: `Payment to vendor for ${input.billNumber}`,
-        sourceType: "vendor_payment",
-        sourceId: String(input.paymentId),
-        sourceEvent: "payment",
-        createdBy: input.createdBy,
-        lines,
-      },
-      tx,
-    );
+    return this.persistJournalEntry(vendorPaymentDraft(input), tx);
   }
 }

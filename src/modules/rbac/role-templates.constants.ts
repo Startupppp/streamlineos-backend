@@ -1,11 +1,13 @@
 import { moduleScopedPermissions } from "./permissions";
-import { CRM_HR_ROLE_TEMPLATES } from "./role-templates-crm-hr.constants";
+import { CRM_ROLE_TEMPLATES } from "./role-templates-crm.constants";
+import { HR_ROLE_TEMPLATES } from "./role-templates-hr.constants";
 import { BUILD_ROLE_TEMPLATES } from "./role-templates-build.constants";
 import type { RoleTemplate } from "./role-template.types";
 export type { RoleTemplate };
 
 export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
-  ...CRM_HR_ROLE_TEMPLATES,
+  ...CRM_ROLE_TEMPLATES,
+  ...HR_ROLE_TEMPLATES,
   {
     id: "accountant",
     name: "Accountant",

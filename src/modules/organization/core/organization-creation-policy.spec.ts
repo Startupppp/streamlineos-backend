@@ -7,6 +7,8 @@ import type { OrgMemberDepartureService } from "./org-member-departure.service";
 import type { OrgLifecycleService } from "./org-lifecycle.service";
 import type { OrgPurgeService } from "./org-purge.service";
 import type { OrganizationSettingsService } from "./organization-settings.service";
+import type { OrgHolidaysService } from "./org-holidays.service";
+import type { OrgCustomDomainsService } from "./org-custom-domains.service";
 import type { InvitationsReadService } from "./invitations-read.service";
 import type { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
@@ -45,6 +47,8 @@ function buildController(switchOrgImpl?: () => Promise<unknown>) {
     {} as unknown as OrgLifecycleService,
     {} as unknown as OrgPurgeService,
     {} as unknown as OrganizationSettingsService,
+    {} as unknown as OrgHolidaysService,
+    {} as unknown as OrgCustomDomainsService,
     {} as unknown as InvitationsReadService,
     {} as unknown as InvitationAcceptanceService,
     {} as unknown as RateLimitService,

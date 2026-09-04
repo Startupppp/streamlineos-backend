@@ -37,11 +37,19 @@ function cached(ids: number[]): CachedMailMessage[] {
   }));
 }
 
+const OUTLOOK_ACCOUNT = {
+  id: 8,
+  provider: "outlook" as const,
+  accountEmail: "me@outlook.example",
+  composioConnectedAccountId: "conn-2",
+};
+
 interface Harness {
   service: MailService;
   gmailList: jest.Mock;
+  outlookList: jest.Mock;
   listCached: jest.Mock;
-  isFresh: jest.Mock;
+  freshAccountIds: jest.Mock;
 }
 
 function makeHarness(
@@ -51,24 +59,30 @@ function makeHarness(
     isFresh: boolean;
     nextCursor: { d: string | null; i: number } | null;
   }>,
-  opts: { fresh?: boolean } = {},
+  opts: { fresh?: boolean; accounts?: Array<typeof GMAIL_ACCOUNT | typeof OUTLOOK_ACCOUNT>; freshIds?: number[] } = {},
 ): Harness {
   const listCached = jest.fn();
   for (const page of metadataPages) listCached.mockResolvedValueOnce(page);
   listCached.mockResolvedValue({ messages: [], hasData: false, isFresh: false, nextCursor: null });
 
-  const isFresh = jest.fn().mockResolvedValue(opts.fresh ?? true);
+  const connected = opts.accounts ?? [GMAIL_ACCOUNT];
+  const freshIds = opts.freshIds
+    ?? ((opts.fresh ?? true) ? connected.map((acc) => acc.id) : []);
+  const freshAccountIds = jest.fn().mockResolvedValue(freshIds);
 
   const gmailList = jest.fn().mockResolvedValue({ messages: [], nextPageToken: null });
+  const outlookList = jest.fn().mockResolvedValue({ messages: [], nextSkip: null });
 
   const accounts = {
-    listAccounts: jest.fn().mockResolvedValue([GMAIL_ACCOUNT]),
+    listAccounts: jest.fn().mockResolvedValue(connected),
     markNeedsReauth: jest.fn(),
+    markNeedsReauthMany: jest.fn(),
   } as unknown as MailAccountsService;
 
   const metadata = {
     listCached,
-    isFreshForAccount: isFresh,
+    freshAccountIds,
+    isFreshForAccount: jest.fn().mockResolvedValue(opts.fresh ?? true),
     deferUpsertBatch: jest.fn(),
   } as unknown as MailMetadataService;
 
@@ -79,13 +93,13 @@ function makeHarness(
   const service = new MailService(
     accounts,
     { listMessages: gmailList } as unknown as GmailMailProvider,
-    { listMessages: jest.fn() } as unknown as OutlookMailProvider,
+    { listMessages: outlookList } as unknown as OutlookMailProvider,
     cache,
     metadata,
     { savePosition: jest.fn().mockResolvedValue(undefined) } as unknown as MailSyncCheckpointService,
   );
 
-  return { service, gmailList, listCached, isFresh };
+  return { service, gmailList, outlookList, listCached, freshAccountIds };
 }
 
 describe("mail list — the cached page is pageable", () => {
@@ -140,13 +154,24 @@ describe("mail list — the cached page is pageable", () => {
     expect(h.gmailList).not.toHaveBeenCalled();
   });
 
-  it("still falls through to the provider when the mirror is stale", async () => {
-    const h = makeHarness([
-      { messages: cached([9]), hasData: true, isFresh: false, nextCursor: null },
-    ]);
+  it("still falls through to the provider when the mirror is stale — and no longer pays for the page it would discard", async () => {
+    const h = makeHarness(
+      [{ messages: cached([9]), hasData: true, isFresh: false, nextCursor: null }],
+      { fresh: false },
+    );
 
     await h.service.listMessages(ORG, USER, MEMBERSHIP, "inbox", String(ACCOUNT), 5);
 
+    expect(h.gmailList).toHaveBeenCalledTimes(1);
+    expect(h.listCached).not.toHaveBeenCalled();
+  });
+
+  it("a mailbox with nothing mirrored yet is not fresh, so a first-ever load reaches the provider", async () => {
+    const h = makeHarness([], { freshIds: [] });
+
+    await h.service.listMessages(ORG, USER, MEMBERSHIP, "inbox", String(ACCOUNT), 5);
+
+    expect(h.listCached).not.toHaveBeenCalled();
     expect(h.gmailList).toHaveBeenCalledTimes(1);
   });
 });
@@ -161,8 +186,8 @@ describe("mail list — search reaches the database", () => {
       ORG, USER, MEMBERSHIP, "inbox", String(ACCOUNT), 5, undefined, "invoice",
     );
 
-    expect(h.isFresh).toHaveBeenCalledWith(ORG, ACCOUNT, "inbox");
-    expect(h.listCached).toHaveBeenCalledWith(MEMBERSHIP, ORG, ACCOUNT, "inbox", 5, "invoice");
+    expect(h.freshAccountIds).toHaveBeenCalledWith(ORG, [ACCOUNT], "inbox");
+    expect(h.listCached).toHaveBeenCalledWith(MEMBERSHIP, ORG, [ACCOUNT], "inbox", 5, "invoice");
     expect(page.messages.map((m) => m.id)).toEqual(["msg-9"]);
     expect(h.gmailList).not.toHaveBeenCalled();
   });
@@ -192,16 +217,56 @@ describe("mail list — search reaches the database", () => {
   });
 });
 
-describe("mail list — the metadata regime is opt-in", () => {
-  it("is skipped entirely for the all-accounts fan-out, which must merge across providers", async () => {
-    const h = makeHarness([
-      { messages: cached([9]), hasData: true, isFresh: true, nextCursor: null },
-    ]);
+/**
+ * The all-accounts view is the one the list pane opens on, and it used to be the
+ * one case the mirror refused to serve: the regime was gated on
+ * `accountIdParam !== "all"`, so the keyset index existed for a code path no
+ * shipped caller could reach and every default inbox load was a provider fanout.
+ *
+ * The union is served from the same index — it leads with (org_id,
+ * user_membership_id, folder) and orders on (date DESC, id DESC), with no
+ * account column between — so the merge across providers the fanout used to do
+ * in JavaScript is now the index's own ordering.
+ */
+describe("mail list — the metadata regime serves the all-accounts view", () => {
+  it("BITE: serves ?accountId=all from the mirror instead of fanning out to every provider", async () => {
+    const h = makeHarness(
+      [{ messages: cached([9]), hasData: true, isFresh: true, nextCursor: null }],
+      { accounts: [GMAIL_ACCOUNT, OUTLOOK_ACCOUNT] },
+    );
+
+    const page = await h.service.listMessages(ORG, USER, MEMBERSHIP, "inbox", "all", 5);
+
+    expect(h.listCached).toHaveBeenCalledWith(
+      MEMBERSHIP, ORG, [ACCOUNT, OUTLOOK_ACCOUNT.id], "inbox", 5, undefined,
+    );
+    expect(page.messages.map((m) => m.id)).toEqual(["msg-9"]);
+    expect(h.gmailList).not.toHaveBeenCalled();
+    expect(h.outlookList).not.toHaveBeenCalled();
+  });
+
+  it("BITE: one stale mailbox sends the whole union back to the providers, so it is never left invisible", async () => {
+    const h = makeHarness(
+      [{ messages: cached([9]), hasData: true, isFresh: true, nextCursor: null }],
+      { accounts: [GMAIL_ACCOUNT, OUTLOOK_ACCOUNT], freshIds: [ACCOUNT] },
+    );
 
     await h.service.listMessages(ORG, USER, MEMBERSHIP, "inbox", "all", 5);
 
     expect(h.listCached).not.toHaveBeenCalled();
     expect(h.gmailList).toHaveBeenCalledTimes(1);
+    expect(h.outlookList).toHaveBeenCalledTimes(1);
+  });
+
+  it("narrows the mirror to the LIVE accounts, so a disconnected mailbox's leftover rows stay out", async () => {
+    const h = makeHarness(
+      [{ messages: cached([9]), hasData: true, isFresh: true, nextCursor: null }],
+      { accounts: [GMAIL_ACCOUNT] },
+    );
+
+    await h.service.listMessages(ORG, USER, MEMBERSHIP, "inbox", "all", 5);
+
+    expect(h.listCached.mock.calls[0]?.[2]).toEqual([ACCOUNT]);
   });
 
   it("is skipped when the caller has no membership, because the mirror is keyed on one", async () => {

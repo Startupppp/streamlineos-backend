@@ -84,16 +84,84 @@ export function rethrowStreamRouteError(
 }
 
 const MAX_SOURCE_HEADER_BYTES = 4_096;
+const MAX_SOURCE_FIELD_CHARS = 160;
+
+/** The companion header naming how many citations did not fit. */
+export function sourcesTruncatedHeaderName(sourcesHeader: string): string {
+  return `${sourcesHeader}-truncated`;
+}
+
+export interface EncodedStreamSources {
+  /** URL-encoded JSON of the sources that fit. */
+  readonly encoded: string;
+  readonly included: number;
+  /** How many citations the header could not carry. Zero means complete. */
+  readonly dropped: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A citation chip renders a title and a snippet, not an essay. Capping the
+ * strings is what turns "one long source and the whole header is abandoned"
+ * into "every source arrives, some of them elided" — the header budget is spent
+ * on COUNT, which is what the reader needs to check the answer against.
+ */
+function capSourceFields(source: unknown): unknown {
+  if (!isRecord(source)) return source;
+  const capped: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    capped[key] =
+      typeof value === "string" && value.length > MAX_SOURCE_FIELD_CHARS
+        ? `${value.slice(0, MAX_SOURCE_FIELD_CHARS - 1)}…`
+        : value;
+  }
+  return capped;
+}
 
 /**
  * Citations must survive a stream that is later truncated, so they go out with
  * the headers rather than as a trailer the client may never receive.
+ *
+ * Loss is now REPORTED rather than silent. The old encoder walked the list
+ * shortest-first and returned `null` the moment nothing fit, so a grounded
+ * answer whose first source happened to carry a long title reached the client
+ * with no sources at all and no way to know any had existed — the reader saw a
+ * confident, apparently unsourced answer, which is precisely the state citation
+ * integrity exists to prevent. String fields are capped first so a single verbose
+ * source cannot evict the rest, and whatever still does not fit is counted and
+ * returned to the caller, which publishes it on a companion header and logs it.
  */
-export function encodeStreamSourcesHeader(sources: readonly unknown[]): string | null {
+export function encodeStreamSources(
+  sources: readonly unknown[],
+  context?: { feature: string; orgId: string },
+): EncodedStreamSources | null {
   if (sources.length === 0) return null;
-  for (let count = sources.length; count > 0; count -= 1) {
-    const encoded = encodeURIComponent(JSON.stringify(sources.slice(0, count)));
-    if (Buffer.byteLength(encoded, "utf8") <= MAX_SOURCE_HEADER_BYTES) return encoded;
+
+  const capped = sources.map(capSourceFields);
+
+  for (let count = capped.length; count > 0; count -= 1) {
+    const encoded = encodeURIComponent(JSON.stringify(capped.slice(0, count)));
+    if (Buffer.byteLength(encoded, "utf8") > MAX_SOURCE_HEADER_BYTES) continue;
+
+    const dropped = capped.length - count;
+    if (dropped > 0)
+      logger.warn("AI stream citations truncated to fit the header budget", {
+        dropped,
+        included: count,
+        total: capped.length,
+        ...(context ?? {}),
+      });
+    return { encoded, included: count, dropped };
   }
-  return null;
+
+  logger.warn("AI stream citations could not be published at all", {
+    dropped: capped.length,
+    included: 0,
+    total: capped.length,
+    ...(context ?? {}),
+  });
+  return { encoded: encodeURIComponent("[]"), included: 0, dropped: capped.length };
 }

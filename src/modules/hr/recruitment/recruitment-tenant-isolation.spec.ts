@@ -65,6 +65,7 @@ function makeDb(rows: unknown[], visibleRows = rows): { db: Db; where: jest.Mock
   const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
   const db = {
     select: jest.fn().mockReturnValue(builder),
+    selectDistinct: jest.fn().mockReturnValue(builder),
     execute: jest.fn().mockResolvedValue([]),
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
@@ -215,28 +216,29 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   });
 
   describe("RecruitmentCandidateOpsService", () => {
+    // The dedupe probe moved off db.query.candidates.findMany (which read the
+    // whole organisation) onto a request-bounded selectDistinct; the tenant
+    // predicate it must carry is unchanged, so the assertion follows the call.
     it("scopes candidate lookup to the requesting org during bulk import (DENY — cross-tenant isolation)", async () => {
-      const { db, findMany } = makeDb([]);
+      const { db, where } = makeDb([]);
       const cache = makeCacheMock();
       const svc = new RecruitmentCandidateOpsService(
         db, {} as never, cache as never, {} as never, {} as never,
       );
       await svc.bulkImport(ATTACKER, { rows: [] });
-      expect(findMany).toHaveBeenCalled();
-      const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-      expect(sqlValues(call?.where)).toContain(ATTACKER);
+      expect(where).toHaveBeenCalled();
+      expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
     });
 
     it("uses the owning org for candidate deduplication (CONTROL)", async () => {
-      const { db, findMany } = makeDb([{ email: "existing@example.com" }]);
+      const { db, where } = makeDb([{ email: "existing@example.com" }]);
       const cache = makeCacheMock();
       const svc = new RecruitmentCandidateOpsService(
         db, {} as never, cache as never, {} as never, {} as never,
       );
       await svc.bulkImport(OWNER, { rows: [] });
-      expect(findMany).toHaveBeenCalled();
-      const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-      expect(sqlValues(call?.where)).toContain(OWNER);
+      expect(where).toHaveBeenCalled();
+      expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
     });
   });
 

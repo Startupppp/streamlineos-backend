@@ -123,7 +123,9 @@ describe("ModuleAccessGroupCrudService — audit: group deleted", () => {
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     };
     const mockDb = {
-      select: jest.fn().mockReturnValue(makeFlexChain([{ cnt: 0 }])),
+      // PRD-C073: "does this group still have assignments?" is a bounded limit-1 read now,
+      // so no rows means no assignments. `[{ cnt: 0 }]` was one ROW and read as "assigned".
+      select: jest.fn().mockReturnValue(makeFlexChain([])),
       transaction: jest.fn().mockImplementation(
         async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
       ),

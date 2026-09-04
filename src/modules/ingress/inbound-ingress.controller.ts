@@ -5,7 +5,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { InboundIngressService } from "./inbound-ingress.service";
 import { inboundEventSchema, type InboundEventBody } from "./dto/inbound-event.schemas";
-import type { InboundCommunicationEvent } from "./inbound-event";
 
 /**
  * The seam, as an endpoint.
@@ -28,6 +27,6 @@ export class InboundIngressController {
   @HttpCode(202)
   @Validate({ body: inboundEventSchema })
   accept(@Body() body: InboundEventBody) {
-    return this.ingress.accept(body as InboundCommunicationEvent);
+    return this.ingress.accept(body);
   }
 }

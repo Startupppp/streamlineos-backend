@@ -262,11 +262,16 @@ export class AccessPermissionResolver {
 
     const roleIdList = Array.from(roleIds);
     if (roleIdList.length > 0) {
+      // The bound is the id list itself, not a constant. `roleIds` unions the
+      // 500 direct assignments read above with the 500 group-derived ones, so a
+      // fixed `.limit(500)` truncated a 1000-id lookup with no `ORDER BY`: the
+      // roles that fell off resolved to no slug record and lost every
+      // ROLE_DEFAULT_PERMISSIONS key, silently and non-deterministically.
       const roleRecords = await this.db
         .select({ id: roles.id, slug: roles.slug })
         .from(roles)
         .where(and(eq(roles.orgId, orgId), inArray(roles.id, roleIdList)))
-        .limit(500);
+        .limit(roleIdList.length);
       const roleById = new Map(
         roleRecords.map((record) => [record.id, record]),
       );

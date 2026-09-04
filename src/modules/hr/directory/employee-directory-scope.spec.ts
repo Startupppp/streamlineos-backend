@@ -34,6 +34,14 @@ function executingCache() {
     cached: jest.fn(
       async (_key: string, loader: () => Promise<unknown>) => loader(),
     ),
+    cachedVersionedForOrg: jest.fn(
+      async (
+        _orgId: string,
+        _namespace: string,
+        _subKey: string,
+        loader: () => Promise<unknown>,
+      ) => loader(),
+    ),
   };
 }
 
@@ -66,8 +74,14 @@ describe("employee directory scope", () => {
 
     await service.getAnniversaryFeed("org-1", "actor-1", "own");
 
-    expect(cache.cached).toHaveBeenCalledWith(
-      expect.stringContaining("org-1:actor-1:own"),
+    // The feed lives in the `hr:celebrations` namespace so the onboarding and
+    // termination bumps can reach it; the sub-key still carries actor and scope,
+    // which is what keeps one caller's scoped feed out of another's.
+    expect(cache.cached).not.toHaveBeenCalled();
+    expect(cache.cachedVersionedForOrg).toHaveBeenCalledWith(
+      "org-1",
+      "hr:celebrations",
+      expect.stringContaining("actor-1:own"),
       expect.any(Function),
       expect.any(Number),
     );

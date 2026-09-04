@@ -2,7 +2,8 @@ import type { Logger } from "@nestjs/common";
 import type { GmailMailProvider } from "../../mail/providers/gmail-mail.provider";
 import type { OutlookMailProvider } from "../../mail/providers/outlook-mail.provider";
 import type { NormalizerConnectionMeta } from "../../mail/providers/mail-normalizers";
-import { isPrivateMessage, type MailMessageForIngress } from "./mail-to-inbound-event";
+import { isPrivateMessage } from "./mail-ingress-privacy";
+import { type MailMessageForIngress } from "./mail-to-inbound-event";
 import type { MailMessageDetail } from "../../mail/dto/mail-schemas";
 import {
   forIngress,

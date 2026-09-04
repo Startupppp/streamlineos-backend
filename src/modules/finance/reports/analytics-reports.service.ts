@@ -13,6 +13,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { baseCreditAmount, baseDebitAmount } from "../../accounting/core/journal-base-amount";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 
@@ -55,8 +56,8 @@ export class AnalyticsReportsService {
       this.db
         .select({
           projectId: journalLines.projectId,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
@@ -76,8 +77,8 @@ export class AnalyticsReportsService {
       this.db
         .select({
           projectId: journalLines.projectId,
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
@@ -164,8 +165,8 @@ export class AnalyticsReportsService {
       this.db
         .select({
           departmentId: journalLines.departmentId,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
@@ -185,8 +186,8 @@ export class AnalyticsReportsService {
       this.db
         .select({
           departmentId: journalLines.departmentId,
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
@@ -276,8 +277,8 @@ export class AnalyticsReportsService {
       .select({
         accountId: journalLines.accountId,
         periodKey: sql<string>`to_char(date_trunc('month', ${journalEntries.entryDate}::date), 'YYYY-MM')`,
-        totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-        totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+        totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+        totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         accountType: ledgerAccounts.accountType,
       })
       .from(journalLines)
@@ -340,8 +341,8 @@ export class AnalyticsReportsService {
     const [assetRows, liabilityRows] = await Promise.all([
       this.db
         .select({
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
@@ -358,8 +359,8 @@ export class AnalyticsReportsService {
 
       this.db
         .select({
-          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+          totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
         })
         .from(journalLines)
         .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))
@@ -411,8 +412,8 @@ export class AnalyticsReportsService {
       months.map(({ label, from, to }) =>
         this.db
           .select({
-            totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-            totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+            totalDebit: sql<string>`coalesce(sum(${baseDebitAmount}), 0)`,
+            totalCredit: sql<string>`coalesce(sum(${baseCreditAmount}), 0)`,
           })
           .from(journalLines)
           .innerJoin(ledgerAccounts, eq(ledgerAccounts.id, journalLines.accountId))

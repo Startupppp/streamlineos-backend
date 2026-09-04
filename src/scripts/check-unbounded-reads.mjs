@@ -30,12 +30,20 @@ const MIN_DB_FILES = 300;
 /**
  * Ceiling on unbounded reads suppressed by a FALSE-POSITIVE verdict — INSTANCES,
  * not files. See countSuppressed() for why the file count could not catch this.
- * Measured at 651 on 2026-09-03 over all three scan roots and set with no headroom:
+ * Measured at 651 on 2026-09-03 over all three scan roots and set with no headroom; lowered to
+ * 648 on 2026-09-04 when /surveys/survey-live-participant.service.ts moved from FALSE-POSITIVE to
+ * BOUNDED and stopped suppressing its three reads (PRD-C058); lowered again to 647 the same day when
+ * /hr/recruitment/recruitment-candidate-ops.service.ts moved the same way — its bulkImport dedupe
+ * probe now reads the request's emails instead of the whole organisation (PRD-C119); lowered again to
+ * 646 on 2026-09-04 when /build/core/projects-search.service.ts stopped materialising the caller's
+ * whole `project_members` list into an `inArray` and became a correlated EXISTS, so its suppression
+ * row was deleted rather than reworded (PRD-C123). Lowering it is
+ * the ratchet working:
  * a new read hiding behind an existing justification must fail here, because that
  * is the only place it can fail. Lower it when you bound one; raising it means
  * saying, in ratchets.json, which read is now hidden and why.
  */
-const MAX_SUPPRESSED_UNBOUNDED = 651;
+const MAX_SUPPRESSED_UNBOUNDED = 646;
 const ORDER_BY_LOOKBACK = 25;
 const STATEMENT_MAX_LINES = 120;
 

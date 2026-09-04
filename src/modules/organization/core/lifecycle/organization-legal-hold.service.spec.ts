@@ -9,6 +9,8 @@ import { OrganizationLegalHoldService } from "./organization-legal-hold.service"
 import { AuditService } from "../../../../common/audit/audit.service";
 import { OrganizationSagaService } from "./organization-saga.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../../common/tenant/with-tenant";
+import { stubService } from "../../../../test/service-stub.spec-fixtures";
 
 jest.mock("../../../../common/tenant/run-in-tenant-transaction");
 
@@ -83,7 +85,7 @@ describe("OrganizationLegalHoldService", () => {
         insert: jest.fn().mockReturnValue({ values: valuesInsert }),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(tx as any),
+        fn(stubService<TenantTx>(tx)),
       );
 
       const { service, audit } = await buildService();
@@ -115,7 +117,7 @@ describe("OrganizationLegalHoldService", () => {
           .mockReturnValueOnce(buildSelectChain([{ holdId: "existing-hold" }])),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(tx as any),
+        fn(stubService<TenantTx>(tx)),
       );
 
       const { service } = await buildService();
@@ -132,7 +134,7 @@ describe("OrganizationLegalHoldService", () => {
           .mockReturnValueOnce(buildSelectChain([])),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(tx as any),
+        fn(stubService<TenantTx>(tx)),
       );
 
       const { service } = await buildService();
@@ -151,7 +153,7 @@ describe("OrganizationLegalHoldService", () => {
         update: jest.fn().mockReturnValue(buildUpdateChain([])),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(tx as any),
+        fn(stubService<TenantTx>(tx)),
       );
 
       const { service } = await buildService();
@@ -174,7 +176,7 @@ describe("OrganizationLegalHoldService", () => {
         select: jest.fn().mockReturnValue(buildSelectChain([holdRow])),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(tx as any),
+        fn(stubService<TenantTx>(tx)),
       );
 
       const { service } = await buildService();

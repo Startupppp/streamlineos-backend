@@ -48,6 +48,14 @@ export const listJournalQuerySchema = z
   }).strict()
   .refine((r) => !r.from || !r.to || r.from <= r.to, { message: "`from` must be <= `to`", path: ["from"] });
 
+/**
+ * `journal_lines.debit`/`credit` are `numeric(18,4)`. A larger value raised a
+ * `22003` from Postgres as a 500 instead of a 400, and a JSON body carries money
+ * as a double, so anything past 2^53/10^4 could not have been meant exactly
+ * either. The cap is the largest amount the column can hold.
+ */
+export const JOURNAL_LINE_MAX_AMOUNT = 99999999999999.9999;
+
 export const createJournalEntrySchema = z
   .object({
     entryDate: isoDate,
@@ -58,8 +66,8 @@ export const createJournalEntrySchema = z
         z
           .object({
             accountCode: z.string().min(1).max(20),
-            debit: z.number().nonnegative(),
-            credit: z.number().nonnegative(),
+            debit: z.number().nonnegative().max(JOURNAL_LINE_MAX_AMOUNT),
+            credit: z.number().nonnegative().max(JOURNAL_LINE_MAX_AMOUNT),
             description: z.string().max(500).optional(),
           })
           .refine((line) => (line.debit > 0) !== (line.credit > 0), {

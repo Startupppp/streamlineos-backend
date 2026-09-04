@@ -1,5 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.types";
+import type { WorkflowRunnerService } from "../../../common/workflow";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
 import { CrmConnectorLifecycleService } from "./crm-connector-lifecycle.service";
 
 describe("CrmConnectorLifecycleService — cross-tenant isolation", () => {
@@ -20,7 +22,7 @@ describe("CrmConnectorLifecycleService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a sync belonging to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const mockWorkflows = {} as any;
+    const mockWorkflows = stubService<WorkflowRunnerService>({});
     const svc = new CrmConnectorLifecycleService(db, mockWorkflows);
     await expect(svc.progress(ATTACKER, SYNC_ID)).rejects.toThrow(NotFoundException);
   });
@@ -59,7 +61,7 @@ describe("CrmConnectorLifecycleService — cross-tenant isolation", () => {
       }),
       execute: jest.fn().mockResolvedValue([]),
     } as unknown as Db;
-    const mockWorkflows = {} as any;
+    const mockWorkflows = stubService<WorkflowRunnerService>({});
     const svc = new CrmConnectorLifecycleService(db, mockWorkflows);
     const result = await svc.progress(OWNER, SYNC_ID);
     expect(result.crmConnectorSyncId).toBe(SYNC_ID);

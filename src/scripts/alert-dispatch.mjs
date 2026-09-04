@@ -15,6 +15,11 @@ const FAILURE_RUNBOOK =
 const REGISTRY = {
   "dead-outbox": { owner: "platform-reliability", runbookAnchor: "#dead-outbox", severity: "critical" },
   "dead-delivery": { owner: "notifications-team", runbookAnchor: "#dead-delivery", severity: "high" },
+  "dead-notification-outbox": {
+    owner: "notifications-team",
+    runbookAnchor: "#dead-notification-outbox",
+    severity: "critical",
+  },
   "sig-failures": { owner: "payments-team", runbookAnchor: "#sig-failures", severity: "high" },
   "tenant-ctx-errors": { owner: "platform-reliability", runbookAnchor: "#tenant-ctx-errors", severity: "critical" },
   p95: { owner: "platform-reliability", runbookAnchor: "#p95", severity: "high" },

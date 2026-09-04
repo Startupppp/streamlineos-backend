@@ -118,7 +118,9 @@ export class DocumentsController {
     }
 
     const expiresIn = 300;
-    const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn);
+    const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn, undefined, {
+      preauthorized: true,
+    });
     await this.audit.logCritical({
       action: "hr.document_viewed",
       userId: currentUser.userId,

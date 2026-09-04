@@ -130,7 +130,7 @@ describe("ChatMessageModerationService — cross-tenant isolation on edit and re
     }).compile();
     const service = module.get(ChatMessageModerationService);
 
-    await expect(service.edit(99, "user-x", ATTACKER_ORG, "pwned")).rejects.toThrow(NotFoundException);
+    await expect(service.edit(99, 1, "user-x", ATTACKER_ORG, "pwned")).rejects.toThrow(NotFoundException);
 
     const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
     expect(sqlValues(q?.where)).toContain(ATTACKER_ORG);
@@ -152,7 +152,7 @@ describe("ChatMessageModerationService — cross-tenant isolation on edit and re
     }).compile();
     const service = module.get(ChatMessageModerationService);
 
-    const result = await service.edit(99, "u1", OWNER_ORG, "updated");
+    const result = await service.edit(99, 1, "u1", OWNER_ORG, "updated");
 
     const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
     expect(sqlValues(q?.where)).toContain(OWNER_ORG);
@@ -171,11 +171,88 @@ describe("ChatMessageModerationService — cross-tenant isolation on edit and re
     }).compile();
     const service = module.get(ChatMessageModerationService);
 
-    await expect(service.remove(99, "user-x", false, ATTACKER_ORG)).rejects.toThrow(NotFoundException);
+    await expect(service.remove(99, 1, "user-x", false, ATTACKER_ORG)).rejects.toThrow(NotFoundException);
 
     const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
     expect(sqlValues(q?.where)).toContain(ATTACKER_ORG);
     expect(sqlValues(q?.where)).not.toContain(OWNER_ORG);
+  });
+
+  /**
+   * The route is `PATCH|DELETE /chat/channels/:channelId/messages/:messageId`. `:channelId`
+   * was parsed by `channelAndMessageIdParams` and then dropped on the floor: the lookup keyed
+   * on `(id, orgId)` only, and the membership check that followed read the message's OWN
+   * `channelId`, so the URL's channel was never compared to anything. A member of channel A
+   * could therefore edit or delete a message of channel A while addressing channel B, and no
+   * layer could tell — the write's own `WHERE` used `message.channelId` too, so it agreed
+   * with itself. The channel in the path is part of the message's identity.
+   */
+  const CHANNEL_IN_URL = 7;
+
+  it("DENY: edit binds the message lookup to the channel named in the URL", async () => {
+    const { db } = makeMessagesService(null);
+
+    const module = await Test.createTestingModule({
+      providers: [
+        ChatMessageModerationService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn() } },
+      ],
+    }).compile();
+    const service = module.get(ChatMessageModerationService);
+
+    await expect(
+      service.edit(99, CHANNEL_IN_URL, "u1", OWNER_ORG, "pwned"),
+    ).rejects.toThrow(NotFoundException);
+
+    const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
+    expect(sqlValues(q?.where)).toContain(CHANNEL_IN_URL);
+  });
+
+  it("DENY: remove binds the message lookup to the channel named in the URL", async () => {
+    const { db } = makeMessagesService(null);
+
+    const module = await Test.createTestingModule({
+      providers: [
+        ChatMessageModerationService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn() } },
+      ],
+    }).compile();
+    const service = module.get(ChatMessageModerationService);
+
+    await expect(
+      service.remove(99, CHANNEL_IN_URL, "u1", false, OWNER_ORG),
+    ).rejects.toThrow(NotFoundException);
+
+    const q = db.query.chatMessages.findFirst.mock.calls[0]?.[0];
+    expect(sqlValues(q?.where)).toContain(CHANNEL_IN_URL);
+  });
+
+  it("scopes the edit WRITE on the URL channel, not on the row it just read", async () => {
+    // Re-deriving the channel from the row makes the predicate agree with itself: it
+    // would still update a message that lives in a different channel from the one the
+    // caller addressed. The write has to carry the caller's channel.
+    const msgRow = { id: 99, orgId: OWNER_ORG, channelId: CHANNEL_IN_URL, senderId: "u1", senderMembershipId: 5, isDeleted: false };
+    const { db } = makeMessagesService(msgRow);
+    db.query.organizationMembers.findFirst.mockResolvedValue({ id: 5 });
+    db.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 1 });
+
+    const where = jest.fn().mockResolvedValue(undefined);
+    db.update = jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) });
+
+    const module = await Test.createTestingModule({
+      providers: [
+        ChatMessageModerationService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+    const service = module.get(ChatMessageModerationService);
+
+    await service.edit(99, CHANNEL_IN_URL, "u1", OWNER_ORG, "updated");
+
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(CHANNEL_IN_URL);
   });
 });
 

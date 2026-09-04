@@ -10,6 +10,9 @@ import {
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
+import { AuditService } from "../../../common/audit/audit.service";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -47,11 +50,14 @@ export class HrSendEmailController {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly emailService: EmailService,
     private readonly emailProvider: EmailProviderService,
+    private readonly audit: AuditService,
   ) {}
 
   @Post()
   @HttpCode(200)
   @RequirePermission("hr:communications:send")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("hr:communications-send")
   @Validate({ body: sendEmailSchema })
   async send(
     @Body() body: SendEmailInput,
@@ -105,6 +111,19 @@ export class HrSendEmailController {
       to: body.to,
       subject,
       html: emailBody,
+    });
+
+    this.audit.log({
+      action: "hr.communications.send",
+      userId: u.userId,
+      orgId: u.orgId,
+      resourceType: "email",
+      resourceId: body.to,
+      metadata: {
+        subject,
+        templateId: body.templateId ?? null,
+        candidateId: body.candidateId ?? null,
+      },
     });
 
     return { sent: true, to: body.to, subject };

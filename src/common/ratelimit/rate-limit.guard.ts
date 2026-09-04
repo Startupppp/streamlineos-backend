@@ -5,10 +5,17 @@ import type { CurrentUserContext } from "../auth/backend-claims";
 import { RateLimitService } from "./rate-limit.service";
 import { RATE_LIMIT_TIER } from "./use-rate-limit.decorator";
 
+/**
+ * The bucket key for an unauthenticated caller.
+ *
+ * Reads `req.ip` and nothing else. It used to prefer the forwarded-for header's LEFTMOST entry,
+ * which is the hop the CLIENT wrote — a proxy appends, it does not prepend — so rotating one
+ * header defeated every unauthenticated tier: 150 requests, 0 blocked, against 120 blocked
+ * from a fixed hop. Express resolves `req.ip` under the `trust proxy` hop count declared in
+ * `common/http/trust-proxy.ts`, which is counted from the RIGHT and therefore unforgeable.
+ */
 function extractClientIp(req: Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const candidate = raw?.split(",")[0]?.trim() || req.ip;
+  const candidate = req.ip;
   return candidate ? candidate.slice(0, 100) : "unknown";
 }
 

@@ -20,6 +20,7 @@ import { LlmService } from "../providers/llm.service";
 import { ProjectsAiService } from "../services/projects-ai.service";
 import { TicketInsightsAiService } from "../services/ticket-insights-ai.service";
 import { TicketTriageAiService } from "../services/ticket-triage-ai.service";
+import { TicketDraftAiService } from "../services/ticket-draft-ai.service";
 import { MeetingActionAiService } from "../services/meeting-action-ai.service";
 import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import {
@@ -69,6 +70,7 @@ export class ProjectsAiController {
     private readonly projectsAi: ProjectsAiService,
     private readonly ticketInsights: TicketInsightsAiService,
     private readonly ticketTriage: TicketTriageAiService,
+    private readonly ticketDraft: TicketDraftAiService,
     private readonly meetingAction: MeetingActionAiService,
     private readonly planLimits: PlanLimitsService,
   ) {}
@@ -149,7 +151,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketTriage.suggestTitleFromDraft(
+    return this.ticketDraft.suggestTitleFromDraft(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -166,7 +168,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketTriage.improveDescriptionDraft(
+    return this.ticketDraft.improveDescriptionDraft(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -183,7 +185,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketTriage.suggestFieldsFromDraft(
+    return this.ticketDraft.suggestFieldsFromDraft(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),

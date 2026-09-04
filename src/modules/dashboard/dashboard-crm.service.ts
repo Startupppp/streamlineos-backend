@@ -13,7 +13,8 @@ import { PARTY_OF_LEAD, leadStatus } from "../crm/crm-party-reads";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
+import { buildOrgSectionCacheKey } from "./dashboard-cache-key";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
@@ -166,8 +167,15 @@ export class DashboardCrmService {
   ): Promise<ExecutiveDashboard> {
     const orgId = u.orgId;
     const withCrm = await this.canSeeCrm(u);
-    return this.cache.cached(
-      CACHE_KEYS.executiveDashboard(orgId, withCrm ? "crm" : "core"),
+    const key = await buildOrgSectionCacheKey(
+      this.access,
+      orgId,
+      "crm-executive",
+      withCrm ? "crm" : "core",
+    );
+    return this.cache.cachedForOrg(
+      orgId,
+      key,
       async () => {
         const [headcountRows, openRolesRows, activeProjectsRows] =
           await this.coreExecutiveReads(orgId);

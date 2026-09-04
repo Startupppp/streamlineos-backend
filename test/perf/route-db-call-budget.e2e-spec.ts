@@ -33,6 +33,16 @@ import {
  */
 
 const APP_URL = process.env.APP_DATABASE_URL ?? "";
+/**
+ * PRD-C079: TLS is OFF unless PGSSLMODE explicitly asks for it. The old default was the
+ * inverse — `require` unless PGSSLMODE === "disable" — which meant every local scratch run
+ * failed at connect time and read as a broken suite rather than a missing env var, so the
+ * one harness that counts database calls under the app role was effectively unrunnable
+ * against the non-BYPASSRLS local target it exists to measure. Every sibling harness
+ * (prepare-perf-http-seed.mjs, route-budget-http.seeded-e2e-spec.ts) already defaults off.
+ */
+const TLS_MODES = new Set(["require", "verify-ca", "verify-full", "prefer"]);
+const SSL_MODE: false | "require" = TLS_MODES.has(process.env.PGSSLMODE ?? "") ? "require" : false;
 const USABLE = APP_URL.length > 0 && /scratch/i.test(APP_URL);
 if (!USABLE)
   console.error(
@@ -63,7 +73,7 @@ describeIfSeeded("route database-call budgets (seeded)", () => {
     client = postgres(APP_URL, {
       max: 1,
       prepare: false,
-      ssl: process.env.PGSSLMODE === "disable" ? false : "require",
+      ssl: SSL_MODE,
       onnotice: () => {},
     });
     instrumentPostgresClient(client);
