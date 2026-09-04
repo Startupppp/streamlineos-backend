@@ -195,7 +195,7 @@ async function main() {
     });
     console.log(`
 POST @everyone -> ${res2.status}`);
-    await new Promise((r) => setTimeout(r, 6000));
+    await new Promise((r) => setTimeout(r, 15000));
     const everyoneAlex = alexBox.received.length - before.alex;
     const everyoneAlexander = alexanderBox.received.length - before.alexander;
     console.log(`@everyone reached Alex      : ${everyoneAlex}`);

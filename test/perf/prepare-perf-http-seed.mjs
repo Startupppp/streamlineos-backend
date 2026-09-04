@@ -179,6 +179,42 @@ async function completeOrgOnboarding(sql, write) {
   return stamped;
 }
 
+/**
+ * 4. THE ACTIVE ORGANISATION. The NextAuth session callback resolves a user's organisation
+ *    through `users.last_active_org_id`; a login writes it, a seed does not. Measured here:
+ *    568 users, 568 ACTIVE memberships, 0 with the pointer set — so every session resolved
+ *    `orgId: null`, `role: ""` and fell through the workspace gate to `/org-setup` even after
+ *    the organisation itself was stamped. `users.onboarding_completed_at` is stamped for the
+ *    same reason: an unstamped member is sent to the joiner form instead of the page.
+ */
+async function linkActiveOrganisation(sql, write) {
+  const pending = await sql.unsafe(
+    `SELECT u.id, m.org_id
+       FROM users u
+       JOIN organization_members m ON m.user_id = u.id AND m.status = 'ACTIVE'
+      WHERE u.last_active_org_id IS NULL
+      ORDER BY u.id`,
+  );
+  process.stdout.write(
+    `[prepare-perf-http-seed] users with no active organisation: ${String(pending.length)}\n`,
+  );
+  if (!write) return 0;
+
+  let linked = 0;
+  for (const row of pending) {
+    const result = await sql.unsafe(
+      `UPDATE users
+          SET last_active_org_id = $2,
+              onboarding_completed_at = COALESCE(onboarding_completed_at, now())
+        WHERE id = $1 AND last_active_org_id IS NULL
+        RETURNING id`,
+      [String(row.id), String(row.org_id)],
+    );
+    linked += result.length;
+  }
+  return linked;
+}
+
 async function enableModules(sql, write) {
   const missing = await sql.unsafe(
     `SELECT o.id AS org_id, c.module_key
@@ -222,12 +258,13 @@ async function main() {
     const placed = await placeOrganizations(sql, write);
     const enabled = await enableModules(sql, write);
     const stamped = await completeOrgOnboarding(sql, write);
+    const linked = await linkActiveOrganisation(sql, write);
     if (!write) {
       process.stdout.write("[prepare-perf-http-seed] dry run — pass --write to insert\n");
       return;
     }
     process.stdout.write(
-      `[prepare-perf-http-seed] inserted ${String(placed)} placement row(s), ${String(enabled)} module row(s), stamped ${String(stamped)} workspace gate(s)\n`,
+      `[prepare-perf-http-seed] inserted ${String(placed)} placement row(s), ${String(enabled)} module row(s), stamped ${String(stamped)} workspace gate(s), linked ${String(linked)} active organisation(s)\n`,
     );
   } finally {
     await sql.end({ timeout: 5 });

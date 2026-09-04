@@ -30,12 +30,23 @@
  *   node test/perf/measure-benchmark-manifest.mjs --self-test
  */
 
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import postgres from "postgres";
-import { MODULES, STATEMENT_CEILING_MS, TENANTS, validateModules } from "./benchmark-modules.mjs";
+import {
+  MODULES,
+  STATEMENT_CEILING_MS,
+  TENANTS,
+  validateModules,
+} from "./benchmark-modules.mjs";
 import { assertScratchTarget } from "./heavy-query-fixtures.mjs";
 import {
   capturePlan,
@@ -45,7 +56,11 @@ import {
   resolveBudgetFixtures,
   selfTest as environmentSelfTest,
 } from "./benchmark-environment.mjs";
-import { METRICS, noiseEnvelope, summarise } from "../../src/scripts/benchmark-regression.mjs";
+import {
+  METRICS,
+  noiseEnvelope,
+  summarise,
+} from "../../src/scripts/benchmark-regression.mjs";
 import { applyRequestLevel } from "./merge-http-measurement.mjs";
 import { pickMetrics, runNoiseStudy } from "./benchmark-noise-study.mjs";
 
@@ -61,7 +76,11 @@ import {
   statementVerdict,
 } from "./benchmark-instruments.mjs";
 
-const MANIFEST_PATH = join(BACKEND_ROOT, "contracts", "benchmark-manifest.json");
+const MANIFEST_PATH = join(
+  BACKEND_ROOT,
+  "contracts",
+  "benchmark-manifest.json",
+);
 
 const arg = (name, fallback) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -70,7 +89,9 @@ const arg = (name, fallback) => {
 async function main() {
   const url = process.env.APP_DATABASE_URL;
   if (!url) {
-    console.error("APP_DATABASE_URL is required — it must be the non-BYPASSRLS application role.");
+    console.error(
+      "APP_DATABASE_URL is required — it must be the non-BYPASSRLS application role.",
+    );
     process.exit(1);
   }
   const target = assertScratchTarget(url, [process.env.DATABASE_URL]);
@@ -82,12 +103,20 @@ async function main() {
   const samples = Math.max(2, Number(arg("samples", "50")) || 50);
   const replicates = Math.max(1, Number(arg("replicates", "1")) || 1);
   const concurrency = Math.max(2, Number(arg("concurrency", "8")) || 8);
-  const iterations = Math.max(concurrency, Number(arg("iterations", "48")) || 48);
+  const iterations = Math.max(
+    concurrency,
+    Number(arg("iterations", "48")) || 48,
+  );
   const withPlans = process.argv.includes("--plans");
   const write = process.argv.includes("--write");
 
   const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
-  const sql = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
+  const sql = postgres(url, {
+    max: 1,
+    prepare: false,
+    ssl,
+    onnotice: () => {},
+  });
 
   const [role] = await sql`
     SELECT current_user AS name, r.rolbypassrls, r.rolsuper FROM pg_roles r WHERE r.rolname = current_user`;
@@ -100,12 +129,20 @@ async function main() {
     process.exit(1);
   }
 
-  const { BUDGETS } = await import(join(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs"));
+  const { BUDGETS } = await import(
+    pathToFileURL(join(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs"))
+      .href
+  );
   const { QUERIES } = await import("./heavy-query-catalog.mjs");
-  const moduleErrors = validateModules(MODULES, new Set(BUDGETS.map((b) => b.id)), new Set(QUERIES.map((q) => q.id)));
+  const moduleErrors = validateModules(
+    MODULES,
+    new Set(BUDGETS.map((b) => b.id)),
+    new Set(QUERIES.map((q) => q.id)),
+  );
   if (moduleErrors.length > 0) {
     await sql.end();
-    for (const e of moduleErrors) console.error("INVALID MODULE DECLARATION:", e);
+    for (const e of moduleErrors)
+      console.error("INVALID MODULE DECLARATION:", e);
     process.exit(1);
   }
 
@@ -128,10 +165,13 @@ async function main() {
   // the passes large → mid → small → tiny → large again puts three other tenants' worth of work
   // between one tenant's replicates.
   const budgetFixtures = {};
-  for (const tenant of TENANTS) budgetFixtures[tenant.label] = await resolveBudgetFixtures(sql, tenant.id);
+  for (const tenant of TENANTS)
+    budgetFixtures[tenant.label] = await resolveBudgetFixtures(sql, tenant.id);
   const complexIds = new Set(
     MODULES.flatMap((m) =>
-      Object.entries(m.readCostBudgets).filter(([, spec]) => spec.class === "complex").map(([id]) => id),
+      Object.entries(m.readCostBudgets)
+        .filter(([, spec]) => spec.class === "complex")
+        .map(([id]) => id),
     ),
   );
 
@@ -159,12 +199,20 @@ async function main() {
         const params = budget.params(budgetFixtures[tenant.label]);
         if (params === null) continue;
         const wantText = r === 0 && complexIds.has(budget.id);
-        const plan = await capturePlan(sql, tenant.id, budget.sql, params, { verbose: wantText });
+        const plan = await capturePlan(sql, tenant.id, budget.sql, params, {
+          verbose: wantText,
+        });
         if (plan.signature) sigs[budget.id] = plan.signature;
-        if (plan.planningBufferBlocks !== null && plan.planningBufferBlocks !== undefined)
-          (planningRuns[tenant.label][r] ??= {})[budget.id] = plan.planningBufferBlocks;
+        if (
+          plan.planningBufferBlocks !== null &&
+          plan.planningBufferBlocks !== undefined
+        )
+          (planningRuns[tenant.label][r] ??= {})[budget.id] =
+            plan.planningBufferBlocks;
         if (wantText && plan.text)
-          retainedPlans[tenant.label].push(`### ${budget.id}  (approved complex, tenant ${tenant.label})\n${plan.text}\n`);
+          retainedPlans[tenant.label].push(
+            `### ${budget.id}  (approved complex, tenant ${tenant.label})\n${plan.text}\n`,
+          );
       }
       planSigRuns[tenant.label].push(sigs);
 
@@ -181,7 +229,14 @@ async function main() {
     Object.entries(planSigRuns).map(([label, runs]) => [label, runs[0]]),
   );
 
-  const { policy, perBenchmarkCv, noiseRows, stabilitySeries, falsePositives, planStability } = runNoiseStudy({
+  const {
+    policy,
+    perBenchmarkCv,
+    noiseRows,
+    stabilitySeries,
+    falsePositives,
+    planStability,
+  } = runNoiseStudy({
     readCostRuns,
     planSigRuns,
     planningRuns,
@@ -209,11 +264,19 @@ async function main() {
   if (withPlans) {
     // measure-heavy-query-plans.mjs decides TLS from the URL string alone, not from PGSSLMODE, so a
     // loopback URL without the parameter is dialled over TLS and dies before it measures anything.
-    const heavyUrl = ssl === false && !url.includes("sslmode=") ? `${url}${url.includes("?") ? "&" : "?"}sslmode=disable` : url;
+    const heavyUrl =
+      ssl === false && !url.includes("sslmode=")
+        ? `${url}${url.includes("?") ? "&" : "?"}sslmode=disable`
+        : url;
     for (const orgLabel of ["large", "mid", "small"]) {
-      const doc = runHeavyQueries({ orgLabel, env: { ...childEnv, PERF_APP_DATABASE_URL: heavyUrl } });
+      const doc = runHeavyQueries({
+        orgLabel,
+        env: { ...childEnv, PERF_APP_DATABASE_URL: heavyUrl },
+      });
       heavyByOrg[orgLabel] = doc;
-      console.log(`heavy-query plans ${orgLabel}: ${doc.results.filter((r) => r.status === "measured").length}/${doc.results.length} measured`);
+      console.log(
+        `heavy-query plans ${orgLabel}: ${doc.results.filter((r) => r.status === "measured").length}/${doc.results.length} measured`,
+      );
     }
   }
 
@@ -221,17 +284,31 @@ async function main() {
   const modules = [];
   for (const m of MODULES) {
     const dataset = {};
-    for (const tenant of TENANTS) dataset[tenant.label] = await measureDatasetSize(sql, m.tables, tenant.id);
+    for (const tenant of TENANTS)
+      dataset[tenant.label] = await measureDatasetSize(
+        sql,
+        m.tables,
+        tenant.id,
+      );
 
     const probeBudget = BUDGETS.find((b) => b.id === m.concurrencyProbe);
     const params = probeBudget.params(budgetFixtures.large);
     const concurrencyRuns = [];
     if (params === null) {
-      concurrencyRuns.push({ status: "unmeasured", reason: `no fixture resolves ${m.concurrencyProbe} on this seed` });
+      concurrencyRuns.push({
+        status: "unmeasured",
+        reason: `no fixture resolves ${m.concurrencyProbe} on this seed`,
+      });
     } else {
       for (const level of [1, concurrency]) {
         const r = await measureConcurrency({
-          url, ssl, orgId: TENANTS[0].id, sql: probeBudget.sql, params, concurrency: level, iterations,
+          url,
+          ssl,
+          orgId: TENANTS[0].id,
+          sql: probeBudget.sql,
+          params,
+          concurrency: level,
+          iterations,
         });
         concurrencyRuns.push({ status: "measured", ...r });
       }
@@ -245,18 +322,27 @@ async function main() {
           readCostByTenant[tenant.label].budgets.find((b) => b.id === id),
         );
         const sig = planSignatures[tenant.label][id];
-        if (sig && measurements[tenant.label].status === "measured") measurements[tenant.label].planSignature = sig;
+        if (sig && measurements[tenant.label].status === "measured")
+          measurements[tenant.label].planSignature = sig;
         const planBlocks = planningRuns[tenant.label][0]?.[id];
-        if (planBlocks !== undefined && measurements[tenant.label].status === "measured")
+        if (
+          planBlocks !== undefined &&
+          measurements[tenant.label].status === "measured"
+        )
           measurements[tenant.label].planningBufferBlocks = planBlocks;
       }
       // Ticket 22 counted statements for two routes. A counted figure becomes an EXACT ratchet on
       // the reference tenant; a default ceiling is recorded beside it and never treated as one.
       const routes = routeBudgets[id] ?? [];
-      const counted = routes.filter((r) => r.measuredDbCalls !== null && r.dbCallBasis !== "manifest-default");
+      const counted = routes.filter(
+        (r) =>
+          r.measuredDbCalls !== null && r.dbCallBasis !== "manifest-default",
+      );
       if (counted.length === 1 && measurements.large.status === "measured")
         measurements.large.measuredDbCalls = counted[0].measuredDbCalls;
-      const errorRuns = TENANTS.filter((t) => measurements[t.label].status === "error").length;
+      const errorRuns = TENANTS.filter(
+        (t) => measurements[t.label].status === "error",
+      ).length;
       benchmarks.push({
         id,
         routeBudgets: routes.length > 0 ? routes : null,
@@ -286,7 +372,8 @@ async function main() {
         approval: spec.approval,
         ceilingMs: ceilingFor(spec),
         repetitions: samples,
-        warmState: "warm — percentiles are over samples 1..N with the first (cold) sample recorded separately as coldMs",
+        warmState:
+          "warm — percentiles are over samples 1..N with the first (cold) sample recorded separately as coldMs",
         measurements,
         errorRate: Math.round((errorRuns / TENANTS.length) * 10000) / 10000,
         cv: perBenchmarkCv[id] ?? null,
@@ -297,21 +384,29 @@ async function main() {
       const measurements = {};
       for (const orgLabel of ["large", "mid", "small"])
         measurements[orgLabel] = heavyByOrg[orgLabel]
-          ? heavyObservation(heavyByOrg[orgLabel].results.find((r) => r.id === id))
-          : { status: "unmeasured", reason: "heavy-query plans not captured in this run (--plans)" };
+          ? heavyObservation(
+              heavyByOrg[orgLabel].results.find((r) => r.id === id),
+            )
+          : {
+              status: "unmeasured",
+              reason: "heavy-query plans not captured in this run (--plans)",
+            };
       benchmarks.push({
         id,
         source: "heavy-query-catalog.mjs",
-        instrument: "EXPLAIN (ANALYZE, BUFFERS, VERBOSE) as streamline_app; full plan text retained in test/perf/benchmark-plans/",
+        instrument:
+          "EXPLAIN (ANALYZE, BUFFERS, VERBOSE) as streamline_app; full plan text retained in test/perf/benchmark-plans/",
         statementClass: "reference",
         approval: null,
         ceilingMs: null,
         repetitions: 2,
-        warmState: "cold and warm both recorded — run 1 and run 2 of the same statement in one transaction",
+        warmState:
+          "cold and warm both recorded — run 1 and run 2 of the same statement in one transaction",
         measurements,
         errorRate: 0,
         cv: null,
-        verdict: measurements.large?.status === "measured" ? "recorded" : "unmeasured",
+        verdict:
+          measurements.large?.status === "measured" ? "recorded" : "unmeasured",
       });
     }
 
@@ -330,12 +425,18 @@ async function main() {
       },
       benchmarks,
     });
-    const datasetErrors = TENANTS.flatMap((t) => dataset[t.label].errors.map((e) => `${t.label}/${e}`));
+    const datasetErrors = TENANTS.flatMap((t) =>
+      dataset[t.label].errors.map((e) => `${t.label}/${e}`),
+    );
     if (datasetErrors.length > 0)
-      for (const e of datasetErrors) console.error(`  DATASET ERROR ${m.id}: ${e}`);
+      for (const e of datasetErrors)
+        console.error(`  DATASET ERROR ${m.id}: ${e}`);
     const probeSummary = concurrencyRuns
       .filter((r) => r.status === "measured")
-      .map((r) => `c${r.concurrency} p95=${r.latency?.p95 ?? "?"}ms err=${r.errorRate}`)
+      .map(
+        (r) =>
+          `c${r.concurrency} p95=${r.latency?.p95 ?? "?"}ms err=${r.errorRate}`,
+      )
       .join(" · ");
     console.log(
       `module ${m.id.padEnd(20)} ${String(benchmarks.length).padStart(2)} benchmarks · ` +
@@ -346,7 +447,9 @@ async function main() {
   await sql.end();
 
   const allBenchmarks = modules.flatMap((m) => m.benchmarks);
-  const measuredOn = (t) => allBenchmarks.filter((b) => b.measurements[t]?.status === "measured").length;
+  const measuredOn = (t) =>
+    allBenchmarks.filter((b) => b.measurements[t]?.status === "measured")
+      .length;
   const manifest = {
     version: 1,
     schemaVersion: "benchmark-manifest/1",
@@ -376,7 +479,10 @@ async function main() {
         "test/perf/measure-heavy-query-plans.mjs — cold/warm buffers plus retained plan text",
         "test/perf/benchmark-environment.mjs — dataset size, machine limits, concurrency and error rate",
       ],
-      command: `node ${process.argv.slice(1).map((a) => (a.includes(" ") ? JSON.stringify(a) : a)).join(" ")}`,
+      command: `node ${process.argv
+        .slice(1)
+        .map((a) => (a.includes(" ") ? JSON.stringify(a) : a))
+        .join(" ")}`,
       reproduce:
         `APP_DATABASE_URL=postgres://streamline_app@127.0.0.1:5432/${environment.database.name} PGSSLMODE=disable \\\n` +
         `  node test/perf/measure-benchmark-manifest.mjs --samples=${samples} --replicates=${replicates} ` +
@@ -430,25 +536,42 @@ async function main() {
             benchmarks: noiseRows,
             falsePositives,
           }
-        : { replicates, what: "not run — rerun with --replicates=3 or more", benchmarks: [], falsePositives: null },
+        : {
+            replicates,
+            what: "not run — rerun with --replicates=3 or more",
+            benchmarks: [],
+            falsePositives: null,
+          },
     regressionPolicy: policy,
     metrics: METRICS,
     coverage: {
       modules: modules.length,
       benchmarks: allBenchmarks.length,
-      readCostBenchmarks: allBenchmarks.filter((b) => b.source === "read-cost-budgets.mjs").length,
-      heavyQueryBenchmarks: allBenchmarks.filter((b) => b.source === "heavy-query-catalog.mjs").length,
+      readCostBenchmarks: allBenchmarks.filter(
+        (b) => b.source === "read-cost-budgets.mjs",
+      ).length,
+      heavyQueryBenchmarks: allBenchmarks.filter(
+        (b) => b.source === "heavy-query-catalog.mjs",
+      ).length,
       measuredOnReferenceTenant: measuredOn("large"),
       planSignaturesCaptured: Object.fromEntries(
-        TENANTS.map((t) => [t.label, Object.keys(planSignatures[t.label]).length]),
+        TENANTS.map((t) => [
+          t.label,
+          Object.keys(planSignatures[t.label]).length,
+        ]),
       ),
       approvedComplexPlansRetained: Object.fromEntries(
         TENANTS.map((t) => [t.label, retainedPlans[t.label].length]),
       ),
       approvedComplexStatements: complexIds.size,
-      dbCallRatchetsArmed: allBenchmarks.filter((b) => b.dbCallRatchet?.armed).length,
-      dbCallRatchetsUnarmed: allBenchmarks.filter((b) => b.dbCallRatchet && !b.dbCallRatchet.armed).length,
-      measuredPerTenant: Object.fromEntries(TENANTS.map((t) => [t.label, measuredOn(t.label)])),
+      dbCallRatchetsArmed: allBenchmarks.filter((b) => b.dbCallRatchet?.armed)
+        .length,
+      dbCallRatchetsUnarmed: allBenchmarks.filter(
+        (b) => b.dbCallRatchet && !b.dbCallRatchet.armed,
+      ).length,
+      measuredPerTenant: Object.fromEntries(
+        TENANTS.map((t) => [t.label, measuredOn(t.label)]),
+      ),
       notMeasured: [
         "End-to-end request latency, response bytes, resident memory and downstream-provider calls. " +
           "These need an HTTP harness; test/helpers/seeded-e2e-app.ts is the right vehicle but requires " +
@@ -502,7 +625,12 @@ function carryForwardRequestLevel(manifest, outPath) {
   } catch {
     return false;
   }
-  if (!prior || typeof prior.requestLevel !== "object" || prior.requestLevel === null) return false;
+  if (
+    !prior ||
+    typeof prior.requestLevel !== "object" ||
+    prior.requestLevel === null
+  )
+    return false;
   applyRequestLevel(manifest, prior.requestLevel);
   return true;
 }
@@ -511,28 +639,58 @@ function selfTest() {
   const results = [];
   const check = (name, ok, detail = "") => {
     results.push(ok);
-    console.log(`  ${ok ? "[pass]" : "[FAIL]"} ${name}${detail ? ` — ${detail}` : ""}`);
+    console.log(
+      `  ${ok ? "[pass]" : "[FAIL]"} ${name}${detail ? ` — ${detail}` : ""}`,
+    );
   };
 
   check(
     "a read-cost breach is a MEASUREMENT, not an error — it must still populate the ratchet",
-    readCostObservation({ id: "x", outcome: "fail", blocks: 10234, warmBlocks: 10234, resultRows: 1, ceiling: 3000, latency: { p95Ms: 9 } }).status === "measured",
+    readCostObservation({
+      id: "x",
+      outcome: "fail",
+      blocks: 10234,
+      warmBlocks: 10234,
+      resultRows: 1,
+      ceiling: 3000,
+      latency: { p95Ms: 9 },
+    }).status === "measured",
   );
   check(
     "an errored budget is never recorded as measured",
-    readCostObservation({ id: "x", outcome: "error", reason: "boom" }).status === "error",
+    readCostObservation({ id: "x", outcome: "error", reason: "boom" })
+      .status === "error",
   );
   check(
     "a vacuous budget is flagged rather than counted as a passing measurement",
-    readCostObservation({ id: "x", outcome: "fail", blocks: 5, warmBlocks: 5, resultRows: 0, vacuous: true, latency: {} }).status === "vacuous",
+    readCostObservation({
+      id: "x",
+      outcome: "fail",
+      blocks: 5,
+      warmBlocks: 5,
+      resultRows: 0,
+      vacuous: true,
+      latency: {},
+    }).status === "vacuous",
   );
   check(
     "a below-floor minority record is unmeasured, not a breach",
-    readCostObservation({ id: "x", outcome: "unmeasured", reason: "seed-too-small" }).status === "unmeasured",
+    readCostObservation({
+      id: "x",
+      outcome: "unmeasured",
+      reason: "seed-too-small",
+    }).status === "unmeasured",
   );
   check(
     "the warm buffer count is what ratchets, not the cold one",
-    readCostObservation({ id: "x", outcome: "pass", blocks: 90, warmBlocks: 78, resultRows: 5, latency: {} }).bufferBlocks === 78,
+    readCostObservation({
+      id: "x",
+      outcome: "pass",
+      blocks: 90,
+      warmBlocks: 78,
+      resultRows: 5,
+      latency: {},
+    }).bufferBlocks === 78,
   );
   check(
     "pickMetrics drops nulls so an unmeasured field can never be compared as zero",
@@ -540,18 +698,24 @@ function selfTest() {
   );
   check(
     "an ordinary statement is held to 50 ms and a complex one to 200 ms",
-    ceilingFor({ class: "ordinary" }) === 50 && ceilingFor({ class: "complex" }) === 200,
+    ceilingFor({ class: "ordinary" }) === 50 &&
+      ceilingFor({ class: "complex" }) === 200,
   );
   check(
     "a statement over its class ceiling reports over, not unmeasured",
-    statementVerdict({ class: "ordinary" }, { status: "measured", p95Ms: 60 }).verdict === "over",
+    statementVerdict({ class: "ordinary" }, { status: "measured", p95Ms: 60 })
+      .verdict === "over",
   );
   check(
     "an unmeasured statement never reports within",
-    statementVerdict({ class: "ordinary" }, { status: "unmeasured" }).verdict === "unmeasured",
+    statementVerdict({ class: "ordinary" }, { status: "unmeasured" })
+      .verdict === "unmeasured",
   );
 
-  const priorPath = join(mkdtempSync(join(tmpdir(), "carry-forward-")), "benchmark-manifest.json");
+  const priorPath = join(
+    mkdtempSync(join(tmpdir(), "carry-forward-")),
+    "benchmark-manifest.json",
+  );
   const priorRequestLevel = {
     instrument: "test/perf/route-budget-http.seeded-e2e-spec.ts",
     commit: "2f37e1bb0",
@@ -561,9 +725,16 @@ function selfTest() {
   };
   writeFileSync(
     priorPath,
-    JSON.stringify({ requestLevel: priorRequestLevel, prd: { requestCeilingsMs: {} }, coverage: { notMeasured: [] } }),
+    JSON.stringify({
+      requestLevel: priorRequestLevel,
+      prd: { requestCeilingsMs: {} },
+      coverage: { notMeasured: [] },
+    }),
   );
-  const rebuilt = { prd: { requestCeilingsMs: { note: "not measured" } }, coverage: { notMeasured: [] } };
+  const rebuilt = {
+    prd: { requestCeilingsMs: { note: "not measured" } },
+    coverage: { notMeasured: [] },
+  };
   const carried = carryForwardRequestLevel(rebuilt, priorPath);
   check(
     "a statement-half rewrite carries the existing HTTP capture forward instead of deleting it",
@@ -574,11 +745,14 @@ function selfTest() {
     "the carried block brings its own description with it, so the manifest cannot say it is unmeasured",
     typeof rebuilt.prd.requestCeilingsMs.note === "string" &&
       rebuilt.prd.requestCeilingsMs.note.includes("ARE measured") &&
-      rebuilt.coverage.notMeasured.some((l) => l.startsWith("Request-level figures cover")),
+      rebuilt.coverage.notMeasured.some((l) =>
+        l.startsWith("Request-level figures cover"),
+      ),
   );
   check(
     "no prior manifest is not a carry-forward, and never invents a requestLevel block",
-    carryForwardRequestLevel({}, join(priorPath, "does-not-exist.json")) === false,
+    carryForwardRequestLevel({}, join(priorPath, "does-not-exist.json")) ===
+      false,
   );
 
   const rc = BUDGET_IDS_FOR_SELF_TEST();
@@ -587,11 +761,19 @@ function selfTest() {
     rc.errors.length === 0,
     rc.errors.join("; ") || `${rc.declared} declared`,
   );
-  const claimed = new Set(MODULES.flatMap((m) => Object.keys(m.readCostBudgets ?? {})));
+  const claimed = new Set(
+    MODULES.flatMap((m) => Object.keys(m.readCostBudgets ?? {})),
+  );
   check(
     "a read-cost budget the catalog holds but no module claims is a validation ERROR, not silent lost coverage",
-    validateModules(MODULES, new Set([...claimed, "unclaimed-probe-budget"]), null).some((e) =>
-      e.includes('"unclaimed-probe-budget" exists in read-cost-budgets.mjs but no module claims it'),
+    validateModules(
+      MODULES,
+      new Set([...claimed, "unclaimed-probe-budget"]),
+      null,
+    ).some((e) =>
+      e.includes(
+        '"unclaimed-probe-budget" exists in read-cost-budgets.mjs but no module claims it',
+      ),
     ),
   );
   check(
@@ -613,7 +795,10 @@ function selfTest() {
 }
 
 function BUDGET_IDS_FOR_SELF_TEST() {
-  const declared = MODULES.reduce((n, m) => n + Object.keys(m.readCostBudgets).length, 0);
+  const declared = MODULES.reduce(
+    (n, m) => n + Object.keys(m.readCostBudgets).length,
+    0,
+  );
   return { declared, errors: validateModules(MODULES, null, null) };
 }
 
