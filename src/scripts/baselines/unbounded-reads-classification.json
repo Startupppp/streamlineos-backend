@@ -1848,8 +1848,8 @@
       "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-candidate-ops.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "bulkImport dedupe probe now reads the request, not the org: selectDistinct on lower(email) + inArray(requested) + limit(requested.length). No unbounded read remains in this file."
     },
     "/hr/recruitment/recruitment-candidate-vault.service.ts": {
       "verdict": "BOUNDED",

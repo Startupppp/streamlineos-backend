@@ -92,7 +92,13 @@ export class ChatHistoryService {
       const [found] = await this.db
         .select({ updatedAt: aiChatConversations.updatedAt, id: aiChatConversations.id })
         .from(aiChatConversations)
-        .where(eq(aiChatConversations.id, opts.cursor))
+        .where(
+          and(
+            eq(aiChatConversations.id, opts.cursor),
+            eq(aiChatConversations.orgId, orgId),
+            eq(aiChatConversations.userMembershipId, membershipId),
+          ),
+        )
         .limit(1);
       cursorRow = found;
     }
@@ -176,7 +182,13 @@ export class ChatHistoryService {
     await this.db
       .update(aiChatConversations)
       .set({ title, updatedAt: now })
-      .where(eq(aiChatConversations.id, id));
+      .where(
+        and(
+          eq(aiChatConversations.id, id),
+          eq(aiChatConversations.orgId, orgId),
+          eq(aiChatConversations.userMembershipId, membershipId),
+        ),
+      );
 
     return {
       id: existing.id,
@@ -201,7 +213,15 @@ export class ChatHistoryService {
 
     if (!existing) throw new NotFoundException("Conversation not found");
 
-    await this.db.delete(aiChatConversations).where(eq(aiChatConversations.id, id));
+    await this.db
+      .delete(aiChatConversations)
+      .where(
+        and(
+          eq(aiChatConversations.id, id),
+          eq(aiChatConversations.orgId, orgId),
+          eq(aiChatConversations.userMembershipId, membershipId),
+        ),
+      );
   }
 
   async listMessages(

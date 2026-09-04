@@ -20,6 +20,7 @@ import { employeeSalaryProfiles } from "../../../db/schema/payroll/workforce";
 import { overtimeRequests } from "../../../db/schema/hr/overtime";
 import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { buildReimbursementPayload } from "./payroll-inputs-money";
+import { periodBoundsFrom } from "./payroll-period-key";
 import { AttendanceSummaryService } from "../time/attendance-summary.service";
 import { LeaveLedgerService } from "../time/leave-ledger.service";
 import { HrBenefitsClaimsService } from "../benefits/hr-benefits-claims.service";
@@ -46,15 +47,6 @@ function assertNotTruncated(rows: { length: number }, source: string, periodKey:
   }
 }
 
-function periodBounds(periodKey: string): { start: string; end: string } {
-  const [year, month] = periodKey.split("-");
-  const lastDay = new Date(Number(year), Number(month), 0).getDate();
-  return {
-    start: `${periodKey}-01`,
-    end: `${periodKey}-${String(lastDay).padStart(2, "0")}`,
-  };
-}
-
 @Injectable()
 export class PayrollInputsBuildService {
   constructor(
@@ -65,7 +57,7 @@ export class PayrollInputsBuildService {
   ) {}
 
   async buildSnapshots(orgId: string, period: typeof hrPayrollInputPeriods.$inferSelect): Promise<void> {
-    const { start, end } = periodBounds(period.periodKey);
+    const { start, end } = periodBoundsFrom(period.periodKey);
 
     const members = await this.db
       .select({

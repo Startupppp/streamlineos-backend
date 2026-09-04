@@ -75,6 +75,19 @@ export async function listConversationMessages(
   };
 }
 
+/**
+ * `conversationId` comes straight off the request body, so the conversation is
+ * resolved against the caller's tenant AND membership BEFORE anything is
+ * written.
+ *
+ * Every statement here used to key on the bare `id`. A forged id therefore
+ * inserted the caller's message into a stranger's conversation and then rewrote
+ * that conversation's title with the first 60 characters of the caller's
+ * prompt — a cross-tenant write, and the read-back that followed handed a
+ * foreign title to whoever asked next. Ownership is checked once, up front, and
+ * every subsequent statement still carries the org predicate, because a guard
+ * that lives only in the preceding SELECT is one refactor away from being gone.
+ */
 export async function appendMessageToConversation(
   db: Db,
   orgId: string,
@@ -87,24 +100,34 @@ export async function appendMessageToConversation(
   const trimmed = content.trim();
   if (!trimmed) return;
 
-  await db.insert(aiChatMessages).values({ orgId, userId, userMembershipId: membershipId, role, content: trimmed, conversationId });
+  const owned = and(
+    eq(aiChatConversations.id, conversationId),
+    eq(aiChatConversations.orgId, orgId),
+  );
 
-  const now = new Date();
   const [conv] = await db
     .select({ title: aiChatConversations.title })
     .from(aiChatConversations)
-    .where(eq(aiChatConversations.id, conversationId))
+    .where(
+      and(owned, eq(aiChatConversations.userMembershipId, membershipId)),
+    )
     .limit(1);
 
-  if (conv && conv.title === null && role === "user") {
+  if (!conv) throw new NotFoundException("Conversation not found");
+
+  await db.insert(aiChatMessages).values({ orgId, userId, userMembershipId: membershipId, role, content: trimmed, conversationId });
+
+  const now = new Date();
+
+  if (conv.title === null && role === "user") {
     await db
       .update(aiChatConversations)
       .set({ title: trimmed.substring(0, 60).trim(), updatedAt: now })
-      .where(eq(aiChatConversations.id, conversationId));
+      .where(owned);
   } else {
     await db
       .update(aiChatConversations)
       .set({ updatedAt: now })
-      .where(eq(aiChatConversations.id, conversationId));
+      .where(owned);
   }
 }

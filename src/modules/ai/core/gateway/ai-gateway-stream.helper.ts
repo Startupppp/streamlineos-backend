@@ -1,7 +1,7 @@
 import { streamText, type ToolSet } from "ai";
 import { logger } from "../../../../common/logger/logger.service";
 import { resolveChatModel, resolveChatModelId } from "../services/chat-assistant-model";
-import { resolveLlmRetryPolicy } from "../providers/llm-retry";
+import { classifyLlmError, resolveLlmRetryPolicy } from "../providers/llm-retry";
 import { redactSensitiveData } from "../redaction.util";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
 import { AiCallMetrics } from "../telemetry/ai-call-metrics";
@@ -38,9 +38,38 @@ export interface AiTextStream {
 const DEFAULT_STREAM_MAX_TOKENS = 1_024;
 const DEFAULT_BREAKER_KEY = "stream";
 const BREAKER_MESSAGE = "AI assistant is temporarily unavailable";
+const TENANT_BREAKER_MESSAGE =
+  "This organization has exceeded its AI rate limit — try again shortly";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+}
+
+/** The per-tenant sibling of a provider breaker key. */
+export function tenantBreakerKey(key: string, orgId: string): string {
+  return `${key}:org:${orgId}`;
+}
+
+export type BreakerAttribution = "provider" | "tenant" | "request";
+
+/**
+ * Who a failed stream is EVIDENCE against.
+ *
+ * The breaker used to count every non-abort error as provider ill-health on one
+ * globally shared key, which made it two things it should never be. A 400 —
+ * a malformed prompt, an over-length context, a content-policy refusal — is a
+ * verdict on the REQUEST: it will fail identically on a fallback model, so
+ * `llm-retry` already refuses to retry it, and counting it as provider illness
+ * meant five bad prompts from one tenant denied AI to every other tenant in the
+ * deployment for 30 s. A 429 is a verdict on the TENANT's burn rate, not on the
+ * provider's health, so it opens that tenant's breaker alone. Only 5xx and
+ * unclassifiable faults are evidence the provider itself is unwell.
+ */
+export function breakerAttribution(error: unknown): BreakerAttribution {
+  const kind = classifyLlmError(error);
+  if (kind === "fatal") return "request";
+  if (kind === "rate_limit") return "tenant";
+  return "provider";
 }
 
 /**
@@ -67,12 +96,12 @@ export class AiGatewayStreamHelper {
    * failures to trip whenever Redis is unavailable — which is exactly when it
    * matters.
    */
-  breakerFor(key: string): AiStreamBreaker {
+  breakerFor(key: string, unavailableMessage: string = BREAKER_MESSAGE): AiStreamBreaker {
     const existing = this.breakers.get(key);
     if (existing) return existing;
     const created = new AiStreamBreaker({
       key,
-      unavailableMessage: BREAKER_MESSAGE,
+      unavailableMessage,
       redis: this.redis,
     });
     this.breakers.set(key, created);
@@ -82,9 +111,22 @@ export class AiGatewayStreamHelper {
   async run(opts: AiStreamTextOpts): Promise<AiTextStream> {
     const { actor, feature, signal, charge = true, redact = true } = opts;
     const call = AiCallMetrics.begin({ feature, tier: "chat", orgId: actor.orgId });
-    const breaker = this.breakerFor(opts.breakerKey ?? DEFAULT_BREAKER_KEY);
+    const breakerKey = opts.breakerKey ?? DEFAULT_BREAKER_KEY;
+    const breaker = this.breakerFor(breakerKey);
+    const tenantBreaker = this.breakerFor(
+      tenantBreakerKey(breakerKey, actor.orgId),
+      TENANT_BREAKER_MESSAGE,
+    );
 
     await breaker.assertClosed();
+    await tenantBreaker.assertClosed();
+
+    const recordProviderFailure = (error: unknown): BreakerAttribution => {
+      const attribution = breakerAttribution(error);
+      if (attribution === "provider") breaker.recordFailure();
+      else if (attribution === "tenant") tenantBreaker.recordFailure();
+      return attribution;
+    };
 
     if (signal?.aborted === true) {
       call.finish("cancelled");
@@ -167,9 +209,10 @@ export class AiGatewayStreamHelper {
         },
         onError: ({ error }) => {
           if (signal?.aborted === true || isAbortError(error)) return;
-          breaker.recordFailure();
+          const attribution = recordProviderFailure(error);
           logger.warn("AI text stream failed", {
             error: error instanceof Error ? error.message : String(error),
+            attribution,
             feature,
             orgId: actor.orgId,
           });
@@ -179,6 +222,7 @@ export class AiGatewayStreamHelper {
           resolved = true;
           releaseConcurrency();
           breaker.recordSuccess();
+          tenantBreaker.recordSuccess();
           const promptTokens = usage?.inputTokens ?? 0;
           const completionTokens = usage?.outputTokens ?? 0;
           const timings = call.finish("ok", {
@@ -218,7 +262,7 @@ export class AiGatewayStreamHelper {
 
       return { stream, model: modelId, correlationId: call.correlationId };
     } catch (error) {
-      breaker.recordFailure();
+      recordProviderFailure(error);
       releaseConcurrency();
       releaseReservation("stream_setup_error");
       call.finish("error");

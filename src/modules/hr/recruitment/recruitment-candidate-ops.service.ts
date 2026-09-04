@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   candidateApplications,
   candidateSlaTracking,
@@ -42,11 +42,26 @@ export class RecruitmentCandidateOpsService {
   ) {}
 
   async bulkImport(orgId: string, input: BulkImportInput) {
-    const existingCandidates = await this.db.query.candidates.findMany({
-      where: eq(candidates.orgId, orgId),
-      columns: { email: true },
-    });
-    const existingEmails = new Set(existingCandidates.map((c) => c.email.toLowerCase()));
+    // Bounded by the REQUEST, not the organisation: this used to select every
+    // candidate row the org holds, unlimited, to answer <=500 questions.
+    // `candidates` has no unique on (org_id, email), so the onConflictDoNothing()
+    // below can never fire and this probe IS the dedupe. lower() on both sides
+    // because email is stored verbatim at some insert sites; selectDistinct with
+    // limit(requested.length) is exact rather than truncating.
+    const requestedEmails = [
+      ...new Set(input.rows.map((row) => row.email.toLowerCase().trim())),
+    ];
+    const existingCandidates = await this.db
+      .selectDistinct({ email: sql<string>`lower(${candidates.email})` })
+      .from(candidates)
+      .where(
+        and(
+          eq(candidates.orgId, orgId),
+          inArray(sql`lower(${candidates.email})`, requestedEmails),
+        ),
+      )
+      .limit(requestedEmails.length);
+    const existingEmails = new Set(existingCandidates.map((c) => c.email));
 
     const results = { created: 0, skipped: 0, errors: [] as string[] };
     const toInsert: Array<typeof candidates.$inferInsert> = [];
