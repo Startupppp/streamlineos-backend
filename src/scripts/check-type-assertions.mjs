@@ -17,18 +17,36 @@
  * The gate has two rules:
  *
  *  1. **Hard zero** for `as any`, `@ts-ignore`, `@ts-expect-error` and
- *     `@ts-nocheck` in application code. There is no ledger for these; the
- *     count is zero today and any reintroduction fails.
+ *     `@ts-nocheck` across **all of `src/`, the spec suite included**. There is
+ *     no ledger for these; the count is zero today and any reintroduction
+ *     fails.
+ *
+ *     The spec half of that corpus is new, and it was never a formality. This
+ *     rule spent a release reading only application code and reporting
+ *     `as any: 0` over a tree that held **159 of them in 28 spec files** — a
+ *     clean number produced by a scan that could not see, which is the exact
+ *     failure mode this gate exists to catch. Rule 4's own header admitted the
+ *     hole in writing while the headline kept printing zero. A spec is where a
+ *     forced type does the most damage, because ts-jest runs
+ *     `isolatedModules`: nothing typechecks a spec at run time, so `as any` on
+ *     a constructor stub let a mock name a method the real service does not
+ *     have and the test went green asserting nothing. Widening cost nothing —
+ *     rule 1 has no ledger to grow — and every one of those 159 sites is gone.
+ *
+ *     Rules 2-4 stay OUT of the spec suite, deliberately: 3,000-odd spec-side
+ *     `as unknown as` are a mocking-strategy decision and would need a ledger
+ *     of their own.
  *  2. **Zero growth** for `as unknown as`. Every file holding one is listed with
  *     its count, its seam and the invariant that makes the cast survivable. A
  *     new file, or an existing file gaining a site, fails. A file that *loses* a
  *     site also fails — with the new lower number to write down — so the ledger
  *     ratchets down and can never quietly hold a number that is no longer true.
  *
- * Scope is application code: `src/**` excluding `*.spec.ts`, `*.e2e-spec.ts`,
- * `__tests__/`, `__mocks__/` and `*spec-fixtures.ts`. The spec suite carries
- * 2,637 more `as unknown as` — the mock-construction idiom — and changing that
- * is a mocking-strategy decision, not a hygiene sweep.
+ * Scope for rules 2-4 is application code: `src/**` excluding `*.spec.ts`,
+ * `*.e2e-spec.ts`, `__tests__/`, `__mocks__/` and `*spec-fixtures.ts`. Rule 1
+ * runs over that PLUS the spec suite those exclusions name — two walks, two
+ * anti-vacuity floors, reported separately so neither can hide behind the
+ * other's number.
  *
  * Flags:
  *   --self-test   Run the classifier against synthetic fixtures and exit.
@@ -45,6 +63,16 @@ const SRC = fileURLToPath(new URL("../", import.meta.url));
 
 /** A scan that suddenly finds nothing is far likelier to be broken than the tree clean. */
 const SCAN_FLOOR_FILES = 2000;
+
+/**
+ * The same floor for rule 1's second corpus, the spec suite. It is measured
+ * separately because the two walks exclude each other by construction: a single
+ * combined count would let one walk collapse to zero while the other carried
+ * the total over the line, which is precisely the "reports clean over a
+ * near-empty corpus" failure this release keeps finding. 2,164 spec-suite files
+ * at head.
+ */
+const SCAN_FLOOR_SPEC_FILES = 1500;
 
 /**
  * Patterns that appear in CODE. These are counted with comments stripped, so a
@@ -108,6 +136,24 @@ export function isSkippedDir(name, depth) {
 const SKIP_FILE = /(\.spec\.ts|\.e2e-spec\.ts|\.db\.spec\.ts|\.test\.ts|spec-fixtures\.ts|\.d\.ts)$/;
 
 /**
+ * The spec suite, stated as the exact complement of the application walk so the
+ * two corpora cannot silently overlap or leave a gap between them: a file is
+ * spec-suite if the application walk would refuse it for being a spec, OR if it
+ * sits under a `__tests__`/`__mocks__` directory at any depth.
+ *
+ * `.d.ts` belongs to NEITHER. A declaration file holds no expressions, so
+ * `as any` cannot appear in one; it is excluded by construction rather than by
+ * oversight, and self-test (aq) pins that.
+ */
+const SPEC_ONLY_FILE = /(\.spec\.ts|\.e2e-spec\.ts|\.db\.spec\.ts|\.test\.ts|spec-fixtures\.ts)$/;
+const TEST_DIRS = new Set(["__tests__", "__mocks__"]);
+
+export function isSpecSuiteFile(name, insideTestDir) {
+  if (!name.endsWith(".ts") || name.endsWith(".d.ts")) return false;
+  return insideTestDir || SPEC_ONLY_FILE.test(name);
+}
+
+/**
  * file -> { count, seam, invariant }
  *
  * `seam` is one of:
@@ -132,12 +178,8 @@ const DOUBLE_CAST_LEDGER = new Map([
   ["src/modules/platform/operator-session.guard.ts", { count: 1, seam: "external", invariant: "`req.route` is attached by Express at dispatch time and is absent from the Nest request type. Read optionally with a `?? req.url` fallback, so an absent route degrades to the raw URL rather than throwing." }],
 
   // -- narrow-me: ours, knowable, and owed a Zod parse --
-  ["src/modules/party/party-merge.service.ts", { count: 2, seam: "narrow-me", invariant: "a merge snapshot written into a jsonb audit column. Drizzle types jsonb as `unknown`, so the cast is the write half of a round-trip whose read half is party-revert.service.ts. Owed a shared `mergeSnapshotSchema` parsed on read." }],
-  ["src/modules/party/party-revert.service.ts", { count: 1, seam: "narrow-me", invariant: "the read half of the party-merge jsonb round-trip. This is the cast that matters: it trusts a stored shape without parsing it, so a snapshot written by an older release deserialises into a lie rather than an error." }],
   ["src/modules/ingress/inbound-ingress.service.ts", { count: 1, seam: "narrow-me", invariant: "an inbound communication event written to a jsonb payload column, whose Drizzle `$type` is `Record<string, unknown>` and to which an interface is not assignable. The READ half is no longer a cast: `inbound-ingress.workflow.ts` now parses the stored payload with `inboundEventSchema`, the same contract the HTTP boundary enforces here, so a row written by an older release raises instead of deserialising into a lie. What survives on this side is the column's type, not a trust boundary — the value written is already validated by `validateInboundEvent` and, on the HTTP path, by `inboundEventSchema` itself." }],
   ["src/modules/crm/import/crm-import-preview.service.ts", { count: 1, seam: "narrow-me", invariant: "stored column mappings read back from a jsonb column. CRM is outside the PRD's dead-code scope but is still application code for this gate." }],
-  ["src/modules/notifications/notification-retention.service.ts", { count: 1, seam: "narrow-me", invariant: "rows from a raw `db.execute` probe. CLAUDE.md §6 says raw rows are `Record<string, unknown>` and should be converted at the use site (`Number(row.count)`), not cast wholesale." }],
-  ["src/modules/record-layouts/record-layouts.service.ts", { count: 1, seam: "narrow-me", invariant: "rows from a raw `db.execute` aggregate. Same §6 treatment as notification-retention.service.ts." }],
 ]);
 
 /**
@@ -358,6 +400,28 @@ export function countPlainAssertions(fileName, source) {
   return { asX, nonNull, asConst };
 }
 
+/**
+ * Rule 1's second walk. Mirrors `walk` but keeps the spec suite and drops
+ * application code, so the union of the two is every `.ts` under `src/` that is
+ * not a declaration file or build output.
+ */
+function* walkSpecs(dir, depth = 0, insideTestDir = false) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules") continue;
+      if (depth === 0 && SKIP_ROOT_DIRS.has(entry.name)) continue;
+      yield* walkSpecs(full, depth + 1, insideTestDir || TEST_DIRS.has(entry.name));
+    } else if (isSpecSuiteFile(entry.name, insideTestDir)) yield full;
+  }
+}
+
 function* walk(dir, depth = 0) {
   let entries;
   try {
@@ -384,6 +448,34 @@ export function countOutsideComments(source, pattern) {
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + " ".repeat(m.length - p1.length));
   return [...stripped.matchAll(pattern)].length;
+}
+
+/**
+ * Rule 1 over the spec suite. Only the banned escapes: no ledger, no ceiling,
+ * no raw-row cross-check — those belong to application code.
+ */
+function scanSpecs(root) {
+  const banned = new Map();
+  let files = 0;
+  for (const file of walkSpecs(root)) {
+    files += 1;
+    let source;
+    try {
+      source = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    const rel = `src/${relative(root, file).replace(/\\/g, "/")}`;
+    for (const [name, pattern] of Object.entries(BANNED_IN_CODE)) {
+      const n = countOutsideComments(source, pattern);
+      if (n) banned.set(`${rel} :: ${name}`, n);
+    }
+    for (const [name, pattern] of Object.entries(BANNED_DIRECTIVES)) {
+      const n = [...source.matchAll(pattern)].length;
+      if (n) banned.set(`${rel} :: ${name}`, n);
+    }
+  }
+  return { banned, files };
 }
 
 function scan(root) {

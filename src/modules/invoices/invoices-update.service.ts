@@ -4,6 +4,7 @@ import { invoiceItems, invoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { PG_CHECK_VIOLATION, isCheckViolation } from "../../common/db/postgres-error";
 import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { resolveSupplierStateCode } from "./lib/invoice-helpers";
 import { computeInvoiceTotals, resolveLineItems } from "./lib/invoice-line-tax";
@@ -122,7 +123,7 @@ export class InvoicesUpdateService {
       const blendedRate = input.taxRate ?? Number(existing.taxRate ?? 0);
       const discountInput = input.discount ?? Number(existing.discount ?? 0);
 
-      await this.db.transaction(async (tx) => {
+      await this.guardImmutability(async () => this.db.transaction(async (tx) => {
         const stored = await tx
           .select({
             gstRate: invoiceItems.gstRate,
@@ -171,7 +172,7 @@ export class InvoicesUpdateService {
           .update(invoices)
           .set(updateData)
           .where(and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)));
-      });
+      }));
     } else {
       await this.db
         .update(invoices)
@@ -189,5 +190,38 @@ export class InvoicesUpdateService {
     });
 
     return { success: true, posted: false };
+  }
+
+  /**
+   * `existing.status` is read before the transaction opens, so a concurrent issue can flip the
+   * invoice out of DRAFT between the guard above and the writes below. The database triggers
+   * (`trg_invoice_immutability`, `trg_invoice_item_immutability`) are what actually stop the edit
+   * at that point, and they raise `check_violation`. Unmapped that reached the client as a 500,
+   * which reads as "the server is broken" rather than "somebody issued this invoice while you were
+   * editing it".
+   */
+  private async guardImmutability<T>(body: () => Promise<T>): Promise<T> {
+    try {
+      return await body();
+    } catch (error) {
+      if (!isCheckViolation(error)) throw error;
+      throw new ConflictException(
+        InvoicesUpdateService.checkViolationMessage(error) ??
+          "This invoice is no longer a draft and can no longer be edited",
+      );
+    }
+  }
+
+  /** The driver error carrying the SQLSTATE sits below Drizzle's wrapper, and only it has the text. */
+  private static checkViolationMessage(error: unknown): string | undefined {
+    let current: unknown = error;
+    for (let depth = 0; current !== null && typeof current === "object" && depth < 6; depth += 1) {
+      if (Reflect.get(current, "code") === PG_CHECK_VIOLATION) {
+        const message: unknown = Reflect.get(current, "message");
+        if (typeof message === "string" && message.length > 0) return message;
+      }
+      current = Reflect.get(current, "cause");
+    }
+    return undefined;
   }
 }

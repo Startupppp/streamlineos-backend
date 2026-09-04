@@ -8,8 +8,11 @@ import {
   ParseIntPipe,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
+import { pipeline } from "node:stream/promises";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -124,14 +127,30 @@ export class PayoutBatchesController {
     return this.batches.getBatch(u.orgId, batchId, query.itemCursor, query.itemLimit);
   }
 
+  /**
+   * Streams the bank file rather than answering with a presigned URL. The CSV
+   * carries unmasked account numbers, so the bytes must never be reachable by
+   * anything but this request's own credential — see
+   * `PayoutBatchesService.downloadFile`.
+   */
   @Get("batches/:batchId/file")
   @RequirePermission("payroll:bank:manage")
   @Validate({ params: batchIdParams })
-  getBatchFile(
+  async getBatchFile(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
   ) {
-    return this.batches.getFile(u.orgId, batchId);
+    const { file, fileName } = await this.batches.downloadFile(u.orgId, batchId);
+    res.setHeader("Content-Type", file.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${fileName.replace(/[^a-zA-Z0-9_.-]/g, "-")}"`,
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    if (file.contentLength !== undefined)
+      res.setHeader("Content-Length", String(file.contentLength));
+    await pipeline(file.body, res);
   }
 
   @Post("batches/:batchId/mark-sent")

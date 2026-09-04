@@ -21,13 +21,40 @@ import { AuditService } from "../../common/audit/audit.service";
 import { JournalPostingService, type DbOrTx } from "../accounting/posting/journal-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
-import { RateResolverService } from "../finance/controls/rate-resolver.service";
+import { ExchangeRateNotFoundError, RateResolverService } from "../finance/controls/rate-resolver.service";
 import { FxService } from "../finance/controls/fx.service";
+import {
+  compareDecimals,
+  decimalFromNumber,
+  formatDecimal,
+  multiplyDecimals,
+  roundDecimal,
+  subtractDecimals,
+  sumDecimals,
+  toDecimal,
+} from "../accounting/core/money.util";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { systemActor } from "../../common/auth/system-actor";
 import type { RecordPaymentInput } from "./dto/invoice-write.schemas";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
+
+/**
+ * `payments.amount` is `numeric(12,2)`, so a receipt can only ever be recorded to
+ * the paisa. Pinning the request amount to that scale once — and comparing the
+ * outstanding balance at the same scale — is what keeps the payment register, the
+ * allocation subledger and the journal recording one quantity instead of three.
+ */
+export const PAYMENT_SCALE = 2;
+
+function sumOfPayments() {
+  return sql<string>`COALESCE(sum(${payments.amount}), 0)::text`;
+}
+
+function maxPayable(invoiceTotal: string | null, totalPaid: string | null | undefined): string {
+  const remaining = subtractDecimals(toDecimal(invoiceTotal), toDecimal(totalPaid));
+  return roundDecimal(remaining, PAYMENT_SCALE);
+}
 
 @Injectable()
 export class InvoicesPaymentService {
@@ -46,7 +73,7 @@ export class InvoicesPaymentService {
   private async createPayment(
     orgId: string,
     invoiceId: number,
-    data: RecordPaymentInput & { createdBy: string },
+    data: RecordPaymentInput & { createdBy: string; settledAmount: string },
     tx: DbOrTx,
   ) {
     const [payment] = await tx
@@ -54,7 +81,7 @@ export class InvoicesPaymentService {
       .values({
         orgId,
         invoiceId,
-        amount: data.amount.toFixed(2),
+        amount: data.settledAmount,
         paymentDate: data.paymentDate,
         paymentMethod: data.paymentMethod,
         referenceNumber: data.referenceNumber ?? null,
@@ -82,22 +109,27 @@ export class InvoicesPaymentService {
       throw new BadRequestException("Cannot record payment on voided invoice");
     }
 
-    const [{ totalPaid }] = await this.db
-      .select({
-        totalPaid: sql<number>`COALESCE(sum(${payments.amount}::numeric), 0)::float`,
-      })
+    const settledAmount = roundDecimal(decimalFromNumber(input.amount), PAYMENT_SCALE);
+
+    const [paidRow] = await this.db
+      .select({ totalPaid: sumOfPayments() })
       .from(payments)
       .where(and(eq(payments.invoiceId, invoiceId), eq(payments.orgId, orgId)));
-    const remaining = Number(invoice.total ?? 0) - totalPaid;
-    if (input.amount > remaining + 0.01) {
+    const payable = maxPayable(invoice.total, paidRow?.totalPaid);
+    if (compareDecimals(settledAmount, payable) > 0) {
       throw new BadRequestException(
-        `Payment amount ${input.amount.toFixed(2)} exceeds outstanding balance ${remaining.toFixed(2)}`,
+        `Payment amount ${formatDecimal(settledAmount, PAYMENT_SCALE)} exceeds outstanding balance ${formatDecimal(payable, PAYMENT_SCALE)}`,
       );
     }
 
     const allocations = input.allocations ?? [];
-    const allocatedTotal = allocations.reduce((sum, a) => sum + a.amount, 0);
-    if (allocations.length > 0 && Math.abs(allocatedTotal - input.amount) > 0.01) {
+    const allocatedAmounts = allocations.map((a) =>
+      roundDecimal(decimalFromNumber(a.amount), PAYMENT_SCALE),
+    );
+    if (
+      allocations.length > 0 &&
+      compareDecimals(sumDecimals(allocatedAmounts), settledAmount) !== 0
+    ) {
       throw new BadRequestException(
         "Allocations total must equal payment amount",
       );
@@ -143,32 +175,30 @@ export class InvoicesPaymentService {
         throw new ConflictException("Cannot record payment on voided invoice");
 
       const [lockedPaid] = await tx
-        .select({
-          totalPaid: sql<number>`COALESCE(sum(${payments.amount}::numeric), 0)::float`,
-        })
+        .select({ totalPaid: sumOfPayments() })
         .from(payments)
         .where(and(eq(payments.invoiceId, invoiceId), eq(payments.orgId, orgId)));
-      const lockedRemaining = Number(lockedInvoice.total ?? 0) - Number(lockedPaid?.totalPaid ?? 0);
-      if (input.amount > lockedRemaining + 0.01)
+      const lockedPayable = maxPayable(lockedInvoice.total, lockedPaid?.totalPaid);
+      if (compareDecimals(settledAmount, lockedPayable) > 0)
         throw new ConflictException(
-          `Payment amount ${input.amount.toFixed(2)} exceeds outstanding balance ${lockedRemaining.toFixed(2)} — another payment landed first`,
+          `Payment amount ${formatDecimal(settledAmount, PAYMENT_SCALE)} exceeds outstanding balance ${formatDecimal(lockedPayable, PAYMENT_SCALE)} — another payment landed first`,
         );
 
       const payment = await this.createPayment(
         orgId,
         invoiceId,
-        { ...input, createdBy: userId },
+        { ...input, createdBy: userId, settledAmount },
         tx,
       );
 
       const touchedIds = new Set([invoiceId]);
       if (allocations.length > 0) {
         await tx.insert(finPaymentAllocations).values(
-          allocations.map((a) => ({
+          allocations.map((a, idx) => ({
             orgId,
             paymentId: payment.id,
             invoiceId: a.invoiceId,
-            amount: a.amount.toFixed(4),
+            amount: allocatedAmounts[idx],
           })),
         );
         for (const id of allocations.map((a) => a.invoiceId)) touchedIds.add(id);
@@ -205,7 +235,7 @@ export class InvoicesPaymentService {
           invoiceNumber: invoice.invoiceNumber,
           paymentDate: input.paymentDate,
           paymentMethod: input.paymentMethod,
-          amount: input.amount,
+          amount: Number(settledAmount),
           createdBy: userId,
         },
         tx,
@@ -219,7 +249,7 @@ export class InvoicesPaymentService {
       userId,
       invoice,
       created.id,
-      input.amount,
+      settledAmount,
       input.paymentDate,
     );
 
@@ -240,7 +270,7 @@ export class InvoicesPaymentService {
           entityType: "invoice",
           entityId: String(invoiceId),
           title: "Payment received",
-          message: `Payment of ${input.amount.toFixed(2)} received for invoice ${invoice.invoiceNumber}`,
+          message: `Payment of ${formatDecimal(settledAmount, PAYMENT_SCALE)} received for invoice ${invoice.invoiceNumber}`,
         })
         .catch(logSideEffectFailure("invoice.payment_received notification", { invoiceId, orgId }));
     if (!registerAfterCommit(emit)) void emit();
@@ -263,7 +293,7 @@ export class InvoicesPaymentService {
     invoice: { id: number; currency: string; exchangeRate: string },
     /** The `payments` row this settlement created — one instalment, one FX result. */
     paymentId: number,
-    allocatedAmount: number,
+    allocatedAmount: string,
     paymentDateIso: string,
   ): Promise<void> {
     const settingsRows = await this.db
@@ -275,17 +305,17 @@ export class InvoicesPaymentService {
 
     if (invoice.currency === baseCurrency) return;
 
-    const bookedRate = Number(invoice.exchangeRate ?? 1);
-    const baseAmountBooked = (allocatedAmount * bookedRate).toFixed(4);
+    const bookedRate = invoice.exchangeRate ? toDecimal(invoice.exchangeRate) : "1";
+    const baseAmountBooked = multiplyDecimals(allocatedAmount, bookedRate);
 
     try {
-      const settledRate = await this.rateResolver.getRate(
+      const settledRate = await this.rateResolver.getRateString(
         orgId,
         invoice.currency,
         baseCurrency,
         new Date(`${paymentDateIso}T00:00:00.000Z`),
       );
-      const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
+      const baseAmountSettled = multiplyDecimals(allocatedAmount, toDecimal(settledRate));
       const user = systemActor("invoices.payment.fx-posting", orgId, userId);
 
       await this.fx.postRealizedGainLoss(user, {
@@ -297,8 +327,9 @@ export class InvoicesPaymentService {
         counterPurpose: "AR",
       });
     } catch (err) {
+      if (!(err instanceof ExchangeRateNotFoundError)) throw err;
       this.classLogger.warn(
-        `No exchange rate for FX on invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,
+        `No exchange rate for FX on invoice ${invoice.id}: ${err.message}`,
       );
     }
   }

@@ -1,5 +1,10 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
+import type { RequestActorContext } from "../../../common/audit/actor-context";
+import { stubService } from "../../../test/service-stub.spec-fixtures";
+import type { PaymentAnalyticsService } from "./payment-analytics.service";
+import type { PaymentAuditService } from "./payment-audit.service";
+import type { OrganizationPaymentProvider, PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentTestTransactionService } from "./payment-test-transaction.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -47,10 +52,10 @@ describe("PaymentTestTransactionService — cross-tenant isolation", () => {
 
   it("throws NotFoundException when provider belongs to a different org (cross-tenant isolation)", async () => {
     const { db, findFirst, insertValues } = makeDb(null);
-    const mockProviders = { resolve: jest.fn().mockResolvedValue(undefined) } as any;
-    const mockAudit = { log: jest.fn() } as any;
-    const svc = new PaymentTestTransactionService(db, mockProviders, mockAudit, {} as any);
-    const actor = { userId: USER_ID, orgId: ATTACKER, ipAddress: null } as any;
+    const mockProviders = stubService<PaymentProviderResolver>({ resolve: jest.fn().mockResolvedValue(undefined) });
+    const mockAudit = stubService<PaymentAuditService>({ log: jest.fn() });
+    const svc = new PaymentTestTransactionService(db, mockProviders, mockAudit, stubService<PaymentAnalyticsService>({}));
+    const actor: RequestActorContext = { userId: USER_ID, orgId: ATTACKER };
     await expect(svc.createTestTransaction(ATTACKER, "razorpay", { amount: "100", currency: "INR" }, actor)).rejects.toThrow(NotFoundException);
     expect(sqlValues((findFirst.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"])).toContain(ATTACKER);
     expect(insertValues).not.toHaveBeenCalled();
@@ -59,16 +64,16 @@ describe("PaymentTestTransactionService — cross-tenant isolation", () => {
   it("proceeds for the owning org when provider exists (control — same-tenant)", async () => {
     const providerRow = { id: 1, orgId: OWNER, providerKey: "razorpay", environment: "test", status: "active" };
     const { db, findFirst, insertValues, updateWhere } = makeDb(providerRow);
-    const mockFacade = {
+    const mockFacade = stubService<OrganizationPaymentProvider>({
       isReady: jest.fn().mockReturnValue(true),
       createOrder: jest.fn().mockResolvedValue({ providerOrderId: "order_1" }),
       publicKeyId: jest.fn().mockReturnValue("key_test"),
-    } as any;
-    const mockProviders = { resolve: jest.fn().mockResolvedValue(mockFacade) } as any;
-    const mockAudit = { log: jest.fn().mockResolvedValue(undefined) } as any;
-    const mockAnalytics = { track: jest.fn() } as any;
+    });
+    const mockProviders = stubService<PaymentProviderResolver>({ resolve: jest.fn().mockResolvedValue(mockFacade) });
+    const mockAudit = stubService<PaymentAuditService>({ log: jest.fn().mockResolvedValue(undefined) });
+    const mockAnalytics = stubService<PaymentAnalyticsService>({ track: jest.fn() });
     const svc = new PaymentTestTransactionService(db, mockProviders, mockAudit, mockAnalytics);
-    const actor = { userId: USER_ID, orgId: OWNER, ipAddress: null } as any;
+    const actor: RequestActorContext = { userId: USER_ID, orgId: OWNER };
 
     const result = await svc.createTestTransaction(OWNER, "razorpay", { amount: "100", currency: "INR" }, actor);
 

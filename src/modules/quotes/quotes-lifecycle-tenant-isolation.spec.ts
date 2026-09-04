@@ -1,4 +1,9 @@
 import type { Db } from "../../db/drizzle.module";
+import type { AuditService } from "../../common/audit/audit.service";
+import type { CacheService } from "../../common/cache/cache.service";
+import { stubService } from "../../test/service-stub.spec-fixtures";
+import type { PlanLimitsService } from "../billing/core/plan-limits.service";
+import type { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { QuotesLifecycleService } from "./quotes-lifecycle.service";
 
 describe("QuotesLifecycleService — cross-tenant isolation", () => {
@@ -18,10 +23,10 @@ describe("QuotesLifecycleService — cross-tenant isolation", () => {
 
   it("returns null when quote belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const mockCache = { cached: jest.fn(), invalidateForOrg: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as any;
-    const mockAudit = { log: jest.fn() } as any;
-    const mockBus = { emit: jest.fn().mockResolvedValue(undefined) } as any;
-    const mockPlanLimits = {} as any;
+    const mockCache = stubService<CacheService>({ cached: jest.fn(), invalidateForOrg: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined) });
+    const mockAudit = stubService<AuditService>({ log: jest.fn() });
+    const mockBus = stubService<CrmAutomationBusService>({ emit: jest.fn().mockResolvedValue(undefined) });
+    const mockPlanLimits = stubService<PlanLimitsService>({});
     const svc = new QuotesLifecycleService(db, mockCache, mockAudit, mockBus, mockPlanLimits);
     const result = await svc.send(ATTACKER, USER_ID, QUOTE_ID);
     expect(result).toBeNull();
@@ -30,10 +35,10 @@ describe("QuotesLifecycleService — cross-tenant isolation", () => {
   it("proceeds for the owning org (control — same-tenant)", async () => {
     const quoteRow = { id: QUOTE_ID, orgId: OWNER, status: "DRAFT", clientId: 1, approvalStatus: null, quoteNumber: "Q-001", dealId: null };
     const db = makeDb(quoteRow);
-    const mockCache = { cached: jest.fn(), invalidateForOrg: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as any;
-    const mockAudit = { log: jest.fn() } as any;
-    const mockBus = { emit: jest.fn().mockResolvedValue(undefined) } as any;
-    const mockPlanLimits = {} as any;
+    const mockCache = stubService<CacheService>({ cached: jest.fn(), invalidateForOrg: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined) });
+    const mockAudit = stubService<AuditService>({ log: jest.fn() });
+    const mockBus = stubService<CrmAutomationBusService>({ emit: jest.fn().mockResolvedValue(undefined) });
+    const mockPlanLimits = stubService<PlanLimitsService>({});
     const svc = new QuotesLifecycleService(db, mockCache, mockAudit, mockBus, mockPlanLimits);
     const result = await svc.send(OWNER, USER_ID, QUOTE_ID);
     expect(result).not.toBeNull();

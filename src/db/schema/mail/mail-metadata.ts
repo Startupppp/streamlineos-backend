@@ -48,6 +48,9 @@ export const mailMessageMetadata = pgTable(
       "gin",
       sql`(coalesce(${table.subject}, '') || chr(1) || coalesce(${table.senderName}, '') || chr(1) || coalesce(${table.senderEmail}, '')) gin_trgm_ops`,
     ),
+    index("idx_mail_metadata_unread_count")
+      .on(table.orgId, table.userMembershipId, table.folder, table.accountId)
+      .where(sql`${table.isRead} = false`),
     index("idx_mail_metadata_thread").on(table.orgId, table.userMembershipId, table.threadId),
     index("idx_mail_metadata_account_sync").on(table.accountId, table.syncedAt.desc()),
     index("idx_mail_metadata_search").on(table.orgId, table.userMembershipId, table.syncedAt.desc()),

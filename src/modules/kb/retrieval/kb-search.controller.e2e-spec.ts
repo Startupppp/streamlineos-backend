@@ -41,12 +41,24 @@ describe("KB Search auth/RBAC (e2e)", () => {
     ["get", "/kb/search"],
   ];
 
-  it.each(abilities)("402 on %s %s when the kb module is not enabled", async (method, path) => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
-    const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(402);
-    expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "kb" } });
-  });
+  /**
+   * Never 402. `kb` is registered `planGated: false`, so `isCoreModuleKey("kb")` is true
+   * and `moduleAvailability` answers `{ available: true }` before it reads a single
+   * entitlement row — the constitution's rule that knowledge is platform core, not a
+   * paid entitlement. This case asserted 402 and could never have passed. What it pins
+   * now is the contract that does hold: an org with the module switched off still
+   * reaches the permission check, and the permission check is what denies. The registry
+   * half is pinned in src/modules/kb/kb-module-gate.spec.ts.
+   */
+  it.each(abilities)(
+    "403 on %s %s with no permission even when the kb module is not enabled",
+    async (method, path) => {
+      const token = await signToken({ permissions: [], enabledModules: [] });
+      const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+    },
+  );
 
   it.each(abilities)("403 on %s %s without permission", async (method, path) => {
     const token = await signToken({ permissions: [], enabledModules: ["kb"] });

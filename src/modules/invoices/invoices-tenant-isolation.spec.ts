@@ -1,4 +1,6 @@
 import type { Db } from "../../db/drizzle.module";
+import type { CacheService } from "../../common/cache/cache.service";
+import { stubService } from "../../test/service-stub.spec-fixtures";
 import { InvoicesService } from "./invoices.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -24,12 +26,12 @@ describe("InvoicesService — cross-tenant isolation", () => {
       query: { invoices: { findMany } },
       select,
     } as unknown as Db;
-    const mockCache = {
+    const mockCache = stubService<CacheService>({
       cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
       cachedVersionedForOrg: jest.fn().mockImplementation(
         (_o: unknown, _ns: unknown, _k: unknown, fn: () => Promise<unknown>) => fn(),
       ),
-    } as any;
+    });
     const svc = new InvoicesService(db, mockCache);
     const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
@@ -46,12 +48,12 @@ describe("InvoicesService — cross-tenant isolation", () => {
       query: { invoices: { findMany } },
       select,
     } as unknown as Db;
-    const mockCache = {
+    const mockCache = stubService<CacheService>({
       cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
       cachedVersionedForOrg: jest.fn().mockImplementation(
         (_o: unknown, _ns: unknown, _k: unknown, fn: () => Promise<unknown>) => fn(),
       ),
-    } as any;
+    });
     const svc = new InvoicesService(db, mockCache);
     const result = await svc.list(OWNER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);

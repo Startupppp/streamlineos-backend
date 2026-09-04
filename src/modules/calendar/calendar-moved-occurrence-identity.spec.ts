@@ -135,7 +135,13 @@ function makeWriteHarness(
     update: jest.fn().mockImplementation((table: Parameters<typeof getTableName>[0]) => ({
       set: jest.fn().mockImplementation((patch: Record<string, unknown>) => {
         if (getTableName(table) === "calendar_events") eventPatches.push(patch);
-        return { where: jest.fn().mockResolvedValue([]) };
+        return {
+          where: jest
+            .fn()
+            .mockImplementation(() =>
+              Object.assign(Promise.resolve([]), { returning: jest.fn().mockResolvedValue([]) }),
+            ),
+        };
       }),
     })),
   };

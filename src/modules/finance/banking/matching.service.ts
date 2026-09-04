@@ -195,6 +195,8 @@ export class MatchingService {
               id: journalEntries.id,
               entryDate: journalEntries.entryDate,
               description: journalEntries.description,
+              // Deliberately the raw ledger amount, not `journal-base-amount.ts`:
+              // this is matched against a bank line in the account's own currency.
               amount: sql<string>`SUM(CAST(${journalLines.debit} AS numeric))`,
             })
             .from(journalEntries)

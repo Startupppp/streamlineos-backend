@@ -23,17 +23,8 @@ import {
   softDeletePartyWithMirror,
   updatePartyWithMirror,
 } from "./party-legacy-writer";
-import { legacyIdsOf, repointLegacyIds, type LegacyIdsByKind } from "./party-merge-legacy-ids";
-
-interface MergeSnapshot {
-  survivorBefore: Record<string, unknown>;
-  mergedBefore: Record<string, unknown>;
-  movedContactIds: string[];
-  addedRoles: string[];
-  movedIdentifierIds?: string[];
-  movedEmployeePartyIds?: string[];
-  movedLegacyIds?: LegacyIdsByKind;
-}
+import { legacyIdsOf, repointLegacyIds } from "./party-merge-legacy-ids";
+import type { MergeSnapshot } from "./dto/party-merge-snapshot.schema";
 
 export interface MergeOutcome {
   partyMergeId: string;
@@ -243,7 +234,7 @@ export class PartyMergeService {
         confidence: assessment.score,
         signals: [...assessment.signals],
         conflicts: plan.conflicts as Record<string, { kept: unknown; discarded: unknown }>,
-        snapshot: snapshot as unknown as Record<string, unknown>,
+        snapshot,
       })
       .returning({ partyMergeId: partyMerges.partyMergeId });
 
@@ -255,7 +246,7 @@ export class PartyMergeService {
       orgId: organizationId,
       resourceType: "business_party",
       resourceId: survivorId,
-      before: snapshot as unknown as Record<string, unknown>,
+      before: snapshot,
       metadata: {
         mergedPartyId: mergedId,
         decidedBy: input.decidedBy,

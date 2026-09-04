@@ -8,7 +8,7 @@ import { LEGACY_CELL_ID } from "../../common/region/placement";
 import { cellPrefixed } from "../../common/cell-transport/cell-channel-namespace";
 
 const CHAT_TOKEN_TTL_MS = 3_600 * 1_000;
-const MAX_CAPABILITY_CHANNELS = 500;
+export const MAX_CAPABILITY_CHANNELS = 500;
 
 @Injectable()
 export class AblyService {

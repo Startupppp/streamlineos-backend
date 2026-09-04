@@ -274,7 +274,10 @@ export class CronBillingService {
         );
 
         if (daysSincePastDue >= SUSPENSION_DAY) {
-          await this.db
+          // The conditional UPDATE is the claim: whoever flips PAST_DUE -> CANCELLED owns the
+          // consequences. A concurrent sweep that lost the race flips nothing and must stay silent,
+          // or the same lost customer is counted twice in MRR.
+          const flipped = await tx
             .update(subscriptions)
             .set({
               status: "CANCELLED",
@@ -287,15 +290,24 @@ export class CronBillingService {
             })
             .where(
               and(eq(subscriptions.id, sub.id), eq(subscriptions.status, "PAST_DUE")),
-            );
+            )
+            .returning({ id: subscriptions.id });
 
-          // The one churn event per paying customer lost, emitted with the cancellation.
+          if (flipped.length === 0) {
+            skipped++;
+            continue;
+          }
+
+          // The one churn event per paying customer lost, emitted with the cancellation. The
+          // dedupeKey names the movement, so a re-run of this sweep conflicts on the outbox event
+          // id instead of committing a second churn row.
           await this.revenue.emit(tx, {
             type: "churn",
             orgId: sub.orgId,
             plan: sub.plan,
             mrr: PLAN_PRICES_PAISE[sub.plan as Plan] ?? 0,
             metadata: { subscriptionId: sub.id, source: "dunning-suspension" },
+            dedupeKey: `dunning-suspension:${sub.id}`,
           });
 
           await this.planLimits.bust(sub.orgId);

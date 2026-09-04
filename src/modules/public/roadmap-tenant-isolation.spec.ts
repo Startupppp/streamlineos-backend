@@ -1,5 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import type { AppConfig } from "../../config/env.validation";
+import { stubService } from "../../test/service-stub.spec-fixtures";
 import { RoadmapService } from "./roadmap.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -28,14 +30,14 @@ describe("RoadmapService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a different org's roadmap (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const mockConfig = { APP_URL: "https://example.com", HMAC_SECRET: "secret" } as any;
+    const mockConfig = stubService<AppConfig>({ VOTE_IP_SALT: "salt", BACKEND_JWT_SECRET: "secret" });
     const svc = new RoadmapService(mockConfig, db);
     await expect(svc.getRoadmap(ATTACKER)).rejects.toThrow(NotFoundException);
   });
 
   it("returns the roadmap for the owning org (control — same-tenant)", async () => {
     const db = makeDb({ id: OWNER, name: "Owner Corp" }, [{ id: 1, title: "Feature A" }]);
-    const mockConfig = { APP_URL: "https://example.com", HMAC_SECRET: "secret" } as any;
+    const mockConfig = stubService<AppConfig>({ VOTE_IP_SALT: "salt", BACKEND_JWT_SECRET: "secret" });
     const svc = new RoadmapService(mockConfig, db);
     const result = await svc.getRoadmap(OWNER);
     expect(result).toBeDefined();

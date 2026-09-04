@@ -13,6 +13,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { baseCreditAmount } from "../../accounting/core/journal-base-amount";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import {
@@ -349,7 +350,7 @@ export class ForecastService {
 
     const accountIds = accountRows.map((r) => r.accountId);
     const rows = await this.db
-      .select({ total: sql<string>`SUM(${journalLines.credit})` })
+      .select({ total: sql<string>`SUM(${baseCreditAmount})` })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
       .where(

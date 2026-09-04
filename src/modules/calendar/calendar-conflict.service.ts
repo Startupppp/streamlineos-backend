@@ -131,7 +131,6 @@ export class CalendarConflictService {
               ),
             ),
           ),
-          mineOrAttending,
           after === null
             ? undefined
             : or(
@@ -207,7 +206,6 @@ export class CalendarConflictService {
     const occurrences: CalendarOccurrence[] = [];
     for (const row of rows) {
       const rsvpStatus = rsvpMap.get(row.id) ?? null;
-      if (row.createdByMembershipId !== callerMembershipId && rsvpStatus === null) continue;
       if (rsvpStatus === "declined") continue;
       const exceptions = exceptionsByEvent.get(row.id) ?? [];
       occurrences.push(

@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { Db } from "../../db/drizzle.types";
 import {
@@ -9,6 +10,7 @@ import {
 } from "../../db/schema/party";
 import { PartyMergeService } from "./party-merge.service";
 import { PartyRevertService } from "./party-revert.service";
+import { mergeSnapshotSchema } from "./dto/party-merge-snapshot.schema";
 
 /**
  * The two things a merge has to get right, over one database double.
@@ -63,8 +65,25 @@ function fakeDb(queue: Record<string, unknown>[][], recorded: Recorded): Db {
         // became rather than from what the caller asked for.
         where: () => {
           recorded.updates.push({ table, values });
-          const rows = [{ partyId: "party-old", organizationId: "org-1", ...values }];
-          return Object.assign(Promise.resolve(rows), { returning: async () => rows });
+          const rows: Record<string, unknown>[] = [
+            { partyId: "party-old", organizationId: "org-1", ...values },
+          ];
+          /**
+           * `.returning({ k: col })` yields rows that CARRY `k`. This double
+           * used to ignore its projection and hand the same synthetic row
+           * back, so `moveIdentifiers`, which maps `row.partyIdentifierId`,
+           * produced `[undefined]` — a shape the real driver cannot return,
+           * and the one that hid the write half of the snapshot contract.
+           */
+          const returning = async (projection?: Record<string, unknown>) =>
+            projection
+              ? rows.map((row, index) =>
+                  Object.fromEntries(
+                    Object.keys(projection).map((key) => [key, row[key] ?? `${key}-${index + 1}`]),
+                  ),
+                )
+              : rows;
+          return Object.assign(Promise.resolve(rows), { returning });
         },
       }),
     }),
@@ -245,6 +264,69 @@ describe("PartyMergeService and legacy identifiers", () => {
       new PartyRevertService(db, audit).revert("org-1", "merge-0"),
     ).resolves.toMatchObject({ restoredPartyId: "party-new" });
     expect(updatesTo(recorded, leadPartyMap)).toEqual([]);
+  });
+
+  /**
+   * The revert is not in a transaction, and the two party rewrites run BEFORE
+   * anything reads a list off the snapshot. So a snapshot that is missing a
+   * required key used to be discovered by `snapshot.movedContactIds.length`
+   * throwing TypeError with both parties already rewritten and the merge row
+   * still open — a half-applied revert, from a stored shape the read half
+   * asserted and never checked.
+   *
+   * `mergeSnapshotSchema.parse` moves that discovery to before the first write.
+   * Both halves of this test bite: the OLD code rejects with a TypeError, and
+   * it rejects with `recorded.updates` non-empty.
+   */
+  it("refuses a snapshot missing a required key BEFORE it rewrites either party", async () => {
+    const db = fakeDb(
+      [
+        [
+          {
+            partyMergeId: "merge-broken",
+            organizationId: "org-1",
+            survivorPartyId: "party-old",
+            mergedPartyId: "party-new",
+            decidedBy: "SYSTEM",
+            snapshot: {
+              survivorBefore: { ...survivor },
+              mergedBefore: { ...loser },
+              addedRoles: [],
+            },
+          },
+        ],
+      ],
+      recorded,
+    );
+
+    await expect(
+      new PartyRevertService(db, audit).revert("org-1", "merge-broken"),
+    ).rejects.toBeInstanceOf(ZodError);
+
+    expect(recorded.updates).toEqual([]);
+    expect(recorded.deletes).toEqual([]);
+    expect(audit.logCritical).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The write half of the same contract. If a merge ever stops recording a key
+   * the revert requires, this fails here rather than on the revert of a merge
+   * that has already happened.
+   */
+  it("writes a snapshot the revert's schema accepts", async () => {
+    const db = fakeDb(
+      [[survivor], [loser], [], [], [], [{ id: 7 }], [{ id: 8 }], [], [], []],
+      recorded,
+    );
+
+    await new PartyMergeService(db, audit).merge("org-1", {
+      leftPartyId: "party-old",
+      rightPartyId: "party-new",
+      decidedBy: "SYSTEM",
+    });
+
+    const [mergeRecord] = recorded.inserts.filter((write) => write.table === partyMerges);
+    expect(mergeSnapshotSchema.safeParse(mergeRecord.values.snapshot).success).toBe(true);
   });
 });
 

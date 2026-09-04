@@ -382,24 +382,20 @@ export class UnifiedInboxService {
     return Number(rows[0]?.cnt ?? 0);
   }
 
+  /**
+   * Counted against `mail_message_metadata` when every connected mailbox's copy
+   * of the inbox is fresh, and only then fanned out to the providers — see
+   * `MailService.countUnread`. This used to be the fanout unconditionally: a live
+   * Gmail/Graph fetch of `MAIL_COUNT_SCAN_LIMIT` messages per account, on a badge
+   * every authenticated page renders. The scan limit is now only the cold path's
+   * sample size.
+   */
   private async countMailUnread(
     orgId: string,
     userId: string,
     membershipId: number | null,
   ): Promise<{ unread: number; exact: boolean }> {
-    const result = await this.mail.listMessages(
-      orgId,
-      userId,
-      membershipId,
-      "inbox",
-      "all",
-      MAIL_COUNT_SCAN_LIMIT,
-      undefined,
-    );
-    return {
-      unread: result.messages.filter((m) => !m.isRead).length,
-      exact: result.messages.length < MAIL_COUNT_SCAN_LIMIT,
-    };
+    return this.mail.countUnread(orgId, userId, membershipId, "inbox", MAIL_COUNT_SCAN_LIMIT);
   }
 
   private async countApprovalPending(orgId: string, userId: string): Promise<number> {

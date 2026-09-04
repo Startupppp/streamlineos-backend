@@ -119,32 +119,20 @@ export class BatchCreatorService {
       return toPaise(e.netPayoutCurrency ?? e.net) > 0;
     });
 
-    if (eligible.length === 0)
-      throw new BadRequestException("No eligible employees for payout batch — check validation");
-
-    const groupMap = new Map<string, typeof eligible>();
-    for (const emp of eligible) {
-      const code = emp.payoutCurrency ?? emp.currency;
-      const arr = groupMap.get(code) ?? [];
-      arr.push(emp);
-      groupMap.set(code, arr);
-    }
-
-    const month = run.month ?? "unknown";
-    const monthNum = month.replace("-", "");
-    const narrationLabel = `Salary ${month}`.trim();
-
-    const [seqRow] = await this.db
-      .select({ count: count() })
-      .from(payrollBankBatches)
-      .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
-    const baseSeq = seqRow?.count ?? 0;
+    // The idempotency lookup has to happen BEFORE the eligibility verdict.
+    // A replayed call re-reads the instructions its own first call wrote, so
+    // every payee is "already instructed" and `eligible` is empty — which used
+    // to 400 on exactly the runs the replay contract exists for. The sub-keys
+    // are therefore derived from every payee on the run, not from `eligible`.
+    const runCurrencyCodes = [
+      ...new Set(employees.map((e) => e.payoutCurrency ?? e.currency)),
+    ];
 
     const preFetchedBatchMap = new Map<string, typeof payrollBankBatches.$inferSelect>();
     const preFetchedItemsMap = new Map<number, Array<typeof payrollBankBatchItems.$inferSelect>>();
 
     if (idempotencyKey) {
-      const allSubKeys = [...groupMap.keys()].map((code) => `${idempotencyKey}-${code}`);
+      const allSubKeys = runCurrencyCodes.map((code) => `${idempotencyKey}-${code}`);
       const preBatches = await this.db
         .select()
         .from(payrollBankBatches)
@@ -170,6 +158,53 @@ export class BatchCreatorService {
         }
       }
     }
+
+    if (eligible.length === 0) {
+      const replayedBatches = idempotencyKey
+        ? runCurrencyCodes.flatMap<BatchCreateResult>((currencyCode) => {
+            const batch = preFetchedBatchMap.get(`${idempotencyKey}-${currencyCode}`);
+            if (!batch) return [];
+            return [{
+              batch,
+              items: preFetchedItemsMap.get(batch.id) ?? [],
+              fileUrl: null,
+              currencyCode,
+              replayed: true,
+            }];
+          })
+        : [];
+      if (replayedBatches.length > 0) return this.summarize(replayedBatches);
+
+      // "Already instructed" and "nobody was ever eligible" are different
+      // operator situations: the first is resolved by opening the existing
+      // batch, the second by fixing bank details, holds or zero-net payees.
+      const instructedCount = employees.filter((e) =>
+        alreadyInstructedRunEmployeeIds.has(e.id),
+      ).length;
+      throw new BadRequestException(
+        instructedCount > 0
+          ? "Every payee on this run already has a live payout instruction — open the existing batch instead of generating another"
+          : "No eligible employees for payout batch — check validation",
+      );
+    }
+
+    const groupMap = new Map<string, typeof eligible>();
+    for (const emp of eligible) {
+      const code = emp.payoutCurrency ?? emp.currency;
+      const arr = groupMap.get(code) ?? [];
+      arr.push(emp);
+      groupMap.set(code, arr);
+    }
+
+    const month = run.month ?? "unknown";
+    const monthNum = month.replace("-", "");
+    const narrationLabel = `Salary ${month}`.trim();
+
+    const [seqRow] = await this.db
+      .select({ count: count() })
+      .from(payrollBankBatches)
+      .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
+    const baseSeq = seqRow?.count ?? 0;
 
     const results: BatchCreateResult[] = [];
     let groupIdx = 0;
@@ -334,6 +369,10 @@ export class BatchCreatorService {
       groupIdx++;
     }
 
+    return this.summarize(results);
+  }
+
+  private summarize(results: BatchCreateResult[]) {
     const allReplayed = results.length > 0 && results.every((r) => r.replayed);
     const currencies = [...new Set(results.map((r) => r.currencyCode))];
     return {

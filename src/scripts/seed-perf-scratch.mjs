@@ -44,6 +44,13 @@ export const TINY_ORG = "aaaaaaaa-1111-0000-0000-000000000004";
  * naive benchmark accidentally measures; `tiny` is the one that shows what a
  * customer with a few hundred rows actually experiences behind the same indexes.
  */
+/**
+ * How many APPROVED leave requests every tenant keeps spanning CURRENT_DATE. Sized above
+ * `dashboard-leaves-today`'s `minRows: 5` so a single row expiring cannot make the budget
+ * vacuous between one seed run and the next.
+ */
+export const LEAVES_SPANNING_TODAY = 12;
+
 export const PERF_ORGS = [
   { id: LARGE_ORG, label: "large", weight: 1, name: "Scratch E2E Corp", slug: "scratch-e2e-corp" },
   { id: MID_ORG, label: "mid", weight: 0.1, name: "Scratch Mid Org", slug: "scratch-mid-org" },
@@ -822,6 +829,47 @@ async function seedHr(ctx) {
       [ctx.org, have, need, leaveTypeId, ctx.memberCount],
     );
   });
+
+  /**
+   * The leaves that are RUNNING right now, which the block above cannot produce.
+   *
+   * Every row it writes starts at `CURRENT_DATE - ((g % 200) || ' days')` and ends one day
+   * later, so the whole population is one-day leaves entirely BEHIND the moment the seed
+   * ran. `DashboardStatsService.leavesToday` reads
+   * `status = 'APPROVED' AND start_date <= today AND end_date >= today`, which can only
+   * match a row whose `g % 200` happened to be 0 on the day the seed ran — and never again
+   * afterwards. Measured on `scratch_perf_seed` on 2026-09-04: 440 APPROVED leave requests
+   * for the reference tenant, ZERO of them spanning today, so `dashboard-leaves-today`
+   * measured an empty result set and `run-read-cost-budgets.mjs` reported it vacuous.
+   *
+   * The predicate `topUp` counts is the route's own predicate, so this section refills
+   * whatever the wall clock has ended rather than writing a fixed set of dates that goes
+   * stale tomorrow. Multi-day spans are deliberate: a one-day leave is out of the window
+   * within hours of being written, and `end_date >= CURRENT_DATE` is exactly the arm that
+   * was never exercised.
+   */
+  await topUp(
+    `${ctx.label} leave_requests spanning today`,
+    "leave_requests",
+    "org_id = $1 AND status = 'APPROVED' AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE",
+    [ctx.org],
+    LEAVES_SPANNING_TODAY,
+    async (_have, need) => {
+      await sql.unsafe(
+        `WITH ${MEMBER_POOL}
+         INSERT INTO leave_requests (org_id, user_id, user_membership_id, leave_type_id, start_date, end_date, status, created_at, updated_at)
+         SELECT $1, mem.user_id, mem.id, $3::int,
+                (CURRENT_DATE - ((g % 4) || ' days')::interval)::date,
+                (CURRENT_DATE + ((g % 6) + 1 || ' days')::interval)::date,
+                'APPROVED'::leave_status,
+                now() - (g || ' minutes')::interval, now()
+         FROM generate_series(1, $2::int) g
+         JOIN mem ON mem.rn = g % $4::int
+         ON CONFLICT DO NOTHING`,
+        [ctx.org, need, leaveTypeId, ctx.memberCount],
+      );
+    },
+  );
 
   await topUp(`${ctx.label} leave_balances`, "leave_balances", "org_id = $1", [ctx.org], Math.max(5, scaled(500, ctx.weight, SCALE)), async (have, need) => {
     await sql.unsafe(

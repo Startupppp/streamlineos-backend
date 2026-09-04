@@ -130,6 +130,9 @@ export class ReconciliationWorkspaceService {
 
     const [result] = await this.db
       .select({
+        // Deliberately the raw ledger amount, not `journal-base-amount.ts`: a bank
+        // account is denominated in one currency, and this balance is compared
+        // against a statement drawn in that same currency.
         balance: sql<string>`COALESCE(SUM(CAST(${journalLines.debit} AS numeric)) - SUM(CAST(${journalLines.credit} AS numeric)), 0)`,
       })
       .from(journalLines)

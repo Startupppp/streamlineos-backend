@@ -210,7 +210,14 @@ describe("SeatLedgerService — the ledger and the quota gate agree on the count
         { provide: DRIZZLE, useValue: planLimitsDb },
         {
           provide: CacheService,
-          useValue: { cached: jest.fn(), set: jest.fn(), invalidate: jest.fn(), get: jest.fn() },
+          // A cache double that never answers is not a cache: `cached` must run the fetcher, or
+          // the tier read this test is comparing SQL against never reaches the database at all.
+          useValue: {
+            cached: jest.fn().mockImplementation((_key: string, fetcher: () => Promise<unknown>) => fetcher()),
+            set: jest.fn(),
+            invalidate: jest.fn(),
+            get: jest.fn(),
+          },
         },
       ],
     }).compile();

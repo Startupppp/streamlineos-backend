@@ -1,4 +1,7 @@
 import type { Db } from "../../db/drizzle.module";
+import type { CacheService } from "../../common/cache/cache.service";
+import { stubService } from "../../test/service-stub.spec-fixtures";
+import type { AccessService } from "../access/access.service";
 import { RbacService } from "./rbac.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -25,11 +28,11 @@ describe("RbacService — cross-tenant isolation", () => {
 
   it("returns empty members for a different org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
-    const mockAccess = {} as any;
-    const mockCache = {
+    const mockAccess = stubService<AccessService>({});
+    const mockCache = stubService<CacheService>({
       cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
       cachedForOrg: jest.fn().mockImplementation((_o: unknown, _n: unknown, fn: () => Promise<unknown>) => fn()),
-    } as any;
+    });
     const svc = new RbacService(db, mockAccess, mockCache);
     const result = await svc.getDiscoveryMembers(ATTACKER);
     expect(result).toHaveLength(0);
@@ -40,11 +43,11 @@ describe("RbacService — cross-tenant isolation", () => {
   it("returns members for the owning org (control — same-tenant)", async () => {
     const memberRow = { userId: "u-1", name: "Alice", email: "alice@owner.com" };
     const { db } = makeDb([memberRow]);
-    const mockAccess = {} as any;
-    const mockCache = {
+    const mockAccess = stubService<AccessService>({});
+    const mockCache = stubService<CacheService>({
       cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
       cachedForOrg: jest.fn().mockImplementation((_o: unknown, _n: unknown, fn: () => Promise<unknown>) => fn()),
-    } as any;
+    });
     const svc = new RbacService(db, mockAccess, mockCache);
     const result = await svc.getDiscoveryMembers(OWNER);
     expect(result).toHaveLength(1);

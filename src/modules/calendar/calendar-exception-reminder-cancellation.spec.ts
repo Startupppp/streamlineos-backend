@@ -36,7 +36,11 @@ function makeInsertChain(returnedRows: unknown[]) {
  */
 function makeUpdateChain() {
   const targets: string[] = [];
-  const where = jest.fn().mockResolvedValue([]);
+  const where = jest
+    .fn()
+    .mockImplementation(() =>
+      Object.assign(Promise.resolve([]), { returning: jest.fn().mockResolvedValue([]) }),
+    );
   const set = jest.fn().mockReturnValue({ where });
   const update = jest.fn().mockImplementation((table: unknown) => {
     targets.push(getTableName(table as Parameters<typeof getTableName>[0]));

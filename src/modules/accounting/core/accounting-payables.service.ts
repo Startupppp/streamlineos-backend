@@ -18,7 +18,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { JournalPostingService } from "../posting/journal-posting.service";
 import { AccountingPayablesQueryService } from "./accounting-payables-query.service";
-import { RateResolverService } from "../../finance/controls/rate-resolver.service";
+import { ExchangeRateNotFoundError, RateResolverService } from "../../finance/controls/rate-resolver.service";
 import { FxService } from "../../finance/controls/fx.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { systemActor } from "../../../common/auth/system-actor";
@@ -459,9 +459,8 @@ export class AccountingPayablesService {
         counterPurpose: "AP",
       });
     } catch (err) {
-      this.logger.warn(
-        `No exchange rate for FX on purchase_bill ${bill.id}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      if (!(err instanceof ExchangeRateNotFoundError)) throw err;
+      this.logger.warn(`No exchange rate for FX on purchase_bill ${bill.id}: ${err.message}`);
     }
   }
 }

@@ -45,11 +45,23 @@ export const sendMailSchema = z.object({
 });
 export type SendMailInput = z.infer<typeof sendMailSchema>;
 
+/**
+ * `to` is the reply's recipient, chosen by the sender.
+ *
+ * It is optional and capped at one address. Optional because a client that does
+ * not send it keeps the historical behaviour — the server derives the recipient
+ * from the message being replied to. Capped at one because that is what both
+ * providers' reply primitives accept (`GMAIL_REPLY_TO_THREAD.recipient_email` is
+ * a single address); additional addressees go in `cc`, which is honoured
+ * end-to-end. Accepting a wider array here would put the field back in the state
+ * this schema exists to fix: collected from the user, validated, then dropped.
+ */
 export const replyMailSchema = z.object({
   accountId: z.number().int().positive(),
   messageId: z.string().min(1).max(500),
   threadId: z.string().min(1).max(500).optional(),
   bodyHtml: z.string().min(1).max(100_000),
+  to: z.array(emailAddressSchema).min(1).max(1).optional(),
   cc: z.array(emailAddressSchema).max(25).optional(),
 });
 export type ReplyMailInput = z.infer<typeof replyMailSchema>;

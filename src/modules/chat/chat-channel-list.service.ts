@@ -13,6 +13,7 @@ import { EntityReferenceService } from "../entity-reference/entity-reference.ser
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { resolvePeopleIdentities, subjectKey } from "../directory/person-seam";
 import { PAGE_SIZE_CAP } from "../../common/pagination/list-query.schema";
+import { MAX_CAPABILITY_CHANNELS } from "../realtime/ably.service";
 import {
   CHANNEL_LIST_COLUMNS,
   loadChannelMemberPreview,
@@ -105,6 +106,14 @@ export class ChatChannelListService {
     return this.listMemberChannels(actor, true, cursor ?? null, limit);
   }
 
+  /**
+   * Bounded at the database, not at the consumer. The only caller is the Ably
+   * token route, and `AblyService.createChatTokenRequest` already grants at most
+   * `MAX_CAPABILITY_CHANNELS` of whatever it is handed. Reading every membership
+   * row first meant a member of 50,000 channels paid for 50,000 rows on every
+   * token mint to have 49,500 of them thrown away in memory. One row beyond the
+   * grant is read so the truncation the consumer performs is observable here.
+   */
   async listMemberChannelIds(orgId: string, userId: string): Promise<number[]> {
     const membershipId = await this.getMembershipId(orgId, userId);
     if (membershipId === null) return [];
@@ -118,7 +127,14 @@ export class ChatChannelListService {
           eq(chatChannelMembers.membershipId, membershipId),
           eq(chatChannels.isArchived, false),
         ),
-      );
+      )
+      .limit(MAX_CAPABILITY_CHANNELS + 1);
+    if (rows.length > MAX_CAPABILITY_CHANNELS)
+      logger.warn("chat: member channel capability list truncated", {
+        orgId,
+        userId,
+        granted: MAX_CAPABILITY_CHANNELS,
+      });
     return rows.map((row) => row.channelId);
   }
 

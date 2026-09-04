@@ -37,7 +37,6 @@ import {
   type AskInput,
 } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
@@ -45,7 +44,6 @@ const conversationIdParams = z.object({ conversationId: z.coerce.number().int().
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-@RequireModule("kb")
 export class KbAskController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,

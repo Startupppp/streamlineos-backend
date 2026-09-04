@@ -59,6 +59,7 @@ const mockSearch = {
   retrieveTopSources: jest.fn().mockResolvedValue([]),
   retrieveAttachmentSnippets: jest.fn().mockResolvedValue(null),
   articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
+  articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
 };
 
 const user = {

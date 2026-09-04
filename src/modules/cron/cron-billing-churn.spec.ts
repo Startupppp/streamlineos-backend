@@ -28,11 +28,15 @@ interface EmittedEvent {
   plan?: string;
   mrr: number;
   metadata?: Record<string, unknown>;
+  dedupeKey?: string;
 }
 
 function makeDb(seed: {
   expired?: Array<{ id: number; plan: string }>;
   pastDue?: Array<Record<string, unknown>>;
+  // Rows the conditional PAST_DUE -> CANCELLED update actually flipped. Unseeded means the
+  // uncontended case, where the sweep wins the race and one row changes.
+  suspended?: Array<{ id: number }>;
   owner?: { userId: string } | null;
 }) {
   const store = { updates: [] as Array<Record<string, unknown>>, order: [] as string[] };
@@ -41,7 +45,8 @@ function makeDb(seed: {
     where: () => {
       store.order.push("update-subscription");
       store.updates.push(values);
-      const rows = seed.expired ?? [];
+      const rows: Array<{ id: number; plan?: string }> =
+        values.status === "CANCELLED" ? (seed.suspended ?? [{ id: 7 }]) : (seed.expired ?? []);
       return {
         returning: () => Promise.resolve(rows),
         then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
@@ -95,6 +100,8 @@ function makeDb(seed: {
 
 async function build(db: ReturnType<typeof makeDb>) {
   const emitted: EmittedEvent[] = [];
+  const planLimits = { bust: jest.fn() };
+  const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
   const revenue = {
     emit: jest.fn().mockImplementation(async (_tx: unknown, event: EmittedEvent) => {
       db._store.order.push("emit-churn");
@@ -108,12 +115,12 @@ async function build(db: ReturnType<typeof makeDb>) {
         { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
       { provide: EmailService, useValue: { sendEmail: jest.fn() } },
       { provide: AiCreditsService, useValue: { getWallet: jest.fn(), purchaseCreditsDirectly: jest.fn() } },
-      { provide: PlanLimitsService, useValue: { bust: jest.fn() } },
+      { provide: PlanLimitsService, useValue: planLimits },
       { provide: RevenueAnalyticsService, useValue: revenue },
-      { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+      { provide: NotificationDispatchService, useValue: dispatch },
     ],
   }).compile();
-  return { service: module.get(CronBillingService), emitted, revenue };
+  return { service: module.get(CronBillingService), emitted, revenue, planLimits, dispatch };
 }
 
 describe("c17-05 — a trial that lapses records churn", () => {
@@ -216,5 +223,73 @@ describe("c17-05 — a subscription suspended for non-payment records churn", ()
     await service.processDunning();
 
     expect(emitted).toHaveLength(1);
+  });
+});
+
+/**
+ * The suspension used to discard the UPDATE's result and emit unconditionally. The UPDATE is
+ * conditional on `status = 'PAST_DUE'`, so a second sweep racing the first flipped nothing at all
+ * and still emitted a second `churn` carrying the plan's full MRR — the same lost customer counted
+ * twice, plus a second cache bust and a second CRITICAL notification to the owner.
+ */
+describe("c17-05 — only the sweep that actually cancelled the subscription reports the churn", () => {
+  const suspendable = [
+    {
+      id: 7,
+      orgId: "org1",
+      plan: "PROFESSIONAL",
+      metadata: { pastDueAt: new Date(Date.now() - 30 * 86_400_000).toISOString() },
+      updatedAt: new Date(Date.now() - 30 * 86_400_000),
+    },
+  ];
+
+  it("emits no churn when the conditional cancel flipped no row", async () => {
+    const db = makeDb({ expired: [], pastDue: suspendable, suspended: [], owner: { userId: "user1" } });
+    const { service, emitted } = await build(db);
+
+    const result = await service.processDunning();
+
+    expect(emitted).toHaveLength(0);
+    expect(result.suspended).toBe(0);
+  });
+
+  it("busts no cache and notifies nobody when it lost the race", async () => {
+    const db = makeDb({ expired: [], pastDue: suspendable, suspended: [], owner: { userId: "user1" } });
+    const { service, planLimits, dispatch } = await build(db);
+
+    await service.processDunning();
+
+    expect(planLimits.bust).not.toHaveBeenCalled();
+    expect(dispatch.emit).not.toHaveBeenCalled();
+  });
+
+  it("counts the losing sweep as skipped rather than as a suspension", async () => {
+    const db = makeDb({ expired: [], pastDue: suspendable, suspended: [], owner: { userId: "user1" } });
+    const { service } = await build(db);
+
+    const result = await service.processDunning();
+
+    expect(result).toMatchObject({ suspended: 0, skipped: 1 });
+  });
+
+  it("carries a dedupeKey naming the suspension, so a re-run collapses onto one revenue row", async () => {
+    const db = makeDb({ expired: [], pastDue: suspendable, owner: { userId: "user1" } });
+    const { service, emitted } = await build(db);
+
+    await service.processDunning();
+
+    expect(emitted[0]?.dedupeKey).toBe("dunning-suspension:7");
+  });
+
+  it("still suspends, busts and notifies when it won the race", async () => {
+    const db = makeDb({ expired: [], pastDue: suspendable, suspended: [{ id: 7 }], owner: { userId: "user1" } });
+    const { service, emitted, planLimits, dispatch } = await build(db);
+
+    const result = await service.processDunning();
+
+    expect(result).toMatchObject({ suspended: 1, skipped: 0 });
+    expect(emitted).toHaveLength(1);
+    expect(planLimits.bust).toHaveBeenCalledWith("org1");
+    expect(dispatch.emit).toHaveBeenCalledTimes(1);
   });
 });

@@ -8,6 +8,8 @@ import {
   type DbOrTx,
   type DraftLine,
   type DraftEntry,
+  type DraftDecimalLine,
+  type DraftDecimalEntry,
   type PersistedEntry,
   type PostInvoiceInput,
   type PostPaymentInput,
@@ -21,10 +23,10 @@ import {
   INVOICE_SOURCE_TYPE,
   INVOICE_SEND_SOURCE_EVENT,
 } from "./journal-posting.data";
-import { compareDecimals, decimalFromNumber, sumDecimals } from "../core/money.util";
+import { compareDecimals, decimalFromNumber, sumDecimals, toDecimal } from "../core/money.util";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 
-export type { DbOrTx, DraftLine, DraftEntry, PersistedEntry, PostInvoiceInput, PostPaymentInput, PostPurchaseBillInput, PostVendorPaymentInput };
+export type { DbOrTx, DraftLine, DraftEntry, DraftDecimalLine, DraftDecimalEntry, PersistedEntry, PostInvoiceInput, PostPaymentInput, PostPurchaseBillInput, PostVendorPaymentInput };
 
 @Injectable()
 export class JournalPostingService {
@@ -70,25 +72,48 @@ export class JournalPostingService {
     return `${prefix}${String(nextSeq).padStart(6, "0")}`;
   }
 
-  private assertBalanced(lines: DraftLine[]): void {
-    const totalDebit = sumDecimals(lines.map((l) => decimalFromNumber(l.debit)));
-    const totalCredit = sumDecimals(lines.map((l) => decimalFromNumber(l.credit)));
+  private toDecimalLines(lines: DraftLine[]): DraftDecimalLine[] {
+    return lines.map((line) => ({
+      accountCode: line.accountCode,
+      debit: decimalFromNumber(line.debit),
+      credit: decimalFromNumber(line.credit),
+      description: line.description,
+    }));
+  }
+
+  private assertBalanced(lines: DraftDecimalLine[]): void {
+    const totalDebit = sumDecimals(lines.map((l) => l.debit));
+    const totalCredit = sumDecimals(lines.map((l) => l.credit));
     if (compareDecimals(totalDebit, totalCredit) !== 0) {
       throw new Error(
         `Unbalanced journal entry: debit=${totalDebit} credit=${totalCredit} (ledger scale)`,
       );
     }
     for (const line of lines) {
-      if (line.debit < 0 || line.credit < 0) {
+      if (compareDecimals(line.debit, "0") < 0 || compareDecimals(line.credit, "0") < 0) {
         throw new Error(`Negative amount in journal line: ${JSON.stringify(line)}`);
       }
-      if ((line.debit > 0 && line.credit > 0) || (line.debit === 0 && line.credit === 0)) {
+      const hasDebit = compareDecimals(line.debit, "0") > 0;
+      const hasCredit = compareDecimals(line.credit, "0") > 0;
+      if (hasDebit === hasCredit) {
         throw new Error(`Journal line must have exactly one of debit or credit > 0: ${JSON.stringify(line)}`);
       }
     }
   }
 
-  async persistJournalEntry(draft: DraftEntry, tx?: DbOrTx): Promise<PersistedEntry> {
+  persistJournalEntry(draft: DraftEntry, tx?: DbOrTx): Promise<PersistedEntry> {
+    return this.persistDecimalJournalEntry(
+      { ...draft, lines: this.toDecimalLines(draft.lines) },
+      tx,
+    );
+  }
+
+  /**
+   * The single write path. Amounts arrive as exact ledger-scale strings, so a
+   * caller that already holds `numeric(18,4)` text — a reversal reading the
+   * entry it reverses — never round-trips money through a double.
+   */
+  async persistDecimalJournalEntry(draft: DraftDecimalEntry, tx?: DbOrTx): Promise<PersistedEntry> {
     this.assertBalanced(draft.lines);
     const executor: DbOrTx = tx ?? this.db;
 
@@ -160,8 +185,8 @@ export class JournalPostingService {
             orgId: draft.orgId,
             entryId: entry.id,
             accountId,
-            debit: decimalFromNumber(line.debit),
-            credit: decimalFromNumber(line.credit),
+            debit: toDecimal(line.debit),
+            credit: toDecimal(line.credit),
             description: line.description ?? null,
             lineOrder: idx,
           };

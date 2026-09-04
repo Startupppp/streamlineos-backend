@@ -236,7 +236,8 @@ describe("Chat reconnect — Ably token (c): channel subscription is tenant+memb
       select: jest.fn().mockReturnThis(),
       from: jest.fn().mockReturnThis(),
       innerJoin: jest.fn().mockReturnThis(),
-      where: jest.fn().mockResolvedValue(channelRows),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(channelRows),
     };
   }
 

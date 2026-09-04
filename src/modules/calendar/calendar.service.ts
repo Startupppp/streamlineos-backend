@@ -205,6 +205,9 @@ export class CalendarService {
               allDay: input.allDay ?? false,
               attendeeEmails: attendeeEmailList,
               addConference: input.addConference ?? false,
+              // Without this the provider receives a single meeting at the first
+              // occurrence and the series diverges from its very first push.
+              rrule: input.rrule ?? null,
             },
           });
         }
@@ -325,6 +328,7 @@ export class CalendarService {
             description: updated.description ?? null,
             startIso: updated.startDate.toISOString(),
             endIso: updated.endDate.toISOString(),
+            rrule: updated.rrule,
           },
         });
 
@@ -424,6 +428,7 @@ export class CalendarService {
         .returning({
           integrationConnectionId: calendarEvents.integrationConnectionId,
           externalEventId: calendarEvents.externalEventId,
+          localVersion: calendarEvents.localVersion,
         });
       removed = deleted.length;
       if (deleted.length > 0) {
@@ -445,6 +450,10 @@ export class CalendarService {
             connectionId: d.integrationConnectionId,
             operation: "delete",
             externalEventId: d.externalEventId,
+            // The delete is the LAST link in the event's version chain, so it carries the
+            // version it removed. Left null, a delete was unordered against the create and
+            // update rows that precede it and could not be compared with them at all.
+            eventLocalVersion: d.localVersion,
             payload: { userId },
           });
       }
