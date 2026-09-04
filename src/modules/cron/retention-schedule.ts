@@ -1,29 +1,3 @@
-/**
- * The cadence declaration for every sweep that must run on a timer — one source of
- * truth for three consumers.
- *
- * `CronRetentionSchedulerService` runs these in process, `alert-retention-dead-man.mjs`
- * alerts on their heartbeats, and `retention-schedule-parity.spec.ts` asserts that the
- * three agree. Before this existed the sweeps were reachable only as `POST /cron/<job>`
- * and no scheduler in either repository ever sent that request, so every drain was
- * correct and dead.
- *
- * Most entries are retention drains, which is where the name comes from. It is no
- * longer only that. `ai-reservations-sweep` is a **compensator**, `monthly-plan-grants`
- * is an **allocation customers are owed**, and `trial-expiry` is a **lifecycle
- * transition** — all three were unscheduled, and all three cost money in one direction
- * or the other rather than disk. Anything whose absence has a consequence belongs on
- * this list; the name is now narrower than the contract and renaming it is a follow-up,
- * not a licence to start a second list.
- *
- * A job only joins this list once its own idempotency is established, because the
- * scheduler is not the guard: `CronLeaseService.withLease` runs **without dedup** when
- * Redis is absent or erroring (`cron-lease.service.ts:41,54`), and `isDue()` returns
- * true with no Redis. The lease reduces duplicate runs; only the job's own natural key
- * prevents a duplicate effect. `UNSCHEDULED_BILLING_JOBS` below records the ones that
- * failed that test.
- */
-
 export interface RetentionJobDeclaration {
   /** Lease, heartbeat and route key. `POST /cron/<jobKey>` is the manual trigger. */
   readonly jobKey: string;
@@ -38,7 +12,6 @@ export interface RetentionJobDeclaration {
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
-/** One missed daily run plus two hours of scheduling jitter. */
 const DAILY_MAX_AGE_MS = 26 * HOUR_MS;
 
 export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
@@ -139,22 +112,6 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
     label: "GDPR subject-export artifact retention (72h expiry, object purge, stale-job reclaim)",
   },
   {
-    /*
-     * Not retention — the monthly credit allocation paying customers are owed.
-     *
-     * `processMonthlyPlanGrants` was reachable only as `POST /cron/monthly-plan-grants`,
-     * which nothing in either repository sends, so **no organisation had ever received a
-     * monthly plan grant from this path**. That is money owed to customers, not disk.
-     *
-     * Daily rather than monthly on purpose. The grant is idempotent per calendar month at
-     * three layers — `getMonthlyGrantedOrgIds` skips an org that already has a PLAN_GRANT
-     * this month, `grantPlanCredits` re-checks the `${plan}-monthly-YYYY-MM` reference
-     * inside its own transaction, and `uq_ai_credit_txns_plan_grant_ref`
-     * (UNIQUE (org_id, reference_id) WHERE type='PLAN_GRANT') refuses a duplicate in the
-     * database — so a daily cadence grants once and skips for the rest of the month, and
-     * self-heals if the process was down on the 1st. A monthly cadence would make a single
-     * missed run cost a customer a month of credits.
-     */
     jobKey: "monthly-plan-grants",
     sweepName: "billing-monthly-grants",
     leaseSeconds: 300,
@@ -163,19 +120,6 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
     label: "Monthly plan credit grants (one PLAN_GRANT per organisation per calendar month)",
   },
   {
-    /*
-     * Not retention — trial lifecycle, and the opposite direction of the same defect.
-     *
-     * `processTrialExpiry` was reachable only as `POST /cron/trial-expiry`, which nothing
-     * sends, so **no trial had ever ended and no expiry reminder had ever been sent**.
-     *
-     * Idempotent by construction: the expiry is one conditional UPDATE
-     * (`status='TRIAL' AND trial_ends_at < now` -> `EXPIRED` ... RETURNING), so a second
-     * run matches no rows and emits no second churn event; the reminders carry
-     * `dedupeKey = trial-expiry:<date>:<days>` against
-     * `uniq_notification_outbox_dedupe (org_id, dedupe_key)`, so a second run the same day
-     * inserts nothing.
-     */
     jobKey: "trial-expiry",
     sweepName: "billing-trial-expiry",
     leaseSeconds: 300,
@@ -184,21 +128,6 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
     label: "Trial expiry and expiry reminders (TRIAL -> EXPIRED, 7/3/1-day notices)",
   },
   {
-    /*
-     * Not retention — the compensator for AI credit reservations.
-     *
-     * `reserve` debits the wallet by the catalogue ceiling up front and writes a
-     * RESERVED row expiring in 15 minutes; `settle` refunds the over-estimate. A lost
-     * or failed settle therefore leaves the organisation charged the ceiling with no
-     * `ai_credit_transactions` row explaining it, and this sweep is the only thing that
-     * gives the money back. It was reachable only as `POST /cron/ai-reservations-sweep`,
-     * which nothing sent — the README's external contract named five jobs and not this
-     * one — so no over-charge had ever been refunded.
-     *
-     * Cadence is 15 minutes, not daily, because the reservation window is 15 minutes:
-     * a daily sweep would leave the balance wrong for most of a day. The lease matches
-     * the HTTP route's 120s so an external POST and this scheduler take the same lock.
-     */
     jobKey: "ai-reservations-sweep",
     sweepName: "sweep:expired-ai-reservations",
     leaseSeconds: 120,
@@ -216,26 +145,6 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
   },
 ];
 
-/**
- * Leased `/cron/*` jobs whose key reads like retention work but which are deliberately
- * NOT on this schedule. Each is still reachable only by an external POST that nothing
- * sends, so each is an open finding — not a closed decision — and is listed here so the
- * omission is reviewable rather than an accident of a regex.
- *
- * They sit outside `RETENTION-POLICY.md`'s per-table inventory, so scheduling them is a
- * product decision rather than a mechanical one: `org-purge-worker` performs irreversible
- * organisation deletion, and the other three drain lifecycle state that the policy
- * document has never classified.
- */
-/**
- * Leased `/cron/*` billing jobs that are deliberately NOT on the schedule above.
- *
- * All six routes on `CronBillingController` were unscheduled — nothing in either
- * repository sends any of them. Three are now scheduled. These are the ones where being
- * unscheduled is not the biggest problem, and switching them on would ship a worse one.
- * Each entry names the single specific thing that would have to change first, so this is
- * a reviewable decision rather than an omission.
- */
 export const UNSCHEDULED_BILLING_JOBS: readonly { jobKey: string; reason: string }[] = [
   {
     jobKey: "auto-topup-flush",
@@ -297,7 +206,6 @@ export const UNSCHEDULED_PURGE_JOBS: readonly { jobKey: string; reason: string }
   },
 ];
 
-/** Reverse lookup for the durable per-tenant failure record `forEachOrg` writes. */
 export function retentionJobForSweep(sweepName: string): RetentionJobDeclaration | undefined {
   return RETENTION_JOBS.find((job) => job.sweepName === sweepName);
 }

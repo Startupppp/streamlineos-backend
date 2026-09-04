@@ -14,6 +14,7 @@ import { CalendarReminderSweepService } from "../calendar/calendar-reminder-swee
 import { CalendarProviderSyncSweepService } from "../calendar/calendar-provider-sync-sweep.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { calendarProviderSyncSweepResponseSchema } from "../calendar/dto/provider-sync.schemas";
+import { calendarReminderSweepResponseSchema } from "../calendar/dto/calendar-reminder-sweep.schemas";
 
 /**
  * The calendar module's background sweeps, alongside `CronBillingController`,
@@ -33,11 +34,13 @@ export class CronCalendarController {
   ) {}
 
   @Get("calendar-reminder-sweep")
+  @ResponseSchema(calendarReminderSweepResponseSchema)
   getCalendarReminderSweep(@Headers("authorization") authorization?: string) {
     return this.runCalendarReminderSweep(authorization);
   }
 
   @Post("calendar-reminder-sweep")
+  @ResponseSchema(calendarReminderSweepResponseSchema)
   @BodylessAction()
   @HttpCode(200)
   postCalendarReminderSweep(@Headers("authorization") authorization?: string) {

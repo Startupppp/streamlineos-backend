@@ -73,6 +73,7 @@ export function sha256(content) {
  */
 export function effectiveSql(content) {
   return content
+    .replace(/\r\n/g, "\n")
     .split("\n")
     .map((line) => line.replace(/--.*$/, ""))
     .join("\n")

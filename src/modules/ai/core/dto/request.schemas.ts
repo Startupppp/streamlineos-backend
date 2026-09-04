@@ -61,15 +61,6 @@ export const nextActionSchema = z.object({
 }).strict();
 export type NextActionInput = z.infer<typeof nextActionSchema>;
 
-export const meetingPrepSchema = z.object({
-  meetingTitle: z.string().min(1).max(200),
-  attendeeType: z.enum(["lead", "client"]),
-  attendeeId: z.number().int().positive(),
-  scheduledAt: z.string(),
-  notes: z.string().max(2000).optional(),
-}).strict();
-export type MeetingPrepInput = z.infer<typeof meetingPrepSchema>;
-
 export const objectionHandlerSchema = z.object({
   objection: z.string().min(1).max(2000),
   dealStage: z.string().min(1).max(100),

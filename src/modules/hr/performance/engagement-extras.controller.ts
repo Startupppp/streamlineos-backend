@@ -19,11 +19,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { EngagementMoodPollsService } from "./engagement-mood-polls.service";
-import { EngagementBadgesService } from "./engagement-badges.service";
 import { EngagementCommunitiesCampaignsService } from "./engagement-communities-campaigns.service";
 import {
-  awardBadgeSchema,
-  createBadgeSchema,
   createCampaignSchema,
   createCommunitySchema,
   communityListSchema,
@@ -32,8 +29,6 @@ import {
   updateCampaignSchema,
   updatePollSchema,
   votePollSchema,
-  type AwardBadgeInput,
-  type CreateBadgeInput,
   type CreateCampaignInput,
   type CreateCommunityInput,
   type CommunityListInput,
@@ -47,10 +42,15 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
-const badgeIdParams = z.object({ badgeId: z.coerce.number().int().positive() }).strict();
-const pollIdParams = z.object({ pollId: z.coerce.number().int().positive() }).strict();
-const communityIdParams = z.object({ communityId: z.coerce.number().int().positive() }).strict();
-const campaignIdParams = z.object({ campaignId: z.coerce.number().int().positive() }).strict();
+const pollIdParams = z
+  .object({ pollId: z.coerce.number().int().positive() })
+  .strict();
+const communityIdParams = z
+  .object({ communityId: z.coerce.number().int().positive() })
+  .strict();
+const campaignIdParams = z
+  .object({ campaignId: z.coerce.number().int().positive() })
+  .strict();
 
 @RequireModule("hr")
 @Controller("hr/engagement")
@@ -58,19 +58,8 @@ const campaignIdParams = z.object({ campaignId: z.coerce.number().int().positive
 export class EngagementExtrasController {
   constructor(
     private readonly moodPolls: EngagementMoodPollsService,
-    private readonly badges: EngagementBadgesService,
     private readonly communitiesCampaigns: EngagementCommunitiesCampaignsService,
   ) {}
-
-  @Get("overview")
-  @RequirePermission("hr:engagement:view")
-  async overview(@CurrentUser() u: CurrentUserContext) {
-    const [eom, leaderboard] = await Promise.all([
-      this.badges.employeeOfMonth(u.orgId),
-      this.badges.leaderboard(u.orgId, 5),
-    ]);
-    return { employeeOfMonth: eom, topLeaderboard: leaderboard };
-  }
 
   @Post("mood")
   @RequirePermission("hr:engagement:view")
@@ -93,68 +82,6 @@ export class EngagementExtrasController {
   @RequirePermission("hr:engagement:manage")
   orgMoodAggregate(@CurrentUser() u: CurrentUserContext) {
     return this.moodPolls.orgMoodAggregate(u.orgId);
-  }
-
-  @Get("badges")
-  @RequirePermission("hr:engagement:view")
-  listBadges(@CurrentUser() u: CurrentUserContext) {
-    return this.badges.listBadges(u.orgId);
-  }
-
-  @Post("badges")
-  @RequirePermission("hr:engagement:manage")
-  @HttpCode(201)
-  @Validate({ body: createBadgeSchema })
-  createBadge(
-    @Body() body: CreateBadgeInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.badges.createBadge(u.orgId, body);
-  }
-
-  @Delete("badges/:badgeId")
-  @HttpCode(204)
-  @RequirePermission("hr:engagement:manage")
-  @Validate({ params: badgeIdParams })
-  async deleteBadge(
-    @Param("badgeId", ParseIntPipe) badgeId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    await this.badges.deleteBadge(u.orgId, badgeId);
-  }
-
-  @Post("badges/:badgeId/award")
-  @RequirePermission("hr:engagement:manage")
-  @HttpCode(201)
-  @Validate({ params: badgeIdParams, body: awardBadgeSchema })
-  awardBadge(
-    @Param("badgeId", ParseIntPipe) badgeId: number,
-    @Body() body: AwardBadgeInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.badges.awardBadge(u.orgId, u.userId, badgeId, body);
-  }
-
-  @Get("badges/my")
-  @RequirePermission("hr:engagement:view")
-  myBadges(@CurrentUser() u: CurrentUserContext) {
-    return this.badges.myBadges(u.orgId, u.userId);
-  }
-
-  @Get("points/my")
-  @RequirePermission("hr:engagement:view")
-  myPoints(@CurrentUser() u: CurrentUserContext) {
-    return this.badges.myPoints(u.orgId, u.userId);
-  }
-
-  @Get("points/leaderboard")
-  @RequirePermission("hr:engagement:view")
-  leaderboard(
-    @Query("top") top: string | undefined,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    const n = Math.min(Number(top ?? 20), 50);
-    return this.badges.leaderboard(u.orgId, n);
   }
 
   @Get("polls")
@@ -237,7 +164,11 @@ export class EngagementExtrasController {
     @Param("communityId", ParseIntPipe) communityId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.communitiesCampaigns.joinCommunity(u.orgId, u.userId, communityId);
+    return this.communitiesCampaigns.joinCommunity(
+      u.orgId,
+      u.userId,
+      communityId,
+    );
   }
 
   @Post("communities/:communityId/leave")
@@ -249,7 +180,11 @@ export class EngagementExtrasController {
     @Param("communityId", ParseIntPipe) communityId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.communitiesCampaigns.leaveCommunity(u.orgId, u.userId, communityId);
+    return this.communitiesCampaigns.leaveCommunity(
+      u.orgId,
+      u.userId,
+      communityId,
+    );
   }
 
   @Get("communities/:communityId/members")
@@ -299,11 +234,5 @@ export class EngagementExtrasController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.communitiesCampaigns.deleteCampaign(u.orgId, campaignId);
-  }
-
-  @Get("employee-of-month")
-  @RequirePermission("hr:engagement:view")
-  employeeOfMonth(@CurrentUser() u: CurrentUserContext) {
-    return this.badges.employeeOfMonth(u.orgId);
   }
 }

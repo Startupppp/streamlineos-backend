@@ -24,3 +24,10 @@ export type Preflight = {
   attempt: number;
   provider: Provider;
 };
+
+export interface QueueRunResult {
+  processed: number;
+  sent: number;
+  failed: number;
+  dead: number;
+}

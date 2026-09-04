@@ -11,7 +11,8 @@ import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronInvitationExpiryService } from "./cron-invitation-expiry.service";
 import { CronLeaseService } from "./cron-lease.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { invitationExpirySweepResponseSchema } from "./dto/cron-invitation-expiry-response.schemas";
 
 @Public()
 @Controller("cron")
@@ -22,11 +23,13 @@ export class CronInvitationExpiryController {
   ) {}
 
   @Get("invitation-expiry-sweep")
+  @ResponseSchema(invitationExpirySweepResponseSchema)
   getInvitationExpirySweep(@Headers("authorization") authorization?: string) {
     return this.runSweep(authorization);
   }
 
   @Post("invitation-expiry-sweep")
+  @ResponseSchema(invitationExpirySweepResponseSchema)
   @BodylessAction()
   @HttpCode(200)
   postInvitationExpirySweep(@Headers("authorization") authorization?: string) {

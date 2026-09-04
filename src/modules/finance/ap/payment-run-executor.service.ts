@@ -94,7 +94,6 @@ export class PaymentRunExecutorService {
     for (const item of pendingItems) {
       type FxCapture = {
         billId: number;
-        /** The `vendor_payments` row this item created — one instalment, one FX result. */
         vendorPaymentId: number;
         currency: string;
         exchangeRate: string;
@@ -103,19 +102,6 @@ export class PaymentRunExecutorService {
       };
       let fxCapture: FxCapture | null = null;
 
-      /*
-       * One economic quantity, one number. `vendor_payments.amount` is
-       * numeric(12,2) — a bank moves whole paise and that column is the
-       * authoritative record of what left the account — while the run item, the
-       * allocation, `amount_paid` and the ledger are all numeric(18,4). Writing
-       * the item's raw scale-4 amount to some of them and a separately rounded
-       * one to the payment left the register and the AP subledger permanently
-       * apart (a Rs 100.0050 item registered Rs 100.00 and allocated Rs 100.0050,
-       * because `Number("100.0050").toFixed(2)` is "100.00" in IEEE-754).
-       *
-       * `paidAmount` is that quantity, in the vendor's currency at scale 2,
-       * rounded half-up exactly. Every write below uses it and nothing else.
-       */
       const paidAmount = roundDecimal(toDecimal(item.amount), 2);
 
       try {
@@ -147,13 +133,6 @@ export class PaymentRunExecutorService {
 
           const billRow = item.billId !== null ? (billMap.get(item.billId) ?? null) : null;
           if (billRow) {
-            /*
-             * `billMap` is a snapshot taken once for the whole run. Writing an
-             * absolute `amount_paid` computed from it silently reverts any
-             * manual payment or credit application that committed in between.
-             * The increment and the status both move in SQL against the row the
-             * statement is already locking.
-             */
             const [settled] = await tx
               .update(purchaseBills)
               .set({
@@ -177,9 +156,6 @@ export class PaymentRunExecutorService {
               tx,
             );
 
-            /* Read back from the write, not from the pre-run snapshot: whether this
-             * payment is the one that settles the bill depends on what else has
-             * committed since `billMap` was built. */
             if (settled?.status === "PAID") {
               await OutboxWriter.emit(tx, {
                 eventId: randomUUID(),

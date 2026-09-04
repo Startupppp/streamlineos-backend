@@ -121,17 +121,6 @@ export class InvoicesPaymentService {
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
     const created = await this.db.transaction(async (tx) => {
-      /*
-       * The outstanding-balance read above is outside any transaction, so two
-       * full payments against one invoice both saw the same remaining amount and
-       * both were accepted — the `payments` rows then totalled twice what the
-       * invoice recorded, because `recomputeInvoiceBalance` writes an absolute
-       * sum and the later write won.
-       *
-       * Locking the invoice row serialises them; the re-summed total inside the
-       * lock sees every committed payment, so the second one is refused instead
-       * of silently overpaying.
-       */
       const [lockedInvoice] = await tx
         .select({ total: invoices.total, status: invoices.status })
         .from(invoices)
@@ -261,7 +250,6 @@ export class InvoicesPaymentService {
     orgId: string,
     userId: string,
     invoice: { id: number; currency: string; exchangeRate: string },
-    /** The `payments` row this settlement created — one instalment, one FX result. */
     paymentId: number,
     allocatedAmount: number,
     paymentDateIso: string,

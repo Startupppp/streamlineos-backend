@@ -130,7 +130,7 @@ BEGIN
     JOIN pg_class c ON c.oid = con.conrelid
    WHERE con.contype = 'f' AND c.relname = 'inv_stock_transactions';
 
-  IF fk_count <> 6 THEN
-    RAISE EXCEPTION 'inv_stock_transactions should carry 6 foreign keys, found %', fk_count;
+  IF fk_count <> 7 THEN
+    RAISE EXCEPTION 'inv_stock_transactions should carry 7 foreign keys, found %', fk_count;
   END IF;
 END $$;

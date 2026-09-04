@@ -49,7 +49,7 @@
     "ops:evidence:self-test": "node src/scripts/production-ops-evidence.mjs --self-test",
     "s05:evidence": "node src/scripts/collect-s05-evidence.mjs",
     "s05:evidence:self-test": "node src/scripts/collect-s05-evidence.mjs --self-test",
-    "check:audit-log-privileges": "node src/scripts/verify-audit-log-privileges.mjs",
+    "check:audit-log-privileges": "node --env-file-if-exists=.env src/scripts/verify-audit-log-privileges.mjs",
     "check:audit-log-privileges:self-test": "node src/scripts/verify-audit-log-privileges.mjs --self-test",
     "check:s05-artifact-contract": "node src/scripts/check-s05-artifact-contract.mjs",
     "cell:admission": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/verify-cell-admission.ts",

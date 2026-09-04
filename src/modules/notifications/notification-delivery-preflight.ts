@@ -5,8 +5,7 @@ import { type Db } from "../../db/drizzle.module";
 import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
 import { checkProviderCaps, type ProviderCaps } from "./notification-provider-caps";
-import type { ClaimedJob, Preflight } from "./notification-delivery-types";
-import type { QueueRunResult } from "./notification-delivery-worker.service";
+import type { ClaimedJob, Preflight, QueueRunResult } from "./notification-delivery-types";
 
 
 /**

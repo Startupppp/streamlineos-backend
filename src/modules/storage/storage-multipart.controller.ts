@@ -98,12 +98,6 @@ export class StorageMultipartController {
       body.partCount,
     );
 
-    /**
-     * The quarantine row is written before the first part can be uploaded, not
-     * after the last one lands. `isKeyBlocked` answers from this row, so the
-     * key is unreachable for the whole window in which bytes exist at it —
-     * beginning quarantine at completion leaves that window open.
-     */
     const quarantineId = await this.quarantine.begin({
       orgId: u.orgId,
       storageKey: result.key,
@@ -216,11 +210,6 @@ export class StorageMultipartController {
 
     await this.multipart.abort(u.orgId, body.key, body.uploadId);
 
-    /**
-     * Cancellation has to clear both halves. Aborting the upload id leaves any
-     * object a racing completion already assembled, and dropping the row
-     * without the object leaves a blob nothing accounts for.
-     */
     await this.storage.deleteFileIfPresent(u.orgId, body.key);
     const record = await this.quarantine.findByIdempotencyKey(
       u.orgId,
@@ -245,12 +234,6 @@ export class StorageMultipartController {
       throw new BadRequestException("Key does not belong to this organization");
   }
 
-  /**
-   * The declared content type is the client's word and proves nothing, so the
-   * assembled object is measured and sniffed here. A mismatch removes the
-   * object and the row together rather than leaving a rejected file sitting at
-   * a key someone can still ask for.
-   */
   private async verifyStoredObject(
     u: CurrentUserContext,
     key: string,

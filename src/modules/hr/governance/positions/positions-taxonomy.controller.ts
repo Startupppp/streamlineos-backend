@@ -17,6 +17,7 @@ import { RequireModule } from "../../../../common/rbac/require-module.decorator"
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { PositionsTaxonomyService } from "./positions-taxonomy.service";
+import { PositionsTransitionsService } from "./positions-transitions.service";
 import {
   createPositionStatusSchema,
   updatePositionStatusSchema,
@@ -37,7 +38,10 @@ const transitionIdParams = z.object({ transitionId: z.coerce.number().int().posi
 @Controller("hr/governance/position-taxonomy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PositionsTaxonomyController {
-  constructor(private readonly service: PositionsTaxonomyService) {}
+  constructor(
+    private readonly service: PositionsTaxonomyService,
+    private readonly transitions: PositionsTransitionsService,
+  ) {}
 
   @Get("statuses")
   @RequirePermission("hr:positions:view")
@@ -82,7 +86,7 @@ export class PositionsTaxonomyController {
   @Get("transitions")
   @RequirePermission("hr:positions:view")
   async listTransitions(@CurrentUser() user: CurrentUserContext) {
-    return this.service.listTransitions(user.orgId);
+    return this.transitions.listTransitions(user.orgId);
   }
 
   @Post("transitions")
@@ -93,7 +97,7 @@ export class PositionsTaxonomyController {
     @Body()
     body: CreatePositionTransitionInput,
   ) {
-    return this.service.createTransition(user.orgId, user.userId, body);
+    return this.transitions.createTransition(user.orgId, user.userId, body);
   }
 
   @Patch("transitions/:transitionId")
@@ -105,7 +109,7 @@ export class PositionsTaxonomyController {
     @Body()
     body: UpdatePositionTransitionInput,
   ) {
-    return this.service.updateTransition(user.orgId, transitionId, body);
+    return this.transitions.updateTransition(user.orgId, transitionId, body);
   }
 
   @Delete("transitions/:transitionId")
@@ -116,6 +120,6 @@ export class PositionsTaxonomyController {
     @CurrentUser() user: CurrentUserContext,
     @Param("transitionId", ParseIntPipe) transitionId: number,
   ) {
-    await this.service.deleteTransition(user.orgId, transitionId);
+    await this.transitions.deleteTransition(user.orgId, transitionId);
   }
 }

@@ -35,18 +35,12 @@ function backoffMsWithJitter(minutes: number): number {
 }
 const STALE_LOCK_MS = 10 * 60 * 1000;
 
-export interface QueueRunResult {
-  processed: number;
-  sent: number;
-  failed: number;
-  dead: number;
-}
-
 import type {
   ClaimedJob,
   DeliveryRow,
   Preflight,
   Provider,
+  QueueRunResult,
 } from "./notification-delivery-types";
 import { resolveDeliveryPreflight } from "./notification-delivery-preflight";
 
