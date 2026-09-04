@@ -51,6 +51,16 @@ export const TINY_ORG = "aaaaaaaa-1111-0000-0000-000000000004";
  */
 export const LEAVES_SPANNING_TODAY = 12;
 
+/**
+ * How many org-visible, single-occurrence calendar events every tenant keeps in the
+ * forward window (start_date >= now() + 1 day). Mirrors the UPCOMING_WINDOW_EVENTS
+ * constant in `seed-heavy-query-load.mjs` so this layer can refill a window that
+ * time has drained since layer 2 ran — `dashboard-personal-calendar-events` filters
+ * `start_date >= NOW()` and returns an empty result set if no future events exist,
+ * making every ceiling trivially satisfied and the plan assertions unexercisable.
+ */
+export const UPCOMING_CALENDAR_EVENTS = 60;
+
 export const PERF_ORGS = [
   { id: LARGE_ORG, label: "large", weight: 1, name: "Scratch E2E Corp", slug: "scratch-e2e-corp" },
   { id: MID_ORG, label: "mid", weight: 0.1, name: "Scratch Mid Org", slug: "scratch-mid-org" },
@@ -136,6 +146,8 @@ if (process.argv.includes("--self-test")) {
     ["accepts a scratch database name", assertScratchTarget("postgres://u:p@h/scratch_perf_seed", []).ok, true],
     ["rejects a url identical to a live url", assertScratchTarget("postgres://u:p@h/scratch_x", ["postgres://u:p@h/scratch_x"]).ok, false],
     ["rejects an unparseable url", assertScratchTarget("not a url", []).ok, false],
+    ["LEAVES_SPANNING_TODAY exceeds dashboard-leaves-today minRows (5)", LEAVES_SPANNING_TODAY >= 5, true],
+    ["UPCOMING_CALENDAR_EVENTS meets the dashboard spec floor (60)", UPCOMING_CALENDAR_EVENTS >= 60, true],
     ["a weight never collapses a tenant to zero rows", scaled(100, 0.0001, 1) >= 1, true],
     ["weights are proportional", scaled(1000, 0.1, 1), 100],
     ["scale is proportional", scaled(1000, 1, 0.25), 250],
@@ -924,6 +936,44 @@ async function seedHr(ctx) {
   });
 }
 
+/**
+ * The forward calendar window. Layer 2 (`seed-heavy-query-load.mjs`) plants the bulk
+ * calendar history and seeds an initial forward window via `seedUpcomingWindow`, but
+ * that window ages out as wall-clock time advances past the seeded dates. This topUp
+ * refills it on every layer-3 run so `dashboard-personal-calendar-events` always faces
+ * a non-empty result set. The predicate matches the one in the budget SQL
+ * (`start_date >= NOW()` + `visibility = 'org'` + no rrule), and events are spread
+ * 2–180 days into the future so they survive at least one day and do not decay to zero
+ * within hours the way `seedReminderWindow` events do.
+ */
+async function seedCalendarForwardWindow(ctx) {
+  if (!ctx.membership) throw new Error("no membership to author calendar events");
+  await topUp(
+    `${ctx.label} calendar_events forward window`,
+    "calendar_events",
+    "org_id = $1 AND visibility = 'org' AND rrule IS NULL AND start_date >= now() + interval '1 day'",
+    [ctx.org],
+    UPCOMING_CALENDAR_EVENTS,
+    async (_have, need) => {
+      await sql.unsafe(
+        `INSERT INTO calendar_events
+           (org_id, title, description, start_date, end_date, all_day, category,
+            timezone, rrule, reminder_15min_sent, created_by_membership_id, visibility, color)
+         SELECT $1,
+                'Upcoming event (perf fixture) ' || g,
+                'Keeps dashboard-personal-calendar-events non-vacuous',
+                now() + ((g % 179 + 2) || ' days')::interval + ((g % 9) || ' hours')::interval,
+                now() + ((g % 179 + 2) || ' days')::interval + ((g % 9) || ' hours')::interval + interval '45 minutes',
+                false,
+                (ARRAY['meeting','review','standup','interview'])[1 + (g % 4)],
+                'UTC', NULL, false, $2::int, 'org', '#0ea5e9'
+         FROM generate_series(1, $3::int) g`,
+        [ctx.org, ctx.membership, need],
+      );
+    },
+  );
+}
+
 async function seedSupport(ctx) {
   const tickets = scaled(BASE.supportTickets, ctx.weight, SCALE);
   await topUp(`${ctx.label} support_tickets`, "support_tickets", "org_id = $1", [ctx.org], tickets, async (have, need) => {
@@ -978,6 +1028,7 @@ const TOUCHED = [
   "chat_channels", "chat_channel_members", "chat_messages", "chat_saved_messages",
   "hr_people", "hr_employments", "leave_types", "leave_requests", "leave_balances",
   "hr_leave_ledger", "attendance", "timesheets", "support_tickets", "mail_message_metadata",
+  "calendar_events",
 ];
 
 /** A plan read before ANALYZE is a plan against stale statistics, which is not a plan. */
@@ -1065,6 +1116,7 @@ async function main() {
     await section(`${ctx.label} finance`, () => seedFinance(ctx));
     await section(`${ctx.label} chat`, () => seedChat(ctx));
     await section(`${ctx.label} hr`, () => seedHr(ctx));
+    await section(`${ctx.label} calendar forward window`, () => seedCalendarForwardWindow(ctx));
     await section(`${ctx.label} support`, () => seedSupport(ctx));
     await section(`${ctx.label} mail`, () => seedMail(ctx));
   }

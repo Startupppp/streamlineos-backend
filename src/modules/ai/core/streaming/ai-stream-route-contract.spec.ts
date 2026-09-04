@@ -82,7 +82,9 @@ describe("streaming routes must not run inside the request-scoped tenant transac
       if (routes.length === 0) continue;
       streamRoutes += routes.length;
       const usesHelper =
-        source.includes("respondWithAiTextStream") || source.includes("pipeAiTextStream");
+        source.includes("respondWithAiTextStream") ||
+        source.includes("pipeAiTextStream") ||
+        source.includes("pipeAiUiMessageStream");
       if (!usesHelper) offenders.push(file);
     }
 
@@ -148,9 +150,13 @@ describe("streaming routes must not run inside the request-scoped tenant transac
   });
 
   it("no AI controller pipes the provider stream itself, bypassing the awaited pipe", () => {
-    const offenders = listControllerFiles(AI_MODULE_ROOT).filter((file) =>
-      /\.pipeTextStreamToResponse\(/.test(readFileSync(file, "utf8")),
-    );
+    const offenders = listControllerFiles(AI_MODULE_ROOT).filter((file) => {
+      const source = readFileSync(file, "utf8");
+      return (
+        /\.pipeTextStreamToResponse\(/.test(source) ||
+        /\.pipeUIMessageStreamToResponse\(/.test(source)
+      );
+    });
 
     expect(offenders).toEqual([]);
   });

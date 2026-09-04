@@ -4,6 +4,7 @@ export {
   encodeStreamSources,
   sourcesTruncatedHeaderName,
   pipeAiTextStream,
+  pipeAiUiMessageStream,
   rethrowStreamRouteError,
 } from "./ai-stream-response";
 export { respondWithAiTextStream } from "./ai-text-stream-route";

@@ -31,6 +31,7 @@
 import postgres from "postgres";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const ENABLED = process.env.PERF_SEED_DB_TESTS === "1";
 const DB_URL = process.env.PERF_SEED_DATABASE_URL ?? process.env.APP_DATABASE_URL;
@@ -42,7 +43,7 @@ interface ResolvedBudget {
   id: string;
   minRows: number | null;
   sql: string;
-  params: unknown[] | null;
+  params: postgres.ParameterOrJSON<never>[] | null;
 }
 
 /** The two budgets whose predicate points forward in time. */
@@ -55,7 +56,9 @@ const FORWARD_WINDOW_BUDGET_IDS = ["dashboard-personal-calendar-events", "dashbo
  * closure — instead of restating a copy that could drift away from the gate it guards.
  */
 function resolveDeclaredBudgets(fixtures: Record<string, unknown>): ResolvedBudget[] {
-  const modulePath = resolve(__dirname, "..", "..", "src", "scripts", "read-cost-budgets.mjs");
+  const modulePath = pathToFileURL(
+    resolve(__dirname, "..", "..", "src", "scripts", "read-cost-budgets.mjs"),
+  ).href;
   const program = `
     import { BUDGETS } from ${JSON.stringify(modulePath)};
     const fixtures = JSON.parse(process.argv[1]);
@@ -137,7 +140,7 @@ describeDb("perf seed forward window", () => {
       expect(budget).toBeDefined();
       expect(budget!.params).not.toBeNull();
 
-      const rows = await inTenant((tx) => tx.unsafe(budget!.sql, budget!.params as unknown[]));
+      const rows = await inTenant((tx) => tx.unsafe(budget!.sql, budget!.params ?? undefined));
 
       // `minRows` is the budget's own floor; a budget that returns fewer rows than it
       // declares is measuring something other than the read it claims to measure.

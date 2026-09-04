@@ -9,6 +9,13 @@ export interface PipeableAiTextStream {
   ): Promise<void>;
 }
 
+export interface PipeableAiUiStream {
+  pipeUIMessageStreamToResponse(
+    response: ServerResponse,
+    init?: { headers?: Record<string, string> },
+  ): Promise<void>;
+}
+
 export interface AiStreamPipeOptions {
   feature: string;
   orgId: string;
@@ -62,6 +69,39 @@ export async function pipeAiTextStream(
     });
     // No argument: `destroy(err)` would emit 'error' on the response, and an
     // unhandled 'error' on a Writable takes the process down.
+    if (!res.writableEnded) res.destroy();
+  }
+}
+
+/**
+ * `pipeUIMessageStreamToResponse` emits ALL AI SDK events (text deltas, tool-call
+ * start, tool-call delta, tool-result) as SSE over the same `text/event-stream`
+ * channel. It sets `x-vercel-ai-ui-message-stream: v1` so clients can detect the
+ * format and route accordingly. Credit settlement callbacks (`onAbort`, `onFinish`)
+ * are wired into `streamText` itself — not the pipe — so switching from
+ * `pipeAiTextStream` to this function does not change settlement semantics.
+ *
+ * Error handling mirrors `pipeAiTextStream`: a mid-stream fault destroys the
+ * response so the client's `fetch` reader rejects rather than seeing a clean end
+ * on a half-sentence.
+ */
+export async function pipeAiUiMessageStream(
+  res: ServerResponse,
+  stream: PipeableAiUiStream,
+  options: AiStreamPipeOptions,
+): Promise<void> {
+  try {
+    await stream.pipeUIMessageStreamToResponse(
+      res,
+      options.headers ? { headers: options.headers } : undefined,
+    );
+  } catch (error) {
+    options.onFault?.(error);
+    logger.error("AI UI message stream terminated before completion", {
+      error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+      feature: options.feature,
+      orgId: options.orgId,
+    });
     if (!res.writableEnded) res.destroy();
   }
 }
