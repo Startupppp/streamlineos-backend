@@ -29,8 +29,11 @@ function walkSource(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+// `relative` yields backslashes on Windows, so every assertion below compared
+// "src\\common\\security\\ssrf-guard.ts" against the forward-slash literal and failed while the
+// file was in fact found — four security properties silently unverified on this platform.
 const SOURCE_FILES = walkSource(resolve(BACKEND_ROOT, "src")).map((file) => ({
-  path: relative(BACKEND_ROOT, file),
+  path: relative(BACKEND_ROOT, file).replace(/\\/g, "/"),
   content: readFileSync(file, "utf8"),
 }));
 
@@ -464,6 +467,7 @@ describe("Path traversal — object keys cannot escape their tenant prefix", () 
   const storage = new StorageService(
     {} as never,
     { NEXT_PUBLIC_R2_PUBLIC_URL: "https://cdn.example.com" } as never,
+    {} as never,
   );
 
   it("accepts a well-formed tenant-prefixed key", () => {

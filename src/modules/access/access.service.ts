@@ -390,20 +390,43 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     return this.entitlements.getPlanLockedModules(orgId);
   }
 
+  private static readonly SNAPSHOT_CACHE_TTL_SECONDS = CACHE_TTL.SHORT;
+
   async getAccessSnapshot(
     orgId: string,
     userId: string,
     currentUserContext: CurrentUserContext,
   ): Promise<AccessSnapshot> {
-    return runInTenantTransaction(
-      this.db,
-      () =>
-        this.snapshotResolver.computeAccessSnapshot(
-          orgId,
-          userId,
-          currentUserContext,
-        ),
-      { orgId },
+    const compute = (): Promise<AccessSnapshot> =>
+      runInTenantTransaction(
+        this.db,
+        () =>
+          this.snapshotResolver.computeAccessSnapshot(
+            orgId,
+            userId,
+            currentUserContext,
+          ),
+        { orgId },
+      );
+
+    // Token-attenuated requests filter scopes by tokenScopes, so two callers
+    // with the same (orgId, userId) may receive different snapshots. Rather than
+    // encoding the full scope set in the cache key, skip caching entirely for
+    // this path — it is uncommon and correctness dominates.
+    if (currentUserContext.tokenScopes !== null) return compute();
+
+    const version = await this.getPermissionsVersion(orgId);
+    const localKey = CACHE_KEYS.accessSnapshot(
+      userId,
+      version,
+      currentUserContext.isOrgOwner,
+    );
+    return this.cache.cachedForOrgWith<AccessSnapshot>(
+      orgId,
+      localKey,
+      compute,
+      () => AccessService.SNAPSHOT_CACHE_TTL_SECONDS,
+      AccessService.SNAPSHOT_CACHE_TTL_SECONDS,
     );
   }
 

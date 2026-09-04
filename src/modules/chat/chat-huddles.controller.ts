@@ -3,8 +3,6 @@ import {
   Controller,
   Get,
   HttpCode,
-  HttpException,
-  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -35,7 +33,8 @@ import {
   type HuddleInviteInput,
 } from "./dto/huddle.schemas";
 import { z } from "zod";
-import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -52,7 +51,6 @@ export class ChatHuddlesController {
   constructor(
     private readonly huddles: ChatHuddlesService,
     private readonly signals: ChatHuddleSignalsService,
-    private readonly rateLimit: RateLimitService,
   ) {}
 
   @ApiOperation({ summary: "Start a voice huddle in a channel" })
@@ -61,14 +59,14 @@ export class ChatHuddlesController {
   @Post("channels/:channelId/huddle/start")
   @BodylessAction()
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("chat:huddle")
   @RequirePermission("chat:huddles:start")
   @Validate({ params: channelIdParams })
-  async startHuddle(
+  startHuddle(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const rl = await this.rateLimit.check("chat:huddle", u.userId);
-    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
     return this.huddles.startHuddle(channelId, u.userId, u.orgId);
   }
 
@@ -159,15 +157,15 @@ export class ChatHuddlesController {
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Post("huddles/:huddleId/signal")
   @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("chat:huddle-signal")
   @RequirePermission("chat:messages:write")
   @Validate({ params: huddleIdParams, body: huddleSignalSchema })
-  async sendSignal(
+  sendSignal(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @Body() body: HuddleSignalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const rl = await this.rateLimit.check("chat:huddle-signal", u.userId);
-    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
     return this.signals.sendSignal(huddleId, u.userId, body, u.orgId);
   }
 
@@ -177,14 +175,14 @@ export class ChatHuddlesController {
   @Patch("huddles/:huddleId/heartbeat")
   @BodylessAction()
   @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("chat:huddle-heartbeat")
   @RequirePermission("chat:channels:read")
   @Validate({ params: huddleIdParams })
-  async heartbeat(
+  heartbeat(
     @Param("huddleId", ParseIntPipe) huddleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const rl = await this.rateLimit.check("chat:huddle-heartbeat", u.userId);
-    if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
     return this.signals.heartbeat(huddleId, u.userId, u.orgId);
   }
 

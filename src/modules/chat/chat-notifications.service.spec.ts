@@ -6,22 +6,20 @@ import { AblyService } from "../realtime/ably.service";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 
 const mockDb = {
-  select: jest.fn().mockReturnThis(),
-  from: jest.fn().mockReturnThis(),
-  innerJoin: jest.fn().mockReturnThis(),
+  select: jest.fn(),
+  from: jest.fn(),
+  innerJoin: jest.fn(),
   where: jest.fn(),
 };
 
-const mockAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
+const mockAbly = { publishToUser: jest.fn() };
 
 const mockOrgSettings = {
-  getSettings: jest.fn().mockResolvedValue({ defaultNotificationPreference: "ALL" }),
+  getSettings: jest.fn(),
 };
 const mockEffects = {
-  execute: jest.fn(async (_effect: unknown, send: () => Promise<void>) => {
-    await send();
-    return "EXECUTED";
-  }),
+  execute: jest.fn(),
+  executeBatch: jest.fn(),
 };
 
 const baseMessage = {
@@ -34,8 +32,21 @@ describe("ChatNotificationsService", () => {
   let service: ChatNotificationsService;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    mockDb.select.mockReturnThis();
+    mockDb.from.mockReturnThis();
+    mockDb.innerJoin.mockReturnThis();
+    mockAbly.publishToUser.mockResolvedValue(undefined);
     mockOrgSettings.getSettings.mockResolvedValue({ defaultNotificationPreference: "ALL" });
+    mockEffects.execute.mockImplementation(async (_effect: unknown, send: () => Promise<void>) => {
+      await send();
+      return "EXECUTED";
+    });
+    mockEffects.executeBatch.mockImplementation(
+      async (items: Array<{ effect: unknown; send: () => Promise<void> }>) => {
+        for (const { send } of items) await send();
+      },
+    );
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatNotificationsService,
@@ -97,9 +108,6 @@ describe("ChatNotificationsService", () => {
       },
     );
 
-    // RT-007: an Ably capability is granted at connect time, so a subscriber removed
-    // from a channel keeps receiving on it. Anything in this payload is disclosed
-    // without passing the read endpoint's authorization — so the body must not be here.
     it("publishes a signal, never the message body", async () => {
       mockDb.where.mockResolvedValueOnce([
         { userId: "user2", mutedUntil: null, notificationPreference: "ALL" },
@@ -130,28 +138,23 @@ describe("ChatNotificationsService", () => {
       expect(mockAbly.publishToUser).not.toHaveBeenCalled();
     });
 
-    it("journals each recipient separately when delivery is retryable", async () => {
+    it("calls executeBatch once for N recipients when idempotencyKey is provided — not N execute calls", async () => {
       mockDb.where.mockResolvedValueOnce([
         { userId: "user2", mutedUntil: null, notificationPreference: "ALL" },
         { userId: "user3", mutedUntil: null, notificationPreference: "ALL" },
+        { userId: "user4", mutedUntil: null, notificationPreference: "ALL" },
       ]);
 
-      await service.publishNewMessageNotification(
-        "org1",
-        1,
-        baseMessage,
-        "GROUP",
-        "event-1:dm",
-      );
+      await service.publishNewMessageNotification("org1", 1, baseMessage, "GROUP", "event-1:dm");
 
-      expect(mockEffects.execute).toHaveBeenCalledTimes(2);
-      expect(mockEffects.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ effectKey: "event-1:dm:user2" }),
-        expect.any(Function),
-      );
-      expect(mockEffects.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ effectKey: "event-1:dm:user3" }),
-        expect.any(Function),
+      expect(mockEffects.execute).not.toHaveBeenCalled();
+      expect(mockEffects.executeBatch).toHaveBeenCalledTimes(1);
+      const [items] = mockEffects.executeBatch.mock.calls[0] as [
+        Array<{ effect: { effectKey: string } }>,
+      ];
+      expect(items).toHaveLength(3);
+      expect(items.map((i) => i.effect.effectKey).sort()).toEqual(
+        ["event-1:dm:user2", "event-1:dm:user3", "event-1:dm:user4"].sort(),
       );
     });
   });
@@ -182,6 +185,44 @@ describe("ChatNotificationsService", () => {
         "notification:mention",
         expect.objectContaining({ channelId: 1 }),
       );
+    });
+
+    it("calls executeBatch once for N recipients when idempotencyKey is provided — not N execute calls", async () => {
+      mockDb.where.mockResolvedValueOnce([
+        { userId: "user2", notificationPreference: "ALL" },
+        { userId: "user3", notificationPreference: "ALL" },
+        { userId: "user4", notificationPreference: "ALL" },
+      ]);
+
+      await service.publishMentionNotification(
+        "org1",
+        1,
+        baseMessage,
+        ["user2", "user3", "user4"],
+        "event-1:mention",
+      );
+
+      expect(mockEffects.execute).not.toHaveBeenCalled();
+      expect(mockEffects.executeBatch).toHaveBeenCalledTimes(1);
+      const [items] = mockEffects.executeBatch.mock.calls[0] as [
+        Array<{ effect: { effectKey: string } }>,
+      ];
+      expect(items).toHaveLength(3);
+      expect(items.map((i) => i.effect.effectKey).sort()).toEqual(
+        ["event-1:mention:user2", "event-1:mention:user3", "event-1:mention:user4"].sort(),
+      );
+    });
+
+    it("delivers all recipients directly when no idempotencyKey is given", async () => {
+      mockDb.where.mockResolvedValueOnce([
+        { userId: "user2", notificationPreference: "ALL" },
+        { userId: "user3", notificationPreference: "ALL" },
+      ]);
+
+      await service.publishMentionNotification("org1", 1, baseMessage, ["user2", "user3"]);
+
+      expect(mockEffects.executeBatch).not.toHaveBeenCalled();
+      expect(mockAbly.publishToUser).toHaveBeenCalledTimes(2);
     });
   });
 });

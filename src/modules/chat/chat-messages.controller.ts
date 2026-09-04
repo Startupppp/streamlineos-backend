@@ -5,8 +5,6 @@ import {
   Delete,
   Get,
   HttpCode,
-  HttpException,
-  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -34,7 +32,8 @@ import {
   type SendMessageInput,
 } from "./dto/chat.schemas";
 import { chatPollQuerySchema, type ChatPollQuery } from "./dto/chat-poll.schemas";
-import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -54,7 +53,6 @@ export class ChatMessagesController {
     private readonly moderation: ChatMessageModerationService,
     private readonly timeline: ChatMessageTimelineService,
     private readonly reactions: ChatReactionsService,
-    private readonly rateLimit: RateLimitService,
   ) {}
 
   @ApiOperation({ summary: "List messages in a channel (cursor-paginated)" })
@@ -76,18 +74,14 @@ export class ChatMessagesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("chat:send-message")
   @Validate({ params: channelIdParams, body: sendMessageSchema })
-  async send(
+  send(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body() body: SendMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const rl = await this.rateLimit.check("chat:send-message", u.userId);
-    if (!rl.allowed)
-      throw new HttpException(
-        `Rate limited. Retry after ${rl.retryAfterSecs}s`,
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
     return this.messages.send(channelId, u.userId, u.orgId, body);
   }
 

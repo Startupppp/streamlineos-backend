@@ -21,6 +21,8 @@ export const CACHE_KEYS = {
   mfaUserTotp: (userId: string) => `mfa:user-totp:${userId}`,
 
   accessVersion: (orgId: string) => `access:version:${orgId}`,
+  accessSnapshot: (userId: string, version: number, isOrgOwner: boolean) =>
+    `access:snapshot:${userId}:v${version}:o${isOrgOwner ? 1 : 0}`,
   accessPerms: (orgId: string, userId: string, version: number) =>
     `access:perms:${orgId}:${userId}:v${version}`,
   accessMembersWithPermPage: (

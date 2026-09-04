@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 /**
  * PRD-C142, pinned against the committed capture rather than against a fixture.
@@ -104,14 +105,19 @@ describe("PRD-C142 — statement ceilings on the production-shaped seed", () => 
   });
 
   it("covers every read-cost budget the catalog declares, so the corpus cannot be narrowed", () => {
-    /* ts-jest cannot `import()` the ESM catalog, so it is read out of a child node process. */
+    /* ts-jest cannot `import()` the ESM catalog, so it is read out of a child node process. The
+       specifier must be a file:// URL — a bare Windows absolute path is rejected by the ESM loader
+       as protocol 'd:', which made this assertion throw instead of returning a verdict. */
+    const catalogUrl = pathToFileURL(
+      join(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs"),
+    ).href;
     const ids: string[] = JSON.parse(
       execFileSync(
         process.execPath,
         [
           "--input-type=module",
           "-e",
-          `import { BUDGETS } from ${JSON.stringify(join(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs"))};` +
+          `import { BUDGETS } from ${JSON.stringify(catalogUrl)};` +
             ` process.stdout.write(JSON.stringify(BUDGETS.map((b) => b.id)));`,
         ],
         { cwd: BACKEND_ROOT, encoding: "utf8" },

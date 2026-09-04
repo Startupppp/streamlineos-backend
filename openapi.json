@@ -5849,11 +5849,13 @@
                         },
                         "debit": {
                           "type": "number",
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 100000000000000
                         },
                         "credit": {
                           "type": "number",
-                          "minimum": 0
+                          "minimum": 0,
+                          "maximum": 100000000000000
                         },
                         "description": {
                           "type": "string",
@@ -49243,7 +49245,280 @@
         "parameters": [],
         "responses": {
           "201": {
-            "description": ""
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "event": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "orgId": {
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "location": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "meetingUrl": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "startDate": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "endDate": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "timezone": {
+                              "type": "string"
+                            },
+                            "allDay": {
+                              "type": "boolean"
+                            },
+                            "color": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "category": {
+                              "type": "string"
+                            },
+                            "entityType": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "entityId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "rrule": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "recurrenceEnd": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "localVersion": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "orgId",
+                            "title",
+                            "description",
+                            "location",
+                            "meetingUrl",
+                            "startDate",
+                            "endDate",
+                            "timezone",
+                            "allDay",
+                            "color",
+                            "category",
+                            "entityType",
+                            "entityId",
+                            "rrule",
+                            "recurrenceEnd",
+                            "localVersion",
+                            "createdAt",
+                            "updatedAt"
+                          ]
+                        },
+                        "oooConflicts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "userId": {
+                                "type": "string"
+                              },
+                              "userName": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "leaveStart": {
+                                "type": "string"
+                              },
+                              "leaveEnd": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "userId",
+                              "userName",
+                              "leaveStart",
+                              "leaveEnd"
+                            ]
+                          }
+                        },
+                        "eventConflicts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "eventId": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "startDate": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "endDate": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "nominalStart": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "allDay": {
+                                "type": "boolean"
+                              },
+                              "timezone": {
+                                "type": "string"
+                              },
+                              "orgId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "eventId",
+                              "title",
+                              "startDate",
+                              "endDate",
+                              "nominalStart",
+                              "allDay",
+                              "timezone",
+                              "orgId"
+                            ]
+                          }
+                        },
+                        "meetingUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "syncQueued": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "event",
+                        "oooConflicts",
+                        "eventConflicts",
+                        "meetingUrl",
+                        "syncQueued"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -49386,7 +49661,175 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "orgId": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "location": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "meetingUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "startDate": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "endDate": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "allDay": {
+                          "type": "boolean"
+                        },
+                        "color": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "category": {
+                          "type": "string"
+                        },
+                        "entityType": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "entityId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rrule": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "recurrenceEnd": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "localVersion": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "orgId",
+                        "title",
+                        "description",
+                        "location",
+                        "meetingUrl",
+                        "startDate",
+                        "endDate",
+                        "timezone",
+                        "allDay",
+                        "color",
+                        "category",
+                        "entityType",
+                        "entityId",
+                        "rrule",
+                        "recurrenceEnd",
+                        "localVersion",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -49683,7 +50126,104 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "orgId": {
+                          "type": "string"
+                        },
+                        "eventId": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "occurrenceStart": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "isCancelled": {
+                          "type": "boolean"
+                        },
+                        "modifiedTitle": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "modifiedStart": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "modifiedEnd": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "orgId",
+                        "eventId",
+                        "occurrenceStart",
+                        "isCancelled",
+                        "modifiedTitle",
+                        "modifiedStart",
+                        "modifiedEnd",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -49766,7 +50306,104 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "orgId": {
+                          "type": "string"
+                        },
+                        "eventId": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "occurrenceStart": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "isCancelled": {
+                          "type": "boolean"
+                        },
+                        "modifiedTitle": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "modifiedStart": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "modifiedEnd": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "orgId",
+                        "eventId",
+                        "occurrenceStart",
+                        "isCancelled",
+                        "modifiedTitle",
+                        "modifiedStart",
+                        "modifiedEnd",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -50055,6 +50692,85 @@
         "x-exposure": "permissioned",
         "x-permission": "calendar:read",
         "description": "Exposure: permission — calendar:read"
+      }
+    },
+    "/calendar/events/{eventId}/sync-queue": {
+      "delete": {
+        "operationId": "CalendarController_cancelSync",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "cancelled": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "cancelled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Calendar"
+        ],
+        "x-exposure": "universal",
+        "description": "Exposure: universal — any authenticated member, subject from the token"
       }
     },
     "/calendar/events/{eventId}/sync-retry": {
@@ -50938,7 +51654,11 @@
     "/chat/actions/create-task-from-message": {
       "post": {
         "operationId": "ChatActionsController_createTaskFromMessage",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -51013,7 +51733,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "chat.action.create-task-from-message",
+        "x-idempotent": true
       }
     },
     "/chat/channels": {
@@ -52530,7 +53252,9 @@
                           "type": "string"
                         },
                         "fileKey": {
-                          "type": "string"
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
                         },
                         "fileSize": {
                           "type": "number"
@@ -52647,7 +53371,7 @@
         "operationId": "ChatMessagesController_edit",
         "parameters": [
           {
-            "name": "messageId",
+            "name": "channelId",
             "required": true,
             "in": "path",
             "schema": {
@@ -52657,9 +53381,9 @@
             }
           },
           {
-            "name": "channelId",
-            "in": "path",
+            "name": "messageId",
             "required": true,
+            "in": "path",
             "schema": {
               "type": "integer",
               "exclusiveMinimum": 0,
@@ -52733,7 +53457,7 @@
         "operationId": "ChatMessagesController_remove",
         "parameters": [
           {
-            "name": "messageId",
+            "name": "channelId",
             "required": true,
             "in": "path",
             "schema": {
@@ -52743,9 +53467,9 @@
             }
           },
           {
-            "name": "channelId",
-            "in": "path",
+            "name": "messageId",
             "required": true,
+            "in": "path",
             "schema": {
               "type": "integer",
               "exclusiveMinimum": 0,
@@ -53147,7 +53871,9 @@
                           "type": "string"
                         },
                         "fileKey": {
-                          "type": "string"
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
                         },
                         "fileSize": {
                           "type": "number"
@@ -53835,6 +54561,9 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -53872,6 +54601,8 @@
         "x-exposure": "permissioned",
         "x-permission": "chat:messages:read",
         "description": "Exposure: permission — chat:messages:read",
+        "x-idempotency-command": "chat.summarize",
+        "x-idempotent": true,
         "x-bodyless": true
       }
     },
@@ -75616,6 +76347,79 @@
         "x-bodyless": true
       }
     },
+    "/cron/kb-telemetry-retention-sweep": {
+      "get": {
+        "operationId": "CronSupportController_getKbTelemetryRetentionSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronSupport"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronSupportController_postKbTelemetryRetentionSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronSupport"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
+      }
+    },
     "/cron/kb-trash-purge": {
       "get": {
         "operationId": "CronSupportController_getKbTrashPurge",
@@ -86146,7 +86950,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           }
         ],
@@ -86307,7 +87113,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           }
         ],
@@ -86444,7 +87252,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           }
         ],
@@ -90881,42 +91691,81 @@
         "parameters": [
           {
             "name": "page",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
             "name": "limit",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           },
           {
             "name": "search",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
             }
           },
           {
             "name": "triggerEvent",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "employee.created",
+                "employee.onboarded",
+                "employee.probation_due",
+                "employee.confirmed",
+                "employee.transferred",
+                "employee.promoted",
+                "employee.salary_revised",
+                "leave.requested",
+                "leave.approved",
+                "attendance.late",
+                "attendance.missed_punch",
+                "document.expiring",
+                "asset.assigned",
+                "asset.return_due",
+                "review.cycle_started",
+                "review.due",
+                "goal.overdue",
+                "course.assigned",
+                "resignation.submitted",
+                "exit.completed",
+                "employee.updated",
+                "employee.exited",
+                "contract.ended",
+                "attendance.finalized",
+                "payroll.inputs_locked"
+              ]
             }
           },
           {
             "name": "isEnabled",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
             }
           }
         ],
@@ -101713,7 +102562,7 @@
     },
     "/hr/engagement/badges": {
       "get": {
-        "operationId": "EngagementExtrasController_listBadges",
+        "operationId": "EngagementBadgesController_listBadges",
         "parameters": [],
         "responses": {
           "200": {
@@ -101736,14 +102585,14 @@
           }
         },
         "tags": [
-          "EngagementExtras"
+          "EngagementBadges"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
         "description": "Exposure: permission — hr:engagement:view"
       },
       "post": {
-        "operationId": "EngagementExtrasController_createBadge",
+        "operationId": "EngagementBadgesController_createBadge",
         "parameters": [],
         "responses": {
           "201": {
@@ -101772,7 +102621,7 @@
           }
         },
         "tags": [
-          "EngagementExtras"
+          "EngagementBadges"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:manage",
@@ -101819,7 +102668,7 @@
     },
     "/hr/engagement/badges/{badgeId}": {
       "delete": {
-        "operationId": "EngagementExtrasController_deleteBadge",
+        "operationId": "EngagementBadgesController_deleteBadge",
         "parameters": [
           {
             "name": "badgeId",
@@ -101862,7 +102711,7 @@
           }
         },
         "tags": [
-          "EngagementExtras"
+          "EngagementBadges"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:manage",
@@ -101871,7 +102720,7 @@
     },
     "/hr/engagement/badges/{badgeId}/award": {
       "post": {
-        "operationId": "EngagementExtrasController_awardBadge",
+        "operationId": "EngagementBadgesController_awardBadge",
         "parameters": [
           {
             "name": "badgeId",
@@ -101914,7 +102763,7 @@
           }
         },
         "tags": [
-          "EngagementExtras"
+          "EngagementBadges"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:manage",
@@ -101947,7 +102796,7 @@
     },
     "/hr/engagement/badges/my": {
       "get": {
-        "operationId": "EngagementExtrasController_myBadges",
+        "operationId": "EngagementBadgesController_myBadges",
         "parameters": [],
         "responses": {
           "200": {
@@ -101970,7 +102819,7 @@
           }
         },
         "tags": [
-          "EngagementExtras"
+          "EngagementBadges"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
@@ -102530,7 +103379,7 @@
     },
     "/hr/engagement/employee-of-month": {
       "get": {
-        "operationId": "EngagementExtrasController_employeeOfMonth",
+        "operationId": "EngagementBadgesController_employeeOfMonth",
         "parameters": [],
         "responses": {
           "200": {
@@ -102553,7 +103402,7 @@
           }
         },
         "tags": [
-          "EngagementExtras"
+          "EngagementBadges"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
@@ -102693,7 +103542,7 @@
     },
     "/hr/engagement/overview": {
       "get": {
-        "operationId": "EngagementExtrasController_overview",
+        "operationId": "EngagementBadgesController_overview",
         "parameters": [],
         "responses": {
           "200": {
@@ -102716,7 +103565,7 @@
           }
         },
         "tags": [
-          "EngagementExtras"
+          "EngagementBadges"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
@@ -102725,7 +103574,7 @@
     },
     "/hr/engagement/points/leaderboard": {
       "get": {
-        "operationId": "EngagementExtrasController_leaderboard",
+        "operationId": "EngagementBadgesController_leaderboard",
         "parameters": [],
         "responses": {
           "200": {
@@ -102748,7 +103597,7 @@
           }
         },
         "tags": [
-          "EngagementExtras"
+          "EngagementBadges"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
@@ -102757,7 +103606,7 @@
     },
     "/hr/engagement/points/my": {
       "get": {
-        "operationId": "EngagementExtrasController_myPoints",
+        "operationId": "EngagementBadgesController_myPoints",
         "parameters": [],
         "responses": {
           "200": {
@@ -102780,7 +103629,7 @@
           }
         },
         "tags": [
-          "EngagementExtras"
+          "EngagementBadges"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
@@ -134361,7 +135210,8 @@
                   },
                   "s3Key": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 1024
                   },
                   "fileUrl": {
                     "type": "string",
@@ -147752,18 +148602,24 @@
         "parameters": [
           {
             "name": "page",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
             "name": "limit",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -169269,7 +170125,11 @@
     "/kb/ask": {
       "post": {
         "operationId": "KbAskController_askQuestion",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -169332,7 +170192,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "kb.ask",
+        "x-idempotent": true
       }
     },
     "/kb/ask/conversations": {
@@ -170046,7 +170908,11 @@
     "/kb/media": {
       "post": {
         "operationId": "KbMediaController_upload",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -170100,7 +170966,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "kb.media.upload",
+        "x-idempotent": true
       }
     },
     "/kb/page-comments/{commentId}": {
@@ -172472,6 +173340,9 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -172509,6 +173380,8 @@
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:manage",
         "description": "Exposure: permission — kb:pages:manage",
+        "x-idempotency-command": "kb.page.reindex",
+        "x-idempotent": true,
         "x-bodyless": true
       }
     },
@@ -173259,6 +174132,9 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -173293,6 +174169,8 @@
         "x-exposure": "permissioned",
         "x-permission": "kb:settings:manage",
         "description": "Exposure: permission — kb:settings:manage",
+        "x-idempotency-command": "kb.pages.reindex-all",
+        "x-idempotent": true,
         "x-bodyless": true
       }
     },
@@ -173308,6 +174186,17 @@
               "default": "",
               "type": "string",
               "maxLength": 200
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
             }
           }
         ],
@@ -173945,7 +174834,29 @@
     "/kb/sources": {
       "get": {
         "operationId": "KbSourcesController_list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -177906,6 +178817,16 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 100000
+                  },
+                  "to": {
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "email",
+                      "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                    }
                   },
                   "cc": {
                     "maxItems": 25,
@@ -182400,6 +183321,112 @@
                     }
                   }
                 },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notification-preferences/consents": {
+      "get": {
+        "operationId": "NotificationPreferencesController_listConsents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "NotificationPreferences"
+        ],
+        "x-exposure": "universal",
+        "description": "Exposure: universal — any authenticated member, subject from the token"
+      },
+      "put": {
+        "operationId": "NotificationPreferencesController_recordConsent",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "NotificationPreferences"
+        ],
+        "x-exposure": "universal",
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channel": {
+                    "type": "string",
+                    "enum": [
+                      "SMS",
+                      "WHATSAPP"
+                    ]
+                  },
+                  "destination": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 320
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "GRANTED",
+                      "WITHDRAWN"
+                    ]
+                  },
+                  "legalBasis": {
+                    "type": "string",
+                    "enum": [
+                      "CONSENT",
+                      "CONTRACT",
+                      "LEGITIMATE_INTEREST",
+                      "LEGAL_OBLIGATION"
+                    ]
+                  }
+                },
+                "required": [
+                  "channel",
+                  "destination",
+                  "state"
+                ],
                 "additionalProperties": false
               }
             }
@@ -201468,6 +202495,9 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -201525,7 +202555,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "payroll.payout.item.mark-failed",
+        "x-idempotent": true
       }
     },
     "/payroll/payout/batches/{batchId}/items/{itemId}/mark-paid": {
@@ -201551,6 +202583,9 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -201608,7 +202643,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "payroll.payout.item.mark-paid",
+        "x-idempotent": true
       }
     },
     "/payroll/payout/batches/{batchId}/mark-paid": {
@@ -201624,6 +202661,9 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -201681,7 +202721,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "payroll.payout.batch.mark-paid",
+        "x-idempotent": true
       }
     },
     "/payroll/payout/batches/{batchId}/mark-sent": {
@@ -201697,6 +202739,9 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -201734,6 +202779,8 @@
         "x-exposure": "permissioned",
         "x-permission": "payroll:bank:manage",
         "description": "Exposure: permission — payroll:bank:manage",
+        "x-idempotency-command": "payroll.payout.batch.mark-sent",
+        "x-idempotent": true,
         "x-bodyless": true
       }
     },
@@ -207709,7 +208756,38 @@
         "parameters": [],
         "responses": {
           "201": {
-            "description": ""
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "grantId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "grantId"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -207824,7 +208902,82 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "grantId": {
+                            "type": "string"
+                          },
+                          "operatorUserId": {
+                            "type": "string"
+                          },
+                          "incidentRef": {
+                            "type": "string"
+                          },
+                          "grantedBy": {
+                            "type": "string"
+                          },
+                          "approverId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "scope": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "grantId",
+                          "operatorUserId",
+                          "incidentRef",
+                          "grantedBy",
+                          "approverId",
+                          "scope",
+                          "status",
+                          "expiresAt",
+                          "createdAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -207856,13 +209009,47 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -207924,13 +209111,50 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
         "responses": {
           "200": {
             "description": ""
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -207972,13 +209196,50 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             }
           }
         ],
         "responses": {
           "200": {
             "description": ""
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -208058,7 +209319,69 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "logId": {
+                            "type": "string"
+                          },
+                          "grantId": {
+                            "type": "string"
+                          },
+                          "operatorUserId": {
+                            "type": "string"
+                          },
+                          "action": {
+                            "type": "string"
+                          },
+                          "ipAddress": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "accessedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "logId",
+                          "grantId",
+                          "operatorUserId",
+                          "action",
+                          "ipAddress",
+                          "accessedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -209591,7 +210914,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           }
         ],
@@ -211398,7 +212723,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           }
         ],
@@ -231456,7 +232783,19 @@
     "/support/kb/reindex-all": {
       "post": {
         "operationId": "SupportKbController_reindexAll",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "afterArticleId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
