@@ -13,11 +13,12 @@ import {
   Optional,
   UnauthorizedException,
 } from "@nestjs/common";
+import { z } from "zod";
 import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { Validate } from "../../common/validation/validate.decorator";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
@@ -26,6 +27,10 @@ import {
   createGrantSchema,
   listGrantsQuerySchema,
   listLogsQuerySchema,
+  operatorAccessAckResponseSchema,
+  operatorAccessGrantCreatedResponseSchema,
+  operatorAccessGrantListResponseSchema,
+  operatorAccessLogListResponseSchema,
   revokeGrantSchema,
   type CreateGrantInput,
   type ListGrantsQuery,
@@ -53,6 +58,15 @@ function isEligibleOperator(user: CurrentUserContext): boolean {
   return user.isOrgOwner || ["ADMIN", "OWNER", "ORG_ADMIN"].includes(user.role);
 }
 
+
+/**
+ * PRD-C048 — `grant_id` is a Postgres `uuid` (`db/schema/common/platform.ts:135`), so an
+ * unvalidated path segment reached the comparison as raw text and failed `22P02` inside
+ * the query rather than 400 at the boundary. Three handlers bound it with no pipe and no
+ * `@Validate({ params })`.
+ */
+const grantIdParams = z.object({ grantId: z.string().uuid() }).strict();
+
 @Controller("platform/operator-access")
 export class PlatformOperatorAccessController {
   constructor(
@@ -65,6 +79,7 @@ export class PlatformOperatorAccessController {
   )
   @Post("grants")
   @Validate({ body: createGrantSchema })
+  @ResponseSchema(operatorAccessGrantCreatedResponseSchema)
   async createGrant(
     @Headers("x-internal-secret") secret: string | undefined,
     @Body() body: CreateGrantInput,
@@ -95,6 +110,8 @@ export class PlatformOperatorAccessController {
   @Post("grants/:grantId/approve")
   @HttpCode(200)
   @BodylessAction()
+  @Validate({ params: grantIdParams })
+  @ResponseSchema(operatorAccessAckResponseSchema)
   async approveGrant(
     @Headers("x-internal-secret") secret: string | undefined,
     @Param("grantId") grantId: string,
@@ -116,7 +133,8 @@ export class PlatformOperatorAccessController {
   )
   @Post("grants/:grantId/reject")
   @HttpCode(200)
-  @Validate({ body: revokeGrantSchema })
+  @Validate({ params: grantIdParams, body: revokeGrantSchema })
+  @ResponseSchema(operatorAccessAckResponseSchema)
   async rejectGrant(
     @Headers("x-internal-secret") secret: string | undefined,
     @Param("grantId") grantId: string,
@@ -134,6 +152,7 @@ export class PlatformOperatorAccessController {
   )
   @Get("grants")
   @Validate({ query: listGrantsQuerySchema })
+  @ResponseSchema(operatorAccessGrantListResponseSchema)
   async listGrants(
     @Headers("x-internal-secret") secret: string | undefined,
     @Query() query: ListGrantsQuery,
@@ -149,7 +168,8 @@ export class PlatformOperatorAccessController {
   )
   @Delete("grants/:grantId")
   @HttpCode(200)
-  @Validate({ body: revokeGrantSchema })
+  @Validate({ params: grantIdParams, body: revokeGrantSchema })
+  @ResponseSchema(operatorAccessAckResponseSchema)
   async revokeGrant(
     @Headers("x-internal-secret") secret: string | undefined,
     @Param("grantId") grantId: string,
@@ -167,6 +187,7 @@ export class PlatformOperatorAccessController {
   )
   @Get("logs")
   @Validate({ query: listLogsQuerySchema })
+  @ResponseSchema(operatorAccessLogListResponseSchema)
   async listLogs(
     @Headers("x-internal-secret") secret: string | undefined,
     @Query() query: ListLogsQuery,

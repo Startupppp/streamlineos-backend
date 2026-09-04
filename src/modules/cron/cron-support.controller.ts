@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronKbService } from "./cron-kb.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronKbChatRetentionService } from "./cron-kb-chat-retention.service";
+import { CronKbTelemetryRetentionService } from "./cron-kb-telemetry-retention.service";
 import { CronSupportService } from "./cron-support.service";
 import { SupportKbGapDetectionService } from "../support/kb-gap/support-kb-gap-detection.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -25,6 +26,7 @@ export class CronSupportController {
     private readonly kb: CronKbService,
     private readonly kbChunkRetention: CronKbChunkRetentionService,
     private readonly kbChatRetention: CronKbChatRetentionService,
+    private readonly kbTelemetryRetention: CronKbTelemetryRetentionService,
     private readonly support: CronSupportService,
     private readonly supportKbGap: SupportKbGapDetectionService,
     private readonly cronLease: CronLeaseService,
@@ -89,6 +91,18 @@ export class CronSupportController {
   @HttpCode(200)
   postSupportKbGapDetect(@Headers("authorization") authorization?: string) {
     return this.runSupportKbGapDetect(authorization);
+  }
+
+  @Get("kb-telemetry-retention-sweep")
+  getKbTelemetryRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runKbTelemetryRetentionSweep(authorization);
+  }
+
+  @Post("kb-telemetry-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  postKbTelemetryRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runKbTelemetryRetentionSweep(authorization);
   }
 
   @Get("kb-chat-history-purge")
@@ -209,6 +223,26 @@ export class CronSupportController {
       throw new InternalServerErrorException("Internal server error");
     }
   }
+  private async runKbTelemetryRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("kb-telemetry-retention-sweep", 600, () =>
+        this.kbTelemetryRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "kb-telemetry-retention-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `KB telemetry retention: deleted ${result.eventsDeleted} events and ${result.checkpointsDeleted} ingestion checkpoints across ${result.orgsProcessed} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("KB telemetry retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
   private async runKbChatHistoryPurge(authorization?: string) {
     assertCronSecret(authorization);
     if (process.env.KB_CHAT_PURGE_WORKER_ENABLED === "false")

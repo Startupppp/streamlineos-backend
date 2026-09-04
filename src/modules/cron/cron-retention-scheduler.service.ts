@@ -15,6 +15,8 @@ import { CronNotificationOutboxRetentionService } from "./cron-notification-outb
 import { CronOutboxRetentionService } from "./cron-outbox-retention.service";
 import { CronKbChatRetentionService } from "./cron-kb-chat-retention.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
+import { CronKbTelemetryRetentionService } from "./cron-kb-telemetry-retention.service";
+import { CronKbService } from "./cron-kb.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
 import { NotificationRetentionService } from "../notifications/notification-retention.service";
@@ -74,6 +76,8 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
     outboxRetention: CronOutboxRetentionService,
     kbChatRetention: CronKbChatRetentionService,
     kbChunkRetention: CronKbChunkRetentionService,
+    kbTelemetryRetention: CronKbTelemetryRetentionService,
+    kbTrash: CronKbService,
     buildRetention: CronBuildRetentionService,
     gdprExportRetention: CronGdprExportRetentionService,
     partitionRetention: NotificationRetentionService,
@@ -90,6 +94,8 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
       ["outbox-events-retention-sweep", () => outboxRetention.sweep()],
       ["kb-chat-history-purge", () => kbChatRetention.purgeExpiredConversations()],
       ["kb-chunk-retention-sweep", () => kbChunkRetention.pruneStaleChunks()],
+      ["kb-telemetry-retention-sweep", () => kbTelemetryRetention.sweep()],
+      ["kb-trash-purge", () => kbTrash.purgeExpiredTrash()],
       ["build-retention-prune", () => buildRetention.pruneWebhookDeliveries()],
       ["gdpr-export-artifact-retention", () => gdprExportRetention.sweep()],
       ["notifications-retention-detach", () => partitionRetention.sweep()],

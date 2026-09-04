@@ -33,11 +33,13 @@ function makeStore(claimResult: ClaimResult): {
       claimParams.push(params);
       return Promise.resolve(claimResult);
     }),
-    complete: jest.fn().mockImplementation((_id: number, _status: number, _data: unknown) => {
-      completeCalls.push(_data);
-      return Promise.resolve();
-    }),
-    fail: jest.fn().mockImplementation((_id: number) => {
+    complete: jest
+      .fn()
+      .mockImplementation((_id: number, _status: number, _data: unknown, _orgId: string) => {
+        completeCalls.push(_data);
+        return Promise.resolve();
+      }),
+    fail: jest.fn().mockImplementation((_id: number, _orgId: string) => {
       failCalls.push(_id);
       return Promise.resolve();
     }),
@@ -139,7 +141,7 @@ describe("IdempotencyInterceptor", () => {
     const result$ = await interceptor.intercept(makeCtx(makeReq(), res), handler);
     expect(await firstValueFrom(result$)).toEqual({ created: true });
     expect(handler.handle).toHaveBeenCalled();
-    expect(store.complete).toHaveBeenCalledWith(7, 201, { created: true });
+    expect(store.complete).toHaveBeenCalledWith(7, 201, { created: true }, "org1");
     expect(completeCalls).toHaveLength(1);
   });
 
@@ -181,7 +183,7 @@ describe("IdempotencyInterceptor", () => {
     const result$ = await interceptor.intercept(makeCtx(makeReq(), {}), errorHandler);
     await firstValueFrom(result$).catch(() => undefined);
     await Promise.resolve();
-    expect(store.fail).toHaveBeenCalledWith(11);
+    expect(store.fail).toHaveBeenCalledWith(11, "org1");
     expect(failCalls).toHaveLength(1);
   });
 

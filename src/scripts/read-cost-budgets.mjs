@@ -238,6 +238,14 @@ export const BUDGETS = [
     id: "inbox-unified-unread-count",
     ceiling: 3_000,
     minRows: 100,
+    /**
+     * A COUNT has no LIMIT to bound it, so `maxScanRows` is the only bound this budget can
+     * carry — without one the entry declared a block ceiling and nothing about plan shape.
+     * Keyed on `membership_id` the plan touches 0 rows on the reference tenant; keyed on
+     * `user_id` it touched 2,046 across the monthly partitions at 10,234 blocks. 500 admits
+     * a real unread backlog and fails that regression.
+     */
+    maxScanRows: 500,
     rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
@@ -346,6 +354,44 @@ export const BUDGETS = [
       LIMIT 501`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "chat_channel_members" },
+    ],
+  },
+  {
+    /**
+     * `GET /support/ably-token` — `SupportRealtimeService.createTokenRequest`, the scoped
+     * branch. The chat token route and this one are two DIFFERENT statements against two
+     * different tables, so `chat-realtime-token-channel-ids` does not cover it: a caller
+     * whose `support:tickets:view` DataScope is narrower than `all` gets one Ably channel
+     * per ticket it can see, read here from `support_tickets` by assignee membership.
+     *
+     * PRD-C145 names the realtime-token paths and both of them were unbudgeted. The read is
+     * already bounded at `MAX_SCOPED_CHANNELS` (200), and `maxScanRows: 300` is what pins
+     * that: it admits the rows a bounded lookup may legitimately touch and fails the moment
+     * the LIMIT or the covering index goes away.
+     *
+     * The seq-scan assertion names `support_tickets` — the growing side, 3,000 rows on this
+     * seed — and the plan reaches it through `idx_support_tickets_org_assignee_actor`
+     * `(org_id, assignee_membership_id, …)`, driven by a single-row index lookup on
+     * `organization_members`. Keyed without the membership subselect the same read is a scan
+     * of every ticket in the tenant.
+     */
+    id: "support-realtime-token-ticket-ids",
+    ceiling: 4_000,
+    minRows: 100,
+    maxScanRows: 300,
+    rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT id
+      FROM support_tickets
+      WHERE org_id = $1
+        AND assignee_membership_id IN (
+          SELECT id FROM organization_members
+          WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE'
+        )
+      LIMIT 200`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "support_tickets" },
     ],
   },
   {

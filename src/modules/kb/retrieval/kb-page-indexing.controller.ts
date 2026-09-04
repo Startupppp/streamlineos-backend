@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { AiRequestAbortInterceptor } from "../../ai/core/streaming";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -56,8 +57,23 @@ const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).st
 export class KbPageIndexingController {
   constructor(private readonly indexing: KbIndexingService) {}
 
+  /**
+   * Fenced because a reindex is billed. `reindexPageOnRequest` re-extracts the page
+   * and issues an embedding batch through the AI gateway, so a client that times out
+   * and retries pays twice for byte-identical work. The chunk dedupe does not save it:
+   * `KbIngestionCheckpointService` short-circuits only once the FIRST run has committed
+   * its checkpoint, and the retry that matters is the one racing the run still in flight.
+   *
+   * `@Idempotent` beside `@NoTenantTransaction()` used to be a guaranteed 500 — the fence
+   * store issued its statements through the bare DRIZZLE proxy, which without an ambient
+   * transaction reaches the pool with no tenant GUC and trips `command_fences`' RLS
+   * policy `organization_id = current_org_id()`, a function that RAISES 42501. The store
+   * now opens a short tenant transaction of its own for the fence, so the two decorators
+   * compose. See `DrizzleCommandFenceStore.fenced`.
+   */
   @Post(":pageId/reindex")
   @BodylessAction()
+  @Idempotent("kb.page.reindex")
   @NoTenantTransaction()
   @RequirePermission("kb:pages:manage")
   @HttpCode(HttpStatus.OK)
@@ -70,8 +86,14 @@ export class KbPageIndexingController {
     return { reindexed: true };
   }
 
+  /**
+   * The same fence, and the one that costs the most to lose: this walks up to
+   * `REINDEX_ALL_BATCH_SIZE` = 100 pages and awaits an embedding round trip for each,
+   * so an unfenced retry is up to 100 duplicate billed embeds.
+   */
   @Post("reindex-all")
   @BodylessAction()
+  @Idempotent("kb.pages.reindex-all")
   @NoTenantTransaction()
   @RequirePermission("kb:settings:manage")
   @HttpCode(HttpStatus.OK)

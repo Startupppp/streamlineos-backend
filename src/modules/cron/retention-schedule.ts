@@ -123,6 +123,22 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
     label: "KB chunk retention (orphaned chunks whose parent is gone)",
   },
   {
+    jobKey: "kb-telemetry-retention-sweep",
+    sweepName: "kb-telemetry-retention",
+    leaseSeconds: 600,
+    intervalMs: DAY_MS,
+    maxAgeMs: DAILY_MAX_AGE_MS,
+    label: "KB telemetry retention (kb_events past 365 days, orphaned ingestion checkpoints past 30)",
+  },
+  {
+    jobKey: "kb-trash-purge",
+    sweepName: "kb-trash-purge",
+    leaseSeconds: 300,
+    intervalMs: DAY_MS,
+    maxAgeMs: DAILY_MAX_AGE_MS,
+    label: "KB trash purge (soft-deleted pages past the org's trash_retention_days)",
+  },
+  {
     jobKey: "build-retention-prune",
     sweepName: "prune-webhook-deliveries",
     leaseSeconds: 120,
@@ -286,10 +302,6 @@ export const UNSCHEDULED_PURGE_JOBS: readonly { jobKey: string; reason: string }
     jobKey: "retention-delete-sweep",
     reason:
       "fulfils HR data-subject delete requests; belongs to the GDPR erasure path, not to hr_retention_policies",
-  },
-  {
-    jobKey: "kb-trash-purge",
-    reason: "KB trash lifecycle; no entry in RETENTION-POLICY.md's per-table inventory",
   },
   {
     jobKey: "session-revocation-prune",

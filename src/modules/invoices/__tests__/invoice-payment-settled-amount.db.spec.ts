@@ -164,7 +164,7 @@ describeDb("invoice payments record one exact quantity — real database", () =>
     await service.recordPayment(ORG_ID, USER_ID, invoiceId, {
       amount: 100,
       paymentDate,
-      paymentMethod: "BANK_TRANSFER",
+      paymentMethod: "bank_transfer",
     });
 
     // `input.amount > remaining + 0.01` with remaining == 0 let this through.
@@ -172,7 +172,7 @@ describeDb("invoice payments record one exact quantity — real database", () =>
       service.recordPayment(ORG_ID, USER_ID, invoiceId, {
         amount: 0.01,
         paymentDate,
-        paymentMethod: "BANK_TRANSFER",
+        paymentMethod: "bank_transfer",
       }),
     ).rejects.toThrow(/exceeds outstanding balance/i);
 
@@ -198,7 +198,7 @@ describeDb("invoice payments record one exact quantity — real database", () =>
     const created = await service.recordPayment(ORG_ID, USER_ID, invoiceId, {
       amount: 100.005,
       paymentDate,
-      paymentMethod: "BANK_TRANSFER",
+      paymentMethod: "bank_transfer",
       allocations: [{ invoiceId, amount: 100.005 }],
     });
 

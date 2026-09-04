@@ -2,6 +2,7 @@ jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
 import "reflect-metadata";
 import type { INestApplication } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { createE2eApp, accessStub } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
@@ -30,7 +31,7 @@ import { AttendanceRegularizationService } from "src/modules/hr/time/attendance-
 const SELF = "user_1";
 const VICTIM = "user_victim";
 const SELF_PERMISSION = "self:attendance";
-const IDEMPOTENCY_KEY = "11111111-2222-4333-8444-555555555555";
+const CROSS_TENANT_IDEMPOTENCY_KEY = "11111111-2222-4333-8444-555555555555";
 
 type Method = "get" | "post";
 
@@ -116,7 +117,14 @@ describe("EmployeeAttendanceController — /me/attendance (e2e)", () => {
     const agent = request(app.getHttpServer());
     const req = route.method === "get" ? agent.get(route.path) : agent.post(route.path);
     if (token) req.set("Authorization", `Bearer ${token}`);
-    if (route.idempotent) req.set("Idempotency-Key", IDEMPOTENCY_KEY);
+    /*
+     * A FRESH key per request. The fence hashes method, params, query and body
+     * alongside the command name, so one shared constant makes the second
+     * fenced route a same-key-different-request collision and the interceptor
+     * answers 422 before the handler runs — which reads exactly like a broken
+     * endpoint. The replay contract itself is asserted separately below.
+     */
+    if (route.idempotent) req.set("Idempotency-Key", randomUUID());
     const body = bodyFor(route);
     return body ? req.send(body) : req;
   }
@@ -214,6 +222,40 @@ describe("EmployeeAttendanceController — /me/attendance (e2e)", () => {
     expect(attendance.checkIn).not.toHaveBeenCalled();
   });
 
+  it("IDEMPOTENCY: a retried punch replays instead of punching twice, and a reused key on a different route is refused", async () => {
+    const token = await signToken({
+      permissions: [SELF_PERMISSION],
+      enabledModules: ALL_MODULES,
+    });
+    const auth = `Bearer ${token}`;
+    const key = randomUUID();
+
+    const first = await request(app.getHttpServer())
+      .post("/me/attendance/check-in")
+      .set("Authorization", auth)
+      .set("Idempotency-Key", key)
+      .send({});
+    expect(first.status).toBe(200);
+    expect(attendance.checkIn).toHaveBeenCalledTimes(1);
+
+    const retry = await request(app.getHttpServer())
+      .post("/me/attendance/check-in")
+      .set("Authorization", auth)
+      .set("Idempotency-Key", key)
+      .send({});
+    expect(retry.status).toBe(200);
+    expect(retry.body).toEqual(first.body);
+    expect(attendance.checkIn).toHaveBeenCalledTimes(1);
+
+    const crossed = await request(app.getHttpServer())
+      .post("/me/attendance/check-out")
+      .set("Authorization", auth)
+      .set("Idempotency-Key", key)
+      .send({});
+    expect(crossed.status).toBe(422);
+    expect(attendance.checkOut).not.toHaveBeenCalled();
+  });
+
   it("CROSS-TENANT: a second tenant's punch is written against its own org", async () => {
     const token = await signToken({
       orgId: "org_alien",
@@ -224,7 +266,7 @@ describe("EmployeeAttendanceController — /me/attendance (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/me/attendance/check-in")
       .set("Authorization", `Bearer ${token}`)
-      .set("Idempotency-Key", IDEMPOTENCY_KEY)
+      .set("Idempotency-Key", CROSS_TENANT_IDEMPOTENCY_KEY)
       .send({});
 
     expect(res.status).toBe(200);

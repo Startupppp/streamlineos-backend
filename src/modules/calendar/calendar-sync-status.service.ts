@@ -8,7 +8,11 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import type { SyncStatusResponse, SyncRetryResponse } from "./dto/sync-status.schemas";
+import type {
+  SyncCancelResponse,
+  SyncRetryResponse,
+  SyncStatusResponse,
+} from "./dto/sync-status.schemas";
 
 const attendeeVisibility = aliasedTable(eventAttendees, "att_sync_visibility");
 
@@ -199,5 +203,58 @@ export class CalendarSyncStatusService {
       .returning({ id: calendarProviderSyncQueue.id });
 
     return { requeued: updated.length };
+  }
+
+  /**
+   * Withdraws provider-sync jobs for this event that have NOT been dispatched.
+   *
+   * The queue had a retry path and no cancellation path at all, so an intent committed
+   * beside the event could only ever be pushed or exhausted — a person who queued a sync
+   * to the wrong connection, or changed their mind before the next tick, had no way to
+   * stop it and no way to say so.
+   *
+   * `state = 'PENDING'` is the whole of what may be withdrawn, and the exclusions are the
+   * point: an IN_FLIGHT row is being pushed right now, so removing it would destroy the
+   * only record of a write that may already have reached the provider; a PROCESSED row
+   * has been pushed; a FAILED row is terminal and carries the reason `getSyncStatus`
+   * reports — deleting it would erase a divergence the user is entitled to see, and
+   * `retrySync` is the deliberate way out of that state.
+   *
+   * A withdrawn row is DELETED rather than flagged. It is an undispatched work item —
+   * backend CLAUDE.md §3's "unsent draft" exception to soft delete — and leaving a
+   * tombstone behind would make `getSyncStatus`, which reads the newest row for the
+   * event, answer about a job nobody is going to run.
+   *
+   * The race with the sweep is resolved by Postgres, in both directions: the claim query
+   * takes `for update skip locked`, so a row this delete has locked is skipped rather
+   * than claimed, and a delete arriving after a claim commits re-evaluates its predicate
+   * under READ COMMITTED and no longer matches `state = 'PENDING'`.
+   */
+  async cancelSync(
+    orgId: string,
+    userId: string,
+    eventId: number,
+  ): Promise<SyncCancelResponse> {
+    const callerMembershipId = await this.resolveCallerMembershipId(orgId, userId);
+    const access = await this.assertReadable(orgId, eventId, userId, callerMembershipId);
+    // Same bar as retrySync: seeing an event is not standing to change what it pushes.
+    if (
+      access.createdByMembershipId !== null &&
+      access.createdByMembershipId !== callerMembershipId
+    )
+      throw new NotFoundException("Event not found");
+
+    const removed = await this.db
+      .delete(calendarProviderSyncQueue)
+      .where(
+        and(
+          eq(calendarProviderSyncQueue.orgId, orgId),
+          eq(calendarProviderSyncQueue.eventId, eventId),
+          eq(calendarProviderSyncQueue.state, "PENDING"),
+        ),
+      )
+      .returning({ id: calendarProviderSyncQueue.id });
+
+    return { cancelled: removed.length };
   }
 }

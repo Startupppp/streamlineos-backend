@@ -92,6 +92,21 @@ const RETENTION_MATRIX = {
     worker: "CronAiUsageRetentionService",
     notes: "730-day default. Dry-run by default. Resumable cursor in Redis. 401 rows now.",
   },
+  kb_pages: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronKbService (kb-trash-purge)",
+    notes: "Soft delete is the lifecycle; KbPageTreeService.purgeExpired hard-deletes in bounded batches once deleted_at is older than the org's trash_retention_days, recording attachment purge keys first. The worker existed and was DELIBERATELY unscheduled, its stated reason being the absence of this very inventory entry — so the drain was correct and dead, and the table read UNCOVERED against a live database. This entry is what let kb-trash-purge join RETENTION_JOBS. Decided 2026-09-04 (ticket 16, PRD-C134).",
+  },
+  kb_events: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronKbTelemetryRetentionService",
+    notes: "One row per article view and per search — the two hottest KB read paths — and the only source behind the analytics overview, gaps, no-results and content-gaps reports, whose rangeSchema leaves both bounds optional so the default read is unbounded. 365 days, matching chat_messages, the other user-attributable append-only stream. Free text in `query` and an actor membership make it discoverable, so org-wide and HR subject legal holds both stop the sweep. Decided 2026-09-04 (ticket 16, PRD-C134).",
+  },
+  kb_ingestion_checkpoints: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronKbTelemetryRetentionService",
+    notes: "One row per chunk carrying a full vector(1536) plus its source text. clearCheckpoints fires only on ingestion SUCCESS, so a crashed worker, a source stranded in `processing` or a provider outage mid-batch leaves them permanently. Expired on the outbox dead-letter horizon (OUTBOX_RETENTION_DAYS = 30) by sharing that constant: nothing resumes a run whose retry budget expired. Derived data, so only the org-wide legal hold applies. Decided 2026-09-04 (ticket 16, PRD-C134).",
+  },
   kb_chat_conversations: {
     decision: "RETAIN-BOUNDED",
     worker: "CronKbChatRetentionService",
@@ -316,6 +331,22 @@ if (args.includes("--self-test")) {
     chatMessagesHasWorker: RETENTION_MATRIX["chat_messages"].worker !== null,
     kbChunksHasWorker: RETENTION_MATRIX["kb_article_chunks"].worker !== null,
     kbChatConversationsHasWorker: RETENTION_MATRIX["kb_chat_conversations"].worker === "CronKbChatRetentionService",
+    /*
+     * Both of these were invisible to this gate rather than covered by it. It reports on
+     * tables at or above --threshold-mb in the live database, so an uncovered table that
+     * is still small is never classified at all — and "not in the report" reads exactly
+     * like "fine". Naming them in the matrix is what lets `classify` answer for them the
+     * moment they cross the threshold, instead of the gate discovering them by growing.
+     */
+    kbPagesHasWorker:
+      RETENTION_MATRIX["kb_pages"].worker !== null &&
+      classify("kb_pages").status === "COVERED",
+    kbEventsHasWorker:
+      RETENTION_MATRIX["kb_events"].worker === "CronKbTelemetryRetentionService" &&
+      classify("kb_events").status === "COVERED",
+    kbIngestionCheckpointsHasWorker:
+      RETENTION_MATRIX["kb_ingestion_checkpoints"].worker === "CronKbTelemetryRetentionService" &&
+      classify("kb_ingestion_checkpoints").status === "COVERED",
     webhookDeliveriesHaveWorker: RETENTION_MATRIX["webhook_deliveries"].worker === "CronBuildRetentionService",
     auditLogsHasNoWorker: RETENTION_MATRIX["audit_logs"].worker === null,
     classifyUnknownIsUncovered: classify("unknown_table_xyz", 100).status === "UNCOVERED",

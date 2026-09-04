@@ -23,6 +23,18 @@ export const updateHrWebhookSchema = z.object({
   isActive: z.boolean().optional(),
 }).strict();
 
+/**
+ * PRD-C048 — `GET /hr/webhooks` used to bind `@Query("page")`/`@Query("limit")` raw and
+ * clamp them by hand (`Math.min(100, Math.max(1, parseInt(limit ?? "50", 10) || 50))`).
+ * A hand-rolled clamp is not a Zod boundary: it is invisible to `@Validate`, so the
+ * page-size cap never reached `openapi.json` and no gate could see it. Same shape as
+ * `listDeliveriesSchema` below, which the same file already got right.
+ */
+export const listHrWebhooksSchema = z.object({
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
+}).strict();
+
 export const listDeliveriesSchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(50, 100),
@@ -31,3 +43,4 @@ export const listDeliveriesSchema = z.object({
 export type CreateHrWebhookInput = z.infer<typeof createHrWebhookSchema>;
 export type UpdateHrWebhookInput = z.infer<typeof updateHrWebhookSchema>;
 export type ListDeliveriesInput = z.infer<typeof listDeliveriesSchema>;
+export type ListHrWebhooksInput = z.infer<typeof listHrWebhooksSchema>;

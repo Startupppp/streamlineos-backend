@@ -157,6 +157,7 @@ export class PayoutBatchesController {
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.batch.mark-sent")
   @Validate({ params: batchIdParams })
   markSent(
     @Param("batchId", ParseIntPipe) batchId: number,
@@ -168,6 +169,7 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/mark-paid")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.batch.mark-paid")
   @Validate({ params: batchIdParams, body: markBatchPaidSchema })
   markBatchPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
@@ -193,6 +195,7 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/items/:itemId/mark-paid")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.item.mark-paid")
   @Validate({ params: batchItemIdParams, body: markItemPaidSchema })
   markItemPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
@@ -206,6 +209,7 @@ export class PayoutBatchesController {
   @Post("batches/:batchId/items/:itemId/mark-failed")
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
+  @Idempotent("payroll.payout.item.mark-failed")
   @Validate({ params: batchItemIdParams, body: markItemFailedSchema })
   markItemFailed(
     @Param("batchId", ParseIntPipe) batchId: number,

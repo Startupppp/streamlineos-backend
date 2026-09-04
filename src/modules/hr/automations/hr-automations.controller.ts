@@ -22,11 +22,13 @@ import {
   updateHrAutomationRuleSchema,
   testHrAutomationSchema,
   toggleHrAutomationRuleSchema,
+  listHrAutomationRulesSchema,
   listRunsSchema,
   type CreateHrAutomationRuleInput,
   type UpdateHrAutomationRuleInput,
   type TestHrAutomationInput,
   type ToggleHrAutomationRuleInput,
+  type ListHrAutomationRulesInput,
   type ListRunsInput,
 } from "./dto/hr-automation.schemas";
 import { HR_AUTOMATION_EVENTS, HR_EVENT_FIELD_DOCS, HR_EVENT_SAMPLE_PAYLOADS } from "./hr-automation-events";
@@ -56,24 +58,17 @@ export class HrAutomationsController {
 
   @Get()
   @RequirePermission("hr:automations:view")
+  @Validate({ query: listHrAutomationRulesSchema })
   list(
     @CurrentUser() u: CurrentUserContext,
-    @Query("page") page?: string,
-    @Query("limit") limit?: string,
-    @Query("search") search?: string,
-    @Query("triggerEvent") triggerEvent?: string,
-    @Query("isEnabled") isEnabled?: string,
+    @Query() query: ListHrAutomationRulesInput,
   ) {
-    const pageNum = Math.max(1, parseInt(page ?? "1", 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit ?? "50", 10) || 50));
-    const enabledFilter = isEnabled === "true" ? true : isEnabled === "false" ? false : undefined;
-
     return this.engine.listRules(u.orgId, {
-      search,
-      triggerEvent,
-      isEnabled: enabledFilter,
-      page: pageNum,
-      limit: limitNum,
+      search: query.search,
+      triggerEvent: query.triggerEvent,
+      isEnabled: query.isEnabled,
+      page: query.page,
+      limit: query.limit,
     });
   }
 

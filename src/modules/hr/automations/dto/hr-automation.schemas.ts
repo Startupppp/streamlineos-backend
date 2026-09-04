@@ -124,6 +124,20 @@ export const testHrAutomationSchema = z.object({
 export const toggleHrAutomationRuleSchema = z.object({ isEnabled: z.boolean() }).strict();
 export type ToggleHrAutomationRuleInput = z.infer<typeof toggleHrAutomationRuleSchema>;
 
+/**
+ * PRD-C048 — `GET /hr/automations` used to bind five raw `@Query(...)` strings and
+ * clamp `page`/`limit` by hand. A hand-rolled clamp is invisible to `@Validate`, so the
+ * page-size cap never reached `openapi.json`, and `search`/`triggerEvent`/`isEnabled`
+ * arrived as unvalidated strings. `isEnabled` keeps its tri-state: absent means "either".
+ */
+export const listHrAutomationRulesSchema = z.object({
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
+  search: z.string().trim().min(1).max(200).optional(),
+  triggerEvent: hrAutomationEventSchema.optional(),
+  isEnabled: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
+}).strict();
+
 export const listRunsSchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(50, 100),
@@ -133,3 +147,4 @@ export type CreateHrAutomationRuleInput = z.infer<typeof createHrAutomationRuleS
 export type UpdateHrAutomationRuleInput = z.infer<typeof updateHrAutomationRuleSchema>;
 export type TestHrAutomationInput = z.infer<typeof testHrAutomationSchema>;
 export type ListRunsInput = z.infer<typeof listRunsSchema>;
+export type ListHrAutomationRulesInput = z.infer<typeof listHrAutomationRulesSchema>;

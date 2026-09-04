@@ -1,5 +1,6 @@
 import {
   Body,
+  Header,
   Controller,
   Delete,
   Get,
@@ -11,6 +12,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { NO_COMPRESSION_HEADER } from "../../../common/http/compression.config";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -22,9 +24,11 @@ import {
   createHrWebhookSchema,
   updateHrWebhookSchema,
   listDeliveriesSchema,
+  listHrWebhooksSchema,
   type CreateHrWebhookInput,
   type UpdateHrWebhookInput,
   type ListDeliveriesInput,
+  type ListHrWebhooksInput,
 } from "./dto/hr-webhook.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -47,14 +51,12 @@ export class HrWebhooksController {
 
   @Get()
   @RequirePermission("hr:integrations:manage")
+  @Validate({ query: listHrWebhooksSchema })
   list(
     @CurrentUser() u: CurrentUserContext,
-    @Query("page") page?: string,
-    @Query("limit") limit?: string,
+    @Query() query: ListHrWebhooksInput,
   ) {
-    const pageNum = Math.max(1, parseInt(page ?? "1", 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit ?? "50", 10) || 50));
-    return this.webhooks.listSubscriptions(u.orgId, pageNum, limitNum);
+    return this.webhooks.listSubscriptions(u.orgId, query.page, query.limit);
   }
 
   @Get(":subscriptionId")
@@ -71,6 +73,9 @@ export class HrWebhooksController {
   @HttpCode(201)
   @RequirePermission("hr:integrations:manage")
   @Validate({ body: createHrWebhookSchema })
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   create(
     @Body() body: CreateHrWebhookInput,
     @CurrentUser() u: CurrentUserContext,

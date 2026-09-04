@@ -38,6 +38,19 @@ function triggerViolation(message: string): Error {
   return Object.assign(new Error("Failed query: delete from \"invoice_items\""), { cause: driver });
 }
 
+/**
+ * How many times the transaction callback actually ran. A `transaction` double
+ * that resolves without invoking its callback makes every statement inside it —
+ * the `delete from invoice_items` the trigger actually fires on — unreachable,
+ * and the mapping would then be proved against nothing but a rejected promise.
+ * Each test asserts this moved.
+ */
+let callbackRuns = 0;
+
+beforeEach(() => {
+  callbackRuns = 0;
+});
+
 function makeDb(transactionOutcome: () => Promise<unknown>): Db {
   const draft = {
     id: INVOICE_ID,
@@ -72,7 +85,32 @@ function makeDb(transactionOutcome: () => Promise<unknown>): Db {
       .fn()
       .mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
     execute: jest.fn().mockResolvedValue([]),
-    transaction: jest.fn().mockImplementation(() => transactionOutcome()),
+    /**
+     * Invokes its callback, so the statements `updateInvoice` issues inside the
+     * transaction really run. `delete from invoice_items` is the one the
+     * immutability trigger raises 23514 on in production, so that is the
+     * statement wired to the outcome under test.
+     */
+    transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => {
+      callbackRuns += 1;
+      const tx = {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              orderBy: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+        delete: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation(() => transactionOutcome()),
+        }),
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+        }),
+      };
+      return cb(tx);
+    }),
   } as unknown as Db;
 }
 
@@ -101,6 +139,7 @@ describe("InvoicesUpdateService — an immutability trigger is a conflict, not a
     await expect(service.updateInvoice(ORG, USER, INVOICE_ID, EDIT)).rejects.toBeInstanceOf(
       ConflictException,
     );
+    expect(callbackRuns).toBe(1);
   });
 
   it("carries the trigger's own message through, so the caller is told what happened", async () => {
@@ -109,6 +148,7 @@ describe("InvoicesUpdateService — an immutability trigger is a conflict, not a
     await expect(service.updateInvoice(ORG, USER, INVOICE_ID, EDIT)).rejects.toThrow(
       /line items of a non-draft invoice are immutable/i,
     );
+    expect(callbackRuns).toBe(1);
   });
 
   it("reads the SQLSTATE from the driver error under Drizzle's wrapper, not from the wrapper", async () => {
@@ -120,6 +160,7 @@ describe("InvoicesUpdateService — an immutability trigger is a conflict, not a
     await expect(service.updateInvoice(ORG, USER, INVOICE_ID, EDIT)).rejects.toBeInstanceOf(
       ConflictException,
     );
+    expect(callbackRuns).toBe(1);
   });
 
   it("leaves every other database failure alone, so a real fault still surfaces as one", async () => {
@@ -134,6 +175,7 @@ describe("InvoicesUpdateService — an immutability trigger is a conflict, not a
     await expect(service.updateInvoice(ORG, USER, INVOICE_ID, EDIT)).rejects.not.toBeInstanceOf(
       ConflictException,
     );
+    expect(callbackRuns).toBe(2);
   });
 
   it("does not interfere with an edit that succeeds", async () => {
@@ -143,5 +185,6 @@ describe("InvoicesUpdateService — an immutability trigger is a conflict, not a
       success: true,
       posted: false,
     });
+    expect(callbackRuns).toBe(1);
   });
 });

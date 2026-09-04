@@ -1,5 +1,6 @@
-import { Controller, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Controller, HttpCode, Param, ParseIntPipe, Post, UseGuards, Header } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
+import { NO_COMPRESSION_HEADER } from "../../common/http/compression.config";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -27,6 +28,9 @@ export class ChatInviteLinksController {
   @HttpCode(200)
   @RequirePermission("chat:invite-links:manage")
   @Validate({ params: channelIdParams })
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   getOrCreate(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -41,6 +45,9 @@ export class ChatInviteLinksController {
   @HttpCode(200)
   @RequirePermission("chat:invite-links:manage")
   @Validate({ params: channelIdParams })
+  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
+  // true })` is live, so a compressed length is a cross-origin size oracle.
+  @Header(NO_COMPRESSION_HEADER, "1")
   regenerate(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,

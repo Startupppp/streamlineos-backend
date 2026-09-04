@@ -16,7 +16,7 @@ import { AiCreditsService } from "../billing/core/ai-credits.service";
 import { BillingService } from "../billing/core/billing.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
-import { PLAN_PRICES_PAISE } from "../billing/core/plan-entitlements.constants";
+import { PLAN_PRICES_PAISE, PLATFORM_PRICE_CURRENCY } from "../billing/core/plan-entitlements.constants";
 import { type Plan } from "../billing/core/dto/billing.schemas";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { forEachOrg } from "../../common/tenant";
@@ -73,6 +73,7 @@ export class CronBillingService {
           orgId,
           plan: row.plan,
           mrr: 0,
+          currency: PLATFORM_PRICE_CURRENCY,
           metadata: { subscriptionId: row.id, source: "trial-expiry" },
         });
       }
@@ -306,6 +307,7 @@ export class CronBillingService {
             orgId: sub.orgId,
             plan: sub.plan,
             mrr: PLAN_PRICES_PAISE[sub.plan as Plan] ?? 0,
+            currency: PLATFORM_PRICE_CURRENCY,
             metadata: { subscriptionId: sub.id, source: "dunning-suspension" },
             dedupeKey: `dunning-suspension:${sub.id}`,
           });

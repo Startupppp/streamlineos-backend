@@ -164,18 +164,18 @@ export function isSpecSuiteFile(name, insideTestDir) {
  */
 const DOUBLE_CAST_LEDGER = new Map([
   // -- external: a standalone script builds a Drizzle client or a stub service --
-  ["src/scripts/benchmark-access-service.ts", { count: 4, seam: "external", invariant: "a benchmark harness stands up one real Db plus three hand-built stubs (cache, entitlements, MFA policy) to time AccessService in isolation. The stubs implement only the methods the measured path calls; the cast is what lets a four-method object stand where a full service is declared. It never runs in the application." }],
-  ["src/scripts/check-declaration-column-drift.ts", { count: 4, seam: "external", invariant: "the same two seams as check-set-null-column-lists.ts, in a second reflective gate: two casts hand the Drizzle schema barrel to a walker as `Record<string, unknown>`, and two type the rows of a `sql.unsafe` catalog query, which postgres.js returns untyped by construction. A pg_catalog row has no compile-time shape. ARRIVED UNTRACKED from another lane on 2026-09-03; if that lane drops the file this entry goes stale and the gate will say so, which is the intended behaviour." }],
-  ["src/scripts/check-set-null-column-lists.ts", { count: 4, seam: "external", invariant: "two casts hand the Drizzle schema barrel to a reflective walker as `Record<string, unknown>`; two more type the rows of a `sql.unsafe` catalog query, which postgres.js returns untyped by construction. Both are outside the type system by definition — a pg_catalog row has no compile-time shape." }],
-  ["src/scripts/verify-cell-degraded-control-plane.ts", { count: 1, seam: "external", invariant: "`drizzle(client, { schema })` instantiates to a structurally identical but nominally different type than the app's `Db` alias. The script needs the app alias to call app services. No runtime narrowing is possible or useful." }],
-  ["src/scripts/verify-cell-admission.ts", { count: 1, seam: "external", invariant: "same Drizzle instantiation seam as verify-cell-degraded-control-plane.ts." }],
-  ["src/scripts/seed-permissions.ts", { count: 1, seam: "external", invariant: "same Drizzle instantiation seam; a seed script constructing its own client." }],
-  ["src/test/sql-predicate.ts", { count: 2, seam: "external", invariant: "reads Drizzle's internal SQL AST node shape, which the library does not export. Test-support code for asserting that a predicate was built, not application code, and it breaks loudly on a Drizzle upgrade rather than silently." }],
+  ["src/scripts/benchmark-access-service.ts", { count: 4, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::keeps every ledgered standalone script out of the application import graph", invariant: "a benchmark harness stands up one real Db plus three hand-built stubs (cache, entitlements, MFA policy) to time AccessService in isolation. The stubs implement only the methods the measured path calls; the cast is what lets a four-method object stand where a full service is declared. It never runs in the application." }],
+  ["src/scripts/check-declaration-column-drift.ts", { count: 4, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::keeps the Drizzle schema barrel walkable as a flat record of inspectable tables", invariant: "the same two seams as check-set-null-column-lists.ts, in a second reflective gate: two casts hand the Drizzle schema barrel to a walker as `Record<string, unknown>`, and two type the rows of a `sql.unsafe` catalog query, which postgres.js returns untyped by construction. A pg_catalog row has no compile-time shape. ARRIVED UNTRACKED from another lane on 2026-09-03; if that lane drops the file this entry goes stale and the gate will say so, which is the intended behaviour." }],
+  ["src/scripts/check-set-null-column-lists.ts", { count: 4, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::keeps the Drizzle schema barrel walkable as a flat record of inspectable tables", invariant: "two casts hand the Drizzle schema barrel to a reflective walker as `Record<string, unknown>`; two more type the rows of a `sql.unsafe` catalog query, which postgres.js returns untyped by construction. Both are outside the type system by definition — a pg_catalog row has no compile-time shape." }],
+  ["src/scripts/verify-cell-degraded-control-plane.ts", { count: 1, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::builds a standalone client that exposes the surface the app's Db alias is used through", invariant: "`drizzle(client, { schema })` instantiates to a structurally identical but nominally different type than the app's `Db` alias. The script needs the app alias to call app services. No runtime narrowing is possible or useful." }],
+  ["src/scripts/verify-cell-admission.ts", { count: 1, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::builds a standalone client that exposes the surface the app's Db alias is used through", invariant: "same Drizzle instantiation seam as verify-cell-degraded-control-plane.ts." }],
+  ["src/scripts/seed-permissions.ts", { count: 1, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::builds a standalone client that exposes the surface the app's Db alias is used through", invariant: "same Drizzle instantiation seam; a seed script constructing its own client." }],
+  ["src/test/sql-predicate.ts", { count: 2, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::still reads drizzle-orm's private SQL chunk shape, and says so by matching", invariant: "reads Drizzle's internal SQL AST node shape, which the library does not export. Test-support code for asserting that a predicate was built, not application code, and it breaks loudly on a Drizzle upgrade rather than silently." }],
 
   // -- external: a runtime shape the type system cannot see --
-  ["src/db/query-telemetry.ts", { count: 3, seam: "external", invariant: "the instrumentation proxy wraps a Drizzle query builder that is thenable at runtime but not declared `PromiseLike`. The cast names the `.then` that is provably there — the proxy only reaches this branch after checking for it." }],
-  ["src/common/observability/tracing.ts", { count: 1, seam: "external", invariant: "a `RegExpMatchArray` is typed as `string[]` but the W3C traceparent regex has four capture groups, so a successful match has exactly five elements. The cast names the arity the regex guarantees; the match is null-checked first." }],
-  ["src/modules/platform/operator-session.guard.ts", { count: 1, seam: "external", invariant: "`req.route` is attached by Express at dispatch time and is absent from the Nest request type. Read optionally with a `?? req.url` fallback, so an absent route degrades to the raw URL rather than throwing." }],
+  ["src/db/query-telemetry.ts", { count: 3, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::awaits a wrapped result that is thenable without declaring PromiseLike", invariant: "the instrumentation proxy wraps a Drizzle query builder that is thenable at runtime but not declared `PromiseLike`. The cast names the `.then` that is provably there — the proxy only reaches this branch after checking for it." }],
+  ["src/common/observability/tracing.ts", { count: 1, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::fills all four traceparent capture groups on a successful match", invariant: "a `RegExpMatchArray` is typed as `string[]` but the W3C traceparent regex has four capture groups, so a successful match has exactly five elements. The cast names the arity the regex guarantees; the match is null-checked first." }],
+  ["src/modules/platform/operator-session.guard.ts", { count: 1, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::degrades an absent Express route object to the raw url instead of throwing", invariant: "`req.route` is attached by Express at dispatch time and is absent from the Nest request type. Read optionally with a `?? req.url` fallback, so an absent route degrades to the raw URL rather than throwing." }],
 
   // -- narrow-me: ours, knowable, and owed a Zod parse --
   ["src/modules/ingress/inbound-ingress.service.ts", { count: 1, seam: "narrow-me", invariant: "an inbound communication event written to a jsonb payload column, whose Drizzle `$type` is `Record<string, unknown>` and to which an interface is not assignable. The READ half is no longer a cast: `inbound-ingress.workflow.ts` now parses the stored payload with `inboundEventSchema`, the same contract the HTTP boundary enforces here, so a row written by an older release raises instead of deserialising into a lie. What survives on this side is the column's type, not a trust boundary — the value written is already validated by `validateInboundEvent` and, on the HTTP path, by `inboundEventSchema` itself." }],
@@ -563,7 +563,7 @@ const SELF_TEST_CHECKS = new Set();
  * measured, and it is floored, so removing a check fails the self-test instead
  * of quietly shrinking it.
  */
-const MIN_SELF_TEST_CHECKS = 43;
+const MIN_SELF_TEST_CHECKS = 52;
 
 function writeCeilingLedger(map) {
   const files = {};
@@ -637,6 +637,39 @@ function runSelfTest() {
       `(m) ${file}: every entry needs a written invariant, not a placeholder`);
   }
 
+  // ---- C031's test clause, made enforceable ------------------------------
+  // "Each exception must be … covered by a negative/runtime contract test."
+  // That clause held for a whole release with ZERO mechanism: no entry named a
+  // test, nothing checked that one existed, and the written invariants were
+  // therefore comments. A `narrow-me` entry is by its own label NOT a permitted
+  // exception, so the requirement attaches to `external` — and demoting an
+  // entry is the only escape, which RAISES the "owed" count rather than
+  // lowering the bar.
+  const seenTestTargets = new Map();
+  for (const [file, entry] of DOUBLE_CAST_LEDGER) {
+    if (entry.seam !== "external") {
+      assert(entry.test === undefined,
+        `(as) ${file}: a "narrow-me" entry is declared debt, not a proven seam — it must NOT name a contract test`);
+      continue;
+    }
+    assert(typeof entry.test === "string" && /^[^:]+\.spec\.ts::.+$/.test(entry.test),
+      `(at) ${file}: every EXTERNAL entry must name its contract test as "<spec path>::<test title>" — C031 permits an assertion only where one exists`);
+    const [specPath, title] = entry.test.split("::");
+    let specSource = seenTestTargets.get(specPath);
+    if (specSource === undefined) {
+      try {
+        specSource = readFileSync(join(SRC, "..", specPath), "utf8");
+      } catch {
+        specSource = null;
+      }
+      seenTestTargets.set(specPath, specSource);
+    }
+    assert(specSource !== null,
+      `(au) ${file}: names ${specPath}, which is not on disk. A ledger that points at a deleted spec proves nothing`);
+    assert(typeof specSource === "string" && specSource.includes(title),
+      `(av) ${file}: ${specPath} does not contain the test titled "${title}" — renaming or deleting a contract test must fail here, not silently un-cover the cast`);
+  }
+
   // ---- rule 3: the raw-SQL row generic ----------------------------------
   const one = (src) => findRawRowGenerics("probe.ts", src);
 
@@ -701,6 +734,27 @@ function runSelfTest() {
     "(al) a NESTED dist/coverage/build/public -> SCANNED. This is the blind spot that cost the frontend 456 files");
   assert(isSkippedDir("node_modules", 3) && isSkippedDir("__tests__", 4) && isSkippedDir("__mocks__", 1),
     "(am) node_modules/__tests__/__mocks__ -> skipped at ANY depth");
+  // ---- rule 1's second corpus: the spec suite -----------------------------
+  // These pin the property the widening rests on: the two walks PARTITION the
+  // tree. Anything the application walk refuses for being a spec, the spec walk
+  // must take — otherwise rule 1 keeps printing zero over files nobody reads,
+  // which is how 159 `as any` survived a release under a gate that reported 0.
+  assert(isSpecSuiteFile("list-query.schema.spec.ts", false)
+    && isSpecSuiteFile("x.e2e-spec.ts", false)
+    && isSpecSuiteFile("x.db.spec.ts", false)
+    && isSpecSuiteFile("x.test.ts", false)
+    && isSpecSuiteFile("service-stub.spec-fixtures.ts", false),
+    "(an) every filename the application walk skips for being a spec MUST be taken by the spec walk — no file may fall between the two corpora");
+  assert(!isSpecSuiteFile("party-merge.service.ts", false),
+    "(ao) an ordinary application file is NOT spec-suite — the corpora partition, they do not overlap, so nothing is counted twice");
+  assert(isSpecSuiteFile("helpers.ts", true) && !isSpecSuiteFile("helpers.ts", false),
+    "(ap) an ORDINARILY named file under __tests__/__mocks__ is spec-suite — the application walk skips that whole directory (am), so only this branch can see it");
+  assert(!isSpecSuiteFile("drizzle.types.d.ts", true) && !isSpecSuiteFile("drizzle.types.d.ts", false),
+    "(aq) a `.d.ts` belongs to NEITHER corpus by construction — a declaration file holds no expressions, so `as any` cannot appear in one");
+  assert(SKIP_FILE.test("x.spec.ts") && SKIP_FILE.test("service-stub.spec-fixtures.ts")
+    && !SKIP_FILE.test("party-merge.service.ts"),
+    "(ar) the partition is stated against the application walk's OWN exclusion list, so widening one corpus cannot silently narrow the other");
+
   assert(CEILING_LEDGER.size > 0,
     "(ai) the ceiling ledger loads — rule 4 is unenforced if the JSON is missing, and the gate must not pass without it");
   for (const [file, entry] of CEILING_LEDGER) {
@@ -763,6 +817,15 @@ function runSelfTest() {
     "  (ak) root `dist`/`coverage`                    -> skipped (output)",
     "  (al) NESTED dist/coverage/build/public         -> scanned (the frontend's blind spot)",
     "  (am) node_modules/__tests__ at any depth       -> skipped",
+    "  (as) a narrow-me entry names no contract test    -> debt, not a permitted exception",
+    "  (at) every EXTERNAL entry names one as path::title",
+    "  (au) the named spec file is on disk               -> a dead pointer fails (gate bites)",
+    "  (av) the named test title is IN that file         -> a rename fails (gate bites)",
+    "  (an) every spec filename the app walk skips     -> taken by the spec walk (no gap)",
+    "  (ao) an ordinary application file                -> not spec-suite (no overlap)",
+    "  (ap) an ordinarily named file under __tests__    -> spec-suite (the app walk cannot see it)",
+    "  (aq) a `.d.ts`                                   -> neither corpus, by construction",
+    "  (ar) the partition is stated against SKIP_FILE itself",
     "  (ai) the ceiling ledger loads at all",
     "  (aj) every ceiling entry has a readable split",
   ]) console.log(line);
@@ -770,9 +833,15 @@ function runSelfTest() {
 
 function main() {
   const { banned, doubleCasts, rawRows, plain, asConstTotal, projectionFailures, checkedProjections, files } = scan(SRC);
+  const { banned: specBanned, files: specFiles } = scanSpecs(SRC);
 
   if (files < SCAN_FLOOR_FILES) {
     console.error(`FAIL: scanned only ${files} file(s), below the floor of ${SCAN_FLOOR_FILES}. The scan is broken, not the tree clean.`);
+    process.exit(1);
+  }
+
+  if (specFiles < SCAN_FLOOR_SPEC_FILES) {
+    console.error(`FAIL: rule 1's spec-suite walk scanned only ${specFiles} file(s), below the floor of ${SCAN_FLOOR_SPEC_FILES}. A second corpus that collapses to nothing reports the same clean zero as a clean corpus — which is the exact hole this walk was added to close.`);
     process.exit(1);
   }
 
@@ -821,8 +890,12 @@ function main() {
   const narrowMe = [...DOUBLE_CAST_LEDGER.values()].filter((e) => e.seam === "narrow-me").reduce((a, e) => a + e.count, 0);
 
   console.log(`=== application files scanned: ${files} ===`);
+  console.log(`=== spec-suite files scanned (rule 1 only): ${specFiles} ===`);
   console.log(`=== \`as unknown as\`: ${total} site(s) in ${doubleCasts.size} file(s) ===`);
+  const externalEntries = [...DOUBLE_CAST_LEDGER.values()].filter((e) => e.seam === "external");
+  const covered = externalEntries.filter((e) => typeof e.test === "string").length;
   console.log(`=== ledger: ${external} at a proven external seam, ${narrowMe} owed a Zod parse ===`);
+  console.log(`=== C031 contract tests: ${covered}/${externalEntries.length} external entr(ies) name a negative/runtime test (self-test (at)-(av) proves each one exists and still bears that title) ===`);
   console.log(`=== \`db.execute<T>\` raw-row generics: ${rawRowTotal} site(s) in ${rawRows.size} file(s), ${checkedProjections} cross-checked against their SQL ===`);
   console.log(`=== plain assertions under a zero-growth ceiling: ${plainTotal} (${plainAs} \`as X\` + ${plainNonNull} non-null \`!\`) in ${plain.size} file(s) ===`);
   console.log(`=== \`as const\` excluded by decision (a const assertion narrows, it does not force): ${asConstTotal} ===`);
@@ -834,7 +907,15 @@ function main() {
     for (const [where, n] of banned) console.error(`  ${where} x${n}`);
     failed = true;
   } else {
-    console.log("=== as any / @ts-ignore / @ts-expect-error / @ts-nocheck: 0 ===");
+    console.log("=== as any / @ts-ignore / @ts-expect-error / @ts-nocheck: 0 (application) ===");
+  }
+
+  if (specBanned.size) {
+    console.error(`\nFAIL: ${specBanned.size} forced-typing escape(s) in the SPEC SUITE. ts-jest runs isolatedModules, so nothing typechecks a spec at run time: \`as any\` on a mock lets it name a method the real service does not have and the assertion beneath it proves nothing. Rule 1 has no ledger and no permitted count on either side of the corpus:`);
+    for (const [where, n] of specBanned) console.error(`  ${where} x${n}`);
+    failed = true;
+  } else {
+    console.log("=== as any / @ts-ignore / @ts-expect-error / @ts-nocheck: 0 (spec suite) ===");
   }
 
   const { added, grown, shrunk, gone } = diffLedger(doubleCasts, DOUBLE_CAST_LEDGER);

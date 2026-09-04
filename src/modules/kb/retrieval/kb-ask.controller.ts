@@ -15,6 +15,7 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -67,6 +68,7 @@ export class KbAskController {
    */
   @Post("ask")
   @HttpCode(200)
+  @Idempotent("kb.ask")
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @UseGuards(RateLimitGuard)

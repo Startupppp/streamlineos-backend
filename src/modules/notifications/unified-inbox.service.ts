@@ -150,12 +150,50 @@ export class UnifiedInboxService {
       .reverse()
       .find((i): i is BuildApprovalInboxItem => i.kind === "build_approval");
 
+    // Mail resumes from the last message actually DELIVERED, the way n/b/a do.
+    //
+    // It used to resume from `nextMailCursor` — the end of the batch it FETCHED.
+    // The merge keeps `limit` items out of four sources fetched at `limit + 1`
+    // each, so on any mixed page most of the mail batch is trimmed, and stepping
+    // the cursor past the whole batch meant those messages were never delivered
+    // to anyone. Silently: the reader sees a full page and scrolls on, and the
+    // gap widens by up to a page every time.
+    //
+    // A mail cursor cannot address a message inside its own batch — it is a map
+    // of per-account provider page tokens and skips — so the position after the
+    // delivered prefix is asked for rather than computed: one more read of
+    // exactly that prefix, whose `nextCursor` is the boundary wanted. It runs
+    // only on a page that actually trimmed mail, is bounded by `limit`, and on
+    // the mirror path it is the same indexed keyset walk the page itself used.
+    //
+    // The delivered count is the leading run that reached the page, not the
+    // total: the merge orders on (timestamp, kind, id) while the provider orders
+    // on date alone, so a timestamp tie could in principle place a later message
+    // ahead of an earlier one. Counting the prefix re-delivers that one message
+    // rather than skipping the one behind it.
+    const deliveredMailKeys = new Set(
+      page
+        .filter((i): i is MailInboxItem => i.kind === "mail")
+        .map((i) => i.dedupKey),
+    );
+    let deliveredMail = 0;
+    while (
+      deliveredMail < mailResult.items.length &&
+      deliveredMailKeys.has(mailResult.items[deliveredMail].dedupKey)
+    )
+      deliveredMail++;
+
     const nextState: InboxCursorState = {
       n: lastNotif ? lastNotif.id : cursorState.n,
       b: lastBroadcast ? lastBroadcast.id : cursorState.b,
-      m: lastMail
-        ? (mailResult.nextMailCursor ?? cursorState.m)
-        : cursorState.m,
+      m: await this.nextMailPosition(
+        orgId,
+        userId,
+        actingMembershipId(user.principal),
+        cursorState.m,
+        mailResult,
+        deliveredMail,
+      ),
       a: lastApproval ? lastApproval.id : cursorState.a,
     };
 
@@ -269,6 +307,39 @@ export class UnifiedInboxService {
         actor: null,
       }),
     );
+  }
+
+  /**
+   * Where the mail source should resume, given how much of the batch it fetched
+   * was actually delivered.
+   *
+   * Fully delivered — or nothing fetched at all — and the batch's own
+   * `nextMailCursor` is the answer. Partly delivered, and the boundary is
+   * re-read: `limit`-bounded, one read, and never on a page that trimmed no
+   * mail. Nothing delivered leaves the position untouched, so the same batch is
+   * offered again on the next page rather than being skipped.
+   */
+  private async nextMailPosition(
+    orgId: string,
+    userId: string,
+    membershipId: number | null,
+    current: string | null,
+    fetched: { items: MailInboxItem[]; nextMailCursor: string | null },
+    delivered: number,
+  ): Promise<string | null> {
+    if (fetched.items.length === 0) return current;
+    if (delivered === fetched.items.length) return fetched.nextMailCursor ?? current;
+    if (delivered === 0) return current;
+    const boundary = await this.mail.listMessages(
+      orgId,
+      userId,
+      membershipId,
+      "inbox",
+      "all",
+      delivered,
+      current ?? undefined,
+    );
+    return boundary.nextCursor ?? current;
   }
 
   private async fetchMail(

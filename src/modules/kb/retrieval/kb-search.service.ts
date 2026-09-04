@@ -181,7 +181,7 @@ export class KbSearchService {
       snippet: this.candidates.buildSnippet(contentText, input.q),
     }));
 
-    await this.events.record(user.orgId, total > 0 ? "search" : "search_no_results", {
+    await this.events.recordDetached(user.orgId, total > 0 ? "search" : "search_no_results", {
       actorMembershipId: actingMembershipId(user.principal) ?? null,
       query: input.q,
       metadata: { resultsCount: total },

@@ -352,12 +352,11 @@ describe("payroll-setup — complexity filter (e2e)", () => {
 
 describe("payroll-setup — seedPayrollTemplates idempotency (unit)", () => {
   /**
-   * `seedPayrollTemplates` reads the already-seeded keys with ONE
-   * `.select().from().where()` and writes the missing ones with ONE bulk
-   * insert. The store below is stateful on purpose: the second call reads back
-   * exactly what the first one wrote, so idempotency has to come from the
-   * seeder. Hand-feeding "row exists" on the second call would assert the
-   * mock instead.
+   * `seedPayrollTemplates` reads the already-seeded keys in ONE org-scoped
+   * query and writes the missing ones in ONE bulk insert. The store below is
+   * stateful on purpose: the second call reads back exactly what the first one
+   * wrote, so idempotency has to come from the seeder. Hand-feeding
+   * "row exists" on the second call would assert the mock instead.
    */
   function seedStore() {
     const seededKeys = new Set<string>();
