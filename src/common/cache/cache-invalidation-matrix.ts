@@ -4,81 +4,15 @@ import { FINANCE_CACHE_ENTRIES } from "./cache-invalidation-finance";
 import { INVENTORY_CACHE_ENTRIES } from "./cache-invalidation-inventory";
 import { RBAC_AUTH_CACHE_ENTRIES } from "./cache-invalidation-rbac-auth";
 import { CRM_CACHE_ENTRIES } from "./cache-invalidation-crm";
+import { HR_CACHE_ENTRIES } from "./cache-invalidation-hr";
 
 export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   ...FINANCE_CACHE_ENTRIES,
   ...INVENTORY_CACHE_ENTRIES,
   ...RBAC_AUTH_CACHE_ENTRIES,
   ...CRM_CACHE_ENTRIES,
+  ...HR_CACHE_ENTRIES,
 
-  {
-    namespace: "org:hierarchy:<orgId>",
-    description: "Organisation hierarchy tree (all shapes)",
-    invalidation: {
-      kind: "write",
-      events: ["OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)"],
-    },
-  },
-  {
-    namespace: "hr:headcount:<orgId>",
-    description: "HR headcount aggregate",
-    invalidation: {
-      kind: "write",
-      events: ["OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)"],
-    },
-  },
-  {
-    namespace: "hr:directory:<orgId>",
-    description: "Employee directory (actor+scope sub-keyed)",
-    invalidation: {
-      kind: "write",
-      events: ["OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)"],
-    },
-    dimensions: ["orgId"] as const,
-  },
-  {
-    namespace: "hr:celebrations:<orgId>",
-    description: "Birthday and work-anniversary feed (actor+scope+day sub-keyed)",
-    invalidation: {
-      kind: "write",
-      events: [
-        "EmployeeOnboardingService.invalidateHrDashboardCache",
-        "TerminationLifecycleService.invalidateHrDashboardCache",
-      ],
-    },
-    dimensions: ["orgId"] as const,
-  },
-  {
-    namespace: "hr:analytics:<orgId>",
-    description: "HR analytics overview, attendance and attrition",
-    invalidation: {
-      kind: "write",
-      events: [
-        "EmployeeOnboardingService.invalidateHrDashboardCache",
-        "TerminationLifecycleService.invalidateHrDashboardCache",
-      ],
-    },
-    dimensions: ["orgId"] as const,
-  },
-  {
-    namespace: "hr:leave-analytics:<orgId>",
-    description: "Leave analytics (scope+year sub-keyed)",
-    invalidation: {
-      kind: "write",
-      events: [
-        "LeavesWriteService (create/cancel)",
-        "LeaveDecisionEffectsService (approve/reject)",
-      ],
-    },
-  },
-  {
-    namespace: "hr:expenses:<orgId>",
-    description: "Expense list (user+admin-flag+filters sub-keyed)",
-    invalidation: {
-      kind: "write",
-      events: ["ExpensesService (any write)"],
-    },
-  },
   {
     namespace: "dashboard:stats:<orgId>",
     description: "Dashboard statistics",

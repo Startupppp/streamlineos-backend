@@ -23,31 +23,6 @@ export class KbCandidateService {
     return row !== undefined;
   }
 
-  /**
-   * The ids of the tenant's `cap` nearest chunks — a FULL pool, or every chunk it has.
-   *
-   * The cheap pass is the HNSW index. Its tenant restriction is a filter sitting on top of
-   * the index scan, so the scan stops when the index runs out of tuples, not when `cap`
-   * tenant rows have survived: measured on a 54,000-chunk table whose target tenant owned
-   * 25,200, `LIMIT 240` came back with **50** rows and `Rows Removed by Filter: 1103`.
-   * Nothing tunes that away — `hnsw.iterative_scan` off/relaxed/strict, `ef_search`
-   * 40/400/1000, `max_scan_tuples` 500,000, `scan_mem_multiplier` 32 and the
-   * `app.search_kb_chunk_ids` fence all returned the same 50 — and it is not RLS: an
-   * explicit `org_id = '…'` constant under the table owner returns 50 as well.
-   *
-   * So the short pool is a fact of filtered ANN, and the only defect that matters is that
-   * the old code returned it as if it were the answer: the fallback was gated on
-   * `annIds.length > 0`, and 50 > 0. `/kb/ask` then answered "I don't have that
-   * information" from a fifth of the candidates it asked for, with no error and no log.
-   *
-   * The pool is therefore taken only when it is FULL, and a short one is redone exactly,
-   * scoped to the tenant. `OFFSET 0` is an optimisation fence: without it the planner
-   * pushes the `ORDER BY` back into the HNSW index and the second pass is as approximate
-   * as the first. The exact pass costs one pass over the tenant's chunks (measured: 240 ms
-   * / 101,825 buffers at 25,200 chunks; 5,383 buffers at 1,200), which is the price of a
-   * correct answer on a shared index — a per-tenant HNSW index, i.e. partitioning
-   * `kb_article_chunks` by `org_id`, is the only thing that makes it cheap as well.
-   */
   async vectorChunkIds(orgId: string, vector: string, cap: number): Promise<number[]> {
     if (cap === 0) return [];
     await this.db.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);

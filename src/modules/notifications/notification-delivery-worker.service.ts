@@ -35,7 +35,6 @@ function backoffMsWithJitter(minutes: number): number {
 }
 const STALE_LOCK_MS = 10 * 60 * 1000;
 
-
 import type {
   ClaimedJob,
   DeliveryRow,

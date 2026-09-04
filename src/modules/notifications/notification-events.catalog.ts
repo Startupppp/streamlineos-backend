@@ -16,103 +16,14 @@ import { HR_NOTIFICATION_EVENTS } from "./notification-events-hr.catalog";
 import { OWNERSHIP_NOTIFICATION_EVENTS } from "./notification-events-ownership.catalog";
 import { KNOWLEDGE_NOTIFICATION_EVENTS } from "./notification-events-knowledge.catalog";
 import { SECURITY_SUPPORT_NOTIFICATION_EVENTS } from "./notification-events-security-support.catalog";
+import { CRM_NOTIFICATION_EVENTS } from "./notification-events-crm.catalog";
+import { INVENTORY_NOTIFICATION_EVENTS } from "./notification-events-inventory.catalog";
 
 const e = notificationEvent;
 const IA = IN_APP;
 const IA_EMAIL = IN_APP_EMAIL;
 const IA_PUSH = IN_APP_PUSH;
 const ALLOWED_URGENT = URGENT_ALLOWED_CHANNELS;
-
-const CRM = [
-  e("crm.lead.assigned", "crm", "CRM", "Lead assigned to you", {
-    defaultPriority: "HIGH",
-    defaultChannels: IA_EMAIL,
-    rateLimitWindowSeconds: 3600,
-    rateLimitMax: 50,
-  }),
-  e("crm.lead.created", "crm", "CRM", "New lead created", {
-    defaultChannels: IA,
-    rateLimitWindowSeconds: 3600,
-    rateLimitMax: 100,
-  }),
-  e("crm.deal.stage_changed", "crm", "CRM", "Deal stage changed", {
-    defaultChannels: IA,
-  }),
-  e("crm.followup.due", "crm", "CRM", "Follow-up due", {
-    defaultChannels: IA_EMAIL,
-    ttlSeconds: 86400,
-    rateLimitWindowSeconds: 86400,
-    rateLimitMax: 50,
-  }),
-  e("crm.followup.overdue", "crm", "CRM", "Follow-up overdue", {
-    defaultPriority: "HIGH",
-    defaultType: "WARNING",
-    defaultChannels: IA_EMAIL,
-  }),
-  e(
-    "crm.customer.message_received",
-    "crm",
-    "CRM",
-    "Customer message received",
-    { defaultPriority: "HIGH", defaultChannels: IA_PUSH },
-  ),
-  e("crm.automation.failed", "crm", "CRM", "Automation failed", {
-    defaultPriority: "HIGH",
-    defaultType: "ERROR",
-    defaultChannels: IA_EMAIL,
-  }),
-  e("crm.lead.converted", "crm", "CRM", "Lead converted to client", {
-    defaultType: "SUCCESS",
-    defaultChannels: IA_PUSH,
-  }),
-  e("crm.client.assigned", "crm", "CRM", "New client assigned to you", {
-    defaultPriority: "HIGH",
-    defaultChannels: IA_PUSH,
-  }),
-  e("crm.ai.score_ready", "crm", "AI", "AI lead score generated", {
-    defaultChannels: IA,
-  }),
-];
-
-const INVENTORY = [
-  e("inventory.stock.low", "inventory", "INVENTORY", "Low stock", {
-    defaultPriority: "HIGH",
-    defaultChannels: IA_EMAIL,
-  }),
-  e("inventory.stock.out", "inventory", "INVENTORY", "Out of stock", {
-    defaultPriority: "HIGH",
-    defaultType: "WARNING",
-    defaultChannels: IA_EMAIL,
-  }),
-  e(
-    "inventory.reorder.suggested",
-    "inventory",
-    "INVENTORY",
-    "Reorder suggested",
-    { defaultChannels: IA },
-  ),
-  e(
-    "inventory.transfer.requested",
-    "inventory",
-    "INVENTORY",
-    "Transfer requested",
-    { defaultChannels: IA },
-  ),
-  e(
-    "inventory.transfer.completed",
-    "inventory",
-    "INVENTORY",
-    "Transfer completed",
-    { defaultType: "SUCCESS", defaultChannels: IA },
-  ),
-  e(
-    "inventory.adjustment.approval_requested",
-    "inventory",
-    "WORKFLOW",
-    "Adjustment approval requested",
-    { defaultPriority: "HIGH", defaultChannels: IA_EMAIL },
-  ),
-];
 
 const SURVEYS = [
   e(
@@ -268,13 +179,13 @@ const SYSTEM = [
 export const NOTIFICATION_EVENT_CATALOG = [
   ...CHAT_NOTIFICATION_EVENTS,
   ...BUILD_NOTIFICATION_EVENTS,
-  ...CRM,
+  ...CRM_NOTIFICATION_EVENTS,
   ...HR_NOTIFICATION_EVENTS,
   ...KNOWLEDGE_NOTIFICATION_EVENTS,
   ...SECURITY_SUPPORT_NOTIFICATION_EVENTS,
   ...OWNERSHIP_NOTIFICATION_EVENTS,
   ...ACCOUNTING_NOTIFICATION_EVENTS,
-  ...INVENTORY,
+  ...INVENTORY_NOTIFICATION_EVENTS,
   ...SURVEYS,
   ...CALENDAR,
   ...BILLING,

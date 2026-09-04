@@ -87,10 +87,10 @@
       "measuredResponseBytes": 21596,
       "measuredMemoryMb": 2.912,
       "measuredLatencyP95Ms": 8.323,
-      "measuredBufferBlocks": 160,
-      "measuredReadPathP50Ms": 0.119,
-      "measuredReadPathP95Ms": 0.13,
-      "measuredReadPathP99Ms": 0.146,
+      "measuredBufferBlocks": 159,
+      "measuredReadPathP50Ms": 0.123,
+      "measuredReadPathP95Ms": 0.141,
+      "measuredReadPathP99Ms": 0.219,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -100,15 +100,15 @@
         "samples": 200,
         "resultRows": 25,
         "tenantRows": 4,
-        "coldMs": 0.36,
-        "warmBufferBlocks": 154,
+        "coldMs": 0.324,
+        "warmBufferBlocks": 153,
         "readCostCeilingBlocks": 10000,
         "readCostOutcome": "pass"
       },
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget returned 0 rows (vacuous) — measures an empty result set"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -181,7 +181,7 @@
       "measuredBufferBlocks": 121,
       "measuredReadPathP50Ms": 0.05,
       "measuredReadPathP95Ms": 0.067,
-      "measuredReadPathP99Ms": 0.091,
+      "measuredReadPathP99Ms": 0.183,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -191,7 +191,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 235297,
-        "coldMs": 2.348,
+        "coldMs": 3.876,
         "warmBufferBlocks": 121,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -200,9 +200,9 @@
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 88,
-        "readPathP50Ms": 0.097,
-        "readPathP95Ms": 0.119,
-        "readPathP99Ms": 0.233,
+        "readPathP50Ms": 0.092,
+        "readPathP95Ms": 0.104,
+        "readPathP99Ms": 0.184,
         "resultRows": 50,
         "tenantRows": 2353
       },
@@ -281,9 +281,9 @@
       "measuredMemoryMb": 2.358,
       "measuredLatencyP95Ms": 8.803,
       "measuredBufferBlocks": 16,
-      "measuredReadPathP50Ms": 0.018,
-      "measuredReadPathP95Ms": 0.032,
-      "measuredReadPathP99Ms": 0.093,
+      "measuredReadPathP50Ms": 0.017,
+      "measuredReadPathP95Ms": 0.025,
+      "measuredReadPathP99Ms": 0.072,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -293,7 +293,7 @@
         "samples": 200,
         "resultRows": 1,
         "tenantRows": 235297,
-        "coldMs": 0.982,
+        "coldMs": 0.914,
         "warmBufferBlocks": 16,
         "readCostCeilingBlocks": 3000,
         "readCostOutcome": "pass"
@@ -302,9 +302,9 @@
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 16,
-        "readPathP50Ms": 0.039,
-        "readPathP95Ms": 0.046,
-        "readPathP99Ms": 0.057,
+        "readPathP50Ms": 0.037,
+        "readPathP95Ms": 0.042,
+        "readPathP99Ms": 0.082,
         "resultRows": 1,
         "tenantRows": 2353
       },
@@ -363,110 +363,6 @@
             "overPrdCeiling": false
           }
         }
-      }
-    },
-    "GET /me/inbox/unified": {
-      "kind": "route",
-      "class": "list",
-      "maxDbCalls": 10,
-      "maxDownstreamCalls": 0,
-      "maxResponseBytes": 262144,
-      "maxLatencyP95Ms": 300,
-      "maxMemoryMb": 64,
-      "maxReadPathP95Ms": 50,
-      "dbCallBasis": "declared-estimate",
-      "readCostBudgetId": "inbox-unified-notifications-page",
-      "note": "PRD-C145's Inbox list path. A four-source fan-in — notifications, broadcasts, mail and build approvals — issued concurrently, so the estimate is the sum of the four page reads plus their membership resolution. The linked read-cost budget covers the notifications leg, which is the one that grows with the tenant (235,297 rows on the reference seed) and the one that was measured at 2,601 buffer blocks before it was re-keyed onto membership_id. maxLatencyP95Ms is the PRD's own 300 ms ordinary-read ceiling rather than the 600 ms the other list-class routes carry: this is an ordinary authenticated read, not an approved complex one.",
-      "measuredDbCalls": null,
-      "measuredDownstreamCalls": null,
-      "measuredResponseBytes": null,
-      "measuredMemoryMb": null,
-      "measuredLatencyP95Ms": null,
-      "measuredBufferBlocks": 170,
-      "measuredReadPathP50Ms": 0.184,
-      "measuredReadPathP95Ms": 0.268,
-      "measuredReadPathP99Ms": 0.402,
-      "measurement": {
-        "status": "measured",
-        "method": "read-path-explain",
-        "readCostBudgetId": "inbox-unified-notifications-page",
-        "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
-        "profile": "reference",
-        "samples": 200,
-        "resultRows": 50,
-        "tenantRows": 235297,
-        "coldMs": 1.717,
-        "warmBufferBlocks": 170,
-        "readCostCeilingBlocks": 5000,
-        "readCostOutcome": "pass"
-      },
-      "minorityMeasurement": {
-        "status": "measured",
-        "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "bufferBlocks": 143,
-        "readPathP50Ms": 0.573,
-        "readPathP95Ms": 0.707,
-        "readPathP99Ms": 0.813,
-        "resultRows": 50,
-        "tenantRows": 2353
-      },
-      "httpMeasurement": {
-        "status": "unmeasured",
-        "method": "http-harness",
-        "reason": "the capture holds no slot for this route",
-        "profiles": {}
-      }
-    },
-    "GET /me/inbox/unified/count": {
-      "kind": "route",
-      "class": "shell",
-      "maxDbCalls": 5,
-      "maxDownstreamCalls": 0,
-      "maxResponseBytes": 1024,
-      "maxLatencyP95Ms": 200,
-      "maxMemoryMb": 32,
-      "maxReadPathP95Ms": 20,
-      "dbCallBasis": "counted-call-path",
-      "readCostBudgetId": "inbox-unified-unread-count",
-      "note": "PRD-C145's unread/count path, and the most expensive kind of unbudgeted route: the badge is issued on every authenticated page load. countNotificationUnread(1) + countMailUnread(1) + countApprovalPending(1) = 3, the last two gated on permission; ceiling 5 covers membership resolution. The notifications count measured 10,234 buffer blocks keyed on user_id and 16 keyed on membership_id — the linked read-cost budget is what holds it there.",
-      "measuredDbCalls": null,
-      "measuredDownstreamCalls": null,
-      "measuredResponseBytes": null,
-      "measuredMemoryMb": null,
-      "measuredLatencyP95Ms": null,
-      "measuredBufferBlocks": 24,
-      "measuredReadPathP50Ms": 0.378,
-      "measuredReadPathP95Ms": 0.472,
-      "measuredReadPathP99Ms": 0.534,
-      "measurement": {
-        "status": "measured",
-        "method": "read-path-explain",
-        "readCostBudgetId": "inbox-unified-unread-count",
-        "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
-        "profile": "reference",
-        "samples": 200,
-        "resultRows": 1,
-        "tenantRows": 235297,
-        "coldMs": 1.431,
-        "warmBufferBlocks": 24,
-        "readCostCeilingBlocks": 3000,
-        "readCostOutcome": "pass"
-      },
-      "minorityMeasurement": {
-        "status": "measured",
-        "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "bufferBlocks": 24,
-        "readPathP50Ms": 0.396,
-        "readPathP95Ms": 0.52,
-        "readPathP99Ms": 0.617,
-        "resultRows": 1,
-        "tenantRows": 2353
-      },
-      "httpMeasurement": {
-        "status": "unmeasured",
-        "method": "http-harness",
-        "reason": "the capture holds no slot for this route",
-        "profiles": {}
       }
     },
     "GET /chat/unread": {
@@ -540,100 +436,6 @@
         }
       }
     },
-    "GET /chat/ably-token": {
-      "kind": "route",
-      "class": "shell",
-      "maxDbCalls": 3,
-      "maxDownstreamCalls": 0,
-      "maxResponseBytes": 8192,
-      "maxLatencyP95Ms": 200,
-      "maxMemoryMb": 32,
-      "maxReadPathP95Ms": 20,
-      "dbCallBasis": "counted-call-path",
-      "readCostBudgetId": "chat-realtime-token-channel-ids",
-      "note": "PRD-C145 names the realtime-token paths and this one carried no budget of any kind. ChatChannelListService.listMemberChannelIds is the only read: resolveMembershipId(1) + the bounded channel select(1) = 2; ceiling 3 leaves one slack. maxDownstreamCalls is 0 because Ably token requests are signed locally from the API key (auth.createTokenRequest, no queryTime) — the route makes no call to Ably. maxBufferBlocks is deliberately absent so the read-cost budget owns that number.",
-      "measuredDbCalls": null,
-      "measuredDownstreamCalls": null,
-      "measuredResponseBytes": null,
-      "measuredMemoryMb": null,
-      "measuredLatencyP95Ms": null,
-      "measuredBufferBlocks": 6,
-      "measuredReadPathP50Ms": 0.011,
-      "measuredReadPathP95Ms": 0.015,
-      "measuredReadPathP99Ms": 0.019,
-      "measurement": {
-        "status": "measured",
-        "method": "read-path-explain",
-        "readCostBudgetId": "chat-realtime-token-channel-ids",
-        "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
-        "profile": "reference",
-        "samples": 200,
-        "resultRows": 2,
-        "tenantRows": 56,
-        "coldMs": 0.024,
-        "warmBufferBlocks": 6,
-        "readCostCeilingBlocks": 4000,
-        "readCostOutcome": "pass"
-      },
-      "minorityMeasurement": {
-        "status": "unmeasured",
-        "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
-      },
-      "httpMeasurement": {
-        "status": "unmeasured",
-        "method": "http-harness",
-        "reason": "the capture holds no slot for this route",
-        "profiles": {}
-      }
-    },
-    "GET /support/ably-token": {
-      "kind": "route",
-      "class": "shell",
-      "maxDbCalls": 3,
-      "maxDownstreamCalls": 0,
-      "maxResponseBytes": 8192,
-      "maxLatencyP95Ms": 200,
-      "maxMemoryMb": 32,
-      "maxReadPathP95Ms": 20,
-      "dbCallBasis": "counted-call-path",
-      "readCostBudgetId": "support-realtime-token-ticket-ids",
-      "note": "The second realtime-token path, and a DIFFERENT statement from the chat one — a caller whose support:tickets:view DataScope is narrower than 'all' gets one channel per ticket it can see, read from support_tickets by assignee membership and bounded at MAX_SCOPED_CHANNELS (200). Handler statements: the scoped ticket select(1); scope resolution runs through AccessService, which is permission resolution and therefore in requestDbCalls rather than maxDbCalls. Ceiling 3 covers the 'all' and 'none' branches, which make no read at all.",
-      "measuredDbCalls": null,
-      "measuredDownstreamCalls": null,
-      "measuredResponseBytes": null,
-      "measuredMemoryMb": null,
-      "measuredLatencyP95Ms": null,
-      "measuredBufferBlocks": 6,
-      "measuredReadPathP50Ms": 0.009,
-      "measuredReadPathP95Ms": 0.012,
-      "measuredReadPathP99Ms": 0.019,
-      "measurement": {
-        "status": "measured",
-        "method": "read-path-explain",
-        "readCostBudgetId": "support-realtime-token-ticket-ids",
-        "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
-        "profile": "reference",
-        "samples": 200,
-        "resultRows": 5,
-        "tenantRows": 3000,
-        "coldMs": 0.146,
-        "warmBufferBlocks": 6,
-        "readCostCeilingBlocks": 4000,
-        "readCostOutcome": "pass"
-      },
-      "minorityMeasurement": {
-        "status": "unmeasured",
-        "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
-      },
-      "httpMeasurement": {
-        "status": "unmeasured",
-        "method": "http-harness",
-        "reason": "the capture holds no slot for this route",
-        "profiles": {}
-      }
-    },
     "GET /dashboard/personal": {
       "kind": "route",
       "class": "aggregate",
@@ -651,10 +453,10 @@
       "measuredResponseBytes": 1650,
       "measuredMemoryMb": 3.464,
       "measuredLatencyP95Ms": 16.166,
-      "measuredBufferBlocks": 13,
-      "measuredReadPathP50Ms": 0.027,
-      "measuredReadPathP95Ms": 0.033,
-      "measuredReadPathP99Ms": 0.067,
+      "measuredBufferBlocks": 18,
+      "measuredReadPathP50Ms": 0.016,
+      "measuredReadPathP95Ms": 0.022,
+      "measuredReadPathP99Ms": 0.042,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -663,21 +465,16 @@
         "profile": "reference",
         "samples": 200,
         "resultRows": 3,
-        "tenantRows": 60101,
-        "coldMs": 0.699,
-        "warmBufferBlocks": 13,
+        "tenantRows": 60012,
+        "coldMs": 1.235,
+        "warmBufferBlocks": 18,
         "readCostCeilingBlocks": 500,
         "readCostOutcome": "pass"
       },
       "minorityMeasurement": {
-        "status": "measured",
+        "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "bufferBlocks": 13,
-        "readPathP50Ms": 0.031,
-        "readPathP95Ms": 0.038,
-        "readPathP99Ms": 0.122,
-        "resultRows": 3,
-        "tenantRows": 701
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -746,10 +543,10 @@
       "measuredResponseBytes": 220339,
       "measuredMemoryMb": 59.514,
       "measuredLatencyP95Ms": 269.042,
-      "measuredBufferBlocks": 706,
-      "measuredReadPathP50Ms": 0.208,
-      "measuredReadPathP95Ms": 0.226,
-      "measuredReadPathP99Ms": 0.327,
+      "measuredBufferBlocks": 709,
+      "measuredReadPathP50Ms": 0.242,
+      "measuredReadPathP95Ms": 0.279,
+      "measuredReadPathP99Ms": 0.445,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -758,21 +555,36 @@
         "profile": "reference",
         "samples": 200,
         "resultRows": 500,
-        "tenantRows": 60101,
-        "coldMs": 13.491,
+        "tenantRows": 60025,
+        "scanRows": 517,
+        "coldMs": 1.035,
+        "firstReadBlocks": 706,
         "warmBufferBlocks": 697,
         "readCostCeilingBlocks": 2000,
-        "readCostOutcome": "pass"
+        "readCostOutcome": "pass",
+        "database": "scratch_perf_seed",
+        "role": "streamline_app (rolbypassrls=f, rolsuper=f) with app.organization_id set",
+        "takenAt": "2026-09-03T10:55:57.776Z",
+        "command": "APP_DATABASE_URL=<streamline_app@scratch_perf_seed> PGSSLMODE=disable SEED_ORG_ID=aaaaaaaa-1111-0000-0000-000000000001 node src/scripts/run-read-cost-budgets.mjs --ids=calendar-events-visible-batch --samples=200",
+        "supersedes": {
+          "measuredBufferBlocks": 7072,
+          "warmBufferBlocks": 7063,
+          "tenantRows": 60012,
+          "why": "The 7,063 was the SINGLE-STATEMENT candidate page: both range branches under one OR, three left joins and the 18-column projection, with no lower bound on start_date on the recurring arm. CalendarEventSourceLoader was subsequently split into four statements per page (candidatePage x2 branches, callerRsvp, fetchEvents) and read-cost-budgets.mjs was rewritten to measure the dominant one of the four — but the number in this file was never re-taken, so check:route-budgets was failing on a figure produced by SQL that no longer exists. Re-measured 2026-09-03 against the CURRENT catalogued SQL on all three seeded tenants: 89.93% 697 warm / 706 first read, 9.00% 700 / 709, 0.90% 46 / 55 — every one inside the 2,000-block ceiling, which is therefore NOT raised. This is a stale-measurement defect, not a route regression."
+        }
       },
       "minorityMeasurement": {
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "bufferBlocks": 55,
-        "readPathP50Ms": 0.052,
+        "tenantSharePct": 0.9,
+        "samples": 200,
+        "bufferBlocks": 46,
+        "firstReadBlocks": 55,
+        "readPathP50Ms": 0.05,
         "readPathP95Ms": 0.06,
-        "readPathP99Ms": 0.079,
+        "readPathP99Ms": 0.082,
         "resultRows": 84,
-        "tenantRows": 701
+        "tenantRows": 625
       },
       "httpMeasurement": {
         "status": "measured",
@@ -856,9 +668,9 @@
       "measuredMemoryMb": 2.307,
       "measuredLatencyP95Ms": 7.502,
       "measuredBufferBlocks": 4,
-      "measuredReadPathP50Ms": 0.031,
-      "measuredReadPathP95Ms": 0.038,
-      "measuredReadPathP99Ms": 0.1,
+      "measuredReadPathP50Ms": 0.03,
+      "measuredReadPathP95Ms": 0.035,
+      "measuredReadPathP99Ms": 0.038,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -868,7 +680,7 @@
         "samples": 200,
         "resultRows": 100,
         "tenantRows": 500,
-        "coldMs": 0.137,
+        "coldMs": 0.217,
         "warmBufferBlocks": 4,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -876,7 +688,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -947,8 +759,8 @@
       "measuredLatencyP95Ms": 11.054,
       "measuredBufferBlocks": 50,
       "measuredReadPathP50Ms": 0.014,
-      "measuredReadPathP95Ms": 0.018,
-      "measuredReadPathP99Ms": 0.021,
+      "measuredReadPathP95Ms": 0.016,
+      "measuredReadPathP99Ms": 0.019,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -958,7 +770,7 @@
         "samples": 200,
         "resultRows": 51,
         "tenantRows": 500,
-        "coldMs": 0.113,
+        "coldMs": 0.161,
         "warmBufferBlocks": 50,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -966,7 +778,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -1037,9 +849,9 @@
       "measuredMemoryMb": 4.046,
       "measuredLatencyP95Ms": 17.241,
       "measuredBufferBlocks": 18,
-      "measuredReadPathP50Ms": 0.144,
-      "measuredReadPathP95Ms": 0.182,
-      "measuredReadPathP99Ms": 0.292,
+      "measuredReadPathP50Ms": 0.145,
+      "measuredReadPathP95Ms": 0.166,
+      "measuredReadPathP99Ms": 0.239,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -1049,7 +861,7 @@
         "samples": 200,
         "resultRows": 100,
         "tenantRows": 18500,
-        "coldMs": 1.048,
+        "coldMs": 0.904,
         "warmBufferBlocks": 18,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -1058,9 +870,9 @@
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 9,
-        "readPathP50Ms": 0.047,
-        "readPathP95Ms": 0.055,
-        "readPathP99Ms": 0.079,
+        "readPathP50Ms": 0.046,
+        "readPathP95Ms": 0.053,
+        "readPathP99Ms": 0.073,
         "resultRows": 100,
         "tenantRows": 185
       },
@@ -1203,9 +1015,9 @@
       "measuredMemoryMb": 4.045,
       "measuredLatencyP95Ms": 9.43,
       "measuredBufferBlocks": 11,
-      "measuredReadPathP50Ms": 0.069,
-      "measuredReadPathP95Ms": 0.074,
-      "measuredReadPathP99Ms": 0.142,
+      "measuredReadPathP50Ms": 0.073,
+      "measuredReadPathP95Ms": 0.083,
+      "measuredReadPathP99Ms": 0.091,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -1215,7 +1027,7 @@
         "samples": 200,
         "resultRows": 51,
         "tenantRows": 400,
-        "coldMs": 0.311,
+        "coldMs": 0.072,
         "warmBufferBlocks": 8,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -1225,8 +1037,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 5,
         "readPathP50Ms": 0.008,
-        "readPathP95Ms": 0.012,
-        "readPathP99Ms": 0.034,
+        "readPathP95Ms": 0.01,
+        "readPathP99Ms": 0.014,
         "resultRows": 4,
         "tenantRows": 4
       },
@@ -1298,9 +1110,9 @@
       "measuredMemoryMb": 2.49,
       "measuredLatencyP95Ms": 9.613,
       "measuredBufferBlocks": 27,
-      "measuredReadPathP50Ms": 0.214,
-      "measuredReadPathP95Ms": 0.229,
-      "measuredReadPathP99Ms": 0.252,
+      "measuredReadPathP50Ms": 0.213,
+      "measuredReadPathP95Ms": 0.265,
+      "measuredReadPathP99Ms": 0.385,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -1310,7 +1122,7 @@
         "samples": 200,
         "resultRows": 51,
         "tenantRows": 1500,
-        "coldMs": 0.563,
+        "coldMs": 0.584,
         "warmBufferBlocks": 24,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -1320,8 +1132,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 6,
         "readPathP50Ms": 0.01,
-        "readPathP95Ms": 0.011,
-        "readPathP99Ms": 0.022,
+        "readPathP95Ms": 0.012,
+        "readPathP99Ms": 0.02,
         "resultRows": 15,
         "tenantRows": 15
       },
@@ -1393,9 +1205,9 @@
       "measuredMemoryMb": 2.566,
       "measuredLatencyP95Ms": 9.283,
       "measuredBufferBlocks": 13,
-      "measuredReadPathP50Ms": 0.059,
-      "measuredReadPathP95Ms": 0.067,
-      "measuredReadPathP99Ms": 0.075,
+      "measuredReadPathP50Ms": 0.061,
+      "measuredReadPathP95Ms": 0.071,
+      "measuredReadPathP99Ms": 0.083,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -1405,7 +1217,7 @@
         "samples": 200,
         "resultRows": 51,
         "tenantRows": 400,
-        "coldMs": 0.066,
+        "coldMs": 0.073,
         "warmBufferBlocks": 7,
         "readCostCeilingBlocks": 3000,
         "readCostOutcome": "pass"
@@ -1415,8 +1227,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 8,
         "readPathP50Ms": 0.007,
-        "readPathP95Ms": 0.01,
-        "readPathP99Ms": 0.034,
+        "readPathP95Ms": 0.013,
+        "readPathP99Ms": 0.024,
         "resultRows": 4,
         "tenantRows": 4
       },
@@ -1529,9 +1341,9 @@
       "measuredMemoryMb": 2.959,
       "measuredLatencyP95Ms": 11.859,
       "measuredBufferBlocks": 22,
-      "measuredReadPathP50Ms": 0.021,
-      "measuredReadPathP95Ms": 0.027,
-      "measuredReadPathP99Ms": 0.031,
+      "measuredReadPathP50Ms": 0.022,
+      "measuredReadPathP95Ms": 0.037,
+      "measuredReadPathP99Ms": 0.108,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -1541,7 +1353,7 @@
         "samples": 200,
         "resultRows": 10,
         "tenantRows": 18500,
-        "coldMs": 0.204,
+        "coldMs": 0.34,
         "warmBufferBlocks": 22,
         "readCostCeilingBlocks": 2000,
         "readCostOutcome": "pass"
@@ -1550,9 +1362,9 @@
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 75,
-        "readPathP50Ms": 0.121,
-        "readPathP95Ms": 0.135,
-        "readPathP99Ms": 0.173,
+        "readPathP50Ms": 0.109,
+        "readPathP95Ms": 0.127,
+        "readPathP99Ms": 0.199,
         "resultRows": 10,
         "tenantRows": 185
       },
@@ -1625,8 +1437,8 @@
       "measuredLatencyP95Ms": 7.381,
       "measuredBufferBlocks": 63,
       "measuredReadPathP50Ms": 0.058,
-      "measuredReadPathP95Ms": 0.07,
-      "measuredReadPathP99Ms": 0.111,
+      "measuredReadPathP95Ms": 0.075,
+      "measuredReadPathP99Ms": 0.118,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -1636,7 +1448,7 @@
         "samples": 200,
         "resultRows": 20,
         "tenantRows": 400,
-        "coldMs": 0.26,
+        "coldMs": 0.344,
         "warmBufferBlocks": 63,
         "readCostCeilingBlocks": 2000,
         "readCostOutcome": "pass"
@@ -1714,9 +1526,9 @@
       "measuredMemoryMb": 4.086,
       "measuredLatencyP95Ms": 7.892,
       "measuredBufferBlocks": 2,
-      "measuredReadPathP50Ms": 0.007,
-      "measuredReadPathP95Ms": 0.009,
-      "measuredReadPathP99Ms": 0.014,
+      "measuredReadPathP50Ms": 0.008,
+      "measuredReadPathP95Ms": 0.015,
+      "measuredReadPathP99Ms": 0.043,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -1726,7 +1538,7 @@
         "samples": 200,
         "resultRows": 1,
         "tenantRows": 9000,
-        "coldMs": 0.145,
+        "coldMs": 0.261,
         "warmBufferBlocks": 2,
         "readCostCeilingBlocks": 500,
         "readCostOutcome": "pass"
@@ -1737,7 +1549,7 @@
         "bufferBlocks": 2,
         "readPathP50Ms": 0.006,
         "readPathP95Ms": 0.007,
-        "readPathP99Ms": 0.008,
+        "readPathP99Ms": 0.011,
         "resultRows": 1,
         "tenantRows": 90
       },
@@ -1808,10 +1620,10 @@
       "measuredResponseBytes": 516,
       "measuredMemoryMb": 2.196,
       "measuredLatencyP95Ms": 10.122,
-      "measuredBufferBlocks": 25,
-      "measuredReadPathP50Ms": 0.062,
-      "measuredReadPathP95Ms": 0.078,
-      "measuredReadPathP99Ms": 0.175,
+      "measuredBufferBlocks": 27,
+      "measuredReadPathP50Ms": 0.058,
+      "measuredReadPathP95Ms": 0.071,
+      "measuredReadPathP99Ms": 0.106,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -1819,22 +1631,17 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
         "profile": "reference",
         "samples": 200,
-        "resultRows": 12,
-        "tenantRows": 1212,
-        "coldMs": 0.35,
-        "warmBufferBlocks": 19,
+        "resultRows": 3,
+        "tenantRows": 1200,
+        "coldMs": 0.37,
+        "warmBufferBlocks": 21,
         "readCostCeilingBlocks": 2000,
         "readCostOutcome": "pass"
       },
       "minorityMeasurement": {
-        "status": "measured",
+        "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "bufferBlocks": 45,
-        "readPathP50Ms": 0.028,
-        "readPathP95Ms": 0.033,
-        "readPathP99Ms": 0.043,
-        "resultRows": 12,
-        "tenantRows": 24
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -1904,9 +1711,9 @@
       "measuredMemoryMb": 2.415,
       "measuredLatencyP95Ms": 9.07,
       "measuredBufferBlocks": 44,
-      "measuredReadPathP50Ms": 0.077,
-      "measuredReadPathP95Ms": 0.094,
-      "measuredReadPathP99Ms": 0.156,
+      "measuredReadPathP50Ms": 0.076,
+      "measuredReadPathP95Ms": 0.091,
+      "measuredReadPathP99Ms": 0.12,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -1916,7 +1723,7 @@
         "samples": 200,
         "resultRows": 55,
         "tenantRows": 9000,
-        "coldMs": 1.319,
+        "coldMs": 2.285,
         "warmBufferBlocks": 44,
         "readCostCeilingBlocks": 2000,
         "readCostOutcome": "pass"
@@ -1926,8 +1733,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 9,
         "readPathP50Ms": 0.015,
-        "readPathP95Ms": 0.02,
-        "readPathP99Ms": 0.041,
+        "readPathP95Ms": 0.021,
+        "readPathP99Ms": 0.029,
         "resultRows": 1,
         "tenantRows": 90
       },
@@ -2000,8 +1807,8 @@
       "measuredLatencyP95Ms": 10.3,
       "measuredBufferBlocks": 2,
       "measuredReadPathP50Ms": 0.006,
-      "measuredReadPathP95Ms": 0.008,
-      "measuredReadPathP99Ms": 0.015,
+      "measuredReadPathP95Ms": 0.013,
+      "measuredReadPathP99Ms": 0.021,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2010,8 +1817,8 @@
         "profile": "reference",
         "samples": 200,
         "resultRows": 1,
-        "tenantRows": 5,
-        "coldMs": 0.015,
+        "tenantRows": 2,
+        "coldMs": 0.019,
         "warmBufferBlocks": 2,
         "readCostCeilingBlocks": 1000,
         "readCostOutcome": "pass"
@@ -2020,11 +1827,11 @@
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 2,
-        "readPathP50Ms": 0.011,
-        "readPathP95Ms": 0.014,
-        "readPathP99Ms": 0.022,
+        "readPathP50Ms": 0.01,
+        "readPathP95Ms": 0.011,
+        "readPathP99Ms": 0.015,
         "resultRows": 1,
-        "tenantRows": 4
+        "tenantRows": 1
       },
       "httpMeasurement": {
         "status": "measured",
@@ -2094,9 +1901,9 @@
       "measuredMemoryMb": 2.248,
       "measuredLatencyP95Ms": 12.625,
       "measuredBufferBlocks": 5,
-      "measuredReadPathP50Ms": 0.011,
-      "measuredReadPathP95Ms": 0.014,
-      "measuredReadPathP99Ms": 0.025,
+      "measuredReadPathP50Ms": 0.01,
+      "measuredReadPathP95Ms": 0.012,
+      "measuredReadPathP99Ms": 0.017,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2116,8 +1923,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 5,
         "readPathP50Ms": 0.008,
-        "readPathP95Ms": 0.011,
-        "readPathP99Ms": 0.014,
+        "readPathP95Ms": 0.014,
+        "readPathP99Ms": 0.023,
         "resultRows": 1,
         "tenantRows": 8
       },
@@ -2190,8 +1997,8 @@
       "measuredLatencyP95Ms": 24.205,
       "measuredBufferBlocks": 14,
       "measuredReadPathP50Ms": 0.012,
-      "measuredReadPathP95Ms": 0.019,
-      "measuredReadPathP99Ms": 0.026,
+      "measuredReadPathP95Ms": 0.017,
+      "measuredReadPathP99Ms": 0.033,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2201,7 +2008,7 @@
         "samples": 200,
         "resultRows": 2,
         "tenantRows": 56,
-        "coldMs": 0.469,
+        "coldMs": 0.465,
         "warmBufferBlocks": 11,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -2209,7 +2016,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -2280,8 +2087,8 @@
       "measuredLatencyP95Ms": 17.42,
       "measuredBufferBlocks": 10,
       "measuredReadPathP50Ms": 0.012,
-      "measuredReadPathP95Ms": 0.015,
-      "measuredReadPathP99Ms": 0.034,
+      "measuredReadPathP95Ms": 0.013,
+      "measuredReadPathP99Ms": 0.016,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2291,7 +2098,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 12000,
-        "coldMs": 0.601,
+        "coldMs": 0.404,
         "warmBufferBlocks": 10,
         "readCostCeilingBlocks": 10000,
         "readCostOutcome": "pass"
@@ -2299,7 +2106,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -2369,9 +2176,9 @@
       "measuredMemoryMb": 2.578,
       "measuredLatencyP95Ms": 12.351,
       "measuredBufferBlocks": 12,
-      "measuredReadPathP50Ms": 0.084,
-      "measuredReadPathP95Ms": 0.092,
-      "measuredReadPathP99Ms": 0.249,
+      "measuredReadPathP50Ms": 0.083,
+      "measuredReadPathP95Ms": 0.093,
+      "measuredReadPathP99Ms": 0.217,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2381,7 +2188,7 @@
         "samples": 200,
         "resultRows": 100,
         "tenantRows": 1000,
-        "coldMs": 0.302,
+        "coldMs": 0.396,
         "warmBufferBlocks": 9,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -2389,7 +2196,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -2459,9 +2266,9 @@
       "measuredMemoryMb": 2.59,
       "measuredLatencyP95Ms": 12.463,
       "measuredBufferBlocks": 84,
-      "measuredReadPathP50Ms": 0.045,
-      "measuredReadPathP95Ms": 0.073,
-      "measuredReadPathP99Ms": 0.157,
+      "measuredReadPathP50Ms": 0.044,
+      "measuredReadPathP95Ms": 0.056,
+      "measuredReadPathP99Ms": 0.078,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2471,7 +2278,7 @@
         "samples": 200,
         "resultRows": 25,
         "tenantRows": 12000,
-        "coldMs": 0.616,
+        "coldMs": 0.283,
         "warmBufferBlocks": 81,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -2481,8 +2288,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 12,
         "readPathP50Ms": 0.024,
-        "readPathP95Ms": 0.03,
-        "readPathP99Ms": 0.059,
+        "readPathP95Ms": 0.031,
+        "readPathP99Ms": 0.065,
         "resultRows": 1,
         "tenantRows": 120
       },
@@ -2625,9 +2432,9 @@
       "measuredMemoryMb": 4.016,
       "measuredLatencyP95Ms": 11.557,
       "measuredBufferBlocks": 4,
-      "measuredReadPathP50Ms": 0.007,
-      "measuredReadPathP95Ms": 0.012,
-      "measuredReadPathP99Ms": 0.029,
+      "measuredReadPathP50Ms": 0.006,
+      "measuredReadPathP95Ms": 0.008,
+      "measuredReadPathP99Ms": 0.013,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2637,7 +2444,7 @@
         "samples": 200,
         "resultRows": 6,
         "tenantRows": 6,
-        "coldMs": 0.029,
+        "coldMs": 0.025,
         "warmBufferBlocks": 1,
         "readCostCeilingBlocks": 3000,
         "readCostOutcome": "pass"
@@ -2645,7 +2452,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -2715,9 +2522,9 @@
       "measuredMemoryMb": 1.966,
       "measuredLatencyP95Ms": 8.075,
       "measuredBufferBlocks": 61,
-      "measuredReadPathP50Ms": 0.065,
-      "measuredReadPathP95Ms": 0.074,
-      "measuredReadPathP99Ms": 0.094,
+      "measuredReadPathP50Ms": 0.064,
+      "measuredReadPathP95Ms": 0.075,
+      "measuredReadPathP99Ms": 0.155,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2727,7 +2534,7 @@
         "samples": 200,
         "resultRows": 200,
         "tenantRows": 600,
-        "coldMs": 0.452,
+        "coldMs": 0.471,
         "warmBufferBlocks": 61,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -2737,8 +2544,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 4,
         "readPathP50Ms": 0.015,
-        "readPathP95Ms": 0.017,
-        "readPathP99Ms": 0.019,
+        "readPathP95Ms": 0.019,
+        "readPathP99Ms": 0.042,
         "resultRows": 30,
         "tenantRows": 30
       },
@@ -2811,8 +2618,8 @@
       "measuredLatencyP95Ms": 10.049,
       "measuredBufferBlocks": 53,
       "measuredReadPathP50Ms": 0.022,
-      "measuredReadPathP95Ms": 0.026,
-      "measuredReadPathP99Ms": 0.028,
+      "measuredReadPathP95Ms": 0.024,
+      "measuredReadPathP99Ms": 0.027,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2822,7 +2629,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 600,
-        "coldMs": 0.337,
+        "coldMs": 0.252,
         "warmBufferBlocks": 53,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -2831,9 +2638,9 @@
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 6,
-        "readPathP50Ms": 0.019,
-        "readPathP95Ms": 0.023,
-        "readPathP99Ms": 0.029,
+        "readPathP50Ms": 0.018,
+        "readPathP95Ms": 0.028,
+        "readPathP99Ms": 0.052,
         "resultRows": 30,
         "tenantRows": 30
       },
@@ -2905,9 +2712,9 @@
       "measuredMemoryMb": 1.944,
       "measuredLatencyP95Ms": 11.264,
       "measuredBufferBlocks": 128,
-      "measuredReadPathP50Ms": 0.029,
-      "measuredReadPathP95Ms": 0.041,
-      "measuredReadPathP99Ms": 0.074,
+      "measuredReadPathP50Ms": 0.031,
+      "measuredReadPathP95Ms": 0.059,
+      "measuredReadPathP99Ms": 0.136,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -2917,7 +2724,7 @@
         "samples": 200,
         "resultRows": 51,
         "tenantRows": 600,
-        "coldMs": 14.089,
+        "coldMs": 7.665,
         "warmBufferBlocks": 24,
         "readCostCeilingBlocks": 3000,
         "readCostOutcome": "pass"
@@ -2925,7 +2732,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "read-cost budget returned 0 rows (vacuous) — measures an empty result set"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -2996,9 +2803,9 @@
       "measuredMemoryMb": 1.899,
       "measuredLatencyP95Ms": 8.112,
       "measuredBufferBlocks": 571,
-      "measuredReadPathP50Ms": 0.491,
-      "measuredReadPathP95Ms": 0.549,
-      "measuredReadPathP99Ms": 0.663,
+      "measuredReadPathP50Ms": 0.471,
+      "measuredReadPathP95Ms": 0.608,
+      "measuredReadPathP99Ms": 0.744,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3008,7 +2815,7 @@
         "samples": 200,
         "resultRows": 100,
         "tenantRows": 5100,
-        "coldMs": 5.739,
+        "coldMs": 2.493,
         "warmBufferBlocks": 523,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -3016,7 +2823,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -3087,8 +2894,8 @@
       "measuredLatencyP95Ms": 13.111,
       "measuredBufferBlocks": 4,
       "measuredReadPathP50Ms": 0.019,
-      "measuredReadPathP95Ms": 0.026,
-      "measuredReadPathP99Ms": 0.037,
+      "measuredReadPathP95Ms": 0.021,
+      "measuredReadPathP99Ms": 0.024,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3098,7 +2905,7 @@
         "samples": 200,
         "resultRows": 100,
         "tenantRows": 1100,
-        "coldMs": 0.257,
+        "coldMs": 0.345,
         "warmBufferBlocks": 4,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -3106,7 +2913,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -3176,9 +2983,9 @@
       "measuredMemoryMb": 3.791,
       "measuredLatencyP95Ms": 27.222,
       "measuredBufferBlocks": 9,
-      "measuredReadPathP50Ms": 0.017,
-      "measuredReadPathP95Ms": 0.021,
-      "measuredReadPathP99Ms": 0.026,
+      "measuredReadPathP50Ms": 0.016,
+      "measuredReadPathP95Ms": 0.023,
+      "measuredReadPathP99Ms": 0.059,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3187,21 +2994,16 @@
         "profile": "reference",
         "samples": 200,
         "resultRows": 50,
-        "tenantRows": 1212,
-        "coldMs": 0.674,
+        "tenantRows": 1200,
+        "coldMs": 0.577,
         "warmBufferBlocks": 9,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
       },
       "minorityMeasurement": {
-        "status": "measured",
+        "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "bufferBlocks": 7,
-        "readPathP50Ms": 0.012,
-        "readPathP95Ms": 0.015,
-        "readPathP99Ms": 0.021,
-        "resultRows": 20,
-        "tenantRows": 24
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -3270,10 +3072,10 @@
       "measuredResponseBytes": 1576,
       "measuredMemoryMb": 2.771,
       "measuredLatencyP95Ms": 14.546,
-      "measuredBufferBlocks": 7,
+      "measuredBufferBlocks": 6,
       "measuredReadPathP50Ms": 0.005,
-      "measuredReadPathP95Ms": 0.008,
-      "measuredReadPathP99Ms": 0.009,
+      "measuredReadPathP95Ms": 0.01,
+      "measuredReadPathP99Ms": 0.024,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3281,22 +3083,17 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000001",
         "profile": "reference",
         "samples": 200,
-        "resultRows": 3,
-        "tenantRows": 1212,
-        "coldMs": 0.131,
-        "warmBufferBlocks": 4,
+        "resultRows": 2,
+        "tenantRows": 1200,
+        "coldMs": 0.221,
+        "warmBufferBlocks": 3,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
       },
       "minorityMeasurement": {
-        "status": "measured",
+        "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "bufferBlocks": 7,
-        "readPathP50Ms": 0.008,
-        "readPathP95Ms": 0.01,
-        "readPathP99Ms": 0.012,
-        "resultRows": 4,
-        "tenantRows": 24
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -3366,9 +3163,9 @@
       "measuredMemoryMb": 2.211,
       "measuredLatencyP95Ms": 11.884,
       "measuredBufferBlocks": 5,
-      "measuredReadPathP50Ms": 0.007,
+      "measuredReadPathP50Ms": 0.006,
       "measuredReadPathP95Ms": 0.01,
-      "measuredReadPathP99Ms": 0.014,
+      "measuredReadPathP99Ms": 0.025,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3378,7 +3175,7 @@
         "samples": 200,
         "resultRows": 17,
         "tenantRows": 9000,
-        "coldMs": 0.157,
+        "coldMs": 0.28,
         "warmBufferBlocks": 5,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -3388,8 +3185,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 4,
         "readPathP50Ms": 0.008,
-        "readPathP95Ms": 0.01,
-        "readPathP99Ms": 0.013,
+        "readPathP95Ms": 0.011,
+        "readPathP99Ms": 0.016,
         "resultRows": 12,
         "tenantRows": 90
       },
@@ -3463,7 +3260,7 @@
       "measuredBufferBlocks": 12,
       "measuredReadPathP50Ms": 0.047,
       "measuredReadPathP95Ms": 0.052,
-      "measuredReadPathP99Ms": 0.056,
+      "measuredReadPathP99Ms": 0.077,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3473,7 +3270,7 @@
         "samples": 200,
         "resultRows": 100,
         "tenantRows": 500,
-        "coldMs": 0.45,
+        "coldMs": 0.411,
         "warmBufferBlocks": 6,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -3481,7 +3278,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -3552,8 +3349,8 @@
       "measuredLatencyP95Ms": 14.928,
       "measuredBufferBlocks": 7,
       "measuredReadPathP50Ms": 0.012,
-      "measuredReadPathP95Ms": 0.015,
-      "measuredReadPathP99Ms": 0.018,
+      "measuredReadPathP95Ms": 0.019,
+      "measuredReadPathP99Ms": 0.024,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3562,8 +3359,8 @@
         "profile": "reference",
         "samples": 200,
         "resultRows": 46,
-        "tenantRows": 3999,
-        "coldMs": 0.226,
+        "tenantRows": 3995,
+        "coldMs": 0.254,
         "warmBufferBlocks": 7,
         "readCostCeilingBlocks": 3000,
         "readCostOutcome": "pass"
@@ -3571,7 +3368,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -3640,10 +3437,10 @@
       "measuredResponseBytes": 95,
       "measuredMemoryMb": 4.102,
       "measuredLatencyP95Ms": 9.932,
-      "measuredBufferBlocks": 80,
-      "measuredReadPathP50Ms": 0.377,
-      "measuredReadPathP95Ms": 0.421,
-      "measuredReadPathP99Ms": 0.542,
+      "measuredBufferBlocks": 77,
+      "measuredReadPathP50Ms": 0.418,
+      "measuredReadPathP95Ms": 0.539,
+      "measuredReadPathP99Ms": 0.594,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3652,16 +3449,16 @@
         "profile": "reference",
         "samples": 200,
         "resultRows": 50,
-        "tenantRows": 3999,
-        "coldMs": 0.598,
-        "warmBufferBlocks": 77,
+        "tenantRows": 3995,
+        "coldMs": 1.145,
+        "warmBufferBlocks": 74,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
       },
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -3772,9 +3569,9 @@
       "measuredMemoryMb": 2.373,
       "measuredLatencyP95Ms": 5.94,
       "measuredBufferBlocks": 218,
-      "measuredReadPathP50Ms": 1.242,
-      "measuredReadPathP95Ms": 1.375,
-      "measuredReadPathP99Ms": 1.503,
+      "measuredReadPathP50Ms": 1.199,
+      "measuredReadPathP95Ms": 1.265,
+      "measuredReadPathP99Ms": 1.519,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3784,7 +3581,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 8000,
-        "coldMs": 1.279,
+        "coldMs": 1.214,
         "warmBufferBlocks": 215,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -3794,8 +3591,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 8,
         "readPathP50Ms": 0.023,
-        "readPathP95Ms": 0.027,
-        "readPathP99Ms": 0.049,
+        "readPathP95Ms": 0.029,
+        "readPathP99Ms": 0.05,
         "resultRows": 50,
         "tenantRows": 80
       },
@@ -3867,9 +3664,9 @@
       "measuredMemoryMb": 4.094,
       "measuredLatencyP95Ms": 18.175,
       "measuredBufferBlocks": 253,
-      "measuredReadPathP50Ms": 1.377,
-      "measuredReadPathP95Ms": 1.487,
-      "measuredReadPathP99Ms": 1.847,
+      "measuredReadPathP50Ms": 1.365,
+      "measuredReadPathP95Ms": 1.623,
+      "measuredReadPathP99Ms": 1.859,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3879,7 +3676,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 8000,
-        "coldMs": 1.509,
+        "coldMs": 1.356,
         "warmBufferBlocks": 250,
         "readCostCeilingBlocks": 10000,
         "readCostOutcome": "pass"
@@ -3889,8 +3686,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 8,
         "readPathP50Ms": 0.028,
-        "readPathP95Ms": 0.03,
-        "readPathP99Ms": 0.034,
+        "readPathP95Ms": 0.039,
+        "readPathP99Ms": 0.076,
         "resultRows": 50,
         "tenantRows": 80
       },
@@ -3962,9 +3759,9 @@
       "measuredMemoryMb": 2.441,
       "measuredLatencyP95Ms": 7.364,
       "measuredBufferBlocks": 174,
-      "measuredReadPathP50Ms": 1.21,
-      "measuredReadPathP95Ms": 1.28,
-      "measuredReadPathP99Ms": 1.388,
+      "measuredReadPathP50Ms": 1.207,
+      "measuredReadPathP95Ms": 1.646,
+      "measuredReadPathP99Ms": 2.578,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -3974,7 +3771,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 6000,
-        "coldMs": 2.15,
+        "coldMs": 2.365,
         "warmBufferBlocks": 165,
         "readCostCeilingBlocks": 10000,
         "readCostOutcome": "pass"
@@ -3984,8 +3781,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 20,
         "readPathP50Ms": 0.022,
-        "readPathP95Ms": 0.026,
-        "readPathP99Ms": 0.055,
+        "readPathP95Ms": 0.029,
+        "readPathP99Ms": 0.051,
         "resultRows": 50,
         "tenantRows": 60
       },
@@ -4057,9 +3854,9 @@
       "measuredMemoryMb": 3.376,
       "measuredLatencyP95Ms": 17.232,
       "measuredBufferBlocks": 4,
-      "measuredReadPathP50Ms": 0.009,
-      "measuredReadPathP95Ms": 0.013,
-      "measuredReadPathP99Ms": 0.015,
+      "measuredReadPathP50Ms": 0.011,
+      "measuredReadPathP95Ms": 0.016,
+      "measuredReadPathP99Ms": 0.025,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -4069,7 +3866,7 @@
         "samples": 200,
         "resultRows": 25,
         "tenantRows": 25,
-        "coldMs": 0.02,
+        "coldMs": 0.029,
         "warmBufferBlocks": 1,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -4077,7 +3874,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -4246,9 +4043,9 @@
       "measuredMemoryMb": 2.294,
       "measuredLatencyP95Ms": 7.053,
       "measuredBufferBlocks": 4,
-      "measuredReadPathP50Ms": 0.01,
-      "measuredReadPathP95Ms": 0.014,
-      "measuredReadPathP99Ms": 0.018,
+      "measuredReadPathP50Ms": 0.012,
+      "measuredReadPathP95Ms": 0.02,
+      "measuredReadPathP99Ms": 0.029,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -4258,7 +4055,7 @@
         "samples": 200,
         "resultRows": 25,
         "tenantRows": 25,
-        "coldMs": 0.019,
+        "coldMs": 0.077,
         "warmBufferBlocks": 1,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -4266,7 +4063,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -4337,8 +4134,8 @@
       "measuredLatencyP95Ms": 8.408,
       "measuredBufferBlocks": 4,
       "measuredReadPathP50Ms": 0.01,
-      "measuredReadPathP95Ms": 0.014,
-      "measuredReadPathP99Ms": 0.023,
+      "measuredReadPathP95Ms": 0.012,
+      "measuredReadPathP99Ms": 0.015,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -4348,7 +4145,7 @@
         "samples": 200,
         "resultRows": 25,
         "tenantRows": 25,
-        "coldMs": 0.023,
+        "coldMs": 0.021,
         "warmBufferBlocks": 1,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -4356,7 +4153,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -4426,9 +4223,9 @@
       "measuredMemoryMb": 2.408,
       "measuredLatencyP95Ms": 8.287,
       "measuredBufferBlocks": 4,
-      "measuredReadPathP50Ms": 0.011,
-      "measuredReadPathP95Ms": 0.015,
-      "measuredReadPathP99Ms": 0.033,
+      "measuredReadPathP50Ms": 0.012,
+      "measuredReadPathP95Ms": 0.013,
+      "measuredReadPathP99Ms": 0.016,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -4438,7 +4235,7 @@
         "samples": 200,
         "resultRows": 35,
         "tenantRows": 35,
-        "coldMs": 0.018,
+        "coldMs": 0.019,
         "warmBufferBlocks": 1,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -4446,7 +4243,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -4516,9 +4313,9 @@
       "measuredMemoryMb": 3.978,
       "measuredLatencyP95Ms": 9.936,
       "measuredBufferBlocks": 11,
-      "measuredReadPathP50Ms": 0.065,
-      "measuredReadPathP95Ms": 0.077,
-      "measuredReadPathP99Ms": 0.104,
+      "measuredReadPathP50Ms": 0.066,
+      "measuredReadPathP95Ms": 0.083,
+      "measuredReadPathP99Ms": 0.143,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -4528,7 +4325,7 @@
         "samples": 200,
         "resultRows": 25,
         "tenantRows": 25,
-        "coldMs": 0.152,
+        "coldMs": 0.148,
         "warmBufferBlocks": 2,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -4536,7 +4333,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -4607,8 +4404,8 @@
       "measuredLatencyP95Ms": 9.227,
       "measuredBufferBlocks": 4,
       "measuredReadPathP50Ms": 0.014,
-      "measuredReadPathP95Ms": 0.016,
-      "measuredReadPathP99Ms": 0.019,
+      "measuredReadPathP95Ms": 0.018,
+      "measuredReadPathP99Ms": 0.028,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -4618,7 +4415,7 @@
         "samples": 200,
         "resultRows": 51,
         "tenantRows": 300,
-        "coldMs": 0.021,
+        "coldMs": 0.03,
         "warmBufferBlocks": 4,
         "readCostCeilingBlocks": 3000,
         "readCostOutcome": "pass"
@@ -4628,8 +4425,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 5,
         "readPathP50Ms": 0.007,
-        "readPathP95Ms": 0.011,
-        "readPathP99Ms": 0.013,
+        "readPathP95Ms": 0.009,
+        "readPathP99Ms": 0.012,
         "resultRows": 3,
         "tenantRows": 3
       },
@@ -4702,8 +4499,8 @@
       "measuredLatencyP95Ms": 10.216,
       "measuredBufferBlocks": 4,
       "measuredReadPathP50Ms": 0.007,
-      "measuredReadPathP95Ms": 0.008,
-      "measuredReadPathP99Ms": 0.01,
+      "measuredReadPathP95Ms": 0.009,
+      "measuredReadPathP99Ms": 0.013,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -4713,7 +4510,7 @@
         "samples": 200,
         "resultRows": 12,
         "tenantRows": 12,
-        "coldMs": 0.014,
+        "coldMs": 0.013,
         "warmBufferBlocks": 1,
         "readCostCeilingBlocks": 2000,
         "readCostOutcome": "pass"
@@ -4723,8 +4520,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 4,
         "readPathP50Ms": 0.005,
-        "readPathP95Ms": 0.007,
-        "readPathP99Ms": 0.01,
+        "readPathP95Ms": 0.008,
+        "readPathP99Ms": 0.017,
         "resultRows": 1,
         "tenantRows": 1
       },
@@ -4839,7 +4636,7 @@
       "measuredBufferBlocks": 4,
       "measuredReadPathP50Ms": 0.005,
       "measuredReadPathP95Ms": 0.008,
-      "measuredReadPathP99Ms": 0.011,
+      "measuredReadPathP99Ms": 0.013,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -4849,7 +4646,7 @@
         "samples": 200,
         "resultRows": 6,
         "tenantRows": 6,
-        "coldMs": 0.019,
+        "coldMs": 0.023,
         "warmBufferBlocks": 1,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -4857,7 +4654,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -4928,7 +4725,7 @@
       "measuredLatencyP95Ms": 14.627,
       "measuredBufferBlocks": 4,
       "measuredReadPathP50Ms": 0.006,
-      "measuredReadPathP95Ms": 0.007,
+      "measuredReadPathP95Ms": 0.008,
       "measuredReadPathP99Ms": 0.01,
       "measurement": {
         "status": "measured",
@@ -4939,7 +4736,7 @@
         "samples": 200,
         "resultRows": 5,
         "tenantRows": 6,
-        "coldMs": 0.153,
+        "coldMs": 0.187,
         "warmBufferBlocks": 1,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -5008,9 +4805,9 @@
       "measuredMemoryMb": 2.153,
       "measuredLatencyP95Ms": 14.849,
       "measuredBufferBlocks": 162,
-      "measuredReadPathP50Ms": 0.762,
-      "measuredReadPathP95Ms": 0.855,
-      "measuredReadPathP99Ms": 0.97,
+      "measuredReadPathP50Ms": 0.733,
+      "measuredReadPathP95Ms": 0.782,
+      "measuredReadPathP99Ms": 0.892,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -5020,7 +4817,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 5000,
-        "coldMs": 1.032,
+        "coldMs": 1.658,
         "warmBufferBlocks": 159,
         "readCostCeilingBlocks": 10000,
         "readCostOutcome": "pass"
@@ -5030,8 +4827,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 5,
         "readPathP50Ms": 0.015,
-        "readPathP95Ms": 0.02,
-        "readPathP99Ms": 0.026,
+        "readPathP95Ms": 0.016,
+        "readPathP99Ms": 0.021,
         "resultRows": 50,
         "tenantRows": 50
       },
@@ -5104,8 +4901,8 @@
       "measuredLatencyP95Ms": 11.047,
       "measuredBufferBlocks": 4,
       "measuredReadPathP50Ms": 0.018,
-      "measuredReadPathP95Ms": 0.022,
-      "measuredReadPathP99Ms": 0.024,
+      "measuredReadPathP95Ms": 0.02,
+      "measuredReadPathP99Ms": 0.026,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -5115,7 +4912,7 @@
         "samples": 200,
         "resultRows": 100,
         "tenantRows": 12000,
-        "coldMs": 0.153,
+        "coldMs": 0.24,
         "warmBufferBlocks": 4,
         "readCostCeilingBlocks": 10000,
         "readCostOutcome": "pass"
@@ -5125,8 +4922,8 @@
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 7,
         "readPathP50Ms": 0.027,
-        "readPathP95Ms": 0.031,
-        "readPathP99Ms": 0.035,
+        "readPathP95Ms": 0.03,
+        "readPathP99Ms": 0.08,
         "resultRows": 100,
         "tenantRows": 120
       },
@@ -5198,8 +4995,8 @@
       "measuredMemoryMb": 6.23,
       "measuredLatencyP95Ms": 19.993,
       "measuredBufferBlocks": 227,
-      "measuredReadPathP50Ms": 0.028,
-      "measuredReadPathP95Ms": 0.032,
+      "measuredReadPathP50Ms": 0.026,
+      "measuredReadPathP95Ms": 0.029,
       "measuredReadPathP99Ms": 0.036,
       "measurement": {
         "status": "measured",
@@ -5210,7 +5007,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 150000,
-        "coldMs": 0.848,
+        "coldMs": 1.001,
         "warmBufferBlocks": 227,
         "readCostCeilingBlocks": 15000,
         "readCostOutcome": "pass"
@@ -5221,7 +5018,7 @@
         "bufferBlocks": 6,
         "readPathP50Ms": 0.017,
         "readPathP95Ms": 0.021,
-        "readPathP99Ms": 0.024,
+        "readPathP99Ms": 0.076,
         "resultRows": 50,
         "tenantRows": 1500
       },
@@ -5294,8 +5091,8 @@
       "measuredLatencyP95Ms": 10.56,
       "measuredBufferBlocks": 62,
       "measuredReadPathP50Ms": 0.269,
-      "measuredReadPathP95Ms": 0.284,
-      "measuredReadPathP99Ms": 0.343,
+      "measuredReadPathP95Ms": 0.331,
+      "measuredReadPathP99Ms": 0.555,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -5305,7 +5102,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 2000,
-        "coldMs": 0.452,
+        "coldMs": 0.845,
         "warmBufferBlocks": 59,
         "readCostCeilingBlocks": 8000,
         "readCostOutcome": "pass"
@@ -5314,9 +5111,9 @@
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 7,
-        "readPathP50Ms": 0.01,
-        "readPathP95Ms": 0.014,
-        "readPathP99Ms": 0.017,
+        "readPathP50Ms": 0.011,
+        "readPathP95Ms": 0.027,
+        "readPathP99Ms": 0.043,
         "resultRows": 20,
         "tenantRows": 20
       },
@@ -5388,9 +5185,9 @@
       "measuredMemoryMb": 4.368,
       "measuredLatencyP95Ms": 9.58,
       "measuredBufferBlocks": 15,
-      "measuredReadPathP50Ms": 0.396,
-      "measuredReadPathP95Ms": 0.431,
-      "measuredReadPathP99Ms": 0.466,
+      "measuredReadPathP50Ms": 0.387,
+      "measuredReadPathP95Ms": 0.435,
+      "measuredReadPathP99Ms": 0.527,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -5400,7 +5197,7 @@
         "samples": 200,
         "resultRows": 100,
         "tenantRows": 400,
-        "coldMs": 0.532,
+        "coldMs": 0.89,
         "warmBufferBlocks": 12,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -5408,7 +5205,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -5478,9 +5275,9 @@
       "measuredMemoryMb": 2.461,
       "measuredLatencyP95Ms": 9.616,
       "measuredBufferBlocks": 68,
-      "measuredReadPathP50Ms": 0.65,
-      "measuredReadPathP95Ms": 0.697,
-      "measuredReadPathP99Ms": 0.807,
+      "measuredReadPathP50Ms": 0.648,
+      "measuredReadPathP95Ms": 0.703,
+      "measuredReadPathP99Ms": 0.944,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -5490,7 +5287,7 @@
         "samples": 200,
         "resultRows": 50,
         "tenantRows": 3000,
-        "coldMs": 0.806,
+        "coldMs": 1.257,
         "warmBufferBlocks": 60,
         "readCostCeilingBlocks": 10000,
         "readCostOutcome": "pass"
@@ -5498,7 +5295,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -5609,9 +5406,9 @@
       "measuredMemoryMb": 2.42,
       "measuredLatencyP95Ms": 11.194,
       "measuredBufferBlocks": 45,
-      "measuredReadPathP50Ms": 0.066,
-      "measuredReadPathP95Ms": 0.079,
-      "measuredReadPathP99Ms": 0.088,
+      "measuredReadPathP50Ms": 0.062,
+      "measuredReadPathP95Ms": 0.084,
+      "measuredReadPathP99Ms": 0.128,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -5621,7 +5418,7 @@
         "samples": 200,
         "resultRows": 20,
         "tenantRows": 18500,
-        "coldMs": 1.536,
+        "coldMs": 1.087,
         "warmBufferBlocks": 5,
         "readCostCeilingBlocks": 30000,
         "readCostOutcome": "pass"
@@ -5630,9 +5427,9 @@
         "status": "measured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
         "bufferBlocks": 53,
-        "readPathP50Ms": 0.069,
-        "readPathP95Ms": 0.08,
-        "readPathP99Ms": 0.101,
+        "readPathP50Ms": 0.068,
+        "readPathP95Ms": 0.132,
+        "readPathP99Ms": 0.18,
         "resultRows": 20,
         "tenantRows": 185
       },
@@ -5777,7 +5574,7 @@
       "measuredBufferBlocks": 30,
       "measuredReadPathP50Ms": 0.017,
       "measuredReadPathP95Ms": 0.02,
-      "measuredReadPathP99Ms": 0.023,
+      "measuredReadPathP99Ms": 0.028,
       "measurement": {
         "status": "measured",
         "method": "read-path-explain",
@@ -5787,7 +5584,7 @@
         "samples": 200,
         "resultRows": 51,
         "tenantRows": 4000,
-        "coldMs": 1.895,
+        "coldMs": 0.894,
         "warmBufferBlocks": 30,
         "readCostCeilingBlocks": 5000,
         "readCostOutcome": "pass"
@@ -5795,7 +5592,7 @@
       "minorityMeasurement": {
         "status": "unmeasured",
         "tenant": "aaaaaaaa-1111-0000-0000-000000000002",
-        "reason": "record carries no blocks/latency"
+        "reason": "read-cost budget outcome \"unmeasured\" — not a measurement"
       },
       "httpMeasurement": {
         "status": "measured",
@@ -7369,19 +7166,19 @@
   },
   "measurement": {
     "method": "read-path-explain",
-    "commit": "dcd5a20717dc6d5a6eb2ff40aa54ae58abe2bc8a",
+    "commit": "06b9d72579c3b58e22e5f97d0cc778ee7657c2d7",
     "commitNote": "HEAD at the moment the numbers were taken. The commit that RECORDS them is its child, since writing the manifest is itself a change — re-run this script after any commit that alters a measured route so the recorded commit stays the one the numbers describe.",
-    "takenAt": "2026-09-04T05:25:30.828Z",
+    "takenAt": "2026-09-03T01:22:58.502Z",
     "database": "scratch_perf_seed",
     "role": "streamline_app (rolbypassrls = false, tenant GUC set)",
     "referenceTenant": "aaaaaaaa-1111-0000-0000-000000000001",
     "referenceProfile": "reference",
     "minorityTenant": "aaaaaaaa-1111-0000-0000-000000000002",
     "samples": 200,
-    "readCostBudgetsDeclared": 75,
-    "readCostBudgetsMeasured": 75,
-    "routeBudgetsMeasured": 58,
-    "routeBudgetsUnmeasured": 39,
+    "readCostBudgetsDeclared": 71,
+    "readCostBudgetsMeasured": 71,
+    "routeBudgetsMeasured": 54,
+    "routeBudgetsUnmeasured": 28,
     "routeBudgetsWithCountedDbCalls": 0
   },
   "httpMeasurement": {
@@ -7415,9 +7212,9 @@
         "refused": 14
       }
     ],
-    "ceilingDigest": "c5a251fb3200186b",
+    "ceilingDigest": "47c38af117daaae8",
     "budgetsWithHttpMeasurement": 69,
-    "budgetsDeclared": 97,
+    "budgetsDeclared": 93,
     "fieldCoverage": {
       "measuredLatencyP95Ms": 69,
       "measuredDownstreamCalls": 69,

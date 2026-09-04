@@ -56,6 +56,7 @@
  *   node src/scripts/check-baseline-integrity.mjs --self-test
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -148,7 +149,7 @@ function improves(direction, registered, current) {
 }
 
 function selfTest() {
-  const dir = fs.mkdtempSync(path.join(process.env.TMPDIR ?? "/tmp", "baseline-selftest-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "baseline-selftest-"));
   fs.writeFileSync(
     path.join(dir, "check-a.mjs"),
     "const TIER2_RATCHET = 10;\nconst MIN_FILES = 100;\nconst PINNED_THING = 5;\nlet x = 1;\nconst lower = 2;\n  const INDENTED = 9;\n",

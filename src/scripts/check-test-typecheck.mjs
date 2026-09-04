@@ -100,11 +100,20 @@ function selfTest() {
    * tree another agent is working in, and the temporary project rewrites the
    * owned prefix onto it so the real gate logic — not a special case — is what
    * decides. `extends` inherits the real strict compilerOptions.
+   *
+   * Include covers ONLY the planted spec. The previous include pulled in
+   * `../src/**\/*` and `../evals/**\/*` to match the real gate's scope, but those
+   * globs are resolved at tsc startup: a concurrent gate (check:spec-typecheck
+   * --self-test) plants a file in src/scripts/__tests__/ and then deletes it,
+   * so tsc would see TS6053 "File not found" rather than the planted arity error,
+   * causing the self-test to report FAIL even though the gate itself is correct.
+   * The planted spec is self-contained (no imports from src/ or evals/), so the
+   * wider includes added nothing to what the self-test actually asserts.
    */
   writeFileSync(
     project,
     JSON.stringify(
-      { extends: "../tsconfig.test.json", include: ["../src/**/*", "../evals/**/*", "./*.ts"] },
+      { extends: "../tsconfig.test.json", include: ["./*.ts"] },
       null,
       2,
     ),

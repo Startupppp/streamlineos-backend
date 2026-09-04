@@ -5,6 +5,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 import { PerformanceController } from "./performance.controller";
 import { EngagementController } from "./engagement.controller";
 import { EngagementExtrasController } from "./engagement-extras.controller";
+import { EngagementBadgesController } from "./engagement-badges.controller";
 import { DocumentsController } from "./documents.controller";
 import { KpisController } from "./kpis.controller";
 import { FeedbackController } from "./feedback.controller";
@@ -34,6 +35,7 @@ import { SuccessionService } from "./succession.service";
     PerformanceController,
     EngagementController,
     EngagementExtrasController,
+    EngagementBadgesController,
     DocumentsController,
     KpisController,
     FeedbackController,

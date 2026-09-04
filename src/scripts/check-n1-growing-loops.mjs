@@ -595,7 +595,7 @@ function runSelfTests() {
       }
     }
     const common = SCAN_ROOTS.find((r) => r.key === "@common");
-    const rel = common.key + join(common.dir, "tenant/for-each-org.ts").slice(common.dir.length);
+    const rel = common.key + join(common.dir, "tenant/for-each-org.ts").slice(common.dir.length).replace(/\\/g, "/");
     if (rel !== "@common/tenant/for-each-org.ts") {
       console.error(`SELF-TEST FAIL: a src/common finding would be keyed "${rel}", not under @common`);
       process.exit(1);

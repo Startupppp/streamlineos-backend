@@ -32,7 +32,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SELF_TEST = process.argv.includes("--self-test");
@@ -163,8 +163,13 @@ function importedSymbolPaths(filePath, src, fileSet) {
   for (const m of src.matchAll(IMPORT_RE)) {
     const spec = m[2];
     if (!spec.startsWith(".")) continue;
-    const base = resolve(dirname(filePath), spec);
-    const candidates = [`${base}.ts`, join(base, "index.ts")];
+    const isPosixStyle = filePath.startsWith("/");
+    const base = isPosixStyle
+      ? posix.resolve(posix.dirname(filePath), spec)
+      : resolve(dirname(filePath), spec);
+    const candidates = isPosixStyle
+      ? [`${base}.ts`, `${base}/index.ts`]
+      : [`${base}.ts`, join(base, "index.ts")];
     const target = candidates.find((c) => fileSet.has(c) || existsSync(c));
     if (!target) continue;
     for (const raw of m[1].split(",")) {

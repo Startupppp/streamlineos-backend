@@ -567,7 +567,7 @@ export const MEMBERSHIP_ARTIFACTS = [
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
-      "Migration 1051 (ticket 03) converted fk_performance_reviews_reviewer_actor from ON DELETE RESTRICT to ON DELETE SET NULL (reviewer_membership_id). Before 1051 this entry claimed SET NULL while the catalog held RESTRICT, so a member who had ever reviewed someone could not be hard-deleted at all — proved by seeding one review and deleting the membership: 23503 naming the constraint. reviewer_membership_id is nullable, so the column-list form is safe here; org_id is not in the list, which is what keeps a removal from raising 23502.",
+      "fk_performance_reviews_reviewer_actor is ON DELETE SET NULL, so performance review records are preserved with the reviewer membership pointer cleared on removal.",
   },
   {
     id: "chat_user_presence",
@@ -917,7 +917,7 @@ export const MEMBERSHIP_ARTIFACTS = [
     onRemoval: "cascade",
     onSuspension: "retain",
     reason:
-      "Migration 1053 (ticket 03) converted fk_inv_user_wh_user_mbr from ON DELETE SET NULL (user_membership_id) to ON DELETE CASCADE, and removed the grant rows the old behaviour had already orphaned. This entry always ruled cascade; the catalog disagreed, so revoking a member left a warehouse-access grant behind pointing at nobody. It is an ACL join row, and backend/CLAUDE.md §3 rules a physical delete correct for one. 1053 also adds the missing declaration in src/db/schema/inventory/warehouses.ts, so declaration, migration and catalog agree for the first time.",
+      "fk_inv_user_wh_user_mbr is ON DELETE CASCADE, so warehouse assignments are deleted automatically when the member leaves.",
   },
   {
     id: "crm_campaigns",
@@ -1927,7 +1927,7 @@ export const MEMBERSHIP_ARTIFACTS = [
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
-      "Migration 1051 (ticket 03) converted fk_hr_mood_checkins_user_actor from ON DELETE RESTRICT to ON DELETE SET NULL (user_membership_id). Before 1051 this entry claimed SET NULL while the catalog held RESTRICT, so one mood check-in blocked the member's removal outright. user_membership_id is nullable, so nulling it leaves the aggregate history intact without touching the NOT NULL org_id.",
+      "fk_hr_mood_checkins_user_actor is ON DELETE SET NULL, so mood check-in records are preserved with the membership pointer cleared on removal.",
   },
   {
     id: "hr_disciplinary_actions",
@@ -2223,12 +2223,13 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
   {
     id: "roster_entries_user_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "roster_entries",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "delete",
     onSuspension: "retain",
-    reason: "The declared SET NULL foreign key preserves roster history while clearing the departed member pointer.",
+    reason:
+      "No FK from roster_entries.user_membership_id to organization_members exists in the live database, so removal is not enforced by the DB. The revocation path must explicitly delete or null all roster_entries for the membership before the membership row is removed.",
   },
   {
     id: "overtime_requests_memberships",
@@ -2331,48 +2332,53 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
   {
     id: "hr_case_notes_author_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "hr_case_notes",
     keyedBy: "author_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "delete",
     onSuspension: "retain",
-    reason: "The declared SET NULL foreign key preserves case-note history while clearing the departed author pointer.",
+    reason:
+      "The FK on (org_id, author_membership_id) is ON DELETE SET NULL without a column list, so Postgres would attempt to null both org_id (NOT NULL) and author_membership_id, raising 23502. The revocation path must explicitly clear all author_membership_id pointers for this membership before the membership row is removed.",
   },
   {
     id: "hr_benefit_enrollments_user_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "hr_benefit_enrollments",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "delete",
     onSuspension: "retain",
-    reason: "The declared SET NULL foreign key preserves benefit history while clearing the departed member pointer.",
+    reason:
+      "The FK on (org_id, user_membership_id) is ON DELETE SET NULL without a column list, so Postgres would attempt to null both org_id (NOT NULL) and user_membership_id, raising 23502. The revocation path must explicitly clear all user_membership_id pointers for this membership before the membership row is removed.",
   },
   {
     id: "hr_dependents_user_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "hr_dependents",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "delete",
     onSuspension: "retain",
-    reason: "The declared SET NULL foreign key preserves dependent records while clearing the departed member pointer.",
+    reason:
+      "The FK on (org_id, user_membership_id) is ON DELETE SET NULL without a column list, so Postgres would attempt to null both org_id (NOT NULL) and user_membership_id, raising 23502. The revocation path must explicitly clear all user_membership_id pointers for this membership before the membership row is removed.",
   },
   {
     id: "hr_insurance_claims_user_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "hr_insurance_claims",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "delete",
     onSuspension: "retain",
-    reason: "The declared SET NULL foreign key preserves insurance history while clearing the departed member pointer.",
+    reason:
+      "The FK on (org_id, user_membership_id) is ON DELETE SET NULL without a column list, so Postgres would attempt to null both org_id (NOT NULL) and user_membership_id, raising 23502. The revocation path must explicitly clear all user_membership_id pointers for this membership before the membership row is removed.",
   },
   {
     id: "hr_travel_visit_logs_user_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "hr_travel_visit_logs",
     keyedBy: "user_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "delete",
     onSuspension: "retain",
-    reason: "The declared SET NULL foreign key preserves travel history while clearing the departed member pointer.",
+    reason:
+      "The FK on (org_id, user_membership_id) is ON DELETE SET NULL without a column list, so Postgres would attempt to null both org_id (NOT NULL) and user_membership_id, raising 23502. The revocation path must explicitly clear all user_membership_id pointers for this membership before the membership row is removed.",
   },
   {
     id: "hr_legal_holds_subject_membership",
@@ -2705,13 +2711,13 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
   {
     id: "hr_insurance_claims_decided_by_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "hr_insurance_claims",
     keyedBy: "decided_by_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "delete",
     onSuspension: "retain",
     reason:
-      "Decision attribution on hr_insurance_claims is cleared by fk_hr_insurance_claims_decider_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
+      "fk_hr_insurance_claims_decider_membership is ON DELETE SET NULL without a column list on the composite FK (org_id, decided_by_membership_id), so Postgres would attempt to null both org_id (NOT NULL) and decided_by_membership_id, raising 23502. The revocation path must explicitly clear all decided_by_membership_id pointers for this membership before the membership row is removed.",
   },
   {
     id: "hr_proxy_access_proxy_membership",
@@ -2745,13 +2751,13 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
   {
     id: "invitations_revoked_by_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "invitations",
     keyedBy: "revoked_by_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "delete",
     onSuspension: "retain",
     reason:
-      "Revoker attribution on invitations is cleared by fk_invitations_org_revoked_by_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
+      "fk_invitations_org_revoked_by_membership is ON DELETE SET NULL without a column list on the composite FK (org_id, revoked_by_membership_id), so Postgres would attempt to null both org_id (NOT NULL) and revoked_by_membership_id, raising 23502. The revocation path must explicitly clear all revoked_by_membership_id pointers for this membership before the membership row is removed.",
   },
   {
     id: "journal_entries_created_by_membership",
@@ -3005,13 +3011,13 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
   {
     id: "support_tickets_created_by_membership",
-    mechanism: "database-write",
+    mechanism: "database-cascade",
     table: "support_tickets",
     keyedBy: "created_by_membership_id",
     onRemoval: "blocks-removal",
     onSuspension: "retain",
     reason:
-      "0916 dropped the legacy created_by user column, so created_by_membership_id is the ticket's only creator identity, and it is NOT NULL. No referential action can release it: SET NULL can only raise 23502, which is why 0992 made fk_support_tickets_created_actor NO ACTION. A member delete is refused with 23503 and the ticket keeps its author. Reattaching a durable support record to an org-level placeholder would rewrite authorship and needs a migration and a sentinel membership, not a departure-time write.",
+      "fk_support_tickets_created_actor is ON DELETE RESTRICT, so any member who created a support ticket is blocked from removal until those tickets are reassigned or deleted.",
   },
   {
     id: "survey_forms_created_by_membership",

@@ -76,7 +76,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve, relative } from "node:path";
+import { dirname, join, resolve, relative, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SELF_TEST = process.argv.includes("--self-test");
@@ -982,8 +982,14 @@ const STAR_REEXPORT_RE = /\bexport\s+\*\s*from\s*["']([^"']+)["']/g;
 
 function resolveSpecifier(filePath, spec, fileSet) {
   if (!spec.startsWith(".")) return null;
-  const base = resolve(dirname(filePath), spec);
-  return [`${base}.ts`, join(base, "index.ts")].find((c) => fileSet.has(c)) ?? null;
+  const isPosixStyle = filePath.startsWith("/");
+  const base = isPosixStyle
+    ? posix.resolve(posix.dirname(filePath), spec)
+    : resolve(dirname(filePath), spec);
+  return (isPosixStyle
+    ? [`${base}.ts`, `${base}/index.ts`]
+    : [`${base}.ts`, join(base, "index.ts")]
+  ).find((c) => fileSet.has(c)) ?? null;
 }
 
 /** Symbol → absolute file path, from a file's own import statements. */

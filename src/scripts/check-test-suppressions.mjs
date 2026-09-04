@@ -396,7 +396,7 @@ let conditionalAliases = 0;
 for (const f of files) {
   const text = readFileSync(f, "utf8");
   conditionalAliases += countConditionalAliases(text);
-  sites = sites.concat(scanText(text, relative(BACKEND_ROOT, f)));
+  sites = sites.concat(scanText(text, relative(BACKEND_ROOT, f).replace(/\\/g, "/")));
 }
 
 if (files.length < MIN_SPEC_FILES) {

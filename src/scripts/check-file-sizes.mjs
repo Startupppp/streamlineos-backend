@@ -22,7 +22,7 @@
  */
 
 import {
-  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, relative, extname, sep } from "node:path";
@@ -124,10 +124,10 @@ export function parseExceptions(doc) {
   return { entries, errors };
 }
 
-function collectFiles(dir, files = []) {
+function collectFiles(dir, files = [], readdir = readdirSync) {
   let entries;
   try {
-    entries = readdirSync(dir);
+    entries = readdir(dir);
   } catch (error) {
     // Swallowing this returned a SHORT file list that then read as "nothing over
     // the limit". An unreadable directory is an unmeasured directory: fail loudly.
@@ -137,7 +137,7 @@ function collectFiles(dir, files = []) {
     const full = join(dir, entry);
     const stat = statSync(full);
     if (stat.isDirectory()) {
-      collectFiles(full, files);
+      collectFiles(full, files, readdir);
     } else if (
       stat.isFile() &&
       extname(entry) === ".ts" &&
@@ -161,7 +161,7 @@ export function runCheck(
   srcDir,
   rootDir,
   exceptionsPath,
-  { minFiles = MIN_FILES, requiredSubtrees = REQUIRED_SUBTREES } = {},
+  { minFiles = MIN_FILES, requiredSubtrees = REQUIRED_SUBTREES, readdir } = {},
 ) {
   let doc;
   try {
@@ -203,7 +203,7 @@ export function runCheck(
 
   let files;
   try {
-    files = collectFiles(srcDir);
+    files = collectFiles(srcDir, [], readdir);
   } catch (error) {
     return {
       ok: false, reason: "scan-error",
@@ -405,14 +405,18 @@ function runSelfTests() {
 
     // The exact shape proved in a tmpdir before this guard existed: a subtree that
     // cannot be read used to be swallowed, and the short list read as "all clear".
-    const unreadable = build("unreadable", { ...anchorFiles, "src/modules/huge.ts": 900 }, []);
-    chmodSync(join(unreadable, "src", "modules"), 0o000);
-    let unreadableRes;
-    try {
-      unreadableRes = runCheck(join(unreadable, "src"), unreadable, join(unreadable, "exc.md"), { minFiles: 1 });
-    } finally {
-      chmodSync(join(unreadable, "src", "modules"), 0o755);
-    }
+    // A mock readdir is used instead of chmod 000 for portability: on Windows chmod
+    // is a no-op, so the directory remained readable and the scan returned violations
+    // (not scan-error). The mock proves the same path on all platforms without relying
+    // on OS-level permission enforcement.
+    const unreadableDir = build("unreadable", { ...anchorFiles, "src/modules/huge.ts": 900 }, []);
+    const modulesDir = join(unreadableDir, "src", "modules");
+    const throwingReaddir = (dir) => {
+      if (dir === modulesDir)
+        throw Object.assign(new Error(`EPERM: operation not permitted, scandir '${dir}'`), { code: "EPERM" });
+      return readdirSync(dir);
+    };
+    const unreadableRes = runCheck(join(unreadableDir, "src"), unreadableDir, join(unreadableDir, "exc.md"), { minFiles: 1, readdir: throwingReaddir });
     assert("an unreadable subtree fails the gate rather than scanning short", unreadableRes.ok === false);
     assert("an unreadable subtree reports reason=scan-error", unreadableRes.reason === "scan-error");
     assert(

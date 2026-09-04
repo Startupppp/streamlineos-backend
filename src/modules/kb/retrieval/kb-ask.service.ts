@@ -46,21 +46,6 @@ export class KbAskService {
     private readonly access: KbAccessService,
   ) {}
 
-  /**
-   * Phase one: everything that reads a tenant row, in ONE short transaction
-   * that COMMITS before the provider call.
-   *
-   * The route carries `@NoTenantTransaction()` because `invokeTextWithUsage` is
-   * a network round trip and a pooled connection held open across it is idle in
-   * transaction for the whole of it, against the 60s
-   * `idle_in_transaction_session_timeout` `withTenant` sets. Retrieval is the
-   * expensive part of that hold — a vector search plus attachment snippets —
-   * so it has to be gathered up front rather than interleaved with the call.
-   *
-   * The ACL filtering stays exactly where it was: every retrieval here runs
-   * under the asker's own visibility predicates (backend CLAUDE.md 4), and the
-   * citations are re-verified in phase two against the same predicates.
-   */
   private async gatherContext(
     user: CurrentUserContext,
     input: AskInput,

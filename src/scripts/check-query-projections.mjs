@@ -472,7 +472,7 @@ function main() {
     totals.findMany += r.findMany.length;
     totals.findFirst += r.findFirst.length;
     totals.bareSelect += r.bareSelect.length;
-    const rel = file.slice(ROOT.length - 1);
+    const rel = file.slice(ROOT.length - 1).replace(/\\/g, "/");
     for (const c of r.countPathsUnprojected)
       countPaths.push(`${rel}:${c.line} (${c.kind} on ${c.table}, consumed only as ${c.binding}.length)`);
     for (const h of scanHeavyColumnReads(rel, src, heavyTables))

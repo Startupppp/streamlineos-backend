@@ -50,7 +50,7 @@
  */
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, resolve, relative } from "node:path";
+import { join, resolve, relative, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
@@ -962,7 +962,10 @@ export function fsSourceReader() {
 function resolveCollaborator(fromFile, rawSrc, typeName) {
   const specifier = importSpecifierFor(rawSrc, typeName);
   if (specifier === null || !specifier.startsWith(".")) return null;
-  return resolve(fromFile, "..", specifier);
+  const isPosixStyle = fromFile.startsWith("/");
+  return isPosixStyle
+    ? posix.resolve(posix.dirname(fromFile), specifier)
+    : resolve(fromFile, "..", specifier);
 }
 
 /**

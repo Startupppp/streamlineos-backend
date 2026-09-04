@@ -109,6 +109,7 @@
  *   2 — the scan could not measure anything (INCONCLUSIVE)
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -453,7 +454,7 @@ function scanTree(root, roots) {
   const findings = [];
   const files = [];
   for (const r of roots) walk(path.join(root, r), files);
-  for (const file of files) scanFile(file, path.relative(root, file), counters, findings);
+  for (const file of files) scanFile(file, path.relative(root, file).replace(/\\/g, "/"), counters, findings);
   return { files, findings, counters };
 }
 
@@ -523,7 +524,7 @@ describe("not caught", () => {
 };
 
 function selfTest() {
-  const dir = fs.mkdtempSync(path.join(process.env.TMPDIR ?? "/tmp", "vacuity-selftest-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vacuity-selftest-"));
   const specDir = path.join(dir, "src");
   fs.mkdirSync(specDir, { recursive: true });
   for (const [name, body] of Object.entries(FIXTURES))

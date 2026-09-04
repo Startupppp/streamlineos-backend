@@ -11,6 +11,7 @@ import { RetentionService } from "./retention/retention.service";
 import { DelegationsService } from "./delegations/delegations.service";
 import { PositionsService } from "./positions/positions.service";
 import { PositionsTaxonomyService } from "./positions/positions-taxonomy.service";
+import { PositionsTransitionsService } from "./positions/positions-transitions.service";
 import { LaborService } from "./labor/labor.service";
 
 @Module({
@@ -29,6 +30,7 @@ import { LaborService } from "./labor/labor.service";
     DelegationsService,
     PositionsService,
     PositionsTaxonomyService,
+    PositionsTransitionsService,
     LaborService,
   ],
   exports: [RetentionService],
