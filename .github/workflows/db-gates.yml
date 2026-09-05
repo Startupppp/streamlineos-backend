@@ -238,13 +238,21 @@ jobs:
           API_KEY_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
           BILLING_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
           BLOG_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
-          CALENDAR_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
           CHAT_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
-          EMAIL_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
           FK_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
           HR_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
-          PUSH_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
           SESSIONS_PROBE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          # These three probe the POLICY, not the catalog, so they take the app
+          # role — a `*_PROBE_DATABASE_URL` wins over APP_DATABASE_URL in the spec,
+          # so pointing them at the owner is what the comment above warns against.
+          # calendar asserts `rolbypassrls = false` outright and email asserts a
+          # 42501 the owner never raises: both were red here. push is worse — it
+          # was GREEN at the owner, because "re-registers instead of raising 42501"
+          # is free when RLS never applies. Measured on a Neon branch as
+          # streamline_app: calendar 9/9, email 9/9, push 9/9.
+          CALENDAR_PROBE_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
+          EMAIL_PROBE_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
+          PUSH_PROBE_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
 
   # Run the complete migration chain twice from disposable databases: once from
   # zero and once split at the supported upgrade watermark. The proof compares the
