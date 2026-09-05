@@ -43,7 +43,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUDGETS as READ_COST_BUDGETS } from "./read-cost-budgets.mjs";
-import { METRICS, decideBenchmark } from "./benchmark-regression.mjs";
+import { METRICS, TIMING_ARM_THRESHOLD, decideBenchmark } from "./benchmark-regression.mjs";
 import { evaluateRequestRegressions } from "./request-benchmark-regression.mjs";
 
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
@@ -345,6 +345,14 @@ export function ratchetedPairs(manifest) {
       if (row[metric] && typeof row[metric].maxAbsSwing === "number")
         stability[metric] = { maxAbsSwing: row[metric].maxAbsSwing, replicates };
     stability.planSignature = { maxAbsSwing: unstablePlans.has(key) ? 1 : 0, replicates };
+    if (typeof row.p95Ms?.maxRelSwing === "number") {
+      const swing = row.p95Ms.maxRelSwing;
+      stability.timingArmed = swing <= TIMING_ARM_THRESHOLD;
+      if (!stability.timingArmed)
+        stability.timingDisarmedBecause =
+          `unchanged-code p95 moved ${(swing * 100).toFixed(0)}% on this benchmark across ` +
+          `${replicates ?? "the"} replicates (>${(TIMING_ARM_THRESHOLD * 100).toFixed(0)}% arming threshold)`;
+    }
     covered.set(key, stability);
   }
   return covered;
@@ -491,12 +499,14 @@ function report(manifest, fresh) {
   violations.push(...requestLevel.violations);
   warnings.push(...requestLevel.warnings);
   const regressions = fresh ? evaluateRegressions(manifest, fresh) : null;
+  const freshRl = fresh ? evaluateRequestLevel(fresh) : null;
   if (fresh) {
     const requests = evaluateRequestRegressions(manifest, fresh);
     regressions.findings.push(...requests.findings);
     regressions.advisories.push(...requests.advisories);
     console.log(`Request regression pass: ${requests.compared} route/profile comparisons`);
-    violations.push(...evaluateRequestLevel(fresh).violations);
+    violations.push(...freshRl.violations);
+    warnings.push(...freshRl.warnings);
   } else if (STRICT) {
     violations.push("Strict release verification requires --against=<fresh manifest> for request and SQL regression comparisons");
   }
@@ -649,6 +659,28 @@ function report(manifest, fresh) {
       for (const a of regressions.advisories.slice(0, 8)) console.log(`    ${a.id} ${a.detail}`);
       if (regressions.advisories.length > 8) console.log(`    … and ${regressions.advisories.length - 8} more`);
     }
+    const dimMap = [
+      ["latency", ["p50Ms", "p95Ms", "p99Ms", "p50", "p95", "p99"]],
+      ["db-calls", ["measuredDbCalls", "requestDbCalls"]],
+      ["downstream-calls", ["downstreamCalls", "deferredDownstreamCalls"]],
+      ["buffers", ["bufferBlocks", "planningBufferBlocks"]],
+      ["rows", ["resultRows", "scanRows"]],
+      ["payload-size", ["responseBytes"]],
+      ["memory", ["memoryMb"]],
+    ];
+    console.log(`  Dimension summary (${regressions.compared} benchmark×tenant pairs compared):`);
+    for (const [dim, metrics] of dimMap) {
+      const regs = regressions.findings.filter((f) => metrics.includes(f.metric)).length;
+      const adv = regressions.advisories.filter((a) => metrics.includes(a.metric));
+      const disarmed = adv.filter((a) => a.detail.includes("DISARMED"));
+      const regLabel = regs > 0 ? `${regs} REGRESSION(S)` : "0 regressions";
+      const advLabel = adv.length > 0 ? ` · ${adv.length} advisory (${disarmed.length} disarmed)` : "";
+      console.log(`    ${dim.padEnd(18)} ${regLabel}${advLabel}`);
+      if (disarmed.length > 0) {
+        const reasons = [...new Set(disarmed.slice(0, 2).map((a) => a.detail.split(": ").slice(1).join(": ")))];
+        for (const r of reasons) console.log(`      disarmed: ${r.slice(0, 120)}`);
+      }
+    }
   } else {
     console.log("\nRegression pass: NOT RUN — pass --against=<fresh measurement json> to ratchet.");
   }
@@ -703,7 +735,7 @@ function report(manifest, fresh) {
 
   const status = verdict({
     violations: violations.length,
-    over: ceilings.over.length + dbCalls.breaches.length + requestLevel.over.length + requestLevel.breaches.length,
+    over: ceilings.over.length + dbCalls.breaches.length + requestLevel.over.length + requestLevel.breaches.length + (freshRl?.over.length ?? 0) + (freshRl?.breaches.length ?? 0),
     regressions: regressions?.findings.length ?? 0,
     measured: ceilings.measured.length,
     declared: slots,
@@ -951,6 +983,25 @@ function selfTest() {
     "a 100× wall-clock movement does NOT fail the build while timing is disarmed",
     slowResult.findings.length === 0 && slowResult.advisories.length === 1,
     "and it is still printed",
+  );
+
+  const perBenchmarkTiming = base();
+  perBenchmarkTiming.noiseStudy = {
+    benchmarks: [{
+      id: "org-members-list", tenant: "large",
+      bufferBlocks: { maxAbsSwing: 0 }, resultRows: { maxAbsSwing: 0 },
+      p95Ms: { maxRelSwing: 0.08 },
+    }],
+  };
+  perBenchmarkTiming.regressionPolicy.timing.armed = false;
+  const ptFresh = JSON.parse(JSON.stringify(perBenchmarkTiming));
+  ptFresh.modules[0].benchmarks[0].measurements.large.bufferBlocks = 101;
+  ptFresh.modules[0].benchmarks[0].measurements.large.p95Ms = 50;
+  const ptResult = evaluateRegressions(perBenchmarkTiming, ptFresh);
+  check(
+    "per-benchmark timing: a quiet per-benchmark envelope (8%) arms timing even when global policy is disarmed",
+    ptResult.findings.some((f) => f.metric === "p95Ms"),
+    "buffers fire (exact zero swing) and p95 fires (own envelope quiet, corroborated)",
   );
 
   const missing = JSON.parse(JSON.stringify(m));

@@ -374,3 +374,201 @@ describe("PRD-C148 — regression gate: noise policy derivation", () => {
     expect(r.fired).toBe(true);
   });
 });
+
+describe("PRD-C148 — regression gate: per-benchmark timing arming", () => {
+  it("arms a quiet benchmark even when the global (harness-wide) policy is disarmed", () => {
+    expect(noisyPolicy.timing.armed).toBe(false);
+    const r = runRegression(`
+const policy = ${JSON.stringify(noisyPolicy)};
+const r = decideRegression({ metric: "p95Ms", baseline: 5, observed: 20, cv: 0.02, policy, corroborated: true,
+  stability: { timingArmed: true, timingDisarmedBecause: null } });
+process.stdout.write(JSON.stringify(r));`) as DecisionResult;
+    expect(r.fired).toBe(true);
+  });
+
+  it("disarms a benchmark whose own envelope is noisy, even when the global policy is armed", () => {
+    expect(stablePolicy.timing.armed).toBe(true);
+    const r = runRegression(`
+const policy = ${JSON.stringify(stablePolicy)};
+const r = decideRegression({ metric: "p95Ms", baseline: 5, observed: 20, cv: 0.02, policy, corroborated: true,
+  stability: { timingArmed: false, timingDisarmedBecause: "own p95 moved 140% across 3 replicates" } });
+process.stdout.write(JSON.stringify(r));`) as DecisionResult;
+    expect(r.fired).toBe(false);
+    expect(r.verdict).toBe("advisory");
+  });
+
+  it("a per-benchmark disarmed metric is still an advisory so it remains visible", () => {
+    const r = runRegression(`
+const policy = ${JSON.stringify(stablePolicy)};
+const r = decideRegression({ metric: "p95Ms", baseline: 5, observed: 100, cv: 0, policy,
+  stability: { timingArmed: false, timingDisarmedBecause: "noise" } });
+process.stdout.write(JSON.stringify(r));`) as DecisionResult;
+    expect(r.verdict).toBe("advisory");
+    expect(r.detail).toContain("DISARMED");
+    expect(r.fired).toBe(false);
+  });
+});
+
+describe("PRD-C148 — regression gate: HTTP route regressions (evaluateRequestRegressions)", () => {
+  const rrUrl = pathToFileURL(
+    join(BACKEND_ROOT, "src", "scripts", "request-benchmark-regression.mjs"),
+  ).href;
+
+  function evalRequests(baseline: unknown, current: unknown): unknown {
+    const program = `import { evaluateRequestRegressions } from ${JSON.stringify(rrUrl)};
+const r = evaluateRequestRegressions(${JSON.stringify(baseline)}, ${JSON.stringify(current)});
+process.stdout.write(JSON.stringify(r));`;
+    return JSON.parse(
+      execFileSync(process.execPath, ["--input-type=module", "-e", program], {
+        cwd: BACKEND_ROOT,
+        encoding: "utf8",
+      }),
+    );
+  }
+
+  const baseRoute = (overrides: Record<string, unknown> = {}) => ({
+    route: "GET /x", profile: "reference", status: "measured", scored: true,
+    routeClass: "list", downstreamAccounting: "request-and-after-commit-v1",
+    requestDbCalls: 3, downstreamCalls: 0, deferredDownstreamCalls: 0,
+    responseBytes: 100, memoryMb: 2,
+    latencyMs: { p50: 5, p95: 10, p99: 12 },
+    ...overrides,
+  });
+
+  const baseManifest = (routeOverrides: Record<string, unknown> = {}, noiseStudyRoutes: Record<string, unknown> | null = null) => ({
+    requestLevel: {
+      database: "scratch", role: "app", cache: "warm", compression: "none",
+      samples: 40, warmup: 5, gcAvailable: true,
+      tenants: [{
+        profile: "reference", scorable: true, fixtureHash: "abc",
+        subjectHashBefore: "x1", subjectHashAfter: "x1", subjectStable: true,
+      }],
+      routes: { "GET /x@reference": baseRoute(routeOverrides) },
+      ...(noiseStudyRoutes ? { noiseStudy: { routes: noiseStudyRoutes } } : {}),
+    },
+  });
+
+  it("downstream calls regression fires (exact count ratchet, no tolerance)", () => {
+    const base = baseManifest();
+    const fresh = baseManifest({ downstreamCalls: 1 });
+    const r = evalRequests(base, fresh) as { findings: Array<{ metric: string; fired: boolean }> };
+    expect(r.findings.some((f) => f.metric === "downstreamCalls" && f.fired)).toBe(true);
+  });
+
+  it("downstream calls decrease does not fire (fewer is not a regression)", () => {
+    const base = baseManifest({ downstreamCalls: 2 });
+    const fresh = baseManifest({ downstreamCalls: 0 });
+    const r = evalRequests(base, fresh) as { findings: Array<{ metric: string; fired: boolean }> };
+    expect(r.findings.filter((f) => f.metric === "downstreamCalls" && f.fired).length).toBe(0);
+  });
+
+  it("requestDbCalls regression fires (exact count ratchet)", () => {
+    const base = baseManifest();
+    const fresh = baseManifest({ requestDbCalls: 5 });
+    const r = evalRequests(base, fresh) as { findings: Array<{ metric: string; fired: boolean }> };
+    expect(r.findings.some((f) => f.metric === "requestDbCalls" && f.fired)).toBe(true);
+  });
+
+  it("responseBytes increase with a replicate envelope fires when over the noise band", () => {
+    const envelope = { n: 3, min: 98, max: 102, mean: 100, p50: 100, p95: 102, p99: 102, sd: 2, cv: 0.02, maxAbsSwing: 4, maxRelSwing: 0.04 };
+    const base = baseManifest({}, { "GET /x@reference": { responseBytes: envelope } });
+    const fresh = baseManifest({ responseBytes: 200 });
+    const r = evalRequests(base, fresh) as { findings: Array<{ metric: string; fired: boolean }> };
+    expect(r.findings.some((f) => f.metric === "responseBytes" && f.fired)).toBe(true);
+  });
+
+  it("responseBytes increase WITHOUT a replicate envelope is advisory (DISARMED), not a failure", () => {
+    const base = baseManifest();
+    const fresh = baseManifest({ responseBytes: 50000 });
+    const r = evalRequests(base, fresh) as { findings: Array<{ fired: boolean }>; advisories: Array<{ metric: string; detail: string }> };
+    expect(r.findings.filter((f) => f.fired).length).toBe(0);
+    const adv = r.advisories.find((a) => a.metric === "responseBytes");
+    expect(adv).toBeDefined();
+    expect(adv!.detail).toContain("DISARMED");
+  });
+
+  it("memoryMb increase WITHOUT a replicate envelope is advisory (DISARMED), not a failure", () => {
+    const base = baseManifest();
+    const fresh = baseManifest({ memoryMb: 999 });
+    const r = evalRequests(base, fresh) as { findings: Array<{ fired: boolean }>; advisories: Array<{ metric: string; detail: string }> };
+    expect(r.findings.filter((f) => f.fired).length).toBe(0);
+    const adv = r.advisories.find((a) => a.metric === "memoryMb");
+    expect(adv).toBeDefined();
+    expect(adv!.detail).toContain("DISARMED");
+  });
+
+  it("HTTP latency WITH a quiet envelope fires when corroborated by DB calls", () => {
+    const envelope = { n: 3, min: 9, max: 11, mean: 10, p50: 10, p95: 11, p99: 11, sd: 1, cv: 0.1, maxAbsSwing: 2, maxRelSwing: 0.22 };
+    const noise = { "GET /x@reference": { latencyMs: { p95: envelope } } };
+    const base = baseManifest({}, noise);
+    const fresh = baseManifest({ requestDbCalls: 5, latencyMs: { p50: 5, p95: 50, p99: 60 } }, noise);
+    const r = evalRequests(base, fresh) as { findings: Array<{ metric: string; fired: boolean }> };
+    expect(r.findings.some((f) => f.metric === "requestDbCalls" && f.fired)).toBe(true);
+  });
+
+  it("HTTP latency increase WITHOUT a replicate envelope is advisory (DISARMED), not a failure", () => {
+    const base = baseManifest();
+    const fresh = baseManifest({ latencyMs: { p50: 5, p95: 9999, p99: 9999 } });
+    const r = evalRequests(base, fresh) as { findings: Array<{ fired: boolean }>; advisories: Array<{ metric: string; detail: string }> };
+    expect(r.findings.filter((f) => f.fired).length).toBe(0);
+    const adv = r.advisories.find((a) => a.metric === "p95");
+    expect(adv).toBeDefined();
+    expect(adv!.detail).toContain("DISARMED");
+  });
+
+  it("an identical fresh capture passes all HTTP metrics without regressions", () => {
+    const base = baseManifest();
+    const r = evalRequests(base, JSON.parse(JSON.stringify(base))) as { findings: Array<{ fired: boolean }> };
+    expect(r.findings.filter((f) => f.fired).length).toBe(0);
+  });
+});
+
+describe("PRD-C148 — all 7 dimensions have coverage", () => {
+  it("latency (p95Ms) regression is caught: a timing blow-up corroborated by buffers fires", () => {
+    const r = decideBench({
+      baseline: { bufferBlocks: 100, p95Ms: 5 },
+      observed: { bufferBlocks: 5000, p95Ms: 80 },
+      policy: stablePolicy,
+    });
+    expect(r.fired).toBe(true);
+    expect(r.findings.some((f) => f.metric === "p95Ms" && f.fired)).toBe(true);
+  });
+
+  it("db-calls (measuredDbCalls) regression is caught: an added statement fires with zero tolerance", () => {
+    const r = decide({ metric: "measuredDbCalls", baseline: 3, observed: 4, policy: stablePolicy });
+    expect(r.fired).toBe(true);
+    expect(r.verdict).toBe("regressed");
+  });
+
+  it("buffers regression is caught: a buffer explosion fires beyond the noise band", () => {
+    const r = decide({ metric: "bufferBlocks", baseline: 100, observed: 9000, policy: stablePolicy });
+    expect(r.fired).toBe(true);
+  });
+
+  it("rows (resultRows) regression is caught: any row count change fires (exact ratchet)", () => {
+    const r = decide({ metric: "resultRows", baseline: 50, observed: 51, policy: stablePolicy });
+    expect(r.fired).toBe(true);
+  });
+
+  it("rows (scanRows) regression is caught: deterministic ratchet on scanned rows fires", () => {
+    const r = decide({ metric: "scanRows", baseline: 500, observed: 50000, policy: stablePolicy });
+    expect(r.fired).toBe(true);
+  });
+
+  it("an unchanged synthetic capture passes all SQL-level dimensions", () => {
+    const baseline = { measuredDbCalls: 3, bufferBlocks: 100, resultRows: 50, scanRows: 500, p95Ms: 5, planSignature: "Index Scan on x" };
+    const r = decideBench({ baseline, observed: { ...baseline }, policy: stablePolicy });
+    expect(r.fired).toBe(false);
+  });
+
+  it("all METRICS keys resolve to a known kind (no unknown-metric verdicts)", () => {
+    const metricsUrl = pathToFileURL(join(BACKEND_ROOT, "src", "scripts", "benchmark-regression.mjs")).href;
+    const keys = runRegression(`
+import { METRICS } from ${JSON.stringify(metricsUrl)};
+process.stdout.write(JSON.stringify(Object.keys(METRICS)));`) as string[];
+    for (const key of keys) {
+      const r = decide({ metric: key, baseline: 1, observed: 2, policy: stablePolicy });
+      expect(r.verdict).not.toBe("unknown-metric");
+    }
+  });
+});

@@ -268,14 +268,20 @@ export function decideRegression({
     };
   }
 
-  const { k, minRelTol, absFloorMs, hardMultiple, corroborationRequired, armed } = policy.timing;
+  const { k, minRelTol, absFloorMs, hardMultiple, corroborationRequired } = policy.timing;
+  // Per-benchmark timing arming: stability.timingArmed overrides the global policy when set.
+  // A benchmark whose own replicate envelope is quiet arms itself; a noisy one self-disarms.
+  // This lets a single wobbly benchmark disarm only itself, not the whole gate.
+  const armed = stability?.timingArmed !== undefined ? stability.timingArmed : policy.timing.armed;
+  const disarmedBecause =
+    stability?.timingArmed !== undefined ? stability.timingDisarmedBecause : policy.timing.disarmedBecause;
   if (armed === false)
     return {
       fired: false,
       verdict: observed > baseline ? "advisory" : "within",
       detail:
-        `${spec.label} ${baseline} -> ${observed} ms. Timing is DISARMED on this harness: ` +
-        `${policy.timing.disarmedBecause ?? "no replicate study has armed it"}`,
+        `${spec.label} ${baseline} -> ${observed} ms. Timing is DISARMED${stability?.timingArmed !== undefined ? " on this benchmark" : " on this harness"}: ` +
+        `${disarmedBecause ?? "no replicate study has armed it"}`,
     };
   const rel = Math.max(minRelTol, k * cv);
   const band = baseline * (1 + rel);
@@ -465,6 +471,28 @@ export function selfTest() {
     "a disarmed timing metric is still REPORTED as advisory rather than silently dropped",
     decideRegression({ metric: "p95Ms", baseline: 5, observed: 500, cv: 0, policy: noisy }).verdict ===
       "advisory",
+  );
+  check(
+    "per-benchmark timing: quiet own envelope arms timing even when the global policy is disarmed",
+    decideRegression({
+      metric: "p95Ms", baseline: 5, observed: 20, cv: 0.02, policy: noisy, corroborated: true,
+      stability: { timingArmed: true, timingDisarmedBecause: null },
+    }).fired,
+    "own envelope was quiet — fires despite globally noisy harness",
+  );
+  check(
+    "per-benchmark timing: noisy own envelope disarms the benchmark even when the global policy is armed",
+    !decideRegression({
+      metric: "p95Ms", baseline: 5, observed: 20, cv: 0.02, policy, corroborated: true,
+      stability: { timingArmed: false, timingDisarmedBecause: "own p95 moved 140% across 3 replicates" },
+    }).fired,
+  );
+  check(
+    "per-benchmark disarmed timing is always an advisory, never silently dropped",
+    decideRegression({
+      metric: "p95Ms", baseline: 5, observed: 20, cv: 0, policy,
+      stability: { timingArmed: false, timingDisarmedBecause: "noise" },
+    }).verdict === "advisory",
   );
   check(
     "disarming timing does not disarm the deterministic ratchet",

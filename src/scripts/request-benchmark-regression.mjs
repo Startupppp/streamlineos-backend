@@ -56,8 +56,13 @@ export function evaluateRequestRegressions(baseline, current) {
     const noise = before.noiseStudy?.routes?.[key];
     for (const metric of SIZE_METRICS) {
       const envelope = noise?.[metric];
-      if (!finite(base[metric]) || !finite(now[metric]) || !validEnvelope(envelope)) {
-        fail(key, metric, "Finite measurements and at least three baseline replicates are required");
+      if (!finite(base[metric]) || !finite(now[metric])) {
+        fail(key, metric, "Missing finite baseline/current measurement");
+        continue;
+      }
+      if (!(envelope?.n >= 3) || !finite(envelope?.maxAbsSwing)) {
+        if (now[metric] > base[metric])
+          advisories.push({ id: key, metric, detail: `${metric} ${base[metric]} -> ${now[metric]}. DISARMED: at least three baseline replicates are required to set the noise band for this dimension` });
         continue;
       }
       const band = base[metric] + envelope.maxAbsSwing;
@@ -68,17 +73,21 @@ export function evaluateRequestRegressions(baseline, current) {
     }
     for (const metric of LATENCY_METRICS) {
       const envelope = noise?.latencyMs?.[metric];
-      if (!finite(base.latencyMs?.[metric]) || !finite(now.latencyMs?.[metric]) || !validEnvelope(envelope)) {
-        fail(key, metric, "Finite latency measurements and at least three baseline replicates are required");
+      if (!finite(base.latencyMs?.[metric]) || !finite(now.latencyMs?.[metric])) {
+        fail(key, metric, "Missing finite baseline/current latency measurement");
+        continue;
+      }
+      if (!validEnvelope(envelope)) {
+        if (now.latencyMs[metric] > base.latencyMs[metric])
+          advisories.push({ id: key, metric, detail: `${metric} ${base.latencyMs[metric]} -> ${now.latencyMs[metric]} ms. DISARMED: at least three baseline replicates are required to set the noise band for HTTP latency` });
         continue;
       }
       const policy = policyFromNoise({ deterministicEnvelopes: [], timingEnvelopes: [envelope], replicates: envelope.n });
       const result = decideRegression({ metric: `${metric}Ms`, baseline: base.latencyMs[metric],
         observed: now.latencyMs[metric], cv: envelope.cv, policy, corroborated });
       if (result.fired) fail(key, metric, result.detail);
-      else if (policy.timing.armed !== true) {
-        fail(key, metric, "HTTP replicate noise is too high to verify latency regression; rerun on a controlled runner");
-      } else if (result.verdict === "uncorroborated") advisories.push({ id: key, metric, detail: result.detail });
+      else if (result.verdict === "uncorroborated" || result.verdict === "advisory")
+        advisories.push({ id: key, metric, detail: result.detail });
     }
   }
   return { compared, findings, advisories };

@@ -38,6 +38,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { noiseEnvelope } from "../../src/scripts/benchmark-regression.mjs";
 
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const MANIFEST_PATH = resolve(BACKEND_ROOT, "contracts/benchmark-manifest.json");
@@ -142,6 +143,36 @@ export function buildRequestLevel(artifacts, budgets, budgetsHash) {
   let failed = 0;
   let excluded = 0;
   const refusalsByReason = {};
+
+  // Collect raw per-route values across all artifacts for noise envelope computation (n >= 3).
+  // Multiple artifacts of the same profile represent independent replicate runs.
+  const rawByKey = {};
+  for (const artifact of artifacts) {
+    for (const run of artifact.tenants ?? []) {
+      if (!tenantIsScorable(run).ok) continue;
+      for (const [route, m] of Object.entries(run.routes ?? {})) {
+        if (m.status !== "measured") continue;
+        const key = `${route}@${run.profile}`;
+        const raw = (rawByKey[key] ??= { responseBytes: [], memoryMb: [], latencyMs: { p50: [], p95: [], p99: [] } });
+        if (typeof m.responseBytes === "number") raw.responseBytes.push(m.responseBytes);
+        if (typeof m.memoryMb === "number") raw.memoryMb.push(m.memoryMb);
+        if (typeof m.latencyMs?.p50 === "number") raw.latencyMs.p50.push(m.latencyMs.p50);
+        if (typeof m.latencyMs?.p95 === "number") raw.latencyMs.p95.push(m.latencyMs.p95);
+        if (typeof m.latencyMs?.p99 === "number") raw.latencyMs.p99.push(m.latencyMs.p99);
+      }
+    }
+  }
+  const noiseRoutes = {};
+  for (const [key, raw] of Object.entries(rawByKey)) {
+    const entry = {};
+    if (raw.responseBytes.length >= 3) entry.responseBytes = noiseEnvelope(raw.responseBytes);
+    if (raw.memoryMb.length >= 3) entry.memoryMb = noiseEnvelope(raw.memoryMb);
+    const lat = {};
+    for (const q of ["p50", "p95", "p99"])
+      if (raw.latencyMs[q].length >= 3) lat[q] = noiseEnvelope(raw.latencyMs[q]);
+    if (Object.keys(lat).length > 0) entry.latencyMs = lat;
+    if (Object.keys(entry).length > 0) noiseRoutes[key] = entry;
+  }
 
   for (const artifact of artifacts) {
     for (const run of artifact.tenants ?? []) {
@@ -258,6 +289,7 @@ export function buildRequestLevel(artifacts, budgets, budgetsHash) {
     },
     tenants,
     routes,
+    noiseStudy: Object.keys(noiseRoutes).length > 0 ? { routes: noiseRoutes } : null,
   };
 }
 
@@ -327,6 +359,15 @@ function selfTest() {
   );
   check("a tenant whose control probe failed contributes NO routes", Object.keys(unscorable.routes).length === 0);
   check("but it is still listed, with the reason", unscorable.tenants[0].scorable === false);
+
+  const singleBuilt = buildRequestLevel([artifact], budgets, "hash");
+  check("a single artifact produces no noiseStudy (n < 3 replicates)", singleBuilt.noiseStudy === null);
+  const tripleArtifact = [artifact, JSON.parse(JSON.stringify(artifact)), JSON.parse(JSON.stringify(artifact))];
+  const tripleBuilt = buildRequestLevel(tripleArtifact, budgets, "hash");
+  check("three identical artifacts produce a noiseStudy for measured routes",
+    tripleBuilt.noiseStudy?.routes?.["GET /a@reference"]?.responseBytes?.n === 3);
+  check("the noiseStudy carries latency p95 envelopes from the three replicates",
+    tripleBuilt.noiseStudy?.routes?.["GET /a@reference"]?.latencyMs?.p95?.n === 3);
 
   const failed = checks.filter((c) => !c.ok);
   for (const c of checks) process.stdout.write(`  ${c.ok ? "ok  " : "FAIL"} ${c.name}\n`);
