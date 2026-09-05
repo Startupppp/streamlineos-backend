@@ -24,11 +24,11 @@ import { sql } from "drizzle-orm";
 import * as schema from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.types";
 import { HrImportCommitService } from "../hr-import-commit.service";
+import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "../../../../../test/helpers/probe-org";
 
 const ENABLED = process.env.HR_DB_TESTS === "1";
 const describeDb = ENABLED ? describe : describe.skip;
 
-const ORG_ID = "kbprobe-a";
 const WORK_EMAIL = "attendance-idem-probe@synthetic.invalid";
 const DATE = "2026-07-06";
 const ROLLBACK = "__rollback__";
@@ -49,25 +49,29 @@ describeDb("attendance import idempotency — real database", () => {
   let client: ReturnType<typeof connect>;
   let db: Db;
   let service: HrImportCommitService;
+  let probe: ProbeOrg;
+  let ORG_ID: string;
   let userId: string;
 
   beforeAll(async () => {
     client = connect();
     db = drizzle(client, { schema });
     service = new HrImportCommitService();
-
-    const [member] = await client<{ user_id: string }[]>`
-      SELECT m.user_id FROM organization_members m
-        JOIN users u ON u.id = m.user_id
-       WHERE m.org_id = ${ORG_ID} AND u.is_active LIMIT 1
-    `;
-    if (!member) throw new Error(`${ORG_ID} has no active member to seed against`);
-    userId = member.user_id;
-  });
+    // Built rather than looked up: the org this suite used to name is created by no seeder in
+    // the repository, so the lookup below it threw on every machine but one.
+    probe = await createProbeOrg(client, "hr-import-attendance-idem");
+    ORG_ID = probe.orgId;
+    userId = probe.userId;
+  }, 60_000);
 
   afterAll(async () => {
-    if (client) await client.end({ timeout: 5 });
-  });
+    if (client) {
+      // The suite's own rows are written inside a transaction it rolls back, so the probe is
+      // the only thing left to remove.
+      if (probe) await dropProbeOrg(client, probe);
+      await client.end({ timeout: 5 });
+    }
+  }, 60_000);
 
   it("the catalog offers ON CONFLICT no arbiter on this table beyond the serial", async () => {
     const rows = await client<{ indexdef: string }[]>`

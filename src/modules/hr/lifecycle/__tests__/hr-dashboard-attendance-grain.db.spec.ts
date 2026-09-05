@@ -23,12 +23,10 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.types";
 import { buildAttendanceAnalytics } from "../hr-dashboard-attendance";
+import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "../../../../../test/helpers/probe-org";
 
 const ENABLED = process.env.HR_DB_TESTS === "1";
 const describeDb = ENABLED ? describe : describe.skip;
-
-/** An org with exactly one active member and no attendance of its own. */
-const ORG_ID = "kbprobe-a";
 
 function connect() {
   if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
@@ -61,27 +59,29 @@ describeDb("HR dashboard attendance analytics — session grain", () => {
   let sql: ReturnType<typeof connect>;
   let db: Db;
   let days: string[];
+  let probe: ProbeOrg;
+  let ORG_ID: string;
   let userId: string;
 
   beforeAll(async () => {
     sql = connect();
     db = drizzle(sql, { schema });
     days = elapsedWeekdaysThisMonth(2);
-    const [member] = await sql<{ user_id: string }[]>`
-      SELECT m.user_id FROM organization_members m
-        JOIN users u ON u.id = m.user_id
-       WHERE m.org_id = ${ORG_ID} AND u.is_active LIMIT 1
-    `;
-    if (!member) throw new Error(`${ORG_ID} has no active member to seed against`);
-    userId = member.user_id;
-  });
+    // The denominator this suite asserts against is `active members x working days`, so the
+    // org has to hold exactly one active member for the arithmetic to be exact. It is built
+    // here rather than looked up, which is what makes the suite runnable on any database at
+    // journal head instead of on the one machine that happened to have the right org.
+    probe = await createProbeOrg(sql, "hr-attendance-grain");
+    ORG_ID = probe.orgId;
+    userId = probe.userId;
+  }, 60_000);
 
   afterAll(async () => {
     if (sql) {
-      await sql`DELETE FROM attendance WHERE org_id = ${ORG_ID} AND user_id = ${userId}`;
+      if (probe) await dropProbeOrg(sql, probe, ["attendance"]);
       await sql.end({ timeout: 5 });
     }
-  });
+  }, 60_000);
 
   it("counts one person-day per employee per day, however many sessions they clock", async () => {
     // No early return. This used to `return` when the month was too young to have
