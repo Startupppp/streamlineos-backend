@@ -72,6 +72,7 @@ const MEMBERSHIP_CACHE_TTL_MS = 15_000;
 @Injectable()
 export class AccessService implements OnModuleInit, OnModuleDestroy {
   private readonly versionCache = new Map<string, VersionEntry>();
+  private readonly versionInFlight = new Map<string, Promise<number>>();
   private readonly permsCache = new Map<string, PermsEntry>();
   private readonly membershipAccessCache = new Map<string, MembershipAccessState>();
   private readonly permResolveInFlight = new Map<string, Promise<Map<string, DataScope>>>();
@@ -142,6 +143,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     });
     this.unsubscribeVersionBump = subscribeVersionBump((orgId) => {
       this.versionCache.delete(orgId);
+      this.versionInFlight.delete(orgId);
       this.deleteOrgEntries(this.membershipAccessCache, orgId);
       this.deleteOrgEntries(this.permsCache, orgId);
       this.deniedModulesResolver.clearForOrg(orgId);
@@ -210,21 +212,30 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const cached = this.versionCache.get(orgId);
     if (cached && cached.expiresAt > Date.now()) return cached.version;
 
-    const version = await accessVersionChannel.read(orgId, () =>
-      this.loadDurablePermissionsVersion(orgId),
-    );
+    const existing = this.versionInFlight.get(orgId);
+    if (existing) return existing;
 
-    this.versionCache.set(orgId, {
-      version,
-      expiresAt: Date.now() + VERSION_CACHE_TTL_MS,
-    });
-    if (this.versionCache.size > 2000) {
-      const now = Date.now();
-      for (const [key, entry] of this.versionCache) {
-        if (entry.expiresAt <= now) this.versionCache.delete(key);
-      }
-    }
-    return version;
+    const load = accessVersionChannel
+      .read(orgId, () => this.loadDurablePermissionsVersion(orgId))
+      .then((version) => {
+        this.versionCache.set(orgId, {
+          version,
+          expiresAt: Date.now() + VERSION_CACHE_TTL_MS,
+        });
+        if (this.versionCache.size > 2000) {
+          const now = Date.now();
+          for (const [key, entry] of this.versionCache) {
+            if (entry.expiresAt <= now) this.versionCache.delete(key);
+          }
+        }
+        return version;
+      })
+      .finally(() => {
+        this.versionInFlight.delete(orgId);
+      });
+
+    this.versionInFlight.set(orgId, load);
+    return load;
   }
 
   async resolveUserPermissions(

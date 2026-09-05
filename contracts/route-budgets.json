@@ -5,7 +5,7 @@
   "surface": {
     "source": "openapi.json",
     "totalOperations": 3613,
-    "declaredBudgets": 97,
+    "declaredBudgets": 98,
     "criticalSelection": "A route is critical when it is (a) issued on every authenticated page load, (b) the primary list or detail read of an in-scope module, (c) the primary transactional write of an in-scope module, or (d) a scheduled worker batch that iterates tenant data. Everything outside that set is declared-out-of-scope, not measured-and-passing.",
     "honesty": "totalOperations is recomputed from openapi.json on every gate run. The value stored here is the count at the release commit; the gate prints the live number so the denominator can never go stale without being visible.",
     "workerBatchScope": {
@@ -7278,6 +7278,32 @@
         "reason": "not yet captured",
         "profiles": {}
       }
+    },
+    "GET /cron/kb-telemetry-retention-sweep": {
+      "kind": "worker-batch",
+      "class": "worker",
+      "maxDbCalls": 50,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 4096,
+      "maxLatencyP95Ms": 600000,
+      "maxMemoryMb": 256,
+      "maxReadPathP95Ms": 50,
+      "maxBatchSize": 500,
+      "maxDurationMs": 600000,
+      "dbCallBasis": "declared-estimate",
+      "note": "KB telemetry retention — prunes kb_events and kb_ingestion_checkpoints per org. Ceilings derive from BATCH_SIZE 500 and the 600s withLease window; deleteInBatches has no MAX_BATCHES cap, so the lease window is the effective bound.",
+      "measuredDbCalls": null,
+      "measuredDownstreamCalls": null,
+      "measuredResponseBytes": null,
+      "measuredMemoryMb": null,
+      "measuredLatencyP95Ms": null,
+      "measuredBufferBlocks": null,
+      "measuredReadPathP50Ms": null,
+      "measuredReadPathP95Ms": null,
+      "measuredReadPathP99Ms": null,
+      "measurement": null,
+      "measuredBatchSize": null,
+      "measuredDurationMs": null
     }
   },
   "measurement": {

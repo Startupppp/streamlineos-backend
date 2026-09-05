@@ -54,12 +54,14 @@ export class DashboardProjectService {
       });
     }
 
-    const managerMember = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)), columns: { id: true } });
-    const memberOf = await this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
-      .where(and(eq(projectMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)));
+    const [managerMember, memberOf] = await Promise.all([
+      this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)), columns: { id: true } }),
+      this.db
+        .select({ projectId: projectMembers.projectId })
+        .from(projectMembers)
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+        .where(and(eq(projectMembers.orgId, orgId), eq(organizationMembers.userId, u.userId))),
+    ]);
 
     const projectIds = memberOf.map((m) => m.projectId);
 
@@ -197,9 +199,11 @@ export class DashboardProjectService {
   async getRecentActivity(orgId: string, u: CurrentUserContext) {
     const scope = await resolveBuildDashboardScope(this.access, u);
     if (scope === "none") return [];
-    const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
+    const [projectIds, managerMember] = await Promise.all([
+      this.resolveProjectIds(orgId, u.userId, scope === "all"),
+      this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)), columns: { id: true } }),
+    ]);
     if (projectIds.length === 0) return [];
-    const managerMember = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)), columns: { id: true } });
 
     const ticketFilters: SQL[] = [
       eq(tickets.orgId, orgId),
