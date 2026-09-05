@@ -168,6 +168,31 @@ async function upsertUser(id, n, suffix = "") {
   );
 }
 
+/**
+ * Enables every catalogued module for a seeded org.
+ *
+ * Without this the live BOLA sweep could not ask its question of most of the API: 1,302 of 1,765
+ * unprobeable routes had their OWN-TENANT control answer 402 MODULE_NOT_ENABLED, so the route was
+ * filed unprobeable rather than scored. Driven from modules_catalog so it cannot drift from the
+ * real module list.
+ */
+async function enableAllModules(conn, orgId) {
+  await conn.unsafe(
+    `INSERT INTO org_modules (org_id, module_key, enabled, enabled_at)
+     SELECT $1, m.module_key, true, now()
+       FROM modules_catalog m
+      WHERE NOT EXISTS (
+        SELECT 1 FROM org_modules o
+         WHERE o.org_id = $1 AND o.module_key = m.module_key
+      )`,
+    [orgId],
+  );
+  await conn.unsafe(
+    `UPDATE org_modules SET enabled = true WHERE org_id = $1 AND enabled = false`,
+    [orgId],
+  );
+}
+
 async function placeOrg(conn, orgId) {
   await conn.unsafe(
     `INSERT INTO organization_placement
@@ -191,6 +216,7 @@ async function seedOrganizationsAndOwners() {
     // "has no region" on every tenant transaction, which surfaces as 401 on every authenticated
     // request. Placed before the existence check so a re-run repairs an org seeded without one.
     await placeOrg(sql, orgId);
+    await enableAllModules(sql, orgId);
 
     const existing = await sql.unsafe(`SELECT id FROM organizations WHERE id = $1`, [orgId])
       .then((r) => r[0]);
