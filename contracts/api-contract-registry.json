@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-03T22:40:58.263Z",
+  "generatedAt": "2026-09-05T08:45:01.762Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -3013,6 +3013,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /ai/executive-brief/stream-generate": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ExecutiveBriefController_streamGenerate",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /ai/feedback": {
       "classification": "internal",
       "classificationOverride": null,
@@ -3134,6 +3145,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /ai/hr/letter-draft/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "HrAiController_letterDraftStream",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /ai/hr/policy-qa": {
       "classification": "internal",
       "classificationOverride": null,
@@ -3150,6 +3172,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "HrAiController_policyQaCapabilities",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /ai/hr/policy-qa/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "HrAiController_policyQaStream",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -3376,6 +3409,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /ai/projects/{projectId}/tickets/draft/improve-description/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsAiController_improveDraftDescriptionStream",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /ai/projects/{projectId}/tickets/draft/suggest-fields": {
       "classification": "internal",
       "classificationOverride": null,
@@ -3557,6 +3601,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ProjectsAiController_improveTicketDescription",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /ai/tickets/{projectId}/{ticketId}/improve-description/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsAiController_improveTicketDescriptionStream",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -8112,6 +8167,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "DELETE /calendar/events/{eventId}/sync-queue": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "CalendarController_cancelSync",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /calendar/events/{eventId}/sync-retry": {
       "classification": "internal",
       "classificationOverride": null,
@@ -12435,6 +12501,28 @@
       "classificationOverride": null,
       "xExposure": "public",
       "operationId": "CronSupportController_postKbChunkRetentionSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /cron/kb-telemetry-retention-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronSupportController_getKbTelemetryRetentionSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/kb-telemetry-retention-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronSupportController_postKbTelemetryRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -16947,7 +17035,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "EngagementExtrasController_listBadges",
+      "operationId": "EngagementBadgesController_listBadges",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -16958,7 +17046,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "EngagementExtrasController_createBadge",
+      "operationId": "EngagementBadgesController_createBadge",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -16969,7 +17057,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "EngagementExtrasController_deleteBadge",
+      "operationId": "EngagementBadgesController_deleteBadge",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -16980,7 +17068,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "EngagementExtrasController_awardBadge",
+      "operationId": "EngagementBadgesController_awardBadge",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -16991,7 +17079,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "EngagementExtrasController_myBadges",
+      "operationId": "EngagementBadgesController_myBadges",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -17101,7 +17189,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "EngagementExtrasController_employeeOfMonth",
+      "operationId": "EngagementBadgesController_employeeOfMonth",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -17145,7 +17233,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "EngagementExtrasController_overview",
+      "operationId": "EngagementBadgesController_overview",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -17156,7 +17244,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "EngagementExtrasController_leaderboard",
+      "operationId": "EngagementBadgesController_leaderboard",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -17167,7 +17255,7 @@
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
-      "operationId": "EngagementExtrasController_myPoints",
+      "operationId": "EngagementBadgesController_myPoints",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -27784,6 +27872,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /kb/ask/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbAskController_askStream",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "PATCH /kb/categories/{categoryId}": {
       "classification": "internal",
       "classificationOverride": null,
@@ -30044,6 +30143,28 @@
       "classificationOverride": null,
       "xExposure": "universal",
       "operationId": "NotificationPreferencesController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /notification-preferences/consents": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "NotificationPreferencesController_listConsents",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PUT /notification-preferences/consents": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "NotificationPreferencesController_recordConsent",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -33241,6 +33362,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "PayrollAiExplainController_explainPayslip",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /payroll/me/payslips/{publicationId}/ai/explain/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollAiExplainController_streamExplainPayslip",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -40458,6 +40590,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /timesheets/ai/billing-narrative/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TimesheetsAiController_billingNarrativeStream",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /timesheets/ai/describe-entry": {
       "classification": "internal",
       "classificationOverride": null,
@@ -40469,11 +40612,33 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /timesheets/ai/describe-entry/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TimesheetsAiController_describeEntryStream",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /timesheets/ai/reports-narrative": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "TimesheetsAiController_reportsNarrative",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /timesheets/ai/reports-narrative/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TimesheetsAiController_reportsNarrativeStream",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -40854,11 +41019,33 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /timesheets/periods/{periodId}/ai/rejection-reason/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TimesheetsAiController_rejectionReasonStream",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /timesheets/periods/{periodId}/ai/summarize": {
       "classification": "internal",
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "TimesheetsAiController_summarize",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /timesheets/periods/{periodId}/ai/summarize/stream": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TimesheetsAiController_summarizeStream",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -42504,7 +42691,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-ticket-comments.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42520,7 +42707,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/deals/deals.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42536,7 +42723,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/deals/deals.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42552,7 +42739,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/hr/directory/employee-onboarding.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42568,7 +42755,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/leads/leads.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42584,7 +42771,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/leads/leads.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42600,7 +42787,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/hr/time/leave-decision-effects.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42616,7 +42803,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-members.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42632,7 +42819,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-members.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42648,7 +42835,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-members.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42790,7 +42977,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-tickets-update.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42806,7 +42993,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-tickets-create.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42822,7 +43009,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-tickets.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,
@@ -42838,7 +43025,7 @@
         "customer-registered webhook endpoints (webhooks API subscriptions)"
       ],
       "emittedFrom": [
-        "src/modules/build/core/projects-tickets-update.service.ts"
+        "s"
       ],
       "declaredIn": null,
       "subscribable": true,

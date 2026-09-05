@@ -26,6 +26,7 @@ import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transactio
 import { AiRequestAbortInterceptor } from "../../ai/core/streaming/ai-request-abort.interceptor";
 import { respondWithAiTextStream } from "../../ai/core/streaming/ai-text-stream-route";
 import { AI_RESULT_STREAM_CONTENT_TYPE } from "../../ai/core/streaming/ai-result-stream";
+import { ApiAiResultStream } from "../../ai/core/streaming/ai-result-stream-contract";
 
 const publicationIdParams = z.object({ publicationId: z.coerce.number().int().positive() }).strict();
 
@@ -56,6 +57,7 @@ export class PayrollAiExplainController {
   }
 
   @Post(":publicationId/ai/explain/stream")
+  @ApiAiResultStream()
   @BodylessAction()
   @HttpCode(200)
   @NoTenantTransaction()

@@ -136,6 +136,7 @@ export class PayrollAiExplainService {
     const generation = await this.gateway.streamTextWithUsage({
       actor: { orgId, userId },
       feature: FEATURE_KEY,
+      tier: "fast",
       maxTokens: 400,
       charge: true,
       redact: false,

@@ -184,6 +184,7 @@ export class ExecutiveBriefService {
     ).streamTextWithUsage({
       actor: { orgId, userId },
       feature: "exec.brief.generate",
+      tier: "standard",
       prompt: {
         system:
           "You are an executive AI assistant. Produce a concise, factual business brief for senior leadership. Cite each data source by module name. Never fabricate metrics not present in the data.",

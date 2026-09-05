@@ -59,8 +59,9 @@ export async function pipeAiTextStream(
 ): Promise<void> {
   try {
     const init = options.headers ? { headers: options.headers } : undefined;
-    if (stream.textStream)
-      await pipeRawAiTextStream(stream.textStream, res, init);
+    const textStream = stream.textStream;
+    if (textStream)
+      await pipeRawAiTextStream(textStream, res, init);
     else await stream.pipeTextStreamToResponse(res, init);
   } catch (error) {
     options.onFault?.(error);

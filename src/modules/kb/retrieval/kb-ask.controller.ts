@@ -45,18 +45,29 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
   AiRequestAbortInterceptor,
-  createStreamAbortSignal,
-  encodeStreamSources,
-  sourcesTruncatedHeaderName,
-  pipeAiTextStream,
-  rethrowStreamRouteError,
+  respondWithAiTextStream,
 } from "../../ai/core/streaming";
+import { createAiResultStream, AI_RESULT_STREAM_CONTENT_TYPE } from "../../ai/core/streaming/ai-result-stream";
+import { createPipeableAiTextStream } from "../../ai/core/streaming/raw-ai-text-stream";
+import type { AskCitation } from "./kb-ask.service";
+import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
+import { ApiAiResultStream } from "../../ai/core/streaming/ai-result-stream-contract";
+import { COMMAND_FENCE_STORE, type CommandFenceStore } from "../../../common/idempotency/command-fence-store";
+import { claimAiStreamCommand, completeAiStreamCommand } from "../../ai/core/streaming/ai-stream-command";
+import { kbAskResultSchema } from "./dto/kb-ask-result.schema";
 import { z } from "zod";
 
 const conversationIdParams = z.object({ conversationId: z.coerce.number().int().positive() }).strict();
 
-const KB_ASK_STREAM_DEADLINE_MS = 60_000;
-const KB_ASK_CITATIONS_HEADER = "x-kb-citations";
+const KB_ASK_STREAM_DEADLINE_MS = 55_000;
+
+function completedKbStream(data: { answer: string }) {
+  return { stream: createPipeableAiTextStream(new ReadableStream<string>({ start(controller) {
+    controller.enqueue(`${JSON.stringify({ type: "text", text: data.answer })}\n`);
+    controller.enqueue(`${JSON.stringify({ type: "result", data })}\n`);
+    controller.close();
+  } })) };
+}
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -66,6 +77,7 @@ export class KbAskController {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ask: KbAskService,
     private readonly history: KbChatHistoryService,
+    @Inject(COMMAND_FENCE_STORE) private readonly fences: CommandFenceStore,
   ) {}
 
   /**
@@ -144,6 +156,7 @@ export class KbAskController {
   }
 
   @Post("ask/stream")
+  @ApiAiResultStream()
   @HttpCode(200)
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
@@ -156,41 +169,52 @@ export class KbAskController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
-    const abort = createStreamAbortSignal(req, res, KB_ASK_STREAM_DEADLINE_MS);
-    try {
-      const result = await this.ask.streamAsk(u, body, abort.signal);
-      if (!result.hasContext) {
-        res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-        res.end("I couldn't find anything about that in the knowledge base. You may want to open a support ticket.");
-        return;
+    await respondWithAiTextStream(req, res, {
+      feature: "kb.ask", orgId: u.orgId, route: "POST /kb/ask/stream",
+      deadlineMs: KB_ASK_STREAM_DEADLINE_MS, contentType: AI_RESULT_STREAM_CONTENT_TYPE,
+    }, async (signal) => {
+      const membershipId = actingMembershipId(u.principal) ?? 0;
+      if (body.conversationId !== undefined)
+        await runInTenantTransaction(this.db, () => this.history.listMessages(
+          u.orgId, u.userId, membershipId, body.conversationId ?? 0, { limit: 1 },
+        ), { orgId: u.orgId });
+      const claim = await runInTenantTransaction(this.db, () => claimAiStreamCommand(this.fences, {
+        key: req.headers["idempotency-key"], command: "kb.ask.stream",
+        orgId: u.orgId, userId: u.userId, membershipId,
+        audience: u.sessionId.startsWith("pat:") ? "pat" : "internal", body,
+      }), { orgId: u.orgId });
+      if (claim.kind === "replay") {
+        const data = kbAskResultSchema.parse(claim.data);
+        await runInTenantTransaction(this.db, async () => {
+          await this.history.listMessages(u.orgId, u.userId, membershipId, data.conversationId, { limit: 1 });
+          await this.ask.assertReplayCitations(u, data.citations);
+        }, { orgId: u.orgId });
+        return completedKbStream(data);
       }
-
-      const encoded = encodeStreamSources(result.citations, {
-        feature: "kb.ask",
-        orgId: u.orgId,
+      const result = await this.ask.streamAsk(u, body, signal);
+      const complete = async (answer: string, citations: AskCitation[], aiUsage?: AiUsageMeta) =>
+        runInTenantTransaction(this.db, async () => {
+          signal.throwIfAborted();
+          const conversationId = body.conversationId ?? (await this.history.createConversation(
+            u.orgId, u.userId, membershipId, body.question.substring(0, 60).trim(),
+          )).id;
+          await this.history.appendToConversation(u.orgId, u.userId, membershipId, conversationId, "user", body.question);
+          await this.history.appendToConversation(u.orgId, u.userId, membershipId, conversationId, "assistant", answer, citations);
+          signal.throwIfAborted();
+          const data = { answer, citations, hasContext: result.hasContext, aiUsage, conversationId };
+          await completeAiStreamCommand(this.fences, claim.fenceId, u.orgId, data);
+          return data;
+        }, { orgId: u.orgId });
+      if (!result.hasContext) {
+        const answer = "I couldn't find anything about that in the knowledge base. You may want to open a support ticket.";
+        const data = await complete(answer, []);
+        return completedKbStream(data);
+      }
+      return createAiResultStream({
+        generation: result.aiStream, signal,
+        complete: async (answer, aiUsage) => complete(answer, await result.verifyCitations(), aiUsage),
       });
-      const truncatedHeader = sourcesTruncatedHeaderName(KB_ASK_CITATIONS_HEADER);
-      await pipeAiTextStream(res, result.aiStream.stream, {
-        feature: "kb.ask",
-        orgId: u.orgId,
-        ...(encoded !== null
-          ? {
-              headers: {
-                [KB_ASK_CITATIONS_HEADER]: encoded.encoded,
-                ...(encoded.dropped > 0 ? { [truncatedHeader]: String(encoded.dropped) } : {}),
-                "access-control-expose-headers":
-                  encoded.dropped > 0
-                    ? `${KB_ASK_CITATIONS_HEADER}, ${truncatedHeader}`
-                    : KB_ASK_CITATIONS_HEADER,
-              },
-            }
-          : {}),
-      });
-    } catch (error) {
-      rethrowStreamRouteError(error, { route: "POST /kb/ask/stream" });
-    } finally {
-      abort.dispose();
-    }
+    });
   }
 
   @Get("ask/history")

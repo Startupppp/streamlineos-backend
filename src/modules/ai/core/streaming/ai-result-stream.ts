@@ -5,6 +5,7 @@ import {
   milliToCredits,
 } from "../billing/ai-model-pricing.constants";
 import { createPipeableAiTextStream } from "./raw-ai-text-stream";
+import { logger } from "../../../../common/logger/logger.service";
 
 export const AI_RESULT_STREAM_CONTENT_TYPE = "application/x-ndjson";
 
@@ -56,9 +57,14 @@ export function createAiResultStream<T>(options: {
     async pull(controller) {
       try {
         const { value, done } = await reader.read();
-        if (done) controller.close();
+        if (done) {
+          reader.releaseLock();
+          controller.close();
+        }
         else controller.enqueue(value);
       } catch {
+        logger.warn("AI result stream did not complete", { correlationId: generation.correlationId, model: generation.model });
+        reader.releaseLock();
         controller.enqueue(
           `${JSON.stringify({ type: "error", message: "AI generation could not be completed" })}\n`,
         );
@@ -66,7 +72,8 @@ export function createAiResultStream<T>(options: {
       }
     },
     async cancel(reason) {
-      await reader.cancel(reason);
+      try { await reader.cancel(reason); }
+      finally { reader.releaseLock(); }
     },
   });
   return { stream: createPipeableAiTextStream(textStream) };

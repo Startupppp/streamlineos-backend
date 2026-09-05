@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { KbEventsService } from "../core/kb-events.service";
@@ -199,7 +199,7 @@ export class KbAskService {
     signal: AbortSignal,
   ): Promise<
     | { hasContext: false }
-    | { hasContext: true; aiStream: AiTextStream; citations: AskCitation[] }
+    | { hasContext: true; aiStream: AiTextStream; citations: AskCitation[]; verifyCitations: () => Promise<AskCitation[]> }
   > {
     const gathered = await this.gatherContext(user, input);
     if (gathered.kind === "no-context") {
@@ -224,6 +224,7 @@ export class KbAskService {
     const aiStream = await this.aiGateway.streamTextWithUsage({
       actor: { orgId: user.orgId, userId: user.userId },
       feature: "kb.ask",
+      tier: "fast",
       maxTokens: 1024,
       charge: true,
       prompt: {
@@ -233,7 +234,10 @@ export class KbAskService {
       signal,
     });
 
-    return { hasContext: true, aiStream, citations: verifiedCitations };
+    return {
+      hasContext: true, aiStream, citations: verifiedCitations,
+      verifyCitations: () => runInTenantTransaction(this.db, () => this.resolveCitations(user, top, sources), { orgId: user.orgId }),
+    };
   }
 
   private async orgHasIndexedContent(orgId: string): Promise<boolean> {
@@ -241,6 +245,21 @@ export class KbAskService {
       sql`SELECT 1 AS one FROM kb_article_chunks WHERE org_id = ${orgId} LIMIT 1`,
     );
     return rows.length > 0;
+  }
+
+  async assertReplayCitations(user: CurrentUserContext, citations: AskCitation[]): Promise<void> {
+    await runInTenantTransaction(this.db, async () => {
+      const articleIds = citations.flatMap((citation) => citation.kind === "article" ? [citation.articleId] : []);
+      const pageIds = citations.flatMap((citation) => citation.kind === "page" ? [citation.pageId] : []);
+      const sourceIds = citations.flatMap((citation) => citation.kind === "source" ? [citation.sourceId] : []);
+      const [articles, pages, sources] = await Promise.all([
+        articleIds.length ? this.resolveVisibleArticles(user, articleIds) : Promise.resolve(new Set<number>()),
+        pageIds.length ? this.resolveVisiblePages(user, pageIds) : Promise.resolve(new Set<number>()),
+        sourceIds.length ? this.resolveVisibleSources(user, sourceIds) : Promise.resolve(new Set<number>()),
+      ]);
+      if (articleIds.some((id) => !articles.has(id)) || pageIds.some((id) => !pages.has(id)) || sourceIds.some((id) => !sources.has(id)))
+        throw new NotFoundException("The saved answer is no longer accessible");
+    }, { orgId: user.orgId });
   }
 
   private async resolveCitations(

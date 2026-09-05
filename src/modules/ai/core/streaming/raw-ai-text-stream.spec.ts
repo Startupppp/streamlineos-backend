@@ -16,6 +16,7 @@ async function close(server: Server): Promise<void> {
 describe("raw AI text transport", () => {
   it("delivers the first chunk before completion and retains response metadata", async () => {
     let finish: (() => void) | undefined;
+    let streamsRead = 0;
     const legacyPipe = jest.fn();
     const server = createServer((req, res) => {
       req.resume();
@@ -25,7 +26,7 @@ describe("raw AI text transport", () => {
           finish = () => { controller.enqueue(" last"); controller.close(); };
         },
       });
-      void pipeAiTextStream(res, { textStream, pipeTextStreamToResponse: legacyPipe }, {
+      void pipeAiTextStream(res, { get textStream() { streamsRead += 1; return textStream; }, pipeTextStreamToResponse: legacyPipe }, {
         orgId: "org-test", feature: "test", headers: { "x-ai-sources": "sources" },
       });
     });
@@ -33,7 +34,7 @@ describe("raw AI text transport", () => {
     try {
       const response = await fetch(url);
       expect(response.headers.get("x-ai-sources")).toBe("sources");
-      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("cache-control")).toBe("no-store, no-transform");
       const reader = response.body?.getReader();
       if (!reader || !finish) throw new Error("Stream did not open");
       expect(new TextDecoder().decode((await reader.read()).value)).toBe("first");
@@ -41,6 +42,7 @@ describe("raw AI text transport", () => {
       expect(new TextDecoder().decode((await reader.read()).value)).toBe(" last");
       expect((await reader.read()).done).toBe(true);
       expect(legacyPipe).not.toHaveBeenCalled();
+      expect(streamsRead).toBe(1);
     } finally {
       await close(server);
     }

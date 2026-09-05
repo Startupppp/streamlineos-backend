@@ -1,6 +1,6 @@
 import { streamText, type ToolSet } from "ai";
 import { logger } from "../../../../common/logger/logger.service";
-import { resolveChatModel, resolveChatModelId } from "../services/chat-assistant-model";
+import { resolveAiStreamModel } from "./ai-stream-model";
 import { classifyLlmError, resolveLlmRetryPolicy } from "../providers/llm-retry";
 import { redactSensitiveData } from "../redaction.util";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
@@ -18,6 +18,7 @@ import {
 } from "../services/ai-service-exceptions";
 
 export interface AiStreamTextOpts {
+  tier?: "fast" | "standard";
   actor: AiInvokeActor;
   feature: string;
   prompt: AiInvokePrompt;
@@ -110,7 +111,7 @@ export class AiGatewayStreamHelper {
 
   async run(opts: AiStreamTextOpts): Promise<AiTextStream> {
     const { actor, feature, signal, charge = true, redact = true } = opts;
-    const call = AiCallMetrics.begin({ feature, tier: "chat", orgId: actor.orgId });
+    const call = AiCallMetrics.begin({ feature, tier: opts.tier ?? "chat", orgId: actor.orgId });
     const breakerKey = opts.breakerKey ?? DEFAULT_BREAKER_KEY;
     const breaker = this.breakerFor(breakerKey);
     const tenantBreaker = this.breakerFor(
@@ -181,10 +182,10 @@ export class AiGatewayStreamHelper {
     };
 
     try {
-      const modelId = resolveChatModelId();
+      const { modelId, model } = resolveAiStreamModel(opts.tier);
       call.providerOpened();
       const stream = streamText({
-        model: resolveChatModel(),
+        model,
         messages: [{ role: "user", content: prompt.user }],
         system: prompt.system,
         maxOutputTokens: opts.maxTokens ?? DEFAULT_STREAM_MAX_TOKENS,

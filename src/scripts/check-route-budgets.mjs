@@ -61,9 +61,12 @@ const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
 const REQUIRED_BUDGET_FIELDS = ["maxDbCalls", "maxDownstreamCalls", "maxResponseBytes", "maxLatencyP95Ms", "maxMemoryMb"];
 const OPTIONAL_INT_FIELDS = ["maxBufferBlocks", "maxBatchSize", "maxDurationMs", "maxDownstreamCallsPerOrg", "maxDbCallsPerOrg", "measuredOrgsSwept"];
 const PER_ORG_FIELD = { maxDownstreamCalls: "maxDownstreamCallsPerOrg", maxDbCalls: "maxDbCallsPerOrg" };
-const OPTIONAL_NUMBER_FIELDS = ["maxReadPathP95Ms"];
+const OPTIONAL_NUMBER_FIELDS = ["maxReadPathP95Ms", "maxApplicationPreProviderP95Ms", "maxFirstVisibleStateMs", "maxProviderTtftP95Ms"];
 
 const MEASURED_PAIRS = [
+  ["measuredApplicationPreProviderP95Ms", "maxApplicationPreProviderP95Ms"],
+  ["measuredFirstVisibleStateMs", "maxFirstVisibleStateMs"],
+  ["measuredProviderTtftP95Ms", "maxProviderTtftP95Ms"],
   ["measuredDbCalls", "maxDbCalls"],
   ["measuredLatencyP95Ms", "maxLatencyP95Ms"],
   ["measuredDownstreamCalls", "maxDownstreamCalls"],
