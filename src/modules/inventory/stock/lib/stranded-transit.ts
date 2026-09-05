@@ -82,6 +82,25 @@ export async function queryStrandedTransit(
   // RETURN_TO_SOURCE moves the units back and never touches `quantity_received`
   // — the line still owes what it always owed — so a returned transfer stayed on
   // the queue for good, and the operator's next act was to return it again.
+  // T05. `inv_stock_levels`' natural key is wider than (variant, lot, serial) —
+  // `stock.ts:54-62` adds `coalesce(handling_unit_id, 0)` and `ownership`. Matching
+  // only the three meant this EXISTS could be satisfied by stock that is not this
+  // transfer's at all, and the transfer stayed on the queue after its own units had
+  // gone. Demonstrated: return a short-received transfer to source while a
+  // VENDOR-owned balance of the same variant stands at the same transit bin, and the
+  // returned transfer never leaves the queue.
+  //
+  // `ownership` is matched, and matched to OWNED specifically rather than to a column
+  // on the line: a transfer line carries no ownership, because a stock transfer only
+  // ever moves the organisation's own goods — the service sets no ownership, so its
+  // movements take the OWNED default. Consigned or vendor-owned stock standing at the
+  // waypoint therefore cannot be this transfer's, whoever put it there.
+  //
+  // `handling_unit_id` is deliberately NOT matched. The transfer's units leave loose,
+  // but they may be palletised at the waypoint, and a row on a handling unit is still
+  // this transfer's stock standing there. Matching `handling_unit_id IS NULL` would
+  // report those goods gone while they are visibly on a pallet in the transit bin —
+  // the opposite error, and the more dangerous one.
   const viewFilter =
     filters.view === "STRANDED"
       ? sql`t.status = 'COMPLETED' AND EXISTS (
@@ -92,6 +111,7 @@ export async function queryStrandedTransit(
              AND sl.product_variant_id = tl.product_variant_id
              AND sl.lot_id IS NOT DISTINCT FROM tl.lot_id
              AND sl.serial_id IS NOT DISTINCT FROM tl.serial_id
+             AND sl.ownership = 'OWNED'
              AND sl.on_hand::numeric > 0
         )`
       : sql`TRUE`;
