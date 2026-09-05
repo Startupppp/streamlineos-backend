@@ -71,80 +71,47 @@ export class CalendarEventSourceLoader {
 
     const callerMembershipId = membership?.id ?? 0;
 
-    const eventsData = await this.queryVisibleEvents(orgId, callerMembershipId, start, end);
+    const candidates = await this.candidatePage(orgId, callerMembershipId, start, end);
+    if (candidates.length === 0)
+      return { eventsData: [], linkedTicketMap: new Map(), exceptionsByEvent: new Map() };
 
+    const ids = candidates.map((c) => c.id);
+    const rsvpByEvent = await this.callerRsvp(orgId, callerMembershipId, ids);
+    const rows = await this.fetchEvents(orgId, callerMembershipId, ids, [...rsvpByEvent.keys()]);
+
+    const creatorMembershipIds = [...new Set(rows.map((r) => r.createdByMembershipId))];
+    const recurringIds = rows.filter((e) => e.rrule !== null).map((e) => e.id);
     const ticketEntityIds: number[] = [];
-    for (const e of eventsData) {
+    for (const e of rows) {
       if (e.entityType === "ticket" && e.entityId != null) {
         const id = parseInt(e.entityId, 10);
         if (!Number.isNaN(id)) ticketEntityIds.push(id);
       }
     }
 
+    const [creatorNames, rawTicketRows, exceptionsByEvent] = await Promise.all([
+      this.creatorNames(orgId, creatorMembershipIds),
+      this.fetchLinkedTickets(orgId, ticketEntityIds),
+      loadExceptionsByEvent(this.database, orgId, recurringIds, start, end),
+    ]);
+
     const linkedTicketMap = new Map<number, LinkedTicket>();
-    if (ticketEntityIds.length > 0) {
-      const rows = await this.database
-        .select({
-          id: tickets.id,
-          ticketNumber: tickets.ticketNumber,
-          title: tickets.title,
-          projectId: projects.id,
-          status: tickets.status,
-          projectKey: projects.key,
-        })
-        .from(tickets)
-        .innerJoin(projects, eq(tickets.projectId, projects.id))
-        .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketEntityIds)));
-      for (const row of rows)
-        linkedTicketMap.set(row.id, {
-          id: row.id,
-          key: `${row.projectKey}-${row.ticketNumber}`,
-          title: row.title,
-          projectId: row.projectId,
-          status: row.status,
-        });
-    }
+    for (const row of rawTicketRows)
+      linkedTicketMap.set(row.id, {
+        id: row.id,
+        key: `${row.projectKey}-${row.ticketNumber}`,
+        title: row.title,
+        projectId: row.projectId,
+        status: row.status,
+      });
 
-    const recurringIds = eventsData.filter((e) => e.rrule !== null).map((e) => e.id);
-    const exceptionsByEvent = await loadExceptionsByEvent(this.database, orgId, recurringIds, start, end);
-
-    return { eventsData, linkedTicketMap, exceptionsByEvent };
-  }
-
-  /**
-   * Single-pass visible-event read: one pair of index-bounded branch queries (non-recurring
-   * and recurring, run in parallel), one RSVP batch, one full-projection fetch, one
-   * creator-name lookup. Statement count is 4 fixed statements regardless of tenant size.
-   *
-   * The previous loop fetched BATCH_SIZE=500 candidates per iteration and continued until
-   * CALENDAR_EVENTS_CAP was reached, producing 4 statements per iteration (2 candidate
-   * + 1 RSVP + 1 fetch): 4 iterations × 4 statements = 16 extra statements on a large
-   * tenant vs a small one. The loop was unnecessary because CALENDAR_EVENTS_CAP is the
-   * correct limit for both branches — using it directly collapses the loop to one pass
-   * without changing what the caller receives (both caps kept a prefix of the
-   * (start_date, id) order, so the result is identical).
-   */
-  private async queryVisibleEvents(
-    orgId: string,
-    callerMembershipId: number,
-    start: Date,
-    end: Date,
-  ): Promise<VisibleEventRow[]> {
-    const candidates = await this.candidatePage(orgId, callerMembershipId, start, end);
-    if (candidates.length === 0) return [];
-
-    const ids = candidates.map((c) => c.id);
-    const rsvpByEvent = await this.callerRsvp(orgId, callerMembershipId, ids);
-    const rows = await this.fetchEvents(orgId, callerMembershipId, ids, [...rsvpByEvent.keys()]);
-
-    const creatorMembershipIds = new Set(rows.map((r) => r.createdByMembershipId));
-    const creatorNames = await this.creatorNames(orgId, [...creatorMembershipIds]);
-
-    return rows.map((row) => ({
+    const eventsData: VisibleEventRow[] = rows.map((row) => ({
       ...row,
       rsvpStatus: rsvpByEvent.get(row.id) ?? null,
       creatorName: creatorNames.get(row.createdByMembershipId) ?? null,
     }));
+
+    return { eventsData, linkedTicketMap, exceptionsByEvent };
   }
 
   /**
@@ -164,6 +131,25 @@ export class CalendarEventSourceLoader {
       .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.id, membershipIds)));
     for (const row of rows) names.set(row.membershipId, row.name);
     return names;
+  }
+
+  private async fetchLinkedTickets(
+    orgId: string,
+    ticketEntityIds: number[],
+  ): Promise<Array<{ id: number; ticketNumber: number; title: string; projectId: number; status: string; projectKey: string }>> {
+    if (ticketEntityIds.length === 0) return [];
+    return this.database
+      .select({
+        id: tickets.id,
+        ticketNumber: tickets.ticketNumber,
+        title: tickets.title,
+        projectId: projects.id,
+        status: tickets.status,
+        projectKey: projects.key,
+      })
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketEntityIds)));
   }
 
   /**

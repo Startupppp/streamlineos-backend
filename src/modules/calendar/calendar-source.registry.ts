@@ -70,8 +70,10 @@ export class CalendarSourceRegistry {
   }
 
   async getToggleList(ctx: CalendarSourceContext): Promise<ReadonlyArray<ToggleEntry>> {
-    const available = await this.resolveAvailable(ctx);
-    const disabledKeys = await this.preferences.getDisabledKeys(ctx.orgId, ctx.userId);
+    const [available, disabledKeys] = await Promise.all([
+      this.resolveAvailable(ctx),
+      this.preferences.getDisabledKeys(ctx.orgId, ctx.userId),
+    ]);
     return available.map((s) => ({
       key: s.key,
       label: s.label,
@@ -95,9 +97,10 @@ export class CalendarSourceRegistry {
   }
 
   async loadAll(ctx: CalendarSourceContext): Promise<CalendarSourceOutput> {
-    const available = await this.resolveAvailable(ctx);
-
-    const disabledKeys = await this.preferences.getDisabledKeys(ctx.orgId, ctx.userId);
+    const [available, disabledKeys] = await Promise.all([
+      this.resolveAvailable(ctx),
+      this.preferences.getDisabledKeys(ctx.orgId, ctx.userId),
+    ]);
 
     const toggleList: ToggleEntry[] = available.map((s) => ({
       key: s.key,
