@@ -65,6 +65,7 @@ describe("[seeded-e2e] Billing enforcement — seat limit, billing non-delegable
     const response = await request(server as never)
       .post("/users/invite")
       .set("Authorization", `Bearer ${freeOwnerToken}`)
+      .set("Idempotency-Key", "test-seat-limit-sixth-invite")
       .send({ email: "sixth-member@test.invalid" });
 
     expect(response.status).toBe(402);
@@ -78,7 +79,7 @@ describe("[seeded-e2e] Billing enforcement — seat limit, billing non-delegable
       .set("Authorization", `Bearer ${delegOwnerToken}`)
       .send({
         delegateeId: delegOrg.members.delegatee?.userId ?? "",
-        permissions: ["billing:plans:view"],
+        permissions: ["billing:subscription:view"],
         endsAt: futureDate,
       });
 

@@ -1,6 +1,11 @@
 import { eq } from "drizzle-orm";
 import request from "supertest";
-import { workflows } from "src/db/schema";
+import {
+  workflowAuditLogs,
+  workflowExecutions,
+  workflowSchedules,
+  workflows,
+} from "src/db/schema";
 import {
   createSeededE2eApp,
   signSeededToken,
@@ -121,15 +126,28 @@ describe("[seeded-e2e] Workflow definitions — RBAC deny and cross-tenant isola
     );
   }, 180_000);
 
+  /**
+   * workflow_audit_logs, workflow_executions and workflow_schedules reference
+   * workflows with NO ACTION, so the definition cannot be removed while any of
+   * them survives — only workflow_versions cascades. Publishing a definition
+   * writes an audit row, so every run of this spec leaves one behind.
+   */
+  const purgeWorkflow = async (workflowId: string): Promise<void> => {
+    await seeded.seedDb
+      .delete(workflowAuditLogs)
+      .where(eq(workflowAuditLogs.workflowId, workflowId));
+    await seeded.seedDb
+      .delete(workflowExecutions)
+      .where(eq(workflowExecutions.workflowId, workflowId));
+    await seeded.seedDb
+      .delete(workflowSchedules)
+      .where(eq(workflowSchedules.workflowId, workflowId));
+    await seeded.seedDb.delete(workflows).where(eq(workflows.id, workflowId));
+  };
+
   afterAll(async () => {
-    if (homeWorkflowId)
-      await seeded.seedDb
-        .delete(workflows)
-        .where(eq(workflows.id, homeWorkflowId));
-    if (neighbourWorkflowId)
-      await seeded.seedDb
-        .delete(workflows)
-        .where(eq(workflows.id, neighbourWorkflowId));
+    if (homeWorkflowId) await purgeWorkflow(homeWorkflowId);
+    if (neighbourWorkflowId) await purgeWorkflow(neighbourWorkflowId);
     if (home) await home.teardown();
     if (neighbour) await neighbour.teardown();
     if (seeded) await seeded.close();

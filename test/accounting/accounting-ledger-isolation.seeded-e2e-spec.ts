@@ -182,7 +182,7 @@ describe("[seeded-e2e] Accounting ledger — isolation, composite uniqueness, co
   });
 
   it("CONFLICT → 409 — creating the same account code twice within one org surfaces as HTTP 409, not 500", async () => {
-    const code = `SPEC-CONFLICT-${home.orgId.slice(0, 8)}`;
+    const code = `SPEC-C-${home.orgId.slice(0, 8)}`;
 
     const first = await request(server as never)
       .post("/accounting/accounts")
@@ -200,7 +200,7 @@ describe("[seeded-e2e] Accounting ledger — isolation, composite uniqueness, co
   });
 
   it("SOFT-DELETE EXCLUDED — a deactivated ledger account does not appear in the activeOnly list", async () => {
-    const code = `SPEC-INACTIVE-${home.orgId.slice(0, 8)}`;
+    const code = `SPEC-I-${home.orgId.slice(0, 8)}`;
 
     const createResp = await request(server as never)
       .post("/accounting/accounts")
