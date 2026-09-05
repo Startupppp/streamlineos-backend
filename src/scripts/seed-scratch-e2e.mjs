@@ -130,7 +130,7 @@ const SAVED_MESSAGE_MEMBERS = 8;
 const SAVED_MESSAGES_PER_MEMBER = 25;
 const ANNOUNCEMENT_COUNT = 400;
 const HR_ROLE_ASSIGNEES = 25;
-const SUPPORT_TICKET_COUNT = 60;
+const SUPPORT_TICKET_COUNT = 100;
 const INVOICE_COUNT = 25;
 const BILL_COUNT = 25;
 const JOURNAL_COUNT = 35;
@@ -1270,18 +1270,28 @@ async function seedAccounting() {
 
 async function seedSupport() {
   log("Seeding support tickets...");
-  const memberRows = await sql.unsafe(
-    `SELECT id, user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' LIMIT 3`,
+  const [participant] = await sql.unsafe(
+    `SELECT ta.membership_id, om.user_id
+     FROM build.ticket_assignees ta
+     INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
+     WHERE ta.org_id = $1
+     GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC LIMIT 1`,
     [LARGE_ORG],
   );
-  const assigneeMembershipId = memberRows[0]?.id ?? null;
-  const creatorMembershipId = memberRows[0]?.id;
+  const [fallback] = participant ? [] : await sql.unsafe(
+    `SELECT id AS membership_id FROM organization_members
+     WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1`,
+    [LARGE_ORG],
+  );
+  const creatorMembershipId = (participant ?? fallback)?.membership_id;
+  const assigneeMembershipId = creatorMembershipId;
 
   if (!creatorMembershipId) { log("  no members — skipping support tickets"); return; }
 
   const existingST = await sql.unsafe(
-    `SELECT count(*)::int n FROM support_tickets WHERE org_id = $1`,
-    [LARGE_ORG],
+    `SELECT count(*)::int n FROM support_tickets
+     WHERE org_id = $1 AND assignee_membership_id = $2`,
+    [LARGE_ORG, assigneeMembershipId],
   ).then((r) => r[0].n);
 
   if (existingST < SUPPORT_TICKET_COUNT) {

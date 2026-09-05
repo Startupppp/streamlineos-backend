@@ -44,6 +44,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUDGETS as READ_COST_BUDGETS } from "./read-cost-budgets.mjs";
 import { METRICS, decideBenchmark } from "./benchmark-regression.mjs";
+import { evaluateRequestRegressions } from "./request-benchmark-regression.mjs";
 
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const MANIFEST_OVERRIDE = (process.argv.find((a) => a.startsWith("--manifest=")) ?? "").slice("--manifest=".length);
@@ -490,6 +491,15 @@ function report(manifest, fresh) {
   violations.push(...requestLevel.violations);
   warnings.push(...requestLevel.warnings);
   const regressions = fresh ? evaluateRegressions(manifest, fresh) : null;
+  if (fresh) {
+    const requests = evaluateRequestRegressions(manifest, fresh);
+    regressions.findings.push(...requests.findings);
+    regressions.advisories.push(...requests.advisories);
+    console.log(`Request regression pass: ${requests.compared} route/profile comparisons`);
+    violations.push(...evaluateRequestLevel(fresh).violations);
+  } else if (STRICT) {
+    violations.push("Strict release verification requires --against=<fresh manifest> for request and SQL regression comparisons");
+  }
 
   const modules = manifest.modules.length;
   const benchmarks = manifest.modules.reduce((n, m) => n + m.benchmarks.length, 0);

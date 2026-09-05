@@ -62,6 +62,7 @@ import {
   summarise,
 } from "../../src/scripts/benchmark-regression.mjs";
 import { applyRequestLevel } from "./merge-http-measurement.mjs";
+import { buildCodeReleaseScope } from "./benchmark-release-scope.mjs";
 import { pickMetrics, runNoiseStudy } from "./benchmark-noise-study.mjs";
 
 import {
@@ -453,6 +454,7 @@ async function main() {
   const manifest = {
     version: 1,
     schemaVersion: "benchmark-manifest/1",
+    codeReleaseScope: buildCodeReleaseScope(),
     description:
       "Per-module benchmark record for the declared critical read paths, and the baseline the " +
       "regression gate ratchets against. Produced by test/perf/measure-benchmark-manifest.mjs.",
