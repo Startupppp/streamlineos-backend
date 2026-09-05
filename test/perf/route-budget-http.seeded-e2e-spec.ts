@@ -629,6 +629,8 @@ function unmeasured(reason: string, status: "unmeasured" | "failed"): RouteMeasu
     downstreamCalls: null,
     responseBytes: null,
     memoryMb: null,
+    memoryMbPercentiles: null,
+    responseBytesPercentiles: null,
   };
 }
 

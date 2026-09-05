@@ -164,6 +164,8 @@ describe("route-budget HTTP harness — the properties the numbers depend on", (
       downstreamCalls: null,
       responseBytes: null,
       memoryMb: null,
+      memoryMbPercentiles: null,
+      responseBytesPercentiles: null,
     });
 
     it("counts measured, refused and failed separately and lists every failure", () => {

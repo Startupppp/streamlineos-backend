@@ -171,7 +171,7 @@ describe("chat channel member — one wire shape across every read path", () => 
     const previewMember = (await loadChannelMemberPreview(db, ORG, [CHANNEL], 1)).get(CHANNEL)?.members[0];
     const detailMember = (await build(makeDb([nestedMemberRow(OTHER)])).getChannel(CHANNEL, ME, ORG))?.members[0];
 
-    expect(previewMember?.user?.email).toBeUndefined();
+    expect(Object.keys(previewMember?.user ?? {})).not.toContain("email");
     expect(detailMember?.user?.email).toBe(`${OTHER}@test.com`);
   });
 
