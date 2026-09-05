@@ -292,6 +292,7 @@ describe("the outage memo cannot answer an authorization question", () => {
     CACHE_KEYS.mfaUserTotp("user-1"),
     "access:perms:user-1:v3",
     "revoked:session:sess-1",
+    "kb:acc-spaces:org-1:v0:p1:m42:u99",
   ];
 
   it.each(AUTHORIZATION_KEYS)("%s is never memoised during an outage", async (key) => {
@@ -316,5 +317,22 @@ describe("the outage memo cannot answer an authorization question", () => {
 
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(cache.outageMemoServedCount).toBe(1);
+  });
+
+  it("kb:acc-spaces: key re-queries the source after a space-member removal even within the outage-memo window", async () => {
+    const key = "kb:acc-spaces:org-1:v0:p1:m42:u99";
+    const before = [10, 27];
+    const after = [10];
+    const fetcher = jest.fn().mockResolvedValueOnce(before).mockResolvedValue(after);
+    const cache = new CacheService(brokenRedis());
+
+    const first = await cache.cached(key, fetcher);
+    expect(first).toEqual(before);
+
+    const second = await cache.cached(key, fetcher);
+    expect(second).toEqual(after);
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(cache.outageMemoServedCount).toBe(0);
   });
 });

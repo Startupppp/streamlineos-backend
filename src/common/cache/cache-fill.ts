@@ -93,6 +93,7 @@ export class CacheFiller {
     "perms:",
     "permission",
     "entitlement",
+    "kb:acc-spaces:",
   ];
 
   private static isAuthorizationScoped(key: string): boolean {
