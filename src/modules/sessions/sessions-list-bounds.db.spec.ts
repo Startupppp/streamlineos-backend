@@ -44,6 +44,12 @@ const ENABLED = process.env.SESSIONS_DB_TESTS === "1";
 const DB_URL = process.env.SESSIONS_PROBE_DATABASE_URL ?? process.env.DATABASE_URL ?? "";
 const describeDb = ENABLED && DB_URL !== "" ? describe : describe.skip;
 
+describe("SessionsService.list — cap constant", () => {
+  it("SESSION_LIST_CAP is 50, matching the admin getUserSessions twin that has always read .limit(50)", () => {
+    expect(SESSION_LIST_CAP).toBe(50);
+  });
+});
+
 if (ENABLED) jest.setTimeout(180_000);
 
 const SUFFIX = randomUUID().slice(0, 8);
