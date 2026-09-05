@@ -84,9 +84,7 @@ export const PLAN_LABELS: Record<EffectivePlan, string> = {
   ENTERPRISE:   "Enterprise",
 };
 
-// ---------------------------------------------------------------------------
 // Trial / pricing catalog (charged amounts + public plan list)
-// ---------------------------------------------------------------------------
 
 /** Days of STARTER trial granted on org creation / registration. Overridable via TRIAL_DAYS env. */
 export const DEFAULT_TRIAL_DAYS = 14;

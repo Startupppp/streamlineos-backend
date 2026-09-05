@@ -43,8 +43,6 @@ export const signAuthMethodSchema = z.enum([
 export const signRoutingModeSchema = z.enum(["parallel", "sequential", "mixed"]);
 export const signCcTimingSchema = z.enum(["on_send", "on_complete"]);
 
-// ---- Envelopes ----
-
 export const createEnvelopeSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200),
   subject: z.string().trim().max(200).optional(),
@@ -105,14 +103,10 @@ export const extendExpirationSchema = z.object({
 }).strict();
 export type ExtendExpirationInput = z.infer<typeof extendExpirationSchema>;
 
-// ---- Documents ----
-
 export const uploadDocumentMetaSchema = z.object({
   orderIndex: z.coerce.number().int().min(0).default(0),
 }).strict();
 export type UploadDocumentMetaInput = z.infer<typeof uploadDocumentMetaSchema>;
-
-// ---- Recipients ----
 
 const PERSON_NAME_REGEX = /^[A-Za-z][A-Za-z\s'.-]{1,79}$/;
 
@@ -144,8 +138,6 @@ export type CreateRecipientInput = z.infer<typeof createRecipientSchema>;
 export const updateRecipientSchema = createRecipientSchema.partial().strict();
 export type UpdateRecipientInput = z.infer<typeof updateRecipientSchema>;
 
-// ---- Fields ----
-
 export const createFieldSchema = z.object({
   documentId: z.number().int().positive(),
   recipientId: z.number().int().positive(),
@@ -170,8 +162,6 @@ export type CreateFieldInput = z.infer<typeof createFieldSchema>;
 
 export const updateFieldSchema = createFieldSchema.partial().omit({ documentId: true, recipientId: true }).strict();
 export type UpdateFieldInput = z.infer<typeof updateFieldSchema>;
-
-// ---- Templates ----
 
 /**
  * `restrictedToRoles` / `restrictedToTeams` used to be here and are gone.
@@ -240,8 +230,6 @@ export const publishPublicFormSchema = z.object({
 }).strict();
 export type PublishPublicFormInput = z.infer<typeof publishPublicFormSchema>;
 
-// ---- Bulk send ----
-
 export const createBulkSendJobSchema = z.object({
   templateId: z.number().int().positive(),
   columnMapping: z.record(z.string(), z.string()),
@@ -249,8 +237,6 @@ export const createBulkSendJobSchema = z.object({
   dryRun: z.boolean().default(false),
 }).strict();
 export type CreateBulkSendJobInput = z.infer<typeof createBulkSendJobSchema>;
-
-// ---- Public signing ----
 
 export const publicAuthSchema = z.object({
   accessCode: z.string().trim().max(50).optional(),
@@ -289,8 +275,6 @@ export const publicFormSubmitSchema = z.object({
   accessCode: z.string().trim().max(50).optional(),
 }).strict();
 export type PublicFormESignSubmitInput = z.infer<typeof publicFormSubmitSchema>;
-
-// ---- Settings ----
 
 export const updateSignSettingsSchema = z.object({
   defaultExpirationDays: z.number().int().min(1).max(365).optional(),
