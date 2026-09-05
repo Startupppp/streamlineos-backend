@@ -1,36 +1,59 @@
 # InventoryOS — NEO handoff
 
-**Release pass — 2026-09-05. Pushed: backend `3d324061f`, frontend `3bbdfabe7`**, both on
-`feat/inventory-world-class-implementation`. `main` untouched in both repos.
+**Release pass, closed — 2026-09-05. Pushed: backend `f79ed69b2`, frontend `9285a13cb`**,
+both on `feat/inventory-world-class-implementation`. `main` was never pushed to from this
+pass; it has moved because other sessions push to it.
 
-A ticketed close-out ran over this branch — 14 tickets, GitHub issues #34–#47 on the
-frontend repo, label `inventory`. **Three of the four defects it was sent to fix were
-already fixed**; §6 had been wrong for five days and two work orders were written against
-it. What was actually broken was the cold build, and fixing that turned 50 failing tests
-green without an inventory code change. The whole inventory seeded suite is now **51 suites,
-561 tests, zero failures** on a database built from migrations alone — the previous best was
-46/50 and 550/555, un-rerun for 27 commits.
+22 tickets, GitHub issues #34–#55 on the frontend repo, label `inventory`. **19 done, 3
+blocked on things no commit can fix.** The seeded suite is **52 suites / 562 tests / EXIT=0**
+at `REACHED_HEAD 632/632`, run clean three times across two schema versions.
 
-Fixed here: the cold build (`1c167fdc1`); five commands that could not be retried, one of
-them found by the ratchet after a hand sweep missed it (`310abf574`, `cd889bef7`); the
-stranded-transit queue judging a transfer on somebody else's stock (`3d324061f`); and on the
-frontend, the complete absence of error boundaries across 82 routed pages, eight missing
-loading states, four URLs that 404'd, and no ratchet on nav→page (`3bac5faad`, `325d21660`,
-`296d8bed2`, `3bbdfabe7`).
+### What this pass was sent to do, and what was actually wrong
 
-**Still needing a human.** Neon is not applied — five live `streamlineos-api` connections,
-and 316 of 630 entries pending by hash against a database whose objects already exist, so
-the decision is *reconcile or rebaseline*, not *run db:migrate*. RF is unproven on a device:
-the product is passwordless and all 577 users have undeliverable addresses, so no automated
-sign-in can exist; the surface is structurally pinned by two ratchets and ergonomically
-unproven. Live Blinkit/Instamart/Zepto and a real WES remain secret-blocked, unchanged.
+It was sent to fix four defects. **Three were already fixed** and §6 had been wrong for five
+days, misdirecting two earlier work orders. The real fault was underneath: `db:bootstrap`
+stopped at 457 of 630, so two columns never existed and all 50 tests in the four "failing"
+suites were dying in setup. Fixing the build turned every one green without an inventory code
+change.
 
-**Red that is not this branch's.** CI on both PRs is inherited from `main`: the backend
-`Legacy org-actor ratchet` job sets a `backend/` working-directory that does not exist, and
-Lint is 244 errors backend / 48 frontend, both main's. The frontend `type-check` failure is
-five errors inside a **stale, gitignored `.next/types/validator.ts` generated Sep 4**, naming
-routes that no longer exist — that gate currently measures build freshness, not type safety.
-And **none of the ratchets this pass added run in CI**; a gate nobody runs is a comment.
+Then the cold build turned out not to be reproducible at all. `0320_recon_phase_a_orgid`
+walks `pg_class` with no `ORDER BY` and only gives a child `org_id` once its parent has it,
+so two builds of one commit produced two different schemas — and tenant isolation is built on
+that column. It now materialises each pass under one snapshot and iterates to a fixed point;
+**three fresh builds produce byte-identical `org_id` sets, 822 tables, same md5.**
+
+### The findings that outrank the tickets that found them
+
+- **`reconciliationQueries.rebuild` has never worked** — `42703` on every call, for every
+  organisation. Projection rebuild is something §12.3 asserts by name. It was invisible
+  because `INV_DB_TESTS` was set nowhere, so nine specs were `describe.skip` in every run.
+- **`inventory-rls.db.spec.ts` ran all 17 probes as the BYPASSRLS owner** — the
+  tenant-isolation suite was testing nothing. Its own anti-vacuity test caught it.
+- **§12.4 "all commands are idempotent" is false by 40 routes** — `products/create`,
+  `purchase-orders/create`, `sales-orders/invoice` and 37 more raise a second document on
+  retry. Five separate commands whose guard was *unreachable* were fixed first; these forty
+  never had one.
+- **`0909…down.sql` cannot execute and never could** (`0A000`), and reverting `0910`
+  silently rewrites data.
+- **Six gates were found reporting green while measuring nothing** — a static call-site
+  count, a property suite that passed with rounding inverted, a load overlap check that
+  counted the whole database, and three more. Every one was caught by a bite proof; none by
+  a green tick. That ratio is the argument for demanding one.
+
+### Blocked, and what each needs
+
+| | Needs |
+|---|---|
+| **CI (#53)** | **The account owner, in Billing & plans.** Two workflow defects were fixed — nothing triggered on this branch (`push.branches` was `[main]`, and PR runs come from a merge commit GitHub stops recomputing once the PR conflicts), and Lint hid Test (steps 8–37 skipped). Runs now exist, the first since 2026-09-01 — but **every job in both repos, including on `main`, is refused at start with `steps: []`**: "recent account payments have failed or your spending limit needs to be increased." Until that clears, no gate can execute in CI |
+| **Neon (#46)** | A human decision: 316 of 632 entries pending by hash against a database whose objects already exist. That is drift, so the call is *reconcile or rebaseline*, not "run db:migrate" |
+| **RF device (#45)** | A real credential. The product is passwordless and all 577 users have undeliverable addresses, so no automated sign-in can exist. The surface is structurally pinned by ratchets and ergonomically unproven |
+
+### Still red and not this branch's
+
+Main's lint debt (244 backend / 48 frontend) — the CI job split is precisely what stops it
+mattering. The frontend `type-check` failure is five errors in a **stale gitignored
+`.next/types/validator.ts` generated Sep 4**, naming routes that no longer exist; that gate
+measures build freshness, not type safety.
 
 **Close pass update — 2026-09-05.** `pnpm db:bootstrap` reaches `REACHED_HEAD 630/630` from an empty database for the first time on this branch, twice consecutively and idempotently (`1c167fdc1`). It had been stopping at 457/630 on `0678_rls_fix_feedback_cycle_responses`, an ordering defect described in §4 — and that, not any behavioural bug, is what the four "remaining cold-build failures" in §6 were. On a database at head those four suites are **50 of 50 tests, EXIT=0**. All three defects §6 called open had already been fixed in ancestors of this tip (`6c8f68fc9`, `99ab6c89d`); §6 and §3 are now corrected and dated. Still blocked and unchanged: RF needs a real signed-in session (`/me/access` 403s to a minted cookie), Neon was not migrated, live Blinkit/Zepto/Instamart secrets and a real WES adapter.
 
