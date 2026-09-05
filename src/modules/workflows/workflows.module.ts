@@ -1,6 +1,5 @@
 import { Module } from "@nestjs/common";
 import { WorkflowsController } from "./workflows.controller";
-import { WorkflowsService } from "./workflows.service";
 import { WorkflowsCrudService } from "./workflows-crud.service";
 import { WorkflowsExecutionService } from "./workflows-execution.service";
 import { WorkflowsApprovalService } from "./workflows-approval.service";
@@ -49,7 +48,6 @@ import { ComposioGateway } from "../integrations/core/composio.gateway";
     WorkflowsSecretsService,
     WorkflowsVariablesService,
     WorkflowsAnalyticsService,
-    WorkflowsService,
     WorkflowRunnerService,
     WorkflowScheduleTickService,
     CronLeaseService,
