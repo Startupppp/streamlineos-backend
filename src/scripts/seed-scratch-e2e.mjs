@@ -712,6 +712,26 @@ async function seedExtraTickets() {
     }
   }
 
+  // allocateTicketNumbers hands out build.project_ticket_counters.next_ticket_number.
+  // Bulk-inserting tickets without advancing it leaves the counter at 1 against seeded
+  // numbers up to 194000, so the first POST /build/{projectId}/tickets collides on the
+  // (org_id, project_id, ticket_number) unique index and answers 500.
+  log("  Syncing project_ticket_counters to the seeded ticket numbers...");
+  await sql.unsafe(
+    `INSERT INTO build.project_ticket_counters (org_id, project_id, next_ticket_number, updated_at)
+     SELECT org_id, project_id, MAX(ticket_number) + 1, now()
+       FROM build.tickets
+      WHERE org_id = $1 AND project_id IS NOT NULL
+      GROUP BY org_id, project_id
+     ON CONFLICT (org_id, project_id) DO UPDATE
+       SET next_ticket_number = GREATEST(
+             project_ticket_counters.next_ticket_number,
+             EXCLUDED.next_ticket_number
+           ),
+           updated_at = now()`,
+    [LARGE_ORG],
+  ).catch((e) => warn("project_ticket_counters sync", e));
+
   log("  Extra tickets seeding done.");
 }
 
