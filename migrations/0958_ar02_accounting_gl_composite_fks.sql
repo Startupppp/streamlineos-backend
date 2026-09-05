@@ -184,7 +184,7 @@ SET lock_timeout = DEFAULT;
 ALTER TABLE gl_journal_lines
   ADD CONSTRAINT fk_gl_journal_lines_org_dim_project
   FOREIGN KEY (org_id, dimension_project_id)
-  REFERENCES projects (org_id, id)
+  REFERENCES build.projects (org_id, id)
   ON DELETE SET NULL (dimension_project_id)
   NOT VALID;
 --> statement-breakpoint
