@@ -209,6 +209,23 @@ Return JSON: { "answer": string, "confidence": "high"|"medium"|"low"|"not_found"
   };
 }
 
+export function policyQaStreamPrompt(input: PolicyQaPromptInput) {
+  const policyList = input.policies
+    .map((p) => `[Policy: ${p.id}] Type: ${p.policyType} | Scope: ${p.scopeType ?? "org"} | Name: ${p.name ?? "Unnamed"}${p.content ? `\nContent: ${p.content.slice(0, 600)}` : ""}`)
+    .join("\n\n");
+  return {
+    system: `You are an expert HR policy assistant. Answer the employee's question clearly and directly, drawing only from the provided policies. If no policy covers the question, say so explicitly — never invent policy rules. Write in plain, professional language.`,
+    user: `Question: ${input.question}\n\nAvailable policies:\n${policyList || "No policies found."}`,
+  };
+}
+
+export function letterDraftStreamPrompt(input: LetterDraftPromptInput) {
+  return {
+    system: `You are an HR professional drafting formal employment letters. This is a draft only — it requires human review and authorized signature before any official use. Write the letter body only: no subject line, no JSON wrapper, just the letter content in a professional tone across 3-4 paragraphs.`,
+    user: `Letter Type: ${input.letterType}\nEmployee Name: ${input.employeeName}\nCurrent Title: ${input.currentTitle ?? "Not specified"}\nAdditional Details: ${input.details ?? "None"}`,
+  };
+}
+
 export interface InterviewKitPromptInput {
   jobTitle: string;
   jobDescription: string | null;

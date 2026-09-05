@@ -49,9 +49,15 @@ import {
   type ScoreCandidateInput,
 } from "../dto/request.schemas";
 import type { HelpdeskReplyResult } from "../dto/output.schemas";
-import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import {
+  AiRequestAbortInterceptor,
+  respondWithAiTextStream,
+  encodeStreamSources,
+  sourcesTruncatedHeaderName,
+} from "../streaming";
 
 const ADVISORY_DISCLAIMER = "AI estimate only. Human decision required.";
+const HR_POLICY_CITATIONS_HEADER = "x-hr-policy-citations";
 
 @Controller("ai")
 @UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
@@ -187,6 +193,37 @@ export class HrAiController {
     return this.hrPolicy.policyQa(u.orgId, u.userId, body.question);
   }
 
+  @Post("hr/policy-qa/stream")
+  @RequirePermission("hr:policies:view")
+  @Validate({ body: policyQaSchema })
+  async policyQaStream(
+    @Req() req: Request,
+    @Body() body: PolicyQaInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    this.ensureLlm("AI policy Q&A is not configured.");
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "hr.policy-qa",
+        orgId: u.orgId,
+        route: "POST /ai/hr/policy-qa/stream",
+        sourcesHeader: HR_POLICY_CITATIONS_HEADER,
+      },
+      async (signal) => {
+        const { aiStream, citations } = await this.hrPolicy.streamPolicyQa(
+          u.orgId,
+          u.userId,
+          body.question,
+          signal,
+        );
+        return { stream: aiStream.stream, sources: citations };
+      },
+    );
+  }
+
   @Post("hr/interview-kit")
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: interviewKitSchema })
@@ -217,6 +254,39 @@ export class HrAiController {
       advisory: true,
       disclaimer: "DRAFT — AI-generated. Requires human review, editing, and authorized signature before official use.",
     };
+  }
+
+  @Post("hr/letter-draft/stream")
+  @RequirePermission("hr:employees:manage")
+  @Validate({ body: letterDraftSchema })
+  async letterDraftStream(
+    @Req() req: Request,
+    @Body() body: LetterDraftInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.planLimits.assertFeature(u.orgId, "ai.review-generation");
+    this.ensureLlm("AI letter drafting is not configured.");
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "hr.letter-draft",
+        orgId: u.orgId,
+        route: "POST /ai/hr/letter-draft/stream",
+      },
+      async (signal) => {
+        const aiStream = await this.hrHelpdesk.streamDraftLetter(
+          u.orgId,
+          body.userId,
+          body.letterType,
+          body.details ?? null,
+          signal,
+        );
+        if (!aiStream) throw new NotFoundException("Employee not found");
+        return { stream: aiStream.stream };
+      },
+    );
   }
 
   @Post("hr/interview-notes-summary")

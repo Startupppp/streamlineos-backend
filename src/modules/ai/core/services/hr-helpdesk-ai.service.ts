@@ -3,14 +3,14 @@ import { and, eq, sql } from "drizzle-orm";
 import { helpdeskTickets, users } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { helpdeskReplyPrompt, letterDraftPrompt } from "../prompts/hr.prompts";
+import { helpdeskReplyPrompt, letterDraftPrompt, letterDraftStreamPrompt } from "../prompts/hr.prompts";
 import {
   HelpdeskReplySchema,
   LetterDraftSchema,
   type HelpdeskReplyResult,
   type LetterDraftResult,
 } from "../dto/output.schemas";
-import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayService, type AiTextStream } from "../gateway/ai-gateway.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { unwrapAiResult } from "./gateway-result.util";
 import { redactSensitiveData } from "../redaction.util";
@@ -143,5 +143,61 @@ export class HrHelpdeskAiService {
     });
 
     return unwrapAiResult(result);
+  }
+
+  async streamDraftLetter(
+    orgId: string,
+    targetUserId: string,
+    letterType: string,
+    details: string | null,
+    signal: AbortSignal,
+  ): Promise<AiTextStream | null> {
+    const ctx = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const empRows = await tx.execute(sql`
+          SELECT p.first_name, p.last_name, e.designation
+          FROM hr_employments e
+          JOIN hr_people p ON p.id = e.person_id
+          WHERE e.org_id = ${orgId}
+            AND p.user_id = ${targetUserId}
+            AND e.deleted_at IS NULL
+          LIMIT 1
+        `);
+
+        if (empRows.length > 0) {
+          const emp = empRows[0] as Record<string, unknown>;
+          return {
+            employeeName: `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim(),
+            currentTitle: emp.designation ? String(emp.designation) : null,
+          };
+        }
+
+        const [userRow] = await tx
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, targetUserId));
+        if (!userRow) return null;
+        return {
+          employeeName: userRow.name ?? targetUserId,
+          currentTitle: null,
+        };
+      },
+      { orgId },
+    );
+    if (!ctx) return null;
+
+    const { employeeName, currentTitle } = ctx;
+    const safeDetails = details ? redactSensitiveData(details) : null;
+    const prompt = letterDraftStreamPrompt({ letterType, employeeName, currentTitle, details: safeDetails });
+
+    return this.gateway.streamTextWithUsage({
+      actor: { orgId, userId: targetUserId },
+      feature: "hr.letter-draft",
+      prompt: { system: prompt.system, user: prompt.user },
+      maxTokens: 1024,
+      charge: true,
+      signal,
+    });
   }
 }

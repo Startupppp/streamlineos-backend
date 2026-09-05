@@ -4,7 +4,7 @@ import { InsufficientAiCreditsException } from "../../../common/http/api-excepti
 import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
-import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { AiGatewayService, type AiTextStream } from "../../ai/core/gateway/ai-gateway.service";
 import { kbArticles, kbPages, kbSources } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -191,6 +191,49 @@ export class KbAskService {
     );
 
     return { answer, citations: verifiedCitations, hasContext: true, aiUsage };
+  }
+
+  async streamAsk(
+    user: CurrentUserContext,
+    input: AskInput,
+    signal: AbortSignal,
+  ): Promise<
+    | { hasContext: false }
+    | { hasContext: true; aiStream: AiTextStream; citations: AskCitation[] }
+  > {
+    const gathered = await this.gatherContext(user, input);
+    if (gathered.kind === "no-context") {
+      this.noContextAnswer(user, input.question);
+      return { hasContext: false };
+    }
+    const { fullContext, top, sources } = gathered;
+
+    const verifiedCitations = await runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.events.record(user.orgId, "ai_answer", {
+          actorMembershipId: actingMembershipId(user.principal) ?? null,
+          query: input.question,
+          metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
+        });
+        return this.resolveCitations(user, top, sources);
+      },
+      { orgId: user.orgId },
+    );
+
+    const aiStream = await this.aiGateway.streamTextWithUsage({
+      actor: { orgId: user.orgId, userId: user.userId },
+      feature: "kb.ask",
+      maxTokens: 1024,
+      charge: true,
+      prompt: {
+        system: ASK_SYSTEM_PROMPT,
+        user: `Question: ${input.question}\n\nContext:\n${fullContext}`,
+      },
+      signal,
+    });
+
+    return { hasContext: true, aiStream, citations: verifiedCitations };
   }
 
   private async orgHasIndexedContent(orgId: string): Promise<boolean> {

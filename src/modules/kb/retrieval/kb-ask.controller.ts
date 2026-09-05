@@ -11,8 +11,12 @@ import {
   Patch,
   Post,
   Query,
+  Req,
+  Res,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -39,12 +43,24 @@ import {
 } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
+import {
+  AiRequestAbortInterceptor,
+  createStreamAbortSignal,
+  encodeStreamSources,
+  sourcesTruncatedHeaderName,
+  pipeAiTextStream,
+  rethrowStreamRouteError,
+} from "../../ai/core/streaming";
 import { z } from "zod";
 
 const conversationIdParams = z.object({ conversationId: z.coerce.number().int().positive() }).strict();
 
+const KB_ASK_STREAM_DEADLINE_MS = 60_000;
+const KB_ASK_CITATIONS_HEADER = "x-kb-citations";
+
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@UseInterceptors(AiRequestAbortInterceptor)
 export class KbAskController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -125,6 +141,56 @@ export class KbAskController {
       logger.error("Failed to persist KB chat message", { error });
     }
     return { ...result, conversationId };
+  }
+
+  @Post("ask/stream")
+  @HttpCode(200)
+  @NoTenantTransaction()
+  @RequirePermission("kb:pages:view")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("kb:ask")
+  @Validate({ body: askSchema })
+  async askStream(
+    @Req() req: Request,
+    @Body() body: AskInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    const abort = createStreamAbortSignal(req, res, KB_ASK_STREAM_DEADLINE_MS);
+    try {
+      const result = await this.ask.streamAsk(u, body, abort.signal);
+      if (!result.hasContext) {
+        res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+        res.end("I couldn't find anything about that in the knowledge base. You may want to open a support ticket.");
+        return;
+      }
+
+      const encoded = encodeStreamSources(result.citations, {
+        feature: "kb.ask",
+        orgId: u.orgId,
+      });
+      const truncatedHeader = sourcesTruncatedHeaderName(KB_ASK_CITATIONS_HEADER);
+      await pipeAiTextStream(res, result.aiStream.stream, {
+        feature: "kb.ask",
+        orgId: u.orgId,
+        ...(encoded !== null
+          ? {
+              headers: {
+                [KB_ASK_CITATIONS_HEADER]: encoded.encoded,
+                ...(encoded.dropped > 0 ? { [truncatedHeader]: String(encoded.dropped) } : {}),
+                "access-control-expose-headers":
+                  encoded.dropped > 0
+                    ? `${KB_ASK_CITATIONS_HEADER}, ${truncatedHeader}`
+                    : KB_ASK_CITATIONS_HEADER,
+              },
+            }
+          : {}),
+      });
+    } catch (error) {
+      rethrowStreamRouteError(error, { route: "POST /kb/ask/stream" });
+    } finally {
+      abort.dispose();
+    }
   }
 
   @Get("ask/history")
