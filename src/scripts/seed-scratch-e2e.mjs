@@ -212,34 +212,37 @@ async function seedOrganizationsAndOwners() {
     [LARGE_ORG, "Scratch E2E Corp", "scratch-e2e-corp", ownerId],
     [SMALL_ORG, "Scratch Minority Org", "scratch-minority-org", minorityUserId],
   ]) {
-    // regionForOrg reads organization_placement, not organizations.region; an unplaced org throws
-    // "has no region" on every tenant transaction, which surfaces as 401 on every authenticated
-    // request. Placed before the existence check so a re-run repairs an org seeded without one.
-    await placeOrg(sql, orgId);
-    await enableAllModules(sql, orgId);
-
     const existing = await sql.unsafe(`SELECT id FROM organizations WHERE id = $1`, [orgId])
       .then((r) => r[0]);
-    if (existing) { log(`  org ${orgId.slice(0, 8)}... already exists`); continue; }
 
-    const [nextIdRow] = await sql.unsafe(`SELECT nextval('organization_members_id_seq') AS next_id`);
-    const nextId = nextIdRow.next_id;
+    if (existing) {
+      log(`  org ${orgId.slice(0, 8)}... already exists`);
+    } else {
+      const [nextIdRow] = await sql.unsafe(`SELECT nextval('organization_members_id_seq') AS next_id`);
+      const nextId = nextIdRow.next_id;
 
-    await sql.begin(async (tx) => {
-      await tx.unsafe(
-        `INSERT INTO organizations (id, name, slug, status, owner_membership_id, created_at, updated_at)
-         VALUES ($1, $2, $3, 'ACTIVE', $4, now(), now())
-         ON CONFLICT (id) DO NOTHING`,
-        [orgId, name, slug, nextId],
-      );
-      await tx.unsafe(
-        `INSERT INTO organization_members (id, user_id, org_id, role, is_owner, status, joined_at)
-         VALUES ($1, $2, $3, 'OWNER', true, 'ACTIVE', now())
-         ON CONFLICT DO NOTHING`,
-        [nextId, ownerUserId, orgId],
-      );
-    });
-    log(`  created org ${orgId.slice(0, 8)}... with owner membership ${nextId}`);
+      await sql.begin(async (tx) => {
+        await tx.unsafe(
+          `INSERT INTO organizations (id, name, slug, status, owner_membership_id, created_at, updated_at)
+           VALUES ($1, $2, $3, 'ACTIVE', $4, now(), now())
+           ON CONFLICT (id) DO NOTHING`,
+          [orgId, name, slug, nextId],
+        );
+        await tx.unsafe(
+          `INSERT INTO organization_members (id, user_id, org_id, role, is_owner, status, joined_at)
+           VALUES ($1, $2, $3, 'OWNER', true, 'ACTIVE', now())
+           ON CONFLICT DO NOTHING`,
+          [nextId, ownerUserId, orgId],
+        );
+      });
+      log(`  created org ${orgId.slice(0, 8)}... with owner membership ${nextId}`);
+    }
+
+    // Both carry an FK to organizations, so they follow the insert; running them on every
+    // pass still repairs an org seeded without a placement, which regionForOrg reads from
+    // organization_placement and whose absence 401s every authenticated request.
+    await placeOrg(sql, orgId);
+    await enableAllModules(sql, orgId);
   }
 }
 
