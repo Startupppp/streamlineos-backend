@@ -30,17 +30,6 @@ export interface RouteFixtures {
    * database what this project actually accepts instead of hard-coding either vocabulary.
    */
   readonly projectStatusName: string | null;
-  /**
-   * The maximum timesheet date already recorded for the fixture membership in this org.
-   *
-   * `uniq_timesheets_work_log` is unique per (org_id, user_membership_id, date) when ticket_id IS
-   * NULL. The date counter in the plan resets each time the module loads, so a second replicate
-   * re-uses day 1, 2, 3 … and collides with the rows the first run inserted. Querying the real
-   * maximum here and walking forward from it keeps every sample and every replicate on a fresh day
-   * without depending on a calendar window that eventually runs out. Null when no entries exist yet
-   * (first run: walk backward from 2026-07-01 as before).
-   */
-  readonly timesheetDateBase: string | null;
 }
 
 export type RouteAuth = "member" | "cron";
@@ -87,14 +76,12 @@ export function buildRoutePlan(fx: RouteFixtures): RoutePlanEntry[] {
     fx.channelId === null ? "" : `/chat/channels/${String(fx.channelId)}${suffix}`;
 
   let planDay = 0;
+  const runNonce = randomUUID();
+  const nonceOffset = parseInt(runNonce.slice(0, 8), 16) % 9125;
+  const BASE_MS = Date.UTC(2000, 0, 1) + nonceOffset * 86_400_000;
   function nextEntryDate(): string {
     planDay += 1;
-    if (fx.timesheetDateBase !== null) {
-      const base = new Date(`${fx.timesheetDateBase}T00:00:00Z`).getTime();
-      return new Date(base + planDay * 86_400_000).toISOString().slice(0, 10);
-    }
-    const base = Date.UTC(2026, 6, 1) - planDay * 86_400_000;
-    return new Date(base).toISOString().slice(0, 10);
+    return new Date(BASE_MS + planDay * 86_400_000).toISOString().slice(0, 10);
   }
 
   const entries: RoutePlanEntry[] = [
