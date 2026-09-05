@@ -1,8 +1,8 @@
 /**
  * Real-database test for invoice number race-safety.
  *
- * Guarded by INV_DB_TESTS=1 — same flag as stock-engine.db.spec.ts.
- * Run with: INV_DB_TESTS=1 npx jest --runInBand --testPathPattern="invoice-numbering.db"
+ * Runs when DATABASE_URL is set, like every other `*.db.spec.ts`.
+ * Run with: DATABASE_URL=... pnpm test:db --testPathPattern="invoice-numbering.db"
  *
  * The service uses pg_advisory_xact_lock(hashtext(orgId || 'invoice')) inside
  * the transaction, then counts ALL org invoices (unfiltered — no status or
@@ -15,21 +15,12 @@
  * here with genuine concurrent Postgres transactions.
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
-import postgres from "postgres";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../../test/db-spec-gate";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 function connect() {
-  if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
-    dotenv.config({ path: ".env" });
-  }
-  const raw = process.env.DATABASE_URL ?? process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), { prepare: false, max: 10, ssl: "require", connect_timeout: 30 });
+  return dbSpecClient(dbSpecUrl("DATABASE_URL", "APP_DATABASE_URL"), { max: 10 });
 }
 
 describeDb("invoice numbering — real database", () => {

@@ -12,24 +12,18 @@
  * exists so that a future change back to a hard delete fails loudly rather than
  * quietly resuming the data loss.
  *
- *   INV_DB_TESTS=1 npx jest --runInBand --testPathPattern="product-soft-delete"
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="product-soft-delete"
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
-import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../../../test/db-spec-gate";
+import { ensureFixtureOrgs } from "../../../../test/db-spec-fixture";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), { prepare: false, max: 4, ssl: "require", connect_timeout: 30 });
+  return dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 4 });
 }
 
 type Database = ReturnType<typeof drizzle>;
@@ -53,10 +47,12 @@ describeDb("product deletion", () => {
   beforeAll(async () => {
     client = connect();
     db = drizzle(client);
-    const [org] = await client<{ id: string }[]>`SELECT id FROM organizations LIMIT 1`;
-    const [user] = await client<{ id: string }[]>`SELECT id FROM users LIMIT 1`;
-    orgId = org!.id;
-    userId = user!.id;
+    // `LIMIT 1` over whatever a shared branch happened to hold: undefined on a
+    // freshly migrated database, and a different tenant on every run elsewhere.
+    // The fixture pair is idempotent, so this is deterministic either way.
+    const [fixture] = await ensureFixtureOrgs(client, 1);
+    orgId = fixture!.orgId;
+    userId = fixture!.userId;
   });
 
   afterAll(async () => {

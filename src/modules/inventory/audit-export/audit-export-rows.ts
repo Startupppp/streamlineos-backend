@@ -80,11 +80,26 @@ function textValues(row: Record<string, unknown>, columns: readonly string[], re
  * Reads the evidence ceilings and the transaction-id boundary in one statement,
  * so both describe the same snapshot. Read apart, a row could commit between
  * them and sit below a ceiling that was taken before it existed.
+ *
+ * The boundary is NOT `pg_snapshot_xmax` on its own. A snapshot's xmax is
+ * `latestCompletedXid + 1`, so a transaction that is still running can hold an
+ * xid equal to or greater than it — measured: a session that had already
+ * inserted came back with an xid exactly equal to the xmax a second session
+ * then pinned. `isEvidenceSettled` compares that boundary against xmin, so with
+ * that writer as the only transaction in flight xmin equalled the boundary and
+ * the pin was called settled while the row below the ceiling could still
+ * commit. `pg_current_xact_id()` assigns this transaction an id, which is
+ * strictly greater than every id assigned before now — and an id assigned
+ * before now is the only kind a dangerous writer can hold, because `nextval`
+ * runs at INSERT and anything inserting later lands above the ceiling.
  */
 export async function pinEvidence(db: Db, orgId: string): Promise<EvidencePin> {
   const rows = await db.execute(sql`
     SELECT
-      pg_snapshot_xmax(pg_current_snapshot())::text AS pinned_xmax,
+      GREATEST(
+        pg_current_xact_id()::text::numeric,
+        pg_snapshot_xmax(pg_current_snapshot())::text::numeric
+      )::text AS pinned_xmax,
       (SELECT coalesce(max(id), 0) FROM inv_stock_transactions WHERE org_id = ${orgId})::text AS ledger_ceiling,
       (SELECT coalesce(max(id), 0) FROM inv_audit_events WHERE org_id = ${orgId})::text AS audit_ceiling
   `);
@@ -103,6 +118,11 @@ export async function pinEvidence(db: Db, orgId: string): Promise<EvidencePin> {
  * point a row with an id below the ceiling can still commit and join the set;
  * after it, the set at or below the ceiling is final and a checksum over it is
  * reproducible forever.
+ *
+ * Conservative in one direction only, and deliberately: a snapshot is
+ * cluster-wide, so an unrelated long transaction in another database holds xmin
+ * down and this reports "not settled" for longer than it needs to. It never
+ * reports settled early — which is the direction that would corrupt an export.
  */
 export async function isEvidenceSettled(db: Db, pinnedXmax: string): Promise<boolean> {
   const rows = await db.execute(

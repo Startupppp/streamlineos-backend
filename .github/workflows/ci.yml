@@ -124,6 +124,14 @@ jobs:
       - name: Migration chain verification
         run: pnpm check:migration-chain:self-test && pnpm check:migration-chain
 
+      # Nine *.db.spec.ts files were gated on INV_DB_TESTS, a variable set in no
+      # workflow, no script and no env file — so every one of them was
+      # describe.skip in every run and reported as a silent green inside
+      # `pnpm test`. This fails when a real-database spec is gated on a variable
+      # nothing sets, or when nothing runs the tier at all.
+      - name: Real-database specs are reachable
+        run: pnpm check:db-spec-gates:self-test && pnpm check:db-spec-gates
+
       - name: Dead-code report
         run: pnpm exec knip --no-progress
         continue-on-error: true
@@ -271,6 +279,18 @@ jobs:
         run: pnpm test:e2e:seeded --testPathPattern="golden-path"
         env:
           NODE_OPTIONS: --max-old-space-size=8192
+
+      # The *.db.spec.ts tier: RLS as a non-bypassing role, projection rebuild,
+      # live-catalogue parity, audit-export regeneration, the ledger cursor, the
+      # stock engine and product soft delete. Same condition as the step above —
+      # without a database the suites skip loudly by name rather than lying, so
+      # the step reports skipped rather than a green that proved nothing.
+      - name: Real-database specs
+        if: env.DATABASE_URL != ''
+        run: pnpm test:db
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
 
   # Tenant isolation, against a real database as the real application role.
   #

@@ -8,7 +8,7 @@
  * the real application role — plus the one that makes the whole suite honest:
  * the role under test must not be able to bypass.
  *
- *   INV_DB_TESTS=1 npx jest --runInBand --testPathPattern="inventory-rls"
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="inventory-rls"
  *
  * Prefers APP_DATABASE_URL when set, which is the deployed application role. If
  * it is absent this creates a NOBYPASSRLS probe role with the same grants and
@@ -16,20 +16,13 @@
  * available — and it refuses to pass as a bypassing role either way.
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
 import postgres from "postgres";
+import { dbSpecSessionClient, dbSpecSuite, dbSpecUrl } from "../../../test/db-spec-gate";
+import { ensureFixtureOrgs } from "../../../test/db-spec-fixture";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 const PROBE_ROLE = "inv_rls_probe";
-
-/** SET ROLE needs a session-mode connection; Neon encodes that in the host. */
-function sessionUrl(raw: string): string {
-  const url = new URL(raw.replace("-pooler.", "."));
-  url.searchParams.delete("channel_binding");
-  return url.toString();
-}
 
 /** A representative table from each area of the inventory surface. */
 const TENANT_TABLES = [
@@ -65,24 +58,32 @@ async function withContext<T>(step: string, work: () => Promise<T>): Promise<T> 
 
 describeDb("inventory row-level security", () => {
   let owner: ReturnType<typeof postgres>;
+  /**
+   * The connection every probe below actually runs on.
+   *
+   * It used to be `owner` unconditionally, with `SET LOCAL ROLE` applied only
+   * when APP_DATABASE_URL was absent — so supplying the deployed application
+   * role made the whole suite run as the BYPASSRLS owner and pass nothing.
+   * That was invisible while the file was `describe.skip`; the first real run
+   * failed the suite's own anti-vacuity check, which is what it is for.
+   */
+  let restricted: ReturnType<typeof postgres>;
   let usingDeployedRole = false;
   let orgA: string;
   let orgB: string;
 
   beforeAll(async () => {
-    if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-    const ownerUrl = process.env.DATABASE_URL;
-    if (!ownerUrl) throw new Error("DATABASE_URL required for INV_DB_TESTS");
-    owner = postgres(sessionUrl(ownerUrl), {
-      prepare: false,
+    // SET ROLE needs a session-mode connection; Neon encodes that in the host.
+    // A blocked GRANT should say so rather than sit behind another suite's locks
+    // until the jest timeout turns it into an unexplained failure.
+    owner = dbSpecSessionClient(dbSpecUrl("DATABASE_URL"), {
       max: 2,
-      onnotice: () => undefined,
-      // A blocked GRANT should say so rather than sit behind another suite's
-      // locks until the jest timeout turns it into an unexplained failure.
       connection: { lock_timeout: "5s" } as never,
     });
 
-    usingDeployedRole = Boolean(process.env.APP_DATABASE_URL);
+    const deployedRoleUrl = process.env.APP_DATABASE_URL?.trim();
+    usingDeployedRole = Boolean(deployedRoleUrl);
+    restricted = deployedRoleUrl ? dbSpecSessionClient(deployedRoleUrl) : owner;
     if (!usingDeployedRole) {
       // Setup failures used to surface as seventeen unexplained assertion
       // failures, because a beforeAll that throws fails every test in the file
@@ -109,6 +110,11 @@ describeDb("inventory row-level security", () => {
       });
     }
 
+    // A freshly migrated database has no organisations at all, and the
+    // cross-tenant probe below needs two. The fixture pair is idempotent and is
+    // created last, so a database that already carries real tenants still probes
+    // those — `ORDER BY created_at` keeps them ahead of the fixture.
+    await ensureFixtureOrgs(owner, 2);
     const orgs = await owner<{ id: string }[]>`SELECT id FROM organizations ORDER BY created_at LIMIT 2`;
     orgA = orgs[0]!.id;
     orgB = orgs[1]?.id ?? orgs[0]!.id;
@@ -128,6 +134,7 @@ describeDb("inventory row-level security", () => {
         console.warn(`could not drop ${PROBE_ROLE}: ${(error as Error).message}`);
       }
     }
+    if (restricted && restricted !== owner) await restricted.end({ timeout: 5 });
     if (owner) await owner.end({ timeout: 5 });
   });
 
@@ -143,7 +150,7 @@ describeDb("inventory row-level security", () => {
     body: (tx: postgres.TransactionSql) => Promise<T>,
   ): Promise<{ ok: true; value: T } | { ok: false; code: string }> {
     try {
-      const value = await owner.begin(async (tx) => {
+      const value = await restricted.begin(async (tx) => {
         if (!usingDeployedRole) await tx.unsafe(`SET LOCAL ROLE ${PROBE_ROLE}`);
         if (orgId !== null) await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
         return body(tx);

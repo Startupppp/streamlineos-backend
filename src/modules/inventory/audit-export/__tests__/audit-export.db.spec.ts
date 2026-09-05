@@ -9,11 +9,9 @@
  *   - a pin taken while a writing transaction is open is *not* settled, which
  *     is the whole reason the job waits before publishing a checksum.
  *
- *   INV_DB_TESTS=1 npx jest --runInBand --testPathPattern="audit-export.db"
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="audit-export.db"
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
-import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
 import {
@@ -30,17 +28,13 @@ import {
   readSection,
   type AuditExportWindow,
 } from "../audit-export-rows";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../../../test/db-spec-gate";
+import { ensureFixtureOrgs } from "../../../../test/db-spec-fixture";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), { prepare: false, max: 4, ssl: "require", connect_timeout: 30 });
+  return dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 4 });
 }
 
 type Database = ReturnType<typeof drizzle>;
@@ -73,10 +67,12 @@ describeDb("inventory audit export", () => {
   beforeAll(async () => {
     client = connect();
     db = drizzle(client);
-    const [org] = await client<{ id: string }[]>`SELECT id FROM organizations LIMIT 1`;
-    const [user] = await client<{ id: string }[]>`SELECT id FROM users LIMIT 1`;
-    orgId = org!.id;
-    userId = user!.id;
+    // `LIMIT 1` over whatever a shared branch happened to hold: undefined on a
+    // freshly migrated database, and a different tenant on every run elsewhere.
+    // The fixture pair is idempotent, so this is deterministic either way.
+    const [fixture] = await ensureFixtureOrgs(client, 1);
+    orgId = fixture!.orgId;
+    userId = fixture!.userId;
   });
 
   afterAll(async () => {
@@ -242,12 +238,63 @@ describeDb("inventory audit export", () => {
     });
   });
 
-  it("does not call a pin settled while the transaction that wrote below it is open", async () => {
+  it("pins a ledger ceiling that covers every movement already written", async () => {
     await inRolledBackFixture(async (tx, f) => {
       const pin = await pinEvidence(tx as never, f.orgId);
-
       expect(pin.ledgerCeilingId).toBeGreaterThanOrEqual(f.txnB);
-      expect(await isEvidenceSettled(tx as never, pin.pinnedXmax)).toBe(false);
     });
+  });
+
+  /**
+   * The settlement claim needs a *second* session, and used to be asserted from
+   * inside the pinning transaction — where it can only ever fail.
+   * `pg_current_snapshot()` never reports the caller's own transaction: on a
+   * quiet database xmin and xmax both come back as the caller's own xid, so
+   * `isEvidenceSettled` returned true while the very transaction that had just
+   * written was still open, and the assertion read as a defect in the pin.
+   *
+   * The service takes both the pin and the settlement check on the pool
+   * (`createJob`, then `awaitSettlement`), so in production the transaction that
+   * might still commit below the ceiling is always somebody else's. That is what
+   * this now holds open.
+   */
+  it("does not call a pin settled while another session's write is still open", async () => {
+    const writer = connect();
+    let release: (() => void) | undefined;
+    const releaseWriter = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let acquired: (() => void) | undefined;
+    const xidAcquired = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+
+    let writerXid = "0";
+    const open = writer.begin(async (wtx) => {
+      const [row] = await wtx<{ x: string }[]>`SELECT pg_current_xact_id()::text AS x`;
+      writerXid = row!.x;
+      acquired!();
+      await releaseWriter;
+    });
+
+    try {
+      await xidAcquired;
+      const pin = await pinEvidence(db as never, orgId);
+
+      // The bound itself, not just its consequence. `pg_snapshot_xmax` alone
+      // returned exactly this writer's id, which is what let the settlement
+      // check pass while the writer was open — so a pin that is not strictly
+      // above it is the defect, whatever the comparison then says.
+      expect(Number(pin.pinnedXmax)).toBeGreaterThan(Number(writerXid));
+      expect(await isEvidenceSettled(db as never, pin.pinnedXmax)).toBe(false);
+    } finally {
+      release!();
+      await open.catch(() => undefined);
+      await writer.end({ timeout: 5 });
+    }
+
+    // Not asserted: that it becomes settled once the writer closes. A snapshot
+    // is cluster-wide, so an unrelated transaction in another database on the
+    // same server holds xmin down and makes that assertion a coin toss.
   });
 });

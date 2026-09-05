@@ -8,10 +8,9 @@
  * dropping them along with the 86 composite tenant foreign keys that depend on
  * them, and no ORM query could filter tenant at the line grain.
  *
- * Guarded by INV_DB_TESTS=1 like the other real-database inventory specs:
- *   INV_DB_TESTS=1 npx jest --runInBand --testPathPattern="inventory-schema-parity"
+ * Runs when DATABASE_URL is set, like the other real-database inventory specs:
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="inventory-schema-parity"
  */
-import dotenv from "dotenv";
 import postgres from "postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 // The whole inventory barrel is the subject: this spec exists to compare every
@@ -19,9 +18,9 @@ import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 // touches no legacy identity table.
 // eslint-disable-next-line no-restricted-imports
 import * as inventorySchema from "../../../db/schema/inventory";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../../test/db-spec-gate";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 interface LiveColumn {
   table_name: string;
@@ -50,10 +49,7 @@ describeDb("inventory schema parity with the live catalogue", () => {
   const drizzle = declaredTables();
 
   beforeAll(async () => {
-    if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-    const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("DATABASE_URL required for INV_DB_TESTS");
-    sql = postgres(url, { prepare: false, max: 1, onnotice: () => undefined });
+    sql = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 1 });
     liveColumns = await sql<LiveColumn[]>`
       SELECT table_name, column_name, is_nullable
       FROM information_schema.columns

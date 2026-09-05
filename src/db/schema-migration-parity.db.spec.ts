@@ -1,6 +1,5 @@
 import * as schema from "./schema";
-import postgres from "postgres";
-import dotenv from "dotenv";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../test/db-spec-gate";
 
 /**
  * Does the database this schema declares actually exist after `db:bootstrap`?
@@ -22,15 +21,15 @@ import dotenv from "dotenv";
  *   psql -d cornerstone_cold -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
  *     CREATE EXTENSION btree_gist; CREATE EXTENSION pgcrypto; CREATE EXTENSION \"uuid-ossp\";"
  *   DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_cold pnpm db:bootstrap
- *   INV_DB_TESTS=1 DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_cold \
+ *   DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_cold \
  *     npx jest --runInBand --testPathPattern=schema-migration-parity
  *
- * Gated behind `INV_DB_TESTS` like the RLS probes, for the same reason: it needs
- * a real database and it is not the unit suite's job to have one.
+ * Runs whenever DATABASE_URL is in the environment and says so loudly when it
+ * is not (`src/test/db-spec-gate.ts`) — it needs a real database and it is not
+ * the unit suite's job to have one.
  */
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 const SCHEMAS = ["public", "build", "build_events", "app"] as const;
 
@@ -41,37 +40,18 @@ const SCHEMAS = ["public", "build", "build_events", "app"] as const;
  * `inventory-schema-reachability.spec.ts` and `cold-build-integrity.spec.ts`
  * use, and it is here so the gap is a number somebody has to look at rather
  * than a surprise at the end of a build.
+ *
+ * Empty, and that is the finding. It carried sixteen billing tables whose
+ * reason said they were "created by no migration in this repository" and existed
+ * only because `drizzle-kit push` made them. Journalled migrations 0520, 0524
+ * and 0565 create all sixteen, and a cold-built database at head has every one
+ * of them — checked table by table. The list was describing a repository that
+ * had already moved on, which is the failure the test below exists to catch:
+ * an exemption nobody re-reads stops meaning "this is missing" and starts
+ * meaning "nobody has looked". It could not fire, because this whole file was
+ * gated on INV_DB_TESTS and skipped in every run.
  */
-const NOT_MIGRATED: ReadonlyArray<{ table: string; reason: string }> = [
-  ...[
-    "billing_credit_note_lines",
-    "billing_credit_notes",
-    "billing_invoice_line_snapshots",
-    "billing_invoice_number_sequences",
-    "billing_invoice_snapshots",
-    "billing_plan_entitlements",
-    "billing_plans",
-    "billing_price_versions",
-    "billing_products",
-    "billing_proration_lines",
-    "billing_seat_events",
-    "billing_usage_events",
-    "billing_usage_reservations",
-    "billing_usage_rollups",
-    "org_entitlement_overrides",
-    "subscription_items",
-  ].map((table) => ({
-    table: `public.${table}`,
-    reason:
-      "Declared in src/db/schema/billing/ and created by no migration in this repository — it " +
-      "exists on the shared branch because drizzle-kit push made it. The gap is larger than the " +
-      "table: the sixteen carry 12 RLS policies, 4 immutability triggers and the 4 " +
-      "enforce_billing_*_immutability functions those triggers call, and none of that is " +
-      "migrated either. Writing it means transcribing a live schema — including tenant isolation " +
-      "policies — into a migration, which is billing's owner's call and not a mechanical one. " +
-      "Until then a cold-built database has every other declared table and none of these.",
-  })),
-];
+const NOT_MIGRATED: ReadonlyArray<{ table: string; reason: string }> = [];
 
 interface Missing {
   tables: string[];
@@ -79,7 +59,7 @@ interface Missing {
 }
 
 async function compare(url: string): Promise<Missing> {
-  const sql = postgres(url, { max: 1, onnotice: () => undefined });
+  const sql = dbSpecClient(url, { max: 1 });
   try {
     const live = new Map<string, Set<string>>();
     for (const row of await sql<
@@ -123,10 +103,7 @@ describeDb("the declared schema exists in the database", () => {
   let missing: Missing;
 
   beforeAll(async () => {
-    if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-    const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("DATABASE_URL required for INV_DB_TESTS");
-    missing = await compare(url);
+    missing = await compare(dbSpecUrl("DATABASE_URL"));
   }, 120_000);
 
   it("finds the schema at all, so a broken walk cannot pass silently", () => {

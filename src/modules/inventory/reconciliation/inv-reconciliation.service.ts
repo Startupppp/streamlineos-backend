@@ -335,11 +335,21 @@ export const reconciliationQueries = {
   rebuild(tx: Executor, orgId: string, where: SQL) {
     return tx.execute<{ id: number }>(sql`
       WITH ledger AS (
-        SELECT product_variant_id, location_id, lot_id, serial_id, quantity_bucket,
+        -- Grouped on the same key as bucketDrift above, and for the same reason:
+        -- NEO-4 and NEO-11 widened the projection with the handling unit and the
+        -- ownership. This CTE was left at the five-column grain while the three
+        -- subqueries below were widened, so every column it selected was one the
+        -- rebuild then failed to find: 42703 column l.handling_unit_id does not
+        -- exist, on every call, for every organisation. Nothing caught it
+        -- because the only spec that executes this statement was skipped in
+        -- every run the repository could perform.
+        SELECT product_variant_id, location_id, lot_id, serial_id, handling_unit_id,
+               ownership, quantity_bucket,
                SUM(quantity_change::numeric) AS total
         FROM inv_stock_transactions
         WHERE org_id = ${orgId}
-        GROUP BY product_variant_id, location_id, lot_id, serial_id, quantity_bucket
+        GROUP BY product_variant_id, location_id, lot_id, serial_id, handling_unit_id,
+                 ownership, quantity_bucket
       ),
       target AS (
         SELECT sl.id,

@@ -1,9 +1,9 @@
 /**
  * Real-database tests for the stock engine.
  *
- * Guarded by INV_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   INV_DB_TESTS=1 npx jest --runInBand --testPathPattern="stock-engine.db"
+ * Runs when DATABASE_URL is set, so the default hermetic `jest` run is
+ * unaffected and CI without a database skips loudly rather than failing:
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="stock-engine.db"
  *
  * These exist because the mocked engine specs cannot catch the defects that
  * actually shipped: the idempotency claim aborted its own transaction, and the
@@ -11,24 +11,15 @@
  * semantics and ledger/snapshot agreement are only provable against Postgres.
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
 import postgres from "postgres";
+import { dbSpecClient, dbSpecSessionClient, dbSpecSuite, dbSpecUrl } from "../../../../test/db-spec-gate";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 function connect() {
-  if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
-    // jest-setup.ts does not load .env; these specs are opt-in and need the real URL.
-    dotenv.config({ path: ".env" });
-  }
   // DATABASE_URL first: these specs create and drop scratch tables, which the
   // RLS-enforced application role is not permitted to do.
-  const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), { prepare: false, max: 10, ssl: "require", connect_timeout: 30 });
+  return dbSpecClient(dbSpecUrl("DATABASE_URL", "APP_DATABASE_URL"), { max: 10 });
 }
 
 /**
@@ -42,11 +33,7 @@ function connect() {
  * mode in the host, the same substitution db-verify-rls.mjs makes.
  */
 function connectSession() {
-  const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
-  const url = new URL(raw.replace("-pooler.", "."));
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), { prepare: false, max: 1, ssl: "require", connect_timeout: 30 });
+  return dbSpecSessionClient(dbSpecUrl("DATABASE_URL", "APP_DATABASE_URL"));
 }
 
 describeDb("stock engine — real database", () => {

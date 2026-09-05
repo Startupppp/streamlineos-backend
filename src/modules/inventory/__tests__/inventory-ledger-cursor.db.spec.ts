@@ -11,9 +11,8 @@
  * test with a mocked database, because all three are about what Postgres does
  * with the predicate.
  *
- *   INV_DB_TESTS=1 npx jest --runInBand --testPathPattern="inventory-ledger-cursor"
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="inventory-ledger-cursor"
  */
-import dotenv from "dotenv";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -27,9 +26,10 @@ import { invStockTransactions } from "../../../db/schema";
 import { keysetBeforeMicros, microsecondCursorValue } from "../../../common/pagination/keyset";
 import { decodeTimestampCursor } from "../../../common/pagination/cursor";
 import { InvStockService } from "../stock/inv-stock.service";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../../test/db-spec-gate";
+import { ensureFixtureLedger, ensureFixtureOrgs } from "../../../test/db-spec-fixture";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 const PAGE = 25;
 const MAX_PAGES = 6;
@@ -40,16 +40,22 @@ describeDb("inventory ledger cursor", () => {
   let orgId: string;
 
   beforeAll(async () => {
-    dotenv.config();
-    const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("DATABASE_URL is required for the ledger cursor probes");
-    client = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+    client = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 1 });
 
-    const [busiest] = await client<{ org_id: string }[]>`
-      SELECT org_id FROM inv_stock_transactions
+    // A walk that never crosses a page boundary proves nothing about a keyset,
+    // and a freshly migrated database has no ledger at all — which used to throw
+    // "no seeded ledger to walk" out of beforeAll and fail every assertion here
+    // with jest's own message. Seed a floor when the database cannot supply one.
+    const [busiest] = await client<{ org_id: string; n: number }[]>`
+      SELECT org_id, count(*)::int AS n FROM inv_stock_transactions
       GROUP BY org_id ORDER BY count(*) DESC LIMIT 1`;
-    if (!busiest) throw new Error("no seeded ledger to walk");
-    orgId = busiest.org_id;
+    if (busiest && busiest.n > PAGE) {
+      orgId = busiest.org_id;
+    } else {
+      const [fixture] = await ensureFixtureOrgs(client, 1);
+      await ensureFixtureLedger(client, fixture!);
+      orgId = fixture!.orgId;
+    }
 
     // The service's collaborators are all policy, not data: the walk under test
     // is the one query. Neutralising them keeps the assertions about the cursor.
