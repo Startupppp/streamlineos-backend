@@ -17,7 +17,7 @@ describe("[seeded-e2e] manual payment method persistence and isolation", () => {
 
   beforeAll(async () => {
     seeded = await createSeededE2eApp();
-    server = seeded.app.getHttpServer<Server>();
+    server = seeded.app.getHttpServer();
     home = await seedOrg(seeded.seedDb).onPlan("PAID")
       .addMember("owner", { standing: "OWNER" })
       .addMember("reader", { permissionKeys: ["payments:providers:view"] }).build();

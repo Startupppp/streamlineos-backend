@@ -29,7 +29,7 @@ export function applyScope(
     case "none":
       return sql`false`;
     default: {
-      const _exhaustive: never = scope;
+      void (scope satisfies never);
       return sql`false`;
     }
   }

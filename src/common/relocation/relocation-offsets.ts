@@ -1,3 +1,5 @@
+import { assertNever } from "../types/assert-never";
+
 export type OutboxDeliveryState =
   | "PENDING"
   | "IN_FLIGHT"
@@ -116,8 +118,7 @@ function classifyEvent(
       if (inFlightIds.has(event.eventId)) return "indeterminate";
       return "replay";
     default: {
-      const exhaustive: never = event.deliveryState;
-      throw new Error(`Unhandled delivery state: ${String(exhaustive)}`);
+      return assertNever(event.deliveryState);
     }
   }
 }

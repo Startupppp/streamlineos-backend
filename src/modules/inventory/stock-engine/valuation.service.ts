@@ -1,4 +1,5 @@
 import { Injectable, UnprocessableEntityException } from "@nestjs/common";
+import { assertNever } from "../../../common/types/assert-never";
 import { eq, sql } from "drizzle-orm";
 import {
   invValuationLayers,
@@ -245,8 +246,7 @@ export class ValuationService {
       case "STANDARD":
         return input.standardCost ?? layerUnitCost;
       default: {
-        const exhaustive: never = input.costingMethod;
-        return exhaustive;
+        return assertNever(input.costingMethod);
       }
     }
   }

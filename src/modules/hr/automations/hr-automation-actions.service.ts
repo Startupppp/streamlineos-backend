@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { tasks } from "../../../db/schema";
 import { logger } from "../../../common/logger/logger.service";
+import { assertNever } from "../../../common/types/assert-never";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { AutomationEmailService } from "../../automation/automation-email.service";
 import { HR_WORKFLOW_STARTER, type HrWorkflowStarterPort } from "./hr-workflow-starter.port";
@@ -108,10 +109,8 @@ export class HrAutomationActionsService {
       case "call_webhook":
         return await this.callWebhook(orgId, action.config.url, action.config.method ?? "POST", payload, ruleWebhookSecret);
 
-      default: {
-        const _exhaustive: never = action;
-        return { type: (_exhaustive as HrAutomationAction).type, ok: false, error: "Unknown action type" };
-      }
+      default:
+        return assertNever(action);
     }
   }
 

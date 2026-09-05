@@ -33,7 +33,7 @@ export function decideProbationLeave(input: ProbationLeaveInput): ProbationLeave
     case "no-record":
       return { allowed: true };
     default: {
-      const _exhaustive: never = input.coverage;
+      void (input.coverage satisfies never);
       return { allowed: false, reason: PROBATION_LEAVE_REFUSAL };
     }
   }

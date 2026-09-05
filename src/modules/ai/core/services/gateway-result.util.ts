@@ -1,4 +1,5 @@
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { assertNever } from "../../../../common/types/assert-never";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import {
   AiConcurrencyLimitException,
@@ -10,9 +11,6 @@ import type {
   AiInvokeResult,
 } from "../gateway/ai-gateway.types";
 
-function assertNever(x: never): never {
-  throw new Error(`Unhandled AI failure kind: ${String(x)}`);
-}
 
 export function throwOnAiFailure(result: AiInvokeFailure): never {
   switch (result.kind) {

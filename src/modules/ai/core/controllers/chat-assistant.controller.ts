@@ -447,8 +447,7 @@ export class ChatAssistantController {
       }
 
       default: {
-        const _exhaustive: never = action;
-        throw new BadRequestException(`Unknown action type: ${String(_exhaustive)}`);
+        throw new BadRequestException(`Unknown action type: ${String(action satisfies never)}`);
       }
     }
 

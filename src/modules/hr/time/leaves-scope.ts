@@ -38,7 +38,7 @@ export function leaveApprovalScope(
     case "none":
       return sql`false`;
     default: {
-      const _exhaustive: never = scope;
+      void (scope satisfies never);
       return sql`false`;
     }
   }
@@ -57,7 +57,7 @@ export function leaveEmployeeScope(
     case "none":
       return sql`false`;
     default: {
-      const _exhaustive: never = scope;
+      void (scope satisfies never);
       return sql`false`;
     }
   }

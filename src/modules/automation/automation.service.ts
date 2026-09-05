@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { assertNever } from "../../common/types/assert-never";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import type { AiNodeType } from "./ai-workflow-nodes/ai-node-types";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
@@ -48,9 +49,6 @@ export interface EvaluationResult {
   actionResults: ActionResult[];
 }
 
-function assertNever(x: never): never {
-  throw new Error(`Unhandled action type: ${String(x)}`);
-}
 
 const AI_ACTION_NODE_MAP: Record<string, AiNodeType> = {
   ai_classify: "classify",

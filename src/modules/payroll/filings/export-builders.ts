@@ -4,6 +4,7 @@
  * Never claim automatic submission or remittance.
  */
 
+import { assertNever } from "../../../common/types/assert-never";
 import { buildCsv } from "../insights/lib/csv";
 import {
   IN_STATUTORY_RULE_BUNDLE_VERSION,
@@ -411,8 +412,7 @@ export function buildFilingExport(
     case "FORM16":
       return buildForm16SummaryExport(employees, opts);
     default: {
-      const _exhaustive: never = filingType;
-      throw new Error(`Unsupported filing type: ${String(_exhaustive)}`);
+      return assertNever(filingType);
     }
   }
 }

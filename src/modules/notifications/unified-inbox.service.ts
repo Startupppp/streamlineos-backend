@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
 import { actingMembershipId } from "../../common/auth/principal";
+import { assertNever } from "../../common/types/assert-never";
 import { MailService } from "../mail/mail.service";
 import { KIND_ORDER, deduplicate, stableSortItems } from "./unified-inbox-projections";
 import { BroadcastsService } from "./broadcasts.service";
@@ -35,11 +36,6 @@ export type UnifiedUnreadCount = {
 };
 
 const MAIL_COUNT_SCAN_LIMIT = 100;
-
-function assertNever(x: never): never {
-  throw new Error(`Unhandled union member: ${String(x)}`);
-}
-
 
 @Injectable()
 export class UnifiedInboxService {
