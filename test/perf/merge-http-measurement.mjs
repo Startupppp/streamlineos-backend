@@ -122,8 +122,10 @@ export function applyRequestLevel(manifest, requestLevel) {
       !line.startsWith("Request-level MUTATION latency"),
   );
   manifest.coverage.notMeasured.unshift(
-    `Request-level figures cover ${String(requestLevel.tally.measured)} of ` +
-      `${String(requestLevel.tally.total)} route×tenant slots on ${String(requestLevel.database)}; ` +
+    `Request-level figures cover ${String(requestLevel.tally.measuredUnique)} of ` +
+      `${String(requestLevel.tally.total)} route×tenant slots ` +
+      `(n=${String(requestLevel.tally.replicates)} replicates, ${String(requestLevel.tally.measured)} measurements total) ` +
+      `on ${String(requestLevel.database)}; ` +
       `${String(requestLevel.tally.refused)} were declined and ${String(requestLevel.tally.failed)} failed. ` +
       `See requestLevel.tally.refusalsByReason for why each was not measured.`,
   );
@@ -139,6 +141,7 @@ export function buildRequestLevel(artifacts, budgets, budgetsHash) {
   const routes = {};
   const tenants = [];
   let measured = 0;
+  const measuredKeys = new Set();
   let refused = 0;
   let failed = 0;
   let excluded = 0;
@@ -217,8 +220,10 @@ export function buildRequestLevel(artifacts, budgets, budgetsHash) {
         }
 
         measured += 1;
+        measuredKeys.add(key);
         if (!classification.scored) excluded += 1;
         const p95 = m.latencyMs?.p95 ?? null;
+        /* across replicates, last replicate wins — same as the scalar responseBytes and memoryMb fields */
         routes[key] = {
           route,
           tenant: run.tenant,
@@ -244,6 +249,8 @@ export function buildRequestLevel(artifacts, budgets, budgetsHash) {
           deferredDownstreamTargets: m.deferredDownstreamTargets ?? null,
           responseBytes: m.responseBytes,
           memoryMb: m.memoryMb,
+          memoryMbPercentiles: m.memoryMbPercentiles ?? null,
+          responseBytesPercentiles: m.responseBytesPercentiles ?? null,
           overPrdCeiling: classification.scored && p95 !== null ? p95 > classification.ceilingMs : false,
         };
       }
@@ -282,6 +289,8 @@ export function buildRequestLevel(artifacts, budgets, budgetsHash) {
     tally: {
       total: Object.keys(routes).length,
       measured,
+      measuredUnique: measuredKeys.size,
+      replicates: artifacts.length,
       refused,
       failed,
       excludedFromCeiling: excluded,
@@ -323,7 +332,7 @@ function selfTest() {
       {
         tenant: "org", profile: "reference", ...ok, tally: { measured: 2, refused: 1, failed: 0 },
         routes: {
-          "GET /a": { status: "measured", samples: 40, latencyMs: { p50: 1, p95: 999, p99: 1, min: 1, max: 1 }, dbCalls: 3, gucCalls: 1, downstreamCalls: 0, downstreamAccounting: "request-and-after-commit-v1", deferredDownstreamCalls: 2, deferredFailures: 0, responseBytes: 10, memoryMb: 1 },
+          "GET /a": { status: "measured", samples: 40, latencyMs: { p50: 1, p95: 999, p99: 1, min: 1, max: 1 }, dbCalls: 3, gucCalls: 1, downstreamCalls: 0, downstreamAccounting: "request-and-after-commit-v1", deferredDownstreamCalls: 2, deferredFailures: 0, responseBytes: 10, memoryMb: 1, memoryMbPercentiles: { p50: 0, p95: 1, p99: 1 }, responseBytesPercentiles: { p50: 8, p95: 10, p99: 10 } },
           "GET /cron/x": { status: "measured", samples: 40, latencyMs: { p50: 1, p95: 5000, p99: 1, min: 1, max: 1 }, dbCalls: 100, gucCalls: 1, downstreamCalls: 8, responseBytes: 10, memoryMb: 40 },
           "GET /gone": { status: "unmeasured", reason: "declined" },
         },
@@ -368,6 +377,17 @@ function selfTest() {
     tripleBuilt.noiseStudy?.routes?.["GET /a@reference"]?.responseBytes?.n === 3);
   check("the noiseStudy carries latency p95 envelopes from the three replicates",
     tripleBuilt.noiseStudy?.routes?.["GET /a@reference"]?.latencyMs?.p95?.n === 3);
+  check("memoryMbPercentiles are carried into the route slot from the artifact",
+    built.routes["GET /a@reference"].memoryMbPercentiles?.p95 === 1);
+  check("responseBytesPercentiles are carried into the route slot from the artifact",
+    built.routes["GET /a@reference"].responseBytesPercentiles?.p50 === 8);
+  check("a route without percentile data gets null, not undefined",
+    built.routes["GET /cron/x@reference"].memoryMbPercentiles === null &&
+      built.routes["GET /cron/x@reference"].responseBytesPercentiles === null);
+  check("measuredUnique counts distinct slots, not total measurements across replicates",
+    tripleBuilt.tally.measuredUnique === 2 && tripleBuilt.tally.measured === 6);
+  check("replicates field equals the number of artifacts passed in",
+    tripleBuilt.tally.replicates === 3 && singleBuilt.tally.replicates === 1);
 
   const failed = checks.filter((c) => !c.ok);
   for (const c of checks) process.stdout.write(`  ${c.ok ? "ok  " : "FAIL"} ${c.name}\n`);
@@ -392,7 +412,7 @@ function main() {
 
   const over = Object.values(requestLevel.routes).filter((r) => r.overPrdCeiling === true);
   process.stdout.write(
-    `[merge-http-measurement] ${String(requestLevel.tally.measured)} measured / ` +
+    `[merge-http-measurement] ${String(requestLevel.tally.measuredUnique)} unique measured (n=${String(requestLevel.tally.replicates)}) / ` +
       `${String(requestLevel.tally.refused)} refused / ${String(requestLevel.tally.failed)} failed ` +
       `of ${String(requestLevel.tally.total)} route×tenant slots · ` +
       `${String(requestLevel.tally.excludedFromCeiling)} excluded from the request ceiling · ` +
