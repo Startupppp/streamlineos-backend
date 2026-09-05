@@ -1652,7 +1652,8 @@ async function seedPayslipPublications() {
   if (existing >= 5) { log("  already seeded — skipping"); return; }
 
   const runEmployees = await sql.unsafe(
-    `SELECT pre.id run_employee_id, pre.run_id FROM payroll_run_employees pre
+    `SELECT pre.id run_employee_id, pre.run_id, pre.user_id, pre.worker_id
+     FROM payroll_run_employees pre
      JOIN payroll_runs pr ON pr.id = pre.run_id AND pr.org_id = $1
      WHERE pre.org_id = $1
      ORDER BY pre.id LIMIT 5`,
@@ -1661,10 +1662,12 @@ async function seedPayslipPublications() {
   if (!runEmployees.length) { log("  no payroll_run_employees — skipping payslip_publications"); return; }
 
   for (const re of runEmployees.slice(existing)) {
+    // chk_payslip_publications_subject requires user_id OR worker_id; carry the
+    // subject over from the run employee rather than inserting a subjectless row.
     await sql.unsafe(
-      `INSERT INTO payslip_publications (org_id, run_id, run_employee_id, channel, status, attempt_count, created_at, updated_at)
-       VALUES ($1, $2, $3, 'PORTAL', 'PENDING', 0, now(), now())`,
-      [LARGE_ORG, re.run_id, re.run_employee_id],
+      `INSERT INTO payslip_publications (org_id, run_id, run_employee_id, user_id, worker_id, channel, status, attempt_count, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, 'PORTAL', 'PENDING', 0, now(), now())`,
+      [LARGE_ORG, re.run_id, re.run_employee_id, re.user_id, re.worker_id],
     ).catch((e) => warn("payslip_publication", e));
   }
 }

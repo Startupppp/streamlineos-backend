@@ -287,38 +287,16 @@ async function runDrill(
         { orgId: orgA, userId: uNorm, title: `cr-${runId}`, status: "TODO" },
       ];
       await db.insert(helpdeskTickets).values(ctrlHdRows);
-      await db.insert(mailMessageMetadata).values([
-        {
-          orgId: orgA,
-          accountId: ACCT,
-          messageId: `cm1-${runId}`,
-          userMembershipId: mNorm,
-          syncedAt: MLEXP,
-        },
-        {
-          orgId: orgA,
-          accountId: ACCT,
-          messageId: `cm2-${runId}`,
-          userMembershipId: mNorm,
-          syncedAt: MLEXP,
-        },
-      ]);
-      await db.insert(announcements).values([
-        {
-          orgId: orgA,
-          title: `cae-${runId}`,
-          content: "drill",
-          authorId: uNorm,
-          expiresAt: ANEXP,
-        },
-        {
-          orgId: orgA,
-          title: `caa-${runId}`,
-          content: "drill",
-          authorId: uNorm,
-          createdAt: ANAGE,
-        },
-      ]);
+      const ctrlMlRows: (typeof mailMessageMetadata.$inferInsert)[] = [
+        { orgId: orgA, accountId: ACCT, messageId: `cm1-${runId}`, userMembershipId: mNorm, syncedAt: MLEXP },
+        { orgId: orgA, accountId: ACCT, messageId: `cm2-${runId}`, userMembershipId: mNorm, syncedAt: MLEXP },
+      ];
+      await db.insert(mailMessageMetadata).values(ctrlMlRows);
+      const ctrlAnRows: (typeof announcements.$inferInsert)[] = [
+        { orgId: orgA, title: `cae-${runId}`, content: "drill", authorId: uNorm, expiresAt: ANEXP },
+        { orgId: orgA, title: `caa-${runId}`, content: "drill", authorId: uNorm, createdAt: ANAGE },
+      ];
+      await db.insert(announcements).values(ctrlAnRows);
     });
 
     const [hdB, mlB, anB] = await Promise.all([
@@ -372,61 +350,22 @@ async function runDrill(
         reason: `drill-${runId}`,
         placedBy: uNorm,
       });
-      await db.insert(helpdeskTickets).values([
-        {
-          orgId: orgA,
-          userId: uHeld,
-          title: `hh1-${runId}`,
-          status: "DONE",
-          resolvedAt: HDEXP,
-        },
-        {
-          orgId: orgA,
-          userId: uHeld,
-          title: `hh2-${runId}`,
-          status: "DONE",
-          resolvedAt: HDEXP,
-        },
-        {
-          orgId: orgA,
-          userId: uNorm,
-          title: `hn1-${runId}`,
-          status: "DONE",
-          resolvedAt: HDEXP,
-        },
-      ]);
-      await db.insert(mailMessageMetadata).values([
-        {
-          orgId: orgA,
-          accountId: ACCT,
-          messageId: `hm-h-${runId}`,
-          userMembershipId: mHeld,
-          syncedAt: MLEXP,
-        },
-        {
-          orgId: orgA,
-          accountId: ACCT,
-          messageId: `hm-n-${runId}`,
-          userMembershipId: mNorm,
-          syncedAt: MLEXP,
-        },
-      ]);
-      await db.insert(announcements).values([
-        {
-          orgId: orgA,
-          title: `hah-${runId}`,
-          content: "drill",
-          authorId: uHeld,
-          expiresAt: ANEXP,
-        },
-        {
-          orgId: orgA,
-          title: `han-${runId}`,
-          content: "drill",
-          authorId: uNorm,
-          expiresAt: ANEXP,
-        },
-      ]);
+      const heldHdRows: (typeof helpdeskTickets.$inferInsert)[] = [
+        { orgId: orgA, userId: uHeld, title: `hh1-${runId}`, status: "DONE", resolvedAt: HDEXP },
+        { orgId: orgA, userId: uHeld, title: `hh2-${runId}`, status: "DONE", resolvedAt: HDEXP },
+        { orgId: orgA, userId: uNorm, title: `hn1-${runId}`, status: "DONE", resolvedAt: HDEXP },
+      ];
+      await db.insert(helpdeskTickets).values(heldHdRows);
+      const heldMlRows: (typeof mailMessageMetadata.$inferInsert)[] = [
+        { orgId: orgA, accountId: ACCT, messageId: `hm-h-${runId}`, userMembershipId: mHeld, syncedAt: MLEXP },
+        { orgId: orgA, accountId: ACCT, messageId: `hm-n-${runId}`, userMembershipId: mNorm, syncedAt: MLEXP },
+      ];
+      await db.insert(mailMessageMetadata).values(heldMlRows);
+      const heldAnRows: (typeof announcements.$inferInsert)[] = [
+        { orgId: orgA, title: `hah-${runId}`, content: "drill", authorId: uHeld, expiresAt: ANEXP },
+        { orgId: orgA, title: `han-${runId}`, content: "drill", authorId: uNorm, expiresAt: ANEXP },
+      ];
+      await db.insert(announcements).values(heldAnRows);
     });
 
     const [hhB, hnB, hmhB, hmnB, hahB, hanB] = await Promise.all([
@@ -500,22 +439,11 @@ async function runDrill(
 
     /* ISOLATION — holds are org-scoped (req 3) */
     await runInNewTenantTransaction(db, orgB, async () => {
-      await db.insert(helpdeskTickets).values([
-        {
-          orgId: orgB,
-          userId: uHeld,
-          title: `is1-${runId}`,
-          status: "DONE",
-          resolvedAt: HDEXP,
-        },
-        {
-          orgId: orgB,
-          userId: uHeld,
-          title: `is2-${runId}`,
-          status: "DONE",
-          resolvedAt: HDEXP,
-        },
-      ]);
+      const isoHdRows: (typeof helpdeskTickets.$inferInsert)[] = [
+        { orgId: orgB, userId: uHeld, title: `is1-${runId}`, status: "DONE", resolvedAt: HDEXP },
+        { orgId: orgB, userId: uHeld, title: `is2-${runId}`, status: "DONE", resolvedAt: HDEXP },
+      ];
+      await db.insert(helpdeskTickets).values(isoHdRows);
     });
     const [ibSeed, iaABef] = await Promise.all([
       cntTickets(db, orgB, uHeld),
