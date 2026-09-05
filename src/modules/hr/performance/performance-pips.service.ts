@@ -64,7 +64,7 @@ export class PerformancePipsService {
   }
 
   async updatePip(orgId: string, pipId: number, input: UpdatePipInput) {
-    await this.db
+    const [updated] = await this.db
       .update(performanceImprovementPlans)
       .set({
         ...(input.status !== undefined && { status: input.status }),
@@ -81,7 +81,11 @@ export class PerformancePipsService {
           eq(performanceImprovementPlans.id, pipId),
           eq(performanceImprovementPlans.orgId, orgId),
         ),
-      );
+      )
+      .returning({ id: performanceImprovementPlans.id });
+
+    if (!updated)
+      throw new NotFoundException("Performance improvement plan not found");
 
     return { success: true };
   }
