@@ -22,6 +22,7 @@ import {
   LARGE_ORG,
   MID_ORG,
   SMALL_ORG,
+  TINY_ORG,
   assertScratchTarget,
   scaled,
 } from "./heavy-query-fixtures.mjs";
@@ -186,6 +187,18 @@ const count = async (table, where, params) => {
   return rows[0].n;
 };
 
+async function placeOrg(orgId) {
+  await sql.unsafe(
+    `INSERT INTO organization_placement
+       (organization_id, region, cell_id, database_shard, object_storage_region, search_cluster,
+        placement_version, write_fence_token, lease_expires_at, status, created_at, updated_at)
+     VALUES ($1, 'primary', 'legacy-1', 'primary', 'primary', 'primary',
+             1, gen_random_uuid()::text, now() + interval '24 hours', 'ACTIVE', now(), now())
+     ON CONFLICT (organization_id) DO NOTHING`,
+    [orgId],
+  );
+}
+
 async function ensureMidOrg() {
   const [existing] = await sql.unsafe(`SELECT id FROM organizations WHERE id = $1`, [MID_ORG]);
   if (existing) return;
@@ -211,7 +224,37 @@ async function ensureMidOrg() {
       [nextId, ownerUserId, MID_ORG],
     );
   });
+  await placeOrg(MID_ORG);
   log(`  created mid org (owner membership ${nextId})`);
+}
+
+async function ensureTinyOrg() {
+  const [existing] = await sql.unsafe(`SELECT id FROM organizations WHERE id = $1`, [TINY_ORG]);
+  if (existing) return;
+  const ownerUserId = "bbbbbbbb-8888-0000-0000-000000000004";
+  await sql.unsafe(
+    `INSERT INTO users (id, name, email, email_verified, first_name, last_name, is_active, created_at, updated_at)
+     VALUES ($1, 'Perf Tiny Owner', 'owner-tiny@scratch-seed.test', now(), 'Perf', 'TinyOwner', true, now(), now())
+     ON CONFLICT (id) DO NOTHING`,
+    [ownerUserId],
+  );
+  const [{ next_id: nextId }] = await sql.unsafe(
+    `SELECT nextval('organization_members_id_seq') AS next_id`,
+  );
+  await sql.begin(async (tx) => {
+    await tx.unsafe(
+      `INSERT INTO organizations (id, name, slug, status, owner_membership_id, created_at, updated_at)
+       VALUES ($1, 'Scratch Tiny Org', 'scratch-tiny-org', 'ACTIVE', $2, now(), now())`,
+      [TINY_ORG, nextId],
+    );
+    await tx.unsafe(
+      `INSERT INTO organization_members (id, user_id, org_id, role, is_owner, status, joined_at)
+       VALUES ($1, $2, $3, 'OWNER', true, 'ACTIVE', now())`,
+      [nextId, ownerUserId, TINY_ORG],
+    );
+  });
+  await placeOrg(TINY_ORG);
+  log(`  created tiny org (owner membership ${nextId})`);
 }
 
 async function ensureMembers(orgId, label, wanted) {
@@ -700,6 +743,7 @@ async function main() {
   if (PURGE) await purge();
 
   await section("mid org", ensureMidOrg);
+  await section("tiny org", ensureTinyOrg);
 
   for (const profile of ORG_PROFILES) {
     const events = scaled(profile.events, SCALE);

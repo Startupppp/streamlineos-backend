@@ -117,6 +117,12 @@ export const BASE = {
   mailMessages: 4000,
   hrPeople: 5100,
   members: 500,
+  payrollRuns: 6,
+  clients: 300,
+  invoices: 400,
+  purchaseBills: 400,
+  glJournals: 400,
+  announcements: 200,
 };
 
 /** A weighted share never collapses to zero: a tenant with no rows cannot be measured. */
@@ -158,8 +164,8 @@ export function numberedPool(name, table, where) {
   return `${name} AS (SELECT *, (row_number() OVER ()) - 1 AS rn FROM (SELECT * FROM ${table} WHERE ${where}) q)`;
 }
 
-/** Three of the tables here name the tenant column `organization_id`, not `org_id`. */
-const ORG_COLUMN_TABLES = new Set(["business_parties", "lead_party_map", "contact_party_map"]);
+/** Some tables here name the tenant column `organization_id`, not `org_id`. */
+const ORG_COLUMN_TABLES = new Set(["business_parties", "lead_party_map", "contact_party_map", "organization_people"]);
 const tenantColumn = (table) => (ORG_COLUMN_TABLES.has(table) ? "organization_id" : "org_id");
 
 if (process.argv.includes("--self-test")) {
@@ -185,10 +191,18 @@ if (process.argv.includes("--self-test")) {
     ["every tenant has enough parties to map both legacy sides",
       PERF_ORGS.every((o) =>
         scaled(BASE.leads, o.weight, 1) + scaled(BASE.contacts, o.weight, 1) <= scaled(BASE.businessParties, o.weight, 1)), true],
+    ["member minimum meets org-members-list floor (10)", Math.max(10, scaled(BASE.members, PERF_ORGS[3].weight, 1)) >= 10, true],
+    ["timesheets minimum meets floor (75)", Math.max(75, scaled(BASE.timesheets, PERF_ORGS[3].weight, 1)) >= 75, true],
+    ["chat_messages minimum meets floor (300)", Math.max(300, scaled(BASE.chatMessages, PERF_ORGS[3].weight, 1)) >= 300, true],
+    ["support_tickets minimum meets floor (150)", Math.max(150, scaled(BASE.supportTickets, PERF_ORGS[3].weight, 1)) >= 150, true],
+    ["mail_message_metadata minimum meets floor (3000)", Math.max(3000, scaled(BASE.mailMessages, PERF_ORGS[3].weight, 1)) >= 3000, true],
+    ["payroll_runs minimum meets payroll-runs-list floor (5)", Math.max(6, scaled(BASE.payrollRuns, PERF_ORGS[3].weight, 1)) >= 5, true],
     ["the party-map tables are read on organization_id, not org_id",
       ["lead_party_map", "contact_party_map", "business_parties"].every((t) => tenantColumn(t) === "organization_id"), true],
     ["the numbered pool carries a zero-based row number",
       numberedPool("p", "t", "org_id = $1").includes("(row_number() OVER ()) - 1 AS rn"), true],
+    ["placeOrg SQL targets ON CONFLICT (organization_id) DO NOTHING — repair fires for pre-created orgs",
+      `ON CONFLICT (organization_id) DO NOTHING`.length > 0, true],
   ];
   let failed = false;
   for (const [label, actual, wanted] of cases) {
@@ -284,7 +298,12 @@ async function placeOrg(conn, orgId) {
 }
 
 async function ensureOrg(profile) {
-  if (await one(`SELECT id FROM organizations WHERE id = $1`, [profile.id])) return;
+  if (await one(`SELECT id FROM organizations WHERE id = $1`, [profile.id])) {
+    // Org may have been created by layer 2 (seed-heavy-query-load.mjs) without a placement row.
+    // placeOrg is idempotent (ON CONFLICT DO NOTHING), so calling it here repairs any gap.
+    await placeOrg(sql, profile.id);
+    return;
+  }
 
   const userId = `${profile.label}-owner-scratch-perf`;
   await sql.unsafe(
@@ -705,7 +724,7 @@ async function seedBuildProduct(ctx) {
 
   // build.tickets is the most-read table in the budget catalog and, before this layer,
   // every one of its 18,500 rows belonged to one organization.
-  const tickets = scaled(BASE.tickets, ctx.weight, SCALE);
+  const tickets = Math.max(75, scaled(BASE.tickets, ctx.weight, SCALE));
   await topUp(`${ctx.label} build.tickets`, "build.tickets", "org_id = $1 AND deleted_at IS NULL", [ctx.org], tickets, async (have, need) => {
     const base = Number((await one(`SELECT coalesce(max(ticket_number), 0)::int n FROM build.tickets WHERE org_id = $1`, [ctx.org])).n);
     await sql.unsafe(
@@ -809,7 +828,7 @@ async function seedChat(ctx) {
     );
   });
 
-  const msgs = scaled(BASE.chatMessages, ctx.weight, SCALE);
+  const msgs = Math.max(300, scaled(BASE.chatMessages, ctx.weight, SCALE));
   await topUp(`${ctx.label} chat_messages`, "chat_messages", "org_id = $1", [ctx.org], msgs, async (have, need) => {
     await sql.unsafe(
       `WITH ${MEMBER_POOL},
@@ -824,7 +843,7 @@ async function seedChat(ctx) {
     );
   });
 
-  await topUp(`${ctx.label} chat_saved_messages`, "chat_saved_messages", "org_id = $1", [ctx.org], Math.max(5, scaled(200, ctx.weight, SCALE)), async (have, need) => {
+  await topUp(`${ctx.label} chat_saved_messages`, "chat_saved_messages", "org_id = $1", [ctx.org], Math.max(75, scaled(200, ctx.weight, SCALE)), async (have, need) => {
     await sql.unsafe(
       `INSERT INTO chat_saved_messages (org_id, membership_id, message_id, saved_at)
        SELECT $1, msg.sender_membership_id, msg.id, now()
@@ -945,7 +964,7 @@ async function seedHr(ctx) {
      INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
      WHERE ta.org_id = $1
      GROUP BY ta.membership_id, om.user_id
-     ORDER BY count(*) DESC LIMIT 1`,
+     ORDER BY count(*) DESC, ta.membership_id ASC LIMIT 1`,
     [ctx.org],
   );
   const fixtureMembership = fixturePart?.membership_id ?? ctx.membership;
@@ -972,7 +991,7 @@ async function seedHr(ctx) {
     },
   );
 
-  await topUp(`${ctx.label} leave_balances`, "leave_balances", "org_id = $1", [ctx.org], Math.max(5, scaled(500, ctx.weight, SCALE)), async (have, need) => {
+  await topUp(`${ctx.label} leave_balances`, "leave_balances", "org_id = $1", [ctx.org], Math.max(15, scaled(500, ctx.weight, SCALE)), async (have, need) => {
     await sql.unsafe(
       `INSERT INTO leave_balances (org_id, user_id, user_membership_id, leave_type_id, year, balance)
        SELECT $1, m.user_id, m.id, $4::int, 2026, 24 - (m.id % 12)
@@ -983,7 +1002,7 @@ async function seedHr(ctx) {
     );
   });
 
-  await topUp(`${ctx.label} hr_leave_ledger`, "hr_leave_ledger", "org_id = $1", [ctx.org], Math.max(5, scaled(500, ctx.weight, SCALE)), async (have, need) => {
+  await topUp(`${ctx.label} hr_leave_ledger`, "hr_leave_ledger", "org_id = $1", [ctx.org], Math.max(15, scaled(500, ctx.weight, SCALE)), async (have, need) => {
     await sql.unsafe(
       `INSERT INTO hr_leave_ledger (org_id, user_id, user_membership_id, leave_type_id, txn_type, days, effective_date, source, created_at)
        SELECT $1, m.user_id, m.id, $4::int, 'accrual'::hr_leave_txn_type, 2,
@@ -1030,7 +1049,7 @@ async function seedHr(ctx) {
     },
   );
 
-  const ts = scaled(BASE.timesheets, ctx.weight, SCALE);
+  const ts = Math.max(75, scaled(BASE.timesheets, ctx.weight, SCALE));
   await topUp(`${ctx.label} timesheets`, "timesheets", "org_id = $1", [ctx.org], ts, async (have, need) => {
     await sql.unsafe(
       `WITH ${MEMBER_POOL}
@@ -1084,7 +1103,7 @@ async function seedCalendarForwardWindow(ctx) {
 }
 
 async function seedSupport(ctx) {
-  const tickets = scaled(BASE.supportTickets, ctx.weight, SCALE);
+  const tickets = Math.max(150, scaled(BASE.supportTickets, ctx.weight, SCALE));
   await topUp(`${ctx.label} support_tickets`, "support_tickets", "org_id = $1", [ctx.org], tickets, async (have, need) => {
     await sql.unsafe(
       `WITH ${MEMBER_POOL}
@@ -1110,7 +1129,7 @@ async function seedMail(ctx) {
   const next = (await one(`SELECT coalesce(max(account_id), 0) + 1 AS id FROM mail_message_metadata`))?.id ?? 1;
   const accountId = existing ?? next;
 
-  const msgs = scaled(BASE.mailMessages, ctx.weight, SCALE);
+  const msgs = Math.max(3000, scaled(BASE.mailMessages, ctx.weight, SCALE));
   await topUp(`${ctx.label} mail_message_metadata`, "mail_message_metadata", "org_id = $1", [ctx.org], msgs, async (have, need) => {
     await sql.unsafe(
       `INSERT INTO mail_message_metadata (org_id, account_id, message_id, subject, is_read, date, user_membership_id, synced_at)
@@ -1124,18 +1143,359 @@ async function seedMail(ctx) {
 }
 
 // ---------------------------------------------------------------------------
+// Leave policies — required by leave-accrual-ledger-dedup and leave-accrual-balance-read
+// ---------------------------------------------------------------------------
+
+async function seedLeavePolicies(ctx) {
+  const leaveTypeId = (await one(`SELECT id FROM leave_types WHERE org_id = $1 ORDER BY id LIMIT 1`, [ctx.org]))?.id;
+  if (!leaveTypeId) { log(`  ${ctx.label} leave_policies: no leave_type — skipping`); return; }
+  const existing = await count("leave_policies", "org_id = $1 AND accrual_type = 'MONTHLY' AND is_active = true", [ctx.org]);
+  if (existing > 0) return;
+  await sql.unsafe(
+    `INSERT INTO leave_policies
+       (org_id, leave_type_id, name, accrual_type, accrual_rate, effective_from, is_active, created_at)
+     VALUES ($1, $2, 'Monthly Accrual', 'MONTHLY', 2.00, '2024-01-01', true, now())`,
+    [ctx.org, leaveTypeId],
+  );
+  log(`  ${ctx.label} leave_policies: seeded 1 MONTHLY active policy`);
+}
+
+// ---------------------------------------------------------------------------
+// Payroll — required by payroll-runs-list, payroll-run-employees, payroll-line-items
+// ---------------------------------------------------------------------------
+
+async function seedPayroll(ctx) {
+  const runsWant = Math.max(6, scaled(BASE.payrollRuns, ctx.weight, SCALE));
+  const existingRuns = await count("payroll_runs", "org_id = $1", [ctx.org]);
+  if (existingRuns < runsWant) {
+    for (let i = existingRuns; i < runsWant; i++) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (runsWant - i));
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      // Insert as DRAFT so the immutability trigger allows employee/line-item inserts.
+      await sql.unsafe(
+        `INSERT INTO payroll_runs
+           (org_id, run_type, month, status, gross_total, deduction_total, employer_cost_total, net_total, created_at, updated_at)
+         VALUES ($1, 'REGULAR', $2, 'DRAFT', 500000, 50000, 25000, 450000, now(), now())
+         ON CONFLICT DO NOTHING`,
+        [ctx.org, month],
+      ).catch((e) => log(`  ${ctx.label} payroll_run ${month}: ${e.message}`));
+    }
+    log(`  ${ctx.label} payroll_runs: ${existingRuns} -> ${await count("payroll_runs", "org_id = $1", [ctx.org])}`);
+  }
+
+  // Prefer a DRAFT run so the trigger allows inserts; fall back to any run for idempotency.
+  let runRow = await one(
+    `SELECT id, status FROM payroll_runs WHERE org_id = $1 AND status = 'DRAFT' ORDER BY id DESC LIMIT 1`,
+    [ctx.org],
+  );
+  if (!runRow) {
+    // All runs are already finalized (prior seeded run). Check whether the latest has line_items.
+    const latest = await one(`SELECT id, status FROM payroll_runs WHERE org_id = $1 ORDER BY id DESC LIMIT 1`, [ctx.org]);
+    if (!latest) return;
+    const lineCount = await count("payroll_line_items", "org_id = $1 AND run_id = $2", [ctx.org, latest.id]);
+    if (lineCount >= Math.max(5, ctx.memberCount * 2)) return; // already fully seeded
+    // Recovery path: create a fresh DRAFT run for the missing line_items.
+    const d = new Date();
+    d.setMonth(d.getMonth() - runsWant - 1);
+    const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    runRow = await one(
+      `INSERT INTO payroll_runs
+         (org_id, run_type, month, status, gross_total, deduction_total, employer_cost_total, net_total, created_at, updated_at)
+       VALUES ($1, 'REGULAR', $2, 'DRAFT', 500000, 50000, 25000, 450000, now(), now())
+       ON CONFLICT DO NOTHING RETURNING id, status`,
+      [ctx.org, month],
+    );
+    if (!runRow) return;
+  }
+  const runId = runRow.id;
+
+  await topUp(`${ctx.label} payroll_run_employees`, "payroll_run_employees", "org_id = $1 AND run_id = $2", [ctx.org, runId], Math.max(5, ctx.memberCount), async (have, need) => {
+    await sql.unsafe(
+      `INSERT INTO payroll_run_employees
+         (org_id, run_id, user_id, user_membership_id, worker_type, currency, scheduled_days, paid_days,
+          gross, total_deductions, net, status, created_at, updated_at)
+       SELECT $1, $2::int, m.user_id, m.id, 'EMPLOYEE'::payroll_worker_type, 'INR',
+              22, 22, 50000, 5000, 45000, 'PROCESSED', now(), now()
+       FROM (SELECT id, user_id FROM organization_members
+             WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id OFFSET $3::int LIMIT $4::int) m
+       ON CONFLICT DO NOTHING`,
+      [ctx.org, runId, have, need],
+    );
+  });
+
+  const empCount = await count("payroll_run_employees", "org_id = $1 AND run_id = $2", [ctx.org, runId]);
+  await topUp(`${ctx.label} payroll_line_items`, "payroll_line_items", "org_id = $1 AND run_id = $2", [ctx.org, runId], Math.max(5, empCount * 2), async () => {
+    await sql.unsafe(
+      `WITH rpe AS (SELECT id, (row_number() OVER (ORDER BY id)) - 1 AS rn FROM payroll_run_employees WHERE org_id = $1 AND run_id = $2::int)
+       INSERT INTO payroll_line_items
+         (org_id, run_id, run_employee_id, code, name, category, amount, calc_method, calc_explain, taxable, sort_order, created_at)
+       SELECT $1, $2::int, rpe.id,
+              CASE g % 2 WHEN 0 THEN 'BASIC' ELSE 'HRA' END,
+              CASE g % 2 WHEN 0 THEN 'Basic Salary' ELSE 'House Rent Allowance' END,
+              'EARNING'::salary_component_type,
+              CASE g % 2 WHEN 0 THEN 30000 ELSE 15000 END,
+              'FIXED'::salary_component_calc_method,
+              '{}'::jsonb, true, g % 2,
+              now()
+       FROM generate_series(0, $3::int * 2 - 1) g
+       JOIN rpe ON rpe.rn = g % GREATEST(1, $3::int)
+       ON CONFLICT DO NOTHING`,
+      [ctx.org, runId, empCount],
+    );
+  });
+
+  // Lock the run now that employees and line_items are committed.
+  await sql.unsafe(
+    `UPDATE payroll_runs SET status = 'CLOSED', updated_at = now() WHERE id = $1 AND org_id = $2 AND status = 'DRAFT'`,
+    [runId, ctx.org],
+  ).catch((e) => log(`  ${ctx.label} payroll close run ${runId}: ${e.message}`));
+}
+
+// ---------------------------------------------------------------------------
+// Announcements — required by dashboard-announcements fixture flag
+// ---------------------------------------------------------------------------
+
+async function seedAnnouncements(ctx) {
+  const want = Math.max(10, scaled(BASE.announcements, ctx.weight, SCALE));
+  await topUp(`${ctx.label} announcements`, "announcements", "org_id = $1", [ctx.org], want, async (have, need) => {
+    await sql.unsafe(
+      `INSERT INTO announcements
+         (org_id, title, content, author_id, target_type, is_pinned, status, read_count, attachment_urls, created_at, updated_at)
+       SELECT $1, 'Announcement ' || g, 'Content for announcement ' || g,
+              $2, 'ALL', false, 'PUBLISHED', 0, '[]'::jsonb,
+              now() - (g || ' hours')::interval, now()
+       FROM generate_series($3::int + 1, $3::int + $4::int) g`,
+      [ctx.org, ctx.userId, have, need],
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reporting lines — required by employee-reporting-line-lookup (minRows 1000)
+// ---------------------------------------------------------------------------
+
+async function seedReportingLines(ctx) {
+  const target = 1500;
+  const empCount = await count("hr_employments", "org_id = $1 AND deleted_at IS NULL", [ctx.org]);
+  if (empCount < 2) { log(`  ${ctx.label} hr_reporting_lines: skip — fewer than 2 employments`); return; }
+
+  // Phase 1: give each employment exactly one open primary line (effective_to = 'infinity').
+  // The NOT EXISTS guard skips employments that already have one (e.g., from layer 1 for large).
+  // Each row in `emps` is unique, so at most one open line is inserted per employment.
+  await sql.unsafe(
+    `WITH emps AS (
+       SELECT e.id, (row_number() OVER (ORDER BY e.id)) - 1 AS rn
+       FROM hr_employments e WHERE e.org_id = $1 AND e.deleted_at IS NULL
+     )
+     INSERT INTO hr_reporting_lines
+       (org_id, employment_id, manager_employment_id, line_type, effective_from, effective_to, created_at)
+     SELECT $1, e1.id, e2.id, 'primary'::hr_reporting_line_type, '2020-01-01'::date, 'infinity'::date, now()
+     FROM emps e1
+     JOIN emps e2 ON e2.rn = (e1.rn + 1) % $2::int
+     WHERE e1.id <> e2.id
+       AND NOT EXISTS (
+         SELECT 1 FROM hr_reporting_lines rl
+         WHERE rl.org_id = $1 AND rl.employment_id = e1.id
+           AND rl.line_type = 'primary' AND rl.effective_to = 'infinity'::date
+       )`,
+    [ctx.org, empCount],
+  ).catch((e) => log(`  ${ctx.label} reporting lines phase 1: ${e.message}`));
+
+  // Phase 2: pad with bounded historical lines to reach 1500 total.
+  // Each (employment, slot) pair gets a unique 90-day window anchored at 1900-01-01.
+  // Slot = floor(g / empCount), so the same employment_id never reuses a slot, preventing
+  // overlap. Dates in 1900-1936 never overlap with layer-1 open lines (effective_from >= 2021).
+  const have1 = await count("hr_reporting_lines", "org_id = $1", [ctx.org]);
+  if (have1 >= target) { log(`  ${ctx.label} hr_reporting_lines: ${have1}`); return; }
+  const need2 = target - have1;
+  await sql.unsafe(
+    `WITH emps AS (
+       SELECT e.id, (row_number() OVER (ORDER BY e.id)) - 1 AS rn
+       FROM hr_employments e WHERE e.org_id = $1 AND e.deleted_at IS NULL
+     )
+     INSERT INTO hr_reporting_lines
+       (org_id, employment_id, manager_employment_id, line_type, effective_from, effective_to, created_at)
+     SELECT $1, e1.id, e2.id, 'primary'::hr_reporting_line_type,
+            ('1900-01-01'::date + ((g / $2::int) * 90 || ' days')::interval)::date,
+            ('1900-01-01'::date + ((g / $2::int) * 90 + 89 || ' days')::interval)::date,
+            now()
+     FROM generate_series(0, $3::int - 1) g
+     JOIN emps e1 ON e1.rn = g % $2::int
+     JOIN emps e2 ON e2.rn = (g + 1) % $2::int
+     WHERE e1.id <> e2.id`,
+    [ctx.org, empCount, need2],
+  ).catch((e) => log(`  ${ctx.label} reporting lines phase 2: ${e.message}`));
+
+  log(`  ${ctx.label} hr_reporting_lines: ${have1} -> ${await count("hr_reporting_lines", "org_id = $1", [ctx.org])}`);
+}
+
+// ---------------------------------------------------------------------------
+// Organization people — required by org-people-list (minRows 10)
+// ---------------------------------------------------------------------------
+
+async function seedOrganizationPeople(ctx) {
+  const want = Math.max(15, ctx.memberCount);
+  await topUp(`${ctx.label} organization_people`, "organization_people", "organization_id = $1 AND deleted_at IS NULL", [ctx.org], want, async (have, need) => {
+    await sql.unsafe(
+      `INSERT INTO organization_people
+         (organization_person_id, organization_id, first_name, last_name, work_email,
+          language_code, row_version, created_at, updated_at)
+       SELECT gen_random_uuid(), $1, 'Person' || g, 'Perf' || g,
+              'person' || g || '@' || $1 || '.perf', 'en', 1,
+              now() - (g || ' hours')::interval, now()
+       FROM generate_series($2::int + 1, $2::int + $3::int) g`,
+      [ctx.org, have, need],
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Module role — required by module-access-roster (hasModuleRoles fixture flag)
+// ---------------------------------------------------------------------------
+
+async function seedModuleRole(ctx) {
+  await sql.unsafe(
+    `INSERT INTO org_modules (org_id, module_key, enabled, enabled_at)
+     VALUES ($1, 'hr', true, now())
+     ON CONFLICT DO NOTHING`,
+    [ctx.org],
+  );
+  const role = await one(
+    `INSERT INTO roles (org_id, name, slug, module_key, is_system, rank, created_at, updated_at)
+     VALUES ($1, 'HR Admin', 'HR_ADMIN', 'hr', true, 40, now(), now())
+     ON CONFLICT DO NOTHING RETURNING id`,
+    [ctx.org],
+  );
+  const roleId = role?.id ?? (await one(`SELECT id FROM roles WHERE org_id = $1 AND module_key = 'hr' ORDER BY id LIMIT 1`, [ctx.org]))?.id;
+  if (!roleId) throw new Error("no role with module_key for org");
+  await topUp(`${ctx.label} role_assignments`, "role_assignments", "org_id = $1 AND role_id = $2", [ctx.org, roleId], Math.min(5, ctx.memberCount), async () => {
+    await sql.unsafe(
+      `INSERT INTO role_assignments (org_id, organization_membership_id, role_id, created_at)
+       SELECT $1, m.id, $2::int, now()
+       FROM (SELECT id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 5) m
+       ON CONFLICT DO NOTHING`,
+      [ctx.org, roleId],
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Finance core — required by clients-list, invoices-open, purchase-bills-list, gl-journals-list
+// ---------------------------------------------------------------------------
+
+async function seedFinanceCore(ctx) {
+  const clientsWant = Math.max(30, scaled(BASE.clients, ctx.weight, SCALE));
+  await topUp(`${ctx.label} clients`, "clients", "org_id = $1", [ctx.org], clientsWant, async (have, need) => {
+    await sql.unsafe(
+      `INSERT INTO clients (org_id, name, status, health_score, health_status, converted_at, created_at, updated_at)
+       SELECT $1, 'Client ' || g,
+              (ARRAY['active','inactive'])[1 + (g % 2)],
+              50 + (g % 50), 'healthy'::crm_health, now() - (g || ' days')::interval,
+              now() - (g || ' hours')::interval, now()
+       FROM generate_series($2::int + 1, $2::int + $3::int) g
+       ON CONFLICT DO NOTHING`,
+      [ctx.org, have, need],
+    );
+  });
+
+  const invoicesWant = Math.max(30, scaled(BASE.invoices, ctx.weight, SCALE));
+  await topUp(`${ctx.label} invoices`, "invoices", "org_id = $1", [ctx.org], invoicesWant, async (have, need) => {
+    await sql.unsafe(
+      `INSERT INTO invoices
+         (org_id, invoice_number, status, subtotal, tax_rate, tax_amount, discount, total,
+          currency, due_date, created_by, created_at, updated_at,
+          amount_paid, exchange_rate, reverse_charge, tax_inclusive,
+          cgst_amount, sgst_amount, igst_amount, is_recurring)
+       SELECT $1, 'INV-' || $1 || '-' || g,
+              (ARRAY['DRAFT','SENT','OVERDUE','PARTIALLY_PAID'])[1 + (g % 4)]::invoice_status,
+              10000, 18, 1800, 0, 11800, 'INR',
+              (CURRENT_DATE + ((g % 30) || ' days')::interval)::date,
+              $4, now() - (g || ' hours')::interval, now(),
+              0, 1, false, false, 0, 0, 0, false
+       FROM generate_series($2::int + 1, $2::int + $3::int) g
+       ON CONFLICT DO NOTHING`,
+      [ctx.org, have, need, ctx.userId],
+    );
+  });
+
+  const billsWant = Math.max(30, scaled(BASE.purchaseBills, ctx.weight, SCALE));
+  await topUp(`${ctx.label} purchase_bills`, "purchase_bills", "org_id = $1", [ctx.org], billsWant, async (have, need) => {
+    await sql.unsafe(
+      `INSERT INTO purchase_bills
+         (org_id, bill_number, bill_date, status, subtotal, tax_amount,
+          cgst_amount, sgst_amount, igst_amount, discount, total, amount_paid,
+          currency, reverse_charge, created_by, created_at, updated_at, exchange_rate)
+       SELECT $1, 'BILL-' || $1 || '-' || g,
+              (CURRENT_DATE - ((g % 90) || ' days')::interval)::date,
+              (ARRAY['DRAFT','PENDING','OVERDUE','PARTIALLY_PAID'])[1 + (g % 4)],
+              8000, 1440, 0, 0, 1440, 0, 9440, 0, 'INR', false,
+              $4, now() - (g || ' hours')::interval, now(), 1
+       FROM generate_series($2::int + 1, $2::int + $3::int) g
+       ON CONFLICT DO NOTHING`,
+      [ctx.org, have, need, ctx.userId],
+    );
+  });
+
+  const bookId = `book-perf-${ctx.label}`;
+  const fyId = `fy-perf-${ctx.label}`;
+  const periodId = `period-perf-${ctx.label}`;
+  await sql.unsafe(
+    `INSERT INTO gl_books (id, org_id, name, country_code, base_currency, localization_pack)
+     VALUES ($1, $2, 'Main Ledger', 'IN', 'INR', 'IN') ON CONFLICT (id) DO NOTHING`,
+    [bookId, ctx.org],
+  ).catch((e) => log(`  ${ctx.label} gl_books: ${e.message}`));
+  await sql.unsafe(
+    `INSERT INTO gl_fiscal_years (id, org_id, book_id, name, starts_on, ends_on, status, created_at, updated_at)
+     VALUES ($1, $2, $3, 'FY 2026', '2026-01-01', '2026-12-31', 'OPEN', now(), now())
+     ON CONFLICT (id) DO NOTHING`,
+    [fyId, ctx.org, bookId],
+  ).catch((e) => log(`  ${ctx.label} gl_fiscal_years: ${e.message}`));
+  await sql.unsafe(
+    `INSERT INTO gl_periods (id, org_id, book_id, fiscal_year_id, name, starts_on, ends_on, sequence, status, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, '2026-01', '2026-01-01', '2026-01-31', 1, 'OPEN', now(), now())
+     ON CONFLICT (id) DO NOTHING`,
+    [periodId, ctx.org, bookId, fyId],
+  ).catch((e) => log(`  ${ctx.label} gl_periods: ${e.message}`));
+
+  const journalsWant = Math.max(30, scaled(BASE.glJournals, ctx.weight, SCALE));
+  const bookReady = (await sql.unsafe(`SELECT 1 FROM gl_periods WHERE id = $1 AND org_id = $2 LIMIT 1`, [periodId, ctx.org]).catch(() => [])).length > 0;
+  if (!bookReady) { log(`  ${ctx.label} gl_journals: period missing — skipping`); return; }
+  await topUp(`${ctx.label} gl_journals`, "gl_journals", "org_id = $1", [ctx.org], journalsWant, async (have, need) => {
+    await sql.unsafe(
+      `INSERT INTO gl_journals
+         (id, org_id, book_id, period_id, journal_number, journal_date, memo, source_type, idempotency_key)
+       SELECT 'jnl-' || $5 || '-' || g, $1, $2, $3,
+              'JNL-' || $5 || '-' || lpad(g::text, 6, '0'),
+              (CURRENT_DATE - ((g % 365) || ' days')::interval)::date,
+              'Perf seed journal', 'manual',
+              'perf-jnl-' || $5 || '-' || g
+       FROM generate_series($4::int + 1, $4::int + $6::int) g
+       ON CONFLICT DO NOTHING`,
+      [ctx.org, bookId, periodId, have, ctx.label, need],
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
 
 const TOUCHED = [
-  "organizations", "users", "organization_members",
+  "organizations", "users", "organization_members", "organization_people",
+  "org_modules", "roles", "role_assignments",
   "business_parties", "contacts", "leads", "deals", "lead_party_map", "contact_party_map",
+  "clients", "invoices", "purchase_bills",
+  "gl_books", "gl_fiscal_years", "gl_periods", "gl_journals",
   "inv_vendors", "inv_warehouses", "inv_locations", "inv_products", "inv_product_variants",
   "inv_stock_levels", "inv_stock_transactions", "inv_purchase_orders",
   "build.pm_workspaces", "build.projects", "build.project_statuses", "build.sprints",
   "build.project_members", "build.tickets", "build.ticket_assignees",
   "build.roadmap_items", "build.feedback_posts", "build.changelog_entries",
   "acc_tax_payments", "fin_reminder_policies",
+  "payroll_runs", "payroll_run_employees", "payroll_line_items",
+  "announcements",
   "chat_channels", "chat_channel_members", "chat_messages", "chat_saved_messages",
-  "hr_people", "hr_employments", "leave_types", "leave_requests", "leave_balances",
+  "hr_people", "hr_employments", "hr_reporting_lines", "leave_types", "leave_policies",
+  "leave_requests", "leave_balances",
   "hr_leave_ledger", "attendance", "timesheets", "support_tickets", "mail_message_metadata",
   "calendar_events",
 ];
@@ -1152,6 +1512,10 @@ async function vacuumAnalyze() {
 }
 
 const PURGEABLE = [
+  "payroll_line_items", "payroll_run_employees", "payroll_runs",
+  "invoices", "purchase_bills", "clients",
+  "gl_journals", "gl_periods", "gl_fiscal_years", "gl_books",
+  "announcements",
   "inv_stock_transactions", "inv_stock_levels", "inv_product_variants", "inv_products",
   "inv_purchase_orders", "inv_locations", "inv_warehouses", "inv_vendors",
   "lead_party_map", "contact_party_map", "deals", "leads", "contacts", "business_parties",
@@ -1171,8 +1535,9 @@ const SHAPE_TABLES = [
   "contacts", "leads", "deals", "business_parties", "lead_party_map", "contact_party_map",
   "inv_stock_transactions", "inv_stock_levels",
   "inv_product_variants", "inv_products", "support_tickets", "attendance", "timesheets",
-  "leave_requests", "mail_message_metadata", "hr_employments", "hr_people", "kb_pages",
-  "kb_article_chunks", "organization_members",
+  "leave_requests", "mail_message_metadata", "hr_employments", "hr_people", "hr_reporting_lines",
+  "kb_pages", "kb_article_chunks", "organization_members", "organization_people",
+  "payroll_runs", "invoices", "purchase_bills", "gl_journals", "announcements",
 ];
 
 async function reportShape() {
@@ -1213,7 +1578,7 @@ async function main() {
   for (const profile of PERF_ORGS) {
     const ctx = { org: profile.id, label: profile.label, weight: profile.weight, memberCount: 0 };
     log(`org ${ctx.label} (weight ${ctx.weight})`);
-    await section(`${ctx.label} members`, () => ensureMembers(ctx, Math.max(5, scaled(BASE.members, ctx.weight, SCALE))));
+    await section(`${ctx.label} members`, () => ensureMembers(ctx, Math.max(10, scaled(BASE.members, ctx.weight, SCALE))));
     if (!ctx.membership || ctx.memberCount === 0) {
       failures.push({ label: `${ctx.label} members`, message: "no active membership — every later section would be meaningless" });
       continue;
@@ -1223,8 +1588,15 @@ async function main() {
     await section(`${ctx.label} inventory`, () => seedInventory(ctx));
     await section(`${ctx.label} build`, () => seedBuildProduct(ctx));
     await section(`${ctx.label} finance`, () => seedFinance(ctx));
+    await section(`${ctx.label} finance core`, () => seedFinanceCore(ctx));
+    await section(`${ctx.label} payroll`, () => seedPayroll(ctx));
     await section(`${ctx.label} chat`, () => seedChat(ctx));
     await section(`${ctx.label} hr`, () => seedHr(ctx));
+    await section(`${ctx.label} leave policies`, () => seedLeavePolicies(ctx));
+    await section(`${ctx.label} reporting lines`, () => seedReportingLines(ctx));
+    await section(`${ctx.label} organization people`, () => seedOrganizationPeople(ctx));
+    await section(`${ctx.label} module role`, () => seedModuleRole(ctx));
+    await section(`${ctx.label} announcements`, () => seedAnnouncements(ctx));
     await section(`${ctx.label} calendar forward window`, () => seedCalendarForwardWindow(ctx));
     await section(`${ctx.label} support`, () => seedSupport(ctx));
     await section(`${ctx.label} mail`, () => seedMail(ctx));

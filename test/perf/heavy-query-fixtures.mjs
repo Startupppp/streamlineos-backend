@@ -1,11 +1,13 @@
 export const LARGE_ORG = "aaaaaaaa-1111-0000-0000-000000000001";
 export const MID_ORG = "aaaaaaaa-1111-0000-0000-000000000003";
 export const SMALL_ORG = "aaaaaaaa-1111-0000-0000-000000000002";
+export const TINY_ORG = "aaaaaaaa-1111-0000-0000-000000000004";
 
 export const ORG_PROFILES = [
   { id: LARGE_ORG, label: "large", members: 500, events: 60000, notifications: 240000, chunks: 12000 },
   { id: MID_ORG, label: "mid", members: 60, events: 6000, notifications: 24000, chunks: 1200 },
   { id: SMALL_ORG, label: "small", members: 8, events: 600, notifications: 2400, chunks: 120 },
+  { id: TINY_ORG, label: "tiny", members: 10, events: 1200, notifications: 4800, chunks: 240 },
 ];
 
 /**
