@@ -9,7 +9,7 @@ import {
   TicketSuggestTitleOutputSchema,
   TicketSuggestFieldsOutputSchema,
 } from "../dto/ticket-ai.schemas";
-import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayService, type AiTextStream } from "../gateway/ai-gateway.service";
 import { unwrapAiResult } from "./gateway-result.util";
 import { assertProject } from "./ticket-ai-assertions";
 import { TEXT_LIMIT, stripHtml } from "./ticket-ai-text";
@@ -123,6 +123,37 @@ Produce an improved HTML description.`;
       resourceId: String(projectId),
     });
     return { description: description.slice(0, 5000) };
+  }
+
+  async streamImproveDescriptionDraft(
+    orgId: string,
+    userId: string,
+    projectId: number,
+    draft: { title?: string; description?: string },
+    signal: AbortSignal,
+  ): Promise<AiTextStream> {
+    const sourceText = (draft.description?.trim() || draft.title?.trim() || "").slice(0, TEXT_LIMIT);
+    if (!sourceText) throw new BadRequestException("Provide a title or description to improve");
+    await runInTenantTransaction(this.db, async () => {
+      await assertProject(this.db, orgId, projectId);
+    }, { orgId });
+    const system = `You are a technical writer specializing in software tickets.
+Rewrite the provided text into a well-structured ticket description using HTML tags compatible with TipTap/ProseMirror (<p>, <ul>, <li>, <strong>, <em>).
+Output ONLY the HTML string, no markdown, no code blocks, no preamble. Keep it under 5000 characters.
+Structure: overview paragraph, acceptance criteria as <ul>, optional notes.`;
+    const user = `Ticket title: "${(draft.title ?? "").trim() || "(untitled)"}"
+Draft description:
+${sourceText}
+
+Produce an improved HTML description.`;
+    return this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "ticket.improve-description",
+      prompt: { system, user },
+      maxTokens: 768,
+      charge: true,
+      signal,
+    });
   }
 
   async suggestFieldsFromDraft(

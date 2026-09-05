@@ -4,10 +4,13 @@ import {
   Controller,
   Param,
   Post,
+  Req,
+  Res,
   ServiceUnavailableException,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -42,7 +45,7 @@ import {
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
-import { AiRequestAbortInterceptor } from "../streaming";
+import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
 
 const projectIdParams = z.object({ projectId: z.string().min(1) }).strict();
 const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1) }).strict();
@@ -176,6 +179,36 @@ export class ProjectsAiController {
     );
   }
 
+  @Post("projects/:projectId/tickets/draft/improve-description/stream")
+  @Validate({ params: projectIdParams, body: draftTicketBodySchema })
+  async improveDraftDescriptionStream(
+    @Req() req: Request,
+    @Param("projectId") rawPid: string,
+    @Body() body: DraftTicketBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "ticket.improve-description",
+        orgId: u.orgId,
+        route: "POST /ai/projects/:projectId/tickets/draft/improve-description/stream",
+      },
+      (signal) =>
+        this.ticketDraft.streamImproveDescriptionDraft(
+          u.orgId,
+          u.userId,
+          parsePositiveInt(rawPid, "projectId"),
+          body,
+          signal,
+        ),
+    );
+  }
+
   @Post("projects/:projectId/tickets/draft/suggest-fields")
   @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async suggestDraftFields(
@@ -235,6 +268,38 @@ export class ProjectsAiController {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
     return this.ticketInsights.improveDescription(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"), body.draft);
+  }
+
+  @Post("tickets/:projectId/:ticketId/improve-description/stream")
+  @Validate({ params: projectIdticketIdParams, body: improveDescriptionBodySchema })
+  async improveTicketDescriptionStream(
+    @Req() req: Request,
+    @Param("projectId") rawPid: string,
+    @Param("ticketId") rawTid: string,
+    @Body() body: ImproveDescriptionBodyInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
+    this.ensureLlm();
+    return respondWithAiTextStream(
+      req,
+      res,
+      {
+        feature: "ticket.improve-description",
+        orgId: u.orgId,
+        route: "POST /ai/tickets/:projectId/:ticketId/improve-description/stream",
+      },
+      (signal) =>
+        this.ticketInsights.streamImproveDescription(
+          u.orgId,
+          u.userId,
+          parsePositiveInt(rawPid, "projectId"),
+          parsePositiveInt(rawTid, "ticketId"),
+          signal,
+          body.draft,
+        ),
+    );
   }
 
   @Post("tickets/:projectId/:ticketId/suggest-subtasks")

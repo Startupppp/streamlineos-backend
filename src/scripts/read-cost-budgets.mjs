@@ -1515,7 +1515,9 @@ export const BUDGETS = [
     id: "dashboard-leaves-today",
     ceiling: 2_000,
     minRows: 5,
-    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND status = 'APPROVED' AND start_date <= $2::date AND end_date >= $2::date`,
+    // CURRENT_DATE, not $2: runBudget calls rowCountSql with [orgId] alone, so a $2 here is
+    // never bound. `params` below still passes today to the measured query, which does get it.
+    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND status = 'APPROVED' AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE`,
     params: (f) => {
       const today = new Date().toISOString().slice(0, 10);
       return [f.orgId, today];

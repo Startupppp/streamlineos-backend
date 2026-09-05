@@ -10,7 +10,7 @@ import {
   TicketCommentsSummaryOutputSchema,
   TicketHandoffOutputSchema,
 } from "../dto/ticket-ai.schemas";
-import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayService, type AiTextStream } from "../gateway/ai-gateway.service";
 import { unwrapAiResult } from "./gateway-result.util";
 import { assertTicket } from "./ticket-ai-assertions";
 
@@ -144,6 +144,37 @@ Produce an improved HTML description.`;
     const description = unwrapAiResult(result);
     this.audit.log({ action: "ai.ticket.improve-description", userId, orgId, resourceType: "ticket", resourceId: String(ticketId) });
     return { description: description.slice(0, 5000) };
+  }
+
+  async streamImproveDescription(
+    orgId: string,
+    userId: string,
+    projectId: number,
+    ticketId: number,
+    signal: AbortSignal,
+    draft?: string,
+  ): Promise<AiTextStream> {
+    const ticket = await runInTenantTransaction(this.db, async () => {
+      return assertTicket(this.db, orgId, projectId, ticketId);
+    }, { orgId });
+    const sourceText = (draft ?? ticket.description ?? ticket.title).slice(0, TEXT_LIMIT);
+    const system = `You are a technical writer specializing in software tickets.
+Rewrite the provided text into a well-structured ticket description using HTML tags compatible with TipTap/ProseMirror (<p>, <ul>, <li>, <strong>, <em>).
+Output ONLY the HTML string, no markdown, no code blocks, no preamble. Keep it under 5000 characters.
+Structure: overview paragraph, acceptance criteria as <ul>, optional notes.`;
+    const user = `Ticket title: "${ticket.title}"
+${draft ? "Draft description:" : "Current description:"}
+${sourceText}
+
+Produce an improved HTML description.`;
+    return this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: "ticket.improve-description",
+      prompt: { system, user },
+      maxTokens: 768,
+      charge: true,
+      signal,
+    });
   }
 
   async handoffSummary(orgId: string, userId: string, projectId: number, ticketId: number) {

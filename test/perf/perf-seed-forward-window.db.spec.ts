@@ -46,8 +46,19 @@ interface ResolvedBudget {
   params: postgres.ParameterOrJSON<never>[] | null;
 }
 
-/** The two budgets whose predicate points forward in time. */
-const FORWARD_WINDOW_BUDGET_IDS = ["dashboard-personal-calendar-events", "dashboard-leaves-today"];
+/**
+ * The budgets that require a non-empty result set against the production-shaped seed.
+ * `dashboard-personal-calendar-events` and `dashboard-leaves-today` filter on a forward
+ * window relative to today; `leave-requests-mine` and `attendance-mine` filter by the
+ * fixture participant's membership_id. All four go vacuous (resultRows = 0) when the seed
+ * is stale or when rows are seeded for the wrong member, so they share the same guard.
+ */
+const FORWARD_WINDOW_BUDGET_IDS = [
+  "dashboard-personal-calendar-events",
+  "dashboard-leaves-today",
+  "leave-requests-mine",
+  "attendance-mine",
+];
 
 /**
  * `read-cost-budgets.mjs` is a native ES module and this suite runs under ts-jest's CommonJS

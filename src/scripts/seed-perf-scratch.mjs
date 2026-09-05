@@ -52,6 +52,15 @@ export const TINY_ORG = "aaaaaaaa-1111-0000-0000-000000000004";
 export const LEAVES_SPANNING_TODAY = 12;
 
 /**
+ * The maximum number of days into the future that the "spanning today" leave rows extend.
+ * A row whose `end_date = CURRENT_DATE + LEAVES_FORWARD_DAYS` remains valid for that many
+ * days after the seed ran without a re-seed, so this constant governs how long the
+ * `dashboard-leaves-today` budget can be measured without running the seed again.
+ * Must be well above zero; 30 days gives ample headroom for the usual re-seed cadence.
+ */
+export const LEAVES_FORWARD_DAYS = 30;
+
+/**
  * How many org-visible, single-occurrence calendar events every tenant keeps in the
  * forward window (start_date >= now() + 1 day). Mirrors the UPCOMING_WINDOW_EVENTS
  * constant in `seed-heavy-query-load.mjs` so this layer can refill a window that
@@ -151,6 +160,8 @@ if (process.argv.includes("--self-test")) {
     ["rejects a url identical to a live url", assertScratchTarget("postgres://u:p@h/scratch_x", ["postgres://u:p@h/scratch_x"]).ok, false],
     ["rejects an unparseable url", assertScratchTarget("not a url", []).ok, false],
     ["LEAVES_SPANNING_TODAY exceeds dashboard-leaves-today minRows (5)", LEAVES_SPANNING_TODAY >= 5, true],
+    ["LEAVES_FORWARD_DAYS is large enough to survive 14 days between benchmark runs", LEAVES_FORWARD_DAYS >= 14, true],
+    ["LEAVES_FORWARD_DAYS upper bound fits in the topUp formula (>= 2)", LEAVES_FORWARD_DAYS >= 2, true],
     ["UPCOMING_CALENDAR_EVENTS meets the dashboard spec floor (60)", UPCOMING_CALENDAR_EVENTS >= 60, true],
     ["FIXTURE_LEAVE_REQUESTS_MIN exceeds leave-requests-mine minRows (20)", FIXTURE_LEAVE_REQUESTS_MIN >= 20, true],
     ["FIXTURE_ATTENDANCE_MIN exceeds attendance-mine minRows (30)", FIXTURE_ATTENDANCE_MIN >= 30, true],
@@ -880,6 +891,10 @@ async function seedHr(ctx) {
    * stale tomorrow. Multi-day spans are deliberate: a one-day leave is out of the window
    * within hours of being written, and `end_date >= CURRENT_DATE` is exactly the arm that
    * was never exercised.
+   *
+   * End-dates now extend up to LEAVES_FORWARD_DAYS into the future so rows remain valid
+   * for that many days between seed runs. The minimum is 2 days, guaranteeing at least a
+   * full day of buffer even when the seed is run at 23:59.
    */
   await topUp(
     `${ctx.label} leave_requests spanning today`,
@@ -893,7 +908,7 @@ async function seedHr(ctx) {
          INSERT INTO leave_requests (org_id, user_id, user_membership_id, leave_type_id, start_date, end_date, status, created_at, updated_at)
          SELECT $1, mem.user_id, mem.id, $3::int,
                 (CURRENT_DATE - ((g % 4) || ' days')::interval)::date,
-                (CURRENT_DATE + ((g % 6) + 1 || ' days')::interval)::date,
+                (CURRENT_DATE + (((g % ${LEAVES_FORWARD_DAYS - 1}) + 2) || ' days')::interval)::date,
                 'APPROVED'::leave_status,
                 now() - (g || ' minutes')::interval, now()
          FROM generate_series(1, $2::int) g
@@ -904,11 +919,34 @@ async function seedHr(ctx) {
     },
   );
 
+  /**
+   * Resolve the benchmark fixture participant: the member the harness selects as the
+   * subject for `leave-requests-mine` and `attendance-mine` (the one with the most rows
+   * in build.ticket_assignees, mirroring the query in run-read-cost-budgets.mjs:458).
+   * seedBuildProduct runs before seedHr in main(), so build.ticket_assignees is populated.
+   *
+   * If the fixture participant differs from ctx.membership (the first active member by id),
+   * the "fixture membership" topUps below would seed rows for the wrong person. The harness
+   * would then find far fewer rows than the budgets' minRows requires, and both budgets
+   * would remain vacuous after the rowCountSql fix.
+   */
+  const [fixturePart] = await sql.unsafe(
+    `SELECT ta.membership_id, om.user_id
+     FROM build.ticket_assignees ta
+     INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
+     WHERE ta.org_id = $1
+     GROUP BY ta.membership_id, om.user_id
+     ORDER BY count(*) DESC LIMIT 1`,
+    [ctx.org],
+  );
+  const fixtureMembership = fixturePart?.membership_id ?? ctx.membership;
+  const fixtureUserId = fixturePart?.user_id ?? ctx.userId;
+
   await topUp(
     `${ctx.label} leave_requests fixture membership`,
     "leave_requests",
     "org_id = $1 AND user_membership_id = $2",
-    [ctx.org, ctx.membership],
+    [ctx.org, fixtureMembership],
     FIXTURE_LEAVE_REQUESTS_MIN,
     async (have, need) => {
       await sql.unsafe(
@@ -920,7 +958,7 @@ async function seedHr(ctx) {
                 now() - (g || ' minutes')::interval, now()
          FROM generate_series(1, $6::int) g
          ON CONFLICT DO NOTHING`,
-        [ctx.org, ctx.userId, ctx.membership, leaveTypeId, have, need],
+        [ctx.org, fixtureUserId, fixtureMembership, leaveTypeId, have, need],
       );
     },
   );
@@ -967,7 +1005,7 @@ async function seedHr(ctx) {
     `${ctx.label} attendance fixture membership`,
     "attendance",
     "org_id = $1 AND user_membership_id = $2",
-    [ctx.org, ctx.membership],
+    [ctx.org, fixtureMembership],
     FIXTURE_ATTENDANCE_MIN,
     async (have, need) => {
       await sql.unsafe(
@@ -978,7 +1016,7 @@ async function seedHr(ctx) {
                 now() - (g || ' hours')::interval
          FROM generate_series(1, $5::int) g
          ON CONFLICT DO NOTHING`,
-        [ctx.org, ctx.userId, ctx.membership, have, need],
+        [ctx.org, fixtureUserId, fixtureMembership, have, need],
       );
     },
   );
