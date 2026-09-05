@@ -44,6 +44,8 @@ interface ResolvedBudget {
   minRows: number | null;
   sql: string;
   params: postgres.ParameterOrJSON<never>[] | null;
+  rowCountSql: string;
+  rowCountParams: postgres.ParameterOrJSON<never>[] | null;
 }
 
 /**
@@ -76,8 +78,15 @@ function resolveDeclaredBudgets(fixtures: Record<string, unknown>): ResolvedBudg
     const wanted = JSON.parse(process.argv[2]);
     const out = wanted.map((id) => {
       const b = BUDGETS.find((x) => x.id === id);
-      if (!b) return { id, minRows: null, sql: "", params: null, missing: true };
-      return { id, minRows: b.minRows ?? null, sql: b.sql, params: b.params(fixtures) ?? null };
+      if (!b) return { id, minRows: null, sql: "", params: null, rowCountSql: "", rowCountParams: null, missing: true };
+      return {
+        id,
+        minRows: b.minRows ?? null,
+        sql: b.sql,
+        params: b.params(fixtures) ?? null,
+        rowCountSql: b.rowCountSql,
+        rowCountParams: (b.rowCountParams ? b.rowCountParams(fixtures) : [fixtures.orgId]) ?? null,
+      };
     });
     process.stdout.write(JSON.stringify(out));
   `;
@@ -156,6 +165,28 @@ describeDb("perf seed forward window", () => {
       // `minRows` is the budget's own floor; a budget that returns fewer rows than it
       // declares is measuring something other than the read it claims to measure.
       expect(rows.length).toBeGreaterThanOrEqual(budget!.minRows ?? 1);
+    }, 60_000);
+
+    /**
+     * The seed floor runs BEFORE the measurement, so a `rowCountSql` that cannot even bind
+     * takes the whole budget out of the corpus — it never reaches the ceiling, the plan
+     * assertions or the vacuity check, and the gate reports it as one breach among many
+     * rather than as a budget that has never measured anything. `leave-requests-mine` and
+     * `attendance-mine` both referenced `$2` while the runner bound `[orgId]` alone, so both
+     * died on "bind message supplies 1 parameters, but prepared statement requires 2" on
+     * every database including the production-shaped seed. Running the count with its own
+     * declared params is what makes that reachable from a test.
+     */
+    it(`${id} counts its seed floor with the params it declares`, async () => {
+      const budget = declared.find((b) => b.id === id);
+      expect(budget).toBeDefined();
+      expect(budget!.rowCountParams).not.toBeNull();
+
+      const [row] = await inTenant((tx) =>
+        tx.unsafe(budget!.rowCountSql, budget!.rowCountParams ?? undefined),
+      );
+
+      expect(Number(row.count)).toBeGreaterThanOrEqual(budget!.minRows ?? 1);
     }, 60_000);
   }
 

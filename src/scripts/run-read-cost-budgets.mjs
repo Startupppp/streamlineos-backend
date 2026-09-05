@@ -16,6 +16,12 @@ export const KNOWN_ASSERTION_KINDS = new Set([
   "forbid-hashed-subplan",
 ]);
 
+export function rowCountPlaceholders(sql) {
+  let highest = 0;
+  for (const match of sql.matchAll(/\$(\d+)/g)) highest = Math.max(highest, Number(match[1]));
+  return highest;
+}
+
 export function validateBudgets(budgets) {
   const errors = [];
   for (let i = 0; i < budgets.length; i++) {
@@ -27,8 +33,18 @@ export function validateBudgets(budgets) {
       errors.push(`${tag}: ceiling must be a finite non-negative number`);
     if (typeof b.minRows !== "number" || b.minRows < 1 || !Number.isFinite(b.minRows))
       errors.push(`${tag}: minRows must be a positive finite number`);
-    if (typeof b.rowCountSql !== "string" || !b.rowCountSql.trim())
+    if (typeof b.rowCountSql !== "string" || !b.rowCountSql.trim()) {
       errors.push(`${tag}: rowCountSql must be a non-empty string`);
+    } else if (rowCountPlaceholders(b.rowCountSql) > 1 && typeof b.rowCountParams !== "function") {
+      // The count runs with [orgId] alone unless the budget says otherwise, so a bare $2 here
+      // is not a narrower count — it is a bind error, and the budget measures nothing at all.
+      errors.push(
+        `${tag}: rowCountSql references $2 or beyond but declares no rowCountParams — the count ` +
+        `would be bound with [orgId] alone and fail at bind time`,
+      );
+    }
+    if (b.rowCountParams !== undefined && typeof b.rowCountParams !== "function")
+      errors.push(`${tag}: rowCountParams must be a function when present`);
     if (typeof b.sql !== "string" || !b.sql.trim())
       errors.push(`${tag}: sql must be a non-empty string`);
     if (typeof b.params !== "function")
@@ -208,7 +224,10 @@ async function runBudget(budget, fixtures, dbUrl, ssl, orgId, samples) {
     return await db.begin(async (tx) => {
       await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
 
-      const [{ count }] = await tx.unsafe(budget.rowCountSql, [orgId]);
+      const countParams = budget.rowCountParams ? budget.rowCountParams(fixtures) : [orgId];
+      if (countParams === null)
+        return { status: "skip", reason: "no fixture data for this budget's row count" };
+      const [{ count }] = await tx.unsafe(budget.rowCountSql, countParams);
       const tableRows = Number(count);
       if (tableRows < budget.minRows)
         return { status: "seed-too-small", measured: tableRows, required: budget.minRows };
@@ -724,8 +743,15 @@ async function main() {
     const declared = budgets.length;
     // A vacuous budget ran, but over an empty result set: the number it produced is not a
     // measurement of the read it claims to guard, so it does not count toward coverage.
+    // A seed-too-small budget did not run at all — `runBudget` returns before the EXPLAIN
+    // loop — so counting it as measured inflates coverage with budgets that measured nothing.
+    // On the reference profile it lands as outcome "fail", which is why it was being counted.
+    const belowSeedFloor = records.filter((r) => r.reason === "seed-too-small").length;
     const measured = records.filter(
-      (r) => (r.outcome === "pass" || r.outcome === "fail") && r.vacuous !== true,
+      (r) =>
+        (r.outcome === "pass" || r.outcome === "fail") &&
+        r.vacuous !== true &&
+        r.reason !== "seed-too-small",
     ).length;
     const notMeasured = declared - measured;
     const pct = declared > 0 ? ((measured / declared) * 100).toFixed(1) : "0.0";
@@ -737,7 +763,7 @@ async function main() {
     console.log(
       `Coverage: ${measured}/${declared} declared read-cost budgets produced a non-empty measurement` +
       ` on tenant ${ORG} (${pct}%), profile=${PROFILE}, samples=${SAMPLES}.` +
-      ` ${notMeasured} unmeasured (${vacuous.length} vacuous, ${unmeasured.length} below seed floor,` +
+      ` ${notMeasured} unmeasured (${vacuous.length} vacuous, ${belowSeedFloor} below seed floor,` +
       ` ${skipped} no fixture, ${excluded} excluded) and therefore unenforced.`,
     );
     if (excluded > 0)
