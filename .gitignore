@@ -21,3 +21,6 @@ backups/
 .lane-a-e2e.sh
 .lane-a-seed.log
 .lane-a.log
+.lane-a-bench.sh
+.lane-a-bench.log
+.lane-a-e2e.log
