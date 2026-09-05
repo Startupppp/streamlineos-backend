@@ -35,6 +35,10 @@ export function buildSeededProcessEnvironment(source: NodeJS.ProcessEnv, databas
     "ROUTE_BUDGET_HTTP_WRITE_SAMPLES", "ROUTE_BUDGET_HTTP_HEAP_SAMPLES", "ROUTE_BUDGET_HTTP_WARMUP",
     "ROUTE_BUDGET_HTTP_DEADLINE_MS", "ROUTE_BUDGET_HTTP_ONLY", "ROUTE_BUDGET_HTTP_SKIP_WRITES",
     "ROUTE_BUDGET_HTTP_REPO", "ROUTE_BUDGET_HTTP_PROVENANCE",
+    "BOLA_SOURCE_ORG_ID", "BOLA_PROBER_ORG_ID", "BOLA_PROBER_USER_ID", "BOLA_LIVE_ARTIFACT",
+    "BOLA_LIVE_ONLY", "BOLA_LIVE_ONLY_FILE", "BOLA_LIVE_LIMIT", "BOLA_LIVE_MIN_SCORED",
+    "BOLA_LIVE_ID_ATTEMPTS", "BOLA_LIVE_TABLE_ATTEMPTS", "BOLA_LIVE_MAX_ATTEMPTS",
+    "BOLA_LIVE_SEED_FIXTURES", "BOLA_LIVE_POOL", "BOLA_LIVE_TIMEOUT_MS",
   ])
     if (source[key]) env[key] = source[key];
   const keys = generateKeyPairSync("ed25519");
@@ -49,6 +53,7 @@ export function buildSeededProcessEnvironment(source: NodeJS.ProcessEnv, databas
     CORS_ORIGINS: "http://localhost:3000", APP_URL: "http://localhost:3000",
     BACKEND_JWT_SECRET: randomBytes(48).toString("base64"), PORTAL_JWT_SECRET: randomBytes(48).toString("base64"),
     ENCRYPTION_KEY: randomBytes(32).toString("hex"),
+    CRON_SECRET: randomBytes(32).toString("hex"),
     AUTH_SIGNING_KEYS: JSON.stringify([{ kid: "seeded-local", privateKey: keys.privateKey.export({ format: "jwk" }), publicKey: keys.publicKey.export({ format: "jwk" }) }]),
     DOTENV_CONFIG_PATH: process.platform === "win32" ? "NUL" : "/dev/null",
   });

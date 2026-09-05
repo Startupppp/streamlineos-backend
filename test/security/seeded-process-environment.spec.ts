@@ -55,6 +55,28 @@ describe("isolated seeded process environment", () => {
     expect(env.AUTH_SIGNING_KEYS).not.toBe("live-keyring");
   });
 
+  /**
+   * The live BOLA sweep decides whether it can run from these variables and SKIPS when any is
+   * absent — and a skipped suite exits 0. Dropping them from the allowlist therefore made the
+   * cross-tenant sweep permanently inert while reporting success, which is how it behaved until
+   * this was fixed.
+   */
+  it("preserves the inputs the live cross-tenant sweep needs, so it cannot silently skip", () => {
+    const env = buildSeededProcessEnvironment({
+      ...source,
+      BOLA_SOURCE_ORG_ID: "org-source",
+      BOLA_PROBER_ORG_ID: "org-prober",
+      BOLA_LIVE_ARTIFACT: "bola.json",
+      BOLA_LIVE_MIN_SCORED: "200",
+    }, "scratch_e2e");
+    expect(env.BOLA_SOURCE_ORG_ID).toBe("org-source");
+    expect(env.BOLA_PROBER_ORG_ID).toBe("org-prober");
+    expect(env.BOLA_LIVE_ARTIFACT).toBe("bola.json");
+    expect(env.BOLA_LIVE_MIN_SCORED).toBe("200");
+    expect(env.DATABASE_URL).toMatch(/scratch/i);
+    expect(env.AUTH_SIGNING_KEYS ?? "").not.toHaveLength(0);
+  });
+
   it.each(seededWorkerFlags)("refuses enabled automatic worker %s", (flag) => {
     const env = buildSeededProcessEnvironment(source, "scratch_e2e");
     expect(() => assertSeededProcessIsolation({ ...env, [flag]: "true" })).toThrow();
