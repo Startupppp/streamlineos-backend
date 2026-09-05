@@ -19,11 +19,10 @@
  *   3. ERROR SHAPES — at least MIN_ERROR_SHAPE_PCT% of operations carry a 4xx
  *      $ref to a shared error response component.
  *
- *   4. RESPONSE SCHEMAS — every operation must have either a 2xx response key
- *      or a declared response body schema (content) at any status code. An
- *      operation that genuinely returns a non-2xx status (e.g. 405) is covered
- *      when its response carries a content schema via @ApiResponse. Gate
- *      requires exact coverage: N/N, never N-1/N.
+ *   4. RESPONSE SCHEMAS — coverage means a resolvable content schema, never a
+ *      bare Nest-generated status key. Historic uncovered operation ids live in
+ *      an exact reviewed ledger and may only disappear. A newly uncovered route,
+ *      a covered-route regression, or an equal-count debt swap fails closed.
  *
  *   5. MUTATING REQUEST SCHEMAS — every mutating operation (POST/PUT/PATCH)
  *      that is not marked @BodylessAction() must carry a request body schema.
@@ -58,14 +57,19 @@
  *   2 — vacuity check failed, document unreadable, or self-test infrastructure error
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { reportCorpus } from "./gate-corpus.mjs";
 
 const SELF_TEST = process.argv.includes("--self-test");
+const EMIT_RESPONSE_DEBT_BASELINE = process.argv.includes("--emit-response-debt-baseline");
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const OPENAPI_PATH = join(BACKEND_ROOT, "openapi.json");
+const RESPONSE_DEBT_BASELINE_PATH = join(
+  BACKEND_ROOT,
+  "src/scripts/baselines/openapi-response-schema-debt.json",
+);
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
 const MUTATING_METHODS = new Set(["post", "put", "patch"]);
@@ -111,7 +115,7 @@ const MIN_ERROR_SHAPE_PCT = 95;
  * This gate therefore stays RED until openapi.json is regenerated, which this release does once,
  * at the end of the wave, by one agent.
  */
-const RESPONSE_SCHEMA_UNCOVERED_CEILING = 3613;
+const RESPONSE_SCHEMA_UNCOVERED_CEILING = 3611;
 
 /**
  * Format a coverage percentage. Never prints "100%" unless covered === total.
@@ -269,7 +273,7 @@ export function findMissingResponseSchemas(document) {
       if (typeof operation !== "object" || operation === null) continue;
       const responses = operation["responses"];
       if (typeof responses !== "object" || responses === null) {
-        violations.push({ method: method.toUpperCase(), path: pathTemplate, issue: "no responses declared at all" });
+        violations.push({ method: method.toUpperCase(), path: pathTemplate, operationId: operation.operationId, issue: "no responses declared at all" });
         continue;
       }
       const twoXxCodes = Object.keys(responses).filter((code) => {
@@ -282,6 +286,7 @@ export function findMissingResponseSchemas(document) {
           violations.push({
             method: method.toUpperCase(),
             path: pathTemplate,
+            operationId: operation.operationId,
             issue: `2xx response (${twoXxCodes.join(", ")}) declares no content schema — a bare auto-generated key is not a contract`,
           });
         }
@@ -290,11 +295,47 @@ export function findMissingResponseSchemas(document) {
       // No 2xx at all: the genuine non-2xx handler (405 and friends) may declare its body here.
       const nonTwoXxCovered = Object.values(responses).some((resp) => responseHasResolvableSchema(resp, document));
       if (!nonTwoXxCovered) {
-        violations.push({ method: method.toUpperCase(), path: pathTemplate, issue: "no declared response body schema" });
+        violations.push({ method: method.toUpperCase(), path: pathTemplate, operationId: operation.operationId, issue: "no declared response body schema" });
       }
     }
   }
   return violations;
+}
+
+/**
+ * A numeric ratchet prevents the debt count growing, but it cannot detect a swap:
+ * removing one contract and adding one different uncovered route leaves the count
+ * unchanged. The exact operation-id ledger closes that hole. Existing debt may
+ * disappear; no operation absent from the reviewed ledger may become uncovered.
+ */
+export function findNewResponseSchemaDebt(violations, allowedOperationIds) {
+  const allowed = new Set(allowedOperationIds);
+  return violations.filter(
+    (violation) =>
+      typeof violation.operationId !== "string" ||
+      violation.operationId.length === 0 ||
+      !allowed.has(violation.operationId),
+  );
+}
+
+function readResponseDebtBaseline() {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(RESPONSE_DEBT_BASELINE_PATH, "utf8"));
+  } catch (error) {
+    throw new Error(`cannot read response-schema debt ledger: ${error.message}`);
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    parsed.version !== 1 ||
+    !Array.isArray(parsed.uncoveredOperationIds) ||
+    parsed.uncoveredOperationIds.some((entry) => typeof entry !== "string" || entry.length === 0) ||
+    new Set(parsed.uncoveredOperationIds).size !== parsed.uncoveredOperationIds.length
+  ) {
+    throw new Error("response-schema debt ledger must be version 1 with unique non-empty operation ids");
+  }
+  return parsed.uncoveredOperationIds;
 }
 
 export function findMissingMutatingRequestSchemas(document) {
@@ -541,6 +582,25 @@ if (SELF_TEST) {
     fail("neg-response-schema-gate", `N-1 coverage (${String(rsNegCovered)}/${String(rsNegTotal)}) should cause the gate to fail`);
   else pass(`neg-response-schema-gate — gate bites: ${String(rsNegCovered)}/${String(rsNegTotal)} coverage fails (${formatPct(rsNegCovered, rsNegTotal)})`);
 
+  const exactDebt = [
+    { operationId: "LegacyController_list", method: "GET", path: "/legacy" },
+  ];
+  if (findNewResponseSchemaDebt(exactDebt, ["LegacyController_list"]).length !== 0)
+    fail("response-debt-ledger-allows-existing", "reviewed legacy debt must remain allowed while it is retired incrementally");
+  else pass("response-debt-ledger-allows-existing — reviewed legacy debt remains bounded");
+
+  const swappedDebt = [
+    { operationId: "NewController_list", method: "GET", path: "/new" },
+  ];
+  if (findNewResponseSchemaDebt(swappedDebt, ["LegacyController_list"]).length !== 1)
+    fail("response-debt-ledger-catches-swap", "equal-count replacement debt must fail the exact ledger");
+  else pass("response-debt-ledger-catches-swap — equal-count debt swaps cannot bypass the ratchet");
+
+  const anonymousDebt = [{ method: "GET", path: "/anonymous" }];
+  if (findNewResponseSchemaDebt(anonymousDebt, []).length !== 1)
+    fail("response-debt-ledger-requires-identity", "unidentified uncovered operations must fail closed");
+  else pass("response-debt-ledger-requires-identity — uncovered operations without an id fail closed");
+
   const mutatingBodyGood = makeFullDoc([
     { path: "/a", method: "post", requestBody: { required: true, content: {} } },
     { path: "/b", method: "post", "x-bodyless": true },
@@ -603,6 +663,30 @@ try {
 } catch (err) {
   process.stderr.write(`check-openapi-coverage: failed to parse openapi.json: ${err.message}\n`);
   process.exit(2);
+}
+
+if (EMIT_RESPONSE_DEBT_BASELINE) {
+  const debt = findMissingResponseSchemas(document);
+  const operationIds = debt.map((violation) => violation.operationId);
+  if (operationIds.some((id) => typeof id !== "string" || id.length === 0)) {
+    process.stderr.write("check-openapi-coverage: refusing to emit debt ledger because an uncovered operation has no operationId\n");
+    process.exit(2);
+  }
+  const unique = [...new Set(operationIds)].sort();
+  if (unique.length !== operationIds.length) {
+    process.stderr.write("check-openapi-coverage: refusing to emit debt ledger because operationId is not unique\n");
+    process.exit(2);
+  }
+  writeFileSync(
+    RESPONSE_DEBT_BASELINE_PATH,
+    `${JSON.stringify({
+      version: 1,
+      purpose: "Exact reviewed legacy response-contract debt. Entries may be removed, never added without explicit API-owner review.",
+      uncoveredOperationIds: unique,
+    }, null, 2)}\n`,
+  );
+  process.stdout.write(`check-openapi-coverage: wrote ${String(unique.length)} operation ids to ${RESPONSE_DEBT_BASELINE_PATH}\n`);
+  process.exit(0);
 }
 
 const totalOperations = countOperations(document);
@@ -677,10 +761,31 @@ const responseSchemaViolations = findMissingResponseSchemas(document);
 const responseSchemaCovered = totalOperations - responseSchemaViolations.length;
 const responseSchemaPct = formatPct(responseSchemaCovered, totalOperations);
 const uncovered = responseSchemaViolations.length;
+let allowedResponseDebt;
+try {
+  allowedResponseDebt = readResponseDebtBaseline();
+} catch (error) {
+  process.stderr.write(`check-openapi-coverage: FAIL — ${error.message}\n`);
+  process.exit(2);
+}
+const newResponseDebt = findNewResponseSchemaDebt(
+  responseSchemaViolations,
+  allowedResponseDebt,
+);
 process.stdout.write(
   `  response-schemas: ${String(responseSchemaCovered)}/${String(totalOperations)} ops declare a response body SCHEMA (${responseSchemaPct})\n` +
   `                    ${String(uncovered)} uncovered [ceiling ${String(RESPONSE_SCHEMA_UNCOVERED_CEILING)}, ratchet — may only go down]\n`,
 );
+if (newResponseDebt.length > 0) {
+  process.stderr.write(
+    `check-openapi-coverage: FAIL — ${String(newResponseDebt.length)} newly uncovered response contract(s) are absent from the reviewed debt ledger.\n` +
+    `This fails even when the total debt count is unchanged: contract swaps are regressions.\n`,
+  );
+  for (const { method, path, operationId, issue } of newResponseDebt.slice(0, 30)) {
+    process.stderr.write(`  ${method.padEnd(6)} ${path} (${String(operationId ?? "missing operationId")}) — ${issue}\n`);
+  }
+  process.exit(1);
+}
 if (uncovered > RESPONSE_SCHEMA_UNCOVERED_CEILING) {
   process.stderr.write(
     `check-openapi-coverage: FAIL — ${String(uncovered)} operation(s) declare no response schema, above the ceiling of ` +

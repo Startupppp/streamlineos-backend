@@ -219,6 +219,7 @@
     "check:openapi-path-params:self-test": "node src/scripts/check-openapi-path-params.mjs --self-test",
     "check:openapi-coverage": "node src/scripts/check-openapi-coverage.mjs",
     "check:openapi-coverage:self-test": "node src/scripts/check-openapi-coverage.mjs --self-test",
+    "check:openapi-response-debt:emit": "node src/scripts/check-openapi-coverage.mjs --emit-response-debt-baseline",
     "check:bodyless-conflicts": "node src/scripts/check-bodyless-conflicts.mjs",
     "check:body-binding": "node --max-old-space-size=8192 src/scripts/check-body-binding.mjs",
     "check:body-binding:self-test": "node src/scripts/check-body-binding-self-test.mjs",
