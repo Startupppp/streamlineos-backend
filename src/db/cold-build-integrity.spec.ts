@@ -104,6 +104,57 @@ describe("PEND-DB — every migration is journalled, or says why not", () => {
       expect(sql).toContain(column);
   });
 
+  /**
+   * A forward-repair migration — `NNNNb_…` beside `NNNN_…` — exists to complete
+   * work its base could not finish, and the two are not guaranteed to run in
+   * numeric order: `db-bootstrap.mjs` and `apply-chain-cold.mjs` both walk
+   * `journal.entries` in ARRAY order, and main journals its repairs mid-array.
+   *
+   * `0678b_feedback_cycle_responses_rls_complete` therefore ran at array position
+   * 400 and `0678_rls_fix_feedback_cycle_responses` at 457. Both add
+   * `fk_feedback_cycle_responses_org`. 0678b guarded it; 0678 did not — so the
+   * base aborted on its own repair's work and `db:bootstrap` stopped at 457/630.
+   *
+   * The idx-contiguity test below cannot see this, because contiguous idx and safe
+   * order are different properties. This one asks for something stronger than an
+   * order: that a constraint both halves of a repair pair create is safe in EITHER
+   * order. That holds however the journal is later merged or renumbered.
+   */
+  it("guards a constraint that both halves of a repair pair add", () => {
+    const ADD_CONSTRAINT = /ADD\s+CONSTRAINT\s+"?([A-Za-z0-9_]+)"?/gi;
+    const tags = journal.entries.map((e) => e.tag);
+    const addsIn = (tag: string) => {
+      const sql = read(tag);
+      return { sql, names: new Set([...sql.matchAll(ADD_CONSTRAINT)].map((m) => m[1])) };
+    };
+
+    const pairs = tags.flatMap((repair) => {
+      const n = /^(\d+)b_/.exec(repair)?.[1];
+      if (!n) return [];
+      const base = tags.find((t) => new RegExp(`^${n}_`).test(t));
+      return base ? [[base, repair] as const] : [];
+    });
+
+    // Guard on the guard: if the pairing regex stops matching, this must not pass as zero.
+    expect(pairs.length).toBeGreaterThanOrEqual(5);
+
+    const unguarded: string[] = [];
+    for (const [base, repair] of pairs) {
+      const b = addsIn(base);
+      const r = addsIn(repair);
+      for (const name of [...b.names].filter((n) => r.names.has(n))) {
+        for (const [tag, { sql }] of [[base, b], [repair, r]] as const) {
+          // The house idiom is a DO block testing pg_constraint for this conname.
+          if (!sql.includes(`conname = '${name}'`)) {
+            unguarded.push(`${tag} adds ${name} unguarded, and its pair adds it too`);
+          }
+        }
+      }
+    }
+
+    expect(unguarded).toEqual([]);
+  });
+
   it("keeps idx contiguous, because idx is the order things run in", () => {
     expect(journal.entries.map((e) => e.idx)).toEqual(
       journal.entries.map((_, i) => i),
