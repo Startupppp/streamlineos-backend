@@ -1926,7 +1926,7 @@ async function reportCounts() {
     console.log(`\n  WARNING: ${errors.length} error(s) in ${grouped.size} distinct failure(s):`);
     for (const [key, n] of grouped) console.log(`    (x${n}) ${key}`);
     process.exitCode = 1;
-  } else {
+  } else if (belowFloor.length === 0) {
     console.log("\n  All sections completed without errors.");
   }
 }
