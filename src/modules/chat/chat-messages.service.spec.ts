@@ -6,7 +6,6 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
-import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 import { StorageService } from "../storage/storage.service";
@@ -26,10 +25,11 @@ const mockDb = {
   update: jest.fn().mockReturnThis(),
   set: jest.fn().mockReturnThis(),
   where: jest.fn().mockReturnThis(),
-  limit: jest.fn().mockResolvedValue([{ id: 1 }]),
+  limit: jest.fn().mockResolvedValue([{ membershipId: 10, id: 1 }]),
   delete: jest.fn().mockReturnThis(),
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
+  innerJoin: jest.fn().mockReturnThis(),
   transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDb)),
 };
 
@@ -47,13 +47,6 @@ const mockAbly = {
   publishChatMessage: jest.fn().mockResolvedValue(undefined),
 };
 const mockReplyReminders = { scheduleForMessage: jest.fn().mockResolvedValue(undefined) };
-const mockEntities = {
-  resolve: jest.fn().mockResolvedValue([]),
-  actionsFor: jest.fn().mockResolvedValue([]),
-  submitAction: jest.fn(),
-  isKnownType: jest.fn().mockReturnValue(true),
-};
-
 const mockOrgSettings = {
   getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 25 }),
 };
@@ -82,7 +75,6 @@ describe("ChatMessagesService", () => {
         { provide: AblyService, useValue: mockAbly },
         { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
-        { provide: EntityReferenceService, useValue: mockEntities },
         { provide: StorageService, useValue: mockStorage },
         { provide: MESSAGE_FANOUT_PROVIDER, useValue: mockFanout },
       ],
@@ -92,7 +84,7 @@ describe("ChatMessagesService", () => {
 
   describe("send", () => {
     it("throws ForbiddenException if user is not a channel member", async () => {
-      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue(null);
+      mockDb.limit.mockResolvedValueOnce([]);
       await expect(
         service.send(1, "user1", "org1", { content: "hello", attachments: [] }),
       ).rejects.toThrow(ForbiddenException);

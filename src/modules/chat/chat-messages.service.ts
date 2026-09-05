@@ -12,7 +12,6 @@ import {
   chatChannels,
   chatChannelMembers,
   chatMessages,
-  organizationMembers,
   users,
 } from "../../db/schema";
 import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
@@ -27,12 +26,10 @@ import { AblyService } from "../realtime/ably.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { SendMessageInput } from "./dto/chat.schemas";
-import { EntityReferenceService } from "../entity-reference/entity-reference.service";
-import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
 import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
-import { isChannelMember, resolveMembershipId } from "./chat-membership-lookup";
+import { resolveChannelMembershipId, resolveMembershipId } from "./chat-membership-lookup";
 import { CHAT_MESSAGE_CLIENT_KEY_CONFLICT } from "./chat-message-conflict-target";
 import { StorageService } from "../storage/storage.service";
 
@@ -59,7 +56,6 @@ export class ChatMessagesService {
     private readonly ably: AblyService,
     private readonly replyReminders: ChatReplyRemindersService,
     private readonly orgSettings: ChatOrgSettingsService,
-    private readonly entities: EntityReferenceService,
     private readonly storage: StorageService,
     @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
   ) {}
@@ -75,11 +71,8 @@ export class ChatMessagesService {
   }
 
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
-    const senderMembershipId = await resolveMembershipId(this.db, orgId, userId);
-    if (
-      senderMembershipId === null ||
-      !(await isChannelMember(this.db, channelId, orgId, senderMembershipId))
-    )
+    const senderMembershipId = await resolveChannelMembershipId(this.db, orgId, userId, channelId);
+    if (senderMembershipId === null)
       throw new ForbiddenException("You are not a member of this channel");
 
     // A retry of a send whose response was lost must return the original message, not
@@ -257,18 +250,10 @@ export class ChatMessagesService {
     }
     const { message, insertedAttachments, senderName, senderImage, channelType } = sendResult;
 
-    const deferred = () =>
-      runInNewTenantTransaction(this.db, orgId, async () => {
-        await this.cache.invalidateNamespace(`chat:unread:${orgId}`);
-        await this.replyReminders.scheduleForMessage(orgId, channelId, message.id, userId);
-      }).catch((error: unknown) => {
-        logger.error("chat message side effects failed", {
-          orgId,
-          channelId,
-          messageId: message.id,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-      });
+    const deferWork = async () => {
+      await this.cache.invalidateNamespace(`chat:unread:${orgId}`);
+      await this.replyReminders.scheduleForMessage(orgId, channelId, message.id, userId, senderMembershipId);
+    };
 
     const realtime = () =>
       this.fanout
@@ -301,7 +286,16 @@ export class ChatMessagesService {
         });
 
     if (!registerAfterCommit(realtime)) void realtime();
-    if (!registerAfterCommit(deferred)) void deferred();
+    if (!registerAfterCommit(deferWork)) {
+      void runInNewTenantTransaction(this.db, orgId, deferWork).catch((error: unknown) => {
+        logger.error("chat message side effects failed", {
+          orgId,
+          channelId,
+          messageId: message.id,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      });
+    }
 
     return message;
   }

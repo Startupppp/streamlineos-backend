@@ -135,7 +135,7 @@ describe("ChatMessagesService.sendThreadReply parent lookup", () => {
     const db = { query: { chatMessages: { findFirst } } };
     const service = new ChatMessagesService(
       db as unknown as Db,
-      ...(Array(7).fill({}) as [never, never, never, never, never, never, never]),
+      ...(Array(6).fill({}) as [never, never, never, never, never, never]),
     );
 
     await expect(

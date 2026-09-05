@@ -2,7 +2,6 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AblyService } from "../../realtime/ably.service";
-import { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import { ChatMessagesService } from "../chat-messages.service";
 import { ChatReplyRemindersService } from "../chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "../chat-org-settings.service";
@@ -39,10 +38,10 @@ const existing = {
 function makeDb(overrides: { replayed?: unknown; inserted?: unknown[] } = {}) {
   const { replayed = undefined, inserted = [existing] } = overrides;
   const chain: Record<string, unknown> = {};
-  for (const m of ["insert", "values", "update", "set", "where", "from", "select", "delete", "onConflictDoNothing", "orderBy"])
+  for (const m of ["insert", "values", "update", "set", "where", "from", "select", "delete", "onConflictDoNothing", "orderBy", "innerJoin"])
     chain[m] = jest.fn(() => chain);
   chain.returning = jest.fn().mockResolvedValue(inserted);
-  chain.limit = jest.fn().mockResolvedValue([{ id: CHANNEL, type: "GROUP" }]);
+  chain.limit = jest.fn().mockResolvedValue([{ membershipId: 10, id: CHANNEL, type: "GROUP", name: "A" }]);
   chain.query = {
     organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 10 }) },
     chatChannelMembers: {
@@ -66,7 +65,6 @@ async function build(db: Record<string, unknown>): Promise<ChatMessagesService> 
       { provide: AblyService, useValue: { configured: false, publishChatEvent: jest.fn() } },
       { provide: ChatReplyRemindersService, useValue: { scheduleForMessage: jest.fn() } },
       { provide: ChatOrgSettingsService, useValue: { getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 25 }) } },
-      { provide: EntityReferenceService, useValue: { resolve: jest.fn().mockResolvedValue([]), isKnownType: jest.fn().mockReturnValue(true) } },
       { provide: StorageService, useValue: { isValidFileKey: jest.fn().mockReturnValue(true) } },
       {
         provide: MESSAGE_FANOUT_PROVIDER,

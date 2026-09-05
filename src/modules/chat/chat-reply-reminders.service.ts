@@ -48,10 +48,14 @@ export class ChatReplyRemindersService {
     channelId: number,
     messageId: number,
     senderId: string,
+    resolvedSenderMembershipId?: number | null,
   ): Promise<void> {
     const remindAt = new Date(Date.now() + this.replyReminderMs);
 
-    const senderMembershipId = await this.resolveMembershipId(orgId, senderId);
+    const senderMembershipId =
+      resolvedSenderMembershipId !== undefined
+        ? resolvedSenderMembershipId
+        : await this.resolveMembershipId(orgId, senderId);
 
     if (senderMembershipId !== null)
       await this.cancelPendingForMemberInChannel(senderMembershipId, channelId);

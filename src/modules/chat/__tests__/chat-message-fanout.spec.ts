@@ -20,10 +20,10 @@ const persisted: PersistedMessage = {
 
 function makeDb() {
   const chain: Record<string, unknown> = {};
-  for (const method of ["insert", "values", "update", "set", "where", "from", "select", "delete", "onConflictDoNothing"])
+  for (const method of ["insert", "values", "update", "set", "where", "from", "select", "delete", "onConflictDoNothing", "innerJoin"])
     chain[method] = jest.fn(() => chain);
   chain.returning = jest.fn().mockResolvedValue([persisted]);
-  chain.limit = jest.fn().mockResolvedValue([{ id: 1 }]);
+  chain.limit = jest.fn().mockResolvedValue([{ membershipId: 1, id: 1, type: "PUBLIC" }]);
   chain.query = {
     chatChannelMembers: {
       findFirst: jest.fn().mockResolvedValue({ userId: "sender" }),
@@ -52,7 +52,6 @@ function makeService() {
     { configured: false, publishChatMessage: jest.fn() } as never,
     { scheduleForMessage: jest.fn().mockResolvedValue(undefined) } as never,
     { getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 10 }) } as never,
-    { resolve: jest.fn().mockResolvedValue([]) } as never,
     { isValidFileKey: jest.fn().mockReturnValue(true) } as never,
     fanout as never,
   ), db, fanout };
@@ -78,6 +77,9 @@ describe("ChatMessagesService.send", () => {
 
   it("hands the composer's mention identities to the fan-out, checked against the roster", async () => {
     const { service, db } = makeService();
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ membershipId: 1 }])
+      .mockResolvedValueOnce([{ userId: "user-alex" }]);
 
     await service.send(1, "sender", "org-1", {
       content: "hello @alex",
@@ -91,6 +93,7 @@ describe("ChatMessagesService.send", () => {
   it("persists sender identity in the outbox payload while the send transaction is open", async () => {
     const { service, db } = makeService();
     (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ membershipId: 1 }])
       .mockResolvedValueOnce([{ id: 1, type: "PUBLIC" }])
       .mockResolvedValueOnce([{ name: "Alice", image: "https://cdn.example.com/alice.jpg" }]);
 
@@ -240,7 +243,7 @@ describe("ChatMessageFanoutService", () => {
     notifications.publishNewMessageNotification.mockRejectedValue(new Error("dm down"));
     notifications.publishMentionNotification.mockResolvedValue(undefined);
 
-    await expect(service.dispatch({
+    await expect(service.dispatchDeferred({
       ...input,
       channelType: "DIRECT",
       mentionedUserIds: ["user-1"],
