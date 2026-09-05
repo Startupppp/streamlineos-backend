@@ -488,6 +488,78 @@ precedes the confirm, and denied does not render as empty. What remains unproven
 is the thing only a person holding a device can answer — whether it is usable
 one-handed.
 
+#### Retried 2026-09-05 — still blocked, and the wall has moved earlier
+
+A second attempt was made under the rule that it must not mint a session. It did
+not reach `/inventory/rf` either, and it stopped **before** the point the first
+attempt reached: at the unauthenticated redirect, not at `/me/access`.
+
+Probed rather than assumed: of the six Next servers and four Nest servers already
+running, the only pair that is both coherent and built from this branch is
+frontend `:3000` (`next dev` rooted in the working tree) talking to backend
+`:1501` — read out of the served bundles, not guessed. All four backends are on
+the local `scratch_t30_browser`, not shared Neon.
+
+At 375×812 with the mobile preset, every RF route answers the same way
+unauthenticated:
+
+```
+/inventory/rf                   307 -> /signin?callbackUrl=%2Finventory%2Frf
+/inventory/rf/pick              307 -> …%2Finventory%2Frf%2Fpick
+/inventory/rf/pick/pl-demo-1    307 -> …%2Fpick%2Fpl-demo-1
+/inventory/rf/putaway           307 -> …%2Finventory%2Frf%2Fputaway
+/inventory/rf/putaway/pt-demo-1 307 -> …%2Fputaway%2Fpt-demo-1
+GET :1501/me/access             401 UNAUTHORIZED   (no credential at all)
+```
+
+**The first attempt's 403 was not an RBAC denial.** `/me/access` is `@Universal()`
+and `@AllowWithoutMfa()` (`src/me/me.controller.ts:27-31`) — it asks for no
+permission. The only two 403 exits on the path are `jwt-auth.guard.ts:181`
+(`"Organization not found"`) and `:202` (`ORG_MEMBERSHIP_INACTIVE`), both of which
+fire when the claims name a user/org pair with **no active membership row** in the
+database the backend is pointed at. The minted cookie asserted an identity that did
+not exist. So the fix was never "get past the 403"; it is "hold a real membership".
+
+**Why no automated sign-in exists here.** The product is passwordless — `users` has
+no password column, and NextAuth registers exactly two providers: Google, and a
+`credentials` provider whose only field is a `magicToken`. Both doors need a person:
+
+* `POST /auth/email-otp` for the seeded owner returns 200 and really writes a row,
+  but `email_otp_codes` stores a `code_hash` and the plaintext goes only to an
+  email. Every one of the 577 users in this database is `@scratch-seed.test` (573)
+  or `@perf.invalid` (4) — **no deliverable mailbox exists.** `POST /auth/magic-link`
+  is worse: it `findOrCreateUser`s, so requesting one for a readable address mints
+  an org-less user that lands on `/org-setup`.
+* Google is live, but `auth-tokens.service.ts:84-124` links by `lower(email)`. No
+  Google-ownable address exists in the data, so a real Google sign-in also produces
+  a new org-less user.
+
+The org that would have worked is `Scratch E2E Corp`
+(`aaaaaaaa-1111-0000-0000-000000000001`) — the only one of eight with any modules
+enabled, `inventory` among them — owned by `user-1@scratch-seed.test`.
+
+**The credential a human must supply**, either one:
+
+1. Repoint a seeded member at a real address — set `users.email` for
+   `bbbbbbbb-0001-0000-0000-000000000001` (owner of `Scratch E2E Corp`) to a
+   mailbox or Google account the operator controls, then sign in normally. An agent
+   must not do this itself: it is granting itself an account.
+2. Or hand over an `authjs.session-token` minted by a person signing in as a user
+   who already holds an active membership in an inventory-enabled org, with the
+   matching `NEXTAUTH_SECRET`.
+
+Not done, and not acceptable as a substitute: minting a session cookie, inserting a
+`magic_link_tokens` row, or brute-forcing the six-digit `code_hash`. Each yields a
+screenshot and no evidence.
+
+`rf-surface.test.ts` and `rf-surface-render.test.tsx` were re-run unmodified against
+a clean working tree — 2 suites, 13 tests, EXIT=0. Neither was weakened, and no
+`/dashboard` measurement is being offered as an RF result.
+
+**Status after two attempts: the RF surface is structurally pinned by two ratchets
+and ergonomically unproven.** What is now also true is that the block is located
+precisely and the key is named.
+
 ### The seeded suite on a cold-built database — closed, 2026-09-05
 
 **All four of the failures this section used to describe are gone, and none of
