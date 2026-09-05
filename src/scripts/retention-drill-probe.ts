@@ -18,9 +18,6 @@ import { CronAnnouncementsRetentionService } from "../modules/cron/cron-announce
 import { CronHelpdeskRetentionService } from "../modules/cron/cron-helpdesk-retention.service";
 import { CronMailRetentionService } from "../modules/cron/cron-mail-retention.service";
 
-const HELPDESK_BATCH_SIZE = 200;
-const DRILL_ACCOUNT_ID = 88_888_888;
-
 export interface DrillCheck {
   readonly id: string;
   readonly phase: string;
@@ -35,11 +32,7 @@ export interface DrillReport {
   readonly error?: string;
 }
 
-/**
- * Anti-vacuity gate for the control phase. Named and exported so --contract can
- * verify its logic without a database: a "retained" verdict is meaningless when
- * the control sweep deleted nothing at all.
- */
+/** Anti-vacuity gate. Named+exported so --contract can verify logic without a DB. */
 export function assessControlDeletion(
   deleted: number,
   seeded: number,
@@ -83,102 +76,79 @@ export const PRODUCTION_RETENTION_PATHS: readonly {
   },
 ];
 
-function arg(name: string): string | undefined {
-  return process.argv
+const ACCT = 88_888_888;
+const HD_BATCH = 200;
+const arg = (name: string) =>
+  process.argv
     .slice(2)
-    .find((a) => a.startsWith(`--${name}=`))
+    .find((x) => x.startsWith(`--${name}=`))
     ?.slice(`--${name}=`.length);
-}
+const ago = (n: number) => new Date(Date.now() - n * 86_400_000);
+
 function emit(report: DrillReport): void {
   const out = arg("out");
   if (!out) {
-    process.stderr.write("retention-drill-probe: --out=<path> required\n");
+    process.stderr.write("--out=<path> required\n");
     return;
   }
   writeFileSync(out, JSON.stringify(report, null, 2) + "\n", "utf8");
 }
-function daysAgo(n: number): Date {
-  return new Date(Date.now() - n * 86_400_000);
-}
 
-async function countTickets(
-  db: DbWithClient,
-  orgId: string,
-  userId: string,
-): Promise<number> {
-  return runInNewTenantTransaction(db, orgId, async () => {
+const cntTickets = (db: DbWithClient, o: string, uid: string) =>
+  runInNewTenantTransaction(db, o, async () => {
     const [r] = await db
       .select({ c: count() })
       .from(helpdeskTickets)
       .where(
-        and(
-          eq(helpdeskTickets.orgId, orgId),
-          eq(helpdeskTickets.userId, userId),
-        ),
+        and(eq(helpdeskTickets.orgId, o), eq(helpdeskTickets.userId, uid)),
       );
     return Number(r?.c ?? 0);
   });
-}
-async function countMail(
-  db: DbWithClient,
-  orgId: string,
-  membershipId: number,
-): Promise<number> {
-  return runInNewTenantTransaction(db, orgId, async () => {
+const cntMail = (db: DbWithClient, o: string, mid: number) =>
+  runInNewTenantTransaction(db, o, async () => {
     const [r] = await db
       .select({ c: count() })
       .from(mailMessageMetadata)
       .where(
         and(
-          eq(mailMessageMetadata.orgId, orgId),
-          eq(mailMessageMetadata.userMembershipId, membershipId),
+          eq(mailMessageMetadata.orgId, o),
+          eq(mailMessageMetadata.userMembershipId, mid),
         ),
       );
     return Number(r?.c ?? 0);
   });
-}
-async function countAnnouncements(
-  db: DbWithClient,
-  orgId: string,
-  authorId: string,
-): Promise<number> {
-  return runInNewTenantTransaction(db, orgId, async () => {
+const cntAnn = (db: DbWithClient, o: string, uid: string) =>
+  runInNewTenantTransaction(db, o, async () => {
     const [r] = await db
       .select({ c: count() })
       .from(announcements)
-      .where(
-        and(
-          eq(announcements.orgId, orgId),
-          eq(announcements.authorId, authorId),
-        ),
-      );
+      .where(and(eq(announcements.orgId, o), eq(announcements.authorId, uid)));
     return Number(r?.c ?? 0);
   });
-}
 
 async function cleanup(
   db: DbWithClient,
-  orgIdA: string,
-  orgIdB: string,
-  userIds: string[],
-  memberIds: number[],
+  orgA: string,
+  orgB: string,
+  uids: string[],
+  mids: number[],
   runId: string,
 ): Promise<void> {
-  await runInNewTenantTransaction(db, orgIdA, async () => {
-    if (memberIds.length > 0)
+  await runInNewTenantTransaction(db, orgA, async () => {
+    if (mids.length)
       await db
         .delete(mailMessageMetadata)
         .where(
           and(
-            eq(mailMessageMetadata.orgId, orgIdA),
-            inArray(mailMessageMetadata.userMembershipId, memberIds),
+            eq(mailMessageMetadata.orgId, orgA),
+            inArray(mailMessageMetadata.userMembershipId, mids),
           ),
         );
     await db
       .delete(mailMessageMetadata)
       .where(
         and(
-          eq(mailMessageMetadata.orgId, orgIdA),
+          eq(mailMessageMetadata.orgId, orgA),
           like(mailMessageMetadata.messageId, `%${runId}`),
         ),
       );
@@ -186,51 +156,51 @@ async function cleanup(
       .delete(helpdeskTickets)
       .where(
         and(
-          eq(helpdeskTickets.orgId, orgIdA),
-          inArray(helpdeskTickets.userId, userIds),
+          eq(helpdeskTickets.orgId, orgA),
+          inArray(helpdeskTickets.userId, uids),
         ),
       );
     await db
       .delete(hrLegalHolds)
       .where(
         and(
-          eq(hrLegalHolds.orgId, orgIdA),
-          inArray(hrLegalHolds.subjectUserId, userIds),
+          eq(hrLegalHolds.orgId, orgA),
+          inArray(hrLegalHolds.subjectUserId, uids),
         ),
       );
     await db
       .delete(announcements)
       .where(
         and(
-          eq(announcements.orgId, orgIdA),
-          inArray(announcements.authorId, userIds),
+          eq(announcements.orgId, orgA),
+          inArray(announcements.authorId, uids),
         ),
       );
     await db
       .delete(organizationMembers)
       .where(
         and(
-          eq(organizationMembers.orgId, orgIdA),
-          inArray(organizationMembers.userId, userIds),
+          eq(organizationMembers.orgId, orgA),
+          inArray(organizationMembers.userId, uids),
         ),
       );
   });
-  await runInNewTenantTransaction(db, orgIdB, async () => {
+  await runInNewTenantTransaction(db, orgB, async () => {
     await db
       .delete(helpdeskTickets)
       .where(
         and(
-          eq(helpdeskTickets.orgId, orgIdB),
-          inArray(helpdeskTickets.userId, userIds),
+          eq(helpdeskTickets.orgId, orgB),
+          inArray(helpdeskTickets.userId, uids),
         ),
       );
   });
-  await db.delete(users).where(inArray(users.id, userIds));
+  await db.delete(users).where(inArray(users.id, uids));
 }
 
 async function runDrill(
-  orgIdA: string,
-  orgIdB: string,
+  orgA: string,
+  orgB: string,
   url: string,
 ): Promise<DrillReport> {
   const client = postgres(url, { prepare: false, max: 4, onnotice: () => {} });
@@ -246,387 +216,378 @@ async function runDrill(
     expected: string,
     observed: string,
     ok: boolean,
-  ) => checks.push({ id, phase, productionPath: path, expected, observed, ok });
+  ) =>
+    void checks.push({
+      id,
+      phase,
+      productionPath: path,
+      expected,
+      observed,
+      ok,
+    });
 
-  const userHeldId = `dh-${runId}`;
-  const userNormalId = `dn-${runId}`;
-  let memberHeldId = 0;
-  let memberNormalId = 0;
+  const uHeld = `dh-${runId}`;
+  const uNorm = `dn-${runId}`;
+  let mHeld = 0;
+  let mNorm = 0;
 
-  const helpdeskSvc = new CronHelpdeskRetentionService(db);
-  const mailSvc = new CronMailRetentionService(db);
-  const announceSvc = new CronAnnouncementsRetentionService(db);
+  const hdSvc = new CronHelpdeskRetentionService(db);
+  const mlSvc = new CronMailRetentionService(db);
+  const anSvc = new CronAnnouncementsRetentionService(db);
 
   try {
-    await db.insert(users).values([
-      { id: userHeldId, email: `drill-held-${runId}@drill.internal` },
-      { id: userNormalId, email: `drill-normal-${runId}@drill.internal` },
-    ]);
+    const userRows: (typeof users.$inferInsert)[] = [
+      { id: uHeld, email: `drill-held-${runId}@drill.internal` },
+      { id: uNorm, email: `drill-norm-${runId}@drill.internal` },
+    ];
+    await db.insert(users).values(userRows);
+    await runInNewTenantTransaction(db, orgA, async () => {
+      const [h] = await db
+        .insert(organizationMembers)
+        .values({ userId: uHeld, orgId: orgA })
+        .returning({ id: organizationMembers.id });
+      const [n] = await db
+        .insert(organizationMembers)
+        .values({ userId: uNorm, orgId: orgA })
+        .returning({ id: organizationMembers.id });
+      if (!h || !n) throw new Error("fixture membership insert returned no id");
+      mHeld = h.id;
+      mNorm = n.id;
+    });
 
-    ({ memberHeldId, memberNormalId } = await runInNewTenantTransaction(
-      db,
-      orgIdA,
-      async () => {
-        const [h] = await db
-          .insert(organizationMembers)
-          .values({ userId: userHeldId, orgId: orgIdA })
-          .returning({ id: organizationMembers.id });
-        const [n] = await db
-          .insert(organizationMembers)
-          .values({ userId: userNormalId, orgId: orgIdA })
-          .returning({ id: organizationMembers.id });
-        if (!h || !n)
-          throw new Error("fixture membership insert returned no id");
-        return { memberHeldId: h.id, memberNormalId: n.id };
-      },
-    ));
+    /* CONTROL — expired eligible data deleted (req 1) */
+    const HDEXP = ago(800); // >730d helpdesk cutoff
+    const MLEXP = ago(400); // >365d mail cutoff
+    const ANEXP = ago(180); // >90d announcement grace
+    const ANAGE = ago(800); // >730d announcement max-age
 
-    /* ===== CONTROL — expired eligible data must be deleted (req 1) ===== */
-    const HDEXP = daysAgo(800); // > 730-day helpdesk cutoff
-    const MLEXP = daysAgo(400); // > 365-day mail cutoff
-    const ANEXP = daysAgo(180); // > 90-day announcement grace
-    const ANAGE = daysAgo(800); // > 730-day announcement max-age
-
-    await runInNewTenantTransaction(db, orgIdA, async () => {
+    await runInNewTenantTransaction(db, orgA, async () => {
       await db.insert(helpdeskTickets).values([
         {
-          orgId: orgIdA,
-          userId: userNormalId,
-          title: `ctrl-1-${runId}`,
-          status: "RESOLVED",
+          orgId: orgA,
+          userId: uNorm,
+          title: `c1-${runId}`,
+          status: "DONE",
           resolvedAt: HDEXP,
         },
         {
-          orgId: orgIdA,
-          userId: userNormalId,
-          title: `ctrl-2-${runId}`,
-          status: "CLOSED",
+          orgId: orgA,
+          userId: uNorm,
+          title: `c2-${runId}`,
+          status: "DONE",
           resolvedAt: HDEXP,
         },
         {
-          orgId: orgIdA,
-          userId: userNormalId,
-          title: `ctrl-3-${runId}`,
-          status: "RESOLVED",
+          orgId: orgA,
+          userId: uNorm,
+          title: `c3-${runId}`,
+          status: "DONE",
           resolvedAt: HDEXP,
         },
-        {
-          orgId: orgIdA,
-          userId: userNormalId,
-          title: `ctrl-recent-${runId}`,
-          status: "TODO",
-        },
+        { orgId: orgA, userId: uNorm, title: `cr-${runId}`, status: "TODO" },
       ]);
       await db.insert(mailMessageMetadata).values([
         {
-          orgId: orgIdA,
-          accountId: DRILL_ACCOUNT_ID,
+          orgId: orgA,
+          accountId: ACCT,
           messageId: `cm1-${runId}`,
-          userMembershipId: memberNormalId,
+          userMembershipId: mNorm,
           syncedAt: MLEXP,
         },
         {
-          orgId: orgIdA,
-          accountId: DRILL_ACCOUNT_ID,
+          orgId: orgA,
+          accountId: ACCT,
           messageId: `cm2-${runId}`,
-          userMembershipId: memberNormalId,
+          userMembershipId: mNorm,
           syncedAt: MLEXP,
         },
       ]);
       await db.insert(announcements).values([
         {
-          orgId: orgIdA,
-          title: `ctrl-ann-exp-${runId}`,
+          orgId: orgA,
+          title: `cae-${runId}`,
           content: "drill",
-          authorId: userNormalId,
+          authorId: uNorm,
           expiresAt: ANEXP,
         },
         {
-          orgId: orgIdA,
-          title: `ctrl-ann-aged-${runId}`,
+          orgId: orgA,
+          title: `caa-${runId}`,
           content: "drill",
-          authorId: userNormalId,
+          authorId: uNorm,
           createdAt: ANAGE,
         },
       ]);
     });
 
-    const [ctHDBef, ctMLBef, ctANBef] = await Promise.all([
-      countTickets(db, orgIdA, userNormalId),
-      countMail(db, orgIdA, memberNormalId),
-      countAnnouncements(db, orgIdA, userNormalId),
+    const [hdB, mlB, anB] = await Promise.all([
+      cntTickets(db, orgA, uNorm),
+      cntMail(db, orgA, mNorm),
+      cntAnn(db, orgA, uNorm),
+    ]);
+    await hdSvc.sweep();
+    await mlSvc.sweep();
+    await anSvc.sweep();
+    const [hdA, mlA, anA] = await Promise.all([
+      cntTickets(db, orgA, uNorm),
+      cntMail(db, orgA, mNorm),
+      cntAnn(db, orgA, uNorm),
     ]);
 
-    await helpdeskSvc.sweep();
-    await mailSvc.sweep();
-    await announceSvc.sweep();
-
-    const [ctHDAft, ctMLAft, ctANAft] = await Promise.all([
-      countTickets(db, orgIdA, userNormalId),
-      countMail(db, orgIdA, memberNormalId),
-      countAnnouncements(db, orgIdA, userNormalId),
-    ]);
-
-    const antiV = assessControlDeletion(ctHDBef - ctHDAft, ctHDBef);
-    if (!antiV.ok)
-      return { mode: "run", checks, error: `INCONCLUSIVE — ${antiV.message}` };
+    const av = assessControlDeletion(hdB - hdA, hdB);
+    if (!av.ok)
+      return { mode: "run", checks, error: `INCONCLUSIVE — ${av.message}` };
 
     rec(
-      "control.helpdesk.deleted",
+      "ctrl.hd",
       "control",
       "CronHelpdeskRetentionService.sweep",
-      "3 expired deleted, 1 recent (TODO) survived",
-      `before=${ctHDBef} after=${ctHDAft} deleted=${ctHDBef - ctHDAft}`,
-      ctHDBef - ctHDAft === 3 && ctHDAft === 1,
+      "3 expired deleted 1 TODO survived",
+      `bef=${hdB} aft=${hdA} del=${hdB - hdA}`,
+      hdB - hdA === 3 && hdA === 1,
     );
     rec(
-      "control.mail.deleted",
+      "ctrl.ml",
       "control",
       "CronMailRetentionService.sweep",
-      "2 expired mail rows deleted",
-      `before=${ctMLBef} after=${ctMLAft}`,
-      ctMLBef - ctMLAft === 2 && ctMLAft === 0,
+      "2 expired mail deleted",
+      `bef=${mlB} aft=${mlA}`,
+      mlB - mlA === 2 && mlA === 0,
     );
     rec(
-      "control.announcements.deleted",
+      "ctrl.an",
       "control",
       "CronAnnouncementsRetentionService.sweep",
-      "2 expired announcements deleted (1 by expires_at, 1 by created_at age)",
-      `before=${ctANBef} after=${ctANAft}`,
-      ctANBef - ctANAft === 2 && ctANAft === 0,
+      "2 expired announcements deleted",
+      `bef=${anB} aft=${anA}`,
+      anB - anA === 2 && anA === 0,
     );
 
-    /* ===== HELD — legally-held subjects retained (req 2) ===== */
-    await runInNewTenantTransaction(db, orgIdA, async () => {
+    /* HELD — legally-held subjects retained (req 2) */
+    await runInNewTenantTransaction(db, orgA, async () => {
       await db.insert(hrLegalHolds).values({
-        orgId: orgIdA,
-        subjectUserId: userHeldId,
+        orgId: orgA,
+        subjectUserId: uHeld,
         reason: `drill-${runId}`,
-        placedBy: userNormalId,
+        placedBy: uNorm,
       });
       await db.insert(helpdeskTickets).values([
         {
-          orgId: orgIdA,
-          userId: userHeldId,
-          title: `held-h1-${runId}`,
-          status: "RESOLVED",
+          orgId: orgA,
+          userId: uHeld,
+          title: `hh1-${runId}`,
+          status: "DONE",
           resolvedAt: HDEXP,
         },
         {
-          orgId: orgIdA,
-          userId: userHeldId,
-          title: `held-h2-${runId}`,
-          status: "RESOLVED",
+          orgId: orgA,
+          userId: uHeld,
+          title: `hh2-${runId}`,
+          status: "DONE",
           resolvedAt: HDEXP,
         },
         {
-          orgId: orgIdA,
-          userId: userNormalId,
-          title: `held-n1-${runId}`,
-          status: "RESOLVED",
+          orgId: orgA,
+          userId: uNorm,
+          title: `hn1-${runId}`,
+          status: "DONE",
           resolvedAt: HDEXP,
         },
       ]);
       await db.insert(mailMessageMetadata).values([
         {
-          orgId: orgIdA,
-          accountId: DRILL_ACCOUNT_ID,
+          orgId: orgA,
+          accountId: ACCT,
           messageId: `hm-h-${runId}`,
-          userMembershipId: memberHeldId,
+          userMembershipId: mHeld,
           syncedAt: MLEXP,
         },
         {
-          orgId: orgIdA,
-          accountId: DRILL_ACCOUNT_ID,
+          orgId: orgA,
+          accountId: ACCT,
           messageId: `hm-n-${runId}`,
-          userMembershipId: memberNormalId,
+          userMembershipId: mNorm,
           syncedAt: MLEXP,
         },
       ]);
       await db.insert(announcements).values([
         {
-          orgId: orgIdA,
-          title: `held-ah-${runId}`,
+          orgId: orgA,
+          title: `hah-${runId}`,
           content: "drill",
-          authorId: userHeldId,
+          authorId: uHeld,
           expiresAt: ANEXP,
         },
         {
-          orgId: orgIdA,
-          title: `held-an-${runId}`,
+          orgId: orgA,
+          title: `han-${runId}`,
           content: "drill",
-          authorId: userNormalId,
+          authorId: uNorm,
           expiresAt: ANEXP,
         },
       ]);
     });
 
-    const [hhDBef, hnDBef, hhMLBef, hnMLBef, hhANBef, hnANBef] =
-      await Promise.all([
-        countTickets(db, orgIdA, userHeldId),
-        countTickets(db, orgIdA, userNormalId),
-        countMail(db, orgIdA, memberHeldId),
-        countMail(db, orgIdA, memberNormalId),
-        countAnnouncements(db, orgIdA, userHeldId),
-        countAnnouncements(db, orgIdA, userNormalId),
-      ]);
-
-    await helpdeskSvc.sweep();
-    await mailSvc.sweep();
-    await announceSvc.sweep();
-
-    const [hhDAft, hnDAft, hhMLAft, hnMLAft, hhANAft, hnANAft] =
-      await Promise.all([
-        countTickets(db, orgIdA, userHeldId),
-        countTickets(db, orgIdA, userNormalId),
-        countMail(db, orgIdA, memberHeldId),
-        countMail(db, orgIdA, memberNormalId),
-        countAnnouncements(db, orgIdA, userHeldId),
-        countAnnouncements(db, orgIdA, userNormalId),
-      ]);
+    const [hhB, hnB, hmhB, hmnB, hahB, hanB] = await Promise.all([
+      cntTickets(db, orgA, uHeld),
+      cntTickets(db, orgA, uNorm),
+      cntMail(db, orgA, mHeld),
+      cntMail(db, orgA, mNorm),
+      cntAnn(db, orgA, uHeld),
+      cntAnn(db, orgA, uNorm),
+    ]);
+    await hdSvc.sweep();
+    await mlSvc.sweep();
+    await anSvc.sweep();
+    const [hhA, hnA, hmhA, hmnA, hahA, hanA] = await Promise.all([
+      cntTickets(db, orgA, uHeld),
+      cntTickets(db, orgA, uNorm),
+      cntMail(db, orgA, mHeld),
+      cntMail(db, orgA, mNorm),
+      cntAnn(db, orgA, uHeld),
+      cntAnn(db, orgA, uNorm),
+    ]);
 
     rec(
-      "held.helpdesk.protected",
+      "held.hd.prot",
       "held",
       "CronHelpdeskRetentionService.sweep",
-      "held user's 2 expired tickets not deleted",
-      `before=${hhDBef} after=${hhDAft}`,
-      hhDAft === hhDBef && hhDBef > 0,
+      "held user tickets not deleted",
+      `bef=${hhB} aft=${hhA}`,
+      hhA === hhB && hhB > 0,
     );
     rec(
-      "held.helpdesk.normal_deleted",
+      "held.hd.norm",
       "held",
       "CronHelpdeskRetentionService.sweep",
-      "unheld user's 1 expired ticket deleted (1 recent survives)",
-      `before=${hnDBef} after=${hnDAft}`,
-      hnDAft < hnDBef && hnDAft > 0,
+      "unheld user expired ticket deleted",
+      `bef=${hnB} aft=${hnA}`,
+      hnA < hnB && hnA > 0,
     );
     rec(
-      "held.mail.protected",
+      "held.ml.prot",
       "held",
       "CronMailRetentionService.sweep",
-      "held membership's expired mail not deleted",
-      `before=${hhMLBef} after=${hhMLAft}`,
-      hhMLAft === hhMLBef && hhMLBef > 0,
+      "held membership mail not deleted",
+      `bef=${hmhB} aft=${hmhA}`,
+      hmhA === hmhB && hmhB > 0,
     );
     rec(
-      "held.mail.normal_deleted",
+      "held.ml.norm",
       "held",
       "CronMailRetentionService.sweep",
-      "unheld membership's expired mail deleted",
-      `before=${hnMLBef} after=${hnMLAft}`,
-      hnMLAft < hnMLBef,
+      "unheld membership expired mail deleted",
+      `bef=${hmnB} aft=${hmnA}`,
+      hmnA < hmnB,
     );
     rec(
-      "held.announcements.protected",
+      "held.an.prot",
       "held",
       "CronAnnouncementsRetentionService.sweep",
-      "held author's expired announcement not deleted",
-      `before=${hhANBef} after=${hhANAft}`,
-      hhANAft === hhANBef && hhANBef > 0,
+      "held author announcement not deleted",
+      `bef=${hahB} aft=${hahA}`,
+      hahA === hahB && hahB > 0,
     );
     rec(
-      "held.announcements.normal_deleted",
+      "held.an.norm",
       "held",
       "CronAnnouncementsRetentionService.sweep",
-      "unheld author's expired announcement deleted",
-      `before=${hnANBef} after=${hnANAft}`,
-      hnANAft < hnANBef,
+      "unheld author expired announcement deleted",
+      `bef=${hanB} aft=${hanA}`,
+      hanA < hanB,
     );
 
-    /* ===== ISOLATION — holds are org-scoped; orgB not cross-contaminated (req 3) ===== */
-    await runInNewTenantTransaction(db, orgIdB, async () => {
+    /* ISOLATION — holds are org-scoped (req 3) */
+    await runInNewTenantTransaction(db, orgB, async () => {
       await db.insert(helpdeskTickets).values([
         {
-          orgId: orgIdB,
-          userId: userHeldId,
-          title: `iso-1-${runId}`,
-          status: "RESOLVED",
+          orgId: orgB,
+          userId: uHeld,
+          title: `is1-${runId}`,
+          status: "DONE",
           resolvedAt: HDEXP,
         },
         {
-          orgId: orgIdB,
-          userId: userHeldId,
-          title: `iso-2-${runId}`,
-          status: "RESOLVED",
+          orgId: orgB,
+          userId: uHeld,
+          title: `is2-${runId}`,
+          status: "DONE",
           resolvedAt: HDEXP,
         },
       ]);
     });
-
-    const [orgBSeed, orgAHBef] = await Promise.all([
-      countTickets(db, orgIdB, userHeldId),
-      countTickets(db, orgIdA, userHeldId),
+    const [ibSeed, iaABef] = await Promise.all([
+      cntTickets(db, orgB, uHeld),
+      cntTickets(db, orgA, uHeld),
     ]);
-    await helpdeskSvc.sweep();
-    const [orgBAft, orgAHAft] = await Promise.all([
-      countTickets(db, orgIdB, userHeldId),
-      countTickets(db, orgIdA, userHeldId),
+    await hdSvc.sweep();
+    const [ibAft, iaAAft] = await Promise.all([
+      cntTickets(db, orgB, uHeld),
+      cntTickets(db, orgA, uHeld),
     ]);
 
     rec(
-      "isolated.helpdesk.orgb_deleted",
+      "iso.orgb.del",
       "isolated",
       "CronHelpdeskRetentionService.sweep",
-      "orgB tickets for userHeld deleted — orgA hold does not cross org boundary",
-      `orgBSeeded=${orgBSeed} orgBAfter=${orgBAft}`,
-      orgBAft < orgBSeed && orgBSeed > 0,
+      "orgB tickets for uHeld deleted — no hold in orgB",
+      `seed=${ibSeed} aft=${ibAft}`,
+      ibAft < ibSeed && ibSeed > 0,
     );
     rec(
-      "isolated.helpdesk.orga_protected",
+      "iso.orga.prot",
       "isolated",
       "CronHelpdeskRetentionService.sweep",
-      "orgA hold still protects userHeld after orgB sweep ran",
-      `orgABefore=${orgAHBef} orgAAfter=${orgAHAft}`,
-      orgAHAft === orgAHBef && orgAHAft > 0,
+      "orgA hold still protects uHeld after orgB sweep",
+      `bef=${iaABef} aft=${iaAAft}`,
+      iaAAft === iaABef && iaAAft > 0,
     );
 
-    /* ===== IDEMPOTENCY — re-run is safe (req 4) ===== */
-    const idempBef = await countTickets(db, orgIdA, userHeldId);
-    await helpdeskSvc.sweep();
-    const idempAft = await countTickets(db, orgIdA, userHeldId);
+    /* IDEMPOTENCY — re-run safe (req 4) */
+    const idB = await cntTickets(db, orgA, uHeld);
+    await hdSvc.sweep();
+    const idA = await cntTickets(db, orgA, uHeld);
     rec(
-      "idempotent.helpdesk",
+      "idem.hd",
       "idempotent",
       "CronHelpdeskRetentionService.sweep (second run)",
-      "held rows unchanged — sweep safe to retry",
-      `before=${idempBef} after=${idempAft}`,
-      idempAft === idempBef && idempBef > 0,
+      "held rows unchanged",
+      `bef=${idB} aft=${idA}`,
+      idA === idB && idB > 0,
     );
 
-    /* ===== BATCH — cursor loops, no silent truncation (req 5) ===== */
-    const batchCount = HELPDESK_BATCH_SIZE + 1;
-    const batchRows = Array.from({ length: batchCount }, (_, i) => ({
-      orgId: orgIdA,
-      userId: userNormalId,
-      title: `batch-${i}-${runId}`,
-      status: "RESOLVED" as const,
+    /* BATCH — cursor loops, no silent truncation (req 5) */
+    const bCount = HD_BATCH + 1;
+    const bRows = Array.from({ length: bCount }, (_, i) => ({
+      orgId: orgA,
+      userId: uNorm,
+      title: `b${i}-${runId}`,
+      status: "DONE" as const,
       resolvedAt: HDEXP,
     }));
-    await runInNewTenantTransaction(db, orgIdA, async () => {
-      for (let i = 0; i < batchRows.length; i += 100)
-        await db.insert(helpdeskTickets).values(batchRows.slice(i, i + 100));
+    await runInNewTenantTransaction(db, orgA, async () => {
+      for (let i = 0; i < bRows.length; i += 100)
+        await db.insert(helpdeskTickets).values(bRows.slice(i, i + 100));
     });
-    const batchBef = await countTickets(db, orgIdA, userNormalId);
-    const batchResult = await helpdeskSvc.sweep();
-    const batchAft = await countTickets(db, orgIdA, userNormalId);
-    const batchDel = batchBef - batchAft;
+    const bBef = await cntTickets(db, orgA, uNorm);
+    const bRes = await hdSvc.sweep();
+    const bAft = await cntTickets(db, orgA, uNorm);
 
     rec(
-      "batch.helpdesk.all_deleted",
+      "batch.hd.all",
       "batch",
-      "CronHelpdeskRetentionService.sweep (BATCH_SIZE+1 rows)",
-      `all ${batchCount} expired rows deleted; sweep loops across multiple batches`,
-      `before=${batchBef} after=${batchAft} deleted=${batchDel}`,
-      batchDel >= batchCount,
+      "CronHelpdeskRetentionService.sweep (BATCH_SIZE+1)",
+      `all ${bCount} expired rows deleted`,
+      `bef=${bBef} aft=${bAft} del=${bBef - bAft}`,
+      bBef - bAft >= bCount,
     );
     rec(
-      "batch.helpdesk.not_truncated",
+      "batch.hd.trunc",
       "batch",
       "CronHelpdeskRetentionService.sweep (HelpdeskRetentionResult.truncated)",
-      "truncated=false — cursor drained completely for fixture org",
-      `truncated=${batchResult.truncated}`,
-      !batchResult.truncated,
+      "truncated=false — cursor drained",
+      `truncated=${bRes.truncated}`,
+      !bRes.truncated,
     );
 
     return { mode: "run", checks };
@@ -640,18 +601,12 @@ async function runDrill(
           : String(err),
     };
   } finally {
-    const memberIds = [memberHeldId, memberNormalId].filter((m) => m > 0);
-    await cleanup(
-      db,
-      orgIdA,
-      orgIdB,
-      [userHeldId, userNormalId],
-      memberIds,
-      runId,
-    ).catch((e: unknown) =>
-      process.stderr.write(
-        `[retention-drill-probe] cleanup: ${e instanceof Error ? e.message : String(e)}\n`,
-      ),
+    const mids = [mHeld, mNorm].filter((m) => m > 0);
+    await cleanup(db, orgA, orgB, [uHeld, uNorm], mids, runId).catch(
+      (e: unknown) =>
+        process.stderr.write(
+          `[cleanup] ${e instanceof Error ? e.message : String(e)}\n`,
+        ),
     );
     await client.end({ timeout: 5 });
   }
@@ -672,7 +627,6 @@ async function main(): Promise<void> {
     });
     return;
   }
-
   const orgIdA = arg("org-a")?.trim();
   const orgIdB = arg("org-b")?.trim();
   const url = process.env.SCRATCH_DATABASE_URL;

@@ -71,7 +71,7 @@ export class CronHelpdeskRetentionService {
           sql`${helpdeskTickets.id} IN (
             SELECT id FROM helpdesk_tickets
             WHERE org_id = ${orgId}
-              AND status IN ('RESOLVED', 'CLOSED')
+              AND status = 'DONE'
               AND resolved_at IS NOT NULL
               AND resolved_at < ${cutoff}
               AND (user_id IS NULL OR user_id NOT IN (
