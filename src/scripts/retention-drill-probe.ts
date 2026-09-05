@@ -262,7 +262,7 @@ async function runDrill(
     const ANAGE = ago(800); // >730d announcement max-age
 
     await runInNewTenantTransaction(db, orgA, async () => {
-      await db.insert(helpdeskTickets).values([
+      const ctrlHdRows: (typeof helpdeskTickets.$inferInsert)[] = [
         {
           orgId: orgA,
           userId: uNorm,
@@ -285,7 +285,8 @@ async function runDrill(
           resolvedAt: HDEXP,
         },
         { orgId: orgA, userId: uNorm, title: `cr-${runId}`, status: "TODO" },
-      ]);
+      ];
+      await db.insert(helpdeskTickets).values(ctrlHdRows);
       await db.insert(mailMessageMetadata).values([
         {
           orgId: orgA,
