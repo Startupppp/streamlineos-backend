@@ -1,5 +1,37 @@
 # InventoryOS — NEO handoff
 
+**Release pass — 2026-09-05. Pushed: backend `3d324061f`, frontend `3bbdfabe7`**, both on
+`feat/inventory-world-class-implementation`. `main` untouched in both repos.
+
+A ticketed close-out ran over this branch — 14 tickets, GitHub issues #34–#47 on the
+frontend repo, label `inventory`. **Three of the four defects it was sent to fix were
+already fixed**; §6 had been wrong for five days and two work orders were written against
+it. What was actually broken was the cold build, and fixing that turned 50 failing tests
+green without an inventory code change. The whole inventory seeded suite is now **51 suites,
+561 tests, zero failures** on a database built from migrations alone — the previous best was
+46/50 and 550/555, un-rerun for 27 commits.
+
+Fixed here: the cold build (`1c167fdc1`); five commands that could not be retried, one of
+them found by the ratchet after a hand sweep missed it (`310abf574`, `cd889bef7`); the
+stranded-transit queue judging a transfer on somebody else's stock (`3d324061f`); and on the
+frontend, the complete absence of error boundaries across 82 routed pages, eight missing
+loading states, four URLs that 404'd, and no ratchet on nav→page (`3bac5faad`, `325d21660`,
+`296d8bed2`, `3bbdfabe7`).
+
+**Still needing a human.** Neon is not applied — five live `streamlineos-api` connections,
+and 316 of 630 entries pending by hash against a database whose objects already exist, so
+the decision is *reconcile or rebaseline*, not *run db:migrate*. RF is unproven on a device:
+the product is passwordless and all 577 users have undeliverable addresses, so no automated
+sign-in can exist; the surface is structurally pinned by two ratchets and ergonomically
+unproven. Live Blinkit/Instamart/Zepto and a real WES remain secret-blocked, unchanged.
+
+**Red that is not this branch's.** CI on both PRs is inherited from `main`: the backend
+`Legacy org-actor ratchet` job sets a `backend/` working-directory that does not exist, and
+Lint is 244 errors backend / 48 frontend, both main's. The frontend `type-check` failure is
+five errors inside a **stale, gitignored `.next/types/validator.ts` generated Sep 4**, naming
+routes that no longer exist — that gate currently measures build freshness, not type safety.
+And **none of the ratchets this pass added run in CI**; a gate nobody runs is a comment.
+
 **Close pass update — 2026-09-05.** `pnpm db:bootstrap` reaches `REACHED_HEAD 630/630` from an empty database for the first time on this branch, twice consecutively and idempotently (`1c167fdc1`). It had been stopping at 457/630 on `0678_rls_fix_feedback_cycle_responses`, an ordering defect described in §4 — and that, not any behavioural bug, is what the four "remaining cold-build failures" in §6 were. On a database at head those four suites are **50 of 50 tests, EXIT=0**. All three defects §6 called open had already been fixed in ancestors of this tip (`6c8f68fc9`, `99ab6c89d`); §6 and §3 are now corrected and dated. Still blocked and unchanged: RF needs a real signed-in session (`/me/access` 403s to a minted cookie), Neon was not migrated, live Blinkit/Zepto/Instamart secrets and a real WES adapter.
 
 **Close pass update — 2026-08-31 (superseded by the entry above).** Code commit `6c8f68fc` fixes the remaining replay-boundary defects by making PO-batch and recall execution reach `runIdempotent` before command-invalidated preconditions, storing a replayable PO response, and fixing the proposal-refresh route order; local checks passed for inventory reachability, PO quantity/override guards, recall execute units, transit-exit arithmetic, frontend route states, and the proposal refresh route-order regression. RF is still blocked by no real signed-in session/cookie, and Neon was not migrated because `pg_stat_activity` showed live `streamlineos-api` sessions, including one active. Remaining non-code blockers are unchanged: live Blinkit/Zepto/Instamart secrets and a real WES adapter.
