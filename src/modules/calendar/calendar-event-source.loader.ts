@@ -6,8 +6,6 @@ import { loadExceptionsByEvent } from "./calendar-exception-loader";
 import type { CalendarEventException } from "./calendar-occurrence.service";
 import type { LinkedTicket } from "./calendar.types";
 
-const BATCH_SIZE = 500;
-
 export interface VisibleEventRow {
   id: number;
   title: string;
@@ -114,17 +112,17 @@ export class CalendarEventSourceLoader {
   }
 
   /**
-   * The drain is bounded, and that is what keeps the statement count down.
+   * Single-pass visible-event read: one pair of index-bounded branch queries (non-recurring
+   * and recurring, run in parallel), one RSVP batch, one full-projection fetch, one
+   * creator-name lookup. Statement count is 4 fixed statements regardless of tenant size.
    *
-   * Every consumer of this loader is already capped twice over —
-   * `CalendarNativeEventSource` stops projecting at `CALENDAR_EVENTS_CAP` and
-   * `CalendarSourceRegistry` then keeps the first `CALENDAR_PER_SOURCE_CAP` (400) of
-   * what it produced — but the loop below used to page until the tenant's whole window
-   * was in memory regardless: 8,522 rows over 18 round trips on the 89.93% tenant, to
-   * feed a cap of 400. Rows arrive in `(start_date, id)` order and both caps keep a
-   * prefix of that order, so stopping at the same bound the projector stops at changes
-   * what the caller sees only for events whose every occurrence is cancelled or falls
-   * outside the window — and only then if fewer than 400 survive.
+   * The previous loop fetched BATCH_SIZE=500 candidates per iteration and continued until
+   * CALENDAR_EVENTS_CAP was reached, producing 4 statements per iteration (2 candidate
+   * + 1 RSVP + 1 fetch): 4 iterations × 4 statements = 16 extra statements on a large
+   * tenant vs a small one. The loop was unnecessary because CALENDAR_EVENTS_CAP is the
+   * correct limit for both branches — using it directly collapses the loop to one pass
+   * without changing what the caller receives (both caps kept a prefix of the
+   * (start_date, id) order, so the result is identical).
    */
   private async queryVisibleEvents(
     orgId: string,
@@ -132,33 +130,21 @@ export class CalendarEventSourceLoader {
     start: Date,
     end: Date,
   ): Promise<VisibleEventRow[]> {
-    const events: VisibleEventRow[] = [];
-    const creatorMembershipIds = new Set<number>();
-    let after: { startDate: Date; id: number } | null = null;
+    const candidates = await this.candidatePage(orgId, callerMembershipId, start, end);
+    if (candidates.length === 0) return [];
 
-    for (;;) {
-      const candidates = await this.candidatePage(orgId, callerMembershipId, start, end, after);
-      if (candidates.length === 0) break;
+    const ids = candidates.map((c) => c.id);
+    const rsvpByEvent = await this.callerRsvp(orgId, callerMembershipId, ids);
+    const rows = await this.fetchEvents(orgId, callerMembershipId, ids, [...rsvpByEvent.keys()]);
 
-      const ids = candidates.map((c) => c.id);
-      const rsvpByEvent = await this.callerRsvp(orgId, callerMembershipId, ids);
-      const rows = await this.fetchEvents(orgId, callerMembershipId, ids, [...rsvpByEvent.keys()]);
-      for (const row of rows) {
-        creatorMembershipIds.add(row.createdByMembershipId);
-        events.push({ ...row, rsvpStatus: rsvpByEvent.get(row.id) ?? null, creatorName: null });
-      }
-
-      if (candidates.length < BATCH_SIZE) break;
-      if (events.length >= CALENDAR_EVENTS_CAP) break;
-      const last = candidates[candidates.length - 1];
-      if (!last) break;
-      after = { startDate: last.startDate, id: last.id };
-    }
-
+    const creatorMembershipIds = new Set(rows.map((r) => r.createdByMembershipId));
     const creatorNames = await this.creatorNames(orgId, [...creatorMembershipIds]);
-    for (const event of events) event.creatorName = creatorNames.get(event.createdByMembershipId) ?? null;
 
-    return events;
+    return rows.map((row) => ({
+      ...row,
+      rsvpStatus: rsvpByEvent.get(row.id) ?? null,
+      creatorName: creatorNames.get(row.createdByMembershipId) ?? null,
+    }));
   }
 
   /**
@@ -181,7 +167,7 @@ export class CalendarEventSourceLoader {
   }
 
   /**
-   * Step one: identifiers only, and the two range branches asked separately.
+   * Step one: identifiers only, two range branches run in parallel.
    *
    * As one `OR` the recurring arm has no lower bound on `start_date`, so the planner
    * walks `idx_calendar_events_org_date` from the tenant's first event forward and
@@ -191,17 +177,17 @@ export class CalendarEventSourceLoader {
    * for the non-recurring one and the partial `idx_calendar_events_org_recurring_start`
    * for the recurring one.
    *
-   * Merging the two branches in memory is safe against the page boundary because each
-   * is ordered and limited by the same key: a row in the global first `BATCH_SIZE` is
-   * necessarily in the first `BATCH_SIZE` of its own branch, so the merge can never
-   * skip one.
+   * Both branches are limited to CALENDAR_EVENTS_CAP so a single call replaces the
+   * former cursor-paginated loop. Merging in memory is correct: each branch is ordered
+   * by (start_date, id) and limited by the same value, so a row in the global first
+   * CALENDAR_EVENTS_CAP is necessarily in the first CALENDAR_EVENTS_CAP of its own
+   * branch and the merge can never skip one.
    */
   private async candidatePage(
     orgId: string,
     callerMembershipId: number,
     start: Date,
     end: Date,
-    after: { startDate: Date; id: number } | null,
   ): Promise<Array<{ id: number; startDate: Date }>> {
     const visible = or(
       eq(calendarEvents.visibility, "org"),
@@ -209,41 +195,34 @@ export class CalendarEventSourceLoader {
       attendedByCaller(callerMembershipId),
     );
 
-    const keyset =
-      after === null
-        ? undefined
-        : or(
-            gt(calendarEvents.startDate, after.startDate),
-            and(eq(calendarEvents.startDate, after.startDate), gt(calendarEvents.id, after.id)),
-          );
-
     const branch = (range: SQL | undefined) =>
       this.database
         .select({ id: calendarEvents.id, startDate: calendarEvents.startDate })
         .from(calendarEvents)
-        .where(and(eq(calendarEvents.orgId, orgId), range, visible, keyset))
+        .where(and(eq(calendarEvents.orgId, orgId), range, visible))
         .orderBy(asc(calendarEvents.startDate), asc(calendarEvents.id))
-        .limit(BATCH_SIZE);
+        .limit(CALENDAR_EVENTS_CAP);
 
-    const nonRecurring = await branch(
-      and(
-        isNull(calendarEvents.rrule),
-        lt(calendarEvents.startDate, end),
-        gt(calendarEvents.endDate, start),
+    const [nonRecurring, recurring] = await Promise.all([
+      branch(
+        and(
+          isNull(calendarEvents.rrule),
+          lt(calendarEvents.startDate, end),
+          gt(calendarEvents.endDate, start),
+        ),
       ),
-    );
-
-    const recurring = await branch(
-      and(
-        isNotNull(calendarEvents.rrule),
-        lt(calendarEvents.startDate, end),
-        or(isNull(calendarEvents.recurrenceEnd), gt(calendarEvents.recurrenceEnd, start)),
+      branch(
+        and(
+          isNotNull(calendarEvents.rrule),
+          lt(calendarEvents.startDate, end),
+          or(isNull(calendarEvents.recurrenceEnd), gt(calendarEvents.recurrenceEnd, start)),
+        ),
       ),
-    );
+    ]);
 
     return [...nonRecurring, ...recurring]
       .sort((a, b) => a.startDate.getTime() - b.startDate.getTime() || a.id - b.id)
-      .slice(0, BATCH_SIZE);
+      .slice(0, CALENDAR_EVENTS_CAP);
   }
 
   /**

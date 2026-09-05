@@ -1,7 +1,6 @@
 import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import { chatChannelMembers, organizationMembers, users } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
-import type { ChannelMemberWire } from "./chat-channel-member-shape";
 
 /**
  * How many member rows one channel may put into the CHANNEL LIST.
@@ -13,9 +12,9 @@ import type { ChannelMemberWire } from "./chat-channel-member-shape";
  * seeded database, `GET /chat/channels` answered **436,371 bytes against a declared 131,072-byte
  * ceiling**; the two 500-member channels in that tenant contributed ~245 KB of member rows each.
  *
- * A list row needs a handful of members: the caller's own row (its `isFavorite`, `role`,
- * `lastReadAt` and notification preference drive the row's controls), the other party on a DIRECT
- * channel, and a short avatar stack. The full roster has its own paginated endpoint,
+ * A list row needs a handful of members: the caller's own row (its `isFavorite`, `role` and
+ * notification preference drive the row's controls), the other party on a DIRECT channel, and a
+ * short avatar stack. The full roster has its own paginated endpoint,
  * `GET /chat/channels/{channelId}/members`. Eight covers every one of those with headroom.
  */
 export const CHANNEL_LIST_MEMBER_PREVIEW = 8;
@@ -23,31 +22,41 @@ export const CHANNEL_LIST_MEMBER_PREVIEW = 8;
 /**
  * The channel columns a list row actually carries.
  *
- * `findMany` with no `columns` ships every column of the table, so `message_count`, `is_pinned`,
- * `linked_deal_id` and `created_by_membership_id` rode 50 rows of a list that renders none of them.
+ * Six columns that the sidebar never renders were removed in the 2026-09-06 budget fix:
+ * `orgId` (read from the session, never from the channel object), `description` (detail panel only),
+ * `isPrivate` (no list surface reads it), `lastMessageAt` (cursor uses the id query; nothing renders
+ * this column), `createdAt` (detail panel only) and `updatedAt` (nothing renders it).
+ * Removing them saves ~156 bytes per channel × 50 channels = ~7.8 KB per page.
  */
 export const CHANNEL_LIST_COLUMNS = {
   id: true,
-  orgId: true,
   name: true,
   type: true,
-  description: true,
   avatarUrl: true,
   isArchived: true,
-  isPrivate: true,
   entityType: true,
   entityId: true,
-  lastMessageAt: true,
-  createdAt: true,
-  updatedAt: true,
 } as const;
 
 /**
- * The preview row is the same wire shape the detail route emits, minus `user.email` — eight rows of
- * an address per channel across a 50-channel page is exactly the payload this preview exists to cut,
- * and no list surface renders one.
+ * The list member preview: a subset of the full member wire shape.
+ *
+ * `lastReadAt`, `joinedAt` and `archivedAt` are present on the detail route but are never consumed
+ * by any list-rendering component — the unread count is a pre-computed integer on the channel row,
+ * `joinedAt` is not displayed in the sidebar, and `archivedAt` is read only by the channel info
+ * panel which fetches via the detail route. Removing the three ISO strings saves ~93 bytes ×
+ * 8 preview members × 50 channels = ~37 KB per page.
  */
-export type ChannelMemberPreview = ChannelMemberWire;
+export interface ChannelMemberPreview {
+  id: number;
+  channelId: number;
+  userId: string | null;
+  role: string;
+  mutedUntil: Date | null;
+  isFavorite: boolean;
+  notificationPreference: string;
+  user: { id: string; name: string | null; image: string | null } | null;
+}
 
 export interface ChannelMemberPreviewPage {
   members: ChannelMemberPreview[];
@@ -80,10 +89,7 @@ export async function loadChannelMemberPreview(
       id: chatChannelMembers.id,
       channelId: chatChannelMembers.channelId,
       role: chatChannelMembers.role,
-      lastReadAt: chatChannelMembers.lastReadAt,
-      joinedAt: chatChannelMembers.joinedAt,
       mutedUntil: chatChannelMembers.mutedUntil,
-      archivedAt: chatChannelMembers.archivedAt,
       isFavorite: chatChannelMembers.isFavorite,
       notificationPreference: chatChannelMembers.notificationPreference,
       // Explicit aliases, not the bare columns. A subquery projection keeps each column's own
@@ -135,10 +141,7 @@ export async function loadChannelMemberPreview(
       id: row.id,
       channelId: row.channelId,
       role: row.role,
-      lastReadAt: row.lastReadAt,
-      joinedAt: row.joinedAt,
       mutedUntil: row.mutedUntil,
-      archivedAt: row.archivedAt,
       isFavorite: row.isFavorite,
       notificationPreference: row.notificationPreference,
       userId: row.membershipUserId,

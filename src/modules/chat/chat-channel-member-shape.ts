@@ -37,7 +37,7 @@ export interface ChannelMemberWire {
 }
 
 /**
- * Every key a member carries on the wire, and nothing else.
+ * Every key a member carries on the wire from the detail route, and nothing else.
  *
  * `orgId` and `membershipId` are deliberately absent: the caller's tenant is already the only one
  * it can read and the membership id is an internal join key, so both were payload the client never
@@ -51,6 +51,26 @@ export const CHANNEL_MEMBER_WIRE_KEYS = [
   "isFavorite",
   "joinedAt",
   "lastReadAt",
+  "mutedUntil",
+  "notificationPreference",
+  "role",
+  "user",
+  "userId",
+] as const;
+
+/**
+ * The subset of member keys that the CHANNEL LIST preview emits.
+ *
+ * `lastReadAt`, `joinedAt` and `archivedAt` are present on the detail route (`CHANNEL_MEMBER_WIRE_KEYS`)
+ * but no list-rendering component reads them — unread count is a pre-computed integer on the channel
+ * row, `joinedAt` is not displayed in the sidebar, and `archivedAt` is read only by the channel info
+ * panel which fetches via the detail route. Removing the three ISO strings from the list member
+ * preview saves ~93 bytes × 8 preview members × 50 channels = ~37 KB per page.
+ */
+export const CHANNEL_LIST_MEMBER_WIRE_KEYS = [
+  "channelId",
+  "id",
+  "isFavorite",
   "mutedUntil",
   "notificationPreference",
   "role",

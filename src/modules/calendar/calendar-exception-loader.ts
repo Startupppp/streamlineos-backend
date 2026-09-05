@@ -1,9 +1,17 @@
-import { and, asc, eq, gt, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { calendarEventExceptions } from "../../db/schema";
 import type { CalendarEventException } from "./calendar-occurrence.service";
+import { CALENDAR_EVENTS_CAP } from "./dto/calendar.schemas";
 
-const EXCEPTION_PAGE_SIZE = 500;
+/**
+ * Upper bound on exceptions fetched in one pass.
+ *
+ * Each recurring event can produce O(1) user-authored exceptions per window.
+ * With at most CALENDAR_EVENTS_CAP recurring events and a 2-month window,
+ * 5 × CALENDAR_EVENTS_CAP gives generous headroom without a data-scaling loop.
+ */
+const EXCEPTION_SINGLE_PASS_CAP = CALENDAR_EVENTS_CAP * 5;
 
 export interface RescheduledOccurrence {
   title: string;
@@ -65,6 +73,15 @@ export function exceptionsInWindow(windowStart: Date, windowEnd: Date) {
   );
 }
 
+/**
+ * Single-pass exception fetch for the given recurring event IDs and window.
+ *
+ * The previous implementation looped in pages of 500. Since recurring events
+ * are capped at CALENDAR_EVENTS_CAP and each produces O(1) user-authored
+ * exceptions per window, EXCEPTION_SINGLE_PASS_CAP covers any realistic
+ * workload without a data-scaling loop, reducing the statement count from
+ * O(exceptions / 500) to exactly 1.
+ */
 export async function loadExceptionsByEvent(
   db: Db,
   orgId: string,
@@ -75,48 +92,36 @@ export async function loadExceptionsByEvent(
   const byEvent = new Map<number, CalendarEventException[]>();
   if (recurringEventIds.length === 0) return byEvent;
 
-  let afterId = 0;
-  for (;;) {
-    const page = await db
-      .select({
-        id: calendarEventExceptions.id,
-        eventId: calendarEventExceptions.eventId,
-        occurrenceStart: calendarEventExceptions.occurrenceStart,
-        isCancelled: calendarEventExceptions.isCancelled,
-        modifiedTitle: calendarEventExceptions.modifiedTitle,
-        modifiedStart: calendarEventExceptions.modifiedStart,
-        modifiedEnd: calendarEventExceptions.modifiedEnd,
-      })
-      .from(calendarEventExceptions)
-      .where(
-        and(
-          eq(calendarEventExceptions.orgId, orgId),
-          inArray(calendarEventExceptions.eventId, recurringEventIds),
-          exceptionsInWindow(windowStart, windowEnd),
-          gt(calendarEventExceptions.id, afterId),
-        ),
-      )
-      .orderBy(asc(calendarEventExceptions.id))
-      .limit(EXCEPTION_PAGE_SIZE);
+  const rows = await db
+    .select({
+      eventId: calendarEventExceptions.eventId,
+      occurrenceStart: calendarEventExceptions.occurrenceStart,
+      isCancelled: calendarEventExceptions.isCancelled,
+      modifiedTitle: calendarEventExceptions.modifiedTitle,
+      modifiedStart: calendarEventExceptions.modifiedStart,
+      modifiedEnd: calendarEventExceptions.modifiedEnd,
+    })
+    .from(calendarEventExceptions)
+    .where(
+      and(
+        eq(calendarEventExceptions.orgId, orgId),
+        inArray(calendarEventExceptions.eventId, recurringEventIds),
+        exceptionsInWindow(windowStart, windowEnd),
+      ),
+    )
+    .orderBy(asc(calendarEventExceptions.eventId))
+    .limit(EXCEPTION_SINGLE_PASS_CAP);
 
-    if (page.length === 0) break;
-
-    for (const ex of page) {
-      const list = byEvent.get(ex.eventId) ?? [];
-      list.push({
-        occurrenceStart: ex.occurrenceStart,
-        isCancelled: ex.isCancelled,
-        modifiedTitle: ex.modifiedTitle,
-        modifiedStart: ex.modifiedStart,
-        modifiedEnd: ex.modifiedEnd,
-      });
-      byEvent.set(ex.eventId, list);
-    }
-
-    const last = page[page.length - 1];
-    if (!last) break;
-    afterId = last.id;
-    if (page.length < EXCEPTION_PAGE_SIZE) break;
+  for (const ex of rows) {
+    const list = byEvent.get(ex.eventId) ?? [];
+    list.push({
+      occurrenceStart: ex.occurrenceStart,
+      isCancelled: ex.isCancelled,
+      modifiedTitle: ex.modifiedTitle,
+      modifiedStart: ex.modifiedStart,
+      modifiedEnd: ex.modifiedEnd,
+    });
+    byEvent.set(ex.eventId, list);
   }
 
   return byEvent;

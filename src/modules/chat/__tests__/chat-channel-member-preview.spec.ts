@@ -20,10 +20,7 @@ interface RankedRow {
   id: number;
   channelId: number;
   role: string;
-  lastReadAt: Date | null;
-  joinedAt: Date | null;
   mutedUntil: Date | null;
-  archivedAt: Date | null;
   isFavorite: boolean;
   notificationPreference: string;
   membershipUserId: string | null;
@@ -37,10 +34,7 @@ interface RankedRow {
 function rankedRow(over: Partial<RankedRow> & { id: number; channelId: number; memberRank: number; memberCount: number }): RankedRow {
   return {
     role: "MEMBER",
-    lastReadAt: null,
-    joinedAt: null,
     mutedUntil: null,
-    archivedAt: null,
     isFavorite: false,
     notificationPreference: "DEFAULT",
     membershipUserId: `user-${String(over.id)}`,
@@ -124,11 +118,29 @@ describe("chat channel list — the member payload is bounded", () => {
     expect(columns).toContain("id");
     expect(columns).toContain("name");
     expect(columns).toContain("entityType");
-    // The four the list renders nowhere, and which rode 50 rows per page.
+    // The four the list renders nowhere, and which rode 50 rows per page before the original fix.
     expect(columns).not.toContain("messageCount");
     expect(columns).not.toContain("isPinned");
     expect(columns).not.toContain("linkedDealId");
     expect(columns).not.toContain("createdByMembershipId");
+    // Six more removed in the 2026-09-06 budget fix: none are rendered by sidebar list components.
+    expect(columns).not.toContain("orgId");
+    expect(columns).not.toContain("description");
+    expect(columns).not.toContain("isPrivate");
+    expect(columns).not.toContain("lastMessageAt");
+    expect(columns).not.toContain("createdAt");
+    expect(columns).not.toContain("updatedAt");
+  });
+
+  it("the member preview projection carries no lastReadAt, joinedAt or archivedAt", async () => {
+    const { db } = makeDb([rankedRow({ id: 1, channelId: 7, memberRank: 1, memberCount: 2 })]);
+    const member = (await loadChannelMemberPreview(db, "org-1", [7], 1)).get(7)?.members[0];
+    expect(member).not.toHaveProperty("lastReadAt");
+    expect(member).not.toHaveProperty("joinedAt");
+    expect(member).not.toHaveProperty("archivedAt");
+    expect(member).toHaveProperty("isFavorite");
+    expect(member).toHaveProperty("mutedUntil");
+    expect(member).toHaveProperty("notificationPreference");
   });
 
   it("reports the TRUE member count beside a truncated preview, not the preview's length", () => {

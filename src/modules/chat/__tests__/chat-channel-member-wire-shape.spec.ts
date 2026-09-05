@@ -1,6 +1,7 @@
 import { ChatChannelMembersImplementation } from "../chat-channel-members-implementation";
 import { loadChannelMemberPreview } from "../chat-channel-member-preview";
 import {
+  CHANNEL_LIST_MEMBER_WIRE_KEYS,
   CHANNEL_MEMBER_WIRE_KEYS,
   flattenChannelMember,
 } from "../chat-channel-member-shape";
@@ -105,10 +106,7 @@ function previewRow(userId: string, id: number) {
     id,
     channelId: CHANNEL,
     role: "MEMBER",
-    lastReadAt: null,
-    joinedAt: null,
     mutedUntil: null,
-    archivedAt: null,
     isFavorite: false,
     notificationPreference: "DEFAULT",
     membershipUserId: userId,
@@ -153,14 +151,18 @@ describe("chat channel member — one wire shape across every read path", () => 
     }
   });
 
-  it("the bounded list preview emits the same key set, so list and detail cannot disagree", async () => {
+  it("the bounded list preview emits only the list subset of keys — detail-only fields are absent", async () => {
     const db = makePreviewDb([previewRow(ME, 1), previewRow(OTHER, 2)]);
     const page = (await loadChannelMemberPreview(db, ORG, [CHANNEL], 1)).get(CHANNEL);
+    const LIST_KEYS = [...CHANNEL_LIST_MEMBER_WIRE_KEYS].sort();
 
     expect(page?.members).toHaveLength(2);
     for (const member of page?.members ?? []) {
-      expect(sortedKeys(member)).toEqual(WIRE_KEYS);
+      expect(sortedKeys(member)).toEqual(LIST_KEYS);
       expect(member).not.toHaveProperty("membership");
+      expect(member).not.toHaveProperty("lastReadAt");
+      expect(member).not.toHaveProperty("joinedAt");
+      expect(member).not.toHaveProperty("archivedAt");
     }
   });
 
