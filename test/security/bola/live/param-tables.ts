@@ -234,13 +234,27 @@ export const PARAM_ALIASES: Readonly<Record<string, readonly string[]>> = {
   kpiId: ["kpi_definitions"],
   docId: ["documents"],
   epicId: ["tickets"],
-  zoneId: ["geofence_zones", "hr_geofence_zones"],
+  zoneId: ["geofences"],
   shiftId: ["shift_templates"],
   recallId: ["inv_recalls", "inv_recall_events"],
   variableId: ["workflow_variables"],
   serialId: ["inv_serial_numbers"],
   snapshotId: ["crm_forecast_snapshots"],
   appId: ["marketplace_apps", "apps"],
+
+  // Parameters whose names give no structural signal — the handler uses a noun the route omits.
+  webhookId: ["webhook_endpoints"],
+  invitationId: ["invitations"],
+  publicationId: ["payslip_publications"],
+  providerId: ["notification_provider_accounts"],
+  suppressionId: ["notification_suppression_rules"],
+  tagId: ["kb_tags", "support_tags"],
+  groupId: ["principal_groups"],
+  approvalId: ["workflow_approvals"],
+  arrearId: ["hr_arrears_adjustments"],
+  varianceId: ["hr_payroll_variance_approvals"],
+  pipId: ["performance_improvement_plans"],
+  swapId: ["shift_swap_requests"],
 };
 
 /**
@@ -281,6 +295,14 @@ export const PATH_PARAM_ALIASES: readonly {
   { match: "/hr/webhooks", param: "subscriptionId", tables: ["hr_webhook_subscriptions"] },
   { match: "/crm/automations", param: "ruleId", tables: ["crm_automation_rules"] },
   { match: "/tasks", param: "taskId", tables: ["tasks"] },
+  { match: "/tasks/sequences", param: "sequenceId", tables: ["task_sequences"] },
+  { match: "/settings/custom-fields", param: "fieldId", tables: ["custom_field_definitions"] },
+  { match: "/crm/settings/custom-fields", param: "fieldId", tables: ["custom_field_definitions"] },
+  { match: "/kb/page-templates", param: "templateId", tables: ["kb_page_templates"] },
+  { match: "/workflows/approvals", param: "approvalId", tables: ["workflow_approvals"] },
+  { match: "/kb/tags", param: "tagId", tables: ["kb_tags"] },
+  { match: "/organization/members", param: "memberId", tables: ["organization_members"] },
+  { match: "/kb/spaces", param: "memberId", tables: ["kb_space_members"] },
 ];
 
 /**

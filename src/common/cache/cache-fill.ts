@@ -271,7 +271,7 @@ export class CacheFiller {
       const serialized = JSON.stringify(data);
       if (serialized === undefined) return data;
       try {
-        await this.timedRedis(() => redis.eval<[string, string], number>(
+        await this.timedRedis(() => redis.eval<[string, string, string], number>(
           'if redis.call("get", KEYS[1]) == ARGV[1] then redis.call("set", KEYS[2], ARGV[2], "EX", ARGV[3]); return 1 else return 0 end',
           [leaseKey, key],
           [leaseToken, serialized, String(ttl)],

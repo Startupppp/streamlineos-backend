@@ -758,6 +758,8 @@ async function seedChat() {
     ).catch(() => {});
   }
 
+  const ownerMembershipId = memberRows[0]?.id;
+
   const chan1Id = await sql.unsafe(
     `SELECT id FROM chat_channels WHERE org_id = $1 AND name = 'channel-1' LIMIT 1`,
     [LARGE_ORG],
@@ -770,6 +772,24 @@ async function seedChat() {
          VALUES ($1, $2, $3, 'MEMBER', now(), false)
          ON CONFLICT DO NOTHING`,
         [LARGE_ORG, chan1Id, m.id],
+      ).catch(() => {});
+    }
+  }
+
+  // Add the owner to every extra channel so the sweep's source user is a member of any
+  // channel it borrows from the fixture pool. Without this every channel-2..55 route
+  // answers 403 (not a member) and is filed unprobeable.
+  if (ownerMembershipId) {
+    const extraChannelIds = await sql.unsafe(
+      `SELECT id FROM chat_channels WHERE org_id = $1 AND name LIKE 'channel-%' AND name != 'channel-1' ORDER BY id`,
+      [LARGE_ORG],
+    );
+    for (const ch of extraChannelIds) {
+      await sql.unsafe(
+        `INSERT INTO chat_channel_members (org_id, channel_id, membership_id, role, joined_at, is_favorite)
+         VALUES ($1, $2, $3, 'MEMBER', now(), false)
+         ON CONFLICT DO NOTHING`,
+        [LARGE_ORG, ch.id, ownerMembershipId],
       ).catch(() => {});
     }
   }
@@ -1341,6 +1361,311 @@ async function seedRoles() {
   ).catch((e) => warn("role_assignments", e));
 }
 
+async function seedOrgUnits() {
+  log("Seeding org_units (6 kinds × 5 each)...");
+  const kinds = ["BUSINESS_UNIT", "BRANCH", "DEPARTMENT", "TEAM", "LOCATION", "COST_CENTER"];
+  for (const kind of kinds) {
+    for (let i = 1; i <= 5; i++) {
+      const code = `SEED-${kind.slice(0, 3)}-${i}`;
+      await sql.unsafe(
+        `INSERT INTO org_units (id, org_id, kind, name, code, status, row_version, created_at, updated_at)
+         SELECT gen_random_uuid(), $1, $2, $3, $4, 'ACTIVE', 1, now(), now()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM org_units WHERE org_id = $1 AND kind = $2 AND code = $4
+         )`,
+        [LARGE_ORG, kind, `Seed ${kind} ${i}`, code],
+      ).catch((e) => warn(`org_units ${kind} ${i}`, e));
+    }
+  }
+}
+
+async function seedInvitations() {
+  log("Seeding invitations (5 PENDING)...");
+  for (let i = 1; i <= 5; i++) {
+    const id = `invite-scratch-${i}-${LARGE_ORG.slice(0, 8)}`;
+    const email = `invite-${i}@scratch-seed.test`;
+    const tokenHash = createHash("sha256").update(`invite-token-${i}-${LARGE_ORG}`).digest("hex");
+    await sql.unsafe(
+      `INSERT INTO invitations (id, email, token_hash, org_id, role, expires_at, status, created_at)
+       VALUES ($1, $2, $3, $4, 'MEMBER', now() + interval '7 days', 'PENDING', now())
+       ON CONFLICT (id) DO NOTHING`,
+      [id, email, tokenHash, LARGE_ORG],
+    ).catch((e) => warn(`invitation ${i}`, e));
+  }
+}
+
+async function seedWebhookEndpoints() {
+  log("Seeding webhook_endpoints (5 rows)...");
+  const existing = await sql.unsafe(
+    `SELECT count(*)::int n FROM webhook_endpoints WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existing >= 5) { log("  already seeded — skipping"); return; }
+  for (let i = existing + 1; i <= 5; i++) {
+    await sql.unsafe(
+      `INSERT INTO webhook_endpoints (org_id, url, secret, description, events, is_active, created_by, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, '["*"]'::jsonb, true, $5, now(), now())`,
+      [LARGE_ORG, `https://hooks.scratch-seed.test/wh-${i}`, `secret-${i}-${LARGE_ORG.slice(0, 8)}`, `Seed webhook ${i}`, ownerId],
+    ).catch((e) => warn(`webhook_endpoint ${i}`, e));
+  }
+}
+
+async function seedCrmExtras() {
+  log("Seeding CRM tasks, task_sequences and principal_groups...");
+
+  const existingTasks = await sql.unsafe(
+    `SELECT count(*)::int n FROM tasks WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingTasks < 20) {
+    await sql.unsafe(
+      `INSERT INTO tasks (org_id, title, type, status, created_at, updated_at)
+       SELECT $1, 'Seed Task ' || s, 'CUSTOM', 'pending', now() - (s || ' hours')::interval, now()
+       FROM generate_series(${existingTasks + 1}, 20) s`,
+      [LARGE_ORG],
+    ).catch((e) => warn("tasks batch", e));
+  }
+
+  const existingSeqs = await sql.unsafe(
+    `SELECT count(*)::int n FROM task_sequences WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingSeqs < 5) {
+    for (let i = existingSeqs + 1; i <= 5; i++) {
+      await sql.unsafe(
+        `INSERT INTO task_sequences (org_id, name, created_by, created_at)
+         VALUES ($1, $2, $3, now())`,
+        [LARGE_ORG, `Seed Sequence ${i}`, ownerId],
+      ).catch((e) => warn(`task_sequence ${i}`, e));
+    }
+  }
+
+  const existingGroups = await sql.unsafe(
+    `SELECT count(*)::int n FROM principal_groups WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingGroups < 5) {
+    for (let i = existingGroups + 1; i <= 5; i++) {
+      await sql.unsafe(
+        `INSERT INTO principal_groups (id, org_id, kind, name, created_at, updated_at)
+         SELECT gen_random_uuid(), $1, 'CUSTOM', $2, now(), now()
+         WHERE NOT EXISTS (SELECT 1 FROM principal_groups WHERE org_id = $1 AND name = $2)`,
+        [LARGE_ORG, `Seed Group ${i}`],
+      ).catch((e) => warn(`principal_group ${i}`, e));
+    }
+  }
+}
+
+async function seedKbExtras() {
+  log("Seeding kb_page_templates, kb_tags and kb_space_members...");
+
+  const memberRow = await sql.unsafe(
+    `SELECT id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1`,
+    [LARGE_ORG],
+  ).then((r) => r[0]);
+
+  const existingTemplates = await sql.unsafe(
+    `SELECT count(*)::int n FROM kb_page_templates WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingTemplates < 5) {
+    for (let i = existingTemplates + 1; i <= 5; i++) {
+      await sql.unsafe(
+        `INSERT INTO kb_page_templates (org_id, name, description, created_by_id, created_at, updated_at)
+         SELECT $1, $2, $3, $4, now(), now()
+         WHERE NOT EXISTS (SELECT 1 FROM kb_page_templates WHERE org_id = $1 AND name = $2)`,
+        [LARGE_ORG, `Seed Template ${i}`, `Template description ${i}`, ownerId],
+      ).catch((e) => warn(`kb_page_template ${i}`, e));
+    }
+  }
+
+  const existingTags = await sql.unsafe(
+    `SELECT count(*)::int n FROM kb_tags WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingTags < 5) {
+    for (let i = existingTags + 1; i <= 5; i++) {
+      const slug = `seed-tag-${i}`;
+      await sql.unsafe(
+        `INSERT INTO kb_tags (org_id, name, slug, created_at)
+         SELECT $1, $2, $3, now()
+         WHERE NOT EXISTS (SELECT 1 FROM kb_tags WHERE org_id = $1 AND slug = $3)`,
+        [LARGE_ORG, `Seed Tag ${i}`, slug],
+      ).catch((e) => warn(`kb_tag ${i}`, e));
+    }
+  }
+
+  if (!memberRow) return;
+  const spaceRow = await sql.unsafe(
+    `SELECT id FROM kb_spaces WHERE org_id = $1 AND deleted_at IS NULL LIMIT 1`,
+    [LARGE_ORG],
+  ).then((r) => r[0]);
+  if (spaceRow) {
+    await sql.unsafe(
+      `INSERT INTO kb_space_members (org_id, space_id, membership_id, space_role, created_at)
+       SELECT $1, $2, $3, 'viewer', now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM kb_space_members WHERE org_id = $1 AND space_id = $2 AND membership_id = $3
+       )`,
+      [LARGE_ORG, spaceRow.id, memberRow.id],
+    ).catch((e) => warn("kb_space_member", e));
+  }
+}
+
+async function seedNotificationExtras() {
+  log("Seeding notification_provider_accounts and notification_suppression_rules...");
+
+  const existingProviders = await sql.unsafe(
+    `SELECT count(*)::int n FROM notification_provider_accounts WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingProviders < 3) {
+    const channels = [["EMAIL", "SMTP"], ["SMS", "TWILIO"], ["PUSH", "WEB_PUSH"]];
+    for (let i = existingProviders; i < 3; i++) {
+      const [channel, provider] = channels[i];
+      await sql.unsafe(
+        `INSERT INTO notification_provider_accounts (org_id, channel, provider, display_name, enabled, sandbox_mode, is_default, health_status, created_by, created_at, updated_at)
+         SELECT $1, $2, $3, $4, true, true, false, 'unknown', $5, now(), now()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM notification_provider_accounts WHERE org_id = $1 AND provider = $3 AND display_name = $4
+         )`,
+        [LARGE_ORG, channel, provider, `Seed ${provider} ${i + 1}`, ownerId],
+      ).catch((e) => warn(`notification_provider ${provider}`, e));
+    }
+  }
+
+  const memberRow = await sql.unsafe(
+    `SELECT id, user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1`,
+    [LARGE_ORG],
+  ).then((r) => r[0]);
+  if (!memberRow) return;
+
+  const existingSuppression = await sql.unsafe(
+    `SELECT count(*)::int n FROM notification_suppression_rules WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingSuppression < 3) {
+    for (let i = existingSuppression + 1; i <= 3; i++) {
+      await sql.unsafe(
+        `INSERT INTO notification_suppression_rules (org_id, user_id, membership_id, scope_type, scope_key, reason, created_at)
+         VALUES ($1, $2, $3, 'GLOBAL', $4, 'opt_out', now())`,
+        [LARGE_ORG, memberRow.user_id, memberRow.id, `seed-scope-${i}`],
+      ).catch((e) => warn(`notification_suppression ${i}`, e));
+    }
+  }
+}
+
+async function seedHrAdditional() {
+  log("Seeding hr_arrears, variance_approvals, PIPs, shift_swaps and custom_field_definitions...");
+
+  const memberRows = await sql.unsafe(
+    `SELECT id, user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 5`,
+    [LARGE_ORG],
+  );
+  if (!memberRows.length) return;
+  const m0 = memberRows[0];
+  const m1 = memberRows[1] ?? m0;
+
+  const existingArrears = await sql.unsafe(
+    `SELECT count(*)::int n FROM hr_arrears_adjustments WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingArrears < 5) {
+    await sql.unsafe(
+      `INSERT INTO hr_arrears_adjustments (org_id, user_id, user_membership_id, reason, amount_cents, source_period, target_period, status, created_at)
+       SELECT $1, m.user_id, m.id, 'Seed arrear ' || s, 50000, '2025-12', '2026-01', 'pending', now()
+       FROM generate_series(${existingArrears + 1}, 5) s
+       JOIN LATERAL (SELECT user_id, id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1 OFFSET ((s - 1) % 5)) m ON true`,
+      [LARGE_ORG],
+    ).catch((e) => warn("hr_arrears batch", e));
+  }
+
+  const existingVariance = await sql.unsafe(
+    `SELECT count(*)::int n FROM hr_payroll_variance_approvals WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingVariance < 5) {
+    for (let i = existingVariance + 1; i <= 5; i++) {
+      await sql.unsafe(
+        `INSERT INTO hr_payroll_variance_approvals (org_id, payroll_period_key, variance_pct, threshold_pct, status, created_at)
+         VALUES ($1, $2, 5.5, 5.0, 'pending', now())`,
+        [LARGE_ORG, `2025-${String(i).padStart(2, "0")}`],
+      ).catch((e) => warn(`hr_variance ${i}`, e));
+    }
+  }
+
+  const existingPips = await sql.unsafe(
+    `SELECT count(*)::int n FROM performance_improvement_plans WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingPips < 5) {
+    await sql.unsafe(
+      `INSERT INTO performance_improvement_plans (org_id, user_id, user_membership_id, manager_id, reason, start_date, end_date, status, created_at, updated_at)
+       SELECT $1, m.user_id, m.id, $2, 'Seed PIP ' || s, '2026-01-01', '2026-06-30', 'ACTIVE', now(), now()
+       FROM generate_series(${existingPips + 1}, 5) s
+       JOIN LATERAL (SELECT user_id, id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1 OFFSET ((s - 1) % 5)) m ON true`,
+      [LARGE_ORG, m1.user_id],
+    ).catch((e) => warn("performance_improvement_plans batch", e));
+  }
+
+  const existingSwaps = await sql.unsafe(
+    `SELECT count(*)::int n FROM shift_swap_requests WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingSwaps < 5) {
+    for (let i = existingSwaps + 1; i <= 5; i++) {
+      await sql.unsafe(
+        `INSERT INTO shift_swap_requests (org_id, requester_id, requester_membership_id, target_user_id, target_membership_id, request_date, target_date, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, '2026-09-10', '2026-09-11', 'PENDING', now())`,
+        [LARGE_ORG, m0.user_id, m0.id, m1.user_id, m1.id],
+      ).catch((e) => warn(`shift_swap ${i}`, e));
+    }
+  }
+
+  const existingCfd = await sql.unsafe(
+    `SELECT count(*)::int n FROM custom_field_definitions WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existingCfd < 5) {
+    for (let i = existingCfd + 1; i <= 5; i++) {
+      await sql.unsafe(
+        `INSERT INTO custom_field_definitions (org_id, entity_type, project_id, key, label, field_type, is_active, display_order, created_at, updated_at)
+         SELECT $1, 'ticket', 0, $2, $3, 'text', true, $4, now(), now()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM custom_field_definitions WHERE org_id = $1 AND entity_type = 'ticket' AND project_id = 0 AND key = $2
+         )`,
+        [LARGE_ORG, `seed_field_${i}`, `Seed Field ${i}`, i],
+      ).catch((e) => warn(`custom_field_definition ${i}`, e));
+    }
+  }
+}
+
+async function seedPayslipPublications() {
+  log("Seeding payslip_publications...");
+  const existing = await sql.unsafe(
+    `SELECT count(*)::int n FROM payslip_publications WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+  if (existing >= 5) { log("  already seeded — skipping"); return; }
+
+  const runEmployees = await sql.unsafe(
+    `SELECT pre.id run_employee_id, pre.run_id FROM payroll_run_employees pre
+     JOIN payroll_runs pr ON pr.id = pre.run_id AND pr.org_id = $1
+     WHERE pre.org_id = $1
+     ORDER BY pre.id LIMIT 5`,
+    [LARGE_ORG],
+  );
+  if (!runEmployees.length) { log("  no payroll_run_employees — skipping payslip_publications"); return; }
+
+  for (const re of runEmployees.slice(existing)) {
+    await sql.unsafe(
+      `INSERT INTO payslip_publications (org_id, run_id, run_employee_id, channel, status, attempt_count, created_at, updated_at)
+       VALUES ($1, $2, $3, 'PORTAL', 'PENDING', 0, now(), now())`,
+      [LARGE_ORG, re.run_id, re.run_employee_id],
+    ).catch((e) => warn("payslip_publication", e));
+  }
+}
+
 async function vacuumAnalyze() {
   log("Running VACUUM ANALYZE on seeded tables...");
   const tables = [
@@ -1445,6 +1770,14 @@ async function main() {
   await trySection("seedRoles", seedRoles);
   await trySection("seedHrExtras", seedHrExtras);
   await trySection("seedMagicLinkToken", seedMagicLinkToken);
+  await trySection("seedOrgUnits", seedOrgUnits);
+  await trySection("seedInvitations", seedInvitations);
+  await trySection("seedWebhookEndpoints", seedWebhookEndpoints);
+  await trySection("seedCrmExtras", seedCrmExtras);
+  await trySection("seedKbExtras", seedKbExtras);
+  await trySection("seedNotificationExtras", seedNotificationExtras);
+  await trySection("seedHrAdditional", seedHrAdditional);
+  await trySection("seedPayslipPublications", seedPayslipPublications);
   await vacuumAnalyze();
   await reportCounts();
 
