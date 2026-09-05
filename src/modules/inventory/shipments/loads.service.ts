@@ -94,14 +94,23 @@ export class LoadsService {
   }
 
   /**
-   * A3. Dispatching a load took no key. The DRAFT guard makes a repeat safe, but
-   * a client retrying a timed-out dispatch was told the load was not DRAFT — the
-   * dispatch had in fact happened, and the driver had left.
+   * A3/T04. Dispatching a load took no key. The DRAFT guard makes a repeat safe,
+   * but a client retrying a timed-out dispatch was told the load was not DRAFT —
+   * the dispatch had in fact happened, and the driver had left.
+   *
+   * The key was added and the guard was left in front of it, so the sentence
+   * above stayed true: the first call sets DISPATCHED, and the retry was refused
+   * on the status its own first run had set, without ever reaching `runIdempotent`.
+   * The DRAFT check now runs inside the claim, so a replay returns the first
+   * answer and only a genuinely non-DRAFT load is refused.
+   *
+   * The shipment and transfer checks below stay outside deliberately: dispatch
+   * does not change a shipment's or a transfer's status, so they are preconditions
+   * this command cannot invalidate, and failing them early costs no key.
    */
   async dispatch(orgId: string, userId: string, loadId: number, input: DispatchLoadInput, idempotencyKey: string) {
     const [load] = await this.db.select().from(invLoads).where(and(eq(invLoads.id, loadId), eq(invLoads.orgId, orgId))).limit(1);
     if (!load) throw new NotFoundException("Load not found");
-    if (load.status !== "DRAFT") throw new ConflictException("Load must be DRAFT to dispatch");
 
     const lines = await this.db.select().from(invLoadLines).where(eq(invLoadLines.loadId, loadId));
 
@@ -147,6 +156,12 @@ export class LoadsService {
         idempotencyKey,
         { command: "inventory.loads.dispatch", loadId, input },
         async () => {
+          // Read through `tx` so the check sees the same snapshot the write does.
+          const [current] = await tx.select({ status: invLoads.status }).from(invLoads)
+            .where(and(eq(invLoads.id, loadId), eq(invLoads.orgId, orgId))).limit(1);
+          if (!current) throw new NotFoundException("Load not found");
+          if (current.status !== "DRAFT") throw new ConflictException("Load must be DRAFT to dispatch");
+
           await tx.update(invLoads).set({
             status: "DISPATCHED",
             dispatchDate: input.dispatchDate ?? today,

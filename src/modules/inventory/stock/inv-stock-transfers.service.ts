@@ -645,9 +645,6 @@ export class InvStockTransfersService {
     // is the state-machine decision it needed -- goods return to the source bin
     // or are written off, both as posted movements -- rather than a wider cancel
     // that would have had to move stock it never named.
-    if (transfer.status !== "PENDING" && transfer.status !== "RESERVED") {
-      throw new BadRequestException("Only PENDING or RESERVED transfers can be cancelled");
-    }
 
     await this.db.transaction((tx) =>
       runIdempotent(
@@ -655,7 +652,22 @@ export class InvStockTransfersService {
         orgId,
         idempotencyKey,
         { command: "inventory.transfers.cancel", transferId },
-        () => this.cancelTransferInTx(tx, orgId, userId, transferId, transfer.status),
+        async () => {
+          // T04. This check used to sit in front of `runIdempotent`, where cancel's
+          // own effect invalidated it — the comment above says exactly that, and the
+          // guard was left outside anyway. At HTTP the controller's `@Idempotent`
+          // fence hid it; a service-level caller had no such cover. Read through `tx`
+          // so the check sees the same snapshot the write does.
+          const [current] = await tx.select({ status: invStockTransfers.status })
+            .from(invStockTransfers)
+            .where(and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)))
+            .limit(1);
+          if (!current) throw new NotFoundException("Transfer not found");
+          if (current.status !== "PENDING" && current.status !== "RESERVED") {
+            throw new BadRequestException("Only PENDING or RESERVED transfers can be cancelled");
+          }
+          return this.cancelTransferInTx(tx, orgId, userId, transferId, current.status);
+        },
         () => ({ cancelled: transferId }),
       ),
     );

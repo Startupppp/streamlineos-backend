@@ -46,10 +46,19 @@ export class SoLifecycleService {
   ) {}
 
   /**
-   * A3. Confirming took no key. The DRAFT guard makes a repeat safe, but a
+   * A3/T04. Confirming took no key. The DRAFT guard makes a repeat safe, but a
    * client retrying a timed-out confirm was told the order could not be
    * confirmed — when it already had been, and had auto-reserved stock on the
    * way. Replaying the original answer is what the key is for.
+   *
+   * The key was added and the guard was left in front of it, so the sentence
+   * above stayed true: the first call sets CONFIRMED, and the retry was refused
+   * with a 400 on the status its own first run had set. The DRAFT check now runs
+   * inside the claim.
+   *
+   * The order is still read out here, because `autoReserve` below needs its lines
+   * after the transaction commits. That read is not the guard — the guard is the
+   * one inside, against `tx`.
    */
   async confirmSo(orgId: string, soId: number, userId: string, idempotencyKey: string) {
     const so = await this.db.query.invSalesOrders.findFirst({
@@ -57,29 +66,45 @@ export class SoLifecycleService {
       with: { lines: true },
     });
     if (!so) throw new NotFoundException("Sales order not found");
-    if (so.status !== "DRAFT")
-      throw new BadRequestException("Only DRAFT sales orders can be confirmed");
 
     const settings = await this.settingsService.get(orgId);
 
-    await this.db.transaction((tx) =>
-      runIdempotent(
+    const outcome = await this.db.transaction((tx) =>
+      runIdempotent<{ confirmed: number; fresh: boolean }>(
         tx,
         orgId,
         idempotencyKey,
         { command: "inventory.sales-orders.confirm", soId },
         async () => {
+          // Read through `tx` so the check sees the same snapshot the write does.
+          const [current] = await tx
+            .select({ status: invSalesOrders.status })
+            .from(invSalesOrders)
+            .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)))
+            .limit(1);
+          if (!current) throw new NotFoundException("Sales order not found");
+          if (current.status !== "DRAFT")
+            throw new BadRequestException("Only DRAFT sales orders can be confirmed");
+
           await tx
             .update(invSalesOrders)
             .set({ status: "CONFIRMED", confirmedAt: new Date(), updatedAt: new Date() })
             .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
-          return { confirmed: soId };
+          return { confirmed: soId, fresh: true };
         },
-        () => ({ confirmed: soId }),
+        // A replay must say so. `fresh` is the same signal `CreatedPoBatch.created`
+        // carries, and it is what stops the auto-reserve below running twice.
+        () => ({ confirmed: soId, fresh: false }),
       ),
     );
 
-    if (settings.autoReserveOnConfirm) {
+    // T04. Auto-reserve sits outside the idempotent unit because `reserve` opens its
+    // own transaction. That made the retry worse than the refusal it replaced: the
+    // replay correctly returned the first answer and then reserved the same lines a
+    // second time, moving a RESERVED order to PARTIALLY_RESERVED. An order that is
+    // idempotent from the outside and not underneath is the defect the recall fix
+    // named. Only a fresh execution reserves.
+    if (outcome.fresh && settings.autoReserveOnConfirm) {
       try {
         await this.autoReserve(orgId, soId, userId, so.lines, so.warehouseId, so.channelId);
       } catch (error) {

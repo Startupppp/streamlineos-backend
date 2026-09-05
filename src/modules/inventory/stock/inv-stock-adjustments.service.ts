@@ -270,7 +270,6 @@ export class InvStockAdjustmentsService {
       where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)),
     });
     if (!adj) throw new NotFoundException("Adjustment not found");
-    if (adj.status !== "PENDING_APPROVAL") throw new BadRequestException("Only PENDING_APPROVAL adjustments can be approved");
 
     // Writing off stock is how theft is concealed, so the person who raised the
     // adjustment may never be the person who approves it. Same maker-checker rule
@@ -288,6 +287,20 @@ export class InvStockAdjustmentsService {
         idempotencyKey,
         { command: "inventory.adjustments.approve", adjustmentId },
         async () => {
+          // T04. This check used to sit in front of `runIdempotent`, where approve's
+          // own effect invalidated it: the first call sets APPROVED and the retry was
+          // refused on that status without reaching the guard that would have replayed
+          // the answer. At HTTP the controller's `@Idempotent` fence hid that, but a
+          // service-level caller had no such cover. Read through `tx` so the check sees
+          // the same snapshot the write does.
+          const [current] = await tx.select({ status: invStockAdjustments.status })
+            .from(invStockAdjustments)
+            .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)))
+            .limit(1);
+          if (!current) throw new NotFoundException("Adjustment not found");
+          if (current.status !== "PENDING_APPROVAL")
+            throw new BadRequestException("Only PENDING_APPROVAL adjustments can be approved");
+
           const updated = await tx.update(invStockAdjustments)
             .set({ status: "APPROVED", approvedBy: userId, approvedAt: new Date() })
             .where(and(
