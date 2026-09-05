@@ -1,6 +1,15 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { SQL, and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
-import { certifications, documents, organizationMembers } from "../../../db/schema";
+import {
+  certifications,
+  documents,
+  organizationMembers,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { applyScope } from "../../access/apply-scope";
@@ -30,7 +39,8 @@ function documentOwnerPredicate(
   membershipId?: number | null,
 ): SQL {
   if (scope === "own") {
-    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+    if (membershipId == null)
+      throw new ForbiddenException("Organization membership required.");
     return eq(documents.userMembershipId, membershipId);
   }
   return applyScope(scope, orgId, userId, { ownerColumn: documents.userId });
@@ -91,7 +101,13 @@ export class DocumentsService {
     private readonly audit: AuditService,
   ) {}
 
-  async listDocuments(orgId: string, userId: string, scope: DataScope, filters: ListDocumentsInput, membershipId?: number | null) {
+  async listDocuments(
+    orgId: string,
+    userId: string,
+    scope: DataScope,
+    filters: ListDocumentsInput,
+    membershipId?: number | null,
+  ) {
     const conditions: SQL[] = [
       eq(documents.orgId, orgId),
       eq(documents.isActive, true),
@@ -121,11 +137,11 @@ export class DocumentsService {
       ? decodeDocumentListCursor(filters.cursor)
       : undefined;
     if (cursor) {
-      const createdAt = new Date(cursor.createdAt);
+      const createdAt = new Date(cursor.createdAt).toISOString();
       conditions.push(
         sql`(
-          ${documents.createdAt} < ${createdAt}
-          OR (${documents.createdAt} = ${createdAt} AND ${documents.id} < ${cursor.documentId})
+          ${documents.createdAt} < ${createdAt}::timestamptz
+          OR (${documents.createdAt} = ${createdAt}::timestamptz AND ${documents.id} < ${cursor.documentId})
         )`,
       );
     }
@@ -219,7 +235,9 @@ export class DocumentsService {
       columns: { id: true },
     });
     if (!targetMember) {
-      throw new NotFoundException("Target user not found in your organization.");
+      throw new NotFoundException(
+        "Target user not found in your organization.",
+      );
     }
 
     const document = await runInTenantTransaction(
@@ -290,20 +308,23 @@ export class DocumentsService {
     if (!doc) throw new NotFoundException("Document not found.");
 
     const requestedUserId = input.userId;
-    const targetMember = requestedUserId == null
-      ? null
-      : await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, requestedUserId),
-          applyScope(scope, orgId, userId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      });
+    const targetMember =
+      requestedUserId == null
+        ? null
+        : await this.db.query.organizationMembers.findFirst({
+            where: and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, requestedUserId),
+              applyScope(scope, orgId, userId, {
+                ownerColumn: organizationMembers.userId,
+              }),
+            ),
+          });
     if (requestedUserId != null) {
       if (!targetMember) {
-        throw new NotFoundException("Target user not found in your permitted scope.");
+        throw new NotFoundException(
+          "Target user not found in your permitted scope.",
+        );
       }
     }
 
@@ -318,12 +339,18 @@ export class DocumentsService {
               ? { description: input.description ?? null }
               : {}),
             ...(input.type !== undefined ? { type: input.type } : {}),
-            ...(input.category !== undefined ? { category: input.category ?? null } : {}),
-            ...(input.userId !== undefined ? {
-              userId: input.userId ?? null,
-              userMembershipId: targetMember?.id ?? null,
-            } : {}),
-            ...(input.isPublic !== undefined ? { isPublic: input.isPublic } : {}),
+            ...(input.category !== undefined
+              ? { category: input.category ?? null }
+              : {}),
+            ...(input.userId !== undefined
+              ? {
+                  userId: input.userId ?? null,
+                  userMembershipId: targetMember?.id ?? null,
+                }
+              : {}),
+            ...(input.isPublic !== undefined
+              ? { isPublic: input.isPublic }
+              : {}),
             ...(input.tags !== undefined ? { tags: input.tags } : {}),
             ...(input.expiryDate !== undefined
               ? { expiryDate: input.expiryDate ?? null }
@@ -338,7 +365,8 @@ export class DocumentsService {
             ),
           )
           .returning();
-        if (!updatedDocument) throw new NotFoundException("Document not found.");
+        if (!updatedDocument)
+          throw new NotFoundException("Document not found.");
         if (input.tags !== undefined)
           await syncDocumentTags(transaction, orgId, documentId, input.tags);
         return updatedDocument;
@@ -389,14 +417,21 @@ export class DocumentsService {
     return { success: true };
   }
 
-  async stats(orgId: string, userId: string, scope: DataScope, membershipId?: number | null) {
+  async stats(
+    orgId: string,
+    userId: string,
+    scope: DataScope,
+    membershipId?: number | null,
+  ) {
     const baseWhere = and(
       eq(documents.orgId, orgId),
       eq(documents.isActive, true),
       documentOwnerPredicate(scope, orgId, userId, membershipId),
     );
 
-    const horizon = formatDateString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+    const horizon = formatDateString(
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    );
 
     const [byType, [summary]] = await Promise.all([
       this.db
@@ -428,7 +463,13 @@ export class DocumentsService {
     };
   }
 
-  async expiry(orgId: string, userId: string, scope: DataScope, daysAhead: number, membershipId?: number | null) {
+  async expiry(
+    orgId: string,
+    userId: string,
+    scope: DataScope,
+    daysAhead: number,
+    membershipId?: number | null,
+  ) {
     const now = new Date();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);

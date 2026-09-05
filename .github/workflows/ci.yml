@@ -800,6 +800,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm ops:evidence:self-test
 
+      # Both halves run here: the check is a type-directed source scan and opens no
+      # database. A Date interpolated into a drizzle sql`` template throws
+      # ERR_INVALID_ARG_TYPE at runtime while passing every other gate, and forEachOrg
+      # swallows it per-org, so the sweep still reports success -- see PRD-C104.
+      - name: No JS Date inside a drizzle sql template
+        if: ${{ !cancelled() }}
+        run: pnpm check:date-in-sql-template:self-test && pnpm check:date-in-sql-template
+
       # The catalog half needs SET_NULL_GATE_DATABASE_URL against a bootstrapped
       # database, which no job here provides, so the live gate would exit 2. The
       # self-test exercises the declaration half, which is hermetic.

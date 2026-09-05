@@ -114,7 +114,7 @@ export class IncentivesService {
         totalRevenue: sql<string>`COALESCE(SUM(${incentives.calculatedAmount}), '0')`,
         approvedCount: sql<string>`COUNT(*) FILTER (WHERE ${incentives.status} IN ('APPROVED', 'ADDED_TO_PAYROLL'))`,
         pendingCount: sql<string>`COUNT(*) FILTER (WHERE ${incentives.status} = 'PENDING')`,
-        thisMonth: sql<string>`COALESCE(SUM(CASE WHEN ${incentives.createdAt} >= ${monthStart} THEN ${incentives.calculatedAmount} ELSE 0 END), '0')`,
+        thisMonth: sql<string>`COALESCE(SUM(CASE WHEN ${incentives.createdAt} >= ${monthStart.toISOString()}::timestamptz THEN ${incentives.calculatedAmount} ELSE 0 END), '0')`,
       })
       .from(incentives)
       .where(eq(incentives.orgId, orgId));

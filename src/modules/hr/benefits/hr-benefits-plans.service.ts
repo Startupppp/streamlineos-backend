@@ -6,7 +6,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, desc, eq, or, isNull, sql } from "drizzle-orm";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -22,7 +25,10 @@ import type {
 } from "./dto/benefits.schemas";
 import { boundHrReadLimit } from "../hr-read-limits";
 import { hasPatchValues } from "../../../common/db/patch-values";
-import { isForeignKeyViolation, isUniqueViolation } from "../../../common/db/postgres-error";
+import {
+  isForeignKeyViolation,
+  isUniqueViolation,
+} from "../../../common/db/postgres-error";
 
 type BenefitPlansCursorScope = {
   orgId: string;
@@ -82,7 +88,9 @@ export class HrBenefitsPlansService {
     if (status) conditions.push(eq(hrBenefitPlans.status, status));
     if (category) conditions.push(eq(hrBenefitPlans.category, category));
     if (position)
-      conditions.push(keysetAfterValue(hrBenefitPlans.name, hrBenefitPlans.id, position));
+      conditions.push(
+        keysetAfterValue(hrBenefitPlans.name, hrBenefitPlans.id, position),
+      );
 
     const rows = await this.db
       .select()
@@ -106,7 +114,9 @@ export class HrBenefitsPlansService {
     const [plan] = await this.db
       .select()
       .from(hrBenefitPlans)
-      .where(and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)))
+      .where(
+        and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)),
+      )
       .limit(1);
 
     if (!plan) throw new NotFoundException("Benefit plan not found");
@@ -122,7 +132,9 @@ export class HrBenefitsPlansService {
       return plan;
     } catch (err: unknown) {
       if (isUniqueViolation(err)) {
-        throw new ConflictException("A benefit plan with this name already exists");
+        throw new ConflictException(
+          "A benefit plan with this name already exists",
+        );
       }
       throw err;
     }
@@ -133,14 +145,18 @@ export class HrBenefitsPlansService {
       const [updated] = await this.db
         .update(hrBenefitPlans)
         .set({ ...data, updatedAt: new Date() })
-        .where(and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)))
+        .where(
+          and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)),
+        )
         .returning();
       if (!updated) throw new NotFoundException("Benefit plan not found");
       return updated;
     } catch (err: unknown) {
       if (err instanceof NotFoundException) throw err;
       if (isUniqueViolation(err)) {
-        throw new ConflictException("A benefit plan with this name already exists");
+        throw new ConflictException(
+          "A benefit plan with this name already exists",
+        );
       }
       throw err;
     }
@@ -150,7 +166,9 @@ export class HrBenefitsPlansService {
     try {
       const [deleted] = await this.db
         .delete(hrBenefitPlans)
-        .where(and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)))
+        .where(
+          and(eq(hrBenefitPlans.id, planId), eq(hrBenefitPlans.orgId, orgId)),
+        )
         .returning();
       if (!deleted) throw new NotFoundException("Benefit plan not found");
       return { ok: true };
@@ -175,16 +193,30 @@ export class HrBenefitsPlansService {
   async createWindow(orgId: string, data: CreateEnrollmentWindowInput) {
     const [window] = await this.db
       .insert(hrBenefitEnrollmentWindows)
-      .values({ ...data, opensAt: new Date(data.opensAt), closesAt: new Date(data.closesAt), orgId })
+      .values({
+        ...data,
+        opensAt: new Date(data.opensAt),
+        closesAt: new Date(data.closesAt),
+        orgId,
+      })
       .returning();
     return window;
   }
 
-  async updateWindow(orgId: string, windowId: number, data: Partial<CreateEnrollmentWindowInput>) {
+  async updateWindow(
+    orgId: string,
+    windowId: number,
+    data: Partial<CreateEnrollmentWindowInput>,
+  ) {
     const [existing] = await this.db
       .select()
       .from(hrBenefitEnrollmentWindows)
-      .where(and(eq(hrBenefitEnrollmentWindows.id, windowId), eq(hrBenefitEnrollmentWindows.orgId, orgId)))
+      .where(
+        and(
+          eq(hrBenefitEnrollmentWindows.id, windowId),
+          eq(hrBenefitEnrollmentWindows.orgId, orgId),
+        ),
+      )
       .limit(1);
 
     if (!existing) throw new NotFoundException("Enrollment window not found");
@@ -200,7 +232,12 @@ export class HrBenefitsPlansService {
     const [updated] = await this.db
       .update(hrBenefitEnrollmentWindows)
       .set(values)
-      .where(and(eq(hrBenefitEnrollmentWindows.id, windowId), eq(hrBenefitEnrollmentWindows.orgId, orgId)))
+      .where(
+        and(
+          eq(hrBenefitEnrollmentWindows.id, windowId),
+          eq(hrBenefitEnrollmentWindows.orgId, orgId),
+        ),
+      )
       .returning();
     return updated;
   }
@@ -210,18 +247,24 @@ export class HrBenefitsPlansService {
    * feature was never set up for it). Only enforced once at least one window row exists in
    * scope for this plan (plan-specific, or org-wide via a null planId).
    */
-  async checkEnrollmentWindowOpen(orgId: string, planId: number): Promise<boolean> {
-    const now = new Date();
+  async checkEnrollmentWindowOpen(
+    orgId: string,
+    planId: number,
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
     const [summary] = await this.db
       .select({
         configured: sql<number>`count(*)::int`,
-        open: sql<number>`count(*) filter (where ${hrBenefitEnrollmentWindows.status} = 'open' and ${hrBenefitEnrollmentWindows.opensAt} <= ${now} and ${hrBenefitEnrollmentWindows.closesAt} >= ${now})::int`,
+        open: sql<number>`count(*) filter (where ${hrBenefitEnrollmentWindows.status} = 'open' and ${hrBenefitEnrollmentWindows.opensAt} <= ${now}::timestamptz and ${hrBenefitEnrollmentWindows.closesAt} >= ${now}::timestamptz)::int`,
       })
       .from(hrBenefitEnrollmentWindows)
       .where(
         and(
           eq(hrBenefitEnrollmentWindows.orgId, orgId),
-          or(eq(hrBenefitEnrollmentWindows.planId, planId), isNull(hrBenefitEnrollmentWindows.planId)),
+          or(
+            eq(hrBenefitEnrollmentWindows.planId, planId),
+            isNull(hrBenefitEnrollmentWindows.planId),
+          ),
         ),
       );
 

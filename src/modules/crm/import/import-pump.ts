@@ -118,7 +118,7 @@ export class ImportPump {
     const claimed = await this.db.execute(sql`
       UPDATE workflow_runs SET
         status = 'RUNNING',
-        lease_expires_at = ${lease},
+        lease_expires_at = ${lease.toISOString()}::timestamptz,
         updated_at = now()
       WHERE workflow_run_id = (
         SELECT workflow_run_id FROM workflow_runs

@@ -6,7 +6,10 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import type { SQLWrapper } from "drizzle-orm";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
 import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import {
   hrEffectiveDatedChanges,
@@ -51,14 +54,17 @@ function afterPosition(
   position: TimelinePosition | undefined,
 ) {
   if (!position) return undefined;
-  const date = new Date(position.createdAt);
+  const date = new Date(position.createdAt).toISOString();
   return sql<boolean>`(
-    ${createdAt} < ${date}
-    OR (${createdAt} = ${date} AND ${sourceRecordId} < ${position.sourceRecordId})
+    ${createdAt} < ${date}::timestamptz
+    OR (${createdAt} = ${date}::timestamptz AND ${sourceRecordId} < ${position.sourceRecordId})
   )`;
 }
 
-function compareTimelineEntries(leftEntry: TimelineCandidate, rightEntry: TimelineCandidate) {
+function compareTimelineEntries(
+  leftEntry: TimelineCandidate,
+  rightEntry: TimelineCandidate,
+) {
   const time = rightEntry.createdAt.getTime() - leftEntry.createdAt.getTime();
   if (time !== 0) return time;
   const source = leftEntry.sourceRank - rightEntry.sourceRank;
@@ -84,10 +90,16 @@ function invalidHistoryCursor(): never {
 function isBusinessDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
 }
 
-function decodeHistoryCursor(value: string | undefined, expected: HistoryCursorScope) {
+function decodeHistoryCursor(
+  value: string | undefined,
+  expected: HistoryCursorScope,
+) {
   if (!value) return null;
   const position = decodeCursor(value);
   if (!position || !isBusinessDate(position.sortValue))
@@ -140,7 +152,9 @@ export class HrTimelineService {
           eq(hrEmployments.id, employmentId),
           eq(hrEmployments.orgId, orgId),
           isNull(hrEmployments.deletedAt),
-          applyScope(scope, orgId, actorUserId, { ownerColumn: hrPeople.userId }),
+          applyScope(scope, orgId, actorUserId, {
+            ownerColumn: hrPeople.userId,
+          }),
         ),
       )
       .limit(1);
@@ -358,7 +372,10 @@ export class HrTimelineService {
         organizationPeople,
         and(
           eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          eq(
+            organizationPeople.organizationPersonId,
+            hrPeople.organizationPersonId,
+          ),
         ),
       )
       .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))

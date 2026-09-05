@@ -5,7 +5,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, sql, sum } from "drizzle-orm";
-import { hrAuditLogs, organizationMembers, recognitions } from "../../../db/schema";
+import {
+  hrAuditLogs,
+  organizationMembers,
+  recognitions,
+} from "../../../db/schema";
 import {
   hrBadgeAwards,
   hrBadges,
@@ -98,7 +102,12 @@ export class EngagementBadgesService {
       const [awardedByMember] = await tx
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, awardedBy)))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, awardedBy),
+          ),
+        )
         .limit(1);
 
       await tx.insert(hrAuditLogs).values({
@@ -136,10 +145,7 @@ export class EngagementBadgesService {
       .from(hrBadgeAwards)
       .leftJoin(hrBadges, eq(hrBadgeAwards.badgeId, hrBadges.id))
       .where(
-        and(
-          eq(hrBadgeAwards.orgId, orgId),
-          eq(hrBadgeAwards.userId, userId),
-        ),
+        and(eq(hrBadgeAwards.orgId, orgId), eq(hrBadgeAwards.userId, userId)),
       )
       .orderBy(desc(hrBadgeAwards.createdAt))
       .limit(100);
@@ -211,7 +217,7 @@ export class EngagementBadgesService {
       .where(
         and(
           eq(recognitions.orgId, orgId),
-          sql`${recognitions.createdAt} >= ${periodStart}`,
+          sql`${recognitions.createdAt} >= ${periodStart.toISOString()}::timestamptz`,
         ),
       )
       .groupBy(recognitions.toUserId)
