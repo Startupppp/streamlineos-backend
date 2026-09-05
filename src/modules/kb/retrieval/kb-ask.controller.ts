@@ -17,6 +17,7 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { ApiHeader } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -156,6 +157,7 @@ export class KbAskController {
   }
 
   @Post("ask/stream")
+  @ApiHeader({ name: "Idempotency-Key", required: true, schema: { type: "string", minLength: 1, maxLength: 200 }, description: "Stable key for one generation attempt. Completed attempts replay after current access checks; an already-started attempt returns 409, and a different request or caller using the key returns 422. Use a new key only for an intentional regeneration." })
   @ApiAiResultStream()
   @HttpCode(200)
   @NoTenantTransaction()

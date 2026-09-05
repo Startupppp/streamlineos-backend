@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   NotFoundException,
   Post,
   Req,
@@ -11,6 +12,7 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { ApiAiTextStream } from "../streaming/ai-text-stream-contract";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -194,6 +196,8 @@ export class HrAiController {
   }
 
   @Post("hr/policy-qa/stream")
+  @HttpCode(200)
+  @ApiAiTextStream("Plain-text policy answer streamed incrementally. Grounding citations are URL-encoded JSON in x-hr-policy-citations; x-hr-policy-citations-truncated declares omitted citations. A transport failure before clean EOF is an incomplete answer.")
   @RequirePermission("hr:policies:view")
   @Validate({ body: policyQaSchema })
   async policyQaStream(
@@ -257,6 +261,8 @@ export class HrAiController {
   }
 
   @Post("hr/letter-draft/stream")
+  @HttpCode(200)
+  @ApiAiTextStream("Plain-text draft employment letter streamed incrementally for human review. A transport failure before clean EOF is an incomplete draft; no letter is sent or signed by this operation.")
   @RequirePermission("hr:employees:manage")
   @Validate({ body: letterDraftSchema })
   async letterDraftStream(

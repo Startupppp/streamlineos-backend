@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  HttpCode,
   Param,
   Post,
   Req,
@@ -11,6 +12,7 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
+import { ApiAiTextStream } from "../streaming/ai-text-stream-contract";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
@@ -180,6 +182,8 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/improve-description/stream")
+  @HttpCode(200)
+  @ApiAiTextStream("Plain-text improved description for the supplied unsaved ticket draft, streamed incrementally. No ticket is persisted; a transport failure before clean EOF leaves an incomplete suggestion.")
   @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async improveDraftDescriptionStream(
     @Req() req: Request,
@@ -271,6 +275,8 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/improve-description/stream")
+  @HttpCode(200)
+  @ApiAiTextStream("Plain-text improved description for the authorized ticket, streamed incrementally. No ticket mutation is performed; a transport failure before clean EOF leaves an incomplete suggestion.")
   @Validate({ params: projectIdticketIdParams, body: improveDescriptionBodySchema })
   async improveTicketDescriptionStream(
     @Req() req: Request,

@@ -17328,8 +17328,15 @@
         "operationId": "HrAiController_letterDraftStream",
         "parameters": [],
         "responses": {
-          "201": {
-            "description": ""
+          "200": {
+            "description": "Plain-text draft employment letter streamed incrementally for human review. A transport failure before clean EOF is an incomplete draft; no letter is sent or signed by this operation.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -17494,8 +17501,15 @@
         "operationId": "HrAiController_policyQaStream",
         "parameters": [],
         "responses": {
-          "201": {
-            "description": ""
+          "200": {
+            "description": "Plain-text policy answer streamed incrementally. Grounding citations are URL-encoded JSON in x-hr-policy-citations; x-hr-policy-citations-truncated declares omitted citations. A transport failure before clean EOF is an incomplete answer.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -18838,8 +18852,15 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": ""
+          "200": {
+            "description": "Plain-text improved description for the supplied unsaved ticket draft, streamed incrementally. No ticket is persisted; a transport failure before clean EOF leaves an incomplete suggestion.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -20097,8 +20118,15 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": ""
+          "200": {
+            "description": "Plain-text improved description for the authorized ticket, streamed incrementally. No ticket mutation is performed; a transport failure before clean EOF leaves an incomplete suggestion.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -170852,7 +170880,19 @@
     "/kb/ask/stream": {
       "post": {
         "operationId": "KbAskController_askStream",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable key for one generation attempt. Completed attempts replay after current access checks; an already-started attempt returns 409, and a different request or caller using the key returns 422. Use a new key only for an intentional regeneration.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Newline-delimited JSON: text frames contain text; one terminal result frame contains the completed DTO in data, including aiUsage; a terminal error frame contains a safe message. EOF without result is incomplete. Authentication and validation errors use the normal JSON error envelope before streaming starts.",
