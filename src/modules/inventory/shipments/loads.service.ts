@@ -109,7 +109,10 @@ export class LoadsService {
    * this command cannot invalidate, and failing them early costs no key.
    */
   async dispatch(orgId: string, userId: string, loadId: number, input: DispatchLoadInput, idempotencyKey: string) {
-    const [load] = await this.db.select().from(invLoads).where(and(eq(invLoads.id, loadId), eq(invLoads.orgId, orgId))).limit(1);
+    // Existence only. The DRAFT check moved inside the claim, so nothing out here
+    // needs the row itself — §3, select only the columns you use.
+    const [load] = await this.db.select({ id: invLoads.id }).from(invLoads)
+      .where(and(eq(invLoads.id, loadId), eq(invLoads.orgId, orgId))).limit(1);
     if (!load) throw new NotFoundException("Load not found");
 
     const lines = await this.db.select().from(invLoadLines).where(eq(invLoadLines.loadId, loadId));

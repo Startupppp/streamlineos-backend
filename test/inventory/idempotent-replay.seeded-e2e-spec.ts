@@ -170,12 +170,15 @@ describe(`${SEEDED_HARNESS} a command a client may retry`, () => {
     await app.close();
   });
 
-  /** Surfaces the response body when a status assertion fails — a bare 402 says nothing. */
+  /**
+   * Surfaces the response body when a status assertion fails. A bare "expected <300,
+   * received 402" says nothing, and the first run of this spec lost time to exactly
+   * that: the 402 was MODULE_NOT_ENABLED, a fixture gap, not the defect under test.
+   */
   const expectAccepted = (res: { status: number; body: unknown }) => {
-    expect({ status: res.status, body: res.body }).toMatchObject({
-      status: expect.any(Number) as unknown as number,
-    });
-    if (res.status >= 300) throw new Error(`expected <300, got ${res.status}: ${JSON.stringify(res.body)}`);
+    if (res.status >= 300) {
+      throw new Error(`expected a 2xx, got ${res.status}: ${JSON.stringify(res.body)}`);
+    }
   };
 
   const statusOf = async (table: string, id: number) => {
@@ -294,6 +297,87 @@ describe(`${SEEDED_HARNESS} a command a client may retry`, () => {
     expect(second.status).toBe(first.status);
     expect(second.body).toEqual(first.body);
     expect(await statusOf("inv_stock_adjustments", adjustment.id)).toBe("APPROVED");
+  });
+
+  /**
+   * §4 asks what a crash between the claim and the side effect costs. Auto-reserve
+   * cannot join the idempotent unit, so a confirm that commits and then dies leaves
+   * a CONFIRMED order that was never reserved. Gating the reserve on "was this a
+   * replay?" would strand it for ever, silently. Gating it on "is there anything
+   * left to do?" lets the retry finish the job — which is what this asserts, by
+   * confirming an order and then replaying the key against an order deliberately
+   * left at CONFIRMED.
+   */
+  it("finishes a reserve the first call never got to, on the retry", async () => {
+    const so = (await asTenant(() =>
+      app.app.get(SoCoreService).createSo(scene.orgId, scene.keeperId, {
+        orderDate: new Date().toISOString().slice(0, 10),
+        warehouseId: scene.warehouseId,
+        currency: "INR",
+        lines: [
+          { productVariantId: scene.variantId, quantity: 2, unitPrice: "10.0000", taxRate: "0", lineOrder: 0 },
+        ],
+      } as never),
+    )) as { id: number };
+
+    const key = `crash-${randomUUID()}`;
+    const send = () =>
+      request(server())
+        .post(`/inventory/sales-orders/${so.id}/confirm`)
+        .set("Authorization", keeperToken)
+        .set("Idempotency-Key", key)
+        .send({});
+
+    expectAccepted(await send());
+
+    // Stand in for "committed CONFIRMED, then the process died before reserving".
+    await asTenant(() =>
+      db().execute(sql`
+        UPDATE inv_sales_orders SET status = 'CONFIRMED'
+        WHERE org_id = ${scene.orgId} AND id = ${so.id}`),
+    );
+
+    expectAccepted(await send());
+    // The retry replayed the confirm and still did the reserve that was outstanding.
+    expect(await statusOf("inv_sales_orders", so.id)).not.toBe("CONFIRMED");
+  });
+
+  it("hides another organisation's load rather than refusing it", async () => {
+    // §8 — a cross-tenant probe belongs beside the happy path, not in a separate
+    // file nobody runs. Absent, never forbidden: a 403 would confirm the id exists.
+    const other = await seedOrg(app.seedDb).onPlan("PAID").addMember("stranger", {
+      permissionKeys: ["inventory:warehouses:scope-all", "inventory:loads:manage"],
+    }).build();
+    try {
+      const strangerToken = `Bearer ${await signSeededToken(
+        other.members["stranger"]!.userId,
+        other.orgId,
+      )}`;
+      await runInNewTenantTransaction(db(), other.orgId, () =>
+        db().execute(sql`
+          INSERT INTO org_modules (org_id, module_key, enabled)
+          VALUES (${other.orgId}, 'inventory', true) ON CONFLICT DO NOTHING`),
+      );
+      const load = (await asTenant(() =>
+        app.app.get(LoadsService).create(scene.orgId, scene.keeperId, {
+          sourceWarehouseId: scene.warehouseId,
+          destination: "Depot",
+          shipmentIds: [],
+          transferIds: [],
+        } as never),
+      )) as { id: number };
+
+      const res = await request(server())
+        .post(`/inventory/loads/${load.id}/dispatch`)
+        .set("Authorization", strangerToken)
+        .set("Idempotency-Key", `xt-${randomUUID()}`)
+        .send({});
+
+      expect(res.status).toBe(404);
+      expect(await statusOf("inv_loads", load.id)).toBe("DRAFT");
+    } finally {
+      await other.teardown().catch(() => undefined);
+    }
   });
 
   it("replays a load dispatch instead of refusing the retry", async () => {

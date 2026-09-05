@@ -193,9 +193,6 @@ export class SoFulfillmentService {
       with: { lines: { with: { productVariant: { with: { product: { columns: { id: true, trackingMethod: true } } } } } } },
     });
     if (!so) throw new NotFoundException("Sales order not found");
-    if (so.status !== "RESERVED" && so.status !== "PARTIALLY_RESERVED" && so.status !== "CONFIRMED") {
-      throw new BadRequestException("Sales order must be CONFIRMED or RESERVED to pick");
-    }
 
     for (const pickLine of data.lines) {
       const soLine = so.lines.find((l) => l.id === pickLine.soLineId);
@@ -230,6 +227,26 @@ export class SoFulfillmentService {
         idempotencyKey,
         { command: "inventory.sales-orders.pick", soId, lines: data.lines },
         async () => {
+          // T04. This guard used to sit in front of `runIdempotent`, where pick's own
+          // effect invalidated it: a full pick sets PICKED, and the retry was refused
+          // with "must be CONFIRMED or RESERVED to pick" — on the status its own first
+          // run had set — without reaching the guard that would have replayed the pick
+          // list. This controller carries no `@Idempotent`, so nothing shadowed it.
+          // Read through `tx` so the check sees the same snapshot the write does.
+          const [current] = await tx
+            .select({ status: invSalesOrders.status })
+            .from(invSalesOrders)
+            .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)))
+            .limit(1);
+          if (!current) throw new NotFoundException("Sales order not found");
+          if (
+            current.status !== "RESERVED" &&
+            current.status !== "PARTIALLY_RESERVED" &&
+            current.status !== "CONFIRMED"
+          ) {
+            throw new BadRequestException("Sales order must be CONFIRMED or RESERVED to pick");
+          }
+
           const pickNumber = await this.numSeq.next(orgId, "PICK_LIST", tx);
 
           const [pickList] = await tx.insert(invPickLists).values({

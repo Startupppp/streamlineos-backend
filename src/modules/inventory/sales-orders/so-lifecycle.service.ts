@@ -69,8 +69,8 @@ export class SoLifecycleService {
 
     const settings = await this.settingsService.get(orgId);
 
-    const outcome = await this.db.transaction((tx) =>
-      runIdempotent<{ confirmed: number; fresh: boolean }>(
+    await this.db.transaction((tx) =>
+      runIdempotent(
         tx,
         orgId,
         idempotencyKey,
@@ -90,21 +90,36 @@ export class SoLifecycleService {
             .update(invSalesOrders)
             .set({ status: "CONFIRMED", confirmedAt: new Date(), updatedAt: new Date() })
             .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
-          return { confirmed: soId, fresh: true };
+          return { confirmed: soId };
         },
-        // A replay must say so. `fresh` is the same signal `CreatedPoBatch.created`
-        // carries, and it is what stops the auto-reserve below running twice.
-        () => ({ confirmed: soId, fresh: false }),
+        () => ({ confirmed: soId }),
       ),
     );
 
-    // T04. Auto-reserve sits outside the idempotent unit because `reserve` opens its
-    // own transaction. That made the retry worse than the refusal it replaced: the
-    // replay correctly returned the first answer and then reserved the same lines a
-    // second time, moving a RESERVED order to PARTIALLY_RESERVED. An order that is
-    // idempotent from the outside and not underneath is the defect the recall fix
-    // named. Only a fresh execution reserves.
-    if (outcome.fresh && settings.autoReserveOnConfirm) {
+    // T04/§4. Auto-reserve cannot join the idempotent unit — `reserve` opens its own
+    // transaction — so it is a side effect after the claim, and §4's question is what
+    // a crash between the two costs. It is recoverable from state already stored: an
+    // order that committed CONFIRMED and never reserved is still sitting at CONFIRMED,
+    // and the reserve can be re-driven from the order's own lines.
+    //
+    // So the condition is "is there anything left to do?", not "was this a replay?".
+    // Both of the obvious alternatives are wrong in opposite directions. Reserving
+    // unconditionally double-reserves on a retry, moving a RESERVED order to
+    // PARTIALLY_RESERVED — idempotent from the outside and not underneath, which is
+    // the defect the recall fix named. Reserving only on a fresh execution is worse
+    // and quieter: a crash after the confirm commit and before the reserve leaves the
+    // order CONFIRMED for ever, because every retry then skips the reserve.
+    //
+    // Reading the status answers both. Auto-reserve always moves the order off
+    // CONFIRMED when it runs — to RESERVED, or to PARTIALLY_RESERVED when the shelf
+    // life floor or short stock removed candidates — so CONFIRMED means it has not run.
+    const [afterConfirm] = await this.db
+      .select({ status: invSalesOrders.status })
+      .from(invSalesOrders)
+      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)))
+      .limit(1);
+
+    if (settings.autoReserveOnConfirm && afterConfirm?.status === "CONFIRMED") {
       try {
         await this.autoReserve(orgId, soId, userId, so.lines, so.warehouseId, so.channelId);
       } catch (error) {

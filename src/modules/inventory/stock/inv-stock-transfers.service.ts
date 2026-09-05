@@ -633,7 +633,8 @@ export class InvStockTransfersService {
   async cancelTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
     const transfer = await this.db.query.invStockTransfers.findFirst({
       where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
-      columns: { id: true, status: true },
+      // Existence only — the status check moved inside the claim.
+      columns: { id: true },
     });
     if (!transfer) throw new NotFoundException("Transfer not found");
     // A2. Deliberately unchanged. Cancelling stops at RESERVED, so no cancel can
