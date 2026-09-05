@@ -198,6 +198,15 @@ jobs:
       - name: Migration rollbacks are truthful
         run: pnpm check:migration-rollback:self-test && pnpm check:migration-rollback
 
+      # The gate above never executes a rollback, and its PASSED grandfathers
+      # everything at or below prefix 839 — which was all 51 inventory
+      # migrations. It now prints that exemption and ratchets it; the execution
+      # half is `pnpm drill:rollback`, which needs a disposable database and runs
+      # in cell-cold-bootstrap.yml against the cell it just rebuilt. Only the
+      # drill's own logic is checked here, where there is no database.
+      - name: Rollback rehearsal logic
+        run: pnpm drill:rollback:self-test
+
       # Every table above the size threshold must have a recorded retention decision.
       # Self-test only here: the live check needs a database.
       - name: Retention coverage

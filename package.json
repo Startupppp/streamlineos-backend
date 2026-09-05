@@ -235,6 +235,8 @@
     "replay:chain-cold": "node --max-old-space-size=8192 src/scripts/replay-chain-cold.mjs",
     "check:migration-rollback": "node src/scripts/check-migration-rollback.mjs",
     "check:migration-rollback:self-test": "node src/scripts/check-migration-rollback.mjs --self-test",
+    "drill:rollback": "node src/scripts/rehearse-migration-rollback.mjs",
+    "drill:rollback:self-test": "node src/scripts/rehearse-migration-rollback.mjs --self-test",
     "check:db-spec-gates": "node src/scripts/check-db-spec-gates.mjs",
     "check:db-spec-gates:self-test": "node src/scripts/check-db-spec-gates.mjs --self-test",
     "check:retention-coverage": "node --env-file-if-exists=.env src/scripts/check-retention-coverage.mjs",
