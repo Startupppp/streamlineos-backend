@@ -1,3 +1,4 @@
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import type { Db } from "../../db/drizzle.module";
 import { NotificationsReadService } from "./notifications-read.service";
 import { notificationWindowEnd, notificationWindowStart } from "./notification-read-window";
@@ -72,7 +73,7 @@ describe("NotificationsReadService — unread counter watermark", () => {
   it("embeds the watermark id in the count WHERE clause when lastReadId > 0", async () => {
     const WATERMARK = 100;
     const { db, capturedCountWhere } = makeDb(WATERMARK);
-    const svc = new NotificationsReadService(db, makeCache());
+    const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
     await svc.unreadCount(ORG, USER);
 
@@ -82,7 +83,7 @@ describe("NotificationsReadService — unread counter watermark", () => {
 
   it("does not embed a zero bound in the count WHERE clause when no watermark is set", async () => {
     const { db, capturedCountWhere } = makeDb(0);
-    const svc = new NotificationsReadService(db, makeCache());
+    const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
     await svc.unreadCount(ORG, USER);
 
@@ -92,7 +93,7 @@ describe("NotificationsReadService — unread counter watermark", () => {
 
   it("scopes the count to the requesting org so a new arrival in another tenant is not counted", async () => {
     const { db, capturedCountWhere } = makeDb(0);
-    const svc = new NotificationsReadService(db, makeCache());
+    const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
     await svc.unreadCount(ORG, USER);
 
@@ -116,7 +117,7 @@ describe("NotificationsReadService — unread counter watermark", () => {
    */
   it("bounds the count by the retention window so 41 of 49 partitions prune at plan time", async () => {
     const { db, capturedCountWhere } = makeDb(0);
-    const svc = new NotificationsReadService(db, makeCache());
+    const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
     const before = new Date();
     await svc.unreadCount(ORG, USER);

@@ -1050,14 +1050,20 @@ jobs:
           DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
           DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
 
+      # Self-contained in-scope fixtures plus the harness self-test. The separate
+      # perf capture and opt-in BOLA/replay artifact drills are not counted here.
       - name: Seeded isolation suite
-        run: pnpm test:e2e:seeded
+        run: |
+          pnpm test:e2e:seeded "${SEEDED_DATABASE_NAME}" \
+            test/{accounting,billing,build,calendar,chat,db,home,hr,kb,mail,notifications,payments,payroll,settings,support,workflows}/*.seeded-e2e-spec.ts \
+            test/security/gdpr-export-cross-module-privacy.seeded-e2e-spec.ts \
+            test/helpers/__tests__/seeded-e2e-app.spec.ts
         env:
+          SEEDED_DATABASE_NAME: ${{ vars.CI_SEEDED_DATABASE_NAME || 'scratch_e2e' }}
           NODE_OPTIONS: --max-old-space-size=8192
           DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
-          # The non-owner role. Without it the suite skips rather than lying.
+          # The runner refuses missing app credentials or a scratch ledger below head.
           APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
-          BACKEND_JWT_SECRET: ${{ secrets.CI_BACKEND_JWT_SECRET }}
 
       - name: Module lifecycle gates (timesheets)
         run: pnpm check:module-lifecycle
@@ -1088,18 +1094,13 @@ jobs:
       #   SEED_ORG_ID / SEED_MINORITY_ORG_ID  two tenants at opposite ends of the
       #                                     seed's skew; the same query picks
       #                                     different plans per tenant here.
-      #   AUTH_SIGNING_KEYS                 a LOCAL PLACEHOLDER Ed25519 keyring.
+      #   AUTH_SIGNING_KEYS                 generated ephemerally by the safe runner.
       #   --expose-gc                       heap is sampled after a forced GC;
       #                                     the harness REFUSES to record memory
-      #                                     without it, which is why this step
-      #                                     does not reuse `pnpm test:e2e:seeded`
-      #                                     (that script has no --expose-gc).
-      # Absent any of them the suite prints "[route-budget-http] SKIPPED — this
-      # suite proves nothing while skipped" and describe.skip's itself, so the
-      # `Seeded isolation suite` step above already COLLECTS this file (its
-      # config matches test/**/*.seeded-e2e-spec.ts) and has always skipped it.
-      # That is why it is named separately here: a skip folded into another job's
-      # green tick is indistinguishable from a pass.
+      #                                     without it; the safe runner supplies it.
+      # Missing tenant fixtures exit INCONCLUSIVE before Jest. Missing credentials,
+      # a stale scratch ledger or a privileged app role fail the runner preflight.
+      # This perf suite is intentionally separate from the self-contained fixtures.
       #
       # MEASURED 2026-09-03 locally with all four present, against
       # scratch_t23_http at journal head 667/667 as streamline_app
@@ -1117,21 +1118,20 @@ jobs:
       # NOT RUN by v2 ticket 30: the five repository secrets it needs do not exist, so its
       # exit code in CI was not measured and is not claimed here.
       # Owner: whoever provisions CI_PERF_SEED_DATABASE_URL / CI_PERF_SEED_APP_DATABASE_URL /
-      # CI_PERF_SEED_ORG_ID / CI_PERF_SEED_MINORITY_ORG_ID / CI_PERF_AUTH_SIGNING_KEYS.
+      # CI_PERF_SEED_ORG_ID / CI_PERF_SEED_MINORITY_ORG_ID and CI_PERF_SEEDED_DATABASE_NAME.
       # Remove the flag in the same change that adds them.
       - name: Route-budget HTTP capture (perf) — needs a seeded database
         if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
-          node --expose-gc --max-old-space-size=12288 ./node_modules/jest/bin/jest.js \
-            --config ./jest-e2e-seeded.json --runInBand --forceExit \
-            --testPathPattern=route-budget-http
+          test -n "$SEED_ORG_ID" && test -n "$SEED_MINORITY_ORG_ID" || { echo 'INCONCLUSIVE: missing performance tenant fixtures'; exit 2; }
+          pnpm test:e2e:seeded "$SEEDED_DATABASE_NAME" test/perf/route-budget-http.seeded-e2e-spec.ts
         env:
+          SEEDED_DATABASE_NAME: ${{ vars.CI_PERF_SEEDED_DATABASE_NAME || 'scratch_e2e' }}
           DATABASE_URL: ${{ secrets.CI_PERF_SEED_DATABASE_URL }}
           APP_DATABASE_URL: ${{ secrets.CI_PERF_SEED_APP_DATABASE_URL }}
           SEED_ORG_ID: ${{ secrets.CI_PERF_SEED_ORG_ID }}
           SEED_MINORITY_ORG_ID: ${{ secrets.CI_PERF_SEED_MINORITY_ORG_ID }}
-          AUTH_SIGNING_KEYS: ${{ secrets.CI_PERF_AUTH_SIGNING_KEYS }}
           ROUTE_BUDGET_HTTP_ARTIFACT: route-budget-http-capture.json
           # Off unless the seed is a disposable copy: the plan's POST entries
           # insert, and several reports quote this seed's row counts to the unit.

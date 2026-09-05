@@ -224,9 +224,8 @@ export function buildRequestLevel(artifacts, budgets, budgetsHash) {
     method: "http-harness",
     instrument: "test/perf/route-budget-http.seeded-e2e-spec.ts",
     command:
-      "DATABASE_URL=<owner@scratch> APP_DATABASE_URL=<streamline_app@scratch> AUTH_SIGNING_KEYS=<local placeholder> " +
-      "node --expose-gc ./node_modules/jest/bin/jest.js --config ./jest-e2e-seeded.json --runInBand " +
-      "--testPathPattern=route-budget-http",
+      "DATABASE_URL=<owner@scratch> APP_DATABASE_URL=<streamline_app@scratch> " +
+      "pnpm test:e2e:seeded scratch_e2e test/perf/route-budget-http.seeded-e2e-spec.ts",
     generatedAt: first.generatedAt ?? null,
     commit: first.commit ?? null,
     workingTreeDirty: first.workingTreeDirty ?? null,

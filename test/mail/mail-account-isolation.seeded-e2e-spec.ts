@@ -42,6 +42,7 @@ describe("[seeded-e2e] Mail accounts — cross-tenant isolation", () => {
   let neighbourAccountId: number | null = null;
   let homeToken = "";
   let neighbourToken = "";
+  let sameOrgOtherToken = "";
   let server: unknown;
 
   beforeAll(async () => {
@@ -56,6 +57,7 @@ describe("[seeded-e2e] Mail accounts — cross-tenant isolation", () => {
     neighbour = await seedOrg(seeded.seedDb)
       .onPlan("PAID")
       .addMember("user")
+      .addMember("other")
       .build();
 
     const [row] = await seeded.seedDb
@@ -82,6 +84,11 @@ describe("[seeded-e2e] Mail accounts — cross-tenant isolation", () => {
     neighbourToken = await signSeededToken(
       seeded,
       neighbour.members.user.userId,
+      neighbour.orgId,
+    );
+    sameOrgOtherToken = await signSeededToken(
+      seeded,
+      neighbour.members.other.userId,
       neighbour.orgId,
     );
   }, 180_000);
@@ -140,5 +147,35 @@ describe("[seeded-e2e] Mail accounts — cross-tenant isolation", () => {
     expect(row?.id).toBe(neighbourAccountId);
     expect(row?.orgId).toBe(neighbour.orgId);
     expect(row?.status).toBe("active");
+  });
+
+  it("does not expose another member's mailbox within the same organization", async () => {
+    const response = await request(seeded.app.getHttpServer())
+      .get("/mail/accounts")
+      .set("Authorization", `Bearer ${sameOrgOtherToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+
+  it.each(["same-organization", "cross-tenant"])(
+    "rejects %s message and thread probes before provider access",
+    async (scope) => {
+      const token = scope === "same-organization" ? sameOrgOtherToken : homeToken;
+      for (const resource of ["messages", "threads"]) {
+        const response = await request(seeded.app.getHttpServer())
+          .get(`/mail/${resource}/foreign-provider-record`)
+          .query({ accountId: neighbourAccountId })
+          .set("Authorization", `Bearer ${token}`);
+
+        expect(response.status).toBe(404);
+        expect(response.body).not.toHaveProperty("bodyHtml");
+      }
+    },
+  );
+
+  it("requires authentication even for an account-list request", async () => {
+    const response = await request(seeded.app.getHttpServer()).get("/mail/accounts");
+    expect(response.status).toBe(401);
   });
 });

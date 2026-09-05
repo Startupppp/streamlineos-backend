@@ -20,6 +20,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { Test } from "@nestjs/testing";
 import { CacheService } from "../../common/cache/cache.service";
 import { NotificationsReadService } from "./notifications-read.service";
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import { listSchema, type ListInput } from "./dto/notification.schemas";
 
 describe("notifications list cache key", () => {
@@ -39,6 +40,7 @@ describe("notifications list cache key", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationsReadService,
+        NotificationVisibilityRegistry,
         { provide: DRIZZLE, useValue: {} },
         { provide: CacheService, useValue: cache },
       ],
@@ -89,5 +91,15 @@ describe("notifications list cache key", () => {
       await service.list("org-1", "user-1", { ...baseline, ...over });
       expect([field, keys[0]]).not.toEqual([field, control]);
     }
+  });
+
+  it("separator characters in search and source cannot collide with filter structure", async () => {
+    await service.list("org-1", "user-1", filters({
+      search: "x", sourceModule: "y&section=ALL&sourceModule=z",
+    }));
+    await service.list("org-1", "user-1", filters({
+      search: "x&section=ALL&sourceModule=y", sourceModule: "z",
+    }));
+    expect(keys[0]).not.toBe(keys[1]);
   });
 });

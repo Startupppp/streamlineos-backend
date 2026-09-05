@@ -20,7 +20,6 @@ import {
   projects,
   projectTeamAssignments,
   projectTeamMembers,
-  ticketAssignees,
   tickets,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -29,7 +28,7 @@ import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor
 import { keysetAfterValue } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveTicketsScope } from "./tickets-scope";
+import { resolveTicketsScope, ticketScopePredicate } from "./tickets-scope";
 import type { TicketsListQuery } from "./dto/projects.schemas";
 import { queryTickets } from "./projects-tickets-read.query";
 
@@ -239,14 +238,7 @@ export class ProjectsTicketsReadService {
         pagination: { limit, nextCursor: null, hasMore: false },
       };
 
-    const scopeClause =
-      scope !== "all"
-        ? or(
-            sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
-            eq(tickets.reporterId, u.userId),
-            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id WHERE ta.org_id = ${u.orgId} AND om.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
-          )
-        : undefined;
+    const scopeClause = ticketScopePredicate(scope, u.orgId, u.userId);
 
     const filterConditions: SQL<unknown>[] = [];
 
@@ -432,14 +424,7 @@ export class ProjectsTicketsReadService {
     const scope = await resolveTicketsScope(this.access, u);
     if (scope === "none") return {};
 
-    const scopeClause =
-      scope !== "all"
-        ? or(
-            sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
-            eq(tickets.reporterId, u.userId),
-            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id WHERE ta.org_id = ${u.orgId} AND om.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
-          )
-        : undefined;
+    const scopeClause = ticketScopePredicate(scope, u.orgId, u.userId);
 
     const rows = await this.db
       .select({ status: tickets.status, cnt: sql<string>`count(*)` })

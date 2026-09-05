@@ -14,13 +14,15 @@ import {
   ilike,
   or,
 } from "drizzle-orm";
-import { notifications, notificationReadWatermarks, tickets, projects, users, organizationMembers } from "../../db/schema";
+import { notifications, notificationReadWatermarks, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { listSchema, type ListInput } from "./dto/notification.schemas";
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
+import type { Principal } from "../../common/auth/principal";
 import type { NotificationTicketContext } from "./notifications.types";
 import { ASSIGNED_EVENT_KEYS, MENTION_EVENT_KEYS } from "./inbox-section-keys";
 import { notificationWindowEnd, notificationWindowStart } from "./notification-read-window";
@@ -55,14 +57,14 @@ function extractTicketId(row: {
   metadata: Record<string, unknown> | null;
 }): number | null {
   if (row.entityType === "ticket" && row.entityId) {
-    const fromEntity = Number.parseInt(row.entityId, 10);
-    if (Number.isFinite(fromEntity)) return fromEntity;
+    const fromEntity = Number(row.entityId);
+    if (Number.isSafeInteger(fromEntity) && fromEntity > 0) return fromEntity;
   }
   const metaId = row.metadata?.ticketId;
-  if (typeof metaId === "number" && Number.isFinite(metaId)) return metaId;
+  if (typeof metaId === "number" && Number.isSafeInteger(metaId) && metaId > 0) return metaId;
   if (typeof metaId === "string") {
-    const fromMeta = Number.parseInt(metaId, 10);
-    if (Number.isFinite(fromMeta)) return fromMeta;
+    const fromMeta = Number(metaId);
+    if (Number.isSafeInteger(fromMeta) && fromMeta > 0) return fromMeta;
   }
   return null;
 }
@@ -96,6 +98,7 @@ export class NotificationsReadService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly visibility: NotificationVisibilityRegistry,
   ) {}
 
   /**
@@ -115,21 +118,22 @@ export class NotificationsReadService {
     const resolved: Record<string, unknown> = { ...filters, section, limit };
     const parts = Object.keys(listSchema.shape)
       .sort()
-      .map((field) => `${field}=${String(resolved[field] ?? "")}`);
-    return `list:${parts.join("&")}`;
+      .map((field) => [field, resolved[field] ?? null]);
+    return `list:${JSON.stringify(parts)}`;
   }
 
-  list(orgId: string, userId: string, filters: ListInput) {
+  async list(orgId: string, userId: string, filters: ListInput, principal?: Principal) {
     const limit = Math.min(filters.limit ?? 20, 100);
     const section = filters.unreadOnly ? "UNREAD" : (filters.section ?? "ALL");
-    const key = this.listCacheKey(filters, section, limit);
-    return this.cache.cachedVersioned(
+    const key = `history-v2:${this.listCacheKey(filters, section, limit)}`;
+    const page = await this.cache.cachedVersioned(
       `notifications:${userId}:${orgId}`,
       key,
       () =>
         this.queryNotifications(orgId, userId, { ...filters, limit, section }),
       CACHE_TTL.SHORT,
     );
+    return { ...page, data: await this.attachTicketContext(orgId, userId, page.data, principal) };
   }
 
   /**
@@ -264,20 +268,19 @@ export class NotificationsReadService {
       .limit(filters.limit + 1);
 
     const page = buildIdCursorPage(rows, filters.limit, (row) => row.id);
-    const data = await this.attachTicketContext(
-      orgId,
-      page.data.map((row) => ({
-        ...row,
-        isRead: row.isRead || (lastReadId > 0 && row.id <= lastReadId),
-      })),
-    );
+    const data = page.data.map((row) => ({
+      ...row,
+      isRead: row.isRead || (lastReadId > 0 && row.id <= lastReadId),
+    }));
 
     return { data, hasMore: page.hasMore, nextCursor: page.nextCursor };
   }
 
   private async attachTicketContext(
     orgId: string,
+    userId: string,
     rows: NotificationListRow[],
+    principal?: Principal,
   ) {
     const ticketIds = Array.from(
       new Set(
@@ -286,60 +289,9 @@ export class NotificationsReadService {
           .filter((id): id is number => id != null),
       ),
     );
-    if (ticketIds.length === 0)
-      return rows.map((row) => ({
-        ...row,
-        ticketContext: null as NotificationTicketContext | null,
-      }));
-
-    const ticketRows = await this.db
-      .select({
-        id: tickets.id,
-        ticketNumber: tickets.ticketNumber,
-        priority: tickets.priority,
-        status: tickets.status,
-        type: tickets.type,
-        projectKey: projects.key,
-        assigneeId: organizationMembers.userId,
-        assigneeName: users.name,
-        assigneeFirstName: users.firstName,
-        assigneeLastName: users.lastName,
-        assigneeImage: users.image,
-      })
-      .from(tickets)
-      .leftJoin(projects, eq(projects.id, tickets.projectId))
-      .leftJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, tickets.orgId),
-          eq(organizationMembers.id, tickets.assigneeMembershipId),
-        ),
-      )
-      .leftJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.id, ticketIds)));
-
-    const byId = new Map<number, NotificationTicketContext>();
-    for (const ticket of ticketRows) {
-      const ticketKey = ticket.projectKey
-        ? `${ticket.projectKey}-${ticket.ticketNumber}`
-        : String(ticket.ticketNumber);
-      byId.set(ticket.id, {
-        ticketId: ticket.id,
-        ticketKey,
-        priority: ticket.priority ?? null,
-        status: ticket.status,
-        type: ticket.type,
-        assignee: ticket.assigneeId
-          ? {
-              id: ticket.assigneeId,
-              name: ticket.assigneeName ?? null,
-              firstName: ticket.assigneeFirstName ?? null,
-              lastName: ticket.assigneeLastName ?? null,
-              image: ticket.assigneeImage ?? null,
-            }
-          : null,
-      });
-    }
+    const byId = principal
+      ? await this.visibility.ticketContexts(orgId, userId, ticketIds, principal)
+      : new Map<number, NotificationTicketContext>();
 
     return rows.map((row) => {
       const ticketId = extractTicketId(row);

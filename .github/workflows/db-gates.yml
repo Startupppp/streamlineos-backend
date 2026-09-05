@@ -342,18 +342,18 @@ jobs:
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
-          POSTGRES_DB: ci
+          POSTGRES_DB: scratch_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ci -d ci"
+          --health-cmd "pg_isready -U ci -d scratch_ci"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
     env:
       NODE_ENV: test
-      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
-      APP_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/ci
+      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/scratch_ci
+      APP_DATABASE_URL: postgres://streamline_app:ci@127.0.0.1:5432/scratch_ci
       APP_DB_PASSWORD: ci
       PGSSLMODE: disable
     steps:
@@ -380,7 +380,7 @@ jobs:
 
       - name: Tenant foreign keys are composite
         env:
-          TENANT_RELATIONSHIP_DB_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          TENANT_RELATIONSHIP_DB_URL: postgres://ci:ci@127.0.0.1:5432/scratch_ci
         run: pnpm check:tenant-relationships:self-test && pnpm check:tenant-relationships
 
       # The seeded suite needs the non-owner role above; without it every case
@@ -391,12 +391,10 @@ jobs:
       # it has a green somebody read.
       - name: Seeded Controller E2E Tests
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: pnpm test:e2e:seeded
+        run: |
+          pnpm test:e2e:seeded scratch_ci \
+            test/{accounting,billing,build,calendar,chat,db,home,hr,kb,mail,notifications,payments,payroll,settings,support,workflows}/*.seeded-e2e-spec.ts \
+            test/security/gdpr-export-cross-module-privacy.seeded-e2e-spec.ts \
+            test/helpers/__tests__/seeded-e2e-app.spec.ts
         env:
           NODE_OPTIONS: --max-old-space-size=8192
-          BACKEND_JWT_SECRET: ci-only-backend-jwt-secret-with-at-least-44-characters
-          PORTAL_JWT_SECRET: ci-only-portal-jwt-secret-with-at-least-44-characters-xx
-          ENCRYPTION_KEY: ci-only-encryption-key-min-32-characters-for-testing
-          INTERNAL_API_SECRET: ci-only-internal-api-secret-min-32-chars-for-testing
-          CORS_ORIGINS: http://localhost:1000
-          APP_URL: http://localhost:1000

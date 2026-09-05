@@ -1,3 +1,4 @@
+import { NotificationVisibilityRegistry } from "src/modules/notifications/notification-visibility.registry";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { writeFileSync } from "node:fs";
@@ -103,7 +104,7 @@ describeIfSeeded("route database-call budgets (seeded)", () => {
     if (!member)
       throw new Error(`[route-db-call-budget] no active membership in org ${orgId} — reseed or set SEED_ORG_ID`);
     userId = member.user_id;
-    service = new NotificationsReadService(db, new CacheService(null));
+    service = new NotificationsReadService(db, new CacheService(null), new NotificationVisibilityRegistry());
   });
 
   afterAll(async () => {

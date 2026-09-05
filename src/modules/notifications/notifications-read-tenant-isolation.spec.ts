@@ -1,3 +1,4 @@
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import type { Db } from "../../db/drizzle.module";
 import { NotificationsReadService } from "./notifications-read.service";
 
@@ -55,7 +56,7 @@ function makeDb(): { db: Db; allWhereArgs: unknown[] } {
   it("scopes notification list to the requesting org (tenant isolation)", async () => {
     const { db, allWhereArgs } = makeDb();
     const cache = { cachedVersioned: jest.fn().mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()) } as never;
-    const svc = new NotificationsReadService(db, cache);
+    const svc = new NotificationsReadService(db, cache, new NotificationVisibilityRegistry());
 
     await svc.list(ATTACKER_ORG, "user-1", { limit: 20, section: "ALL" as const, unreadOnly: false });
 
@@ -67,7 +68,7 @@ function makeDb(): { db: Db; allWhereArgs: unknown[] } {
   it("returns notifications only for the requesting org (same-tenant control)", async () => {
     const { db } = makeDb();
     const cache = { cachedVersioned: jest.fn().mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()) } as never;
-    const svc = new NotificationsReadService(db, cache);
+    const svc = new NotificationsReadService(db, cache, new NotificationVisibilityRegistry());
 
     const result = await svc.list(OWNER_ORG, "user-1", { limit: 20, section: "ALL" as const, unreadOnly: false });
 

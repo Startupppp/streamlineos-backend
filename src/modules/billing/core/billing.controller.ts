@@ -28,6 +28,12 @@ import {
   type ValidateCouponQueryInput,
 } from "./dto/billing.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  billingEntitlementsResponseSchema,
+  billingSeatsResponseSchema,
+  billingSummaryResponseSchema,
+} from "./dto/billing-response-schema";
 import { z } from "zod";
 
 const couponIdParams = z.object({ couponId: z.coerce.number().int().positive() }).strict();
@@ -104,11 +110,13 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:view")
   @Get("summary")
+  @ResponseSchema(billingSummaryResponseSchema)
   getSummary(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSummary(u.orgId);
   }
 
   @Get("entitlements")
+  @ResponseSchema(billingEntitlementsResponseSchema)
   @Universal()
   getEntitlements(@CurrentUser() u: CurrentUserContext) {
     return this.planLimits.getEntitlements(u.orgId);
@@ -151,6 +159,7 @@ export class BillingController {
   }
 
   @Get("seats")
+  @ResponseSchema(billingSeatsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:seats:view")
   getSeatInfo(@CurrentUser() u: CurrentUserContext) {

@@ -23,7 +23,13 @@ import {
   type StatusInput,
 } from "./dto/chat.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  chatOnlineResponseSchema,
+  chatPresenceAckResponseSchema,
+  chatUnreadResponseSchema,
+  chatUsersResponseSchema,
+} from "./dto/chat-presence-response-schema";
 
 @ApiTags("Chat Presence")
 @ApiBearerAuth()
@@ -35,6 +41,7 @@ export class ChatPresenceController {
   @ApiOperation({ summary: "Update presence heartbeat to mark user as online" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("presence/heartbeat")
+  @ResponseSchema(chatPresenceAckResponseSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:read")
@@ -45,6 +52,7 @@ export class ChatPresenceController {
   @ApiOperation({ summary: "Get currently online users in the organisation" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("presence/online")
+  @ResponseSchema(chatOnlineResponseSchema)
   @RequirePermission("chat:messages:read")
   online(@CurrentUser() u: CurrentUserContext) {
     return this.presence.getOnlineUsers(u.orgId);
@@ -53,6 +61,7 @@ export class ChatPresenceController {
   @ApiOperation({ summary: "Set the current user's status message and emoji" })
   @ApiResponse({ status: 200, description: "OK" })
   @Put("status")
+  @ResponseSchema(chatPresenceAckResponseSchema)
   @RequirePermission("chat:messages:write")
   @Validate({ body: statusSchema })
   setStatus(
@@ -65,6 +74,7 @@ export class ChatPresenceController {
   @ApiOperation({ summary: "Get total unread message count across all channels" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("unread")
+  @ResponseSchema(chatUnreadResponseSchema)
   @RequirePermission("chat:messages:read")
   async unread(@CurrentUser() u: CurrentUserContext) {
     const total = await this.presence.getUnreadTotal(u.userId, u.orgId);
@@ -89,6 +99,7 @@ export class ChatPresenceController {
   @ApiOperation({ summary: "List all users in the organisation for mentions and invites" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("users")
+  @ResponseSchema(chatUsersResponseSchema)
   @RequirePermission("chat:channels:read")
   users(@CurrentUser() u: CurrentUserContext) {
     return this.presence.getOrgUsers(u.orgId);

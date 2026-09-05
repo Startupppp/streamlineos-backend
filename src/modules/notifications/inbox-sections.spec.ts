@@ -1,3 +1,4 @@
+import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import type { Db } from "../../db/drizzle.module";
 import { NotificationsReadService } from "./notifications-read.service";
 import type { ListInput } from "./dto/notification.schemas";
@@ -67,7 +68,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
   describe("MENTIONS section", () => {
     it("includes a '%mention%' ilike predicate in the WHERE clause", async () => {
       const { db, allWhereArgs } = makeDb();
-      const svc = new NotificationsReadService(db, makeCache());
+      const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
       await svc.list("org-1", "user-1", { section: "MENTIONS", limit: 20 } as ListInput);
 
@@ -81,7 +82,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
     it("always includes the caller orgId in the WHERE clause", async () => {
       const ORG = "org-mentions-scope";
       const { db, allWhereArgs } = makeDb();
-      const svc = new NotificationsReadService(db, makeCache());
+      const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
       await svc.list(ORG, "user-1", { section: "MENTIONS", limit: 20 } as ListInput);
 
@@ -91,7 +92,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
     it("always includes the caller userId in the WHERE clause", async () => {
       const USER = "user-mentions-scope";
       const { db, allWhereArgs } = makeDb();
-      const svc = new NotificationsReadService(db, makeCache());
+      const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
       await svc.list("org-1", USER, { section: "MENTIONS", limit: 20 } as ListInput);
 
@@ -102,7 +103,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
   describe("ASSIGNED_TO_ME section", () => {
     it("includes an '%assigned%' ilike predicate in the WHERE clause", async () => {
       const { db, allWhereArgs } = makeDb();
-      const svc = new NotificationsReadService(db, makeCache());
+      const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
       await svc.list("org-1", "user-1", { section: "ASSIGNED_TO_ME", limit: 20 } as ListInput);
 
@@ -116,7 +117,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
     it("always includes the caller orgId in the WHERE clause", async () => {
       const ORG = "org-assigned-scope";
       const { db, allWhereArgs } = makeDb();
-      const svc = new NotificationsReadService(db, makeCache());
+      const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
       await svc.list(ORG, "user-1", { section: "ASSIGNED_TO_ME", limit: 20 } as ListInput);
 
@@ -126,7 +127,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
     it("always includes the caller userId in the WHERE clause", async () => {
       const USER = "user-assigned-scope";
       const { db, allWhereArgs } = makeDb();
-      const svc = new NotificationsReadService(db, makeCache());
+      const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
       await svc.list("org-1", USER, { section: "ASSIGNED_TO_ME", limit: 20 } as ListInput);
 
@@ -137,7 +138,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
   describe("APPROVALS section", () => {
     it("uses WORKFLOW category predicate, not a mention or assigned pattern", async () => {
       const { db, allWhereArgs } = makeDb();
-      const svc = new NotificationsReadService(db, makeCache());
+      const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
       await svc.list("org-1", "user-1", { section: "APPROVALS", limit: 20 } as ListInput);
 
@@ -150,7 +151,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
   describe("ALL section", () => {
     it("does not include any mention or assigned predicate", async () => {
       const { db, allWhereArgs } = makeDb();
-      const svc = new NotificationsReadService(db, makeCache());
+      const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
       await svc.list("org-1", "user-1", { section: "ALL", limit: 20 } as ListInput);
 
@@ -166,7 +167,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
 
       for (const section of ["ALL", "MENTIONS", "ASSIGNED_TO_ME", "APPROVALS"] as const) {
         const { db, allWhereArgs } = makeDb();
-        const svc = new NotificationsReadService(db, makeCache());
+        const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
         await svc.list(ORG_A, "user-1", { section, limit: 20 } as ListInput);
 
@@ -183,7 +184,7 @@ describe("NotificationsReadService — inbox section SQL predicates", () => {
 
       for (const section of ["ALL", "MENTIONS", "ASSIGNED_TO_ME", "APPROVALS"] as const) {
         const { db, allWhereArgs } = makeDb();
-        const svc = new NotificationsReadService(db, makeCache());
+        const svc = new NotificationsReadService(db, makeCache(), new NotificationVisibilityRegistry());
 
         await svc.list("org-1", USER_A, { section, limit: 20 } as ListInput);
 

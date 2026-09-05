@@ -7,6 +7,8 @@ import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
 import { EntitlementsService, ModuleStatus } from "./entitlements.service";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { orgModuleListResponseSchema } from "./dto/org-module-response-schema";
 
 const moduleKeyParamSchema = z.object({
   moduleKey: z.string().min(1).max(64).regex(/^[a-z][a-z0-9_-]*$/),
@@ -24,6 +26,7 @@ export class EntitlementsController {
   constructor(private readonly entitlements: EntitlementsService) {}
 
   @Get()
+  @ResponseSchema(orgModuleListResponseSchema)
   @RequirePermission("settings:manage")
   listModules(@CurrentUser() u: CurrentUserContext): Promise<ModuleStatus[]> {
     return this.entitlements.listModules(u.orgId);

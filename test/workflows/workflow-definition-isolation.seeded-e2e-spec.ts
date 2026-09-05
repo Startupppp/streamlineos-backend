@@ -189,4 +189,30 @@ describe("[seeded-e2e] Workflow definitions — RBAC deny and cross-tenant isola
     expect(response.status).toBe(404);
     expect(await nameOf(neighbourWorkflowId)).toBe(NEIGHBOUR_WORKFLOW_NAME);
   });
+
+  it("persists an authorized update and returns it on the next request", async () => {
+    const name = "authorized-home-workflow-rename";
+    const updated = await request(seeded.app.getHttpServer())
+      .patch(`/workflows/${homeWorkflowId}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ name });
+    expect(updated.status).toBe(200);
+    expect(await nameOf(homeWorkflowId)).toBe(name);
+
+    const read = await request(seeded.app.getHttpServer())
+      .get(`/workflows/${homeWorkflowId}`)
+      .set("Authorization", `Bearer ${managerToken}`);
+    expect(read.status).toBe(200);
+    expect(read.body).toMatchObject({ id: homeWorkflowId, name });
+    expect(await nameOf(neighbourWorkflowId)).toBe(NEIGHBOUR_WORKFLOW_NAME);
+  });
+
+  it("rejects unauthenticated mutations without changing the stored definition", async () => {
+    const before = await nameOf(homeWorkflowId);
+    const response = await request(seeded.app.getHttpServer())
+      .patch(`/workflows/${homeWorkflowId}`)
+      .send({ name: "anonymous-rename" });
+    expect(response.status).toBe(401);
+    expect(await nameOf(homeWorkflowId)).toBe(before);
+  });
 });

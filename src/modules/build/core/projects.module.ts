@@ -25,6 +25,7 @@ import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import { BuildDueSweepService } from "./build-due-sweep.service";
 import { BuildNotificationVisibility } from "./build-notification-visibility";
+import { BuildNotificationContextService } from "./build-notification-context.service";
 import { ProjectsTicketsService } from "./projects-tickets.service";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
@@ -84,6 +85,7 @@ import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-c
     BuildTicketStatusChangedConsumerService,
     BuildDueSweepService,
     BuildNotificationVisibility,
+    BuildNotificationContextService,
     ProjectsQueryService,
     ProjectsWriteService,
     ProjectsProvisionService,

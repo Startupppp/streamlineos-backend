@@ -11,6 +11,9 @@ import { JwtKeyringService } from "src/common/auth/jwt-keyring.service";
 import * as schema from "src/db/schema";
 import type { Db } from "src/db/drizzle.module";
 import { assertDisposableDatabase } from "test/helpers/disposable-database";
+import { assertSeededProcessIsolation } from "test/helpers/seeded-process-environment";
+import { PayrollJobsWorkerService } from "src/modules/payroll/jobs/payroll-jobs-worker.service";
+import { PayrollCalendarReminderScheduler } from "src/modules/payroll/insights/payroll-calendar-reminder.scheduler";
 
 export { assertDisposableDatabase };
 
@@ -40,12 +43,16 @@ export interface SeededE2eOptions {
 }
 
 export async function createSeededE2eApp(options: SeededE2eOptions = {}): Promise<SeededE2eApp> {
+  assertSeededProcessIsolation(process.env);
   const ownerUrl = process.env.DATABASE_URL;
   if (!ownerUrl) throw new Error("DATABASE_URL must be set for seeded e2e tests");
   const target = assertDisposableDatabase(ownerUrl);
   if (!target.ok) throw new Error(`[seeded-e2e] ${target.reason}`);
 
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(PayrollJobsWorkerService).useValue({})
+    .overrideProvider(PayrollCalendarReminderScheduler).useValue({})
+    .compile();
   const app = moduleRef.createNestApplication();
   app.useGlobalFilters(new AllExceptionsFilter());
   if (options.mirrorHttpStack === true) {

@@ -20,8 +20,8 @@ export interface PaymentAuditEntry {
 export class PaymentAuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async log(entry: PaymentAuditEntry) {
-    await this.db.insert(paymentAuditEvents).values({
+  async log(entry: PaymentAuditEntry, db: Db = this.db) {
+    await db.insert(paymentAuditEvents).values({
       orgId: entry.orgId,
       actorUserId: entry.actorUserId,
       providerId: entry.providerId ?? null,

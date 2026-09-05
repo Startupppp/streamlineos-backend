@@ -3,6 +3,7 @@ import { notifications, organizationMembers } from "../../db/schema";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import type { Principal } from "../../common/auth/principal";
 import type {
   ListInput,
   SnoozeInput,
@@ -133,8 +134,8 @@ export class NotificationsService {
       });
   }
 
-  list(orgId: string, userId: string, filters: ListInput) {
-    return this.read.list(orgId, userId, filters);
+  list(orgId: string, userId: string, filters: ListInput, principal?: Principal) {
+    return this.read.list(orgId, userId, filters, principal);
   }
 
   unreadCount(orgId: string, userId: string) {

@@ -18,6 +18,12 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  dashboardAnnouncementsResponseSchema,
+  dashboardPersonalResponseSchema,
+  dashboardStatsResponseSchema,
+} from "./dto/dashboard-response-schema";
 import { DashboardStatsService } from "./dashboard-stats.service";
 import { DashboardAvailabilityService } from "./dashboard-availability.service";
 import { DashboardBirthdaysService } from "./dashboard-birthdays.service";
@@ -61,6 +67,7 @@ export class DashboardController {
   }
 
   @Get("announcements")
+  @ResponseSchema(dashboardAnnouncementsResponseSchema)
   @Universal()
   announcementsList(@CurrentUser() u: CurrentUserContext) {
     return this.announcements.getActiveAnnouncements(u.orgId);
@@ -152,6 +159,7 @@ export class DashboardController {
   }
 
   @Get("personal")
+  @ResponseSchema(dashboardPersonalResponseSchema)
   @Universal()
   personal(@CurrentUser() u: CurrentUserContext) {
     return this.personalService.getPersonalDashboard(u);
@@ -174,6 +182,7 @@ export class DashboardController {
   }
 
   @Get("stats")
+  @ResponseSchema(dashboardStatsResponseSchema)
   @Universal()
   stats(@CurrentUser() u: CurrentUserContext) {
     return this.statsService.getDashboardStats(u.orgId, u);

@@ -12,7 +12,7 @@ run against PostgreSQL.
 Run it from `backend` with:
 
 ```sh
-DATABASE_URL=<owner-postgres-url> pnpm test:e2e:seeded -- --runTestsByPath test/kb/kb-page-visibility.seeded-e2e-spec.ts
+DATABASE_URL=<owner-postgres-url> APP_DATABASE_URL=<application-postgres-url> pnpm test:e2e:seeded scratch_e2e test/kb/kb-page-visibility.seeded-e2e-spec.ts
 ```
 
 If `DATABASE_URL` or the migrated pgvector database is unavailable, the test

@@ -206,4 +206,40 @@ describe("[seeded-e2e] Notifications — list contract", () => {
     expect(res.status).toBe(404);
     expect(res.status).not.toBe(403);
   });
+
+  it("continues after the first page without dropping or duplicating equal-time rows", async () => {
+    const first = await request(seeded.app.getHttpServer())
+      .get("/notifications")
+      .query({ limit: 100 })
+      .set("Authorization", `Bearer ${bulkToken}`);
+    expect(first.status).toBe(200);
+    expect(first.body.hasMore).toBe(true);
+    const cursor: unknown = first.body.nextCursor;
+    if (typeof cursor !== "number")
+      throw new Error("Notification continuation must return a numeric cursor");
+
+    const second = await request(seeded.app.getHttpServer())
+      .get("/notifications")
+      .query({ limit: 100, cursor })
+      .set("Authorization", `Bearer ${bulkToken}`);
+    expect(second.status).toBe(200);
+    expect(second.body.hasMore).toBe(false);
+    expect(second.body.nextCursor).toBeNull();
+
+    const ids: number[] = [];
+    for (const response of [first, second]) {
+      const data: unknown = response.body.data;
+      if (!Array.isArray(data)) throw new Error("Notification page data must be an array");
+      for (const item of data) {
+        if (item === null || typeof item !== "object" || !("id" in item) || typeof item.id !== "number")
+          throw new Error("Notification rows must expose numeric ids");
+        ids.push(item.id);
+      }
+    }
+    expect(ids).toHaveLength(105);
+    expect(new Set(ids).size).toBe(105);
+    expect([...ids].sort((a, b) => a - b)).toEqual([...bulkIds].sort((a, b) => a - b));
+    expect(ids).not.toContain(neighbourNotifId);
+    expect(ids).not.toContain(softDeleteId);
+  });
 });

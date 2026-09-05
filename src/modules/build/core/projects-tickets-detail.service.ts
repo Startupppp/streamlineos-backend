@@ -30,6 +30,8 @@ export class ProjectsTicketsDetailService {
   ) {}
 
   async getTicketByKey(u: CurrentUserContext, projectId: number, ticketNumber: number) {
+    const scope = await resolveTicketsScope(this.access, u);
+    if (scope === "none") throw new ProjectsForbiddenTicketException();
     const ticket = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.orgId, u.orgId),
@@ -71,7 +73,6 @@ export class ProjectsTicketsDetailService {
     });
     if (!ticket) throw new ProjectsTicketNotFoundException();
 
-    const scope = await resolveTicketsScope(this.access, u);
     if (scope !== "all") {
       const isAssignee =
         ticket.assignee?.user?.id === u.userId ||
@@ -99,6 +100,8 @@ export class ProjectsTicketsDetailService {
   }
 
   async getTicket(u: CurrentUserContext, ticketId: number) {
+    const scope = await resolveTicketsScope(this.access, u);
+    if (scope === "none") throw new ProjectsForbiddenTicketException();
     const ticket = await this.db.query.tickets.findFirst({
       where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
       with: {
@@ -135,7 +138,6 @@ export class ProjectsTicketsDetailService {
     });
     if (!ticket) throw new ProjectsTicketNotFoundException();
 
-    const scope = await resolveTicketsScope(this.access, u);
     if (scope !== "all") {
       const isAssignee =
         ticket.assignee?.user?.id === u.userId ||
