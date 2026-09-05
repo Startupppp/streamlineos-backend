@@ -118,6 +118,13 @@ export const FIXTURE_KB_PAGE_VISITS_MIN = 35;
  */
 export const FIXTURE_LEAVE_LEDGER_CRON_MIN = 15;
 
+/**
+ * Minimum kb_pages per org whose fts matches 'policy' so `kb-page-id-probe-sdf`
+ * (minRows 30, limit 51) is non-vacuous on every profile. Exceeds the limit so the
+ * function returns a full page of ids and the budget is measurable.
+ */
+export const KB_PROBE_PAGES_MIN = 55;
+
 export const PERF_ORGS = [
   { id: LARGE_ORG, label: "large", weight: 1, name: "Scratch E2E Corp", slug: "scratch-e2e-corp" },
   { id: MID_ORG, label: "mid", weight: 0.1, name: "Scratch Mid Org", slug: "scratch-mid-org" },
@@ -230,6 +237,7 @@ if (process.argv.includes("--self-test")) {
     ["KB_SPACES_MIN exceeds kb-spaces-list minRows (3)", KB_SPACES_MIN >= 3, true],
     ["FIXTURE_KB_PAGE_VISITS_MIN exceeds kb-page-visits-mine minRows (30)", FIXTURE_KB_PAGE_VISITS_MIN >= 30, true],
     ["FIXTURE_LEAVE_LEDGER_CRON_MIN exceeds leave-accrual-ledger-dedup minRows (10)", FIXTURE_LEAVE_LEDGER_CRON_MIN >= 10, true],
+    ["KB_PROBE_PAGES_MIN exceeds search/kb-page-id-probe-sdf limit (51) so function returns full result", KB_PROBE_PAGES_MIN > 51, true],
     ["a weight never collapses a tenant to zero rows", scaled(100, 0.0001, 1) >= 1, true],
     ["weights are proportional", scaled(1000, 0.1, 1), 100],
     ["scale is proportional", scaled(1000, 1, 0.25), 250],
@@ -1299,6 +1307,33 @@ async function seedKb(ctx) {
       [ctx.org, have, need],
     );
   });
+
+  const [probeSpace] = await sql.unsafe(
+    `SELECT id FROM kb_spaces WHERE org_id = $1 ORDER BY id LIMIT 1`,
+    [ctx.org],
+  );
+  if (probeSpace) {
+    await topUp(
+      `${ctx.label} kb_pages probe (kb-page-id-probe-sdf)`,
+      "kb_pages",
+      "org_id = $1 AND deleted_at IS NULL AND fts @@ websearch_to_tsquery('english', 'policy')",
+      [ctx.org],
+      KB_PROBE_PAGES_MIN,
+      async (have, need) => {
+        await sql.unsafe(
+          `INSERT INTO kb_pages (org_id, space_id, title, content, status, visibility, sort_order,
+                                 created_by_id, created_by_membership_id, last_edited_by_id,
+                                 last_edited_by_membership_id, created_at, updated_at)
+           SELECT $1, $2::int, 'Policy Document ' || ($3::int + g), '{}'::jsonb, 'published', 'org',
+                  90000 + $3::int + g, $4, $5::int, $4, $5::int, now(), now()
+           FROM generate_series(1, $6::int) g`,
+          [ctx.org, probeSpace.id, have, ctx.userId, ctx.membership, need],
+        );
+      },
+    );
+  } else {
+    log(`  ${ctx.label} kb_page_probe: no space found — skipping`);
+  }
 
   const [fixturePart] = await sql.unsafe(
     `SELECT ta.membership_id, om.user_id
