@@ -534,42 +534,59 @@ next reader can tell staleness from fact without re-deriving it.
 The cold-build repair is `1c167fdc1`; what it fixed, and the ordering defect
 underneath it, is described in §4.
 
-### Neon — deliberately not applied
+### Neon — still not applied, for a different reason than before
 
-`0580`–`0588` **have not been applied to the shared Neon branch**, and neither
-has `0589` or the reshaped `0352`. This is a decision, not an omission, and the
-reason turned out to be stronger than "somebody might be mid-run":
+**Re-measured 2026-09-05. Two of the three reasons below have changed, and the
+conclusion has not.**
 
-1. **The branch is in use right now.** Six connections, one of them an
-   application named `streamlineos-api` — another session's backend, live
-   against it.
-2. **None of NEO's schema is there.** Probed directly rather than through the
-   bookkeeping: `inv_channel_pools`, `inv_handling_units`, `inv_labor_records`,
-   `inv_kit_components`, `inv_dock_appointments`, `inv_grn_lines.cross_dock_so_id`,
-   `inv_products.measure_mode` and `inv_settings.waveless_picking` are all
-   **absent**.
-3. **The bookkeeping does not describe the branch.** 435 recorded hashes against
-   a 356-entry journal, and 258 entries pending by hash. So `db:migrate` there is
-   not "apply nine files" — it is a schema reconciliation of unknown extent on a
-   database somebody else is using. That is not a call to make unilaterally.
+**The NEO schema is now there.** Probed directly, all eight of the objects this
+section used to list as absent are present: `inv_channel_pools`,
+`inv_handling_units`, `inv_labor_records`, `inv_kit_components`,
+`inv_dock_appointments`, `inv_grn_lines.cross_dock_so_id`,
+`inv_products.measure_mode`, `inv_settings.waveless_picking`. 106 `inv_*` tables.
+Somebody applied them between 2026-08-31 and now. Nothing in this repository
+records who or when, which is its own finding.
 
-Everything in this document was therefore proven on a **local Postgres**:
+**The bookkeeping drifted further.** 685 recorded hashes against a 630-entry
+journal, and **316 entries pending by hash** — up from 258. The objects exist and
+the hashes do not match, so the pending count is measuring files applied by hand
+or edited since, not schema that is missing. `db:migrate` there would still be a
+reconciliation of unknown extent rather than a forward migration.
+
+**The branch is in use right now.** `pg_stat_activity`, 2026-09-05:
 
 ```
-DATABASE_URL=postgres://<you>@localhost:5432/cornerstone_neo16 \
-  node --max-old-space-size=12288 ./node_modules/jest/bin/jest.js \
-  --config ./jest-e2e-seeded.json --forceExit --runInBand \
-  --testPathPattern=neo-golden-path
+streamlineos-api   idle in transaction   3
+streamlineos-api   active                1
+streamlineos-api   idle                  1
 ```
 
-29 tests, green twice consecutively. The cold-build figures come from throwaway
-databases created for the purpose and dropped afterwards.
+Five connections from another session's backend, one of them active and three
+holding open transactions.
 
-One caveat on `cornerstone_neo16` worth knowing before trusting it further: it
-was built by applying migrations file by file continuing past failures, so it
-carries `0000`'s shape of `custom_field_definitions` while running everything
-after it — a state no in-order migration can produce. It is sound for inventory,
-which touches none of that, and it is not a substitute for a cold build.
+**Decision: not applied.** Either reason alone is sufficient; together they are
+not close. Applying a 316-entry reconciliation to a database another process is
+actively transacting against is not a call an agent makes. What a human has to
+decide is whether the hash drift should be reconciled at all, or the recorded
+hashes rebaselined against the current journal — those are different operations
+with different risks, and the answer depends on how the eight NEO objects got
+there, which nothing here records.
+
+Everything in this document was therefore proven on a **local Postgres** built by
+`db:bootstrap` to `REACHED_HEAD 630/630`:
+
+```
+createdb inv_head_0905
+psql -d inv_head_0905 -c "CREATE EXTENSION vector; CREATE EXTENSION pg_trgm;
+  CREATE EXTENSION btree_gist; CREATE EXTENSION pgcrypto; CREATE EXTENSION \"uuid-ossp\";"
+DATABASE_URL=postgres://<you>@localhost:5432/inv_head_0905 pnpm db:bootstrap
+DIRECT_DATABASE_URL=… APP_DB_ROLE=streamline_app APP_DB_PASSWORD=… \
+  node src/scripts/db-bootstrap-app-role.mjs        # non-owner, NOBYPASSRLS
+```
+
+**`.env`'s `DATABASE_URL` points at that shared Neon branch.** Every seeded-spec
+command in this programme overrides it on the command line. A seeded run that
+forgets to is a run against somebody else's live database.
 
 ## 7. Flags, and what off means
 
