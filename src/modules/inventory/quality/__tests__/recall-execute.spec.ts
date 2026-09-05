@@ -177,14 +177,28 @@ const IMPACT: RecallImpact = {
 };
 
 const LEVELS: Row[] = [
-  { productVariantId: 40, locationId: 7, lotId: 1, onHand: "100.0000" },
+  {
+    productVariantId: 40,
+    locationId: 7,
+    lotId: 1,
+    handlingUnitId: 55,
+    ownership: "VENDOR",
+    onHand: "100.0000",
+  },
   // Zero on hand: a hold against nothing is a document with no stock behind it.
-  { productVariantId: 40, locationId: 8, lotId: 1, onHand: "0.0000" },
+  {
+    productVariantId: 40,
+    locationId: 8,
+    lotId: 1,
+    handlingUnitId: null,
+    ownership: "OWNED",
+    onHand: "0.0000",
+  },
 ];
 
 function build(levels: Row[] = LEVELS) {
   const { db, inserts, updates, keys } = fakeDb(levels);
-  const engine = { executeMany: jest.fn(() => Promise.resolve([])) };
+  const engine = { executeManyInTx: jest.fn(() => Promise.resolve([])) };
   const simulation = { simulate: jest.fn(() => Promise.resolve(IMPACT)) };
   const service = new RecallsService(
     db as never,
@@ -220,21 +234,29 @@ describe("R4/D4 — executing a recall", () => {
     const holds = inserts.find((w) => w.table === getTableName(invQualityHolds));
     // Two levels, one of them empty: the empty bin gets no hold.
     expect(holds?.values).toHaveLength(1);
-    expect(holds?.values[0]).toMatchObject({ locationId: 7, quantity: "100.0000" });
+    expect(holds?.values[0]).toMatchObject({
+      locationId: 7,
+      handlingUnitId: 55,
+      ownership: "VENDOR",
+      quantity: "100.0000",
+    });
 
     // The lot flip is what actually stops the goods moving — the allocator
     // refuses any lot whose status is not ACTIVE under every strategy.
-    expect(engine.executeMany).toHaveBeenCalledTimes(1);
-    const [, , commands] = engine.executeMany.mock.calls[0] as unknown as [
+    expect(engine.executeManyInTx).toHaveBeenCalledTimes(1);
+    const [, , , commands] = engine.executeManyInTx.mock.calls[0] as unknown as [
+      unknown,
       string,
       string,
       Array<{ idempotencyKey: string; movements: Array<Record<string, unknown>> }>,
     ];
     expect(commands).toHaveLength(1);
-    expect(commands[0]?.idempotencyKey).toBe("recall:1:lot:1:loc:7");
+    expect(commands[0]?.idempotencyKey).toBe("recall:1:lot:1:loc:7:hu:55:own:VENDOR");
     expect(commands[0]?.movements[0]).toMatchObject({
       transactionType: "QUARANTINE_IN",
       qualityBucket: "QUALITY_HOLD",
+      handlingUnitId: 55,
+      ownership: "VENDOR",
       quantityDelta: "100.0000",
     });
   });
@@ -263,17 +285,9 @@ describe("R4/D4 — executing a recall", () => {
     // The one that used to double: a replayed recall re-inserted every hold.
     expect(countOf(inserts, invQualityHolds)).toBe(1);
 
-    // The engine is still called on the replay, and that is correct: its
-    // commands carry a derived key per (recall, lot, location), so it dedupes
-    // on its own terms and a retry after a crashed first attempt still gets
-    // its movements posted.
-    expect(engine.executeMany).toHaveBeenCalledTimes(2);
-    const [, , replayed] = engine.executeMany.mock.calls[1] as unknown as [
-      string,
-      string,
-      Array<{ idempotencyKey: string }>,
-    ];
-    expect(replayed[0]?.idempotencyKey).toBe("recall:1:lot:1:loc:7");
+    // The quarantine movements now share the recall transaction. A committed
+    // replay returns the stored recall result and does not repost movements.
+    expect(engine.executeManyInTx).toHaveBeenCalledTimes(1);
   });
 
   it("refuses stale evidence before it writes anything", async () => {
@@ -319,7 +333,7 @@ describe("R4/D4 — executing a recall", () => {
     expect(countOf(inserts, invRecallEvents)).toBe(1);
     // The lot still flips to RECALLED — a lot with nothing on the shelf is
     // still a lot nobody may allocate from later.
-    expect(engine.executeMany).not.toHaveBeenCalled();
+    expect(engine.executeManyInTx).not.toHaveBeenCalled();
   });
 });
 

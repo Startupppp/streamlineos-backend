@@ -27,11 +27,13 @@ import { RecallSimulationService, type RecallImpact } from "./recall-simulation.
 /** What the idempotent unit of `create` produces, and replays. */
 interface ExecutedRecall {
   recall: { id: number; recallNumber: string };
-  /** The (lot, location) grains the engine must quarantine, at their on-hand. */
+  /** The exact stock grains the engine quarantined, at their on-hand. */
   quarantine: Array<{
     productVariantId: number;
     locationId: number;
     lotId: number;
+    handlingUnitId: number | null;
+    ownership: "OWNED" | "VENDOR" | "CUSTOMER";
     onHand: string;
   }>;
 }
@@ -60,6 +62,11 @@ function reviveRecall(stored: unknown): ExecutedRecall {
         productVariantId: Number(g.productVariantId),
         locationId: Number(g.locationId),
         lotId: Number(g.lotId),
+        handlingUnitId: g.handlingUnitId == null ? null : Number(g.handlingUnitId),
+        ownership:
+          g.ownership === "VENDOR" || g.ownership === "CUSTOMER"
+            ? g.ownership
+            : "OWNED",
         onHand: String(g.onHand ?? "0"),
       }];
     }),
@@ -180,15 +187,11 @@ export class RecallsService {
    */
   async create(orgId: string, userId: string, input: CreateRecallInput, idempotencyKey: string) {
     // A3/A5/D4. Everything that writes a document — the recall, its lines, the
-    // lot flip and the hold records — sits inside one idempotent unit, so a
+    // lot flip, the hold records and the quarantine movements — sits inside one idempotent unit, so a
     // retried request replays all of it or none of it. It used to cover only
     // the recall row: a retry replayed the document and then inserted a second
     // full set of quality holds against the same stock, which is a recall that
     // looks idempotent from the outside and is not.
-    //
-    // The engine movements stay outside because `executeMany` opens its own
-    // transaction; they carry a derived key per (recall, lot, location) and are
-    // replay-safe on their own terms.
     const executed = await this.db.transaction(async (tx) =>
       runIdempotent(
         tx,
@@ -246,6 +249,8 @@ export class RecallsService {
                 productVariantId: invStockLevels.productVariantId,
                 locationId: invStockLevels.locationId,
                 lotId: invStockLevels.lotId,
+                handlingUnitId: invStockLevels.handlingUnitId,
+                ownership: invStockLevels.ownership,
                 onHand: invStockLevels.onHand,
               })
               .from(invStockLevels)
@@ -258,6 +263,8 @@ export class RecallsService {
                 productVariantId: level.productVariantId,
                 locationId: level.locationId,
                 lotId: level.lotId,
+                handlingUnitId: level.handlingUnitId ?? null,
+                ownership: level.ownership,
                 onHand: level.onHand,
               });
             }
@@ -269,11 +276,39 @@ export class RecallsService {
                   productVariantId: grain.productVariantId,
                   locationId: grain.locationId,
                   lotId: grain.lotId,
+                  handlingUnitId: grain.handlingUnitId,
+                  ownership: grain.ownership,
                   quantity: grain.onHand,
                   reason: `Recall ${recallNumber}`,
                   createdBy: userId,
                 })),
               );
+
+              const recallCommands = quarantine.map(grain => ({
+                idempotencyKey:
+                  `recall:${recall.id}:lot:${grain.lotId}:loc:${grain.locationId}:` +
+                  `hu:${grain.handlingUnitId ?? "none"}:own:${grain.ownership}`,
+                sourceType: "RECALL",
+                sourceId: String(recall.id),
+                // A recall quarantines the goods; it does not make them disappear.
+                // Zeroing ON_HAND as well drove available negative and destroyed the
+                // count of what is physically on the shelf — which is exactly the
+                // number a recall needs to report.
+                movements: [
+                  {
+                    transactionType: "QUARANTINE_IN",
+                    productVariantId: grain.productVariantId,
+                    locationId: grain.locationId,
+                    lotId: grain.lotId,
+                    handlingUnitId: grain.handlingUnitId,
+                    ownership: grain.ownership,
+                    quantityDelta: grain.onHand,
+                    qualityBucket: "QUALITY_HOLD" as const,
+                  },
+                ],
+              }));
+
+              await this.engine.executeManyInTx(tx, orgId, userId, recallCommands);
             }
           }
 
@@ -316,23 +351,6 @@ export class RecallsService {
         (stored) => reviveRecall(stored),
       ),
     );
-
-    const recallCommands = executed.quarantine.map(grain => ({
-      idempotencyKey: `recall:${executed.recall.id}:lot:${grain.lotId}:loc:${grain.locationId}`,
-      sourceType: "RECALL",
-      sourceId: String(executed.recall.id),
-      // A recall quarantines the goods; it does not make them disappear.
-      // Zeroing ON_HAND as well drove available negative and destroyed the
-      // count of what is physically on the shelf — which is exactly the
-      // number a recall needs to report.
-      movements: [
-        { transactionType: "QUARANTINE_IN", productVariantId: grain.productVariantId, locationId: grain.locationId, lotId: grain.lotId, quantityDelta: grain.onHand, qualityBucket: "QUALITY_HOLD" as const },
-      ],
-    }));
-
-    if (recallCommands.length > 0) {
-      await this.engine.executeMany(orgId, userId, recallCommands);
-    }
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invQualityRecallsNamespace(orgId));
     return this.findOne(orgId, executed.recall.id);

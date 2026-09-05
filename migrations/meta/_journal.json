@@ -4411,6 +4411,13 @@
       "when": 1803000010002,
       "tag": "0909_build_common_actor_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 630,
+      "version": "7",
+      "when": 1803000010003,
+      "tag": "0910_inv_quality_hold_stock_grain",
+      "breakpoints": true
     }
   ]
 }

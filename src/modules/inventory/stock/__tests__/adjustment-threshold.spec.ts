@@ -39,6 +39,17 @@ export function makeTx(findFirst: jest.Mock) {
   return {
     insert: jest.fn().mockReturnValue({ values }),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
+    select: jest.fn().mockImplementation(() => {
+      const chain: Record<string, unknown> = {};
+      for (const link of ["from", "where", "limit"]) {
+        chain[link] = jest.fn(() => chain);
+      }
+      chain["then"] = async (
+        resolve: (rows: unknown[]) => unknown,
+        reject: (reason: unknown) => unknown,
+      ) => Promise.resolve(findFirst()).then((row) => resolve(row ? [row] : []), reject);
+      return chain;
+    }),
     // D8. The posting reads its own cost back off the ledger rows the engine
     // just wrote, so the transaction has to answer that too.
     execute: jest.fn().mockResolvedValue([{ value: "42.0000" }]),

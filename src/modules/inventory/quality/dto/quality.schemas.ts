@@ -69,6 +69,8 @@ export const createHoldSchema = z.object({
   locationId: z.number().int(),
   lotId: z.number().int().optional(),
   serialId: z.number().int().optional(),
+  handlingUnitId: z.number().int().nullable().optional(),
+  ownership: z.enum(["OWNED", "VENDOR", "CUSTOMER"]).optional(),
   quantity: z.string().regex(/^\d+(\.\d+)?$/),
   reason: z.string().min(1),
 }).strict();

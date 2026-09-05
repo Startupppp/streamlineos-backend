@@ -4,11 +4,13 @@ import {
   invQualityInspectionStatusEnum, invQualityHoldStatusEnum,
   invQualityDispositionEnum, invRecallStatusEnum,
   invInspectionSamplingMethodEnum, invInspectionPlanVersionStatusEnum,
+  invOwnershipEnum,
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { invProductVariants, invProducts, invCategories } from "./core";
 import { invLocations } from "./warehouses";
 import { invLots, invSerialNumbers } from "./traceability";
+import { invHandlingUnits } from "./handling-units";
 
 /**
  * D3 — which arrivals have to be looked at, and how hard.
@@ -196,6 +198,8 @@ export const invQualityHolds = pgTable("inv_quality_holds", {
   locationId: integer("location_id").references(() => invLocations.id),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
+  handlingUnitId: integer("handling_unit_id"),
+  ownership: invOwnershipEnum("ownership").default("OWNED").notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
   reason: text("reason").notNull(),
   status: invQualityHoldStatusEnum("status").default("ACTIVE").notNull(),
@@ -208,8 +212,17 @@ export const invQualityHolds = pgTable("inv_quality_holds", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_inv_quality_holds_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.handlingUnitId],
+    foreignColumns: [invHandlingUnits.orgId, invHandlingUnits.id],
+    name: "fk_inv_quality_holds_handling_unit_org",
+  }),
   index("idx_inv_qh_org_status").on(table.orgId, table.status),
   index("idx_inv_qh_variant").on(table.orgId, table.productVariantId),
+  index("idx_inv_qh_org_hu").on(table.orgId, table.handlingUnitId)
+    .where(sql`${table.handlingUnitId} IS NOT NULL`),
+  index("idx_inv_qh_org_ownership").on(table.orgId, table.ownership, table.productVariantId)
+    .where(sql`ownership <> 'OWNED'`),
 ]);
 
 export const invRecallEvents = pgTable("inv_recall_events", {
