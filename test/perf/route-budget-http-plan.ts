@@ -119,6 +119,7 @@ export function buildRoutePlan(fx: RouteFixtures): RoutePlanEntry[] {
     { key: "GET /build/roadmap", method: "get", path: "/build/roadmap", auth: "member" },
     { key: "GET /build/feedback", method: "get", path: "/build/feedback", auth: "member" },
     { key: "GET /build/changelog", method: "get", path: "/build/changelog", auth: "member" },
+    { key: "GET /build/all-work", method: "get", path: "/build/all-work", auth: "member" },
 
     { key: "GET /dashboard/my-issues", method: "get", path: "/dashboard/my-issues", auth: "member" },
     { key: "GET /dashboard/announcements", method: "get", path: "/dashboard/announcements", auth: "member" },
@@ -180,6 +181,7 @@ export function buildRoutePlan(fx: RouteFixtures): RoutePlanEntry[] {
     { key: "GET /leads", method: "get", path: "/leads", auth: "member" },
     { key: "GET /deals", method: "get", path: "/deals", auth: "member" },
     { key: "GET /clients", method: "get", path: "/clients", auth: "member" },
+    { key: "GET /party/parties", method: "get", path: "/party/parties", auth: "member" },
     {
       key: "POST /leads",
       method: "post",
@@ -258,15 +260,22 @@ export function buildRoutePlan(fx: RouteFixtures): RoutePlanEntry[] {
   for (const job of CRON_JOBS)
     entries.push({ key: `GET /cron/${job}`, method: "get", path: `/cron/${job}`, auth: "cron" });
 
+  for (const job of CRON_JOBS_ALSO_POST)
+    entries.push({ key: `POST /cron/${job}`, method: "post", path: `/cron/${job}`, auth: "cron" });
+
   return entries;
 }
 
 /**
- * The twelve worker batches, in manifest order.
+ * All declared worker batches that carry a budget entry in contracts/route-budgets.json.
  *
- * A cron route is `@Public()` and gated on `CRON_SECRET`, so it is reachable from the harness with
- * a header rather than a token — and unlike every other entry it iterates tenants rather than
+ * A cron route is `@Public()` and gated on `CRON_SECRET`, so it is reachable from the harness
+ * with a header rather than a token — and unlike every other entry it iterates tenants rather than
  * serving one, which is exactly why its budget is a batch budget and not a route budget.
+ *
+ * Every entry here must have a corresponding `GET /cron/<name>` budget with `kind: worker-batch`
+ * in contracts/route-budgets.json. The list is maintained here alongside the plan so that a newly
+ * budgeted batch is visible in a single diff rather than split across two files.
  */
 export const CRON_JOBS = [
   "notification-outbox-flush",
@@ -276,9 +285,29 @@ export const CRON_JOBS = [
   "email-outbox-flush",
   "notifications-retention-sweep",
   "notifications-retention-detach",
+  "notification-outbox-retention-sweep",
   "monthly-leave-reset",
   "build-due-sweep",
   "ai-reservations-sweep",
   "idempotency-fence-sweep",
   "storage-sweep",
+  "outbox-events-retention-sweep",
+  "calendar-provider-sync-sweep",
+  "announcements-retention-sweep",
+  "mail-metadata-retention-sweep",
+  "helpdesk-retention-sweep",
+  "retention-delete-sweep",
+  "ai-usage-retention-sweep",
+  "build-retention-prune",
+  "kb-chat-history-purge",
+  "kb-chunk-retention-sweep",
+  "hr-policy-retention-sweep",
+  "kb-telemetry-retention-sweep",
 ] as const;
+
+/**
+ * Worker batches whose controller exposes BOTH a GET and a POST method for the same handler.
+ * Each name here must also appear in CRON_JOBS (for the GET entry) and must have a corresponding
+ * `POST /cron/<name>` budget entry in contracts/route-budgets.json.
+ */
+export const CRON_JOBS_ALSO_POST = ["retention-delete-sweep"] as const;

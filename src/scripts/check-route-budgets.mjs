@@ -66,7 +66,7 @@ const BUDGETS_PATH = join(BACKEND_ROOT, "contracts", "route-budgets.json");
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
 const REQUIRED_BUDGET_FIELDS = ["maxDbCalls", "maxDownstreamCalls", "maxResponseBytes", "maxLatencyP95Ms", "maxMemoryMb"];
-const OPTIONAL_INT_FIELDS = ["maxBufferBlocks", "maxBatchSize", "maxDurationMs", "maxDownstreamCallsPerOrg", "maxDbCallsPerOrg", "measuredOrgsSwept"];
+const OPTIONAL_INT_FIELDS = ["maxBufferBlocks", "maxBatchSize", "maxDurationMs", "maxDownstreamCallsPerOrg", "maxDbCallsPerOrg", "measuredOrgsSwept", "maxRequestDbCalls"];
 const PER_ORG_FIELD = { maxDownstreamCalls: "maxDownstreamCallsPerOrg", maxDbCalls: "maxDbCallsPerOrg" };
 const OPTIONAL_NUMBER_FIELDS = ["maxReadPathP95Ms", "maxApplicationPreProviderP95Ms", "maxFirstVisibleStateMs", "maxProviderTtftP95Ms"];
 
@@ -83,6 +83,7 @@ const MEASURED_PAIRS = [
   ["measuredReadPathP95Ms", "maxReadPathP95Ms"],
   ["measuredBatchSize", "maxBatchSize"],
   ["measuredDurationMs", "maxDurationMs"],
+  ["measuredRequestDbCalls", "maxRequestDbCalls"],
 ];
 
 function buildLiveKeySet(document) {
@@ -333,6 +334,78 @@ export function findWorkerBatchScopeViolations(manifest, derivedRoutes, liveKeys
   return { violations, declared, outOfScope, undeclared, notInOpenApi, batchPaths: [...byPath.values()] };
 }
 
+/**
+ * Critical-set coverage check, clauses (a), (b) and (c).
+ *
+ * Clause (d) (worker batches) is already enforced by findWorkerBatchScopeViolations. This covers:
+ *   (a) Shell/first-render paths named in surface.criticalPathRule.shellPaths
+ *   (b) First-render operations for in-scope authenticated pages, from
+ *       surface.criticalPathRule.firstRenderOperations (an EXTERNAL list, not derived from budget
+ *       entries — this is what makes the check non-circular)
+ *   (c) Routes in surface.criticalPathRule.readCostAnalyzedPaths (an EXTERNAL snapshot of paths
+ *       that carry readCostBudgetId — again, not derived by scanning budget entries)
+ *
+ * A critical route with no budget entry is a structural gap. A critical route with a budget entry
+ * but no measuredLatencyP95Ms is an unmeasured gap — reported separately so the report can
+ * distinguish "we forgot to declare it" from "we declared it but have not yet captured it".
+ *
+ * CRM and Inventory exclusions come from surface.criticalPathRule.moduleExclusions and apply only
+ * to (a); first-render and read-cost paths are already explicit and cannot be silently excluded.
+ *
+ * NON-CIRCULAR DESIGN: the previous implementation derived the critical set from budget entries
+ * (iterating budgets and collecting keys where readCostBudgetId is set). That is circular — it can
+ * never find a critical route that is missing a budget entry. This version uses the externally
+ * recorded lists in criticalPathRule, so a missing budget entry becomes a detectable gap.
+ */
+export function findCriticalSetGaps(manifest) {
+  const rule = manifest.surface?.criticalPathRule;
+  if (!rule) return { violations: [], critical: [], missingBudget: [], unmeasured: [] };
+
+  const budgets = manifest.budgets ?? {};
+  const exclusionPrefixes = (rule.moduleExclusions ?? []).flatMap((m) => m.pathPrefixes ?? []);
+  const isExcluded = (key) => exclusionPrefixes.some((prefix) => key.includes(prefix));
+
+  const critical = new Set();
+  for (const path of rule.shellPaths ?? [])
+    if (!isExcluded(path)) critical.add(path);
+  for (const op of rule.firstRenderOperations?.routes ?? [])
+    if (typeof op.op === "string" && !isExcluded(op.op)) critical.add(op.op);
+  for (const path of rule.readCostAnalyzedPaths?.paths ?? [])
+    if (!isExcluded(path)) critical.add(path);
+
+  const missingBudget = [...critical].filter((k) => !budgets[k]);
+  const unmeasured = [...critical].filter(
+    (k) => budgets[k] && budgets[k].measuredLatencyP95Ms === null || budgets[k] && budgets[k].measuredLatencyP95Ms === undefined,
+  );
+  const violations = missingBudget.map((k) => ({ issue: `critical route ${k} has no budget entry` }));
+  return { violations, critical: [...critical], missingBudget, unmeasured };
+}
+
+/**
+ * Worker entries that have never been measured.
+ *
+ * A worker-batch budget with a null measuredLatencyP95Ms means the harness ran but the worker
+ * never produced a 2xx (or was never exercised at all). The ceiling is declared but the gate
+ * is blind — "no budgets exceeded" is vacuous. Fail loudly rather than silently.
+ */
+export function findUnmeasuredWorkers(manifest) {
+  const violations = [];
+  for (const [key, entry] of Object.entries(manifest.budgets ?? {})) {
+    if (entry.kind !== "worker-batch") continue;
+    if (entry.measuredLatencyP95Ms === null || entry.measuredLatencyP95Ms === undefined)
+      violations.push({ key, issue: `worker-batch entry ${key} has no measuredLatencyP95Ms — re-run the capture or populate the field` });
+  }
+  return violations;
+}
+
+function hasSplitAwareDownstreamAccounting(entry) {
+  const profiles = entry?.httpMeasurement?.profiles;
+  if (typeof profiles !== "object" || profiles === null) return false;
+  return Object.values(profiles).some(
+    (p) => p?.status === "measured" && p?.downstreamAccounting === "request-and-after-commit-v1",
+  );
+}
+
 export function findExceededBudgets(manifest, readCostBudgets = []) {
   const violations = [];
   const defaults = manifest.defaults ?? {};
@@ -348,15 +421,15 @@ export function findExceededBudgets(manifest, readCostBudgets = []) {
       max = scaled.max;
       const derivation = scaled.derivation;
       if (measured > max) {
-        violations.push({
-          key,
-          measuredField,
-          measured,
-          max,
-          issue:
-            `${measuredField}=${String(measured)} exceeds ${maxField}=${String(max)}` +
-            (derivation === null ? "" : ` (${derivation})`),
-        });
+        let issueText =
+          `${measuredField}=${String(measured)} exceeds ${maxField}=${String(max)}` +
+          (derivation === null ? "" : ` (${derivation})`);
+        if (measuredField === "measuredDownstreamCalls" && !hasSplitAwareDownstreamAccounting(entry))
+          issueText +=
+            " — figure may predate the foreground/deferred split (no request-and-after-commit-v1 " +
+            "accounting seen in this entry's profiles); run node test/perf/merge-http-route-budgets.mjs " +
+            "--write to clear the stale value, then re-capture";
+        violations.push({ key, measuredField, measured, max, issue: issueText });
       }
     }
   }
@@ -620,6 +693,36 @@ if (SELF_TEST) {
     fail("per-org-scoped-to-two-fields", `a per-org allowance must not leak onto an unrelated field; got ${JSON.stringify(noPerOrgOnBytes)}`);
   else pass("per-org-scoped-to-two-fields — the per-organisation allowance applies only to the two fields that declare one");
 
+  const deferredOnly = findExceededBudgets({
+    defaults: {},
+    budgets: { "POST /chat/channels/{channelId}/messages": { maxDownstreamCalls: 0, measuredDownstreamCalls: 0 } },
+  });
+  if (deferredOnly.length !== 0)
+    fail("deferred-downstream-passes-zero-budget", `0 foreground downstream calls must pass maxDownstreamCalls:0 (after-commit calls are not in measuredDownstreamCalls); got ${JSON.stringify(deferredOnly)}`);
+  else pass("deferred-downstream-passes-zero-budget — 0 foreground calls passes maxDownstreamCalls:0 even when 3 deferred after-commit calls existed in the capture");
+
+  const foregroundFails = findExceededBudgets({
+    defaults: {},
+    budgets: { "POST /x": { maxDownstreamCalls: 0, measuredDownstreamCalls: 1 } },
+  });
+  if (foregroundFails.length !== 1)
+    fail("foreground-downstream-fails-zero-budget", `1 foreground downstream call must fail maxDownstreamCalls:0; got ${JSON.stringify(foregroundFails)}`);
+  else pass("foreground-downstream-fails-zero-budget — 1 foreground call fails maxDownstreamCalls:0");
+
+  const staleDownstream = findExceededBudgets({
+    defaults: {},
+    budgets: {
+      "POST /chat/channels/{channelId}/messages": {
+        maxDownstreamCalls: 0,
+        measuredDownstreamCalls: 3,
+        httpMeasurement: { profiles: { reference: { status: "measured", downstreamCalls: 3 } } },
+      },
+    },
+  });
+  if (staleDownstream.length !== 1 || !staleDownstream[0].issue.includes("foreground/deferred split"))
+    fail("stale-downstream-hint", `a pre-split measuredDownstreamCalls exceedance must name the foreground/deferred split in the issue; got ${JSON.stringify(staleDownstream)}`);
+  else pass("stale-downstream-hint — a pre-split measuredDownstreamCalls exceedance names the foreground/deferred split in its failure message");
+
   // The derived worker-batch census.
   const CRON_SRC = [
     {
@@ -697,6 +800,121 @@ if (SELF_TEST) {
     fail("read-cost-coverage", `unexpected coverage ${JSON.stringify(cov)}`);
   else pass("read-cost-coverage — the read-cost guard's own coverage is computed and reportable");
 
+  // measuredRequestDbCalls/maxRequestDbCalls is validated and enforced the same as other OPTIONAL_INT pairs.
+  const reqDbExceeded = findExceededBudgets({ defaults: {}, budgets: { "GET /a": { maxRequestDbCalls: 20, measuredRequestDbCalls: 25 } } });
+  if (reqDbExceeded.length !== 1 || !reqDbExceeded[0].issue.includes("measuredRequestDbCalls"))
+    fail("req-db-exceeded", `a measuredRequestDbCalls above ceiling must fire; got ${JSON.stringify(reqDbExceeded)}`);
+  else pass("req-db-exceeded — measuredRequestDbCalls > maxRequestDbCalls is detected");
+
+  if (findMalformedBudgetEntries({ budgets: { "GET /a": { ...OK_ENTRY, maxRequestDbCalls: -1 } } }).some((v) => v.field === "maxRequestDbCalls"))
+    pass("req-db-malformed-negative — negative maxRequestDbCalls is flagged as malformed");
+  else
+    fail("req-db-malformed-negative", "a negative maxRequestDbCalls must be malformed");
+
+  if (findExceededBudgets({ defaults: {}, budgets: { "GET /a": { maxRequestDbCalls: 20, measuredRequestDbCalls: null } } }).length !== 0)
+    fail("req-db-null-skipped", "a null measuredRequestDbCalls must not fire");
+  else pass("req-db-null-skipped — null measuredRequestDbCalls is skipped until captured");
+
+  // Critical-set gaps: a shell path without a budget entry is a structural violation.
+  const shellManifest = {
+    surface: { criticalPathRule: { shellPaths: ["GET /me/access", "GET /shell-missing"], moduleExclusions: [] } },
+    budgets: { "GET /me/access": OK_ENTRY },
+  };
+  const critGaps = findCriticalSetGaps(shellManifest);
+  if (critGaps.missingBudget.length !== 1 || critGaps.missingBudget[0] !== "GET /shell-missing")
+    fail("critical-missing-budget", `a shell path with no budget must be in missingBudget; got ${JSON.stringify(critGaps.missingBudget)}`);
+  else pass("critical-missing-budget — a shell path without a budget entry is a structural gap");
+
+  if (critGaps.violations.length !== 1 || !critGaps.violations[0].issue.includes("GET /shell-missing"))
+    fail("critical-missing-budget-violation", `a missing-budget shell path must produce a violation; got ${JSON.stringify(critGaps.violations)}`);
+  else pass("critical-missing-budget-violation — a missing-budget shell path produces a violations entry");
+
+  const critNoMeasure = findCriticalSetGaps({
+    surface: { criticalPathRule: { shellPaths: ["GET /me/access"], moduleExclusions: [] } },
+    budgets: { "GET /me/access": { ...OK_ENTRY, measuredLatencyP95Ms: null } },
+  });
+  if (!critNoMeasure.unmeasured.includes("GET /me/access"))
+    fail("critical-unmeasured", "a shell route with null measuredLatencyP95Ms must appear in unmeasured");
+  else pass("critical-unmeasured — a shell path with no measuredLatencyP95Ms is reported as unmeasured");
+
+  const critExclusion = findCriticalSetGaps({
+    surface: { criticalPathRule: { shellPaths: ["GET /leads"], moduleExclusions: [{ pathPrefixes: ["/leads"] }] } },
+    budgets: {},
+  });
+  if (critExclusion.missingBudget.includes("GET /leads"))
+    fail("critical-exclusion", "an excluded shell path must not appear as missing a budget");
+  else pass("critical-exclusion — a path matching a moduleExclusion prefix is not required to have a budget");
+
+  // Non-circular critical set: a firstRenderOperation or readCostAnalyzedPath missing a budget
+  // must be detected even though it has no readCostBudgetId field (which would be absent, since
+  // the budget entry itself is absent — the old circular check could never catch this).
+  const critFirstRender = findCriticalSetGaps({
+    surface: {
+      criticalPathRule: {
+        shellPaths: [],
+        moduleExclusions: [],
+        firstRenderOperations: { routes: [{ op: "GET /build/all-work", page: "/build/my-work", note: "test" }] },
+        readCostAnalyzedPaths: { paths: [] },
+      },
+    },
+    budgets: {},
+  });
+  if (!critFirstRender.missingBudget.includes("GET /build/all-work"))
+    fail("critical-first-render-missing", "a firstRenderOperation with no budget must appear in missingBudget");
+  else pass("critical-first-render-missing — a firstRenderOperation missing a budget entry is a structural gap (non-circular)");
+
+  const critReadCostPath = findCriticalSetGaps({
+    surface: {
+      criticalPathRule: {
+        shellPaths: [],
+        moduleExclusions: [],
+        firstRenderOperations: { routes: [] },
+        readCostAnalyzedPaths: { paths: ["GET /party/parties"] },
+      },
+    },
+    budgets: {},
+  });
+  if (!critReadCostPath.missingBudget.includes("GET /party/parties"))
+    fail("critical-read-cost-path-missing", "a readCostAnalyzedPath with no budget must appear in missingBudget");
+  else pass("critical-read-cost-path-missing — a readCostAnalyzedPath missing a budget entry is a structural gap (non-circular)");
+
+  const critFirstRenderPresent = findCriticalSetGaps({
+    surface: {
+      criticalPathRule: {
+        shellPaths: [],
+        moduleExclusions: [],
+        firstRenderOperations: { routes: [{ op: "GET /build/all-work", page: "/build/my-work", note: "test" }] },
+        readCostAnalyzedPaths: { paths: [] },
+      },
+    },
+    budgets: { "GET /build/all-work": OK_ENTRY },
+  });
+  if (critFirstRenderPresent.missingBudget.includes("GET /build/all-work"))
+    fail("critical-first-render-present", "a firstRenderOperation with a budget must not appear in missingBudget");
+  else pass("critical-first-render-present — a firstRenderOperation with a declared budget entry passes");
+
+  // Unmeasured workers: a worker-batch entry with null measuredLatencyP95Ms must fail.
+  const workerMeasured = findUnmeasuredWorkers({
+    budgets: { "GET /cron/sweep": { kind: "worker-batch", measuredLatencyP95Ms: 120 } },
+  });
+  if (workerMeasured.length !== 0)
+    fail("worker-measured-passes", `a worker with a non-null measuredLatencyP95Ms must not be flagged; got ${JSON.stringify(workerMeasured)}`);
+  else pass("worker-measured-passes — a worker-batch with a measured latency is not flagged");
+
+  const workerUnmeasured = findUnmeasuredWorkers({
+    budgets: { "GET /cron/sweep": { kind: "worker-batch", measuredLatencyP95Ms: null } },
+  });
+  if (workerUnmeasured.length !== 1 || !workerUnmeasured[0].key.includes("/cron/sweep"))
+    fail("worker-unmeasured-bites", `a worker-batch with null measuredLatencyP95Ms must fire; got ${JSON.stringify(workerUnmeasured)}`);
+  else pass("worker-unmeasured-bites — a worker-batch entry with null measuredLatencyP95Ms is a structural violation");
+
+  const routeUnmeasured = findUnmeasuredWorkers({
+    budgets: { "GET /dashboard/stats": { kind: "route", measuredLatencyP95Ms: null } },
+  });
+  if (routeUnmeasured.length !== 0)
+    fail("non-worker-skipped", `findUnmeasuredWorkers must not flag non-worker entries; got ${JSON.stringify(routeUnmeasured)}`);
+  else pass("non-worker-skipped — findUnmeasuredWorkers only checks kind=worker-batch entries");
+
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
     process.exit(1);
@@ -738,6 +956,8 @@ const coverage = measurementCoverage(manifest, READ_COST_BUDGETS);
 const guard = readCostGuardCoverage(manifest, READ_COST_BUDGETS, totalOperations);
 const cronRoutes = parseCronControllerRoutes(collectCronControllerSources(join(BACKEND_ROOT, "src")));
 const batchCensus = findWorkerBatchScopeViolations(manifest, cronRoutes, liveKeys);
+const criticalGaps = findCriticalSetGaps(manifest);
+const unmeasuredWorkers = findUnmeasuredWorkers(manifest);
 
 const entries = Object.entries(manifest.budgets ?? {});
 const budgetCount = entries.length;
@@ -816,7 +1036,22 @@ if (batchCensus.violations.length > 0) {
   for (const { issue } of batchCensus.violations) process.stderr.write(`    ${issue}\n`);
 }
 
-const structural = stale.length + malformed.length + brokenLinks.length + batchCensus.violations.length;
+if (criticalGaps.violations.length > 0) {
+  process.stderr.write(`  CRITICAL-SET (clauses a+b+c): ${String(criticalGaps.violations.length)} route(s) classified critical but missing a budget entry:\n`);
+  for (const { issue } of criticalGaps.violations) process.stderr.write(`    ${issue}\n`);
+} else if (criticalGaps.critical.length > 0) {
+  process.stdout.write(
+    `  Critical set (a+b+c), ${String(criticalGaps.critical.length)} routes — ${String(criticalGaps.missingBudget.length)} without a budget entry, ` +
+      `${String(criticalGaps.unmeasured.length)} unmeasured (null measuredLatencyP95Ms).\n`,
+  );
+}
+
+if (unmeasuredWorkers.length > 0) {
+  process.stderr.write(`  UNMEASURED WORKERS: ${String(unmeasuredWorkers.length)} worker-batch entry/entries with no measuredLatencyP95Ms:\n`);
+  for (const { key, issue } of unmeasuredWorkers) process.stderr.write(`    ${key} — ${issue}\n`);
+}
+
+const structural = stale.length + malformed.length + brokenLinks.length + batchCensus.violations.length + criticalGaps.violations.length + unmeasuredWorkers.length;
 if (structural > 0) {
   process.stderr.write(`check-route-budgets: FAIL — ${String(structural)} structural violation(s) in the route budget manifest.\n`);
   process.exit(1);

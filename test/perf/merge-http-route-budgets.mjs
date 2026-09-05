@@ -56,6 +56,20 @@ export const HTTP_FIELDS = [
   { measured: "measuredDownstreamCalls", declared: "declaredDownstreamCalls", ceiling: "maxDownstreamCalls", read: (m) => m.downstreamAccounting === "request-and-after-commit-v1" ? m.downstreamCalls ?? null : null },
   { measured: "measuredResponseBytes", declared: "declaredResponseBytes", ceiling: "maxResponseBytes", read: (m) => m.responseBytes ?? null },
   { measured: "measuredMemoryMb", declared: "declaredMemoryMb", ceiling: "maxMemoryMb", read: (m) => m.memoryMb ?? null },
+  {
+    measured: "measuredRequestDbCalls",
+    declared: "declaredRequestDbCalls",
+    ceiling: "maxRequestDbCalls",
+    read: (m) => m.requestDbCalls ?? null,
+  },
+  { measured: "measuredLatencyP50Ms", declared: null, ceiling: null, read: (m) => m.latencyMs?.p50 ?? null },
+  { measured: "measuredLatencyP99Ms", declared: null, ceiling: null, read: (m) => m.latencyMs?.p99 ?? null },
+  { measured: "measuredMemoryMbP50", declared: null, ceiling: null, read: (m) => m.memoryMbPercentiles?.p50 ?? null },
+  { measured: "measuredMemoryMbP95", declared: null, ceiling: null, read: (m) => m.memoryMbPercentiles?.p95 ?? null },
+  { measured: "measuredMemoryMbP99", declared: null, ceiling: null, read: (m) => m.memoryMbPercentiles?.p99 ?? null },
+  { measured: "measuredResponseBytesP50", declared: null, ceiling: null, read: (m) => m.responseBytesPercentiles?.p50 ?? null },
+  { measured: "measuredResponseBytesP95", declared: null, ceiling: null, read: (m) => m.responseBytesPercentiles?.p95 ?? null },
+  { measured: "measuredResponseBytesP99", declared: null, ceiling: null, read: (m) => m.responseBytesPercentiles?.p99 ?? null },
 ];
 
 export const NEVER_WRITTEN = {
@@ -159,6 +173,8 @@ export function planRoute(key, budget, slots) {
             deferredDownstreamTargets: s.deferredDownstreamTargets ?? null,
             responseBytes: s.responseBytes ?? null,
             memoryMb: s.memoryMb ?? null,
+            memoryMbPercentiles: s.memoryMbPercentiles ?? null,
+            responseBytesPercentiles: s.responseBytesPercentiles ?? null,
             requestDbCalls: s.requestDbCalls ?? null,
             gucCalls: s.gucCalls ?? null,
             prdCeilingMs: s.prdCeilingMs ?? null,
@@ -415,10 +431,12 @@ function selfTest() {
     deferredFailures: 0,
     responseBytes: 900,
     memoryMb: 3,
+    memoryMbPercentiles: { p50: 2, p95: 3, p99: 3, min: 1, max: 3 },
+    responseBytesPercentiles: { p50: 800, p95: 900, p99: 900, min: 700, max: 900 },
     overPrdCeiling: false,
     ...over,
   });
-  const budget = { maxLatencyP95Ms: 500, maxDownstreamCalls: 0, maxResponseBytes: 1000, maxMemoryMb: 64, maxDbCalls: 3, measuredDbCalls: 3 };
+  const budget = { maxLatencyP95Ms: 500, maxDownstreamCalls: 0, maxResponseBytes: 1000, maxMemoryMb: 64, maxRequestDbCalls: 20, maxDbCalls: 3, measuredDbCalls: 3 };
 
   // --- the capture-wide refusals -------------------------------------------------------------
   const goodCapture = {
@@ -451,7 +469,7 @@ function selfTest() {
 
   // --- the per-route decision ----------------------------------------------------------------
   const measured = planRoute("GET /x", budget, [slot({})]);
-  check("a measured slot fills all four HTTP fields", HTTP_FIELDS.every((f) => typeof measured.fields[f.measured] === "number"));
+  check("a measured slot fills all thirteen HTTP fields including measuredRequestDbCalls", HTTP_FIELDS.every((f) => typeof measured.fields[f.measured] === "number"));
   check("measuredDbCalls is never among the written fields", measured.fields.measuredDbCalls === undefined);
   check("deferred calls are retained outside the request ceiling", measured.http.profiles.reference.deferredDownstreamCalls === 3 && measured.fields.measuredDownstreamCalls === 0);
   const legacyWindow = planRoute("GET /x", budget, [slot({ downstreamAccounting: undefined, downstreamCalls: 3 })]);
@@ -460,6 +478,7 @@ function selfTest() {
   check("the request statement count is recorded under its own name", measured.http.requestDbCalls === 12);
   check("the tenant-GUC statements stay separate", measured.http.gucCalls === 3);
   check("the note explaining why measuredDbCalls is untouched travels with the entry", measured.http.requestDbCallsNote === NEVER_WRITTEN.why);
+  check("measuredRequestDbCalls is written from requestDbCalls so the full request count is compared to maxRequestDbCalls", measured.fields.measuredRequestDbCalls === 12);
 
   const twoTenants = planRoute("GET /x", budget, [slot({}), slot({ profile: "minority", tenant: "t2", responseBytes: 5000, latencyMs: { p50: 1, p95: 2, p99: 3 } })]);
   check("the WORST profile wins per field, not the reference one", twoTenants.fields.measuredResponseBytes === 5000);
@@ -507,7 +526,12 @@ function selfTest() {
   check("the ceiling digest moves when a ceiling moves", ceilingDigest({ a: { maxDbCalls: 1 } }) !== ceilingDigest({ a: { maxDbCalls: 2 } }));
   check("the ceiling digest is stable across key order", ceilingDigest({ a: { maxDbCalls: 1, maxMemoryMb: 2 } }) === ceilingDigest({ a: { maxMemoryMb: 2, maxDbCalls: 1 } }));
 
-  const total = 27;
+  check("measuredLatencyP50Ms is populated from latencyMs.p50", measured.fields.measuredLatencyP50Ms === 5);
+  check("measuredLatencyP99Ms is populated from latencyMs.p99", measured.fields.measuredLatencyP99Ms === 12);
+  check("measuredMemoryMbP95 is populated from memoryMbPercentiles.p95", measured.fields.measuredMemoryMbP95 === 3);
+  check("measuredResponseBytesP50 is populated from responseBytesPercentiles.p50", measured.fields.measuredResponseBytesP50 === 800);
+
+  const total = 32;
   if (failures.length > 0) {
     for (const f of failures) process.stderr.write(`  FAIL  ${f}\n`);
     process.stderr.write(`[merge-http-route-budgets] self-test ${String(total - failures.length)}/${String(total)}\n`);

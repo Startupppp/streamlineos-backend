@@ -347,6 +347,8 @@ export interface RouteMeasurement {
   readonly downstreamCalls: number | null;
   readonly responseBytes: number | null;
   readonly memoryMb: number | null;
+  readonly memoryMbPercentiles: Percentiles | null;
+  readonly responseBytesPercentiles: Percentiles | null;
   readonly bodyPreview?: string;
   /** Origins the LAST measured request reached, so a non-zero count says where it went. */
   readonly downstreamTargets?: Record<string, number>;
@@ -380,6 +382,8 @@ export function summarise(
       downstreamCalls: null,
       responseBytes: null,
       memoryMb: null,
+      memoryMbPercentiles: null,
+      responseBytesPercentiles: null,
     };
 
   const nonOk = samples.find((s) => s.status < 200 || s.status >= 300);
@@ -396,6 +400,8 @@ export function summarise(
       downstreamCalls: null,
       responseBytes: null,
       memoryMb: null,
+      memoryMbPercentiles: null,
+      responseBytesPercentiles: null,
       bodyPreview,
     };
 
@@ -441,6 +447,8 @@ export function summarise(
     ),
     responseBytes: Math.max(...samples.map((s) => s.bytes)),
     memoryMb: heapValues.length > 0 ? Math.max(...heapValues) : null,
+    memoryMbPercentiles: percentiles(heapValues),
+    responseBytesPercentiles: percentiles(samples.map((s) => s.bytes)),
   };
 }
 
