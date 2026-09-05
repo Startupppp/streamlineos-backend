@@ -1,8 +1,10 @@
 import { HttpException, InternalServerErrorException } from "@nestjs/common";
 import type { ServerResponse } from "http";
 import { logger } from "../../../../common/logger/logger.service";
+import { pipeRawAiTextStream } from "./raw-ai-text-stream";
 
 export interface PipeableAiTextStream {
+  readonly textStream?: ReadableStream<string>;
   pipeTextStreamToResponse(
     response: ServerResponse,
     init?: { headers?: Record<string, string> },
@@ -56,14 +58,15 @@ export async function pipeAiTextStream(
   options: AiStreamPipeOptions,
 ): Promise<void> {
   try {
-    await stream.pipeTextStreamToResponse(
-      res,
-      options.headers ? { headers: options.headers } : undefined,
-    );
+    const init = options.headers ? { headers: options.headers } : undefined;
+    if (stream.textStream)
+      await pipeRawAiTextStream(stream.textStream, res, init);
+    else await stream.pipeTextStreamToResponse(res, init);
   } catch (error) {
     options.onFault?.(error);
     logger.error("AI stream terminated before completion", {
-      error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+      error:
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
       feature: options.feature,
       orgId: options.orgId,
     });
@@ -98,7 +101,8 @@ export async function pipeAiUiMessageStream(
   } catch (error) {
     options.onFault?.(error);
     logger.error("AI UI message stream terminated before completion", {
-      error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+      error:
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
       feature: options.feature,
       orgId: options.orgId,
     });
@@ -117,7 +121,8 @@ export function rethrowStreamRouteError(
 ): never {
   if (error instanceof HttpException) throw error;
   logger.error("AI stream route error", {
-    error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+    error:
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
     route: context.route,
   });
   throw new InternalServerErrorException("Internal server error");
@@ -203,5 +208,9 @@ export function encodeStreamSources(
     total: capped.length,
     ...(context ?? {}),
   });
-  return { encoded: encodeURIComponent("[]"), included: 0, dropped: capped.length };
+  return {
+    encoded: encodeURIComponent("[]"),
+    included: 0,
+    dropped: capped.length,
+  };
 }

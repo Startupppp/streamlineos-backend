@@ -5,7 +5,10 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Req,
+  Res,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -18,6 +21,11 @@ import { PayrollAiExplainService } from "./payroll-ai-explain.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import type { Request, Response } from "express";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
+import { AiRequestAbortInterceptor } from "../../ai/core/streaming/ai-request-abort.interceptor";
+import { respondWithAiTextStream } from "../../ai/core/streaming/ai-text-stream-route";
+import { AI_RESULT_STREAM_CONTENT_TYPE } from "../../ai/core/streaming/ai-result-stream";
 
 const publicationIdParams = z.object({ publicationId: z.coerce.number().int().positive() }).strict();
 
@@ -45,5 +53,28 @@ export class PayrollAiExplainController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.explainService.explainPayslip(u.orgId, u.userId, publicationId);
+  }
+
+  @Post(":publicationId/ai/explain/stream")
+  @BodylessAction()
+  @HttpCode(200)
+  @NoTenantTransaction()
+  @UseInterceptors(AiRequestAbortInterceptor)
+  @UseGuards(PermissionGuard, RateLimitGuard)
+  @UseRateLimit("ai:invoke")
+  @RequirePermission("self:payslips")
+  @Validate({ params: publicationIdParams })
+  async streamExplainPayslip(
+    @Param("publicationId", ParseIntPipe) publicationId: number,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    await respondWithAiTextStream(req, res, {
+      feature: "payroll.explain-payslip",
+      orgId: u.orgId,
+      route: "POST /payroll/me/payslips/:publicationId/ai/explain/stream",
+      contentType: AI_RESULT_STREAM_CONTENT_TYPE,
+    }, (signal) => this.explainService.streamExplainPayslip(u.orgId, u.userId, publicationId, signal));
   }
 }

@@ -53,7 +53,7 @@ const ROUTE_BUDGETS_PATH = resolve(BACKEND_ROOT, "contracts/route-budgets.json")
 /** measured field on the budget -> [capture field, ceiling field, how to read it off the slot] */
 export const HTTP_FIELDS = [
   { measured: "measuredLatencyP95Ms", declared: "declaredLatencyP95Ms", ceiling: "maxLatencyP95Ms", read: (m) => m.latencyMs?.p95 ?? null },
-  { measured: "measuredDownstreamCalls", declared: "declaredDownstreamCalls", ceiling: "maxDownstreamCalls", read: (m) => m.downstreamCalls ?? null },
+  { measured: "measuredDownstreamCalls", declared: "declaredDownstreamCalls", ceiling: "maxDownstreamCalls", read: (m) => m.downstreamAccounting === "request-and-after-commit-v1" ? m.downstreamCalls ?? null : null },
   { measured: "measuredResponseBytes", declared: "declaredResponseBytes", ceiling: "maxResponseBytes", read: (m) => m.responseBytes ?? null },
   { measured: "measuredMemoryMb", declared: "declaredMemoryMb", ceiling: "maxMemoryMb", read: (m) => m.memoryMb ?? null },
 ];
@@ -118,6 +118,9 @@ export function captureViolations(requestLevel) {
   const carriesHeap = Object.values(requestLevel.routes ?? {}).some((r) => typeof r.memoryMb === "number");
   if (carriesHeap && requestLevel.gcAvailable !== true)
     violations.push("heap figures are recorded but the capture ran without --expose-gc");
+  for (const [route, measurement] of Object.entries(requestLevel.routes ?? {}))
+    if (typeof measurement.deferredFailures === "number" && measurement.deferredFailures > 0)
+      violations.push(`${route} recorded ${measurement.deferredFailures} failed after-commit hooks`);
   return violations;
 }
 
@@ -150,6 +153,10 @@ export function planRoute(key, budget, slots) {
             latencyP95Ms: s.latencyMs?.p95 ?? null,
             latencyP99Ms: s.latencyMs?.p99 ?? null,
             downstreamCalls: s.downstreamCalls ?? null,
+            downstreamAccounting: s.downstreamAccounting ?? null,
+            deferredDownstreamCalls: s.deferredDownstreamCalls ?? null,
+            deferredFailures: s.deferredFailures ?? null,
+            deferredDownstreamTargets: s.deferredDownstreamTargets ?? null,
             responseBytes: s.responseBytes ?? null,
             memoryMb: s.memoryMb ?? null,
             requestDbCalls: s.requestDbCalls ?? null,
@@ -216,6 +223,7 @@ export function planRoute(key, budget, slots) {
       requestDbCalls: dbCalls?.value ?? null,
       gucCalls: guc?.value ?? null,
       requestDbCallsNote: NEVER_WRITTEN.why,
+      downstreamAccountingNote: "Request downstream counts exclude explicitly scoped after-commit work. Deferred calls, failures and destination maxima are recorded separately after a bounded completion drain. Older counting-window captures cannot populate measuredDownstreamCalls.",
       profiles,
     },
   };
@@ -402,6 +410,9 @@ function selfTest() {
     requestDbCalls: 12,
     gucCalls: 3,
     downstreamCalls: 0,
+    downstreamAccounting: "request-and-after-commit-v1",
+    deferredDownstreamCalls: 3,
+    deferredFailures: 0,
     responseBytes: 900,
     memoryMb: 3,
     overPrdCeiling: false,
@@ -442,6 +453,10 @@ function selfTest() {
   const measured = planRoute("GET /x", budget, [slot({})]);
   check("a measured slot fills all four HTTP fields", HTTP_FIELDS.every((f) => typeof measured.fields[f.measured] === "number"));
   check("measuredDbCalls is never among the written fields", measured.fields.measuredDbCalls === undefined);
+  check("deferred calls are retained outside the request ceiling", measured.http.profiles.reference.deferredDownstreamCalls === 3 && measured.fields.measuredDownstreamCalls === 0);
+  const legacyWindow = planRoute("GET /x", budget, [slot({ downstreamAccounting: undefined, downstreamCalls: 3 })]);
+  check("legacy counting-window captures do not populate request downstream measurements", legacyWindow.fields.measuredDownstreamCalls === undefined);
+  check("failed after-commit work prevents capture acceptance", captureViolations({ ...goodCapture, routes: { a: slot({ deferredFailures: 1 }) } }).some((issue) => issue.includes("failed after-commit")));
   check("the request statement count is recorded under its own name", measured.http.requestDbCalls === 12);
   check("the tenant-GUC statements stay separate", measured.http.gucCalls === 3);
   check("the note explaining why measuredDbCalls is untouched travels with the entry", measured.http.requestDbCallsNote === NEVER_WRITTEN.why);

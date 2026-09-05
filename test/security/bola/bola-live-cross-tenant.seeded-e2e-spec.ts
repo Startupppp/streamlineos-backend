@@ -391,15 +391,12 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
 
   beforeAll(async () => {
     process.env.CRON_SECRET = process.env.CRON_SECRET ?? `bola-local-${randomUUID()}`;
-    process.stdout.write(`[bola-live-debug] T+0s beforeAll start\n`);
     seeded = await createSeededE2eApp({ mirrorHttpStack: true });
-    process.stdout.write(`[bola-live-debug] T+${String(Math.round((Date.now() - Number(process.env._BOLA_START ?? Date.now())) / 1000))}s app compiled+init done\n`);
     await seeded.app.listen(0);
     const address = seeded.app.getHttpServer().address();
     const port = typeof address === "object" && address !== null ? address.port : 0;
     if (!port) throw new Error("[bola-live] the harness app did not bind a port");
     baseUrl = `http://127.0.0.1:${String(port)}`;
-    process.stdout.write(`[bola-live-debug] app listening on ${baseUrl}\n`);
 
     owner = postgres(OWNER_URL, {
       max: 2,
@@ -407,12 +404,9 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
       ssl: requiresTls(OWNER_URL) ? "require" : false,
       onnotice: () => {},
     });
-    process.stdout.write(`[bola-live-debug] owner pool created; loading catalog (perTable=${String(POOL_PER_TABLE)})\n`);
     sourceCatalog = await loadCatalog(owner, SOURCE_ORG, POOL_PER_TABLE);
-    process.stdout.write(`[bola-live-debug] catalog loaded — tables=${String(sourceCatalog.tables.size)} populated=${String(sourceCatalog.populated.size)}\n`);
     sourceUser = await resolveOwnerUser(SOURCE_ORG);
     proberUser = PROBER_USER.length > 0 ? PROBER_USER : await resolveOwnerUser(PROBER_ORG);
-    process.stdout.write(`[bola-live-debug] users resolved source=${sourceUser} prober=${proberUser}\n`);
 
     /**
      * The tenant is given one object of every type its routes address and it does not hold.
@@ -424,15 +418,11 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
      */
     if (SEED_FIXTURES) {
       const seeder = new FixtureSeeder(owner, SOURCE_ORG, sourceUser);
-      process.stdout.write(`[bola-live-debug] FixtureSeeder.load() start\n`);
       await seeder.load();
-      process.stdout.write(`[bola-live-debug] FixtureSeeder.load() done\n`);
       const targets = [...unpopulatedTargets(sourceCatalog.tables, sourceCatalog.populated).entries()].sort(
         (a, b) => b[1].routes - a[1].routes,
       );
-      process.stdout.write(`[bola-live-debug] seeding ${String(targets.length)} unpopulated tables\n`);
       for (const [, target] of targets) await seeder.seed(target.table);
-      process.stdout.write(`[bola-live-debug] fixture seeding done\n`);
       const outcome = seeder.result();
       for (const key of outcome.created.keys()) seededTables.add(key);
       harnessProofs.fixtureSeeding = {
@@ -442,13 +432,10 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
         refused: [...outcome.refused.entries()].map(([table, why]) => `${table}: ${why}`),
       };
       sourceCatalog = await loadCatalog(owner, SOURCE_ORG, POOL_PER_TABLE);
-      process.stdout.write(`[bola-live-debug] re-catalog done\n`);
     }
 
     pool = new BorrowPool(owner, SOURCE_ORG, sourceUser);
-    process.stdout.write(`[bola-live-debug] loadColumns start\n`);
     harnessProofs.borrowPoolColumns = await pool.loadColumns();
-    process.stdout.write(`[bola-live-debug] beforeAll done\n`);
     await refreshTokens();
   });
 

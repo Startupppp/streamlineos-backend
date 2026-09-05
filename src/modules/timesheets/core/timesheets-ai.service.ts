@@ -1,5 +1,16 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
-import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
+import {
+  AiGatewayService,
+  type AiTextStream,
+  type InvokeTextOpts,
+} from "../../ai/core/gateway/ai-gateway.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -9,7 +20,11 @@ import { ReportsService } from "./reports.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 import { throwOnAiFailure } from "../../ai/core/services/gateway-result.util";
-import type { DescribeEntryInput, BillingNarrativeInput, RejectionDraftInput } from "./dto/ai.schemas";
+import type {
+  DescribeEntryInput,
+  BillingNarrativeInput,
+  RejectionDraftInput,
+} from "./dto/ai.schemas";
 import type { OverviewQuery } from "./dto/reports.schemas";
 import {
   buildRejectionSystemPrompt,
@@ -61,8 +76,36 @@ export class TimesheetsAiService {
     return runInTenantTransaction(this.db, read, { orgId });
   }
 
-  async summarizePeriod(u: CurrentUserContext, periodId: number): Promise<{ narration: string; evidence: Record<string, unknown> }> {
-    const detail = await this.readEvidence(u.orgId, () => this.periods.getPeriod(u, periodId));
+  async summarizePeriod(
+    u: CurrentUserContext,
+    periodId: number,
+  ): Promise<{ narration: string; evidence: Record<string, unknown> }> {
+    const { options, evidence } = await this.preparePeriodSummary(u, periodId);
+    const result = await this.gateway.invokeText(options);
+    if (!result.ok) throw new ServiceUnavailableException(result.message);
+    return { narration: result.data, evidence };
+  }
+
+  async streamSummarizePeriod(
+    u: CurrentUserContext,
+    periodId: number,
+    signal: AbortSignal,
+  ): Promise<AiTextStream & { evidence: Record<string, unknown> }> {
+    const { options, evidence } = await this.preparePeriodSummary(u, periodId);
+    const stream = await this.gateway.streamTextWithUsage({
+      ...options,
+      signal,
+    });
+    return { ...stream, evidence };
+  }
+
+  private async preparePeriodSummary(
+    u: CurrentUserContext,
+    periodId: number,
+  ): Promise<{ options: InvokeTextOpts; evidence: Record<string, unknown> }> {
+    const detail = await this.readEvidence(u.orgId, () =>
+      this.periods.getPeriod(u, periodId),
+    );
     if (!detail) throw new NotFoundException("Period not found");
 
     const { period, entries } = detail;
@@ -74,7 +117,7 @@ export class TimesheetsAiService {
     const evidence = buildEvidence(period, entries);
     const evidenceRecord: Record<string, unknown> = evidence;
 
-    const result = await this.gateway.invokeText({
+    const options: InvokeTextOpts = {
       actor: { orgId: u.orgId, userId: u.userId },
       feature: FEATURE_KEY,
       tier: "fast",
@@ -87,20 +130,33 @@ export class TimesheetsAiService {
         promptKey: "timesheets.period-summary",
         promptVersion: 1,
       },
-    });
-
-    if (!result.ok) {
-      throw new ServiceUnavailableException(result.message);
-    }
-
-    return { narration: result.data, evidence: evidenceRecord };
+    };
+    return { options, evidence: evidenceRecord };
   }
 
   async describeEntry(
     u: CurrentUserContext,
     input: DescribeEntryInput,
   ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const result = await this.gateway.invokeTextWithUsage({
+    return this.invoke(this.prepareDescription(u, input));
+  }
+
+  streamDescribeEntry(
+    u: CurrentUserContext,
+    input: DescribeEntryInput,
+    signal: AbortSignal,
+  ): Promise<AiTextStream> {
+    return this.gateway.streamTextWithUsage({
+      ...this.prepareDescription(u, input),
+      signal,
+    });
+  }
+
+  private prepareDescription(
+    u: CurrentUserContext,
+    input: DescribeEntryInput,
+  ): InvokeTextOpts {
+    return {
       actor: { orgId: u.orgId, userId: u.userId },
       feature: DESCRIBE_FEATURE_KEY,
       tier: "fast",
@@ -112,10 +168,7 @@ export class TimesheetsAiService {
         promptKey: DESCRIBE_FEATURE_KEY,
         promptVersion: 1,
       },
-    });
-
-    if (!result.ok) return throwOnAiFailure(result);
-    return { text: result.data, aiUsage: result.aiUsage };
+    };
   }
 
   async draftRejectionReason(
@@ -123,10 +176,32 @@ export class TimesheetsAiService {
     periodId: number,
     input: RejectionDraftInput,
   ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const detail = await this.readEvidence(u.orgId, () => this.periods.getPeriod(u, periodId));
+    return this.invoke(await this.prepareRejection(u, periodId, input));
+  }
+
+  async streamRejectionReason(
+    u: CurrentUserContext,
+    periodId: number,
+    input: RejectionDraftInput,
+    signal: AbortSignal,
+  ): Promise<AiTextStream> {
+    return this.gateway.streamTextWithUsage({
+      ...(await this.prepareRejection(u, periodId, input)),
+      signal,
+    });
+  }
+
+  private async prepareRejection(
+    u: CurrentUserContext,
+    periodId: number,
+    input: RejectionDraftInput,
+  ): Promise<InvokeTextOpts> {
+    const detail = await this.readEvidence(u.orgId, () =>
+      this.periods.getPeriod(u, periodId),
+    );
     if (!detail) throw new NotFoundException("Period not found");
 
-    const result = await this.gateway.invokeTextWithUsage({
+    return {
       actor: { orgId: u.orgId, userId: u.userId },
       feature: REJECTION_FEATURE_KEY,
       tier: "fast",
@@ -141,17 +216,34 @@ export class TimesheetsAiService {
         promptKey: REJECTION_FEATURE_KEY,
         promptVersion: 1,
       },
-    });
-
-    if (!result.ok) return throwOnAiFailure(result);
-    return { text: result.data, aiUsage: result.aiUsage };
+    };
   }
 
   async reportsNarrative(
     u: CurrentUserContext,
     query: OverviewQuery,
   ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
-    const overview = await this.readEvidence(u.orgId, () => this.reports.getOverview(u, query));
+    return this.invoke(await this.prepareReports(u, query));
+  }
+
+  async streamReportsNarrative(
+    u: CurrentUserContext,
+    query: OverviewQuery,
+    signal: AbortSignal,
+  ): Promise<AiTextStream> {
+    return this.gateway.streamTextWithUsage({
+      ...(await this.prepareReports(u, query)),
+      signal,
+    });
+  }
+
+  private async prepareReports(
+    u: CurrentUserContext,
+    query: OverviewQuery,
+  ): Promise<InvokeTextOpts> {
+    const overview = await this.readEvidence(u.orgId, () =>
+      this.reports.getOverview(u, query),
+    );
     if (overview.totalHours === 0) {
       throw new BadRequestException(
         "No timesheet data found for the selected range.",
@@ -165,7 +257,7 @@ export class TimesheetsAiService {
       dateRange: { start: query.startDate ?? null, end: query.endDate ?? null },
     };
 
-    const result = await this.gateway.invokeTextWithUsage({
+    return {
       actor: { orgId: u.orgId, userId: u.userId },
       feature: REPORTS_FEATURE_KEY,
       tier: "fast",
@@ -177,16 +269,31 @@ export class TimesheetsAiService {
         promptKey: REPORTS_FEATURE_KEY,
         promptVersion: 1,
       },
-    });
-
-    if (!result.ok) return throwOnAiFailure(result);
-    return { text: result.data, aiUsage: result.aiUsage };
+    };
   }
 
   async billingNarrative(
     u: CurrentUserContext,
     input: BillingNarrativeInput,
   ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
+    return this.invoke(await this.prepareBilling(u, input));
+  }
+
+  async streamBillingNarrative(
+    u: CurrentUserContext,
+    input: BillingNarrativeInput,
+    signal: AbortSignal,
+  ): Promise<AiTextStream> {
+    return this.gateway.streamTextWithUsage({
+      ...(await this.prepareBilling(u, input)),
+      signal,
+    });
+  }
+
+  private async prepareBilling(
+    u: CurrentUserContext,
+    input: BillingNarrativeInput,
+  ): Promise<InvokeTextOpts> {
     const items = await this.readEvidence(u.orgId, () =>
       this.billing.getBillableWorkForNarrative(u, input),
     );
@@ -196,7 +303,7 @@ export class TimesheetsAiService {
       );
     }
 
-    const result = await this.gateway.invokeTextWithUsage({
+    return {
       actor: { orgId: u.orgId, userId: u.userId },
       feature: NARRATIVE_FEATURE_KEY,
       tier: "fast",
@@ -208,8 +315,13 @@ export class TimesheetsAiService {
         promptKey: NARRATIVE_FEATURE_KEY,
         promptVersion: 1,
       },
-    });
+    };
+  }
 
+  private async invoke(
+    options: InvokeTextOpts,
+  ): Promise<{ text: string; aiUsage?: AiUsageMeta }> {
+    const result = await this.gateway.invokeTextWithUsage(options);
     if (!result.ok) return throwOnAiFailure(result);
     return { text: result.data, aiUsage: result.aiUsage };
   }

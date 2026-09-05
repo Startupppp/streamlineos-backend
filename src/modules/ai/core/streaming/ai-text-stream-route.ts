@@ -21,6 +21,7 @@ export interface AiTextStreamRouteOptions {
    * halfway loses them, and a trailer is not a place a fetch reader can see.
    */
   sourcesHeader?: string;
+  contentType?: string;
 }
 
 export interface AiTextStreamProduct {
@@ -79,7 +80,10 @@ export async function respondWithAiTextStream(
 
   try {
     const { stream, sources } = await produce(abort.signal);
-    const headers = sourceHeaders(options, sources);
+    const headers = {
+      ...sourceHeaders(options, sources),
+      ...(options.contentType ? { "content-type": options.contentType } : {}),
+    };
     await pipeAiTextStream(res, stream, {
       feature: options.feature,
       orgId: options.orgId,

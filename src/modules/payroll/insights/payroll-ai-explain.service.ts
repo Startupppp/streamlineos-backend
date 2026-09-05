@@ -16,6 +16,8 @@ import {
   type EvidenceCitation,
 } from "./payroll-ai-guardrails";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { createAiResultStream } from "../../ai/core/streaming/ai-result-stream";
 
 const FEATURE_KEY = "payroll.explain-payslip" as const;
 
@@ -59,7 +61,7 @@ export class PayrollAiExplainService {
     private readonly gateway: AiGatewayService,
   ) {}
 
-  async explainPayslip(orgId: string, userId: string, publicationId: number): Promise<PayslipExplanation> {
+  private async loadEvidence(orgId: string, userId: string, publicationId: number) {
     const pub = await this.db
       .select({
         pubId: payslipPublications.id,
@@ -120,6 +122,47 @@ export class PayrollAiExplainService {
       employerContributions: employerContribs.map((c) => ({ name: c.name, amount: c.amount })),
     };
 
+    return evidence;
+  }
+
+  async streamExplainPayslip(orgId: string, userId: string, publicationId: number, signal: AbortSignal) {
+    signal.throwIfAborted();
+    const evidence = await runInTenantTransaction(
+      this.db,
+      () => this.loadEvidence(orgId, userId, publicationId),
+      { orgId },
+    );
+    signal.throwIfAborted();
+    const generation = await this.gateway.streamTextWithUsage({
+      actor: { orgId, userId },
+      feature: FEATURE_KEY,
+      maxTokens: 400,
+      charge: true,
+      redact: false,
+      signal,
+      prompt: {
+        system: buildSystemPrompt(),
+        user: buildUserPrompt(evidence),
+        promptKey: FEATURE_KEY,
+        promptVersion: 1,
+      },
+    });
+    return createAiResultStream<PayslipExplanation>({
+      generation,
+      signal,
+      complete: async (explanation, aiUsage) => ({
+        explanation,
+        evidenceSnapshot: evidence,
+        citations: buildPayslipEvidenceCitations(evidence),
+        capability: PAYROLL_AI_CAPABILITY,
+        forbiddenActions: FORBIDDEN_PAYROLL_AI_ACTIONS,
+        aiUsage,
+      }),
+    });
+  }
+
+  async explainPayslip(orgId: string, userId: string, publicationId: number): Promise<PayslipExplanation> {
+    const evidence = await this.loadEvidence(orgId, userId, publicationId);
     const result = await this.gateway.invokeTextWithUsage({
       actor: { orgId, userId },
       feature: FEATURE_KEY,

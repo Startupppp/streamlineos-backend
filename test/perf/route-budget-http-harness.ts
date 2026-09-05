@@ -2,6 +2,8 @@ import http from "node:http";
 import https from "node:https";
 import { createHash } from "node:crypto";
 import { queryTelemetry } from "src/db/query-telemetry";
+import { isAfterCommitWork } from "src/common/observability/after-commit-work";
+import { DeferredDownstreamCapture } from "./deferred-downstream-capture";
 
 /**
  * The HTTP-level instrument behind ticket 22's second box.
@@ -42,6 +44,9 @@ export interface RequestSample {
   readonly gucCalls: number;
   readonly downstreamCalls: number;
   readonly heapMb: number | null;
+  readonly deferredDownstreamCalls?: number;
+  readonly deferredFailures?: number;
+  readonly deferredDownstreamTargets?: Record<string, number>;
 }
 
 export interface Percentiles {
@@ -71,6 +76,7 @@ interface Saved {
  * like a route that calls a provider.
  */
 export class DownstreamCounter {
+  private readonly deferred = new DeferredDownstreamCapture();
   private count = 0;
   private saved: Saved | null = null;
   private selfPorts = new Set<string>();
@@ -90,8 +96,12 @@ export class DownstreamCounter {
   }
 
   private isSelf(target: string): boolean {
-    if (!/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]|::1)/i.test(target)) return false;
-    for (const port of this.selfPorts) if (target.includes(`:${port}`)) return true;
+    if (
+      !/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]|::1)/i.test(target)
+    )
+      return false;
+    for (const port of this.selfPorts)
+      if (target.includes(`:${port}`)) return true;
     return false;
   }
 
@@ -117,7 +127,12 @@ export class DownstreamCounter {
     if (typeof arg === "string") return arg;
     if (arg instanceof URL) return arg.toString();
     if (arg !== null && typeof arg === "object") {
-      const opts = arg as { host?: string; hostname?: string; port?: number | string; href?: string };
+      const opts = arg as {
+        host?: string;
+        hostname?: string;
+        port?: number | string;
+        href?: string;
+      };
       if (typeof opts.href === "string") return opts.href;
       const host = opts.hostname ?? opts.host ?? "";
       return opts.port === undefined ? host : `${host}:${String(opts.port)}`;
@@ -127,6 +142,7 @@ export class DownstreamCounter {
 
   install(): void {
     if (this.saved) return;
+    this.deferred.install();
     this.saved = {
       httpRequest: http.request,
       httpGet: http.get,
@@ -149,7 +165,10 @@ export class DownstreamCounter {
 
     const originalFetch = this.saved.fetch;
     if (originalFetch)
-      (globalThis as { fetch?: FetchLike }).fetch = async (input: unknown, init?: unknown) => {
+      (globalThis as { fetch?: FetchLike }).fetch = async (
+        input: unknown,
+        init?: unknown,
+      ) => {
         const target = this.describe(input);
         if (!this.isSelf(target)) this.record(target);
         return originalFetch(input, init);
@@ -158,21 +177,28 @@ export class DownstreamCounter {
 
   restore(): void {
     if (!this.saved) return;
+    this.deferred.restore();
     http.request = this.saved.httpRequest;
     http.get = this.saved.httpGet;
     https.request = this.saved.httpsRequest;
     https.get = this.saved.httpsGet;
-    if (this.saved.fetch) (globalThis as { fetch?: FetchLike }).fetch = this.saved.fetch;
+    if (this.saved.fetch)
+      (globalThis as { fetch?: FetchLike }).fetch = this.saved.fetch;
     this.saved = null;
   }
 
   private record(target: string): void {
-    this.count += 1;
     const origin = this.origin(target);
+    if (isAfterCommitWork()) {
+      this.deferred.record(origin);
+      return;
+    }
+    this.count += 1;
     this.targets.set(origin, (this.targets.get(origin) ?? 0) + 1);
   }
 
   reset(): void {
+    this.deferred.reset();
     this.count = 0;
     this.targets.clear();
   }
@@ -181,9 +207,25 @@ export class DownstreamCounter {
     return this.count;
   }
 
+  async drainDeferred(): Promise<void> {
+    await withDeadline(
+      () => this.deferred.drain(),
+      10_000,
+      "after-commit work completion",
+    );
+  }
+
+  readDeferred(): ReturnType<DeferredDownstreamCapture["snapshot"]> {
+    return this.deferred.snapshot();
+  }
+
   /** Origins in descending call order, so the artifact names what a route talked to. */
   readTargets(): Record<string, number> {
-    return Object.fromEntries([...this.targets.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+    return Object.fromEntries(
+      [...this.targets.entries()].sort(
+        (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+      ),
+    );
   }
 }
 
@@ -191,7 +233,10 @@ export function percentiles(values: readonly number[]): Percentiles | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number): number => {
-    const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * q) - 1));
+    const idx = Math.min(
+      sorted.length - 1,
+      Math.max(0, Math.ceil(sorted.length * q) - 1),
+    );
     return sorted[idx] ?? 0;
   };
   return {
@@ -240,6 +285,7 @@ export async function measureOnce(
   downstream: DownstreamCounter,
   options: { measureHeap: boolean },
 ): Promise<RequestSample> {
+  await downstream.drainDeferred();
   const trackHeap = options.measureHeap && gcAvailable();
   if (trackHeap) collect();
   const baseline = process.memoryUsage().heapUsed;
@@ -266,18 +312,30 @@ export async function measureOnce(
   if (settled > peak) peak = settled;
 
   const snapshot = queryTelemetry.snapshot();
+  const foregroundDownstreamCalls = downstream.read();
+  await downstream.drainDeferred();
+  const deferred = downstream.readDeferred();
   return {
     status: response.status,
     ms: round(elapsedMs),
     bytes: response.bytes,
     dbCalls: snapshot["db.query.execute"].count,
     gucCalls: snapshot["db.guc.setup"].count,
-    downstreamCalls: downstream.read(),
-    heapMb: trackHeap ? round(Math.max(0, peak - baseline) / BYTES_PER_MB) : null,
+    downstreamCalls: foregroundDownstreamCalls,
+    deferredDownstreamCalls: deferred.calls,
+    deferredFailures: deferred.failures,
+    deferredDownstreamTargets: deferred.targets,
+    heapMb: trackHeap
+      ? round(Math.max(0, peak - baseline) / BYTES_PER_MB)
+      : null,
   };
 }
 
 export interface RouteMeasurement {
+  readonly downstreamAccounting?: "request-and-after-commit-v1";
+  readonly deferredDownstreamCalls?: number;
+  readonly deferredFailures?: number;
+  readonly deferredDownstreamTargets?: Record<string, number>;
   readonly status: "measured" | "unmeasured" | "failed";
   readonly httpStatus: number | null;
   readonly reason?: string;
@@ -343,7 +401,14 @@ export function summarise(
 
   const dbCounts = samples.map((s) => s.dbCalls);
   const distinct = [...new Set(dbCounts)].sort((a, b) => a - b);
-  const heapValues = heapSamples.map((s) => s.heapMb).filter((v): v is number => v !== null);
+  const heapValues = heapSamples
+    .map((s) => s.heapMb)
+    .filter((v): v is number => v !== null);
+  const effectSamples = [...samples, ...heapSamples];
+  const downstreamAccounting: RouteMeasurement["downstreamAccounting"] =
+    samples.every((sample) => sample.deferredDownstreamCalls !== undefined)
+      ? "request-and-after-commit-v1"
+      : undefined;
 
   return {
     status: "measured",
@@ -356,6 +421,24 @@ export function summarise(
     dbCallsVaried: distinct.length > 1 ? distinct : null,
     gucCalls: Math.max(...samples.map((s) => s.gucCalls)),
     downstreamCalls: Math.max(...samples.map((s) => s.downstreamCalls)),
+    ...(downstreamAccounting ? { downstreamAccounting } : {}),
+    deferredDownstreamCalls: Math.max(
+      ...effectSamples.map((s) => s.deferredDownstreamCalls ?? 0),
+    ),
+    deferredFailures: effectSamples.reduce(
+      (total, sample) => total + (sample.deferredFailures ?? 0),
+      0,
+    ),
+    deferredDownstreamTargets: effectSamples.reduce<Record<string, number>>(
+      (targets, sample) => {
+        for (const [origin, count] of Object.entries(
+          sample.deferredDownstreamTargets ?? {},
+        ))
+          targets[origin] = Math.max(targets[origin] ?? 0, count);
+        return targets;
+      },
+      {},
+    ),
     responseBytes: Math.max(...samples.map((s) => s.bytes)),
     memoryMb: heapValues.length > 0 ? Math.max(...heapValues) : null,
   };
@@ -377,12 +460,18 @@ export class DeadlineExceeded extends Error {
     readonly label: string,
     readonly ms: number,
   ) {
-    super(`[route-budget-http] "${label}" exceeded its ${String(ms)}ms deadline`);
+    super(
+      `[route-budget-http] "${label}" exceeded its ${String(ms)}ms deadline`,
+    );
     this.name = "DeadlineExceeded";
   }
 }
 
-export async function withDeadline<T>(work: () => Promise<T>, ms: number, label: string): Promise<T> {
+export async function withDeadline<T>(
+  work: () => Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => reject(new DeadlineExceeded(label, ms)), ms);
@@ -438,7 +527,10 @@ export async function controlProbe(
   anonymousSend: () => Promise<HttpResponseShape & { body: string }>,
   options: { deadlineMs: number },
 ): Promise<ControlProbe> {
-  const once = async (send: () => Promise<HttpResponseShape & { body: string }>, label: string): Promise<ProbeOutcome> => {
+  const once = async (
+    send: () => Promise<HttpResponseShape & { body: string }>,
+    label: string,
+  ): Promise<ProbeOutcome> => {
     const startedAt = process.hrtime.bigint();
     try {
       const res = await withDeadline(send, options.deadlineMs, label);
@@ -459,14 +551,20 @@ export async function controlProbe(
     }
   };
 
-  const authenticated = await once(authenticatedSend, "control probe (authenticated)");
+  const authenticated = await once(
+    authenticatedSend,
+    "control probe (authenticated)",
+  );
   const anonymous = await once(anonymousSend, "control probe (anonymous)");
 
   const failure = controlFailure(authenticated, anonymous);
   return { ok: failure === null, failure, authenticated, anonymous };
 }
 
-function controlFailure(authenticated: ProbeOutcome, anonymous: ProbeOutcome): string | null {
+function controlFailure(
+  authenticated: ProbeOutcome,
+  anonymous: ProbeOutcome,
+): string | null {
   if (authenticated.error !== undefined)
     return `the authenticated control request did not complete (${authenticated.error}). Nothing measured after this point would be a measurement of a working request.`;
   if (authenticated.status !== 200)
@@ -495,13 +593,19 @@ function controlFailure(authenticated: ProbeOutcome, anonymous: ProbeOutcome): s
  * change visible as a changed hash rather than as a number that quietly describes two databases.
  */
 export function contentHash(value: unknown): string {
-  return createHash("sha256").update(stableStringify(value)).digest("hex").slice(0, 16);
+  return createHash("sha256")
+    .update(stableStringify(value))
+    .digest("hex")
+    .slice(0, 16);
 }
 
 function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value ?? null) ?? "null";
+  if (value === null || typeof value !== "object")
+    return JSON.stringify(value ?? null) ?? "null";
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const entries = Object.entries(value as Record<string, unknown>).sort(
+    ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
+  );
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
 }
 
@@ -521,7 +625,9 @@ export interface RunTally {
  * table of 40 good numbers that silently omits the 42 routes the harness never managed to reach,
  * which reads as "42 routes have no budget" rather than "42 routes were not measured".
  */
-export function tally(routes: Readonly<Record<string, RouteMeasurement>>): RunTally {
+export function tally(
+  routes: Readonly<Record<string, RouteMeasurement>>,
+): RunTally {
   const refusalsByReason: Record<string, number> = {};
   const routeFailures: string[] = [];
   let measured = 0;

@@ -26,6 +26,7 @@ import {
   type EndableResponse,
 } from "../http/stream-abort";
 import { resolveAdmissionConfig } from "../admission/admission.config";
+import { runAfterCommitWork } from "../observability/after-commit-work";
 
 interface TenantBearingRequest {
   method?: string;
@@ -148,7 +149,7 @@ export class TenantContextInterceptor implements NestInterceptor {
           await hook();
         });
       });
-      void run().catch((error: unknown) => {
+      void runAfterCommitWork(run).catch((error: unknown) => {
         this.logger.error(
           `after-commit hook failed for org ${resolved.orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
         );

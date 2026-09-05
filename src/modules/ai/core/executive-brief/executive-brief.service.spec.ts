@@ -1,4 +1,14 @@
 import { Test } from "@nestjs/testing";
+import { ServerResponse, IncomingMessage } from "node:http";
+import { Socket } from "node:net";
+
+jest.mock("node:stream/promises", () => ({
+  pipeline: jest.fn(async (stream: AsyncIterable<string>) => {
+    const chunks: string[] = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    return chunks.join("");
+  }),
+}));
 
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
@@ -27,6 +37,19 @@ const TEST_AI_USAGE = {
 
 function makeGateway(ok: boolean) {
   return {
+    streamTextWithUsage: jest.fn().mockResolvedValue({
+      model: "gpt-4o-mini",
+      stream: {
+        textStream: new ReadableStream<string>({ start(controller) {
+          controller.enqueue("The org ");
+          controller.enqueue("is healthy.");
+          controller.close();
+        } }),
+        text: Promise.resolve("The org is healthy."),
+        finishReason: Promise.resolve("stop"),
+        totalUsage: Promise.resolve({ inputTokens: 100, outputTokens: 50, totalTokens: 150 }),
+      },
+    }),
     invokeTextWithUsage: jest.fn().mockResolvedValue(
       ok
         ? { ok: true, data: "The org is healthy.", aiUsage: TEST_AI_USAGE }
@@ -102,6 +125,37 @@ async function buildSvc(opts: {
 }
 
 describe("ExecutiveBriefService", () => {
+  it("streams without saving a draft, then persists before successful completion", async () => {
+    const svc = await buildSvc({});
+    const save = jest.spyOn(svc["summaries"], "saveSnapshot");
+    const result = await svc.streamGenerate(ORG, USER, new AbortController().signal);
+    expect(save).not.toHaveBeenCalled();
+    expect(result.sources).toHaveLength(3);
+    await result.stream.pipeTextStreamToResponse(new ServerResponse(new IncomingMessage(new Socket())));
+    expect(save).toHaveBeenCalledWith(ORG, "executive_brief", ORG, expect.objectContaining({
+      summary: expect.stringContaining("The org is healthy."),
+    }), USER);
+  });
+
+  it("does not publish a successful completion when snapshot persistence fails", async () => {
+    const svc = await buildSvc({});
+    jest.spyOn(svc["summaries"], "saveSnapshot").mockRejectedValue(new Error("snapshot unavailable"));
+    const result = await svc.streamGenerate(ORG, USER, new AbortController().signal);
+    await expect(result.stream.pipeTextStreamToResponse(new ServerResponse(new IncomingMessage(new Socket()))))
+      .rejects.toThrow("snapshot unavailable");
+  });
+
+  it("does not save a partial stream after cancellation", async () => {
+    const svc = await buildSvc({});
+    const save = jest.spyOn(svc["summaries"], "saveSnapshot");
+    const abort = new AbortController();
+    const result = await svc.streamGenerate(ORG, USER, abort.signal);
+    abort.abort();
+    await expect(result.stream.pipeTextStreamToResponse(new ServerResponse(new IncomingMessage(new Socket()))))
+      .rejects.toThrow();
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("aggregates all sources and returns narrative + citations", async () => {
     const svc = await buildSvc({});
     const result = await svc.generate(ORG, USER);
