@@ -1,6 +1,5 @@
 import { writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { and, count, eq, inArray, like } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -17,6 +16,15 @@ import { mailMessageMetadata } from "../db/schema/mail/mail-metadata";
 import { CronAnnouncementsRetentionService } from "../modules/cron/cron-announcements-retention.service";
 import { CronHelpdeskRetentionService } from "../modules/cron/cron-helpdesk-retention.service";
 import { CronMailRetentionService } from "../modules/cron/cron-mail-retention.service";
+import {
+  ACCT,
+  HD_BATCH,
+  ago,
+  cntTickets,
+  cntMail,
+  cntAnn,
+  cleanup,
+} from "./retention-drill-fixtures";
 
 export interface DrillCheck {
   readonly id: string;
@@ -76,14 +84,11 @@ export const PRODUCTION_RETENTION_PATHS: readonly {
   },
 ];
 
-const ACCT = 88_888_888;
-const HD_BATCH = 200;
 const arg = (name: string) =>
   process.argv
     .slice(2)
     .find((x) => x.startsWith(`--${name}=`))
     ?.slice(`--${name}=`.length);
-const ago = (n: number) => new Date(Date.now() - n * 86_400_000);
 
 function emit(report: DrillReport): void {
   const out = arg("out");
@@ -92,110 +97,6 @@ function emit(report: DrillReport): void {
     return;
   }
   writeFileSync(out, JSON.stringify(report, null, 2) + "\n", "utf8");
-}
-
-const cntTickets = (db: DbWithClient, o: string, uid: string) =>
-  runInNewTenantTransaction(db, o, async () => {
-    const [r] = await db
-      .select({ c: count() })
-      .from(helpdeskTickets)
-      .where(
-        and(eq(helpdeskTickets.orgId, o), eq(helpdeskTickets.userId, uid)),
-      );
-    return Number(r?.c ?? 0);
-  });
-const cntMail = (db: DbWithClient, o: string, mid: number) =>
-  runInNewTenantTransaction(db, o, async () => {
-    const [r] = await db
-      .select({ c: count() })
-      .from(mailMessageMetadata)
-      .where(
-        and(
-          eq(mailMessageMetadata.orgId, o),
-          eq(mailMessageMetadata.userMembershipId, mid),
-        ),
-      );
-    return Number(r?.c ?? 0);
-  });
-const cntAnn = (db: DbWithClient, o: string, uid: string) =>
-  runInNewTenantTransaction(db, o, async () => {
-    const [r] = await db
-      .select({ c: count() })
-      .from(announcements)
-      .where(and(eq(announcements.orgId, o), eq(announcements.authorId, uid)));
-    return Number(r?.c ?? 0);
-  });
-
-async function cleanup(
-  db: DbWithClient,
-  orgA: string,
-  orgB: string,
-  uids: string[],
-  mids: number[],
-  runId: string,
-): Promise<void> {
-  await runInNewTenantTransaction(db, orgA, async () => {
-    if (mids.length)
-      await db
-        .delete(mailMessageMetadata)
-        .where(
-          and(
-            eq(mailMessageMetadata.orgId, orgA),
-            inArray(mailMessageMetadata.userMembershipId, mids),
-          ),
-        );
-    await db
-      .delete(mailMessageMetadata)
-      .where(
-        and(
-          eq(mailMessageMetadata.orgId, orgA),
-          like(mailMessageMetadata.messageId, `%${runId}`),
-        ),
-      );
-    await db
-      .delete(helpdeskTickets)
-      .where(
-        and(
-          eq(helpdeskTickets.orgId, orgA),
-          inArray(helpdeskTickets.userId, uids),
-        ),
-      );
-    await db
-      .delete(hrLegalHolds)
-      .where(
-        and(
-          eq(hrLegalHolds.orgId, orgA),
-          inArray(hrLegalHolds.subjectUserId, uids),
-        ),
-      );
-    await db
-      .delete(announcements)
-      .where(
-        and(
-          eq(announcements.orgId, orgA),
-          inArray(announcements.authorId, uids),
-        ),
-      );
-    await db
-      .delete(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgA),
-          inArray(organizationMembers.userId, uids),
-        ),
-      );
-  });
-  await runInNewTenantTransaction(db, orgB, async () => {
-    await db
-      .delete(helpdeskTickets)
-      .where(
-        and(
-          eq(helpdeskTickets.orgId, orgB),
-          inArray(helpdeskTickets.userId, uids),
-        ),
-      );
-  });
-  await db.delete(users).where(inArray(users.id, uids));
 }
 
 async function runDrill(
@@ -288,13 +189,37 @@ async function runDrill(
       ];
       await db.insert(helpdeskTickets).values(ctrlHdRows);
       const ctrlMlRows: (typeof mailMessageMetadata.$inferInsert)[] = [
-        { orgId: orgA, accountId: ACCT, messageId: `cm1-${runId}`, userMembershipId: mNorm, syncedAt: MLEXP },
-        { orgId: orgA, accountId: ACCT, messageId: `cm2-${runId}`, userMembershipId: mNorm, syncedAt: MLEXP },
+        {
+          orgId: orgA,
+          accountId: ACCT,
+          messageId: `cm1-${runId}`,
+          userMembershipId: mNorm,
+          syncedAt: MLEXP,
+        },
+        {
+          orgId: orgA,
+          accountId: ACCT,
+          messageId: `cm2-${runId}`,
+          userMembershipId: mNorm,
+          syncedAt: MLEXP,
+        },
       ];
       await db.insert(mailMessageMetadata).values(ctrlMlRows);
       const ctrlAnRows: (typeof announcements.$inferInsert)[] = [
-        { orgId: orgA, title: `cae-${runId}`, content: "drill", authorId: uNorm, expiresAt: ANEXP },
-        { orgId: orgA, title: `caa-${runId}`, content: "drill", authorId: uNorm, createdAt: ANAGE },
+        {
+          orgId: orgA,
+          title: `cae-${runId}`,
+          content: "drill",
+          authorId: uNorm,
+          expiresAt: ANEXP,
+        },
+        {
+          orgId: orgA,
+          title: `caa-${runId}`,
+          content: "drill",
+          authorId: uNorm,
+          createdAt: ANAGE,
+        },
       ];
       await db.insert(announcements).values(ctrlAnRows);
     });
@@ -351,19 +276,61 @@ async function runDrill(
         placedBy: uNorm,
       });
       const heldHdRows: (typeof helpdeskTickets.$inferInsert)[] = [
-        { orgId: orgA, userId: uHeld, title: `hh1-${runId}`, status: "DONE", resolvedAt: HDEXP },
-        { orgId: orgA, userId: uHeld, title: `hh2-${runId}`, status: "DONE", resolvedAt: HDEXP },
-        { orgId: orgA, userId: uNorm, title: `hn1-${runId}`, status: "DONE", resolvedAt: HDEXP },
+        {
+          orgId: orgA,
+          userId: uHeld,
+          title: `hh1-${runId}`,
+          status: "DONE",
+          resolvedAt: HDEXP,
+        },
+        {
+          orgId: orgA,
+          userId: uHeld,
+          title: `hh2-${runId}`,
+          status: "DONE",
+          resolvedAt: HDEXP,
+        },
+        {
+          orgId: orgA,
+          userId: uNorm,
+          title: `hn1-${runId}`,
+          status: "DONE",
+          resolvedAt: HDEXP,
+        },
       ];
       await db.insert(helpdeskTickets).values(heldHdRows);
       const heldMlRows: (typeof mailMessageMetadata.$inferInsert)[] = [
-        { orgId: orgA, accountId: ACCT, messageId: `hm-h-${runId}`, userMembershipId: mHeld, syncedAt: MLEXP },
-        { orgId: orgA, accountId: ACCT, messageId: `hm-n-${runId}`, userMembershipId: mNorm, syncedAt: MLEXP },
+        {
+          orgId: orgA,
+          accountId: ACCT,
+          messageId: `hm-h-${runId}`,
+          userMembershipId: mHeld,
+          syncedAt: MLEXP,
+        },
+        {
+          orgId: orgA,
+          accountId: ACCT,
+          messageId: `hm-n-${runId}`,
+          userMembershipId: mNorm,
+          syncedAt: MLEXP,
+        },
       ];
       await db.insert(mailMessageMetadata).values(heldMlRows);
       const heldAnRows: (typeof announcements.$inferInsert)[] = [
-        { orgId: orgA, title: `hah-${runId}`, content: "drill", authorId: uHeld, expiresAt: ANEXP },
-        { orgId: orgA, title: `han-${runId}`, content: "drill", authorId: uNorm, expiresAt: ANEXP },
+        {
+          orgId: orgA,
+          title: `hah-${runId}`,
+          content: "drill",
+          authorId: uHeld,
+          expiresAt: ANEXP,
+        },
+        {
+          orgId: orgA,
+          title: `han-${runId}`,
+          content: "drill",
+          authorId: uNorm,
+          expiresAt: ANEXP,
+        },
       ];
       await db.insert(announcements).values(heldAnRows);
     });
@@ -440,8 +407,20 @@ async function runDrill(
     /* ISOLATION — holds are org-scoped (req 3) */
     await runInNewTenantTransaction(db, orgB, async () => {
       const isoHdRows: (typeof helpdeskTickets.$inferInsert)[] = [
-        { orgId: orgB, userId: uHeld, title: `is1-${runId}`, status: "DONE", resolvedAt: HDEXP },
-        { orgId: orgB, userId: uHeld, title: `is2-${runId}`, status: "DONE", resolvedAt: HDEXP },
+        {
+          orgId: orgB,
+          userId: uHeld,
+          title: `is1-${runId}`,
+          status: "DONE",
+          resolvedAt: HDEXP,
+        },
+        {
+          orgId: orgB,
+          userId: uHeld,
+          title: `is2-${runId}`,
+          status: "DONE",
+          resolvedAt: HDEXP,
+        },
       ];
       await db.insert(helpdeskTickets).values(isoHdRows);
     });
