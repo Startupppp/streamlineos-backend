@@ -376,14 +376,14 @@ export class CronLeaveService {
       if (toExpire.length > 0) {
         await this.db.transaction(async (tx) => {
           const updateVals = sql.join(
-            toExpire.map((e) => sql`(${e.id}, ${e.newBalance.toString()})`),
+            toExpire.map((e) => sql`(${e.id}::integer, ${e.newBalance}::numeric)`),
             sql`, `,
           );
           await tx.execute(sql`
             UPDATE leave_balances AS lb
             SET balance = v.new_bal
             FROM (VALUES ${updateVals}) AS v(id, new_bal)
-            WHERE lb.id = v.id::integer
+            WHERE lb.id = v.id
               AND lb.org_id = ${orgId}
           `);
           await tx.insert(hrLeaveLedger).values(

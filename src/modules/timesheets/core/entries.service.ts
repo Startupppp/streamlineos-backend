@@ -8,6 +8,7 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { isUniqueViolationOn } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, projects, tickets } from "../../../db/schema";
@@ -155,62 +156,69 @@ export class EntriesService {
       ]);
     }
 
-    const entry = await this.db.transaction(async (tx) => {
-      const periodId = await this.periodService.getOrCreatePeriod(
-        u.orgId,
-        membershipId,
-        input.date,
-        workWeekStart,
-        tx,
-      );
+    let entry: typeof timesheets.$inferSelect;
+    try {
+      entry = await this.db.transaction(async (tx) => {
+        const periodId = await this.periodService.getOrCreatePeriod(
+          u.orgId,
+          membershipId,
+          input.date,
+          workWeekStart,
+          tx,
+        );
 
-      const [inserted] = await tx
-        .insert(timesheets)
-        .values({
+        const [inserted] = await tx
+          .insert(timesheets)
+          .values({
+            orgId: u.orgId,
+            userMembershipId: membershipId,
+            ticketId: input.ticketId ?? null,
+            projectId: input.projectId ?? null,
+            date: input.date,
+            hours: hours.toString(),
+            description: input.description ?? null,
+            isBillable,
+            billingType,
+            workLink: input.workLink ?? null,
+            source: input.source ?? "MANUAL",
+            timesheetPeriodId: periodId,
+            status: "PENDING",
+            invoicingStatus: "UNINVOICED",
+            payrollStatus: "UNPROCESSED",
+          })
+          .returning();
+
+        if (!inserted)
+          throw new ConflictException("Could not create the time entry");
+
+        if (input.ticketId) {
+          await this.periodService.syncTicketTimeSpent(tx, u.orgId, input.ticketId);
+        }
+
+        await this.periodService.recomputePeriodTotals(u.orgId, periodId, tx);
+
+        await this.audit.record(tx, {
           orgId: u.orgId,
-          userMembershipId: membershipId,
-          ticketId: input.ticketId ?? null,
-          projectId: input.projectId ?? null,
-          date: input.date,
-          hours: hours.toString(),
-          description: input.description ?? null,
-          isBillable,
-          billingType,
-          workLink: input.workLink ?? null,
-          source: input.source ?? "MANUAL",
-          timesheetPeriodId: periodId,
-          status: "PENDING",
-          invoicingStatus: "UNINVOICED",
-          payrollStatus: "UNPROCESSED",
-        })
-        .returning();
+          actorMembershipId: membershipId,
+          entityType: "entry",
+          entityId: inserted.id.toString(),
+          action: "entry.created",
+          after: {
+            hours,
+            ...(hours !== input.hours ? { rawHours: input.hours } : {}),
+            date: input.date,
+            projectId: input.projectId,
+            ticketId: input.ticketId,
+          },
+        });
 
-      if (!inserted)
-        throw new ConflictException("Could not create the time entry");
-
-      if (input.ticketId) {
-        await this.periodService.syncTicketTimeSpent(tx, u.orgId, input.ticketId);
-      }
-
-      await this.periodService.recomputePeriodTotals(u.orgId, periodId, tx);
-
-      await this.audit.record(tx, {
-        orgId: u.orgId,
-        actorMembershipId: membershipId,
-        entityType: "entry",
-        entityId: inserted.id.toString(),
-        action: "entry.created",
-        after: {
-          hours,
-          ...(hours !== input.hours ? { rawHours: input.hours } : {}),
-          date: input.date,
-          projectId: input.projectId,
-          ticketId: input.ticketId,
-        },
+        return inserted;
       });
-
-      return inserted;
-    });
+    } catch (error) {
+      if (isUniqueViolationOn(error, "uniq_timesheets_work_log"))
+        throw new ConflictException("A time entry for this date already exists");
+      throw error;
+    }
 
     return this.reader.getEntryById(u.orgId, entry.id);
   }

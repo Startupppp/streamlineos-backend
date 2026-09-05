@@ -13,9 +13,14 @@ export async function allocateTicketNumbers(
 
   const rows = await executor.execute(sql`
     INSERT INTO build.project_ticket_counters (org_id, project_id, next_ticket_number)
-    VALUES (${orgId}, ${projectId}, ${count + 1})
+    SELECT ${orgId}, ${projectId}, COALESCE(MAX(ticket_number), 0) + ${count + 1}
+    FROM build.tickets
+    WHERE org_id = ${orgId} AND project_id = ${projectId}
     ON CONFLICT (org_id, project_id) DO UPDATE
-      SET next_ticket_number = project_ticket_counters.next_ticket_number + ${count},
+      SET next_ticket_number = GREATEST(
+            project_ticket_counters.next_ticket_number,
+            EXCLUDED.next_ticket_number - ${count}
+          ) + ${count},
           updated_at = now()
     RETURNING next_ticket_number - ${count} AS start
   `);
