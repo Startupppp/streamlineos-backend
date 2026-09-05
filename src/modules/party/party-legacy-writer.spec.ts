@@ -258,17 +258,22 @@ describe("party-legacy-writer — the party is written first, in one transaction
 
     await updateMirroredLeads(fake.db, "org-1", [7], { designation: "Rear Admiral" });
 
+    // Ticket 08's contract, on the update path this time: the `update:leads`
+    // that used to sit last is gone for the same reason `insert:leads` is gone
+    // from the create trace above. There is no second copy to write, so what
+    // the caller is handed is assembled from what the party became.
     expect(fake.trace()).toEqual([
       "select:leadMap@1",
       "select:party@1",
       "update:party@1",
-      "update:leads@1",
     ]);
     // The party takes the merged model's name for the field.
     expect(fake.of("update", businessParties)[0]?.set).toEqual({ jobTitle: "Rear Admiral" });
-    // The lead takes the whole derivation, not just the field that changed, so a
-    // column that drifted for any other reason is corrected by the next write.
-    expect(fake.of("update", leads)[0]?.set).toEqual(LEAD_MIRROR.derive(PARTY));
+    // The returned row is the whole derivation, not just the field that changed.
+    const [returned] = await updateMirroredLeads(new FakeDb(world()).db, "org-1", [7], {
+      designation: "Rear Admiral",
+    });
+    expect(returned).toMatchObject(LEAD_MIRROR.derive(PARTY));
   });
 
   it("keeps a bulk update to a fixed number of statements", async () => {
@@ -289,16 +294,22 @@ describe("party-legacy-writer — the party is written first, in one transaction
     // record. Two leads, two parties, one statement each way.
     expect(fake.of("select", businessParties)).toHaveLength(1);
     expect(fake.of("update", businessParties)).toHaveLength(1);
-    expect(fake.of("update", leads)).toHaveLength(1);
+    // And no `leads` write at all: the grouping that used to keep that side to
+    // one statement has nothing left to group.
+    expect(fake.of("update", leads)).toHaveLength(0);
   });
 
   it("checks a lead is live before deleting it, so a delete does not move the timestamp", async () => {
-    const fake = new FakeDb(world({ leads: [] }));
+    // Liveness is read from the party now, because that is where `deleted_at`
+    // lives for a mirror-created lead — asking `leads` found nothing for every
+    // such record and turned the delete into a silent no-op. An id with neither
+    // a map row nor a legacy row is the one case that is genuinely not there.
+    const fake = new FakeDb(world({ leadMap: [], leads: [] }));
 
     await softDeleteMirroredLeads(fake.db, "org-1", [7]);
 
-    // No live lead came back, so nothing was written at all.
-    expect(fake.trace()).toEqual(["select:leads@0"]);
+    // Nothing live came back from either side, so nothing was written at all.
+    expect(fake.trace()).toEqual(["select:leadMap@0", "select:leads@0"]);
   });
 
   it("soft-deletes the party and the lead together when the lead is live", async () => {
@@ -306,12 +317,14 @@ describe("party-legacy-writer — the party is written first, in one transaction
 
     await softDeleteMirroredLeads(fake.db, "org-1", [7]);
 
+    // The map answers liveness outside the transaction — where `leads` used to
+    // be asked — and the update path then re-reads it inside to resolve the
+    // party. No `update:leads`, for the reason recorded on the update trace.
     expect(fake.trace()).toEqual([
-      "select:leads@0",
+      "select:leadMap@0",
       "select:leadMap@1",
       "select:party@1",
       "update:party@1",
-      "update:leads@1",
     ]);
     expect(fake.of("update", businessParties)[0]?.set?.deletedAt).toBeInstanceOf(Date);
   });

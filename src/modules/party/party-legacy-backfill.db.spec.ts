@@ -3,9 +3,9 @@
  * runs, *every* row in `leads`, `clients`, `contacts` and `crm_organizations`
  * resolves to a Party.
  *
- * Guarded by CRM_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   CRM_DB_TESTS=1 npx jest --runInBand --testPathPattern="party-legacy-backfill.db"
+ * Runs whenever DATABASE_URL is present and skips loudly by name when it is
+ * not. Run with:
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="party-legacy-backfill.db"
  *
  * Totality is the whole point of the map, and it is the one property a mocked
  * database cannot demonstrate — a fake answers whatever it was told to answer,
@@ -19,11 +19,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
-import postgres from "postgres";
+import type postgres from "postgres";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../test/db-spec-gate";
+import { ensureCrmFixtureOrg } from "../../test/db-spec-crm-fixture";
 
-const ENABLED = process.env.CRM_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 /**
  * Jest's default is five seconds. Every test here opens a connection to a remote
@@ -37,7 +37,7 @@ const describeDb = ENABLED ? describe : describe.skip;
  * the file is to pay it. A failure here should mean the SQL is wrong, never that
  * the database was a little further away today.
  */
-if (ENABLED) jest.setTimeout(60_000);
+jest.setTimeout(60_000);
 
 /** Read on demand: the default hermetic run loads this file only to skip it. */
 const migration = (name: string) =>
@@ -45,24 +45,6 @@ const migration = (name: string) =>
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
-
-function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  // DATABASE_URL, not APP_DATABASE_URL: applying the migration needs DDL rights
-  // the RLS-enforced application role does not have.
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for CRM_DB_TESTS");
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  // Notices are expected here -- the expand is idempotent and says so loudly.
-  return postgres(url.toString(), {
-    prepare: false,
-    max: 2,
-    ssl: "require",
-    connect_timeout: 30,
-    onnotice: () => {},
-  });
-}
 
 interface Probe {
   unmappedLeads: number;
@@ -78,9 +60,14 @@ describeDb("legacy backfill — real database", () => {
   let companyExpand: string;
   let companyMap: string;
   let companyBackfill: string;
+  let fixtureOrgId: string;
 
-  beforeAll(() => {
-    sql = connect();
+  beforeAll(async () => {
+    // DATABASE_URL, not APP_DATABASE_URL: applying the migration needs DDL
+    // rights the RLS-enforced application role does not have. Notices are
+    // expected — the expand is idempotent and says so loudly.
+    sql = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 2 });
+    fixtureOrgId = (await ensureCrmFixtureOrg(sql)).orgId;
     expand = migration("0240_party_expand_legacy_fields.sql");
     backfill = migration("0241_party_legacy_backfill.sql");
     // Ticket 25: `crm_organizations` was the fifth identity table, and it joined
@@ -109,9 +96,7 @@ describeDb("legacy backfill — real database", () => {
         await tx.unsafe(companyExpand).simple();
         await tx.unsafe(companyMap).simple();
 
-        const [org] = await tx`SELECT id FROM organizations LIMIT 1`;
-        if (!org) throw new Error("CRM_DB_TESTS needs at least one organization to scope fixtures to");
-        const orgId = org.id as string;
+        const orgId = fixtureOrgId;
 
         const marker = randomUUID();
         const [liveLead] = await tx`

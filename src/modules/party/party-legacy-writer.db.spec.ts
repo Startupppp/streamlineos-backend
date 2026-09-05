@@ -3,9 +3,9 @@
  * row and the Party it mirrors cannot be observed disagreeing, because they are
  * written in one transaction with the Party first.
  *
- * Guarded by CRM_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   CRM_DB_TESTS=1 npx jest --runInBand --testPathPattern="party-legacy-writer.db"
+ * Runs whenever DATABASE_URL is present and skips loudly by name when it is
+ * not. Run with:
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="party-legacy-writer.db"
  *
  * Atomicity is the property a mocked database cannot demonstrate. A fake rolls
  * back whatever it was told to roll back; only a real savepoint, and a real
@@ -18,8 +18,7 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
-import dotenv from "dotenv";
-import postgres from "postgres";
+import type postgres from "postgres";
 import * as schema from "../../db/schema";
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, leadPartyMap, partyRoles } from "../../db/schema/party";
@@ -35,35 +34,23 @@ import {
 } from "./party-legacy-leads";
 import { createMirroredClient } from "./party-legacy-clients";
 import { createMirroredContact } from "./party-legacy-contacts";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../test/db-spec-gate";
+import { ensureCrmFixtureOrg } from "../../test/db-spec-crm-fixture";
 
-const ENABLED = process.env.CRM_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
 
-function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for CRM_DB_TESTS");
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), {
-    prepare: false,
-    max: 2,
-    ssl: "require",
-    connect_timeout: 30,
-    onnotice: () => {},
-  });
-}
-
 describeDb("party-legacy-writer — real database", () => {
-  let client: ReturnType<typeof connect>;
+  let client: ReturnType<typeof postgres>;
   let db: Db;
+  let fixtureOrgId: string;
 
-  beforeAll(() => {
-    client = connect();
+  beforeAll(async () => {
+    client = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 2 });
     db = drizzle(client, { schema });
+    fixtureOrgId = (await ensureCrmFixtureOrg(client)).orgId;
   });
 
   afterAll(async () => {
@@ -75,10 +62,7 @@ describeDb("party-legacy-writer — real database", () => {
     let captured: T | undefined;
     try {
       await db.transaction(async (tx) => {
-        const [org] = await tx.select({ id: schema.organizations.id }).from(schema.organizations).limit(1);
-        if (!org)
-          throw new Error("CRM_DB_TESTS needs at least one organization to scope fixtures to");
-        captured = await body(tx, org.id);
+        captured = await body(tx, fixtureOrgId);
         throw new Rollback();
       });
     } catch (error) {
@@ -177,14 +161,27 @@ describeDb("party-legacy-writer — real database", () => {
       expect(party?.jobTitle).toBe("Rear Admiral");
 
       // Through the party surface: the lead follows.
+      //
+      // "Follows" is now a derivation rather than a second write. Ticket 08 and
+      // migration 0277 stopped `createMirroredLead` inserting into `leads` at
+      // all — the id is minted by the map and the row is assembled from the
+      // Party by `LEAD_MIRROR.derive`. So this asked `SELECT … FROM leads` for a
+      // row that by design does not exist, and read the absence as the update
+      // having failed. What the legacy surface serves is the derivation, and
+      // that is what is checked.
       await updatePartyWithMirror(tx, orgId, map!.partyId, { jobTitle: "Commodore" });
       const [afterParty] = await tx
         .select()
         .from(businessParties)
         .where(eq(businessParties.partyId, map!.partyId));
-      const [afterLead] = await tx.select().from(leads).where(eq(leads.id, created.id));
-      expect(afterLead?.designation).toBe("Commodore");
-      expect(diffLegacyMirror("LEAD", afterParty!, afterLead!)).toEqual([]);
+      expect(LEAD_MIRROR.derive(afterParty!).designation).toBe("Commodore");
+
+      // A lead that still has a legacy row — backfilled by 0241, or adopted —
+      // is kept in step by `refreshMirrorsOfParty`, and that is the pairing
+      // `diffLegacyMirror` exists to police. It is asserted where such a row
+      // exists: see "reports a legacy row somebody wrote behind the mirror's
+      // back". Diffing a party against its own derivation would be vacuous.
+      expect(await tx.select().from(leads).where(eq(leads.id, created.id))).toEqual([]);
     });
   });
 
@@ -240,26 +237,56 @@ describeDb("party-legacy-writer — real database", () => {
       expect(contact.title).toBe("Founder");
       expect(contact.twitterUrl).toBe("https://x.test/babbage");
 
+      // ORGANISATION is the fourth mapped kind, added with `crm_organizations`
+      // by ticket 25; `MAPPED_LEGACY_KINDS` has carried it since, and this
+      // expectation predates it.
       const report = await new PartyDivergenceService(tx).report(orgId);
-      expect(report.divergentCount).toEqual({ LEAD: 0, CLIENT: 0, CONTACT: 0 });
+      expect(report.divergentCount).toEqual({
+        LEAD: 0,
+        CLIENT: 0,
+        CONTACT: 0,
+        ORGANISATION: 0,
+      });
     });
   });
 
+  /**
+   * Divergence needs two copies, and only an adopted or backfilled record still
+   * has them.
+   *
+   * This used to create the lead through the mirror and then write to `leads`
+   * behind its back — but after ticket 08 a mirror-created lead has no `leads`
+   * row, so that UPDATE matched nothing, there was no second copy to disagree,
+   * and the check correctly reported no divergence. The shape that CAN diverge
+   * is the one the check exists for: a legacy row that arrived on its own and
+   * was adopted, which `refreshMirrorsOfParty` then keeps in step until somebody
+   * writes around it.
+   */
   it("reports a legacy row somebody wrote behind the mirror's back, and repairs nothing", async () => {
     await withTenant(async (tx, orgId) => {
-      const created = await createMirroredLead(tx, orgId, {
-        orgId,
-        name: "Ada",
-        designation: "Head of Computation",
-      });
+      // `tags` is set explicitly because the derivation produces `[]` where the
+      // column defaults to NULL, and `diffLegacyMirror` reports that pair as a
+      // difference. Left unset it is a second, permanent divergence on every
+      // adopted or backfilled lead, and it would mask the one planted below.
+      const [orphan] = await tx
+        .insert(leads)
+        .values({ orgId, name: "Ada", designation: "Head of Computation", tags: [] })
+        .returning();
+      // Adoption mints the map row and reads the legacy row as truth once, which
+      // leaves the two sides agreeing. The patch is empty on purpose: a patch
+      // would move the party and not the legacy row — `movePartiesFor` does not
+      // refresh mirrors, only `updatePartyWithMirror` does — and this test needs
+      // exactly one field to disagree, planted below.
+      const created = await updateMirroredLead(tx, orgId, orphan!.id, {});
+      expect(created?.designation).toBe("Head of Computation");
 
       // A write that did not go through the writer, which is exactly the
       // divergence the check exists to surface.
-      await tx.update(leads).set({ designation: "Stale" }).where(eq(leads.id, created.id));
+      await tx.update(leads).set({ designation: "Stale" }).where(eq(leads.id, orphan!.id));
 
       const service = new PartyDivergenceService(tx);
       const report = await service.report(orgId);
-      const mine = report.divergent.find((row) => row.legacyId === created.id);
+      const mine = report.divergent.find((row) => row.legacyId === orphan!.id);
 
       expect(mine?.fields).toEqual([
         expect.objectContaining({ column: "designation", partyColumn: "jobTitle" }),
@@ -268,8 +295,8 @@ describeDb("party-legacy-writer — real database", () => {
       // Run it again: still divergent. A check that repaired would go green here
       // and take the evidence of which write path did this with it.
       const second = await service.report(orgId);
-      expect(second.divergent.find((row) => row.legacyId === created.id)?.fields).toHaveLength(1);
-      const [row] = await tx.select().from(leads).where(eq(leads.id, created.id));
+      expect(second.divergent.find((row) => row.legacyId === orphan!.id)?.fields).toHaveLength(1);
+      const [row] = await tx.select().from(leads).where(eq(leads.id, orphan!.id));
       expect(row?.designation).toBe("Stale");
     });
   });
@@ -308,8 +335,15 @@ describeDb("party-legacy-writer — real database", () => {
   it("keeps the mirror inside the tenant that owns the party", async () => {
     await withTenant(async (tx, orgId) => {
       const created = await createMirroredLead(tx, orgId, { orgId, name: "Tenant check" });
-      const [row] = await tx.select().from(leads).where(eq(leads.id, created.id));
-      expect(row?.orgId).toBe(orgId);
+      // The record is the party and the map row now; `leads` holds nothing for a
+      // mirror-created lead, so asking it which tenant owns this was asking the
+      // wrong table. Both surviving sides are checked instead.
+      expect(created.orgId).toBe(orgId);
+      const [map] = await tx
+        .select()
+        .from(leadPartyMap)
+        .where(and(eq(leadPartyMap.organizationId, orgId), eq(leadPartyMap.leadId, created.id)));
+      expect(map?.organizationId).toBe(orgId);
       expect(LEAD_MIRROR.derive({ ...(await onlyParty(tx, orgId, created.id)) }).orgId).toBe(orgId);
     });
   });

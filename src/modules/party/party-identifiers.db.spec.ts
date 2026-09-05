@@ -3,9 +3,9 @@
  * holding an email address, a telephone number or a WhatsApp number has an
  * identifier row for it.
  *
- * Guarded by CRM_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   CRM_DB_TESTS=1 npx jest --runInBand --testPathPattern="party-identifiers.db"
+ * Runs whenever DATABASE_URL is present and skips loudly by name when it is
+ * not. Run with:
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="party-identifiers.db"
  *
  * Totality is the one property a mocked database cannot demonstrate — a fake
  * answers whatever it was told to answer, so a backfill whose anti-join is
@@ -26,12 +26,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
-import postgres from "postgres";
+import type postgres from "postgres";
 import { normaliseIdentifier, type IdentifierKind } from "../ingress/inbound-event";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../test/db-spec-gate";
+import { ensureCrmFixtureOrg } from "../../test/db-spec-crm-fixture";
 
-const ENABLED = process.env.CRM_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
 /** Read on demand: the default hermetic run loads this file only to skip it. */
 const migration = (name: string): string =>
@@ -39,23 +39,6 @@ const migration = (name: string): string =>
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
-
-function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  // DATABASE_URL, not APP_DATABASE_URL: applying the migration needs DDL rights
-  // the RLS-enforced application role does not have.
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for CRM_DB_TESTS");
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), {
-    prepare: false,
-    max: 2,
-    ssl: "require",
-    connect_timeout: 30,
-    onnotice: () => {},
-  });
-}
 
 /**
  * The same telephone line and the same address, written the way real records
@@ -79,10 +62,14 @@ const FORMATS: { kind: IdentifierKind; written: string }[] = [
 describeDb("party identifiers — real database", () => {
   let sql: ReturnType<typeof postgres>;
   let backfill: string;
+  let fixtureOrgId: string;
 
-  beforeAll(() => {
-    sql = connect();
+  beforeAll(async () => {
+    // DATABASE_URL, not APP_DATABASE_URL: applying the migration needs DDL
+    // rights the RLS-enforced application role does not have.
+    sql = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 2 });
     backfill = migration("0260_party_identifiers.sql");
+    fixtureOrgId = (await ensureCrmFixtureOrg(sql)).orgId;
   });
 
   afterAll(async () => {
@@ -97,6 +84,12 @@ describeDb("party identifiers — real database", () => {
    * 0260 has been applied for real — `CREATE TABLE IF NOT EXISTS` would survive,
    * but `ADD CONSTRAINT` would not, and a test that only passes on a database
    * where the migration is pending stops being run the week it lands.
+   *
+   * Every insert names `party_id` explicitly. `business_parties.party_id` is
+   * `text NOT NULL` with no database default — the identifier comes from
+   * Drizzle's `$defaultFn(() => randomUUID())`, which is client-side and so
+   * does nothing for the raw SQL here. These fixtures omitted it and every one
+   * of them failed on the not-null constraint the first time this file was run.
    */
   async function withBackfill<T>(
     body: (tx: postgres.TransactionSql, orgId: string, marker: string) => Promise<T>,
@@ -107,17 +100,15 @@ describeDb("party identifiers — real database", () => {
         await tx.unsafe("SET LOCAL statement_timeout = '60s'").simple();
         await tx.unsafe('DROP TABLE IF EXISTS "party_identifiers" CASCADE').simple();
 
-        const [org] = await tx`SELECT id FROM organizations LIMIT 1`;
-        if (!org)
-          throw new Error("CRM_DB_TESTS needs at least one organization to scope fixtures to");
-        const orgId = org.id as string;
+        const orgId = fixtureOrgId;
         const marker = randomUUID().slice(0, 8);
 
         for (const [index, format] of FORMATS.entries()) {
           const column =
             format.kind === "email" ? "email" : format.kind === "phone" ? "phone" : "whatsapp_phone";
           await tx.unsafe(
-            `INSERT INTO business_parties (organization_id, name, ${column}) VALUES ($1, $2, $3)`,
+            `INSERT INTO business_parties (party_id, organization_id, name, ${column})
+             VALUES (gen_random_uuid()::text, $1, $2, $3)`,
             [orgId, `fixture ${marker} ${String(index)}`, format.written],
           );
         }
@@ -125,14 +116,15 @@ describeDb("party identifiers — real database", () => {
         // A soft-deleted record must not hold a claim: the deletion would
         // otherwise poison that address for everybody, permanently.
         await tx`
-          INSERT INTO business_parties (organization_id, name, email, deleted_at)
-          VALUES (${orgId}, ${`deleted ${marker}`}, ${`deleted-${marker}@example.test`}, now())`;
+          INSERT INTO business_parties (party_id, organization_id, name, email, deleted_at)
+          VALUES (gen_random_uuid()::text, ${orgId}, ${`deleted ${marker}`},
+                  ${`deleted-${marker}@example.test`}, now())`;
 
         // Two records for one line. Exactly one of them may hold the claim.
         await tx`
-          INSERT INTO business_parties (organization_id, name, phone)
-          VALUES (${orgId}, ${`contested a ${marker}`}, '+1 (212) 555-0000'),
-                 (${orgId}, ${`contested b ${marker}`}, '+12125550000')`;
+          INSERT INTO business_parties (party_id, organization_id, name, phone)
+          VALUES (gen_random_uuid()::text, ${orgId}, ${`contested a ${marker}`}, '+1 (212) 555-0000'),
+                 (gen_random_uuid()::text, ${orgId}, ${`contested b ${marker}`}, '+12125550000')`;
 
         await tx.unsafe(backfill).simple();
 

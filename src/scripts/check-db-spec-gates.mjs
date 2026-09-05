@@ -60,49 +60,15 @@ const GATE_CALL = "dbSpecSuite";
  *
  * Printed on every run. An exemption that only exists in source is the thing
  * this gate was written to stop.
+ *
+ * Empty, and the empty is the point. The five CRM specs listed here until now
+ * were exempt because they needed a seeded CRM tenant rather than merely a
+ * migrated database. `src/test/db-spec-crm-fixture.ts` supplies one — the real
+ * `PermissionCatalogSyncService` and the real `seedSystemRolesForOrg`, so the
+ * RBAC probe measures the seeder rather than the fixture — and all five now
+ * take their suite from `db-spec-gate` like the rest of the tier.
  */
-const EXEMPT = [
-  {
-    file: "src/modules/activities/activity-cursors.db.spec.ts",
-    variable: "CRM_DB_TESTS",
-    reason:
-      "The five CRM database specs need a seeded CRM tenant, not just a migrated database: run " +
-      "against an empty one at head, all five fail in setup. Converting them to dbSpecSuite means " +
-      "giving them a fixture the way the inventory tier now has one, which is its own piece of work.",
-  },
-  {
-    file: "src/modules/party/party-identifiers.db.spec.ts",
-    variable: "CRM_DB_TESTS",
-    reason:
-      "Same tier as activity-cursors: it applies a migration and compares its SQL normalisation " +
-      "against live party rows, so it needs seeded parties. It cannot run on a migrated-but-empty " +
-      "database, which is the only kind CI can create today.",
-  },
-  {
-    file: "src/modules/party/party-legacy-backfill.db.spec.ts",
-    variable: "CRM_DB_TESTS",
-    reason:
-      "Same tier: asserts totality of the 0260 backfill over live legacy rows, so an empty database " +
-      "makes every assertion vacuous rather than passing. Needs the same fixture work as the rest " +
-      "of the CRM database tier before it can be default-on.",
-  },
-  {
-    file: "src/modules/party/party-legacy-writer.db.spec.ts",
-    variable: "CRM_DB_TESTS",
-    reason:
-      "Same tier: exercises the dual-write path against existing legacy rows and their parties, so " +
-      "it depends on seeded CRM data. Listed here rather than converted so the debt is a number in " +
-      "this gate's output instead of a silent skip.",
-  },
-  {
-    file: "src/modules/rbac/__tests__/crm-permissions-reach-somebody.db.spec.ts",
-    variable: "CRM_DB_TESTS",
-    reason:
-      "Same tier: asks whether every catalogued CRM key reaches a role in a real database, which " +
-      "needs organisations with seeded system roles. On an empty database it reports every key as " +
-      "unreachable, so default-on would be a false red rather than evidence.",
-  },
-];
+const EXEMPT = [];
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -231,8 +197,12 @@ function report(root) {
   console.log(`check:db-spec-gates`);
   console.log(`  ${specs.length} *.db.spec.ts files scanned`);
   console.log(`  ${specs.length - EXEMPT.length} default-on via src/test/${GATE_MODULE}`);
-  console.log(`  ${EXEMPT.length} exempt, each named below with its reason:`);
-  for (const e of EXEMPT) console.log(`    - ${e.file} (${e.variable}): ${e.reason}`);
+  if (EXEMPT.length === 0) {
+    console.log(`  0 exempt — every real-database spec runs on a connection string`);
+  } else {
+    console.log(`  ${EXEMPT.length} exempt, each named below with its reason:`);
+    for (const e of EXEMPT) console.log(`    - ${e.file} (${e.variable}): ${e.reason}`);
+  }
 
   if (violations.length > 0) {
     console.log("");

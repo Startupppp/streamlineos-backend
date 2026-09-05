@@ -1,12 +1,11 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { leadPartyMap } from "../../db/schema/party";
+import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { leads } from "../../db/schema/crm/leads";
 import { LEAD_MIRROR } from "./party-legacy-mirror";
 import type { PartyRow } from "./party-mirror-fields";
 import {
   applyPartyPatch,
   grantRole,
-  groupByPayload,
   insertBareParty,
   movePartiesFor,
   type LeadInsert,
@@ -193,24 +192,29 @@ export async function updateMirroredLeads(
       (party) => LEAD_MIRROR.split(patch, party).partyPatch,
     );
 
-    const derived: { id: number; payload: Partial<LeadInsert> }[] = [];
+    /**
+     * What the caller is handed is assembled from what the party *became*, the
+     * same way `createMirroredLead` assembles it — see `legacyLeadRow`.
+     *
+     * The `UPDATE leads` that used to produce these rows is gone, and with it
+     * the `groupByPayload` that kept a bulk write to a handful of statements:
+     * there is no second table left to write, so there is nothing to group. The
+     * party updates are still grouped, inside `movePartiesFor`. This is the
+     * shape `updateMirroredClients` and `updateMirroredContacts` already had —
+     * leads was the one kind ticket 08 converted on create and not on update,
+     * and the gap was invisible because it is not a crash. `.returning()` over a
+     * table the mirror no longer writes matches nothing, so every lead created
+     * through the mirror updated its party correctly and then reported no rows,
+     * which every caller reads as "not found".
+     */
+    const updated: LeadRow[] = [];
     for (const [leadId, partyId] of partyByLead) {
       const party = moved.get(partyId);
       if (!party) continue;
       // The pass-through half does not depend on the party, so it is the same
       // for every row; the derivation is not, and is computed per party.
       const { legacyOwnedPatch } = LEAD_MIRROR.split(patch, party);
-      derived.push({ id: leadId, payload: { ...LEAD_MIRROR.derive(party), ...legacyOwnedPatch } });
-    }
-
-    const updated: LeadRow[] = [];
-    for (const group of groupByPayload(derived)) {
-      const rows = await tx
-        .update(leads)
-        .set(group.payload)
-        .where(and(eq(leads.orgId, organizationId), inArray(leads.id, group.ids)))
-        .returning();
-      updated.push(...rows);
+      updated.push(legacyLeadRow(leadId, organizationId, party, legacyOwnedPatch));
     }
     return updated;
   });
@@ -230,6 +234,14 @@ export async function updateMirroredLead(
  * Idempotent, matching the `WHERE deleted_at IS NULL` the legacy updates carried:
  * deleting an already-deleted record must not move the timestamp that says when
  * it went.
+ *
+ * Liveness is read from the Party, because that is where `deleted_at` now lives.
+ * This asked `leads` directly, which for a lead created through the mirror is a
+ * table with no row in it — so the probe returned nothing, the delete became a
+ * silent no-op, and the caller got an empty array rather than an error. A lead
+ * that arrived out of band still has no map row, and for those the legacy table
+ * is the only account of whether it is live; `updateMirroredLeads` adopts them
+ * on the way through, so they are included rather than skipped.
  */
 export async function softDeleteMirroredLeads(
   db: MirrorDb,
@@ -238,16 +250,56 @@ export async function softDeleteMirroredLeads(
 ): Promise<LeadRow[]> {
   const ids = [...new Set(leadIds)].filter((id) => Number.isInteger(id));
   if (ids.length === 0) return [];
-  const live = await db
-    .select({ id: leads.id })
-    .from(leads)
-    .where(
-      and(eq(leads.orgId, organizationId), inArray(leads.id, ids), isNull(leads.deletedAt)),
-    );
   return updateMirroredLeads(
     db,
     organizationId,
-    live.map((row) => row.id),
+    await liveLegacyIds(db, organizationId, ids),
     { deletedAt: new Date() },
   );
+}
+
+/**
+ * The ids among `ids` that are not already deleted, asked of whichever side of
+ * the mirror actually holds the record.
+ *
+ * Mapped ids answer from `business_parties`; unmapped ones — a restore, an
+ * out-of-band import, a module not yet converted — answer from `leads`, which is
+ * the same row `adoptLead` will read as truth on the way through.
+ */
+async function liveLegacyIds(
+  db: MirrorDb,
+  organizationId: string,
+  ids: readonly number[],
+): Promise<number[]> {
+  const mapped = await db
+    .select({ leadId: leadPartyMap.leadId, deletedAt: businessParties.deletedAt })
+    .from(leadPartyMap)
+    .innerJoin(
+      businessParties,
+      and(
+        eq(businessParties.organizationId, leadPartyMap.organizationId),
+        eq(businessParties.partyId, leadPartyMap.partyId),
+      ),
+    )
+    .where(
+      and(
+        eq(leadPartyMap.organizationId, organizationId),
+        inArray(leadPartyMap.leadId, [...ids]),
+      ),
+    );
+
+  // Live is "carries no deletion timestamp", not "is exactly null" — the column
+  // is nullable and a projection that omits it must not read as deleted.
+  const live = mapped.filter((row) => !row.deletedAt).map((row) => row.leadId);
+  const seen = new Set(mapped.map((row) => row.leadId));
+  const unmapped = ids.filter((id) => !seen.has(id));
+  if (unmapped.length === 0) return live;
+
+  const orphans = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(
+      and(eq(leads.orgId, organizationId), inArray(leads.id, unmapped), isNull(leads.deletedAt)),
+    );
+  return [...live, ...orphans.map((row) => row.id)];
 }

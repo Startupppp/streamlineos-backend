@@ -9,16 +9,22 @@
  * connection to see it. `due_at is null` as a sort key and a keyset that has to
  * step across the null group are the same kind of claim.
  *
- * Guarded by CRM_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   CRM_DB_TESTS=1 npx jest --runInBand --testPathPattern="activity-cursors.db"
+ * Runs whenever DATABASE_URL is present and skips loudly by name when it is
+ * not. Run with:
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="activity-cursors.db"
+ *
+ * The tenant comes from `ensureCrmFixtureOrg` rather than from
+ * `SELECT id FROM organizations LIMIT 1`, which is what this file used to open
+ * with. That read is a question about whatever a shared branch happened to
+ * contain: against a freshly migrated database — the only kind CI can create —
+ * it returned nothing and every test here died in setup on
+ * "needs at least one organization to scope fixtures to".
  *
  * Everything happens inside a transaction that is rolled back, fixtures
  * included, so the tests leave the database exactly as they found it.
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
-import postgres from "postgres";
+import type postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { MyTasksService } from "./my-tasks.service";
@@ -26,29 +32,15 @@ import { ActivitiesService } from "./activities.service";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { Db } from "../../db/drizzle.types";
 import type { TaskPage } from "./task-list";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../test/db-spec-gate";
+import { ensureCrmFixtureOrg } from "../../test/db-spec-crm-fixture";
 
-const ENABLED = process.env.CRM_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+const describeDb = dbSpecSuite();
 
-if (ENABLED) jest.setTimeout(120_000);
+jest.setTimeout(120_000);
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
-
-function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for CRM_DB_TESTS");
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), {
-    prepare: false,
-    max: 1,
-    ssl: "require",
-    connect_timeout: 30,
-    onnotice: () => {},
-  });
-}
 
 /**
  * Four tasks that between them cover every branch of the ordering.
@@ -75,10 +67,12 @@ const IN_DUE_ORDER = [
 describeDb("activity cursors — real database", () => {
   let client: ReturnType<typeof postgres>;
   let db: Db;
+  let fixtureOrgId: string;
 
-  beforeAll(() => {
-    client = connect();
+  beforeAll(async () => {
+    client = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 1 });
     db = drizzle(client) as unknown as Db;
+    fixtureOrgId = (await ensureCrmFixtureOrg(client)).orgId;
   });
 
   afterAll(async () => {
@@ -100,9 +94,7 @@ describeDb("activity cursors — real database", () => {
       await db.transaction(async (tx) => {
         await tx.execute(sql.raw("SET LOCAL statement_timeout = '60s'"));
 
-        const org = await tx.execute<{ id: string }>(sql`SELECT id FROM organizations LIMIT 1`);
-        const orgId = org[0]?.id;
-        if (!orgId) throw new Error("CRM_DB_TESTS needs at least one organization to scope fixtures to");
+        const orgId = fixtureOrgId;
         const userId = `mt-${randomUUID()}`;
         const partyId = randomUUID();
 

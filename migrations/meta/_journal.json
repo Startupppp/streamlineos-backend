@@ -4425,6 +4425,20 @@
       "when": 1803000010004,
       "tag": "0911_inv_projects_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 632,
+      "version": "7",
+      "when": 1803000010005,
+      "tag": "0912_feedbucket_modules_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 633,
+      "version": "7",
+      "when": 1803000010006,
+      "tag": "0913_party_map_drop_legacy_fks",
+      "breakpoints": true
     }
   ]
 }
