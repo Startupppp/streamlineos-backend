@@ -24,3 +24,7 @@ backups/
 .lane-a-bench.sh
 .lane-a-bench.log
 .lane-a-e2e.log
+
+# Throwaway diagnostic and one-off patch scripts. Two were committed by accident
+# (.tmp-probe.mjs, .tmp-ticket-patch3.py) in a shared working tree.
+.tmp-*
