@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { aliasedTable, and, asc, eq, isNotNull, isNull, gt, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, gt, lt, or, sql, type SQL } from "drizzle-orm";
 import { calendarEvents, eventAttendees, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -9,6 +9,24 @@ import type { DataScope } from "../access/access.types";
 
 const EXPORT_ROW_CAP = 500;
 const EXPORT_RANGE_CAP_MS = 366 * 24 * 60 * 60 * 1000;
+
+/**
+ * Scalar subquery — correlated, not hashable.
+ *
+ * A LEFT JOIN + isNotNull(callerAtt.id) in the same OR as two equality
+ * predicates forces the planner to materialise every row the caller attended
+ * before the OR can short-circuit on visibility = 'org'. A scalar sublink
+ * is evaluated only for rows the two cheap arms did not already admit, keeping
+ * it as a targeted probe through event_attendees_event_membership_unique.
+ * See calendar-event-source.loader.ts:attendedByCaller for the benchmark.
+ */
+function attendedByExporter(callerMembershipId: number): SQL {
+  return sql`(SELECT ${eventAttendees.id} FROM ${eventAttendees}
+     WHERE ${eventAttendees.orgId} = ${calendarEvents.orgId}
+       AND ${eventAttendees.eventId} = ${calendarEvents.id}
+       AND ${eventAttendees.membershipId} = ${callerMembershipId}
+     LIMIT 1) IS NOT NULL`;
+}
 
 interface ExportedEvent {
   title: string;
@@ -40,12 +58,10 @@ export class CalendarExportService {
     });
     const callerMembershipId = membership?.id ?? 0;
 
-    const callerAtt = aliasedTable(eventAttendees, "exp_caller_att");
-
     const visibilityClause = or(
       eq(calendarEvents.visibility, "org"),
       eq(calendarEvents.createdByMembershipId, callerMembershipId),
-      isNotNull(callerAtt.id),
+      attendedByExporter(callerMembershipId),
     );
 
     const scopeClause =
@@ -69,14 +85,6 @@ export class CalendarExportService {
         recurrenceEnd: calendarEvents.recurrenceEnd,
       })
       .from(calendarEvents)
-      .leftJoin(
-        callerAtt,
-        and(
-          eq(callerAtt.orgId, calendarEvents.orgId),
-          eq(callerAtt.eventId, calendarEvents.id),
-          eq(callerAtt.membershipId, callerMembershipId),
-        ),
-      )
       .where(
         and(
           eq(calendarEvents.orgId, orgId),

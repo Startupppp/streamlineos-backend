@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { aliasedTable, and, asc, eq, gt, inArray, isNotNull, like, or, sql } from "drizzle-orm";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 import {
   calendarEvents,
   calendarProviderSyncQueue,
@@ -47,60 +47,6 @@ export class CalendarService {
     end: Date,
   ): Promise<CalendarEventsResult> {
     return this.eventsAggregate.getEvents(orgId, userId, start, end);
-  }
-
-  async getUpcomingNativeEvents(
-    orgId: string,
-    userId: string,
-    after: Date,
-    limit: number,
-  ) {
-    const callerAtt = aliasedTable(eventAttendees, "upcoming_caller_att");
-
-    const membership = await this.db.query.organizationMembers.findFirst({
-      columns: { id: true },
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-    });
-
-    const callerMembershipId = membership?.id ?? 0;
-
-    return this.db
-      .select({
-        id: calendarEvents.id,
-        title: calendarEvents.title,
-        startDate: calendarEvents.startDate,
-        endDate: calendarEvents.endDate,
-        allDay: calendarEvents.allDay,
-        color: calendarEvents.color,
-        category: calendarEvents.category,
-        location: calendarEvents.location,
-      })
-      .from(calendarEvents)
-      .leftJoin(
-        callerAtt,
-        and(
-          eq(callerAtt.orgId, calendarEvents.orgId),
-          eq(callerAtt.eventId, calendarEvents.id),
-          eq(callerAtt.membershipId, callerMembershipId),
-        ),
-      )
-      .where(
-        and(
-          eq(calendarEvents.orgId, orgId),
-          gt(calendarEvents.startDate, after),
-          or(
-            eq(calendarEvents.visibility, "org"),
-            eq(calendarEvents.createdByMembershipId, callerMembershipId),
-            isNotNull(callerAtt.id),
-          ),
-        ),
-      )
-      .orderBy(asc(calendarEvents.startDate))
-      .limit(limit);
   }
 
   async createEvent(orgId: string, userId: string, input: CreateEventInput) {

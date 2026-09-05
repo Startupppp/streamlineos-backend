@@ -19,7 +19,11 @@ const documentFileReferenceSchema = z
   .max(2048)
   .refine(
     (value) =>
-      /^https:\/\//i.test(value) || /^(?:documents|hr-documents)\/[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
+      !value.includes("..") &&
+      !value.includes("\\") &&
+      !value.startsWith("/") &&
+      !/^[a-z][a-z0-9+.-]*:/i.test(value) &&
+      /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
     "Invalid stored document file reference",
   );
 

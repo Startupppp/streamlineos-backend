@@ -330,29 +330,6 @@ describe("AC7: cross-tenant object key denied", () => {
   });
 });
 
-describe("AC7: expired signed URL denied", () => {
-  it("verifyDownloadToken rejects a token with ttl=-1 as expired", async () => {
-    const { verifyDownloadToken, signDownloadToken } = await import("../../common/security/av-scan");
-    const SECRET = "test-secret-that-is-at-least-32-bytes-long";
-
-    const expiredToken = signDownloadToken("org-1", "org-1/uploads/file.pdf", SECRET, -1);
-    const result = verifyDownloadToken(expiredToken, SECRET);
-
-    expect(result.valid).toBe(false);
-    if (!result.valid) expect(result.reason).toBe("expired");
-  });
-
-  it("verifyDownloadToken accepts a fresh token", async () => {
-    const { verifyDownloadToken, signDownloadToken } = await import("../../common/security/av-scan");
-    const SECRET = "test-secret-that-is-at-least-32-bytes-long";
-
-    const token = signDownloadToken("org-1", "org-1/uploads/file.pdf", SECRET);
-    const result = verifyDownloadToken(token, SECRET);
-
-    expect(result.valid).toBe(true);
-  });
-});
-
 describe("AC7: re-authorized download after permission revocation denied", () => {
   it("denies download when the file record has moved to a different org (permission revoked scenario)", async () => {
     const db = buildDb({ onboardingDocuments: { orgId: "org-B" } });

@@ -39,6 +39,7 @@ import {
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { StorageService } from "../../storage/storage.service";
+import { parseStorageKey } from "../../storage/storage-key";
 import { AuditService } from "../../../common/audit/audit.service";
 import { resolveExitAdmin } from "./exit-scope";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -177,6 +178,10 @@ export class ExitController {
     );
     const fileKey = this.storage.getFileKeyFromUrl(record.fileUrl);
     if (!this.storage.isValidFileKey(fileKey)) {
+      throw new NotFoundException("Resignation letter is unavailable.");
+    }
+    const { folderRoot } = parseStorageKey(fileKey, currentUser.orgId);
+    if (folderRoot !== "resignations") {
       throw new NotFoundException("Resignation letter is unavailable.");
     }
 

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 /**
  * PRD-C145 — "Prove Chat, Calendar, Inbox and Notifications list, unread/count, range/history
@@ -50,8 +51,9 @@ interface ReadCostBudget {
  */
 function loadReadCostBudgets(): ReadCostBudget[] {
   const modulePath = resolve(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs");
+  const moduleUrl = pathToFileURL(modulePath).href;
   const program = `
-    import { BUDGETS } from ${JSON.stringify(modulePath)};
+    import { BUDGETS } from ${JSON.stringify(moduleUrl)};
     process.stdout.write(JSON.stringify(BUDGETS.map((b) => ({
       id: b.id, ceiling: b.ceiling, maxScanRows: b.maxScanRows ?? null,
       sql: String(b.sql ?? ""), planAssertions: b.planAssertions ?? [],

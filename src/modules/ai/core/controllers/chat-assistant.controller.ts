@@ -56,7 +56,7 @@ import { Validate } from "../../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../../common/auth/principal";
 import {
   createStreamAbortSignal,
-  pipeAiTextStream,
+  pipeAiUiMessageStream,
   rethrowStreamRouteError,
 } from "../streaming";
 import { AiRequestAbortInterceptor } from "../streaming";
@@ -269,7 +269,7 @@ export class ChatAssistantController {
         parsed.data.persona,
         abort.signal,
       );
-      await pipeAiTextStream(res, result, { feature: "ai.chat", orgId: u.orgId });
+      await pipeAiUiMessageStream(res, result, { feature: "ai.chat", orgId: u.orgId });
     } catch (error) {
       rethrowStreamRouteError(error, { route: "POST /chat" });
     } finally {

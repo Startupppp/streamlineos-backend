@@ -17,6 +17,15 @@ function sqlValues(val: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
+/**
+ * The mock chain deliberately omits `leftJoin`. The export query uses a
+ * scalar subquery for attendance visibility instead of a LEFT JOIN (see
+ * `attendedByExporter` in calendar-export.service.ts). If the service is
+ * reverted to use `.leftJoin()`, every test below throws
+ * "TypeError: db.select(...).from(...).leftJoin is not a function" —
+ * that TypeError IS the bite proof: the test fails exactly where the
+ * structural regression is.
+ */
 function makeDb(memberRow?: { id: number }, whereCalls?: unknown[]): Db {
   const limit = jest.fn().mockResolvedValue([]);
   const orderBy = jest.fn().mockReturnValue({ limit });
@@ -24,8 +33,7 @@ function makeDb(memberRow?: { id: number }, whereCalls?: unknown[]): Db {
     whereCalls?.push(cond);
     return { orderBy };
   });
-  const leftJoin = jest.fn().mockReturnValue({ where });
-  const from = jest.fn().mockReturnValue({ leftJoin });
+  const from = jest.fn().mockReturnValue({ where });
   return {
     query: {
       organizationMembers: {
@@ -84,6 +92,16 @@ describe("exportSchema — date range enforcement", () => {
   it("rejects a non-date to value", () => {
     const result = exportSchema.safeParse({ from: "2026-08-01", to: "bad" });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("CalendarExportService — scalar subquery visibility (no LEFT JOIN)", () => {
+  it("BITE: resolves without error when the mock chain has no leftJoin — reverted service throws TypeError here", async () => {
+    const db = makeDb({ id: 7 });
+    const svc = new CalendarExportService(db);
+    const from = new Date("2026-01-01");
+    const to = new Date("2026-06-30");
+    await expect(svc.exportEvents("org-1", "user-1", from, to, "all")).resolves.toBeDefined();
   });
 });
 

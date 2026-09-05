@@ -53,6 +53,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
+import { parseStorageKey } from "../../storage/storage-key";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -114,6 +115,10 @@ export class DocumentsController {
     );
     const fileKey = this.storage.getFileKeyFromUrl(document.fileUrl);
     if (!this.storage.isValidFileKey(fileKey)) {
+      throw new NotFoundException("Document file is unavailable.");
+    }
+    const { folderRoot } = parseStorageKey(fileKey, currentUser.orgId);
+    if (folderRoot !== "documents" && folderRoot !== "hr-documents" && folderRoot !== "hr") {
       throw new NotFoundException("Document file is unavailable.");
     }
 

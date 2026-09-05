@@ -21,6 +21,7 @@ import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
+import { parseStorageKey } from "../../storage/storage-key";
 import { OnboardingViewsService } from "./onboarding-views.service";
 import { resolveOnboardingManageScope } from "./onboarding-scope";
 import {
@@ -127,6 +128,10 @@ export class HrOnboardingDocsAdminController {
     );
     const fileKey = this.storage.getFileKeyFromUrl(document.fileUrl);
     if (!this.storage.isValidFileKey(fileKey)) {
+      throw new NotFoundException("Document file is unavailable.");
+    }
+    const { folderRoot } = parseStorageKey(fileKey, currentUser.orgId);
+    if (folderRoot !== "onboarding" && folderRoot !== "onboarding-docs") {
       throw new NotFoundException("Document file is unavailable.");
     }
 

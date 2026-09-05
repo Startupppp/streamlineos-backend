@@ -501,15 +501,13 @@ describe("exportEvents — visibility filter applied to export query", () => {
       },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          leftJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockImplementation((cond) => {
-              capturedWhereArgs.push(cond);
-              return {
-                orderBy: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockResolvedValue(mockRows),
-                }),
-              };
-            }),
+          where: jest.fn().mockImplementation((cond) => {
+            capturedWhereArgs.push(cond);
+            return {
+              orderBy: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue(mockRows),
+              }),
+            };
           }),
         }),
       }),
@@ -536,11 +534,9 @@ describe("exportEvents — visibility filter applied to export query", () => {
       },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          leftJoin: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({
-              orderBy: jest.fn().mockReturnValue({
-                limit: jest.fn().mockResolvedValue([]),
-              }),
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
             }),
           }),
         }),

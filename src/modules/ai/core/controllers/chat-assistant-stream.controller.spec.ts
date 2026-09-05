@@ -137,7 +137,7 @@ describe("ChatAssistantController — the pipe promise is awaited", () => {
   it("does not reject the handler when the provider faults after headers were sent", async () => {
     const controller = makeController(
       jest.fn().mockResolvedValue({
-        pipeTextStreamToResponse: jest.fn().mockRejectedValue(new Error("upstream 503")),
+        pipeUIMessageStreamToResponse: jest.fn().mockRejectedValue(new Error("upstream 503")),
       }),
     );
     const res = makeResponse();
@@ -169,7 +169,7 @@ describe("ChatAssistantController — cancellation reaches the service", () => {
             signal = s;
             res.emitClose();
             return Promise.resolve({
-              pipeTextStreamToResponse: jest.fn().mockResolvedValue(undefined),
+              pipeUIMessageStreamToResponse: jest.fn().mockResolvedValue(undefined),
             });
           },
         ),
@@ -198,7 +198,7 @@ describe("ChatAssistantController — cancellation reaches the service", () => {
             signal = s;
             req.emitClose();
             return Promise.resolve({
-              pipeTextStreamToResponse: jest.fn().mockResolvedValue(undefined),
+              pipeUIMessageStreamToResponse: jest.fn().mockResolvedValue(undefined),
             });
           },
         ),

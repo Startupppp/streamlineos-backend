@@ -11,7 +11,11 @@ const resignationFileReferenceSchema = z
   .max(2048)
   .refine(
     (value) =>
-      /^https:\/\//i.test(value) || /^resignations\/[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
+      !value.includes("..") &&
+      !value.includes("\\") &&
+      !value.startsWith("/") &&
+      !/^[a-z][a-z0-9+.-]*:/i.test(value) &&
+      /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
     "Must be a stored resignation file reference",
   );
 
@@ -141,7 +145,11 @@ const onboardingFileReferenceSchema = z
   .max(2048, "fileUrl is too long")
   .refine(
     (value) =>
-      /^https:\/\//i.test(value) || /^(?:onboarding|onboarding-docs)\/[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
+      !value.includes("..") &&
+      !value.includes("\\") &&
+      !value.startsWith("/") &&
+      !/^[a-z][a-z0-9+.-]*:/i.test(value) &&
+      /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(value),
     "fileUrl must be a stored onboarding file reference",
   );
 
