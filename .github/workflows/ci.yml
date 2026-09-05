@@ -121,10 +121,31 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
 
-      # Anti-vacuity. Five `--testPathPattern` runs that match nothing exit 1 under
+      # T16. PRD §12.9's `property` row was "Absent repo-wide" — zero fast-check
+      # hits in either lockfile. These are the quantity properties Phase 1's
+      # Required-validation list names: the four decimal.ts operators, both
+      # availability formulas and the UOM conversion, over generated inputs with
+      # coverage floors so a degenerate generator fails instead of passing. The
+      # differential half against PostgreSQL is available-formula-parity.db.spec.ts,
+      # which runs in the golden-path job where a database exists.
+      - name: Ratchet - quantity properties
+        run: pnpm exec jest --ci --testPathPattern=quantity.property
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      # T16. §12.9's `browser` row is a recorded exemption rather than a gate,
+      # because an inventory browser gate needs a running authenticated app and
+      # nothing here can produce one. This holds every reason that exemption
+      # rests on, so it cannot be inherited once its cause has gone.
+      - name: Ratchet - inventory gate exemptions
+        run: pnpm exec jest --ci --testPathPattern=inventory-gate-exemptions
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      # Anti-vacuity. Seven `--testPathPattern` runs that match nothing exit 1 under
       # `--ci`, but a renamed spec would also just stop existing quietly if anyone
       # ever added `--passWithNoTests`. This asserts the files are actually there.
-      - name: The five ratchets exist
+      - name: The seven ratchets exist
         run: |
           set -euo pipefail
           missing=0
@@ -133,6 +154,8 @@ jobs:
             src/modules/inventory/__tests__/inventory-schema-reachability.spec.ts \
             src/modules/inventory/stock-engine/__tests__/available-formula-single-definition.spec.ts \
             src/modules/inventory/__tests__/idempotent-guard-placement.spec.ts \
+            src/modules/inventory/stock-engine/__tests__/quantity.property.spec.ts \
+            src/modules/inventory/__tests__/inventory-gate-exemptions.spec.ts \
             src/db/cold-build-integrity.spec.ts ; do
             if [ ! -f "$f" ]; then echo "MISSING RATCHET: $f"; missing=1; fi
           done
@@ -315,6 +338,19 @@ jobs:
       # drill's own logic is checked here, where there is no database.
       - name: Rollback rehearsal logic
         run: pnpm drill:rollback:self-test
+
+      # PRD §12.9's `load` row had no inventory evidence at all: `load:drive`'s
+      # five workloads contain zero `inventor|stock|warehouse` hits, and the nine
+      # `inv-*` read budgets are single-query EXPLAIN on an idle database, which
+      # is a different question from whether the plan holds at concurrency 16.
+      # `load:drive:inventory` drives those same nine shapes as streamline_app
+      # with the tenant GUC set. Self-test only here, on the drill:rollback
+      # precedent above: the full drive needs a database holding a seeded
+      # inventory dataset, so what CI checks is that the gate can still fail —
+      # BYPASSRLS, a breach, an error, too few samples, serialised requests, a
+      # p95 under the network floor and the read shapes disappearing.
+      - name: Inventory load gate logic
+        run: pnpm load:drive:inventory:self-test
 
       # Every table above the size threshold must have a recorded retention decision.
       # Self-test only here: the live check needs a database.
