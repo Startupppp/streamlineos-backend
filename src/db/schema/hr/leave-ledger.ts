@@ -64,6 +64,13 @@ export const hrLeaveLedger = pgTable(
       table.effectiveDate,
     ),
     index("idx_hr_leave_ledger_payroll_status").on(table.orgId, table.payrollStatus),
+    index("idx_hr_leave_ledger_dedup_lookup").on(
+      table.orgId,
+      table.leaveTypeId,
+      table.txnType,
+      table.source,
+      table.period,
+    ),
   ],
 );
 
