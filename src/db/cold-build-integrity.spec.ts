@@ -265,3 +265,142 @@ function liveReadersOfLegacyTables(): string[] {
   for (const r of roots) walk(r);
   return found;
 }
+
+describe("PEND-DB — 0320's org_id walk cannot depend on heap order", () => {
+  /**
+   * `0320_recon_phase_a_orgid` adds `org_id` to every public table holding a NOT-NULL
+   * single-column FK to an org-bearing parent. It used to do that in ONE unordered pass
+   * over `pg_class`, and a table only qualified when its parent ALREADY carried the
+   * column — so a child visited before its parent failed the test and was never revisited.
+   * The resulting schema was a function of heap order.
+   *
+   * That is measured, not feared. Two fresh databases built from this journal at this
+   * commit ended 0320 with **744** and **743** `org_id`-bearing tables; the one that
+   * differed was `workflow_actions`. `workflow_triggers` and `workflow_variables` — two
+   * levels down from `workflows` — were missed by BOTH, because one pass cannot close a
+   * chain. The deterministic file reaches 746 on every build.
+   *
+   * Tenant isolation is keyed on `org_id`, so the failure mode is not a crash: a table
+   * that silently misses the column gets no `trg_set_org_id` and no tenant policy. Only
+   * one of the two possible schemas was ever tested.
+   *
+   * Two properties fix it and BOTH are load-bearing, so both are asserted here — a total
+   * order on every candidate query, and iteration to a fixed point. Ordering alone is not
+   * enough (a child sorted before its parent is still missed); a fixed point alone is not
+   * enough (which parent a two-parent table binds to would still be planner luck).
+   */
+  const TAG = "0320_recon_phase_a_orgid";
+  const src = read(TAG);
+  const block = src.slice(src.indexOf("DO $$"));
+
+  it("finds 0320's catalog walk at all, so a gutted file cannot pass vacuously", () => {
+    expect(src.length).toBeGreaterThan(3000);
+    expect(block.length).toBeGreaterThan(1500);
+    expect(block).toContain("FROM pg_class c");
+    expect(block).toContain("trg_set_org_id");
+    expect(block).toContain("ADD COLUMN IF NOT EXISTS org_id");
+  });
+
+  /**
+   * Paren depth for every character of the block, so "the query this LIMIT belongs to"
+   * means the same scope rather than the nearest `SELECT` in the text — an inner LATERAL
+   * that happens to be ordered otherwise vouches for an unordered outer pick, which is
+   * exactly the false pass this check was written to avoid.
+   */
+  const depths: number[] = [];
+  {
+    let d = 0;
+    for (let i = 0; i < block.length; i++) {
+      if (block[i] === "(") {
+        depths[i] = d;
+        d++;
+      } else if (block[i] === ")") {
+        d--;
+        depths[i] = d;
+      } else depths[i] = d;
+    }
+  }
+  const atDepth = (from: number, to: number, depth: number): string =>
+    [...block.slice(from, to)].filter((_, k) => (depths[from + k] ?? -1) === depth).join("");
+
+  it("orders every row-picking query, so no candidate is chosen by planner luck", () => {
+    const limits = [...block.matchAll(/\bLIMIT\s+1\b/gi)].map((m) => m.index ?? 0);
+    // Anti-vacuity: the parent-FK pick, the parent's org-column pick and the PK pick.
+    expect(limits.length).toBeGreaterThanOrEqual(3);
+
+    const unanchored: string[] = [];
+    const unordered: string[] = [];
+    for (const at of limits) {
+      const depth = depths[at] ?? 0;
+      let select = -1;
+      for (let i = at - 6; i >= 0; i--)
+        if (block.startsWith("SELECT", i) && (depths[i] ?? -1) === depth) {
+          select = i;
+          break;
+        }
+      const excerpt = block.slice(Math.max(0, at - 110), at + 8).trim();
+      if (select < 0) unanchored.push(excerpt);
+      else if (!/ORDER BY/i.test(atDepth(select, at, depth))) unordered.push(excerpt);
+    }
+    // Every LIMIT must be attributable to a query, or the check below means nothing.
+    expect(unanchored).toEqual([]);
+    expect(unordered).toEqual([]);
+  });
+
+  it("breaks the parent-FK tie on something unique, because an ORDER BY can be partial", () => {
+    // Present-and-partial is the case the scan above cannot see: a table with two
+    // NOT-NULL single-column FKs to two org-bearing parents ties on the CASE, and the
+    // planner then picks. `con.conname` is unique per table, so ending on it makes the
+    // order total by construction and pins which parent the trigger derives org_id from.
+    const pick = block.indexOf("FROM pg_constraint con");
+    expect(pick).toBeGreaterThan(0);
+    const depth = depths[pick] ?? 0;
+    let limit = -1;
+    for (let i = pick; i < block.length; i++)
+      if (block.startsWith("LIMIT 1", i) && (depths[i] ?? -1) === depth) {
+        limit = i;
+        break;
+      }
+    // Anti-vacuity: without the pick's own LIMIT there is nothing to be ordered.
+    expect(limit).toBeGreaterThan(pick);
+    const order = atDepth(pick, limit, depth).match(/ORDER BY[\s\S]*/);
+    expect(order).not.toBeNull();
+    expect(order?.[0] ?? "").toContain("con.conname");
+  });
+
+  it("iterates its work list in a declared order rather than heap order", () => {
+    const headers = [...block.matchAll(/FOR\s+\w+\s+IN([\s\S]*?)\bLOOP\b/g)].map(
+      (m) => m[1] ?? "",
+    );
+    expect(headers.length).toBeGreaterThanOrEqual(1);
+    for (const header of headers) expect(header).toMatch(/ORDER BY/i);
+    // The whole pass is materialised by one ordered query before any DDL runs, so the
+    // work list and the parent bound to each table are fixed under a single snapshot.
+    expect(block).toMatch(/jsonb_agg\(\s*to_jsonb\(t\)\s+ORDER BY/i);
+    expect(block).toMatch(/ORDER BY c\.relname/);
+  });
+
+  it("repeats until a pass adds nothing, so a child is reached after its parent", () => {
+    expect(block).toMatch(/EXIT WHEN added = 0/);
+    expect(block).toMatch(/added\s*:=\s*added\s*\+\s*1/);
+    // And it must refuse rather than silently truncate the closure if it never converges.
+    expect(block).toMatch(/RAISE EXCEPTION[\s\S]{0,140}converge/i);
+  });
+
+  it("stays re-runnable, because editing this file changed its content hash", () => {
+    // `db-bootstrap.mjs` keys applied migrations on sha256(content), so this file now
+    // re-runs on every database where the old text had already applied. Verified against
+    // a populated database: backfill, SET NOT NULL and both constraints are no-ops twice.
+    expect(block).toContain("ADD COLUMN IF NOT EXISTS org_id");
+    expect(block).toContain("DROP TRIGGER IF EXISTS trg_set_org_id");
+    const adds = [...block.matchAll(/ADD CONSTRAINT %I/g)];
+    // The only two statements that cannot simply be repeated. Both sit inside a guard.
+    expect(adds.length).toBe(2);
+    for (const m of adds) {
+      const at = m.index ?? 0;
+      const guard = block.lastIndexOf("IF NOT EXISTS (SELECT 1 FROM pg_constraint", at);
+      expect(guard).toBeGreaterThanOrEqual(0);
+      expect(block.slice(guard, at)).not.toContain("END IF;");
+    }
+  });
+});
