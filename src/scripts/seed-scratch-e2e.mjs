@@ -168,6 +168,18 @@ async function upsertUser(id, n, suffix = "") {
   );
 }
 
+async function placeOrg(conn, orgId) {
+  await conn.unsafe(
+    `INSERT INTO organization_placement
+       (organization_id, region, cell_id, database_shard, object_storage_region, search_cluster,
+        placement_version, write_fence_token, lease_expires_at, status, created_at, updated_at)
+     VALUES ($1, 'primary', 'legacy-1', 'primary', 'primary', 'primary',
+             1, gen_random_uuid()::text, now() + interval '24 hours', 'ACTIVE', now(), now())
+     ON CONFLICT (organization_id) DO NOTHING`,
+    [orgId],
+  );
+}
+
 async function seedOrganizationsAndOwners() {
   log("Seeding organizations + owner memberships (atomic bootstrap)...");
 
@@ -175,6 +187,11 @@ async function seedOrganizationsAndOwners() {
     [LARGE_ORG, "Scratch E2E Corp", "scratch-e2e-corp", ownerId],
     [SMALL_ORG, "Scratch Minority Org", "scratch-minority-org", minorityUserId],
   ]) {
+    // regionForOrg reads organization_placement, not organizations.region; an unplaced org throws
+    // "has no region" on every tenant transaction, which surfaces as 401 on every authenticated
+    // request. Placed before the existence check so a re-run repairs an org seeded without one.
+    await placeOrg(sql, orgId);
+
     const existing = await sql.unsafe(`SELECT id FROM organizations WHERE id = $1`, [orgId])
       .then((r) => r[0]);
     if (existing) { log(`  org ${orgId.slice(0, 8)}... already exists`); continue; }

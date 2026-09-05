@@ -245,6 +245,18 @@ async function topUp(label, table, where, params, want, insert) {
  * precisely so both can go in one transaction and be checked at commit; SET CONSTRAINTS
  * makes that explicit rather than relying on the constraint's declared default.
  */
+async function placeOrg(conn, orgId) {
+  await conn.unsafe(
+    `INSERT INTO organization_placement
+       (organization_id, region, cell_id, database_shard, object_storage_region, search_cluster,
+        placement_version, write_fence_token, lease_expires_at, status, created_at, updated_at)
+     VALUES ($1, 'primary', 'legacy-1', 'primary', 'primary', 'primary',
+             1, gen_random_uuid()::text, now() + interval '24 hours', 'ACTIVE', now(), now())
+     ON CONFLICT (organization_id) DO NOTHING`,
+    [orgId],
+  );
+}
+
 async function ensureOrg(profile) {
   if (await one(`SELECT id FROM organizations WHERE id = $1`, [profile.id])) return;
 
@@ -255,6 +267,9 @@ async function ensureOrg(profile) {
     [userId, `${profile.label} Owner`, `${profile.label}-owner@scratch-seed.test`, profile.label],
   );
   const { next_id: nextId } = await one(`SELECT nextval('organization_members_id_seq') AS next_id`);
+  // regionForOrg reads organization_placement, not organizations.region; an unplaced org throws
+  // "has no region" on every tenant transaction, so its benchmarks measure a 401, not the route.
+  await placeOrg(sql, profile.id);
   await sql.begin(async (tx) => {
     await tx.unsafe("SET CONSTRAINTS ALL DEFERRED");
     await tx.unsafe(
