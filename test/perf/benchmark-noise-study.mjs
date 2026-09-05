@@ -73,7 +73,7 @@ export function runNoiseStudy({ readCostRuns, planSigRuns = {}, planningRuns = {
           tenant: tenant.label,
           bufferBlocks: { values: obs.map((o) => o.bufferBlocks), maxAbsSwing: buf.maxAbsSwing, maxRelSwing: buf.maxRelSwing },
           resultRows: { values: obs.map((o) => o.resultRows), maxAbsSwing: rows.maxAbsSwing },
-          p95Ms: { values: obs.map((o) => o.p95Ms), cv: p95.cv, maxRelSwing: p95.maxRelSwing },
+          p95Ms: { values: obs.map((o) => o.p95Ms), cv: p95.cv, maxRelSwing: p95.maxRelSwing, maxAbsSwing: p95.maxAbsSwing },
           ...(planningEnvelope
             ? { planningBufferBlocks: { values: planBlocks, maxAbsSwing: planningEnvelope.maxAbsSwing } }
             : {}),

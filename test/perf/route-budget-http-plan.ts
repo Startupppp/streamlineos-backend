@@ -30,6 +30,17 @@ export interface RouteFixtures {
    * database what this project actually accepts instead of hard-coding either vocabulary.
    */
   readonly projectStatusName: string | null;
+  /**
+   * The maximum timesheet date already recorded for the fixture membership in this org.
+   *
+   * `uniq_timesheets_work_log` is unique per (org_id, user_membership_id, date) when ticket_id IS
+   * NULL. The date counter in the plan resets each time the module loads, so a second replicate
+   * re-uses day 1, 2, 3 … and collides with the rows the first run inserted. Querying the real
+   * maximum here and walking forward from it keeps every sample and every replicate on a fresh day
+   * without depending on a calendar window that eventually runs out. Null when no entries exist yet
+   * (first run: walk backward from 2026-07-01 as before).
+   */
+  readonly timesheetDateBase: string | null;
 }
 
 export type RouteAuth = "member" | "cron";
@@ -50,15 +61,6 @@ export interface RoutePlanEntry {
   readonly idempotent?: boolean;
   /** Declared, not silent: an entry the plan refuses to attempt says why. */
   readonly unattemptable?: string;
-}
-
-let harnessDay = 0;
-
-/** Distinct, deterministic and inside a plausible period — one day per sample, walking backwards. */
-function nextHarnessDate(): string {
-  harnessDay += 1;
-  const base = Date.UTC(2026, 6, 1) - harnessDay * 86_400_000;
-  return new Date(base).toISOString().slice(0, 10);
 }
 
 const CALENDAR_WINDOW = {
@@ -83,6 +85,17 @@ export function buildRoutePlan(fx: RouteFixtures): RoutePlanEntry[] {
     fx.projectId === null ? "" : `/build/${String(fx.projectId)}${suffix}`;
   const channel = (suffix: string): string =>
     fx.channelId === null ? "" : `/chat/channels/${String(fx.channelId)}${suffix}`;
+
+  let planDay = 0;
+  function nextEntryDate(): string {
+    planDay += 1;
+    if (fx.timesheetDateBase !== null) {
+      const base = new Date(`${fx.timesheetDateBase}T00:00:00Z`).getTime();
+      return new Date(base + planDay * 86_400_000).toISOString().slice(0, 10);
+    }
+    const base = Date.UTC(2026, 6, 1) - planDay * 86_400_000;
+    return new Date(base).toISOString().slice(0, 10);
+  }
 
   const entries: RoutePlanEntry[] = [
     { key: "GET /me/access", method: "get", path: "/me/access", auth: "member" },
@@ -180,7 +193,7 @@ export function buildRoutePlan(fx: RouteFixtures): RoutePlanEntry[] {
       idempotent: true,
       // `uniq_timesheets_work_log` is unique per (member, date, work item), so every sample needs
       // its own day: a fixed date measures the duplicate-key path from the second request onward.
-      body: () => ({ date: nextHarnessDate(), hours: 1, description: "route-budget harness entry" }),
+      body: () => ({ date: nextEntryDate(), hours: 1, description: "route-budget harness entry" }),
     },
 
     { key: "GET /contacts", method: "get", path: "/contacts", auth: "member" },

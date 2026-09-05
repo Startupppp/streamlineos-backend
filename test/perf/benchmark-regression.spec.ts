@@ -523,6 +523,48 @@ process.stdout.write(JSON.stringify(r));`;
   });
 });
 
+describe("PRD-C148 — absolute-floor timing arming", () => {
+  const subMsPolicy = makePolicy({ timingSamples: [0.3, 0.48, 0.35] });
+  const bigNoisyPolicy = makePolicy({ timingSamples: [9, 10, 15] });
+
+  it("arms a harness when the worst p95 absolute swing ≤ 1 ms, even if relative swing is 60%", () => {
+    expect(subMsPolicy.timing.armed).toBe(true);
+  });
+
+  it("passes a +0.03 ms move on an abs-floor-armed benchmark (within-band or below-floor, does not fire)", () => {
+    const r = runRegression(`
+const policy = ${JSON.stringify(subMsPolicy)};
+const r = decideRegression({
+  metric: "p95Ms", baseline: 0.3, observed: 0.33, cv: 0.3,
+  policy, corroborated: false,
+  stability: { timingArmed: true, timingDisarmedBecause: null }
+});
+process.stdout.write(JSON.stringify(r));`) as DecisionResult;
+    expect(r.fired).toBe(false);
+    expect(["within", "below-floor"]).toContain(r.verdict);
+  });
+
+  it("fires a +2 ms move on an abs-floor-armed benchmark (above the 1 ms absolute floor)", () => {
+    const r = runRegression(`
+const policy = ${JSON.stringify(subMsPolicy)};
+const r = decideRegression({
+  metric: "p95Ms", baseline: 0.3, observed: 2.3, cv: 0.3,
+  policy, corroborated: false,
+  stability: { timingArmed: true, timingDisarmedBecause: null }
+});
+process.stdout.write(JSON.stringify(r));`) as DecisionResult;
+    expect(r.fired).toBe(true);
+    expect(r.verdict).toBe("regressed");
+  });
+
+  it("keeps a 10 ms benchmark with 60% relative and 6 ms absolute swing DISARMED (both thresholds exceeded)", () => {
+    expect(bigNoisyPolicy.timing.armed).toBe(false);
+    const r = decide({ metric: "p95Ms", baseline: 10, observed: 25, policy: bigNoisyPolicy });
+    expect(r.fired).toBe(false);
+    expect(r.verdict).toBe("advisory");
+  });
+});
+
 describe("PRD-C148 — all 7 dimensions have coverage", () => {
   it("latency (p95Ms) regression is caught: a timing blow-up corroborated by buffers fires", () => {
     const r = decideBench({

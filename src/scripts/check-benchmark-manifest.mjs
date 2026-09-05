@@ -346,12 +346,20 @@ export function ratchetedPairs(manifest) {
         stability[metric] = { maxAbsSwing: row[metric].maxAbsSwing, replicates };
     stability.planSignature = { maxAbsSwing: unstablePlans.has(key) ? 1 : 0, replicates };
     if (typeof row.p95Ms?.maxRelSwing === "number") {
-      const swing = row.p95Ms.maxRelSwing;
-      stability.timingArmed = swing <= TIMING_ARM_THRESHOLD;
-      if (!stability.timingArmed)
-        stability.timingDisarmedBecause =
-          `unchanged-code p95 moved ${(swing * 100).toFixed(0)}% on this benchmark across ` +
-          `${replicates ?? "the"} replicates (>${(TIMING_ARM_THRESHOLD * 100).toFixed(0)}% arming threshold)`;
+      const relSwing = row.p95Ms.maxRelSwing;
+      const armAbsMs = 1;
+      let absSwing = typeof row.p95Ms.maxAbsSwing === "number" ? row.p95Ms.maxAbsSwing : null;
+      if (absSwing === null && Array.isArray(row.p95Ms.values) && row.p95Ms.values.length >= 2) {
+        const vals = row.p95Ms.values.filter((v) => typeof v === "number" && Number.isFinite(v));
+        if (vals.length >= 2) absSwing = Math.max(...vals) - Math.min(...vals);
+      }
+      const armedByRel = relSwing <= TIMING_ARM_THRESHOLD;
+      const armedByAbs = absSwing !== null && absSwing <= armAbsMs;
+      stability.timingArmed = armedByRel || armedByAbs;
+      stability.timingDisarmedBecause = stability.timingArmed
+        ? null
+        : `unchanged-code p95 moved ${(relSwing * 100).toFixed(0)}%${absSwing !== null ? ` (${absSwing.toFixed(3)} ms absolute swing)` : ""} on this benchmark across ` +
+          `${replicates ?? "the"} replicates — above the ${(TIMING_ARM_THRESHOLD * 100).toFixed(0)}% relative AND ${armAbsMs} ms absolute arming thresholds`;
     }
     covered.set(key, stability);
   }
@@ -498,12 +506,17 @@ function report(manifest, fresh) {
   const requestLevel = evaluateRequestLevel(manifest);
   violations.push(...requestLevel.violations);
   warnings.push(...requestLevel.warnings);
-  const regressions = fresh ? evaluateRegressions(manifest, fresh) : null;
+  const sqlRegressions = fresh ? evaluateRegressions(manifest, fresh) : null;
+  const requests = fresh ? evaluateRequestRegressions(manifest, fresh) : null;
   const freshRl = fresh ? evaluateRequestLevel(fresh) : null;
+  const regressions = fresh
+    ? {
+        ...sqlRegressions,
+        findings: [...sqlRegressions.findings, ...requests.findings],
+        advisories: [...sqlRegressions.advisories, ...requests.advisories],
+      }
+    : null;
   if (fresh) {
-    const requests = evaluateRequestRegressions(manifest, fresh);
-    regressions.findings.push(...requests.findings);
-    regressions.advisories.push(...requests.advisories);
     console.log(`Request regression pass: ${requests.compared} route/profile comparisons`);
     violations.push(...freshRl.violations);
     warnings.push(...freshRl.warnings);
@@ -514,6 +527,33 @@ function report(manifest, fresh) {
   const modules = manifest.modules.length;
   const benchmarks = manifest.modules.reduce((n, m) => n + m.benchmarks.length, 0);
   const slots = ceilings.measured.length + ceilings.unmeasured.length + ceilings.vacuous.length;
+
+  const excludedBenchmarkIds = new Set((manifest.codeReleaseScope?.excluded ?? []).map((e) => e.id));
+  const excludedReasonById = new Map(
+    (manifest.codeReleaseScope?.excluded ?? []).map((e) => [e.id, e.reason ?? "excluded from scope"]),
+  );
+  const slotBenchId = (slot) => slot.split("@")[0].split("/").pop();
+  const isExcluded = (slot) => excludedBenchmarkIds.has(slotBenchId(slot));
+  const inScopeMeasured = ceilings.measured.filter((k) => !isExcluded(k));
+  const outOfScopeMeasured = ceilings.measured.filter((k) => isExcluded(k));
+  const inScopeUnmeasured = ceilings.unmeasured.filter((u) => !isExcluded(u.split(":")[0]));
+  const outOfScopeUnmeasured = ceilings.unmeasured.filter((u) => isExcluded(u.split(":")[0]));
+  const inScopeVacuous = ceilings.vacuous.filter((v) => !isExcluded(v));
+  const outOfScopeVacuous = ceilings.vacuous.filter((v) => isExcluded(v));
+  const inScopeTotal = inScopeMeasured.length + inScopeUnmeasured.length + inScopeVacuous.length;
+  const outOfScopeTotal = outOfScopeMeasured.length + outOfScopeUnmeasured.length + outOfScopeVacuous.length;
+  const excludedDomains = manifest.codeReleaseScope?.excludedDomains ?? [];
+  const unmeasuredDomainCounts = {};
+  for (const u of outOfScopeUnmeasured) {
+    const bid = slotBenchId(u.split(":")[0]);
+    const reason = excludedReasonById.get(bid) ?? "";
+    const domain = excludedDomains.find((d) => reason.toLowerCase().includes(d)) ?? "other";
+    unmeasuredDomainCounts[domain] = (unmeasuredDomainCounts[domain] ?? 0) + 1;
+  }
+  const domainStr = Object.entries(unmeasuredDomainCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([d, n]) => `${d.toUpperCase()} ${n}`)
+    .join(", ");
 
   console.log(`Benchmark manifest — ${modules} modules, ${benchmarks} benchmarks`);
   console.log(
@@ -561,8 +601,9 @@ function report(manifest, fresh) {
       ` tenants ${manifest.method.tenants.map((t) => t.label).join("/")}`,
   );
   console.log(
-    `  statement ceilings measured: ${fraction(ceilings.measured.length, slots)} of benchmark×tenant slots` +
-      ` · ${ceilings.vacuous.length} vacuous · ${ceilings.unmeasured.length} unmeasured`,
+    `  statement ceilings — in scope ${fraction(inScopeMeasured.length, inScopeTotal)}` +
+      `${outOfScopeTotal > 0 ? ` · excluded ${outOfScopeTotal} total (${outOfScopeUnmeasured.length} unmeasured${domainStr ? `: ${domainStr}` : ""} · ${outOfScopeMeasured.length} measured)` : ""}` +
+      ` · ${inScopeVacuous.length} vacuous · ${inScopeUnmeasured.length} in-scope unmeasured`,
   );
 
   const policy = manifest.regressionPolicy;
@@ -737,12 +778,29 @@ function report(manifest, fresh) {
     violations: violations.length,
     over: ceilings.over.length + dbCalls.breaches.length + requestLevel.over.length + requestLevel.breaches.length + (freshRl?.over.length ?? 0) + (freshRl?.breaches.length ?? 0),
     regressions: regressions?.findings.length ?? 0,
-    measured: ceilings.measured.length,
-    declared: slots,
+    measured: inScopeMeasured.length,
+    declared: inScopeTotal,
   });
+  if (inScopeUnmeasured.length > 0) {
+    console.log(`\n${inScopeUnmeasured.length} in-scope unmeasured slot(s) — these count against coverage:`);
+    for (const u of inScopeUnmeasured.slice(0, 12)) console.log(`  ${u}`);
+    if (inScopeUnmeasured.length > 12) console.log(`  … and ${inScopeUnmeasured.length - 12} more`);
+  }
+  if (outOfScopeUnmeasured.length > 0) {
+    console.log(`\n${outOfScopeUnmeasured.length} excluded slot(s) — not counted against in-scope coverage:`);
+    const byReason = {};
+    for (const u of outOfScopeUnmeasured) {
+      const bid = slotBenchId(u.split(":")[0]);
+      const reason = excludedReasonById.get(bid) ?? "excluded from scope";
+      (byReason[reason] ??= []).push(slotBenchId(u.split(":")[0]));
+    }
+    for (const [reason, ids] of Object.entries(byReason))
+      console.log(`  ${ids.length} slot(s): ${reason}`);
+  }
   console.log(
-    `\nSTATUS: ${status} — ${fraction(ceilings.measured.length, slots)} of statement ceilings measured, ` +
-      `${fraction(requestLevel.measured, requestLevel.total)} of request-level slots measured.`,
+    `\nSTATUS: ${status} — in scope ${fraction(inScopeMeasured.length, inScopeTotal)}` +
+      `${outOfScopeTotal > 0 ? ` · excluded ${outOfScopeTotal} (${outOfScopeUnmeasured.length} unmeasured${domainStr ? `: ${domainStr}` : ""} · ${outOfScopeMeasured.length} measured)` : ""}` +
+      ` · ${fraction(requestLevel.measured, requestLevel.total)} request-level slots measured.`,
   );
   return { status, violations, ceilings, dbCalls, requestLevel, regressions };
 }
@@ -1004,6 +1062,27 @@ function selfTest() {
     "buffers fire (exact zero swing) and p95 fires (own envelope quiet, corroborated)",
   );
 
+  const absFloorTiming = base();
+  absFloorTiming.regressionPolicy.timing.armed = false;
+  absFloorTiming.noiseStudy = {
+    benchmarks: [{
+      id: "org-members-list", tenant: "large",
+      bufferBlocks: { maxAbsSwing: 0 }, resultRows: { maxAbsSwing: 0 },
+      p95Ms: { maxRelSwing: 0.6, values: [0.3, 0.48, 0.35] },
+    }],
+  };
+  absFloorTiming.modules[0].benchmarks[0].measurements.large.p95Ms = 0.3;
+  const absFloorFresh = JSON.parse(JSON.stringify(absFloorTiming));
+  absFloorFresh.modules[0].benchmarks[0].measurements.large.bufferBlocks = 101;
+  absFloorFresh.modules[0].benchmarks[0].measurements.large.p95Ms = 0.33;
+  const absFloorResult = evaluateRegressions(absFloorTiming, absFloorFresh);
+  check(
+    "abs-floor arming: a 60% relative swing but 0.18 ms absolute swing arms the benchmark; +0.03 ms delta is below the 1 ms floor and does not fire",
+    absFloorResult.findings.some((f) => f.metric === "bufferBlocks") &&
+      !absFloorResult.findings.some((f) => f.metric === "p95Ms"),
+    "buffers fire (exact zero swing), p95 +0.03 ms is below the 1 ms absFloor even though the benchmark is now armed",
+  );
+
   const missing = JSON.parse(JSON.stringify(m));
   missing.modules[0].benchmarks = [];
   check(
@@ -1030,6 +1109,70 @@ function selfTest() {
   check("verdict is FAIL on a regression", verdict({ violations: 0, over: 0, regressions: 1, measured: 5, declared: 5 }) === "FAIL");
   check("verdict is INCONCLUSIVE when nothing was measured", verdict({ violations: 0, over: 0, regressions: 0, measured: 0, declared: 5 }) === "INCONCLUSIVE");
   check("verdict is OK only when everything is measured and clean", verdict({ violations: 0, over: 0, regressions: 0, measured: 5, declared: 5 }) === "OK");
+
+  {
+    const baseWithScope = base();
+    baseWithScope.codeReleaseScope = {
+      excludedDomains: ["crm"],
+      included: [{ module: "m", id: "org-members-list", source: "read-cost-budgets.mjs" }],
+      excluded: [{ module: "crm", id: "crm-benchmark", source: "read-cost-budgets.mjs", reason: "crm is excluded from the code release" }],
+    };
+    baseWithScope.modules.push({
+      id: "crm",
+      title: "CRM",
+      surface: "s",
+      tables: ["t"],
+      dataset: { large: { tenantRows: 10 } },
+      concurrency: { runs: [] },
+      benchmarks: [
+        {
+          id: "crm-benchmark",
+          source: "read-cost-budgets.mjs",
+          statementClass: "ordinary",
+          approval: null,
+          ceilingMs: 50,
+          repetitions: 200,
+          warmState: "warm",
+          errorRate: 0,
+          measurements: { large: { status: "not-measured", reason: "seed-too-small" } },
+        },
+      ],
+    });
+    const scopedCeilings = evaluateCeilings(baseWithScope);
+    const excIds = new Set(baseWithScope.codeReleaseScope.excluded.map((e) => e.id));
+    const outOfScopeU = scopedCeilings.unmeasured.filter((u) => excIds.has(u.split("@")[0]));
+    const inScopeU = scopedCeilings.unmeasured.filter((u) => !excIds.has(u.split("@")[0]));
+    check(
+      "scope split: an excluded unmeasured slot is identified as out-of-scope and does not lower the in-scope figure",
+      outOfScopeU.length === 1 && inScopeU.length === 0,
+      "the crm-benchmark slot is excluded; the in-scope org-members-list slot is measured",
+    );
+
+    const baseWithInScopeGap = base();
+    baseWithInScopeGap.modules[0].benchmarks.push({
+      id: "org-members-list",
+      source: "read-cost-budgets.mjs",
+      statementClass: "ordinary",
+      approval: null,
+      ceilingMs: 50,
+      repetitions: 200,
+      warmState: "warm",
+      errorRate: 0,
+      measurements: { large: { status: "not-measured", reason: "seed-too-small" } },
+    });
+    baseWithInScopeGap.codeReleaseScope = {
+      excludedDomains: [],
+      included: [{ module: "m", id: "org-members-list", source: "read-cost-budgets.mjs" }],
+      excluded: [],
+    };
+    const gapCeilings = evaluateCeilings(baseWithInScopeGap);
+    check(
+      "scope split: an in-scope unmeasured slot counts against coverage and produces PARTIAL",
+      gapCeilings.unmeasured.length === 1 &&
+        gapCeilings.unmeasured[0].includes("org-members-list") &&
+        verdict({ violations: 0, over: 0, regressions: 0, measured: 1, declared: 2 }) === "PARTIAL",
+    );
+  }
 
   // --- the request-level half -------------------------------------------------------------
   const rlBase = () => ({

@@ -129,9 +129,13 @@ export function policyFromNoise({ deterministicEnvelopes, timingEnvelopes, exact
   const detAbs = deterministicEnvelopes.map((e) => e.maxAbsSwing).filter((n) => Number.isFinite(n));
   const detRel = deterministicEnvelopes.map((e) => e.maxRelSwing).filter((n) => Number.isFinite(n));
   const timeRel = timingEnvelopes.map((e) => e.maxRelSwing).filter((n) => Number.isFinite(n));
+  const timeAbs = timingEnvelopes.map((e) => e.maxAbsSwing).filter((n) => Number.isFinite(n));
   const worstDetAbs = detAbs.length ? Math.max(...detAbs) : 0;
   const worstDetRel = detRel.length ? Math.max(...detRel) : 0;
   const worstTimeRel = timeRel.length ? Math.max(...timeRel) : 0;
+  const worstTimeAbs = timeAbs.length ? Math.max(...timeAbs) : Infinity;
+  const absFloorMs = 1;
+  const timingArmed = worstTimeRel <= TIMING_ARM_THRESHOLD || worstTimeAbs <= absFloorMs;
   return {
     deterministic: {
       relTol: round4(worstDetRel),
@@ -140,17 +144,20 @@ export function policyFromNoise({ deterministicEnvelopes, timingEnvelopes, exact
     timing: {
       k: 3,
       minRelTol: round4(Math.max(0.1, worstTimeRel)),
-      absFloorMs: 1,
+      absFloorMs,
+      timingArmAbsSwingMs: absFloorMs,
       hardMultiple: 2,
       corroborationRequired: true,
-      armed: worstTimeRel <= TIMING_ARM_THRESHOLD,
+      armed: timingArmed,
       disarmedBecause:
-        worstTimeRel <= TIMING_ARM_THRESHOLD
+        timingArmed
           ? null
-          : `unchanged code moved by up to ${(worstTimeRel * 100).toFixed(0)}% between replicates on this ` +
-            `harness, against a ${(TIMING_ARM_THRESHOLD * 100).toFixed(0)}% arming threshold. A gate with a ` +
-            `noise floor that wide cannot distinguish a regression from a rerun, so timing is recorded and ` +
-            `reported but does not decide the exit code. Buffers, rows, plan shape and statement counts do.`,
+          : `unchanged code moved by up to ${(worstTimeRel * 100).toFixed(0)}% ` +
+            `(${Number.isFinite(worstTimeAbs) ? worstTimeAbs.toFixed(3) + " ms absolute" : "abs unknown"}) ` +
+            `between replicates on this harness — above the ${(TIMING_ARM_THRESHOLD * 100).toFixed(0)}% relative ` +
+            `AND ${absFloorMs} ms absolute arming thresholds. A gate with a noise floor that wide cannot ` +
+            `distinguish a regression from a rerun, so timing is recorded and reported but does not decide ` +
+            `the exit code. Buffers, rows, plan shape and statement counts do.`,
     },
     exact: {
       planSignatureArmed: !exactStability || exactStability.planSignature?.unstable === 0,

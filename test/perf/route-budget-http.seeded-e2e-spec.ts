@@ -516,6 +516,7 @@ const EMPTY_FIXTURES: RouteFixtures = {
   clientId: null,
   ticketId: null,
   projectStatusName: null,
+  timesheetDateBase: null,
 };
 
 /**
@@ -598,6 +599,19 @@ async function resolveFixtures(
           [orgId, projectId] as never[],
         );
 
+  const membershipRows = await sql.unsafe<{ id: number }[]>(
+    `SELECT id FROM organization_members WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE' LIMIT 1`,
+    [orgId, userId] as never[],
+  );
+  const membershipId = membershipRows[0]?.id ?? null;
+  const maxDateRows = membershipId === null
+    ? []
+    : await sql.unsafe<{ d: string | null }[]>(
+        `SELECT to_char(MAX(date), 'YYYY-MM-DD') AS d FROM timesheets WHERE org_id = $1 AND user_membership_id = $2`,
+        [orgId, membershipId] as never[],
+      );
+  const timesheetDateBase = maxDateRows[0]?.d ?? null;
+
   return {
     projectId,
     projectStatusName: statusRows[0]?.name ?? null,
@@ -613,6 +627,7 @@ async function resolveFixtures(
     payrollRunId: await one(`SELECT id FROM payroll_runs WHERE org_id = $1 ORDER BY id LIMIT 1`, [orgId]),
     clientId: await one(`SELECT id FROM clients WHERE org_id = $1 ORDER BY id LIMIT 1`, [orgId]),
     ticketId: await one(`SELECT id FROM build.tickets WHERE org_id = $1 ORDER BY id LIMIT 1`, [orgId]),
+    timesheetDateBase,
   };
 }
 

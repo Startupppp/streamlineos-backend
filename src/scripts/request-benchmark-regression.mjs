@@ -24,11 +24,13 @@ export function evaluateRequestRegressions(baseline, current) {
     if (before[field] !== after[field]) fail("requestLevel", "comparability", `${field} changed between captures`);
   }
   const profiles = new Map((after.tenants ?? []).map((tenant) => [tenant.profile, tenant]));
-  for (const tenant of before.tenants ?? []) {
-    const now = profiles.get(tenant.profile);
-    if (!tenant.fixtureHash || tenant.fixtureHash !== now?.fixtureHash ||
+  const basisProfiles = new Map((before.tenants ?? []).map((tenant) => [tenant.profile, tenant]));
+  for (const profile of new Set([...basisProfiles.keys(), ...profiles.keys()])) {
+    const tenant = basisProfiles.get(profile);
+    const now = profiles.get(profile);
+    if (!tenant?.fixtureHash || tenant.fixtureHash !== now?.fixtureHash ||
         tenant.subjectHashBefore !== now?.subjectHashBefore || !tenant.scorable || !now?.scorable) {
-      fail(tenant.profile, "comparability", "Fixture, subject or successful control evidence is missing or changed");
+      fail(profile, "comparability", "Fixture, subject or successful control evidence is missing or changed");
     }
   }
   const keys = new Set([...Object.keys(before.routes ?? {}), ...Object.keys(after.routes ?? {})]);
