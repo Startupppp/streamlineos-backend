@@ -75,6 +75,8 @@ const CALENDAR_WINDOW = {
  */
 const MAIL_UNCONNECTED =
   "provider-backed: no connected mail account in the seed, so no real message/thread/attachment id exists to request";
+const REALTIME_UNCONFIGURED =
+  "provider-backed: the isolated seeded process carries no ABLY_API_KEY, so the token mint answers a provider error rather than the route";
 
 export function buildRoutePlan(fx: RouteFixtures): RoutePlanEntry[] {
   const project = (suffix: string): string =>
@@ -87,6 +89,10 @@ export function buildRoutePlan(fx: RouteFixtures): RoutePlanEntry[] {
     { key: "GET /notifications", method: "get", path: "/notifications", auth: "member" },
     { key: "GET /notifications/unread-count", method: "get", path: "/notifications/unread-count", auth: "member" },
     { key: "GET /chat/unread", method: "get", path: "/chat/unread", auth: "member" },
+    { key: "GET /chat/ably-token", method: "get", path: "/chat/ably-token", auth: "member", unattemptable: REALTIME_UNCONFIGURED },
+    { key: "GET /support/ably-token", method: "get", path: "/support/ably-token", auth: "member", unattemptable: REALTIME_UNCONFIGURED },
+    { key: "GET /me/inbox/unified", method: "get", path: "/me/inbox/unified", auth: "member" },
+    { key: "GET /me/inbox/unified/count", method: "get", path: "/me/inbox/unified/count", auth: "member" },
     { key: "GET /dashboard/personal", method: "get", path: "/dashboard/personal", auth: "member" },
     { key: "GET /calendar/events", method: "get", path: "/calendar/events", query: CALENDAR_WINDOW, auth: "member" },
     { key: "GET /organization/members", method: "get", path: "/organization/members", auth: "member" },

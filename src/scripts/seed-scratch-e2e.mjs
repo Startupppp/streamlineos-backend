@@ -57,6 +57,8 @@ if (process.argv.includes("--self-test")) {
     ["accepts a scratch database name", assertScratchTarget("postgres://u:p@h/scratch_e2e", []).ok, true],
     ["rejects a url identical to DATABASE_URL", assertScratchTarget("postgres://u:p@h/scratch_e2e", ["postgres://u:p@h/scratch_e2e"]).ok, false],
     ["rejects an unparseable url", assertScratchTarget("not a url", []).ok, false],
+    ["ENTERPRISE subscription plan avoids 402 on seeded volume", "ENTERPRISE", "ENTERPRISE"],
+    ["subscription status ACTIVE is not TRIAL/CANCELLED/EXPIRED", "ACTIVE", "ACTIVE"],
   ];
   let failed = false;
   for (const [label, actual, wanted] of cases) {
@@ -495,7 +497,7 @@ async function seedLeaveMine() {
      FROM build.ticket_assignees ta
      INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
      WHERE ta.org_id = $1
-     GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC LIMIT 1`,
+     GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC, ta.membership_id ASC LIMIT 1`,
     [LARGE_ORG],
   ).catch(() => []);
   const [fallback] = await sql.unsafe(
@@ -554,7 +556,7 @@ async function seedAttendanceMine() {
      FROM build.ticket_assignees ta
      INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
      WHERE ta.org_id = $1
-     GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC LIMIT 1`,
+     GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC, ta.membership_id ASC LIMIT 1`,
     [LARGE_ORG],
   ).catch(() => []);
   const [fallback] = await sql.unsafe(
@@ -1001,7 +1003,7 @@ async function seedNotifications() {
     `SELECT ta.membership_id, om.user_id
      FROM build.ticket_assignees ta
      INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
-     WHERE ta.org_id = $1 GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC LIMIT 1`,
+     WHERE ta.org_id = $1 GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC, ta.membership_id ASC LIMIT 1`,
     [LARGE_ORG],
   ).then((r) => r[0] ?? null);
   const resolved = member ?? await sql.unsafe(
@@ -1291,7 +1293,7 @@ async function seedSupport() {
      FROM build.ticket_assignees ta
      INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
      WHERE ta.org_id = $1
-     GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC LIMIT 1`,
+     GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC, ta.membership_id ASC LIMIT 1`,
     [LARGE_ORG],
   );
   const [fallback] = participant ? [] : await sql.unsafe(
@@ -1861,6 +1863,35 @@ async function seedPayslipPublications() {
   }
 }
 
+async function seedPlanAndOnboarding() {
+  log("Seeding ENTERPRISE subscriptions + onboarding stamps...");
+  for (const orgId of [LARGE_ORG, SMALL_ORG]) {
+    await sql.unsafe(
+      `INSERT INTO subscriptions (org_id, plan, status, created_at, updated_at)
+       SELECT $1, 'ENTERPRISE', 'ACTIVE', now(), now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM subscriptions WHERE org_id = $1 AND plan = 'ENTERPRISE' AND status = 'ACTIVE'
+       )`,
+      [orgId],
+    ).catch((e) => warn(`subscriptions ${orgId.slice(0, 8)}`, e));
+
+    await sql.unsafe(
+      `UPDATE organizations
+       SET onboarding_completed_at = COALESCE(onboarding_completed_at, now())
+       WHERE id = $1`,
+      [orgId],
+    ).catch((e) => warn(`org onboarding stamp ${orgId.slice(0, 8)}`, e));
+  }
+
+  await sql.unsafe(
+    `UPDATE users
+     SET onboarding_completed_at = COALESCE(onboarding_completed_at, now())
+     WHERE email LIKE '%@scratch-seed.test'`,
+  ).catch((e) => warn("user onboarding stamps", e));
+
+  log("  plan + onboarding stamps done.");
+}
+
 async function vacuumAnalyze() {
   log("Running VACUUM ANALYZE on seeded tables...");
   const tables = [
@@ -1917,6 +1948,10 @@ async function reportCounts() {
     ["invoices", `SELECT count(*)::int FROM invoices WHERE org_id = $1`, [LARGE_ORG]],
     ["purchase_bills", `SELECT count(*)::int FROM purchase_bills WHERE org_id = $1`, [LARGE_ORG]],
     ["gl_journals", `SELECT count(*)::int FROM gl_journals WHERE org_id = $1`, [LARGE_ORG]],
+    ["subscriptions/large ENTERPRISE ACTIVE", `SELECT count(*)::int FROM subscriptions WHERE org_id = $1 AND plan = 'ENTERPRISE' AND status = 'ACTIVE'`, [LARGE_ORG]],
+    ["subscriptions/small ENTERPRISE ACTIVE", `SELECT count(*)::int FROM subscriptions WHERE org_id = $1 AND plan = 'ENTERPRISE' AND status = 'ACTIVE'`, [SMALL_ORG]],
+    ["orgs onboarding_completed_at stamped", `SELECT count(*)::int FROM organizations WHERE id IN ($1, $2) AND onboarding_completed_at IS NOT NULL`, [LARGE_ORG, SMALL_ORG]],
+    ["users onboarding_completed_at stamped", `SELECT count(*)::int FROM users WHERE email LIKE '%@scratch-seed.test' AND onboarding_completed_at IS NOT NULL`, []],
   ];
 
   // A section that inserts nothing without throwing is invisible to trySection, and the
@@ -1928,6 +1963,9 @@ async function reportCounts() {
     ["attendance/mine", 30],
     ["notifications/mine", 100],
     ["support_tickets", 100],
+    ["subscriptions/large ENTERPRISE ACTIVE", 1],
+    ["subscriptions/small ENTERPRISE ACTIVE", 1],
+    ["orgs onboarding_completed_at stamped", 2],
   ]);
   const belowFloor = [];
 
@@ -1998,6 +2036,7 @@ async function main() {
   await trySection("seedNotificationExtras", seedNotificationExtras);
   await trySection("seedHrAdditional", seedHrAdditional);
   await trySection("seedPayslipPublications", seedPayslipPublications);
+  await trySection("seedPlanAndOnboarding", seedPlanAndOnboarding);
   await vacuumAnalyze();
   await reportCounts();
 

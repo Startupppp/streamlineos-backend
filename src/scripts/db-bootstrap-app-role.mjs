@@ -12,7 +12,7 @@ if (!adminUrl) {
 
 const role = process.env.APP_DB_ROLE || "streamline_app";
 const password = process.env.APP_DB_PASSWORD || "";
-const schemas = (process.env.APP_DB_SCHEMA || "public,build,build_events")
+const schemas = (process.env.APP_DB_SCHEMA || "public,build,build_events,app")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);

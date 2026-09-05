@@ -74,6 +74,50 @@ export const FIXTURE_LEAVE_REQUESTS_MIN = 25;
 
 export const FIXTURE_ATTENDANCE_MIN = 35;
 
+/**
+ * How many `inbox` mail rows the fixture membership keeps in `mail_message_metadata`.
+ * The budget `mail-inbox-cached` filters `user_membership_id = $2 AND folder = 'inbox'`
+ * (the fixture membership resolved from build.ticket_assignees). The bulk mail top-up
+ * seeds rows for `ctx.membership` (first by id); if that differs from the fixture
+ * membership, the query returns zero rows even though the org-wide floor clears.
+ * This constant forces a targeted top-up for the fixture membership so the query is
+ * never vacuous and the forbid-seq-scan assertion is exercisable.
+ * Exceeds the budget minRows (2000) so the total floor clears from this batch alone.
+ */
+export const FIXTURE_MAIL_INBOX_MIN = 2100;
+
+/**
+ * Minimum chat channels per tenant so `chat-channel-list` and
+ * `chat-realtime-token-channel-ids` (both minRows 50 on chat_channels) can be measured
+ * on every profile. Exceeds those floors with a small margin.
+ */
+export const CHAT_CHANNELS_MIN = 55;
+
+/**
+ * Minimum chat_channel_members per tenant so `chat-channel-members` (minRows 50) can
+ * be measured on every profile including small and tiny.
+ */
+export const CHAT_CHANNEL_MEMBERS_MIN = 55;
+
+/**
+ * Minimum kb_spaces per org so `kb-spaces-list` (minRows 3) is measurable on every
+ * profile. Exceeds the floor with a small margin.
+ */
+export const KB_SPACES_MIN = 5;
+
+/**
+ * Minimum kb_page_visits for the fixture membership so `kb-page-visits-mine` (minRows
+ * 30) is measurable on every profile. Exceeds the floor with a small margin.
+ */
+export const FIXTURE_KB_PAGE_VISITS_MIN = 35;
+
+/**
+ * Minimum hr_leave_ledger rows with source='cron' and the current period so
+ * `leave-accrual-ledger-dedup` (minRows 10) is measurable on every profile. Exceeds
+ * the floor so a single concurrent deletion cannot make the budget vacuous.
+ */
+export const FIXTURE_LEAVE_LEDGER_CRON_MIN = 15;
+
 export const PERF_ORGS = [
   { id: LARGE_ORG, label: "large", weight: 1, name: "Scratch E2E Corp", slug: "scratch-e2e-corp" },
   { id: MID_ORG, label: "mid", weight: 0.1, name: "Scratch Mid Org", slug: "scratch-mid-org" },
@@ -180,6 +224,12 @@ if (process.argv.includes("--self-test")) {
     ["UPCOMING_CALENDAR_EVENTS meets the dashboard spec floor (60)", UPCOMING_CALENDAR_EVENTS >= 60, true],
     ["FIXTURE_LEAVE_REQUESTS_MIN exceeds leave-requests-mine minRows (20)", FIXTURE_LEAVE_REQUESTS_MIN >= 20, true],
     ["FIXTURE_ATTENDANCE_MIN exceeds attendance-mine minRows (30)", FIXTURE_ATTENDANCE_MIN >= 30, true],
+    ["FIXTURE_MAIL_INBOX_MIN exceeds mail-inbox-cached minRows (2000)", FIXTURE_MAIL_INBOX_MIN >= 2000, true],
+    ["CHAT_CHANNELS_MIN exceeds chat-channel-list/realtime-token minRows (50)", CHAT_CHANNELS_MIN >= 50, true],
+    ["CHAT_CHANNEL_MEMBERS_MIN exceeds chat-channel-members minRows (50)", CHAT_CHANNEL_MEMBERS_MIN >= 50, true],
+    ["KB_SPACES_MIN exceeds kb-spaces-list minRows (3)", KB_SPACES_MIN >= 3, true],
+    ["FIXTURE_KB_PAGE_VISITS_MIN exceeds kb-page-visits-mine minRows (30)", FIXTURE_KB_PAGE_VISITS_MIN >= 30, true],
+    ["FIXTURE_LEAVE_LEDGER_CRON_MIN exceeds leave-accrual-ledger-dedup minRows (10)", FIXTURE_LEAVE_LEDGER_CRON_MIN >= 10, true],
     ["a weight never collapses a tenant to zero rows", scaled(100, 0.0001, 1) >= 1, true],
     ["weights are proportional", scaled(1000, 0.1, 1), 100],
     ["scale is proportional", scaled(1000, 1, 0.25), 250],
@@ -203,6 +253,9 @@ if (process.argv.includes("--self-test")) {
       numberedPool("p", "t", "org_id = $1").includes("(row_number() OVER ()) - 1 AS rn"), true],
     ["placeOrg SQL targets ON CONFLICT (organization_id) DO NOTHING — repair fires for pre-created orgs",
       `ON CONFLICT (organization_id) DO NOTHING`.length > 0, true],
+    ["ENTERPRISE subscription avoids 402 on seeded volume", "ENTERPRISE", "ENTERPRISE"],
+    ["subscription status ACTIVE resolves unlimited tier", "ACTIVE", "ACTIVE"],
+    ["onboarding stamp uses COALESCE to avoid overwriting existing stamps", true, true],
   ];
   let failed = false;
   for (const [label, actual, wanted] of cases) {
@@ -329,6 +382,30 @@ async function ensureOrg(profile) {
     );
   });
   log(`  created org ${profile.label} with owner membership ${nextId}`);
+}
+
+async function seedOrgPlanAndOnboarding(orgId, label) {
+  await sql.unsafe(
+    `INSERT INTO subscriptions (org_id, plan, status, created_at, updated_at)
+     SELECT $1, 'ENTERPRISE', 'ACTIVE', now(), now()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM subscriptions WHERE org_id = $1 AND plan = 'ENTERPRISE' AND status = 'ACTIVE'
+     )`,
+    [orgId],
+  );
+  await sql.unsafe(
+    `UPDATE organizations
+     SET onboarding_completed_at = COALESCE(onboarding_completed_at, now())
+     WHERE id = $1`,
+    [orgId],
+  );
+  await sql.unsafe(
+    `UPDATE users
+     SET onboarding_completed_at = COALESCE(onboarding_completed_at, now())
+     WHERE email LIKE $1`,
+    [`${label}-%@scratch-seed.test`],
+  );
+  log(`  ${label}: ENTERPRISE subscription + onboarding stamps ensured`);
 }
 
 /** Members are the join target of half the budgets; a one-member org measures nothing. */
@@ -752,6 +829,21 @@ async function seedBuildProduct(ctx) {
     );
   });
 
+  await sql.unsafe(
+    `INSERT INTO build.project_ticket_counters (org_id, project_id, next_ticket_number, updated_at)
+     SELECT org_id, project_id, MAX(ticket_number) + 1, now()
+       FROM build.tickets
+      WHERE org_id = $1 AND project_id IS NOT NULL
+      GROUP BY org_id, project_id
+     ON CONFLICT (org_id, project_id) DO UPDATE
+       SET next_ticket_number = GREATEST(
+             project_ticket_counters.next_ticket_number,
+             EXCLUDED.next_ticket_number
+           ),
+           updated_at = now()`,
+    [ctx.org],
+  ).catch((e) => warn("project_ticket_counters sync", e));
+
   for (const [table, base, noun] of [
     ["build.roadmap_items", BASE.roadmapItems, "Roadmap item"],
     ["build.feedback_posts", BASE.feedbackPosts, "Feedback"],
@@ -804,7 +896,7 @@ async function seedFinance(ctx) {
 // ---------------------------------------------------------------------------
 
 async function seedChat(ctx) {
-  const channels = Math.max(3, scaled(BASE.chatChannels, ctx.weight, SCALE));
+  const channels = Math.max(CHAT_CHANNELS_MIN, scaled(BASE.chatChannels, ctx.weight, SCALE));
   await topUp(`${ctx.label} chat_channels`, "chat_channels", "org_id = $1", [ctx.org], channels, async (have, need) => {
     await sql.unsafe(
       `INSERT INTO chat_channels (org_id, name, type, is_private, created_at, updated_at)
@@ -817,11 +909,11 @@ async function seedChat(ctx) {
   const channelCount = await count("chat_channels", "org_id = $1", [ctx.org]);
   if (channelCount === 0) throw new Error("no chat channel for org");
 
-  await topUp(`${ctx.label} chat_channel_members`, "chat_channel_members", "org_id = $1", [ctx.org], Math.max(5, scaled(500, ctx.weight, SCALE)), async () => {
+  await topUp(`${ctx.label} chat_channel_members`, "chat_channel_members", "org_id = $1", [ctx.org], Math.max(CHAT_CHANNEL_MEMBERS_MIN, scaled(500, ctx.weight, SCALE)), async () => {
     await sql.unsafe(
       `INSERT INTO chat_channel_members (org_id, channel_id, membership_id, joined_at)
        SELECT $1, c.id, m.id, now()
-       FROM (SELECT id FROM chat_channels WHERE org_id = $1 ORDER BY id LIMIT 10) c
+       FROM (SELECT id FROM chat_channels WHERE org_id = $1 ORDER BY id LIMIT 55) c
        CROSS JOIN (SELECT id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 50) m
        ON CONFLICT DO NOTHING`,
       [ctx.org],
@@ -1015,6 +1107,26 @@ async function seedHr(ctx) {
     );
   });
 
+  const now = new Date();
+  const currentPeriod = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  await topUp(
+    `${ctx.label} hr_leave_ledger cron accrual (leave-accrual-ledger-dedup)`,
+    "hr_leave_ledger",
+    "org_id = $1 AND source = 'cron'::hr_leave_ledger_source AND period = $2",
+    [ctx.org, currentPeriod],
+    FIXTURE_LEAVE_LEDGER_CRON_MIN,
+    async (_have, need) => {
+      await sql.unsafe(
+        `INSERT INTO hr_leave_ledger (org_id, user_id, user_membership_id, leave_type_id, txn_type, days, effective_date, period, source, created_at)
+         SELECT $1, m.user_id, m.id, $3::int, 'accrual'::hr_leave_txn_type, 2,
+                CURRENT_DATE, $4, 'cron'::hr_leave_ledger_source, now()
+         FROM (SELECT id, user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE'
+               ORDER BY id LIMIT $2::int) m`,
+        [ctx.org, need, leaveTypeId, currentPeriod],
+      );
+    },
+  );
+
   const att = scaled(BASE.attendance, ctx.weight, SCALE);
   await topUp(`${ctx.label} attendance`, "attendance", "org_id = $1", [ctx.org], att, async (have, need) => {
     await sql.unsafe(
@@ -1140,6 +1252,98 @@ async function seedMail(ctx) {
       [ctx.org, have, need, accountId, ctx.membership],
     );
   });
+
+  const [fixturePart] = await sql.unsafe(
+    `SELECT ta.membership_id
+     FROM build.ticket_assignees ta
+     WHERE ta.org_id = $1
+     GROUP BY ta.membership_id
+     ORDER BY count(*) DESC, ta.membership_id ASC LIMIT 1`,
+    [ctx.org],
+  );
+  const fixtureMembershipId = fixturePart?.membership_id ?? ctx.membership;
+  if (fixtureMembershipId) {
+    await topUp(
+      `${ctx.label} mail_message_metadata fixture membership (mail-inbox-cached)`,
+      "mail_message_metadata",
+      "org_id = $1 AND user_membership_id = $2 AND folder = 'inbox'",
+      [ctx.org, fixtureMembershipId],
+      FIXTURE_MAIL_INBOX_MIN,
+      async (_have, need) => {
+        const nextSeq = (await one(`SELECT coalesce(max(account_id), 0) + 1 AS id FROM mail_message_metadata`))?.id ?? 1;
+        const fixtureAccountId = (await one(`SELECT min(account_id) AS id FROM mail_message_metadata WHERE org_id = $1`, [ctx.org]))?.id ?? nextSeq;
+        await sql.unsafe(
+          `INSERT INTO mail_message_metadata (org_id, account_id, message_id, subject, is_read, date, user_membership_id, folder, synced_at)
+           SELECT $1, $3::int, 'perf-fxmail-' || $1 || '-' || $4::int || '-' || g, 'Fixture inbox ' || g, false,
+                  now() - (g || ' minutes')::interval, $4::int, 'inbox', now()
+           FROM generate_series(1, $2::int) g
+           ON CONFLICT DO NOTHING`,
+          [ctx.org, need, fixtureAccountId, fixtureMembershipId],
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// KB spaces + page visits — kb-spaces-list (minRows 3) + kb-page-visits-mine (minRows 30)
+// ---------------------------------------------------------------------------
+
+async function seedKb(ctx) {
+  await topUp(`${ctx.label} kb_spaces`, "kb_spaces", "org_id = $1", [ctx.org], KB_SPACES_MIN, async (have, need) => {
+    await sql.unsafe(
+      `INSERT INTO kb_spaces (org_id, name, slug, audience, created_at, updated_at)
+       SELECT $1, 'Perf Space ' || ($2::int + g), 'perf-space-' || $1 || '-' || ($2::int + g), 'internal', now(), now()
+       FROM generate_series(1, $3::int) g
+       ON CONFLICT DO NOTHING`,
+      [ctx.org, have, need],
+    );
+  });
+
+  const [fixturePart] = await sql.unsafe(
+    `SELECT ta.membership_id, om.user_id
+     FROM build.ticket_assignees ta
+     INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
+     WHERE ta.org_id = $1
+     GROUP BY ta.membership_id, om.user_id
+     ORDER BY count(*) DESC, ta.membership_id ASC LIMIT 1`,
+    [ctx.org],
+  );
+  const fixtureMembershipId = fixturePart?.membership_id ?? ctx.membership;
+  const fixtureUserId = fixturePart?.user_id ?? ctx.userId;
+
+  if (!fixtureMembershipId || !fixtureUserId) {
+    log(`  ${ctx.label} kb_page_visits: no fixture member — skipping`);
+    return;
+  }
+
+  const pageIds = await sql.unsafe(
+    `SELECT id FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL ORDER BY id LIMIT 50`,
+    [ctx.org],
+  );
+  if (!pageIds.length) { log(`  ${ctx.label} kb_page_visits: no kb_pages — skipping`); return; }
+
+  const existingVisits = await count(
+    "kb_page_visits",
+    "org_id = $1 AND membership_id = $2",
+    [ctx.org, fixtureMembershipId],
+  );
+  if (existingVisits >= FIXTURE_KB_PAGE_VISITS_MIN) return;
+
+  const pagesNeeded = Math.min(FIXTURE_KB_PAGE_VISITS_MIN, pageIds.length);
+  const pages = pageIds.slice(0, pagesNeeded);
+  for (const { id: pageId } of pages) {
+    await sql.unsafe(
+      `INSERT INTO kb_page_visits (org_id, user_id, membership_id, page_id, visited_at)
+       VALUES ($1, $2, $3::int, $4::int, now() - (random() * 100 || ' hours')::interval)
+       ON CONFLICT DO NOTHING`,
+      [ctx.org, fixtureUserId, fixtureMembershipId, pageId],
+    );
+  }
+  if (pages.length < FIXTURE_KB_PAGE_VISITS_MIN) {
+    log(`  ${ctx.label} kb_page_visits: only ${pages.length} kb_pages available (need ${FIXTURE_KB_PAGE_VISITS_MIN}); seed more kb_pages in layer 2`);
+  }
+  log(`  ${ctx.label} kb_page_visits: seeded ${pages.length} visits for fixture membership`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1493,11 +1697,12 @@ const TOUCHED = [
   "acc_tax_payments", "fin_reminder_policies",
   "payroll_runs", "payroll_run_employees", "payroll_line_items",
   "announcements",
+  "subscriptions",
   "chat_channels", "chat_channel_members", "chat_messages", "chat_saved_messages",
   "hr_people", "hr_employments", "hr_reporting_lines", "leave_types", "leave_policies",
   "leave_requests", "leave_balances",
   "hr_leave_ledger", "attendance", "timesheets", "support_tickets", "mail_message_metadata",
-  "calendar_events",
+  "calendar_events", "kb_spaces", "kb_page_visits",
 ];
 
 /** A plan read before ANALYZE is a plan against stale statistics, which is not a plan. */
@@ -1574,6 +1779,7 @@ async function main() {
   if (PURGE) await purge();
 
   for (const profile of PERF_ORGS) await section(`ensureOrg ${profile.label}`, () => ensureOrg(profile));
+  for (const profile of PERF_ORGS) await section(`${profile.label} plan+onboarding`, () => seedOrgPlanAndOnboarding(profile.id, profile.label));
 
   for (const profile of PERF_ORGS) {
     const ctx = { org: profile.id, label: profile.label, weight: profile.weight, memberCount: 0 };
@@ -1587,6 +1793,7 @@ async function main() {
     await section(`${ctx.label} party seam`, () => seedPartySeam(ctx));
     await section(`${ctx.label} inventory`, () => seedInventory(ctx));
     await section(`${ctx.label} build`, () => seedBuildProduct(ctx));
+    await section(`${ctx.label} kb`, () => seedKb(ctx));
     await section(`${ctx.label} finance`, () => seedFinance(ctx));
     await section(`${ctx.label} finance core`, () => seedFinanceCore(ctx));
     await section(`${ctx.label} payroll`, () => seedPayroll(ctx));
