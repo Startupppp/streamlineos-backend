@@ -1,6 +1,8 @@
 # InventoryOS — NEO handoff
 
-**Close pass update — 2026-08-31.** Code commit `6c8f68fc` fixes the remaining replay-boundary defects by making PO-batch and recall execution reach `runIdempotent` before command-invalidated preconditions, storing a replayable PO response, and fixing the proposal-refresh route order; local checks passed for inventory reachability, PO quantity/override guards, recall execute units, transit-exit arithmetic, frontend route states, and the proposal refresh route-order regression. RF is still blocked by no real signed-in session/cookie, and Neon was not migrated because `pg_stat_activity` showed live `streamlineos-api` sessions, including one active. Remaining non-code blockers are unchanged: live Blinkit/Zepto/Instamart secrets and a real WES adapter.
+**Close pass update — 2026-09-05.** `pnpm db:bootstrap` reaches `REACHED_HEAD 630/630` from an empty database for the first time on this branch, twice consecutively and idempotently (`1c167fdc1`). It had been stopping at 457/630 on `0678_rls_fix_feedback_cycle_responses`, an ordering defect described in §4 — and that, not any behavioural bug, is what the four "remaining cold-build failures" in §6 were. On a database at head those four suites are **50 of 50 tests, EXIT=0**. All three defects §6 called open had already been fixed in ancestors of this tip (`6c8f68fc9`, `99ab6c89d`); §6 and §3 are now corrected and dated. Still blocked and unchanged: RF needs a real signed-in session (`/me/access` 403s to a minted cookie), Neon was not migrated, live Blinkit/Zepto/Instamart secrets and a real WES adapter.
+
+**Close pass update — 2026-08-31 (superseded by the entry above).** Code commit `6c8f68fc` fixes the remaining replay-boundary defects by making PO-batch and recall execution reach `runIdempotent` before command-invalidated preconditions, storing a replayable PO response, and fixing the proposal-refresh route order; local checks passed for inventory reachability, PO quantity/override guards, recall execute units, transit-exit arithmetic, frontend route states, and the proposal refresh route-order regression. RF is still blocked by no real signed-in session/cookie, and Neon was not migrated because `pg_stat_activity` showed live `streamlineos-api` sessions, including one active. Remaining non-code blockers are unchanged: live Blinkit/Zepto/Instamart secrets and a real WES adapter.
 
 **Branch:** `feat/inventory-world-class-implementation` (both repos)
 **Written:** 2026-08-30. Revised the same day by the PEND pass, which closed §6.
@@ -194,6 +196,15 @@ a root cause here and should not be read as understood.
 > other four had an independent cause that the column error was masking, and
 > `transit-exit` is the only one of them this document described accurately.
 > See §6.
+
+> **Corrected again, 2026-09-05 — and the correction above was also wrong.** On a
+> database at `REACHED_HEAD 630/630`, all four of the remaining suites pass:
+> **50 of 50 tests, EXIT=0**. The "independent cause" the note above reaches for
+> did not exist. Every one of those four was failing in *setup* on a column the
+> cold build never created, because `db:bootstrap` stopped at 457/630 — see §4
+> and §6. Three corrections, on the same five suites, each confident and each
+> reading a schema failure as a behavioural one. The signal was there the whole
+> time and was discounted twice: `does not exist` in the log.
 
 Both golden paths — the original and NEO's — pass in that run.
 
@@ -477,42 +488,51 @@ precedes the confirm, and denied does not render as empty. What remains unproven
 is the thing only a person holding a device can answer — whether it is usable
 one-handed.
 
-### The seeded suite on a cold-built database, and what the last four failures are
+### The seeded suite on a cold-built database — closed, 2026-09-05
 
-**46 of 50 suites, 550 of 555 tests**, against a database produced by `createdb`
-+ extensions + `db:bootstrap` and nothing else. Zero occurrences of
-`does not exist` in the whole run — the missing-column class of failure is gone.
+**All four of the failures this section used to describe are gone, and none of
+them needed the fix this section proposed.**
 
-That corrects §3, which attributed four of its five failures to the missing party
-columns. Those columns now exist and **one** of the five was fixed by them:
-`landed-cost`. The other four had an independent cause underneath.
+```
+po-batching · proposal-override · recall-simulate-execute · transit-exit
+Test Suites: 4 passed, 4 total
+Tests:      50 passed, 50 total          EXIT=0
+```
 
-Two of them are the same defect in two modules, and it is worth naming because it
-is §1's lesson one turn further on:
+Against `db:bootstrap` at `REACHED_HEAD 630/630`, app role `streamline_app`
+(`rolbypassrls=false`), local Postgres.
 
-> **A command whose own effect invalidates its own precondition can never be
-> retried, because the idempotency guard sits behind the precondition.**
+**What this section got wrong, and it is worth being precise about it.** The four
+were described as three distinct defects — two idempotency-boundary bugs, one
+unexplained `400`, one arithmetic error. Two of the three had in fact been fixed
+before this section was written; the third was fixed the day after. What was
+still broken was none of them: it was the **cold build**, which stopped at
+457/630 and therefore never created `inv_products.measure_mode` or
+`inv_sales_orders.created_by_membership_id`. Every one of those 50 tests was
+failing in setup on a missing column, and the diagnosis above was reading a
+schema failure as four behavioural ones.
 
-* `po-batch.service.ts` runs `resolveForBatching` *before* `runIdempotent`. The
-  first call creates the draft purchase order; the service's own rule is that a
-  proposal is already batched when an unsent draft carries a line for it, so the
-  replay resolves to zero lines and throws "None of these proposals still need
-  ordering" — a `400` — without ever reaching the guard that exists to return the
-  first result.
-* `quality-recalls.service.ts` does the same with `resolveLines`: the first
-  execution moves stock, so the replay's `evidenceVersion` no longer matches and
-  it throws `RECALL_EVIDENCE_STALE` before the guard.
+| Was described as | Actually |
+|---|---|
+| po-batch / quality-recalls replay — "**Not attempted here**" | Fixed by `6c8f68fc9`, 2026-08-31. Both now call the precondition *inside* the `runIdempotent` closure (`po-batch.service.ts:231-293`, `quality-recalls.service.ts:192-317`), and po-batch stores the full ten-field `CreatedPoBatch`. `po-batching:270` and `recall-simulate-execute:255` are the replay tests, both green |
+| `proposal-override` "answers 400 to a body that satisfies its schema" | Fixed by `6c8f68fc9`. **Route shadowing**: `@Post("versions/:productVariantId")` was registered before `@Post("versions/refresh")`, so `"refresh"` reached `z.coerce.number()` → `NaN` → 400. The body was never validated against its own schema, which is exactly why the sentence above was literally true and still misleading. Held now by `__tests__/forecasting-route-order.spec.ts` |
+| `transit-exit` "the transfer-line arithmetic" | Fixed by `99ab6c89d`. The STRANDED view asked the *document* (`quantity > quantity_received`) while an exit moves *stock* and is architecturally forbidden from touching the document, so a returned transfer stayed queued for ever. `lib/stranded-transit.ts:85-97` now asks `inv_stock_levels` |
 
-In both, `runIdempotent` is correct and unreachable. Both also store only part of
-their response (`poId`, `poNumber`, `created`), so a replay could not reconstruct
-the body even once it reached the guard — the fix is a transaction-boundary
-change plus a wider stored response, in two services, one of which is regulated.
-**Not attempted here**: that is a considered piece of work in modules this pass
-does not own, and it has been failing since before this branch.
+Line 3 of this document has said since 2026-08-31 that `6c8f68fc` fixed two of
+these. This section kept saying otherwise for five days, and **two work orders
+were written against it** — both instructing an agent to fix code that was
+already correct.
 
-The remaining two are not understood and should not be read as though they were:
-`proposal-override`'s refresh endpoint answers `400` to a body that satisfies its
-schema, and `transit-exit` is the transfer-line arithmetic §3 already described.
+That is the same failure §1 is about, one turn further on. §1's lesson is that a
+green unit suite tells you nothing about the seam. This one is narrower and
+sharper: **a document that is not re-measured becomes wrong in the direction of
+the work that has since been done**, and it is most dangerous where it is most
+specific, because specificity reads as evidence. The remedy is not more detail —
+this section had plenty. It is a date and a command beside every claim, so the
+next reader can tell staleness from fact without re-deriving it.
+
+The cold-build repair is `1c167fdc1`; what it fixed, and the ordering defect
+underneath it, is described in §4.
 
 ### Neon — deliberately not applied
 
