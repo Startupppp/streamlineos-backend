@@ -4,6 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnprocessableEntityException,
   UnsupportedMediaTypeException,
 } from "@nestjs/common";
 import { getObservabilityContext } from "../../../common/observability";
@@ -21,6 +22,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
+import { FileQuarantineService } from "../../storage/file-quarantine.service";
 import { isOwnOrgStorageKey } from "../../storage/storage-key";
 import type { AddVaultDocumentInput } from "./dto/candidate-records.schemas";
 
@@ -33,7 +35,10 @@ const ALLOWED_EXTENSIONS = /\.(pdf|docx|doc)$/i;
 
 @Injectable()
 export class RecruitmentCandidateVaultService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly quarantine: FileQuarantineService,
+  ) {}
 
   async listVault(orgId: string, candidateId: number) {
     await this.ensureCandidate(orgId, candidateId);
@@ -76,6 +81,14 @@ export class RecruitmentCandidateVaultService {
     if (!isOwnOrgStorageKey(input.s3Key, orgId))
       throw new BadRequestException("Invalid file reference");
 
+    const scanStatus = await this.quarantine.getStatusForKey(orgId, input.s3Key);
+    if (scanStatus !== null && scanStatus !== "clean") {
+      throw new UnprocessableEntityException(
+        "File has not cleared malware scanning. Confirm the upload is complete before adding to the vault.",
+      );
+    }
+    const avResult = scanStatus === "clean" ? "CLEAN" : "PENDING";
+
     const [doc] = await this.db
       .insert(candidateDocumentsVault)
       .values({
@@ -88,7 +101,7 @@ export class RecruitmentCandidateVaultService {
         fileSize: input.fileSize,
         documentType: input.documentType ?? null,
         uploadedBy: userId,
-        avResult: "PENDING",
+        avResult,
       })
       .returning();
     return doc;

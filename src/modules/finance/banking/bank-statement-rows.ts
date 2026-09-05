@@ -103,8 +103,8 @@ export function parseBankStatementRows(
     const counterparty = mapping.counterparty !== undefined ? (row[mapping.counterparty] ?? null) : null;
 
     parsed.push({
-      date: parsedDate!,
-      description: rawDesc || null!,
+      date: parsedDate ?? "",
+      description: rawDesc,
       amount: (amountNum ?? 0).toFixed(4),
       reference: reference?.trim() || null,
       counterparty: counterparty?.trim() || null,

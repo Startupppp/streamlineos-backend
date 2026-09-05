@@ -26,7 +26,8 @@ import { AuthorizedInService } from "../../common/auth/authorized-in-service.dec
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
-import { registerAfterCommit } from "../../common/tenant";
+import { NoTenantTransaction, runInNewTenantTransaction } from "../../common/tenant";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -113,6 +114,7 @@ export class StorageController {
   @MultipartAction({ file: "file", fields: { folder: "string" } })
   @ResponseSchema(storageUploadResponseSchema)
   @AuthorizedInService("assertUploadAllowed")
+  @NoTenantTransaction()
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -126,7 +128,6 @@ export class StorageController {
     const folder = sanitizeFolder(
       folderField && folderField.length > 0 ? folderField : "uploads",
     );
-    await this.assertUploadAllowed(folder, u);
 
     if (file.size > MAX_UPLOAD_SIZE) throw new BadRequestException("File too large (max 10MB)");
     if (!ALLOWED_UPLOAD_TYPES.includes(file.mimetype))
@@ -134,59 +135,65 @@ export class StorageController {
     if (!validateMagicBytes(file.buffer, file.mimetype))
       throw new BadRequestException("File content does not match declared type");
 
-    /**
-     * Asked before the scan and the quota read, not after: refusing here costs
-     * the caller nothing, while refusing at submission time would mean a
-     * malware scan and a quarantine row thrown away.
-     */
     if (!this.transforms.hasCapacity())
       throw new ServiceUnavailableException("Upload processing is saturated — retry shortly");
-
-    const [orgUsed, userUsed] = await Promise.all([
-      this.quarantine.getTotalUsageBytes(u.orgId),
-      this.quarantine.getTotalUsageBytesForUser(u.orgId, u.userId),
-    ]);
-    if (orgUsed + file.size > ORG_QUOTA_BYTES)
-      throw new PayloadTooLargeException("Organization storage quota exceeded");
-    if (userUsed + file.size > USER_QUOTA_BYTES)
-      throw new PayloadTooLargeException("User storage quota exceeded");
-
-    const scanResult = await this.avScanner.scan(file.buffer, file.originalname, file.mimetype);
-    if (scanResult.status === "infected")
-      throw new UnprocessableEntityException(`Upload rejected: malware detected (${scanResult.threat})`);
-    if (scanResult.status === "error")
-      throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
-
-    /**
-     * The key is settled here and the transform runs later. Nothing on this
-     * request thread compresses, transcodes or writes bytes: the response is
-     * already `pending_scan`, so a caller that reads the contract cannot tell
-     * the difference, and the object stays unreachable until the quarantine row
-     * says clean either way.
-     */
-    const { key, plannedMimeType } = await this.storage.planUpload(
-      u.orgId,
-      file.buffer,
-      folder,
-      file.originalname,
-      file.mimetype,
-    );
-    const declaredSha256 = createHash("sha256").update(file.buffer).digest("hex");
-
-    const quarantineId = await this.quarantine.begin({
-      orgId: u.orgId,
-      storageKey: key,
-      filename: file.originalname,
-      mimeType: plannedMimeType,
-      fileSizeBytes: file.size,
-      sha256: declaredSha256,
-      uploadedBy: u.userId,
-    });
 
     const { orgId, userId } = u;
     const body = file.buffer;
     const originalName = file.originalname;
     const originalMimeType = file.mimetype;
+    const fileSize = file.size;
+
+    await runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.assertUploadAllowed(folder, u);
+
+        const [orgUsed, userUsed] = await Promise.all([
+          this.quarantine.getTotalUsageBytes(orgId),
+          this.quarantine.getTotalUsageBytesForUser(orgId, userId),
+        ]);
+        if (orgUsed + fileSize > ORG_QUOTA_BYTES)
+          throw new PayloadTooLargeException("Organization storage quota exceeded");
+        if (userUsed + fileSize > USER_QUOTA_BYTES)
+          throw new PayloadTooLargeException("User storage quota exceeded");
+      },
+      { orgId },
+    );
+
+    const scanResult = await this.avScanner.scan(body, originalName, originalMimeType);
+    if (scanResult.status === "infected")
+      throw new UnprocessableEntityException(`Upload rejected: malware detected (${scanResult.threat})`);
+    if (scanResult.status === "error")
+      throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
+
+    const { key, plannedMimeType, quarantineId, declaredSha256 } =
+      await runInTenantTransaction(
+        this.db,
+        async () => {
+          const { key, plannedMimeType } = await this.storage.planUpload(
+            orgId,
+            body,
+            folder,
+            originalName,
+            originalMimeType,
+          );
+          const sha256 = createHash("sha256").update(body).digest("hex");
+
+          const quarantineId = await this.quarantine.begin({
+            orgId,
+            storageKey: key,
+            filename: originalName,
+            mimeType: plannedMimeType,
+            fileSizeBytes: fileSize,
+            sha256,
+            uploadedBy: userId,
+          });
+
+          return { key, plannedMimeType, quarantineId, declaredSha256: sha256 };
+        },
+        { orgId },
+      );
 
     const enqueue = async (): Promise<void> => {
       const accepted = this.transforms.submit({
@@ -196,17 +203,20 @@ export class StorageController {
           this.publishUpload({ orgId, userId, quarantineId, key, body, originalName, originalMimeType }),
         compensate: () => this.retractUpload(orgId, quarantineId, key),
       });
-      if (!accepted) void this.retractUpload(orgId, quarantineId, key);
+      if (!accepted)
+        void runInNewTenantTransaction(this.db, orgId, () =>
+          this.retractUpload(orgId, quarantineId, key),
+        );
     };
 
-    if (!registerAfterCommit(enqueue)) await enqueue();
+    await enqueue();
 
     return {
       quarantineId,
       status: "pending_scan",
       key,
       mimeType: plannedMimeType,
-      size: file.size,
+      size: fileSize,
       sha256: declaredSha256,
     };
   }

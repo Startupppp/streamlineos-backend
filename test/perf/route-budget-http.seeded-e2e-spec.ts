@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import request from "supertest";
 import postgres from "postgres";
+import { requiresTls } from "src/db/pool.config";
 import { createSeededE2eApp, signSeededToken, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import {
   DownstreamCounter,
@@ -270,8 +271,18 @@ describeIfSeeded("route budgets over the HTTP stack (seeded)", () => {
     downstream.excludeLoopbackPort(port);
     downstream.install();
 
-    owner = postgres(OWNER_URL, { max: 2, prepare: false, ssl: false, onnotice: () => {} });
-    appProbe = postgres(APP_URL, { max: 1, prepare: false, ssl: false, onnotice: () => {} });
+    owner = postgres(OWNER_URL, {
+      max: 2,
+      prepare: false,
+      ssl: requiresTls(OWNER_URL) ? "require" : false,
+      onnotice: () => {},
+    });
+    appProbe = postgres(APP_URL, {
+      max: 1,
+      prepare: false,
+      ssl: requiresTls(APP_URL) ? "require" : false,
+      onnotice: () => {},
+    });
 
     const applied = await owner.unsafe<{ n: number }[]>(
       `SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`,

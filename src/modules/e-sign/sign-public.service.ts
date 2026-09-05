@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { StorageService } from "../storage/storage.service";
+import { validateMagicBytes } from "../storage/file-signatures";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignEnvelopesService } from "./sign-envelopes.service";
@@ -344,6 +345,11 @@ export class SignPublicService {
       if (input.imageDataUrl) {
         const base64 = input.imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
         const buffer = Buffer.from(base64, "base64");
+        const MAX_SIGNATURE_BYTES = 1_500_000;
+        if (buffer.length > MAX_SIGNATURE_BYTES)
+          throw new BadRequestException("Signature image exceeds size limit");
+        if (!validateMagicBytes(buffer, "image/png"))
+          throw new BadRequestException("Signature image must be a valid PNG");
         const uploaded = await this.storage.uploadFile(envelope.orgId, buffer, `signos/${envelope.orgId}/${envelope.id}/signatures`, `${input.assetType}.png`, "image/png");
         imageFileKey = uploaded.key;
       }

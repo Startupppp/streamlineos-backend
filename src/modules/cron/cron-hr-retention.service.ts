@@ -51,6 +51,8 @@ export interface HrRetentionSweepResult {
   skippedPayrollPolicies: number;
 }
 
+export type PurgeOutcome = "deleted" | "pending_retry" | "lost";
+
 /**
  * Deletes one object whose owning row retention has already removed, recording a
  * pending-purge ledger row BEFORE the delete is attempted.
@@ -61,7 +63,9 @@ export interface HrRetentionSweepResult {
  * again — the sweep counted it as an orphan and moved on. With the row written
  * first, the storage sweep retries it, and a failure becomes a delay.
  *
- * Returns whether the object was actually deleted.
+ * Returns "deleted" on success, "pending_retry" when the delete failed but a
+ * purge ledger row exists for the storage sweep to retry, or "lost" when both
+ * the ledger row and the delete failed and no retry mechanism remains.
  */
 export async function purgeRetiredObject(
   db: Db,
@@ -69,7 +73,8 @@ export async function purgeRetiredObject(
   orgId: string,
   key: string,
   logError: (message: string, meta: Record<string, unknown>) => void,
-): Promise<boolean> {
+): Promise<PurgeOutcome> {
+  let ledgerRecorded = false;
   try {
     await db
       .insert(storagePendingPurge)
@@ -84,6 +89,7 @@ export async function purgeRetiredObject(
         target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
         set: { status: "pending", lastAttemptedAt: null, failedReason: null },
       });
+    ledgerRecorded = true;
   } catch (err) {
     logError("[hr-retention] could not record the pending purge for a retired object", {
       orgId,
@@ -96,10 +102,12 @@ export async function purgeRetiredObject(
     await storage.deleteFileIfPresent(orgId, key);
   } catch (err) {
     logError(
-      "[hr-retention] stored object survived its retired record — purge row left for the storage sweep to retry",
+      ledgerRecorded
+        ? "[hr-retention] stored object survived its retired record — purge row left for the storage sweep to retry"
+        : "[hr-retention] stored object survived its retired record — no ledger row recorded, object is orphaned",
       { orgId, key, error: err instanceof Error ? err.message : String(err) },
     );
-    return false;
+    return ledgerRecorded ? "pending_retry" : "lost";
   }
 
   await db
@@ -108,7 +116,7 @@ export async function purgeRetiredObject(
     .where(
       and(eq(storagePendingPurge.orgId, orgId), eq(storagePendingPurge.storageKey, key)),
     );
-  return true;
+  return "deleted";
 }
 
 @Injectable()
@@ -332,10 +340,10 @@ export class CronHrRetentionService {
   ): Promise<void> {
     for (const [orgId, keys] of retiredKeys) {
       for (const key of keys) {
-        const deleted = await purgeRetiredObject(this.db, this.storage, orgId, key, (message, meta) =>
+        const outcome = await purgeRetiredObject(this.db, this.storage, orgId, key, (message, meta) =>
           this.logger.error(message, meta),
         );
-        if (deleted) result.storageObjectsDeleted += 1;
+        if (outcome === "deleted") result.storageObjectsDeleted += 1;
         else result.storageObjectsOrphaned += 1;
       }
       retiredKeys.set(orgId, []);

@@ -23,7 +23,8 @@ import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
-import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { NoTenantTransaction } from "../../common/tenant";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { StorageService } from "./storage.service";
 import { MediaTransformRunner } from "./media-transform.runner";
 import { AvScanner } from "../../common/security/av-scan";
@@ -56,6 +57,7 @@ export class OnboardingDocumentsController {
   @ResponseSchema(onboardingDocumentResponseSchema)
   @Universal()
   @HttpCode(201)
+  @NoTenantTransaction()
   @MultipartAction({ file: "file", fields: { type: "string" }, requiredFields: ["type"] })
   @Validate({ body: uploadBodySchema })
   @UseInterceptors(
@@ -89,14 +91,14 @@ export class OnboardingDocumentsController {
     if (file.size > MAX_SIZE)
       throw new BadRequestException("File size must be under 5MB");
 
+    if (!this.transforms.hasCapacity())
+      throw new ServiceUnavailableException("Upload processing is saturated — retry shortly");
+
     const scanResult = await this.avScanner.scan(file.buffer, file.originalname, file.mimetype);
     if (scanResult.status === "infected")
       throw new UnprocessableEntityException(`Upload rejected: malware detected (${scanResult.threat})`);
     if (scanResult.status === "error")
       throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
-
-    if (!this.transforms.hasCapacity())
-      throw new ServiceUnavailableException("Upload processing is saturated — retry shortly");
 
     const { key, plannedMimeType } = await this.storage.planUpload(
       u.orgId,
@@ -107,68 +109,62 @@ export class OnboardingDocumentsController {
     );
 
     const stepName = `Upload ${type}`;
-
-    await this.db.transaction(async (tx) => {
-      await tx.insert(documents).values({
-        orgId: u.orgId,
-        userId: u.userId,
-        name: file.originalname,
-        type,
-        fileUrl: key,
-        fileSize: file.size,
-        mimeType: plannedMimeType,
-        uploadedBy: u.userId,
-      });
-      const existing = await tx.query.onboardingSteps.findFirst({
-        where: and(
-          eq(onboardingSteps.orgId, u.orgId),
-          eq(onboardingSteps.userId, u.userId),
-          eq(onboardingSteps.stepName, stepName),
-        ),
-        columns: { id: true },
-      });
-      if (existing) {
-        await tx
-          .update(onboardingSteps)
-          .set({ status: "COMPLETED", completedAt: new Date() })
-          .where(and(eq(onboardingSteps.orgId, u.orgId), eq(onboardingSteps.id, existing.id)));
-      } else {
-        await tx.insert(onboardingSteps).values({
-          userId: u.userId,
-          orgId: u.orgId,
-          stepName,
-          status: "COMPLETED",
-          completedAt: new Date(),
-        });
-      }
-    });
-
-    /**
-     * The row already carries the key, so the blob write is re-drivable and
-     * nothing on the request thread compresses or uploads. A refusal by the
-     * bounded runner is not silent: the row is left pointing at a key with no
-     * object, which is the state `cron-storage-sweep` already reconciles, and
-     * the runner has logged the refusal at error level.
-     */
     const orgId = u.orgId;
+    const userId = u.userId;
     const originalname = file.originalname;
     const mimetype = file.mimetype;
     const buffer = file.buffer;
+    const fileSize = file.size;
 
-    const enqueue = async (): Promise<void> => {
-      this.transforms.submit({
-        name: "onboarding.document.compress",
-        orgId,
-        run: async () => {
-          await this.storage.compressToKey(orgId, buffer, key, originalname, mimetype);
-        },
-        compensate: async () => {
-          await this.storage.deleteFileIfPresent(orgId, key);
-        },
-      });
-    };
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx.insert(documents).values({
+          orgId,
+          userId,
+          name: originalname,
+          type,
+          fileUrl: key,
+          fileSize,
+          mimeType: plannedMimeType,
+          uploadedBy: userId,
+        });
+        const existing = await tx.query.onboardingSteps.findFirst({
+          where: and(
+            eq(onboardingSteps.orgId, orgId),
+            eq(onboardingSteps.userId, userId),
+            eq(onboardingSteps.stepName, stepName),
+          ),
+          columns: { id: true },
+        });
+        if (existing) {
+          await tx
+            .update(onboardingSteps)
+            .set({ status: "COMPLETED", completedAt: new Date() })
+            .where(and(eq(onboardingSteps.orgId, orgId), eq(onboardingSteps.id, existing.id)));
+        } else {
+          await tx.insert(onboardingSteps).values({
+            userId,
+            orgId,
+            stepName,
+            status: "COMPLETED",
+            completedAt: new Date(),
+          });
+        }
+      },
+      { orgId },
+    );
 
-    if (!registerAfterCommit(enqueue)) await enqueue();
+    this.transforms.submit({
+      name: "onboarding.document.compress",
+      orgId,
+      run: async () => {
+        await this.storage.compressToKey(orgId, buffer, key, originalname, mimetype);
+      },
+      compensate: async () => {
+        await this.storage.deleteFileIfPresent(orgId, key);
+      },
+    });
 
     return { url: key };
   }

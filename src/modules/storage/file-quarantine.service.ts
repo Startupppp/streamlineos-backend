@@ -235,6 +235,21 @@ export class FileQuarantineService {
     return row.status !== "clean";
   }
 
+  async getStatusForKey(orgId: string, storageKey: string): Promise<QuarantineStatus | null> {
+    const rows = await this.db
+      .select({ status: fileQuarantineRecords.status })
+      .from(fileQuarantineRecords)
+      .where(
+        and(
+          eq(fileQuarantineRecords.orgId, orgId),
+          eq(fileQuarantineRecords.storageKey, storageKey),
+          isNull(fileQuarantineRecords.deletedAt),
+        ),
+      )
+      .limit(1);
+    return rows[0]?.status ?? null;
+  }
+
   async getTotalUsageBytes(orgId: string): Promise<number> {
     const rows = await this.db
       .select({

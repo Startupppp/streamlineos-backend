@@ -45,7 +45,8 @@ export class InvWarehouseLocationsService {
     if (existing) throw new ConflictException("A location with this code already exists in this warehouse");
 
     const [loc] = await this.db.insert(invLocations).values({ orgId, warehouseId, ...data }).returning();
-    return loc!;
+    if (!loc) throw new Error("location insert did not return a row");
+    return loc;
   }
 
   async updateLocation(orgId: string, locationId: number, data: UpdateLocationInput) {

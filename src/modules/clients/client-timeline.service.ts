@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { z } from "zod";
 import { deals, dealActivities, leadActivities, users } from "../../db/schema";
 import { businessParties, clientPartyMap, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -11,9 +12,13 @@ import {
   clientPartyScope,
 } from "./client-party-reader";
 
+const timelineEventTypeSchema = z.enum([
+  "deal_created", "deal_stage_change", "call", "email", "meeting", "note", "conversion",
+]);
+
 export interface TimelineEvent {
   id: string;
-  type: "deal_created" | "deal_stage_change" | "call" | "email" | "meeting" | "note" | "conversion";
+  type: z.infer<typeof timelineEventTypeSchema>;
   title: string;
   description: string;
   date: string;
@@ -113,7 +118,7 @@ export class ClientTimelineService {
     for (const act of allDealActivities) {
       events.push({
         id: `deal-act-${act.id}`,
-        type: act.type as TimelineEvent["type"],
+        type: timelineEventTypeSchema.parse(act.type),
         title: act.subject || `${act.type} logged`,
         description: act.notes || "",
         date: act.createdAt ? new Date(act.createdAt).toISOString() : new Date().toISOString(),
@@ -140,7 +145,7 @@ export class ClientTimelineService {
       for (const act of leadActs) {
         events.push({
           id: `lead-act-${act.id}`,
-          type: act.type as TimelineEvent["type"],
+          type: timelineEventTypeSchema.parse(act.type),
           title: act.subject || `${act.type} (pre-conversion)`,
           description: act.notes || "",
           date: new Date(act.date).toISOString(),

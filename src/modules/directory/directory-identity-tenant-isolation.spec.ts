@@ -18,6 +18,19 @@ describe("DirectoryIdentityService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
 
+  /**
+   * Self-returning so the double cannot fall behind the service's builder chain: a
+   * missing link reads as a domain failure ("innerJoin is not a function") rather than
+   * as the stale test double it is.
+   */
+  function selectChain(): Record<string, unknown> {
+    const chain: Record<string, unknown> = {};
+    for (const step of ["from", "innerJoin", "leftJoin", "where", "orderBy", "limit", "groupBy"])
+      chain[step] = jest.fn(() => chain);
+    chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve);
+    return chain;
+  }
+
   function makeDb(): { db: Db; mocks: DirectoryDbMocks } {
     const organizationMembersFindMany = jest.fn().mockResolvedValue([]);
     const invitationsFindFirst = jest.fn().mockResolvedValue(null);
@@ -27,7 +40,7 @@ describe("DirectoryIdentityService — cross-tenant isolation", () => {
         organizationMembers: { findFirst: jest.fn().mockResolvedValue(null), findMany: organizationMembersFindMany },
         invitations: { findFirst: invitationsFindFirst },
       },
-      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+      select: jest.fn(() => selectChain()),
     } as unknown as Db;
     return { db, mocks: { organizationMembersFindMany, invitationsFindFirst } };
   }

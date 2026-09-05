@@ -7,6 +7,14 @@ import type { AvScanner } from "../../common/security/av-scan";
 import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
+import type { TenantTx } from "../../common/tenant/with-tenant";
+
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (
+    _db: unknown,
+    fn: (tx: TenantTx) => Promise<unknown>,
+  ) => fn({} as TenantTx),
+}));
 
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0]);
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0]);

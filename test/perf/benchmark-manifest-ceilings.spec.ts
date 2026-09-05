@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /**
- * PRD-C142, pinned against the committed capture rather than against a fixture.
+ * PRD-C140, PRD-C142, pinned against the committed capture rather than a fixture.
  *
  * `check-benchmark-manifest.mjs` already refuses a manifest whose statements are over ceiling, but
  * its exit code is shared with the request-level half, so a statement regression can hide behind a
@@ -25,16 +25,44 @@ const TENANTS = ["large", "mid", "small", "tiny"] as const;
 interface Observation {
   status?: string;
   p95Ms?: number | null;
+  reason?: string;
 }
 interface Benchmark {
   id: string;
   statementClass?: string;
   ceilingMs?: number;
   measurements?: Record<string, Observation>;
+  repetitions?: number;
+  warmState?: string;
+  errorRate?: number;
+}
+interface Module {
+  id: string;
+  title?: string;
+  surface?: string;
+  tables?: unknown;
+  dataset?: Record<string, { tenantRows?: number }>;
+  concurrency?: { runs?: unknown[] };
+  benchmarks: Benchmark[];
 }
 interface Manifest {
   prd: { statementCeilingsMs: { ordinary: number; complex: number } };
-  modules: { id: string; benchmarks: Benchmark[]; readCostBudgets?: Record<string, unknown> }[];
+  environment: {
+    releaseSha?: string;
+    machine?: { cpuCount?: number; totalMemoryMb?: number };
+    container?: unknown;
+    database?: { name?: string };
+    role?: { bypassrls?: boolean };
+  };
+  method?: {
+    command?: string;
+    reproduce?: string;
+    samples?: number;
+    replicates?: number;
+    concurrencyLevels?: number[];
+  };
+  regressionPolicy?: unknown;
+  modules: Module[];
 }
 
 const manifest: Manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
@@ -52,13 +80,128 @@ function slots(): { id: string; tenant: string; cls: string; ceiling: number; ob
 
 const measured = slots().filter((s) => s.obs.status === "measured" && typeof s.obs.p95Ms === "number");
 
+describe("PRD-C140 — manifest provenance and schema completeness", () => {
+  it("records the release SHA so a stale capture is identifiable", () => {
+    expect(typeof manifest.environment.releaseSha).toBe("string");
+    expect(manifest.environment.releaseSha!.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("records machine limits so result portability can be assessed", () => {
+    expect(typeof manifest.environment.machine?.cpuCount).toBe("number");
+    expect(typeof manifest.environment.machine?.totalMemoryMb).toBe("number");
+  });
+
+  it("records container info so CI vs laptop divergence is detectable", () => {
+    expect(manifest.environment.container).toBeDefined();
+  });
+
+  it("records the database name so the capture can be re-run on the same seed", () => {
+    expect(typeof manifest.environment.database?.name).toBe("string");
+    expect(manifest.environment.database!.name!.length).toBeGreaterThan(0);
+  });
+
+  it("records the measurement role and confirms it is NOT bypassrls", () => {
+    expect(manifest.environment.role).toBeDefined();
+    expect(manifest.environment.role!.bypassrls).toBe(false);
+  });
+
+  it("records the reproduce command so results can be re-generated", () => {
+    expect(typeof manifest.method?.command).toBe("string");
+    expect(manifest.method!.command!.length).toBeGreaterThan(0);
+    expect(typeof manifest.method?.reproduce).toBe("string");
+    expect(manifest.method!.reproduce!.length).toBeGreaterThan(0);
+  });
+
+  it("records sample counts so statistical weight is transparent", () => {
+    expect(typeof manifest.method?.samples).toBe("number");
+    expect(manifest.method!.samples!).toBeGreaterThanOrEqual(1);
+    expect(typeof manifest.method?.replicates).toBe("number");
+    expect(manifest.method!.replicates!).toBeGreaterThanOrEqual(1);
+  });
+
+  it("records the regression policy so the noise envelope is inspectable", () => {
+    expect(manifest.regressionPolicy).toBeDefined();
+  });
+
+  it("requires every non-reference benchmark to carry its required measurement fields", () => {
+    const missing: string[] = [];
+    for (const mod of manifest.modules) {
+      for (const b of mod.benchmarks) {
+        if (b.statementClass === "reference") continue;
+        if (typeof b.repetitions !== "number") missing.push(`${b.id}: missing repetitions`);
+        if (typeof b.warmState !== "string") missing.push(`${b.id}: missing warmState`);
+        if (typeof b.errorRate !== "number") missing.push(`${b.id}: missing errorRate`);
+        if (!b.measurements) missing.push(`${b.id}: missing measurements`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("records the dataset size for every module on every tenant so empty-corpus is detectable", () => {
+    const absent: string[] = [];
+    for (const mod of manifest.modules) {
+      if (!mod.dataset) {
+        absent.push(`${mod.id}: no dataset`);
+        continue;
+      }
+      for (const tenant of TENANTS) {
+        if (!mod.dataset[tenant]) absent.push(`${mod.id}@${tenant}: missing dataset entry`);
+      }
+    }
+    expect(absent).toEqual([]);
+  });
+});
+
 describe("PRD-C142 — statement ceilings on the production-shaped seed", () => {
   it("declares the PRD's two ceilings and nothing looser", () => {
     expect(manifest.prd.statementCeilingsMs).toEqual({ ordinary: 50, complex: 200 });
   });
 
-  it("measures a real corpus, so an empty capture cannot read as a pass", () => {
-    expect(measured.length).toBeGreaterThanOrEqual(150);
+  it("measures every slot the seed supports and accounts for every slot it does not", () => {
+    const validSkipReasons = new Set([
+      "seed-too-small",
+      "no fixture data for this budget",
+      "vacuous",
+    ]);
+
+    const gaps = slots().filter(
+      (s) => s.obs.status === "unmeasured" && !validSkipReasons.has(s.obs.reason ?? ""),
+    );
+    expect(
+      gaps.map((s) => `${s.id}@${s.tenant}: ${String(s.obs.reason)}`),
+    ).toEqual([]);
+
+    const catalogUrl = pathToFileURL(
+      join(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs"),
+    ).href;
+    const catalogIds: string[] = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import { BUDGETS } from ${JSON.stringify(catalogUrl)};` +
+            ` process.stdout.write(JSON.stringify(BUDGETS.map((b) => b.id)));`,
+        ],
+        { cwd: BACKEND_ROOT, encoding: "utf8" },
+      ),
+    );
+    const largeSkipped = new Set(
+      slots()
+        .filter(
+          (s) =>
+            s.tenant === "large" &&
+            s.obs.status === "unmeasured" &&
+            validSkipReasons.has(s.obs.reason ?? ""),
+        )
+        .map((s) => s.id),
+    );
+    const expectedMinimumAtLarge = catalogIds.filter((id) => !largeSkipped.has(id)).length;
+    const measuredAtLarge = measured.filter((s) => s.tenant === "large").length;
+    const vacuousAtLarge = slots().filter(
+      (s) => s.tenant === "large" && s.obs.status === "vacuous",
+    ).length;
+    expect(measuredAtLarge + vacuousAtLarge).toBeGreaterThanOrEqual(expectedMinimumAtLarge);
   });
 
   it("holds every measured ORDINARY statement at p95 <= 50 ms", () => {
@@ -105,9 +248,6 @@ describe("PRD-C142 — statement ceilings on the production-shaped seed", () => 
   });
 
   it("covers every read-cost budget the catalog declares, so the corpus cannot be narrowed", () => {
-    /* ts-jest cannot `import()` the ESM catalog, so it is read out of a child node process. The
-       specifier must be a file:// URL — a bare Windows absolute path is rejected by the ESM loader
-       as protocol 'd:', which made this assertion throw instead of returning a verdict. */
     const catalogUrl = pathToFileURL(
       join(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs"),
     ).href;

@@ -102,6 +102,10 @@ export function normalizeDatabaseUrl(url: string): string {
   }
 }
 
+export function requiresTls(url: string): boolean {
+  return NEON_HOST.test(url);
+}
+
 function hostOf(url: string): string {
   try {
     return new URL(url).hostname;

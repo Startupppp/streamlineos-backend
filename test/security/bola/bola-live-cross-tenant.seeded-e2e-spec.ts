@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import request from "supertest";
 import postgres from "postgres";
+import { requiresTls } from "src/db/pool.config";
 import { createSeededE2eApp, signSeededToken, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { DEFAULT_IDS_PER_TABLE, loadCatalog, type Catalog } from "test/security/bola/live/fixture-catalog";
 import { BorrowPool } from "test/security/bola/live/borrow-pool";
@@ -397,7 +398,12 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     if (!port) throw new Error("[bola-live] the harness app did not bind a port");
     baseUrl = `http://127.0.0.1:${String(port)}`;
 
-    owner = postgres(OWNER_URL, { max: 2, prepare: false, ssl: false, onnotice: () => {} });
+    owner = postgres(OWNER_URL, {
+      max: 2,
+      prepare: false,
+      ssl: requiresTls(OWNER_URL) ? "require" : false,
+      onnotice: () => {},
+    });
     sourceCatalog = await loadCatalog(owner, SOURCE_ORG, POOL_PER_TABLE);
     sourceUser = await resolveOwnerUser(SOURCE_ORG);
     proberUser = PROBER_USER.length > 0 ? PROBER_USER : await resolveOwnerUser(PROBER_ORG);

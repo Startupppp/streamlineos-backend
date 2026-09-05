@@ -254,6 +254,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/inventory/warehouses/inv-warehouse-locations.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Offset pagination with explicit min(limit, LOCATION_PAGE_LIMIT=100) bound; always emits both LIMIT and OFFSET.",
+      "justification": "listLocations uses Math.min(limit, 100) before computing offset, so depth is capped at the constant page size; a keyset migration would add latency with no correctness gain for a sub-100-row admin lookup."
+    },
     "/inventory/warehouses/inv-warehouses.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
@@ -395,14 +400,14 @@
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound"
     },
+    "/storage/file-quarantine.service.ts": {
+      "verdict": "KEYSET-MIGRATED",
+      "note": "GET /storage/quarantine now pages by (created_at DESC, id DESC) with keysetBeforeUuid + buildCursorPage and limit+1 sentinel; the automatic COUNT(*) is gone. Zero frontend callers, so the envelope change from {data,total,page,limit} to CursorPage was backend-only."
+    },
     "/users/organization-users.reader.ts": {
       "verdict": "KEYSET-MIGRATED",
       "proof": "listUsers uses sort-specific keyset cursors, organization predicate, stable tie-breakers, and limit+1",
       "note": "Offset pagination; needs keyset migration or proven depth bound"
-    },
-    "/storage/file-quarantine.service.ts": {
-      "verdict": "KEYSET-MIGRATED",
-      "note": "GET /storage/quarantine now pages by (created_at DESC, id DESC) with keysetBeforeUuid + buildCursorPage and limit+1 sentinel; the automatic COUNT(*) is gone. Zero frontend callers, so the envelope change from {data,total,page,limit} to CursorPage was backend-only."
     },
     "/users/user-profile.service.ts": {
       "verdict": "ACTIONABLE",
@@ -881,6 +886,10 @@
       "note": "Has 12 count/sum/groupBy aggregate references; test-run analytics queries produce scalar summaries",
       "justification": "L86 is aggregate-only; L135/L150/L163 read testCase IDs bounded by specific test run ID; test cases per run bounded by run scope 2026-09-01"
     },
+    "/calendar/calendar-attendee-sync.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "All three reads are bounded by natural constraints: current attendees for one event (seldom >100), memberships bounded by the passed attendeeIds array, and emails bounded by the passed attendeeIds array. All use inArray() or a single-event WHERE predicate."
+    },
     "/calendar/calendar-conflict.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Conflict candidate reads are tenant-scoped and now consumed in keyset batches",
@@ -970,6 +979,10 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "account reads bounded by clientId (per-client accounts, small set per client) 2026-09-01"
+    },
+    "/clients/client-timeline.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "client lookup at :46 is a single-record findFirst (bounded by definition); deals-for-client at :80 has no LIMIT and can grow with the client relationship -- needs a cap added."
     },
     "/clients/clients-email.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1110,6 +1123,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "inside forEachOrg; L26 reads holidays by orgId+date (single-day lookup, small daily holiday set); bounded per-org per-day 2026-09-01"
+    },
+    "/cron/cron-hr-retention-documents.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "documentAuditLogs lookup is bounded by IN (onboardingRows ids), and onboardingRows is one drainPages page of at most batchSize (200) rows selected with .limit(batchSize) immediately above. Extracted from cron-hr-retention.service.ts 2026-09-02 (ticket 37); the same read carried the same verdict there."
     },
     "/cron/cron-hr-retention.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1511,6 +1529,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "gdpr lane (excluded territory)",
       "justification": "GDPR export worker bounded by orgId+userId of specific export request; per-user data collection 2026-09-01"
+    },
+    "/gdpr/gdpr-subject-erasure-authored-content.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "GDPR subject erasure intentionally reads all records for a subject; bounded by authorId = subjectUserId (one user)",
+      "justification": "Selects every KB article, source, attachment and page the erasure subject authored. GDPR compliance requires processing ALL of them; a LIMIT would produce a partial erasure. Bounded by authorId/createdById/uploadedBy = subjectUserId (one user account, not an org-wide scan), and each scan is keyset-drained through forEachIdPage() in gdpr-subject-erasure-paging.ts. Re-keyed 2026-09-02 (ticket 37) when the KB erasure moved out of gdpr-subject-erasure.service.ts."
     },
     "/gdpr/gdpr.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2807,6 +2830,10 @@
       "note": "inArray bounds result count to ROLE_TEMPLATES.length (static code constant); rbac module owned by another agent",
       "justification": "Line 369: inArray(roles.slug, slugs) where slugs = ROLE_TEMPLATES.map(t => t.slug) - a static code constant. Result count is bounded by ROLE_TEMPLATES.length. Adding LIMIT would break the deduplication check that prevents duplicate role creation from templates."
     },
+    "/realtime/push-subscription-store.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "loadSubscriptionsForUser is bounded by the number of push endpoints a single user registers (typically 1-5 devices); loadSubscriptionsForPage is bounded by the input userIds slice (already batched by the caller at PUSH_SUBSCRIPTION_BATCH=200)."
+    },
     "/realtime/web-push.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -2821,6 +2848,10 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "sales dashboard reads are aggregate-only or bounded by userId+orgId scope; dashboard aggregates exempt 2026-09-01"
+    },
+    "/sales/sales-playbook.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "listPlaybook reads all playbook entries for an org. The playbook is org-managed admin configuration; per-org entry counts are single-digit to low double-digit and bounded by administrative intent, not by user activity. No pagination is exposed in the API because the client renders the full list in a drag-to-reorder UI."
     },
     "/sales/sales.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -3068,31 +3099,6 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listGlobalVariables capped at .limit(200); workflow variables are org config, typically <100 2026-09-01"
     },
-    "/gdpr/gdpr-subject-erasure-authored-content.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "GDPR subject erasure intentionally reads all records for a subject; bounded by authorId = subjectUserId (one user)",
-      "justification": "Selects every KB article, source, attachment and page the erasure subject authored. GDPR compliance requires processing ALL of them; a LIMIT would produce a partial erasure. Bounded by authorId/createdById/uploadedBy = subjectUserId (one user account, not an org-wide scan), and each scan is keyset-drained through forEachIdPage() in gdpr-subject-erasure-paging.ts. Re-keyed 2026-09-02 (ticket 37) when the KB erasure moved out of gdpr-subject-erasure.service.ts."
-    },
-    "/cron/cron-hr-retention-documents.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "documentAuditLogs lookup is bounded by IN (onboardingRows ids), and onboardingRows is one drainPages page of at most batchSize (200) rows selected with .limit(batchSize) immediately above. Extracted from cron-hr-retention.service.ts 2026-09-02 (ticket 37); the same read carried the same verdict there."
-    },
-    "@common/tenant/for-each-org.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "NEWLY VISIBLE 2026-09-03: src/common entered this gate's corpus for the first time. forEachOrg selects every ACTIVE, non-deleted organization with no .limit() and holds the whole list in memory before the sweep loop starts; it is called from 84 sites, so it is the widest unbounded read in the repository and it was outside the scan. Bounded today only by the tenant count (3 ACTIVE orgs measured on a database at journal head), which is exactly the kind of bound that stops holding. Fix is a keyset drain over organizations.id \u2014 the loop already processes one org at a time and needs no full list."
-    },
-    "@common/relocation/relocation-traffic-tracker.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. loadActiveRelocationTargets selects every organization_relocations row with is_active AND current_state = 'ACTIVE_TARGET' across ALL tenants, no .limit(). 0 rows measured at journal head, so the bound today is 'nobody is relocating', which is an operational fact and not a size bound."
-    },
-    "@common/tenant/org-admin-recipients.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. getOrgAdminUserIds selects every ACTIVE OWNER/ORG_ADMIN membership for an org with no .limit(). Bounded by orgId alone \u2014 'an org has few admins' is a convention, not a cap, and it is exactly the shape of justification this file was found suppressing real unbounded exports with. Banked rather than blessed."
-    },
     "@common/hr/sync-canonical-employment-fields.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -3103,20 +3109,35 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Subquery bounded by (orgId, userId, isPrimary = true) \u2014 one person's primary employment, at most one row by construction."
     },
-    "@common/org/sync-org-unit-placement.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Bounded by (membershipId, orgId, orgUnits.kind) \u2014 one person's placement in one unit kind."
-    },
     "@common/org/provision-org-modules.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Reads modules_catalog whole, with no WHERE \u2014 but that is the fixed platform module catalog, not tenant data: 20 rows measured on a database at journal head, and it grows only when the product ships a new module. Provisioning needs every row to decide core vs selected."
     },
+    "@common/org/sync-org-unit-placement.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Bounded by (membershipId, orgId, orgUnits.kind) \u2014 one person's placement in one unit kind."
+    },
     "@common/organization/organization-actor.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "NEWLY VISIBLE 2026-09-03 with src/common. Both reads are batch hydration bounded by an inArray over a caller-supplied id list: L286 by inArray(userId, unique) and L298 by inArray(membershipId, memberships.map(id)) \u2014 the second list is a subset of the first, so neither can exceed what the caller already holds in memory."
+    },
+    "@common/relocation/relocation-traffic-tracker.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. loadActiveRelocationTargets selects every organization_relocations row with is_active AND current_state = 'ACTIVE_TARGET' across ALL tenants, no .limit(). 0 rows measured at journal head, so the bound today is 'nobody is relocating', which is an operational fact and not a size bound."
+    },
+    "@common/tenant/for-each-org.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03: src/common entered this gate's corpus for the first time. forEachOrg selects every ACTIVE, non-deleted organization with no .limit() and holds the whole list in memory before the sweep loop starts; it is called from 84 sites, so it is the widest unbounded read in the repository and it was outside the scan. Bounded today only by the tenant count (3 ACTIVE orgs measured on a database at journal head), which is exactly the kind of bound that stops holding. Fix is a keyset drain over organizations.id \u2014 the loop already processes one org at a time and needs no full list."
+    },
+    "@common/tenant/org-admin-recipients.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. getOrgAdminUserIds selects every ACTIVE OWNER/ORG_ADMIN membership for an org with no .limit(). Bounded by orgId alone \u2014 'an org has few admins' is a convention, not a cap, and it is exactly the shape of justification this file was found suppressing real unbounded exports with. Banked rather than blessed."
     },
     "@common/tenant/org-membership.ts": {
       "verdict": "FALSE-POSITIVE",

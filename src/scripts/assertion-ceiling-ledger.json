@@ -1,5 +1,5 @@
 {
-  "note": "Rule 4 of check-type-assertions.mjs: a per-file ZERO-GROWTH ceiling on plain `as X` and non-null `!` assertions in application code. Seeded at the head count. It may only ever go DOWN: --update-ledger refuses to raise a number, and the gate fails both when a file gains an assertion and when an entry outlives its site. `as const` is excluded by decision (it narrows, it does not force). Specs are outside this gate entirely \u2014 see the rule 4 header.",
+  "note": "Rule 4 of check-type-assertions.mjs: a per-file ZERO-GROWTH ceiling on plain `as X` and non-null `!` assertions in application code. Seeded at the head count. It may only ever go DOWN: --update-ledger refuses to raise a number, and the gate fails both when a file gains an assertion and when an entry outlives its site. `as const` is excluded by decision (it narrows, it does not force). Specs are outside this gate entirely — see the rule 4 header.",
   "files": {
     "src/common/async/bounded-map.ts": {
       "as": 1,
@@ -91,10 +91,6 @@
     },
     "src/common/relocation/relocation-state.ts": {
       "as": 2,
-      "nonNull": 0
-    },
-    "src/common/security/av-scan.ts": {
-      "as": 1,
       "nonNull": 0
     },
     "src/common/security/ssrf-guard.ts": {
@@ -406,7 +402,7 @@
       "nonNull": 0
     },
     "src/modules/clients/clients.service.ts": {
-      "as": 3,
+      "as": 1,
       "nonNull": 0
     },
     "src/modules/contacts/contact-roles.service.ts": {
@@ -724,10 +720,6 @@
     "src/modules/finance/ar/reminders.service.ts": {
       "as": 0,
       "nonNull": 1
-    },
-    "src/modules/finance/banking/imports.service.ts": {
-      "as": 0,
-      "nonNull": 2
     },
     "src/modules/finance/banking/transfers.service.ts": {
       "as": 3,
@@ -1223,7 +1215,7 @@
     },
     "src/modules/inventory/warehouses/inv-warehouses.service.ts": {
       "as": 0,
-      "nonNull": 8
+      "nonNull": 7
     },
     "src/modules/invoices/invoices-write.service.ts": {
       "as": 1,
@@ -1655,10 +1647,6 @@
     },
     "src/modules/sales/sales.service.ts": {
       "as": 7,
-      "nonNull": 0
-    },
-    "src/modules/sessions/sessions.controller.ts": {
-      "as": 1,
       "nonNull": 0
     },
     "src/modules/settings/settings.helpers.ts": {

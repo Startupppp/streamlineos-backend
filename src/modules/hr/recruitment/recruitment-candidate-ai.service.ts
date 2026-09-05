@@ -21,12 +21,7 @@ import {
   type ParsedResume,
 } from "./dto/candidate-ai.schemas";
 
-const RESUME_ALLOWED_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "text/plain",
-];
+const RESUME_ALLOWED_TYPES = ["text/plain"];
 const RESUME_MAX_SIZE = 5 * 1024 * 1024;
 
 function clamp(n: number, min = 0, max = 100): number {
@@ -276,7 +271,7 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
         throw new BadRequestException("File too large (max 5MB)");
       if (!RESUME_ALLOWED_TYPES.includes(file.mimetype)) {
         throw new BadRequestException(
-          "Unsupported file type. Please upload a PDF, DOCX, or TXT file.",
+          "Only plain text files (.txt) are supported for file upload. Copy and paste PDF or DOCX content as text instead.",
         );
       }
       text = file.buffer.toString("utf-8");

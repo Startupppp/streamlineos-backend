@@ -138,7 +138,7 @@ export class ExternalEffectLedger {
   ): Promise<void> {
     if (items.length === 0) return;
 
-    const orgId = items[0]!.effect.organizationId;
+    const orgId = items[0].effect.organizationId;
     if (items.some(({ effect }) => effect.organizationId !== orgId))
       throw new Error("executeBatch: all effects must share the same organizationId");
 
@@ -201,7 +201,7 @@ export class ExternalEffectLedger {
     await runInNewTenantTransaction(this.db, orgId, async (tx) => {
       await Promise.all(
         claimedItems.map(({ effect }, idx) => {
-          const result = sendResults[idx]!;
+          const result = sendResults[idx];
           const ok = result.status === "fulfilled";
           return tx
             .update(externalEffectLedger)

@@ -58,7 +58,7 @@ describe("purgeRetiredObject — the ledger row is written before the object is 
   it("records the pending purge first, then deletes, then confirms", async () => {
     const h = harness("ok");
 
-    await expect(purgeRetiredObject(h.db, h.storage, ORG, KEY, h.log)).resolves.toBe(true);
+    await expect(purgeRetiredObject(h.db, h.storage, ORG, KEY, h.log)).resolves.toBe("deleted");
 
     expect(h.calls.map((c) => c.op)).toEqual(["insert", "delete", "update"]);
     expect(h.calls[0]?.table).toBe(storagePendingPurge);
@@ -75,7 +75,7 @@ describe("purgeRetiredObject — the ledger row is written before the object is 
   it("leaves the purge row PENDING when the object delete fails, so the sweep retries it", async () => {
     const h = harness("throws");
 
-    await expect(purgeRetiredObject(h.db, h.storage, ORG, KEY, h.log)).resolves.toBe(false);
+    await expect(purgeRetiredObject(h.db, h.storage, ORG, KEY, h.log)).resolves.toBe("pending_retry");
 
     expect(h.calls.map((c) => c.op)).toEqual(["insert", "delete"]);
     expect(h.calls.some((c) => c.op === "update")).toBe(false);
