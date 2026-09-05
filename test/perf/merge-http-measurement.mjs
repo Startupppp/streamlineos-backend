@@ -57,6 +57,10 @@ export const EXCLUDED_CLASS_REASON =
  * excluded in the artifact, or the next reader cannot tell an exemption from an oversight.
  */
 export function classifyRoute(routeClass) {
+  if (routeClass === "stream") return {
+    scored: false, ceilingMs: null,
+    reason: "Stream completion includes provider generation; enforce the declared full-stream deadline and separately captured application pre-provider, first-visible-state and provider TTFT budgets.",
+  };
   if (routeClass === "worker") return { scored: false, ceilingMs: null, reason: EXCLUDED_CLASS_REASON };
   if (routeClass === "aggregate")
     return {
@@ -288,7 +292,7 @@ function selfTest() {
       {
         tenant: "org", profile: "reference", ...ok, tally: { measured: 2, refused: 1, failed: 0 },
         routes: {
-          "GET /a": { status: "measured", samples: 40, latencyMs: { p50: 1, p95: 999, p99: 1, min: 1, max: 1 }, dbCalls: 3, gucCalls: 1, downstreamCalls: 0, responseBytes: 10, memoryMb: 1 },
+          "GET /a": { status: "measured", samples: 40, latencyMs: { p50: 1, p95: 999, p99: 1, min: 1, max: 1 }, dbCalls: 3, gucCalls: 1, downstreamCalls: 0, downstreamAccounting: "request-and-after-commit-v1", deferredDownstreamCalls: 2, deferredFailures: 0, responseBytes: 10, memoryMb: 1 },
           "GET /cron/x": { status: "measured", samples: 40, latencyMs: { p50: 1, p95: 5000, p99: 1, min: 1, max: 1 }, dbCalls: 100, gucCalls: 1, downstreamCalls: 8, responseBytes: 10, memoryMb: 40 },
           "GET /gone": { status: "unmeasured", reason: "declined" },
         },
@@ -303,6 +307,19 @@ function selfTest() {
   check("refusals carry their reason", built.tally.refusalsByReason.declined === 1);
   check("excluded routes are counted", built.tally.excludedFromCeiling === 1);
   check("the declared ceiling is carried through", built.routes["GET /a@reference"].declaredLatencyP95Ms === 400);
+  check(
+    "deferred downstream calls are propagated from the artifact route to the manifest slot",
+    built.routes["GET /a@reference"].deferredDownstreamCalls === 2,
+  );
+  check(
+    "downstream accounting scheme is propagated so the budget gate knows which captures to trust",
+    built.routes["GET /a@reference"].downstreamAccounting === "request-and-after-commit-v1",
+  );
+  check(
+    "a route without the accounting scheme has null for both deferred fields, not a stale number",
+    built.routes["GET /cron/x@reference"].deferredDownstreamCalls === null &&
+      built.routes["GET /cron/x@reference"].downstreamAccounting === null,
+  );
 
   const unscorable = buildRequestLevel(
     [{ tenants: [{ tenant: "org", profile: "reference", controlBefore: { ok: false }, controlAfter: { ok: true }, subjectStable: true, routes: { "GET /a": { status: "measured", latencyMs: { p95: 1 } } } }] }],
