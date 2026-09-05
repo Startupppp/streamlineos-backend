@@ -22,7 +22,7 @@ export class SupportAiTriageAnalysisService {
     private readonly embHelper: SupportAiEmbeddingsHelper,
   ) {}
 
-  async analyzeTicket(orgId: string, ticketId: number) {
+  async analyzeTicket(orgId: string, ticketId: number, userId: string) {
     if (!(await this.data.isAvailable(orgId))) return null;
     const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
     const messages = await this.db.query.supportTicketMessages.findMany({
@@ -36,7 +36,7 @@ export class SupportAiTriageAnalysisService {
       .map((m) => `- ${redactSensitiveData(m.body)}`)
       .join("\n");
     const gatewayResult = await this.aiGateway.invokeStructured({
-      actor: { orgId, userId: null },
+      actor: { orgId, userId },
       feature: "support.analysis",
       tier: "fast",
       schema: analysisSchema,

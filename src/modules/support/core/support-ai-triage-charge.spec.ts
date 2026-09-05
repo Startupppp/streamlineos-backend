@@ -70,23 +70,35 @@ describe("SupportAiTriageAnalysisService.analyzeTicket — credit charging", () 
       summary: "Test", sentiment: "neutral", category: null, suggestedPriority: "LOW", isSpam: false, confidence: 0.8,
     }));
 
-    await svc.analyzeTicket("org1", 42);
+    await svc.analyzeTicket("org1", 42, "user-abc");
 
     expect(mockGateway.invokeStructured).toHaveBeenCalledWith(
       expect.objectContaining({ charge: true, feature: "support.analysis" }),
     );
   });
 
+  it("passes the caller userId (not null) to the gateway actor", async () => {
+    const { svc, mockGateway } = buildService(makeGatewayOk({
+      summary: "Test", sentiment: "neutral", category: null, suggestedPriority: "LOW", isSpam: false, confidence: 0.8,
+    }));
+
+    await svc.analyzeTicket("org1", 42, "user-from-token");
+
+    expect(mockGateway.invokeStructured).toHaveBeenCalledWith(
+      expect.objectContaining({ actor: { orgId: "org1", userId: "user-from-token" } }),
+    );
+  });
+
   it("throws InsufficientAiCreditsException (402) when credits are exhausted", async () => {
     const { svc } = buildService(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
 
-    await expect(svc.analyzeTicket("org1", 42)).rejects.toBeInstanceOf(InsufficientAiCreditsException);
+    await expect(svc.analyzeTicket("org1", 42, "user-abc")).rejects.toBeInstanceOf(InsufficientAiCreditsException);
   });
 
   it("returns null (no throw) when provider is temporarily unavailable", async () => {
     const { svc } = buildService(makeGatewayFail("provider_unavailable"));
 
-    const result = await svc.analyzeTicket("org1", 42);
+    const result = await svc.analyzeTicket("org1", 42, "user-abc");
     expect(result).toBeNull();
   });
 
@@ -97,7 +109,7 @@ describe("SupportAiTriageAnalysisService.analyzeTicket — credit charging", () 
       buildMockData(null),
     );
 
-    await expect(svc.analyzeTicket("org1", 999)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.analyzeTicket("org1", 999, "user-abc")).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("returns null when supportAi feature flag is off", async () => {
@@ -121,7 +133,7 @@ describe("SupportAiTriageAnalysisService.analyzeTicket — credit charging", () 
       mockOrgFeatures as never, mockEmbHelper as never,
     );
 
-    const result = await svc.analyzeTicket("org1", 42);
+    const result = await svc.analyzeTicket("org1", 42, "user-abc");
     expect(result).toBeNull();
     expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
   });

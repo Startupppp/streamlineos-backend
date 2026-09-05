@@ -89,7 +89,7 @@ export class SupportAiController {
   @Validate({ params: ticketIdParams })
   async analyze(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
-    return this.ai.analyzeTicket(u.orgId, ticketId);
+    return this.ai.analyzeTicket(u.orgId, ticketId, u.userId);
   }
 
   @Post(":ticketId/ai/find-duplicates")

@@ -139,14 +139,14 @@ describe("SupportAiService", () => {
   describe("analyzeTicket", () => {
     it("returns null when the org has disabled support AI", async () => {
       mockOrgFeatures.getFlags.mockResolvedValueOnce({ supportAi: false });
-      const result = await service.analyzeTicket("org1", 42);
+      const result = await service.analyzeTicket("org1", 42, "user-1");
       expect(result).toBeNull();
       expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the ticket doesn't belong to the org", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
-      await expect(service.analyzeTicket("org1", 999)).rejects.toThrow(NotFoundException);
+      await expect(service.analyzeTicket("org1", 999, "user-1")).rejects.toThrow(NotFoundException);
     });
 
     it("persists summary/sentiment/category/priority suggestions from one structured gateway call (charge: true)", async () => {
@@ -159,7 +159,7 @@ describe("SupportAiService", () => {
         confidence: 0.9,
       }));
 
-      const result = await service.analyzeTicket("org1", 42);
+      const result = await service.analyzeTicket("org1", 42, "user-1");
 
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;
@@ -180,7 +180,7 @@ describe("SupportAiService", () => {
         confidence: 0.95,
       }));
 
-      await service.analyzeTicket("org1", 42);
+      await service.analyzeTicket("org1", 42, "user-1");
       const insertedTypes = mockDb.values.mock.calls.map((c: [Record<string, unknown>]) => c[0].type);
       expect(insertedTypes).toContain("spam");
       expect(insertedTypes).not.toContain("category");
@@ -188,7 +188,7 @@ describe("SupportAiService", () => {
 
     it("returns null gracefully when the gateway returns a failure", async () => {
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayFail("provider_unavailable"));
-      const result = await service.analyzeTicket("org1", 42);
+      const result = await service.analyzeTicket("org1", 42, "user-1");
       expect(result).toBeNull();
     });
   });
@@ -461,7 +461,7 @@ describe("SupportAiService", () => {
       }));
       mockDb.limit.mockResolvedValue([]);
 
-      await service.runFullAnalysis("org1", 42);
+      await service.runFullAnalysis("org1", 42, "user-1");
 
       expect(mockGateway.invokeStructured).toHaveBeenCalledTimes(1);
       const [analysisCall] = mockGateway.invokeStructured.mock.calls;
@@ -471,7 +471,7 @@ describe("SupportAiService", () => {
 
     it("swallows errors from sub-calls (fire-and-forget safety)", async () => {
       mockGateway.invokeStructured.mockRejectedValueOnce(new Error("unexpected boom"));
-      await expect(service.runFullAnalysis("org1", 42)).resolves.toBeUndefined();
+      await expect(service.runFullAnalysis("org1", 42, "user-1")).resolves.toBeUndefined();
     });
   });
 

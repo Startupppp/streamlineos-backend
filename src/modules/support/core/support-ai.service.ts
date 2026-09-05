@@ -24,8 +24,8 @@ export class SupportAiService {
     private readonly reportHelper: SupportAiReportHelper,
   ) {}
 
-  analyzeTicket(orgId: string, ticketId: number) {
-    return this.analysis.analyzeTicket(orgId, ticketId);
+  analyzeTicket(orgId: string, ticketId: number, userId: string) {
+    return this.analysis.analyzeTicket(orgId, ticketId, userId);
   }
 
   suggestReply(user: CurrentUserContext, ticketId: number) {
@@ -68,9 +68,9 @@ export class SupportAiService {
     return this.reportHelper.getAiReport(orgId, filters);
   }
 
-  async runFullAnalysis(orgId: string, ticketId: number, _userId?: string): Promise<void> {
+  async runFullAnalysis(orgId: string, ticketId: number, userId: string): Promise<void> {
     await Promise.allSettled([
-      this.analysis.analyzeTicket(orgId, ticketId),
+      this.analysis.analyzeTicket(orgId, ticketId, userId),
       this.analysis.findDuplicates(orgId, ticketId),
     ]);
   }
