@@ -14,16 +14,9 @@ backups/
 .cell-cost-history.json
 .load-driver-results.json
 
-.lane-a-rebuild.sh
-.lane-a.env
 .chain-gaps
-.lane-a-seed.sh
-.lane-a-e2e.sh
-.lane-a-seed.log
-.lane-a.log
-.lane-a-bench.sh
-.lane-a-bench.log
-.lane-a-e2e.log
+.lane-*
+.seed-bite.log
 
 # Throwaway diagnostic and one-off patch scripts. Two were committed by accident
 # (.tmp-probe.mjs, .tmp-ticket-patch3.py) in a shared working tree.
