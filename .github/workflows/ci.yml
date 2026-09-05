@@ -8,9 +8,23 @@ name: Backend CI
 # `meetsGate` against `EVAL_ACCEPTANCE`. They run under `pnpm test`, so a prompt
 # or model change that regresses one of them fails this job.
 
+# 2026-09-05 (ticket 20) — WHY `feat/**` IS HERE.
+#
+# `push` used to be `[main]` only, so the sole trigger for a feature branch was
+# `pull_request`. GitHub raises that event from the PR's MERGE commit, and it
+# stops raising it the moment the PR conflicts with its base: `refs/pull/16/merge`
+# was last written 2026-09-01T08:57:59Z, and the last `pull_request` run on this
+# branch started 2026-09-01T08:58:01Z. Two seconds apart, then silence — through
+# a dozen pushes. Verified directly: a push at 2026-09-05T08:52Z produced
+# `total_count: 0` runs while a push to main four minutes earlier produced three.
+#
+# So every ratchet this programme built had never once executed in CI, and the
+# reason was not the gates, the config or Actions being off (they are on, and main
+# builds daily) — it was that a conflict with main silently switches CI off for a
+# whole branch. A gate that a merge conflict can disable is not a gate.
 on:
   push:
-    branches: [main]
+    branches: [main, "feat/**"]
   pull_request:
   # The live evals cost provider credits, so they are not on every push. Once a
   # day is enough to catch a model the provider changed underneath us.
@@ -19,10 +33,111 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # head_ref on a PR, ref_name on a push — both resolve to the branch name, so the
+  # `push` and `pull_request` runs of one branch share a group instead of doubling.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
+  # THREE INDEPENDENT JOBS, NO `needs:`. That is the whole point: each reports its
+  # own verdict, and a red one hides nothing. See the `Lint`/`Test` note in `verify`.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Red on main, and inherited rather than owned here. It stays a blocking job
+      # so it is still visible and still has to be fixed — it just no longer takes
+      # the test suite and thirty gates down with it.
+      - name: Lint
+        run: pnpm lint
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Includes the eval acceptance gates. The heap is raised because the
+      # project's own typecheck needs it and jest transpiles the same tree.
+      - name: Test
+        run: pnpm test
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+  # The five inventory ratchets, BY NAME, in a job of their own. `pnpm test` above
+  # already runs them, but only if the whole suite is green enough to get there —
+  # and the suite is large, slow and shares a verdict with everything else. Named
+  # here they are readable in the run log and can never be silenced by an unrelated
+  # failure. `--ci` and an explicit floor so a pattern that matches nothing fails.
+  inventory-ratchets:
+    name: Inventory ratchets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Ratchet - inventory-reachability
+        run: pnpm exec jest --ci --testPathPattern=inventory-reachability
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Ratchet - inventory-schema-reachability
+        run: pnpm exec jest --ci --testPathPattern=inventory-schema-reachability
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Ratchet - available-formula
+        run: pnpm exec jest --ci --testPathPattern=available-formula-single-definition
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Ratchet - idempotent-guard-placement
+        run: pnpm exec jest --ci --testPathPattern=idempotent-guard-placement
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      - name: Ratchet - cold-build-integrity
+        run: pnpm exec jest --ci --testPathPattern=cold-build-integrity
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      # Anti-vacuity. Five `--testPathPattern` runs that match nothing exit 1 under
+      # `--ci`, but a renamed spec would also just stop existing quietly if anyone
+      # ever added `--passWithNoTests`. This asserts the files are actually there.
+      - name: The five ratchets exist
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in \
+            src/modules/inventory/__tests__/inventory-reachability.spec.ts \
+            src/modules/inventory/__tests__/inventory-schema-reachability.spec.ts \
+            src/modules/inventory/stock-engine/__tests__/available-formula-single-definition.spec.ts \
+            src/modules/inventory/__tests__/idempotent-guard-placement.spec.ts \
+            src/db/cold-build-integrity.spec.ts ; do
+            if [ ! -f "$f" ]; then echo "MISSING RATCHET: $f"; missing=1; fi
+          done
+          exit $missing
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -42,16 +157,10 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Lint
-        run: pnpm lint
-
-      # Includes the eval acceptance gates. The heap is raised because the
-      # project's own typecheck needs it and jest transpiles the same tree.
-      - name: Test
-        run: pnpm test
-        env:
-          NODE_OPTIONS: --max-old-space-size=8192
-
+      # `Lint` and `Test` used to sit here, in that order, with the thirty gates
+      # below them. Run 33489746534: Lint failed at step 7 and steps 8-37 — Test
+      # and every gate — reported `skipped`. They are their own jobs now, with no
+      # `needs:`, so main's inherited lint debt cannot switch the rest off.
       - name: Build
         run: pnpm build
 
