@@ -643,11 +643,18 @@ underneath it, is described in §4.
 **Re-measured 2026-09-05. Two of the three reasons below have changed, and the
 conclusion has not.**
 
+**A counting correction first, 2026-09-05.** An earlier revision of this section — and
+several commit messages in this pass — said **106** `inv_*` tables. That figure came from
+`tablename LIKE 'inv_%'`, and `_` is a single-character wildcard in SQL `LIKE`, so it also
+counted `invoices`, `invitations`, `invitation_events`, `invoice_items` and
+`investment_proofs`. The real number is **101**, on the cold build and on Neon alike. The
+escaped predicate is `LIKE 'inv\_%'`.
+
 **The NEO schema is now there.** Probed directly, all eight of the objects this
 section used to list as absent are present: `inv_channel_pools`,
 `inv_handling_units`, `inv_labor_records`, `inv_kit_components`,
 `inv_dock_appointments`, `inv_grn_lines.cross_dock_so_id`,
-`inv_products.measure_mode`, `inv_settings.waveless_picking`. 106 `inv_*` tables.
+`inv_products.measure_mode`, `inv_settings.waveless_picking`. 101 `inv_*` tables.
 Somebody applied them between 2026-08-31 and now. Nothing in this repository
 records who or when, which is its own finding.
 
