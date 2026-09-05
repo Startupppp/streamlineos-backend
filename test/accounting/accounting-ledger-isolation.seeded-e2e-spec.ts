@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import request from "supertest";
-import { journalEntries } from "src/db/schema";
+import { journalEntries, ledgerAccounts } from "src/db/schema";
 import {
   createSeededE2eApp,
   signSeededToken,
@@ -8,35 +8,7 @@ import {
 } from "test/helpers/seeded-e2e-app";
 import { seedOrg, type SeededFixture } from "test/helpers/seed-builder";
 
-/**
- * Two seeded organisations, the real guards, the real RBAC resolver and a real
- * Postgres. The nine DB-less suites under `src/modules/accounting` mock the query
- * builder and therefore cannot assert that a cross-tenant id produces 404 rather
- * than 403 — a mocked `where` accepts any predicate.
- *
- * This file asks the question those suites cannot.
- *
- *   allow        the manager reads their own journal entry (200)
- *   cross-tenant a manager of org A asking for org B's entry id gets 404, not 403
- *                — a 403 would confirm the record exists (backend/CLAUDE.md §4)
- *   deny (RBAC)  a member holding only accounting:journal:read is refused the post
- *                action at 403 inside their own tenant; the row does not move
- *   integrity    after the cross-tenant post attempt, org B's row is re-read from
- *                the database and is still DRAFT
- *
- * WHAT THIS FILE DOES *NOT* PROVE, measured rather than assumed. The app connects
- * as APP_DATABASE_URL (streamline_app, not the table owner). If RLS is active on
- * journal_entries with a policy that filters on org_id = current_org_id(), the
- * cross-tenant 404 is enforced by Postgres independently of the service predicate
- * in AccountingLedgerService.getJournalEntry and postJournalEntry. This file
- * proves the DEPLOYED SYSTEM refuses; attribution of the cross-tenant leg to the
- * service predicate belongs to a unit test that compiles the predicate and
- * asserts the tenant binding. The RBAC leg (403 from PermissionGuard) is solely
- * attributable to the guard: narrowing the post route's @RequirePermission key
- * from "accounting:journal:manage" to "accounting:journal:read" turns the DENY
- * case red here and nowhere else.
- */
-describe("[seeded-e2e] Accounting journal — allow, deny and cross-tenant isolation", () => {
+describe("[seeded-e2e] Accounting ledger — isolation, composite uniqueness, conflict and soft-delete", () => {
   let seeded: SeededE2eApp;
   let home: SeededFixture;
   let neighbour: SeededFixture;
@@ -54,7 +26,13 @@ describe("[seeded-e2e] Accounting journal — allow, deny and cross-tenant isola
       .onPlan("PAID")
       .withModules("accounting")
       .addMember("manager", {
-        permissionKeys: ["accounting:journal:read", "accounting:journal:manage"],
+        permissionKeys: [
+          "accounting:journal:read",
+          "accounting:journal:manage",
+          "accounting:accounts:read",
+          "accounting:accounts:create",
+          "accounting:accounts:update",
+        ],
       })
       .addMember("reader", { permissionKeys: ["accounting:journal:read"] })
       .build();
@@ -173,5 +151,85 @@ describe("[seeded-e2e] Accounting journal — allow, deny and cross-tenant isola
 
     expect(response.status).toBe(404);
     expect(await statusOf(neighbourEntryId)).toBe("DRAFT");
+  });
+
+  it("COMPOSITE UNIQUENESS — the same account code may exist in two different organisations without violating the unique constraint", async () => {
+    const sharedCode = "SPEC-COMP-CROSS-ORG";
+
+    await seeded.seedDb.insert(ledgerAccounts).values({
+      orgId: home.orgId,
+      code: sharedCode,
+      name: "home composite account",
+      accountType: "ASSET",
+    });
+
+    await seeded.seedDb.insert(ledgerAccounts).values({
+      orgId: neighbour.orgId,
+      code: sharedCode,
+      name: "neighbour composite account",
+      accountType: "ASSET",
+    });
+
+    const rows = await seeded.seedDb
+      .select({ orgId: ledgerAccounts.orgId })
+      .from(ledgerAccounts)
+      .where(eq(ledgerAccounts.code, sharedCode));
+
+    const orgIds = rows.map((r) => r.orgId);
+    expect(orgIds).toContain(home.orgId);
+    expect(orgIds).toContain(neighbour.orgId);
+    expect(orgIds).toHaveLength(2);
+  });
+
+  it("CONFLICT → 409 — creating the same account code twice within one org surfaces as HTTP 409, not 500", async () => {
+    const code = `SPEC-CONFLICT-${home.orgId.slice(0, 8)}`;
+
+    const first = await request(server as never)
+      .post("/accounting/accounts")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ code, name: "first account", accountType: "ASSET" });
+
+    expect(first.status).toBe(201);
+
+    const second = await request(server as never)
+      .post("/accounting/accounts")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ code, name: "duplicate account", accountType: "ASSET" });
+
+    expect(second.status).toBe(409);
+  });
+
+  it("SOFT-DELETE EXCLUDED — a deactivated ledger account does not appear in the activeOnly list", async () => {
+    const code = `SPEC-INACTIVE-${home.orgId.slice(0, 8)}`;
+
+    const createResp = await request(server as never)
+      .post("/accounting/accounts")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ code, name: "to be deactivated", accountType: "ASSET" });
+
+    expect(createResp.status).toBe(201);
+    const accountId: unknown = createResp.body?.id;
+    expect(typeof accountId).toBe("number");
+
+    const patchResp = await request(server as never)
+      .patch(`/accounting/accounts/${String(accountId)}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ isActive: false });
+
+    expect(patchResp.status).toBe(200);
+
+    const listResp = await request(server as never)
+      .get("/accounting/accounts?activeOnly=true")
+      .set("Authorization", `Bearer ${managerToken}`);
+
+    expect(listResp.status).toBe(200);
+
+    const body: unknown = listResp.body;
+    const items = Array.isArray(body) ? body : (listResp.body.data ?? []);
+    expect(
+      items.some(
+        (a: Record<string, unknown>) => a["code"] === code,
+      ),
+    ).toBe(false);
   });
 });

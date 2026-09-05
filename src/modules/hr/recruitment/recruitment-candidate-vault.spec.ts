@@ -6,6 +6,10 @@ import { vaultAccessLogs } from "../../../db/schema";
 import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
 import { RecruitmentCandidateVaultService } from "./recruitment-candidate-vault.service";
 
+const cleanQuarantine = {
+  getStatusForKey: async () => "clean" as const,
+} as unknown as import("../../storage/file-quarantine.service").FileQuarantineService;
+
 interface InsertedRow {
   table: unknown;
   values: Record<string, unknown>;
@@ -61,7 +65,7 @@ const DOCUMENT = {
 describe("vault document deletion writes an audit row", () => {
   it("records the deletion and the document's name in the same transaction as the delete", async () => {
     const harness = buildDb(DOCUMENT);
-    const service = new RecruitmentCandidateVaultService(harness.db as never);
+    const service = new RecruitmentCandidateVaultService(harness.db as never, cleanQuarantine);
 
     await service.deleteVaultDocument("org_1", 7, 42, "user_actor");
 
@@ -100,7 +104,7 @@ describe("vault document deletion writes an audit row", () => {
 
   it("attributes the deletion to the ambient actor when the caller passes none", async () => {
     const harness = buildDb(DOCUMENT);
-    const service = new RecruitmentCandidateVaultService(harness.db as never);
+    const service = new RecruitmentCandidateVaultService(harness.db as never, cleanQuarantine);
 
     await runWithObservabilityContext(
       { correlationId: "corr-1", actorId: "user_ambient" },
@@ -114,7 +118,7 @@ describe("vault document deletion writes an audit row", () => {
 
   it("refuses to delete at all when no actor can be identified", async () => {
     const harness = buildDb(DOCUMENT);
-    const service = new RecruitmentCandidateVaultService(harness.db as never);
+    const service = new RecruitmentCandidateVaultService(harness.db as never, cleanQuarantine);
 
     await expect(service.deleteVaultDocument("org_1", 7, 42)).rejects.toBeInstanceOf(
       InternalServerErrorException,
@@ -125,7 +129,7 @@ describe("vault document deletion writes an audit row", () => {
 
   it("writes nothing when the document does not belong to the candidate", async () => {
     const harness = buildDb(undefined);
-    const service = new RecruitmentCandidateVaultService(harness.db as never);
+    const service = new RecruitmentCandidateVaultService(harness.db as never, cleanQuarantine);
 
     await expect(
       service.deleteVaultDocument("org_1", 7, 42, "user_actor"),

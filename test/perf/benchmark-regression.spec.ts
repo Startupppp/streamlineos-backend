@@ -352,13 +352,13 @@ describe("PRD-C148 — regression gate: full benchmark decisions", () => {
 
 describe("PRD-C148 — regression gate: noise policy derivation", () => {
   it("derives an exact ratchet when unchanged code's buffers never moved", () => {
-    const p = makePolicy([2838], [5]);
+    const p = makePolicy({ deterministicSamples: [2838], timingSamples: [5] });
     expect(p.deterministic.relTol).toBe(0);
     expect(p.deterministic.absTol).toBe(0);
   });
 
   it("arms timing when the replicate swing is below the 25% threshold", () => {
-    const p = makePolicy([100], [5]);
+    const p = makePolicy({ deterministicSamples: [100], timingSamples: [5] });
     expect(p.timing.armed).toBe(true);
   });
 

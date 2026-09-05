@@ -34,7 +34,7 @@ describe("InvWarehouseLocationsService — cross-tenant isolation", () => {
   it("createLocation throws NotFoundException when warehouseId belongs to a different org — cross-tenant DENY", async () => {
     const db = makeDb(undefined);
     const svc = new InvWarehouseLocationsService(db, mockCache);
-    await expect(svc.createLocation(ATTACKER_ORG, 9999, { code: "A1", name: "Aisle 1" })).rejects.toThrow(NotFoundException);
+    await expect(svc.createLocation(ATTACKER_ORG, 9999, { code: "A1", name: "Aisle 1", locationType: "AISLE" as const })).rejects.toThrow(NotFoundException);
   });
 
   it("getWarehouseStock throws NotFoundException when warehouseId belongs to a different org — cross-tenant DENY", async () => {

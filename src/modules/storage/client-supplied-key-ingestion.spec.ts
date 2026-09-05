@@ -6,6 +6,10 @@ import { RecruitmentCandidateVaultService } from "../hr/recruitment/recruitment-
 import { SupportKbEngagementService } from "../support/core/support-kb-engagement.service";
 import type { Db } from "../../db/drizzle.module";
 
+const cleanQuarantine = {
+  getStatusForKey: async () => "clean" as const,
+} as unknown as import("./file-quarantine.service").FileQuarantineService;
+
 const ORG_A = "11111111-1111-4111-8111-111111111111";
 const ORG_B = "22222222-2222-4222-8222-222222222222";
 
@@ -108,7 +112,7 @@ describe("client-supplied object keys are bound to the caller's tenant at the se
   };
 
   it("the vault refuses a key naming another organisation", async () => {
-    const svc = new RecruitmentCandidateVaultService(vaultDb());
+    const svc = new RecruitmentCandidateVaultService(vaultDb(), cleanQuarantine);
     await expect(
       svc.addVaultDocument(ORG_A, "user-1", 7, {
         ...VALID_VAULT_INPUT,
@@ -118,7 +122,7 @@ describe("client-supplied object keys are bound to the caller's tenant at the se
   });
 
   it("the vault refuses a legacy key that names no organisation at all", async () => {
-    const svc = new RecruitmentCandidateVaultService(vaultDb());
+    const svc = new RecruitmentCandidateVaultService(vaultDb(), cleanQuarantine);
     await expect(
       svc.addVaultDocument(ORG_A, "user-1", 7, {
         ...VALID_VAULT_INPUT,
@@ -128,7 +132,7 @@ describe("client-supplied object keys are bound to the caller's tenant at the se
   });
 
   it("the vault accepts the caller's own key (control)", async () => {
-    const svc = new RecruitmentCandidateVaultService(vaultDb());
+    const svc = new RecruitmentCandidateVaultService(vaultDb(), cleanQuarantine);
     await expect(
       svc.addVaultDocument(ORG_A, "user-1", 7, VALID_VAULT_INPUT),
     ).resolves.toEqual({ id: 1 });
@@ -141,7 +145,7 @@ describe("client-supplied object keys are bound to the caller's tenant at the se
    * constrains anything.
    */
   it("the vault requires the declared MIME AND the extension to agree with the allowlist", async () => {
-    const svc = new RecruitmentCandidateVaultService(vaultDb());
+    const svc = new RecruitmentCandidateVaultService(vaultDb(), cleanQuarantine);
     await expect(
       svc.addVaultDocument(ORG_A, "user-1", 7, {
         ...VALID_VAULT_INPUT,

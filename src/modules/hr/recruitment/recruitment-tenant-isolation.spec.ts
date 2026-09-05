@@ -19,6 +19,10 @@ import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
 import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.service";
 import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
 
+const cleanQuarantine = {
+  getStatusForKey: async () => "clean" as const,
+} as unknown as import("../../storage/file-quarantine.service").FileQuarantineService;
+
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean")
     return [value];
@@ -245,7 +249,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   describe("RecruitmentCandidateVaultService", () => {
     it("hides vault for a different org (DENY — cross-tenant isolation)", async () => {
       const { db, findFirst } = makeDb([]);
-      const svc = new RecruitmentCandidateVaultService(db);
+      const svc = new RecruitmentCandidateVaultService(db, cleanQuarantine);
       await expect(svc.listVault(ATTACKER, 1)).rejects.toThrow(NotFoundException);
       expect(findFirst).toHaveBeenCalled();
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -254,7 +258,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
 
     it("returns vault documents for the owning org (CONTROL)", async () => {
       const { db, findMany } = makeDb([{ id: 1, orgId: OWNER }]);
-      const svc = new RecruitmentCandidateVaultService(db);
+      const svc = new RecruitmentCandidateVaultService(db, cleanQuarantine);
       const result = await svc.listVault(OWNER, 1);
       expect(result).toHaveLength(1);
     });
