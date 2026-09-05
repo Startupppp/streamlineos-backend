@@ -103,7 +103,16 @@ export const BASE = {
   chatMessages: 12000,
   supportTickets: 3000,
   timesheets: 4000,
-  leaveRequests: 1200,
+  // 1,200 was 2.4 leave requests per member for the whole life of a 500-member tenant, an
+  // order of magnitude below every table beside it (attendance 9,000, timesheets 4,000,
+  // chat 12,000). At that size the reference tenant's table is 33 pages, so a Seq Scan is
+  // the CHEAPER plan and dashboard-leaves-today's forbid-seq-scan assertion fails whether
+  // idx_leave_requests_org_approved_dates exists or not — it cannot tell a dropped index
+  // from a small table, which is the one thing it is there to tell. Same reasoning, and the
+  // same fix, as the announcements batch in seed-scratch-e2e.mjs and the calendar window in
+  // seed-heavy-query-load.mjs: size the fixture until the plan under test is the plan the
+  // planner would actually choose in production.
+  leaveRequests: 24000,
   attendance: 9000,
   mailMessages: 4000,
   hrPeople: 5100,

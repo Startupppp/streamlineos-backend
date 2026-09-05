@@ -997,29 +997,45 @@ async function seedChat() {
 
 async function seedNotifications() {
   log("Seeding notifications...");
-  const userRow = await sql.unsafe(
-    `SELECT user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' LIMIT 1`,
+  const member = await sql.unsafe(
+    `SELECT ta.membership_id, om.user_id
+     FROM build.ticket_assignees ta
+     INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
+     WHERE ta.org_id = $1 GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC LIMIT 1`,
     [LARGE_ORG],
-  ).then((r) => r[0]?.user_id);
-  if (!userRow) { log("  no members — skipping notifications"); return; }
+  ).then((r) => r[0] ?? null);
+  const resolved = member ?? await sql.unsafe(
+    `SELECT id AS membership_id, user_id FROM organization_members
+     WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1`,
+    [LARGE_ORG],
+  ).then((r) => r[0] ?? null);
+  if (!resolved) { log("  no members — skipping notifications"); return; }
+  const { membership_id: membershipId, user_id: userId } = resolved;
+
+  const adopted = await sql.unsafe(
+    `UPDATE notifications SET membership_id = $2, user_id = $3
+     WHERE org_id = $1 AND membership_id IS NULL AND deleted_at IS NULL`,
+    [LARGE_ORG, membershipId, userId],
+  ).then((r) => r.count ?? 0).catch((e) => { warn("notifications adopt membership_id", e); return 0; });
+  if (adopted > 0) log(`  adopted ${adopted} existing notification rows to membership_id=${membershipId}`);
 
   const existingN = await sql.unsafe(
-    `SELECT count(*)::int n FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
-    [LARGE_ORG],
+    `SELECT count(*)::int n FROM notifications WHERE org_id = $1 AND membership_id = $2 AND deleted_at IS NULL`,
+    [LARGE_ORG, membershipId],
   ).then((r) => r[0].n);
 
   if (existingN < NOTIFICATION_COUNT) {
     const from = existingN + 1;
-    log(`  inserting ${NOTIFICATION_COUNT - existingN} notifications...`);
+    log(`  inserting ${NOTIFICATION_COUNT - existingN} notifications for membership_id=${membershipId}...`);
     await sql.unsafe(
-      `INSERT INTO notifications (org_id, user_id, type, title, message, is_read, category, source_module, created_at, updated_at, deleted_at, archived_at)
-       SELECT $1, $2,
+      `INSERT INTO notifications (org_id, user_id, membership_id, type, title, message, is_read, category, source_module, created_at, updated_at, deleted_at, archived_at)
+       SELECT $1, $3, $2::int,
          CASE WHEN s % 4 = 0 THEN 'WARNING' WHEN s % 4 = 1 THEN 'SUCCESS' WHEN s % 4 = 2 THEN 'ERROR' ELSE 'INFO' END::notification_type,
          'Notification ' || s, 'Body ' || s,
          s % 4 = 0, 'SYSTEM', 'system',
          now() - (s || ' minutes')::interval, now(), null, null
        FROM generate_series(${from}, ${NOTIFICATION_COUNT}) s`,
-      [LARGE_ORG, userRow],
+      [LARGE_ORG, membershipId, userId],
     ).catch((e) => warn("notifications batch", e));
   }
 }
@@ -1886,6 +1902,7 @@ async function reportCounts() {
     ["kb_pages", `SELECT count(*)::int FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL`, [LARGE_ORG]],
     ["kb_page_visits", `SELECT count(*)::int FROM kb_page_visits WHERE org_id = $1`, [LARGE_ORG]],
     ["notifications", `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`, [LARGE_ORG]],
+    ["notifications/mine", `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND membership_id IS NOT NULL AND deleted_at IS NULL AND archived_at IS NULL`, [LARGE_ORG]],
     ["leave_requests", `SELECT count(*)::int FROM leave_requests WHERE org_id = $1`, [LARGE_ORG]],
     ["leave_requests/today", `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND status = 'APPROVED' AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE`, [LARGE_ORG]],
     ["leave_requests/mine", `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND user_membership_id IS NOT NULL`, [LARGE_ORG]],
@@ -1909,6 +1926,8 @@ async function reportCounts() {
     ["leave_requests/today", 5],
     ["leave_requests/mine", 20],
     ["attendance/mine", 30],
+    ["notifications/mine", 100],
+    ["support_tickets", 100],
   ]);
   const belowFloor = [];
 
