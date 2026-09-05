@@ -77,6 +77,14 @@ const FORMATS: { kind: IdentifierKind; written: string }[] = [
 ];
 
 describeDb("party identifiers — real database", () => {
+  // Every test here drops party_identifiers and re-runs the backfill across the
+  // tenant's whole business_parties table, which `withBackfill` already declares
+  // may take up to 60s (`SET LOCAL statement_timeout`). Jest's unstated 5s default
+  // contradicted that: on the production-shaped seed two tests died at 5,000 ms
+  // mid-backfill and read as assertion failures. This aligns the test timeout with
+  // the statement timeout the file already declares — no assertion is relaxed.
+  jest.setTimeout(60_000);
+
   let sql: ReturnType<typeof postgres>;
   let backfill: string;
 

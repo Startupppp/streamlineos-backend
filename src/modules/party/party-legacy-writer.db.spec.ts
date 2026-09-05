@@ -27,7 +27,6 @@ import { clients, contacts } from "../../db/schema/crm/contacts";
 import { leads } from "../../db/schema/crm/leads";
 import { PartyDivergenceService } from "./party-divergence.service";
 import { diffLegacyMirror, LEAD_MIRROR } from "./party-legacy-mirror";
-import { MAPPED_LEGACY_KINDS } from "./party-legacy-seam";
 import { updatePartyWithMirror } from "./party-legacy-writer";
 import {
   createMirroredLead,
@@ -242,10 +241,26 @@ describeDb("party-legacy-writer — real database", () => {
       expect(contact.title).toBe("Founder");
       expect(contact.twitterUrl).toBe("https://x.test/babbage");
 
-      const report = await new PartyDivergenceService(tx).report(orgId);
-      expect(report.divergentCount).toEqual(
-        Object.fromEntries(MAPPED_LEGACY_KINDS.map((kind) => [kind, 0])),
-      );
+      // Scoped to the two rows this test wrote, via the service's own `after`
+      // cursor. Asserting the WHOLE tenant is divergence-free only held while the
+      // first organisation happened to have no CRM rows: on the production-shaped
+      // seed it reports CONTACT 200 / LEAD 200 — the page size, not a defect — and
+      // this read as a mirror bug. The claim being made is about these two writes.
+      const report = await new PartyDivergenceService(tx).report(orgId, {
+        kinds: ["CLIENT", "CONTACT"],
+        after: { CLIENT: client.id - 1, CONTACT: contact.id - 1 },
+      });
+      // Anti-vacuity: an `after` past the end scans nothing and the filter below
+      // is then empty for free, which is the failure this whole test guards.
+      expect(report.scanned.CLIENT).toBeGreaterThan(0);
+      expect(report.scanned.CONTACT).toBeGreaterThan(0);
+      expect(
+        report.divergent.filter(
+          (row) =>
+            (row.kind === "CLIENT" && row.legacyId === client.id) ||
+            (row.kind === "CONTACT" && row.legacyId === contact.id),
+        ),
+      ).toEqual([]);
     });
   });
 
@@ -262,7 +277,12 @@ describeDb("party-legacy-writer — real database", () => {
       await tx.update(leads).set({ designation: "Stale" }).where(eq(leads.id, created.id));
 
       const service = new PartyDivergenceService(tx);
-      const report = await service.report(orgId);
+      // `after` starts the scan at this lead. Unscoped, the seeded tenant fills the
+      // 200-row page with older leads and this row never appears — `mine` came back
+      // undefined, which reads as "the divergence was not detected" when in fact it
+      // was never looked at.
+      const scope = { kinds: ["LEAD"] as const, after: { LEAD: created.id - 1 } };
+      const report = await service.report(orgId, scope);
       const mine = report.divergent.find((row) => row.legacyId === created.id);
 
       expect(mine?.fields).toEqual([
@@ -271,7 +291,7 @@ describeDb("party-legacy-writer — real database", () => {
 
       // Run it again: still divergent. A check that repaired would go green here
       // and take the evidence of which write path did this with it.
-      const second = await service.report(orgId);
+      const second = await service.report(orgId, scope);
       expect(second.divergent.find((row) => row.legacyId === created.id)?.fields).toHaveLength(1);
       const [row] = await tx.select().from(leads).where(eq(leads.id, created.id));
       expect(row?.designation).toBe("Stale");
