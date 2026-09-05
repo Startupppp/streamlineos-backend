@@ -4838,6 +4838,27 @@
       "when": 1803000010142,
       "tag": "1067_t07_hr_identity_and_search_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 824,
+      "version": "7",
+      "when": 1803000010143,
+      "tag": "0958_ar02_accounting_gl_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 825,
+      "version": "7",
+      "when": 1803000010144,
+      "tag": "0959_ar02_accounting_apar_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 826,
+      "version": "7",
+      "when": 1803000010145,
+      "tag": "0960_ar02_accounting_bank_tax_acc_composite_fks",
+      "breakpoints": true
     }
   ]
 }
