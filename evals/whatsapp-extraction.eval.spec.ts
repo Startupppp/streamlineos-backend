@@ -1,4 +1,4 @@
-import { EVAL_ACCEPTANCE, meetsGate, runEval, type EvalReport } from "./ai-eval-runner";
+import { EVAL_ACCEPTANCE, gatesPresentIn, meetsGate, runEval, type EvalReport } from "./ai-eval-runner";
 import {
   EVAL_STAGES,
   MAX_BODY_CHARS,
@@ -209,7 +209,7 @@ describe("whatsapp extraction evals", () => {
       "EXTRACTION_WHATSAPP_STAGE_RECALL",
     ]);
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(true);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(true);
   });
 
   it("fails the gate when one message of a burst invents a date", async () => {
@@ -238,7 +238,7 @@ describe("whatsapp extraction evals", () => {
       [{ name: "EXTRACTION_WHATSAPP_NO_INVENTED_DATE_RATE", check: noInventedDate }],
     );
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(false);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(false);
   });
 
   /**

@@ -4,6 +4,7 @@ import {
   INV_AI_EVAL_CASES,
   INV_AI_EVAL_CATEGORIES,
   type InvAiEvalCase,
+  type InvAiEvalCategory,
 } from "../inv-ai-eval-cases";
 import {
   EVAL_ACTOR,
@@ -38,6 +39,11 @@ import {
   resolveInvAiActions,
   InvAiEvidenceError,
 } from "../../inv-ai-action-resolver";
+import {
+  EVAL_ACCEPTANCE,
+  meetsGate,
+  type EvalReport,
+} from "../../../../../../evals/ai-eval-runner";
 
 /**
  * F6 — the inventory AI eval suite.
@@ -58,11 +64,25 @@ const executed = new Set<string>();
 const byId = new Map<string, InvAiEvalCase>(INV_AI_EVAL_CASES.map((c) => [c.id, c]));
 
 /** Register one eval case. The id must be in the register; the property is the test name. */
-function evalIt(id: string, fn: jest.ProvidesCallback): void {
+const outcomes = new Map<string, boolean>();
+
+function evalIt(id: string, fn: () => void | Promise<void>): void {
   const testCase = byId.get(id);
   if (!testCase) throw new Error(`inv-ai-evals: "${id}" is not in INV_AI_EVAL_CASES`);
   executed.add(id);
-  it(`[${testCase.category}] ${id} — ${testCase.property}`, fn);
+  it(`[${testCase.category}] ${id} — ${testCase.property}`, async () => {
+    // T21. The case's own assertion is still the thing that fails; this only
+    // records the outcome so the scored block at the end of the file can hold
+    // the recorded threshold against it. A case that throws is recorded false
+    // and then rethrown, so nothing is swallowed.
+    try {
+      await fn();
+    } catch (error) {
+      outcomes.set(id, false);
+      throw error;
+    }
+    outcomes.set(id, true);
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -1057,5 +1077,98 @@ describe("inventory AI eval suite integrity", () => {
   it("has no duplicate case ids", () => {
     const ids = INV_AI_EVAL_CASES.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+/* ================================================================== *
+ * T21 — recorded thresholds
+ * ================================================================== */
+
+/**
+ * A report over one category, in the shape `meetsGate` scores.
+ *
+ * One report per category rather than one for the suite, because `meetsGate`
+ * divides by `report.total`: a single report with five criteria would measure
+ * the seven injection cases against all thirty-one, and 7/31 would fail a gate
+ * of 1.0 while a genuine injection regression would move the figure by 1/31 and
+ * stay above a gate low enough to accommodate that. The denominator has to be
+ * the category.
+ */
+const INV_EVAL_CRITERION = "inventoryEvalPassed";
+
+function categoryReport(category: InvAiEvalCategory, criterion: string): EvalReport {
+  const cases = INV_AI_EVAL_CASES.filter((c) => c.category === category);
+  const rows = cases.map((c) => ({
+    name: c.id,
+    // An id with no recorded outcome did not run. `false` is the safe reading:
+    // the alternative is a category whose cases all vanished scoring 0/0 = pass.
+    passed: outcomes.get(c.id) === true,
+    criteriaResults: { [criterion]: outcomes.get(c.id) === true },
+  }));
+  const passed = rows.filter((r) => r.passed).length;
+  return {
+    total: rows.length,
+    passed,
+    failed: rows.length - passed,
+    byCriterion: { [criterion]: { passed, failed: rows.length - passed } },
+    cases: rows,
+  };
+}
+
+
+/**
+ * Declared, not asserted. `as ReadonlyArray<[...]>` on the literal would coerce
+ * a mistyped catalog key into the tuple type instead of rejecting it, which is
+ * the same silence T21 is about — and root §6 bans the cast anyway. With the
+ * type on the const, `INVENTORY_INJECTION_RESISTANCE` for
+ * `INVENTORY_INJECTION_RESISTANCE_RATE` is a compile error.
+ */
+const CORPUS_FLOORS: ReadonlyArray<readonly [InvAiEvalCategory, number]> = [
+  ["golden", EVAL_ACCEPTANCE.INVENTORY_MIN_GOLDEN_CASES],
+  ["refusal", EVAL_ACCEPTANCE.INVENTORY_MIN_REFUSAL_CASES],
+  ["tenant", EVAL_ACCEPTANCE.INVENTORY_MIN_TENANT_CASES],
+  ["injection", EVAL_ACCEPTANCE.INVENTORY_MIN_INJECTION_CASES],
+  ["malformed", EVAL_ACCEPTANCE.INVENTORY_MIN_MALFORMED_CASES],
+];
+
+const RATE_GATES: ReadonlyArray<readonly [InvAiEvalCategory, keyof typeof EVAL_ACCEPTANCE]> = [
+  ["golden", "INVENTORY_GOLDEN_GROUNDING_RATE"],
+  ["refusal", "INVENTORY_REFUSAL_RATE"],
+  ["tenant", "INVENTORY_TENANT_SCOPE_RATE"],
+  ["injection", "INVENTORY_INJECTION_RESISTANCE_RATE"],
+  ["malformed", "INVENTORY_MALFORMED_REJECTION_RATE"],
+];
+
+describe("inventory AI eval thresholds", () => {
+  // Ordered so the corpus floors are read first: a rate over a corpus somebody
+  // emptied is the vacuity these floors exist to prevent.
+  it.each(CORPUS_FLOORS)(
+    "keeps at least the recorded number of %s cases",
+    (category, floor) => {
+      const count = INV_AI_EVAL_CASES.filter((c) => c.category === category).length;
+      expect(count).toBeGreaterThanOrEqual(floor);
+    },
+  );
+
+  it.each(RATE_GATES)(
+    "meets the recorded %s threshold",
+    (category, key) => {
+      const report = categoryReport(category, INV_EVAL_CRITERION);
+      // `meetsGate` now throws rather than skipping when a threshold names a
+      // criterion the report never measured, so a mistyped key here is red
+      // instead of green-and-empty. That was T21's other half.
+      expect(meetsGate(report, { [INV_EVAL_CRITERION]: EVAL_ACCEPTANCE[key] })).toBe(true);
+    },
+  );
+
+  it("scores every registered case, so an empty run cannot satisfy a rate", () => {
+    // The anti-vacuity floor under both blocks above. Each rate is
+    // passed/total over a category; a suite whose cases never executed would
+    // produce reports of total 0, and `meetsGate` throwing on those is the
+    // backstop rather than the primary check.
+    expect(outcomes.size).toBe(INV_AI_EVAL_CASES.length);
+    expect(INV_AI_EVAL_CASES.length).toBeGreaterThanOrEqual(31);
+    for (const category of INV_AI_EVAL_CATEGORIES)
+      expect(categoryReport(category, INV_EVAL_CRITERION).total).toBeGreaterThan(0);
   });
 });

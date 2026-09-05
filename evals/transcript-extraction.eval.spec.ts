@@ -1,4 +1,4 @@
-import { EVAL_ACCEPTANCE, meetsGate, runEval, type EvalReport } from "./ai-eval-runner";
+import { EVAL_ACCEPTANCE, gatesPresentIn, meetsGate, runEval, type EvalReport } from "./ai-eval-runner";
 import { EVAL_STAGES, extractFromEvent } from "./channel-extraction";
 import {
   TRANSCRIPT_EXTRACTION_DATASET,
@@ -81,7 +81,7 @@ describe("transcript extraction evals", () => {
       "EXTRACTION_TRANSCRIPT_STAGE_RECALL",
     ]);
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(true);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(true);
   });
 
   it("fails the gate when an extractor starts advancing stages", async () => {
@@ -110,7 +110,7 @@ describe("transcript extraction evals", () => {
       ],
     );
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(false);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(false);
   });
 
   /**

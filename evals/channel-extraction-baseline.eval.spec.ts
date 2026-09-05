@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { EVAL_ACCEPTANCE, meetsGate, runEval } from "./ai-eval-runner";
+import { EVAL_ACCEPTANCE, gatesPresentIn, meetsGate, runEval } from "./ai-eval-runner";
 import { EVAL_STAGES, emailTunedExtract } from "./channel-extraction";
 import { AUTONOMY_EXTRACTION_DATASET } from "./datasets/autonomy-extraction.dataset";
 import { validateAgainstSchema } from "./scorers/schema.scorer";
@@ -96,7 +96,7 @@ describe("the channel gates are one extractor, measured three times", () => {
         ],
       );
 
-      expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(true);
+      expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(true);
     });
 
     /**
