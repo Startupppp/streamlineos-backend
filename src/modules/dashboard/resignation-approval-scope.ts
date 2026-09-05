@@ -23,8 +23,6 @@ export function resignationApprovalScope(
       AND rl.line_type = 'primary'
       AND rl.effective_from <= CURRENT_DATE AND rl.effective_to >= CURRENT_DATE
   )`;
-  const derivedApprover = canonicalDirectReport;
-
   switch (scope) {
     case "all":
       return sql`true`;
@@ -32,10 +30,10 @@ export function resignationApprovalScope(
       const teammates = applyScope(scope, orgId, actorUserId, {
         ownerColumn: resignations.userId,
       });
-      return sql`(${derivedApprover} AND ${teammates})`;
+      return sql`(${canonicalDirectReport} AND ${teammates})`;
     }
     case "own":
-      return derivedApprover;
+      return canonicalDirectReport;
     case "none":
       return sql`false`;
     default: {

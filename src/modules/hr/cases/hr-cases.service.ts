@@ -112,7 +112,7 @@ export class HrCasesService {
     const fallback = or(
       ilike(hrCases.summary, `%${search}%`),
       ilike(hrCases.caseNumber, `%${search}%`),
-    )!;
+    ) ?? sql`false`;
     const rows = await this.db.execute(
       sql`SELECT app.search_hr_case_ids(${search}, ${CASE_SEARCH_CAP + 1}) AS id`,
     );
@@ -180,18 +180,19 @@ export class HrCasesService {
         assignedToMembershipId,
       })
       .returning();
+    if (!newCase) throw new Error("Case insert did not return a row");
 
     await this.audit.log({
       orgId,
       actorId: userId,
       entityType: "hr_case",
-      entityId: String(newCase!.id),
+      entityId: String(newCase.id),
       action: "case.created",
       after: { caseNumber, category: input.category, severity: input.severity },
       ipAddress,
     });
 
-    return newCase!;
+    return newCase;
   }
 
   async createAnonymous(orgId: string, input: AnonymousReportInput) {
@@ -214,17 +215,18 @@ export class HrCasesService {
         assignedTo: null,
       })
       .returning({ id: hrCases.id, caseNumber: hrCases.caseNumber });
+    if (!newCase) throw new Error("Anonymous case insert did not return a row");
 
     await this.audit.log({
       orgId,
       actorId: null,
       entityType: "hr_case",
-      entityId: String(newCase!.id),
+      entityId: String(newCase.id),
       action: "case.anonymous_report",
       after: { caseNumber, category: input.category },
     });
 
-    return { caseNumber: newCase!.caseNumber };
+    return { caseNumber: newCase.caseNumber };
   }
 
   async update(
@@ -264,6 +266,7 @@ export class HrCasesService {
       })
       .where(and(eq(hrCases.orgId, orgId), eq(hrCases.id, id)))
       .returning();
+    if (!updated) throw new Error("Case update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -276,7 +279,7 @@ export class HrCasesService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async softDelete(orgId: string, id: number, userId: string, hasConfidential: boolean, membershipId?: number | null) {
@@ -348,6 +351,7 @@ export class HrCasesService {
         isConfidential: input.isConfidential ?? false,
       })
       .returning();
+    if (!note) throw new Error("Case note insert did not return a row");
 
     await this.audit.log({
       orgId,
@@ -359,7 +363,7 @@ export class HrCasesService {
       ipAddress,
     });
 
-    return note!;
+    return note;
   }
 
   async listDocuments(orgId: string, caseId: number, userId: string, hasConfidential: boolean, membershipId?: number | null) {
@@ -401,6 +405,7 @@ export class HrCasesService {
         uploadedBy: userId,
       })
       .returning();
+    if (!doc) throw new Error("Case document insert did not return a row");
 
     await this.audit.log({
       orgId,
@@ -412,7 +417,7 @@ export class HrCasesService {
       ipAddress,
     });
 
-    return doc!;
+    return doc;
   }
 
   async startInvestigation(
@@ -434,6 +439,7 @@ export class HrCasesService {
       .set({ status: "under_investigation", updatedAt: new Date() })
       .where(and(eq(hrCases.orgId, orgId), eq(hrCases.id, caseId)))
       .returning();
+    if (!updated) throw new Error("Case investigation update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -446,7 +452,7 @@ export class HrCasesService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async countByStatus(orgId: string) {

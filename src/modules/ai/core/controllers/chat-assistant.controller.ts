@@ -291,18 +291,17 @@ export class ChatAssistantController {
       throw new BadRequestException(`Unknown action type: ${action}`);
     }
 
-    const confirmedAction = action;
     const denyReason = await this.toolAccess.denyReason(
       u.orgId,
       u.userId,
-      CONFIRM_ACTION_PERMISSION[confirmedAction],
+      CONFIRM_ACTION_PERMISSION[action],
     );
     if (denyReason) throw new ForbiddenException(denyReason);
 
     let result: Record<string, unknown>;
     let summary: string;
 
-    switch (confirmedAction) {
+    switch (action) {
       case "ticket.create": {
         const svc = this.moduleRef.get(ProjectsTicketsService, { strict: false });
         const createInput = {
@@ -448,7 +447,7 @@ export class ChatAssistantController {
       }
 
       default: {
-        const _exhaustive: never = confirmedAction;
+        const _exhaustive: never = action;
         throw new BadRequestException(`Unknown action type: ${String(_exhaustive)}`);
       }
     }

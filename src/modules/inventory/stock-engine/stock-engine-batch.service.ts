@@ -60,8 +60,8 @@ export class StockEngineBatchService {
           await claimIdempotencyKey(
             tx,
             orgId,
-            commands[i]!.idempotencyKey,
-            requestHashes[i]!,
+            commands[i].idempotencyKey,
+            requestHashes[i],
           ),
         );
       }
@@ -72,12 +72,12 @@ export class StockEngineBatchService {
       );
 
       const settings = await this.settingsService.get(orgId);
-      await this.periods.assertPeriodOpen(orgId, new Date(resolvePostingDate(commands[0]!)));
+      await this.periods.assertPeriodOpen(orgId, new Date(resolvePostingDate(commands[0])));
       const costing = await loadCostingContext(
         tx,
         orgId,
         commands.flatMap((c) => c.movements.map((m) => m.productVariantId)),
-        resolvePostingDate(commands[0]!),
+        resolvePostingDate(commands[0]),
       );
 
       type LevelKey = {
@@ -89,8 +89,8 @@ export class StockEngineBatchService {
       const uniqueLevelKeys = new Map<string, LevelKey>();
 
       for (let i = 0; i < commands.length; i++) {
-        if (claims[i]!.kind === "replay") continue;
-        for (const m of commands[i]!.movements) {
+        if (claims[i].kind === "replay") continue;
+        for (const m of commands[i].movements) {
           const k = `${m.productVariantId}:${m.locationId}:${m.lotId ?? null}:${m.serialId ?? null}`;
           if (!uniqueLevelKeys.has(k)) {
             uniqueLevelKeys.set(k, {
@@ -181,8 +181,8 @@ export class StockEngineBatchService {
       const results: StockEngineResult[] = [];
 
       for (let i = 0; i < commands.length; i++) {
-        const claim = claims[i]!;
-        const cmd = commands[i]!;
+        const claim = claims[i];
+        const cmd = commands[i];
 
         if (claim.kind === "replay") {
           results.push(extractEngineResult(claim.stored));

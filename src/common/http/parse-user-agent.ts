@@ -86,10 +86,15 @@ function detectApiClient(ua: string): string | null {
 }
 
 function isBotUserAgent(ua: string): boolean {
-  return /bot|crawl|spider|slurp|mediapartners|bingpreview|facebookexternalhit/i.test(ua);
+  return /bot|crawl|spider|slurp|mediapartners|bingpreview|facebookexternalhit/i.test(
+    ua,
+  );
 }
 
-function isElectronUserAgent(ua: string, browserName: string | undefined): boolean {
+function isElectronUserAgent(
+  ua: string,
+  browserName: string | undefined,
+): boolean {
   return browserName === "Electron" || /(?:^|[^a-z])Electron\//i.test(ua);
 }
 
@@ -97,7 +102,8 @@ function normalizeClientAppHint(clientApp: string): string {
   const trimmed = clientApp.trim().replace(/\s+/g, " ");
   if (!trimmed) return DESKTOP_APP_LABEL;
   if (/^streamlineos(?:\s+desktop)?$/i.test(trimmed)) return DESKTOP_APP_LABEL;
-  if (/desktop/i.test(trimmed) && /streamlineos/i.test(trimmed)) return DESKTOP_APP_LABEL;
+  if (/desktop/i.test(trimmed) && /streamlineos/i.test(trimmed))
+    return DESKTOP_APP_LABEL;
   return trimmed.slice(0, 80);
 }
 
@@ -174,27 +180,31 @@ export function parseUserAgent(
   if (!enriched) {
     const hint = hints?.clientApp?.trim();
     if (hint) {
-      return { browser: normalizeClientAppHint(hint), os: null, platform: null };
+      return {
+        os: null,
+        platform: null,
+        browser: normalizeClientAppHint(hint),
+      };
     }
     return { browser: "Unknown", os: null, platform: null };
   }
 
-  const ua = enriched;
+  const apiClient = detectApiClient(enriched);
+  if (apiClient) return { browser: apiClient, os: null, platform: null };
 
-  const apiClient = detectApiClient(ua);
-  if (apiClient) {
-    return { browser: apiClient, os: null, platform: null };
-  }
-
-  if (isBotUserAgent(ua)) {
+  if (isBotUserAgent(enriched))
     return { browser: "Bot", os: null, platform: null };
-  }
 
-  const parsed = new UAParser(ua).getResult();
+  const parsed = new UAParser(enriched).getResult();
   const osName = normalizeOsName(parsed.os.name);
 
   return {
-    browser: resolveBrowserLabel(ua, parsed.browser.name, parsed.browser.version, hints),
+    browser: resolveBrowserLabel(
+      enriched,
+      parsed.browser.name,
+      parsed.browser.version,
+      hints,
+    ),
     os: osName,
     platform: resolvePlatform(parsed.device.type),
   };

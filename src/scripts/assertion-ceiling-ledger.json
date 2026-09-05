@@ -777,10 +777,6 @@
       "as": 0,
       "nonNull": 1
     },
-    "src/modules/hr/cases/hr-cases.service.ts": {
-      "as": 0,
-      "nonNull": 9
-    },
     "src/modules/hr/cases/hr-disciplinary.service.ts": {
       "as": 3,
       "nonNull": 2
@@ -891,11 +887,7 @@
     },
     "src/modules/hr/governance/positions/positions.service.ts": {
       "as": 3,
-      "nonNull": 7
-    },
-    "src/modules/hr/governance/retention/retention.service.ts": {
-      "as": 0,
-      "nonNull": 7
+      "nonNull": 0
     },
     "src/modules/hr/helpdesk/dto/hr-calendar.schemas.ts": {
       "as": 2,
@@ -1191,7 +1183,7 @@
     },
     "src/modules/inventory/stock-engine/stock-engine-batch.service.ts": {
       "as": 2,
-      "nonNull": 8
+      "nonNull": 0
     },
     "src/modules/inventory/stock-engine/stock-engine.service.ts": {
       "as": 1,
@@ -1208,10 +1200,6 @@
     "src/modules/inventory/traceability/traceability-chain.service.ts": {
       "as": 0,
       "nonNull": 5
-    },
-    "src/modules/inventory/warehouses/inv-warehouses.service.ts": {
-      "as": 0,
-      "nonNull": 7
     },
     "src/modules/invoices/invoices-write.service.ts": {
       "as": 1,

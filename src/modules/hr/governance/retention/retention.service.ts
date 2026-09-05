@@ -75,18 +75,19 @@ export class RetentionService {
           );
         throw e;
       });
+    if (!policy) throw new Error("Retention policy insert did not return a row");
 
     await this.audit.log({
       orgId,
       actorId: userId,
       entityType: "hr_retention_policy",
-      entityId: String(policy!.id),
+      entityId: String(policy.id),
       action: "retention_policy.created",
       after: input,
       ipAddress,
     });
 
-    return policy!;
+    return policy;
   }
 
   async updatePolicy(orgId: string, policyId: number, userId: string, input: UpdateRetentionPolicyInput, ipAddress?: string) {
@@ -110,6 +111,7 @@ export class RetentionService {
           );
         throw e;
       });
+    if (!updated) throw new Error("Retention policy update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -122,7 +124,7 @@ export class RetentionService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async deletePolicy(orgId: string, policyId: number, userId: string, ipAddress?: string) {
@@ -187,18 +189,19 @@ export class RetentionService {
         reason: input.reason ?? null,
       })
       .returning();
+    if (!req) throw new Error("Data request insert did not return a row");
 
     await this.audit.log({
       orgId,
       actorId: userId,
       entityType: "hr_data_request",
-      entityId: String(req!.id),
+      entityId: String(req.id),
       action: "data_request.created",
       after: { type: input.type, subjectUserId: input.subjectUserId },
       ipAddress,
     });
 
-    return req!;
+    return req;
   }
 
   async updateRequest(orgId: string, requestId: number, userId: string, input: UpdateDataRequestInput, ipAddress?: string) {
@@ -213,6 +216,7 @@ export class RetentionService {
       .set({ ...input, updatedAt: new Date() })
       .where(and(eq(hrDataRequests.orgId, orgId), eq(hrDataRequests.id, requestId)))
       .returning();
+    if (!updated) throw new Error("Data request update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -224,7 +228,7 @@ export class RetentionService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async approveRequest(orgId: string, requestId: number, userId: string, ipAddress?: string) {
@@ -239,6 +243,7 @@ export class RetentionService {
       .set({ status: "approved", approvedBy: userId, updatedAt: new Date() })
       .where(and(eq(hrDataRequests.orgId, orgId), eq(hrDataRequests.id, requestId)))
       .returning();
+    if (!updated) throw new Error("Data request approve update did not return a row");
 
     await this.audit.log({
       orgId,
@@ -251,7 +256,7 @@ export class RetentionService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async processRequest(orgId: string, requestId: number, userId: string, ipAddress?: string) {
