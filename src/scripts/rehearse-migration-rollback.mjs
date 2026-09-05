@@ -82,19 +82,7 @@ const TIER2_CLEAN_BASELINE = 11;
  * listed and starts working also fails it, so the list cannot go stale — which
  * is the failure mode this whole ticket is about.
  */
-const KNOWN_BROKEN = [
-  {
-    tag: "0909_build_common_actor_validate",
-    code: "0A000",
-    reason:
-      "Its 29 statements are all `ALTER TABLE … ALTER CONSTRAINT … NOT VALID`, and PostgreSQL " +
-      "refuses: ALTER CONSTRAINT can change deferrability and nothing else, so a validated " +
-      "constraint cannot be un-validated. The file has never been able to run and never could. " +
-      "Reversing 0909 properly means dropping and re-adding all 29 foreign keys NOT VALID, which " +
-      "is a build change with its own risk, not an inventory one — recorded here rather than " +
-      "guessed at. It is also why tier 1 cannot descend past 0910.",
-  },
-];
+const KNOWN_BROKEN = [];
 
 const DDL = /\b(ALTER|DROP|CREATE|TRUNCATE|UPDATE|DELETE|INSERT)\b/i;
 
@@ -477,8 +465,12 @@ async function main() {
   try {
     console.log("drill:rollback — executing rollbacks, not counting files");
     console.log(`  ${tags.length} journalled migrations, ${candidates.length} with a rollback file`);
-    console.log(`  ${KNOWN_BROKEN.length} known-broken rollback file(s), named here every run:`);
-    for (const k of KNOWN_BROKEN) console.log(`    - ${k.tag} (${k.code}): ${k.reason}`);
+    if (KNOWN_BROKEN.length === 0) {
+      console.log("  0 known-broken rollback files: every rollback file is expected to execute");
+    } else {
+      console.log(`  ${KNOWN_BROKEN.length} known-broken rollback file(s), named here every run:`);
+      for (const k of KNOWN_BROKEN) console.log(`    - ${k.tag} (${k.code}): ${k.reason}`);
+    }
     const suffix = suffixWithRollbacks(tags);
     await tierOne(sql, tags, findings);
     clean = await tierTwo(
