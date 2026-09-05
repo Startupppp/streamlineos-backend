@@ -1,6 +1,8 @@
 import { type SystemJobId, systemJobCeiling } from "./system-jobs";
 import { assertNever } from "../types/assert-never";
 
+export { assertNever } from "../types/assert-never";
+
 export type Principal =
   | {
       kind: "human-session";
@@ -29,7 +31,6 @@ export type Principal =
       ceiling: readonly string[];
     };
 
-export type PrincipalKind = Principal["kind"];
 
 export const ACCOUNT_ONLY_PRINCIPAL: Principal = { kind: "account-only" };
 
@@ -117,9 +118,4 @@ export function systemJobCovers(
   return (
     principal.kind === "system-job" && principal.ceiling.includes(permissionKey)
   );
-}
-
-export interface PrincipalAuditIdentity {
-  actorKind: PrincipalKind;
-  actorRef: string | null;
 }

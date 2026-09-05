@@ -17,3 +17,7 @@ backups/
 .lane-a-rebuild.sh
 .lane-a.env
 .chain-gaps
+.lane-a-seed.sh
+.lane-a-e2e.sh
+.lane-a-seed.log
+.lane-a.log

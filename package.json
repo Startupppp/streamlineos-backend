@@ -286,6 +286,8 @@
     "drill:erasure": "node --env-file-if-exists=.env src/scripts/drill-erasure.mjs",
     "drill:erasure:self-test": "node src/scripts/drill-erasure.mjs --self-test",
     "drill:legal-hold": "node --env-file-if-exists=.env src/scripts/drill-legal-hold.mjs",
+    "drill:retention": "node --env-file-if-exists=.env src/scripts/drill-retention.mjs",
+    "drill:retention:self-test": "node src/scripts/drill-retention.mjs --self-test",
     "check:migration-ledger": "node --env-file-if-exists=.env src/scripts/check-migration-ledger.mjs",
     "check:migration-ledger:self-test": "node src/scripts/check-migration-ledger.mjs --self-test",
     "check:spec-typecheck": "node src/scripts/check-spec-typecheck.mjs",

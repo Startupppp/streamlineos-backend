@@ -53,6 +53,13 @@ const SELF_TEST = process.argv.includes("--self-test");
 // A CI job that reads only the exit code cannot tell INCONCLUSIVE or PARTIAL from OK.
 // STREAMLINE_STRICT_BUDGETS=1 (or --strict) makes the distinction machine-readable.
 const STRICT = process.env.STREAMLINE_STRICT_BUDGETS === "1" || process.argv.includes("--strict");
+// RATCHET CEILING — the maximum value that surface.workerBatchScope.undeclaredWatermark may legally
+// hold. Raising the watermark in the data file above this constant fails the gate even when the
+// live undeclared count is at or below the watermark, so the bypass is visible in a gate-source
+// diff, not a data-file diff. Lowering the watermark (in the data file) is always permitted.
+// To move this ceiling: lower the data-file watermark first, then lower this constant in the same
+// commit — the constant must never be HIGHER than the data-file value.
+const WATERMARK_CEILING = 42;
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const OPENAPI_PATH = join(BACKEND_ROOT, "openapi.json");
 const BUDGETS_PATH = join(BACKEND_ROOT, "contracts", "route-budgets.json");
@@ -306,13 +313,22 @@ export function findWorkerBatchScopeViolations(manifest, derivedRoutes, liveKeys
   const watermark = scope.undeclaredWatermark;
   if (typeof watermark !== "number" || !Number.isInteger(watermark) || watermark < 0)
     violations.push({ issue: `surface.workerBatchScope.undeclaredWatermark must be a non-negative integer, got ${JSON.stringify(watermark)}` });
-  else if (undeclared.length > watermark)
-    violations.push({
-      issue:
-        `${String(undeclared.length)} cron batches declare no budget, above the recorded watermark of ${String(watermark)}. ` +
-        `A new scheduled batch must declare its five ceilings or be named in declaredOutOfScope with a reason. ` +
-        `Raising the watermark to go green is itself the defect this ratchet exists to catch.`,
-    });
+  else {
+    if (watermark > WATERMARK_CEILING)
+      violations.push({
+        issue:
+          `RATCHET VIOLATION: surface.workerBatchScope.undeclaredWatermark is ${String(watermark)}, which exceeds the pinned ceiling of ${String(WATERMARK_CEILING)} in check-route-budgets.mjs. ` +
+          `Raising the watermark in the data file to make a failure disappear is the defect this ceiling exists to catch. ` +
+          `Declare a budget for the new batch, or lower the watermark; never raise it above ${String(WATERMARK_CEILING)}.`,
+      });
+    if (undeclared.length > watermark)
+      violations.push({
+        issue:
+          `${String(undeclared.length)} cron batches declare no budget, above the recorded watermark of ${String(watermark)}. ` +
+          `A new scheduled batch must declare its five ceilings or be named in declaredOutOfScope with a reason. ` +
+          `Raising the watermark to go green is itself the defect this ratchet exists to catch.`,
+      });
+  }
 
   return { violations, declared, outOfScope, undeclared, notInOpenApi, batchPaths: [...byPath.values()] };
 }
