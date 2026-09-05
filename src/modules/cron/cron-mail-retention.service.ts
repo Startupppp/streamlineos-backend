@@ -94,6 +94,17 @@ export class CronMailRetentionService {
             SELECT id FROM mail_message_metadata
             WHERE org_id = ${orgId}
               AND synced_at < ${cutoff}
+              AND (user_membership_id IS NULL OR user_membership_id NOT IN (
+                SELECT m.id FROM organization_members m
+                WHERE m.org_id = ${orgId}
+                  AND m.user_id IN (
+                    SELECT subject_user_id FROM hr_legal_holds
+                    WHERE org_id = ${orgId}
+                      AND status = 'active'
+                      AND deleted_at IS NULL
+                      AND subject_user_id IS NOT NULL
+                  )
+              ))
             LIMIT ${BATCH_SIZE}
           )`,
         )

@@ -89,6 +89,13 @@ export class CronAnnouncementsRetentionService {
             WHERE org_id = ${orgId}
               AND expires_at IS NOT NULL
               AND expires_at < ${cutoff}
+              AND author_id NOT IN (
+                SELECT subject_user_id FROM hr_legal_holds
+                WHERE org_id = ${orgId}
+                  AND status = 'active'
+                  AND deleted_at IS NULL
+                  AND subject_user_id IS NOT NULL
+              )
             LIMIT ${limit}
           )`,
         )
@@ -110,6 +117,13 @@ export class CronAnnouncementsRetentionService {
             SELECT id FROM announcements
             WHERE org_id = ${orgId}
               AND created_at < ${cutoff}
+              AND author_id NOT IN (
+                SELECT subject_user_id FROM hr_legal_holds
+                WHERE org_id = ${orgId}
+                  AND status = 'active'
+                  AND deleted_at IS NULL
+                  AND subject_user_id IS NOT NULL
+              )
             LIMIT ${limit}
           )`,
         )

@@ -71,115 +71,149 @@ try {
   process.exit(2);
 }
 
+// Canonical owner slugs — mirrors MODULE_SLO_OWNERSHIP in slo-modules.ts via MODULE_OWNERS in route-attribution.mjs.
+const RETENTION_OWNERS = new Set([
+  "people-team",
+  "delivery-team",
+  "support-team",
+  "finance-team",
+  "payments-team",
+  "knowledge-team",
+  "communications-team",
+  "platform-reliability",
+]);
+
 const RETENTION_MATRIX = {
   kb_article_chunks: {
     decision: "RETAIN-BOUNDED",
     worker: "CronKbChunkRetentionService",
+    owner: "support-team",
     notes: "Prune chunks whose parent article/page is deleted or unpublished. 30k rows, 497 MB.",
   },
   chat_messages: {
     decision: "PARTITION+ARCHIVE",
     worker: "NotificationRetentionService (detach+drop)",
+    owner: "communications-team",
     notes: "Partitioned monthly. DETACH PARTITION CONCURRENTLY + DROP. 365-day retention.",
   },
   timesheets: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "people-team",
     notes: "Payroll-adjacent compliance obligation. 5k rows, 10.7 MB. No deletion allowed.",
   },
   ai_usage_logs: {
     decision: "RETAIN-BOUNDED",
     worker: "CronAiUsageRetentionService",
+    owner: "platform-reliability",
     notes: "730-day default. Dry-run by default. Resumable cursor in Redis. 401 rows now.",
   },
   kb_pages: {
     decision: "RETAIN-BOUNDED",
     worker: "CronKbService (kb-trash-purge)",
+    owner: "knowledge-team",
     notes: "Soft delete is the lifecycle; KbPageTreeService.purgeExpired hard-deletes in bounded batches once deleted_at is older than the org's trash_retention_days, recording attachment purge keys first. The worker existed and was DELIBERATELY unscheduled, its stated reason being the absence of this very inventory entry — so the drain was correct and dead, and the table read UNCOVERED against a live database. This entry is what let kb-trash-purge join RETENTION_JOBS. Decided 2026-09-04 (ticket 16, PRD-C134).",
   },
   kb_events: {
     decision: "RETAIN-BOUNDED",
     worker: "CronKbTelemetryRetentionService",
+    owner: "knowledge-team",
     notes: "One row per article view and per search — the two hottest KB read paths — and the only source behind the analytics overview, gaps, no-results and content-gaps reports, whose rangeSchema leaves both bounds optional so the default read is unbounded. 365 days, matching chat_messages, the other user-attributable append-only stream. Free text in `query` and an actor membership make it discoverable, so org-wide and HR subject legal holds both stop the sweep. Decided 2026-09-04 (ticket 16, PRD-C134).",
   },
   kb_ingestion_checkpoints: {
     decision: "RETAIN-BOUNDED",
     worker: "CronKbTelemetryRetentionService",
+    owner: "support-team",
     notes: "One row per chunk carrying a full vector(1536) plus its source text. clearCheckpoints fires only on ingestion SUCCESS, so a crashed worker, a source stranded in `processing` or a provider outage mid-batch leaves them permanently. Expired on the outbox dead-letter horizon (OUTBOX_RETENTION_DAYS = 30) by sharing that constant: nothing resumes a run whose retry budget expired. Derived data, so only the org-wide legal hold applies. Decided 2026-09-04 (ticket 16, PRD-C134).",
   },
   kb_chat_conversations: {
     decision: "RETAIN-BOUNDED",
     worker: "CronKbChatRetentionService",
+    owner: "knowledge-team",
     notes: "Organization-configured chat history retention, defaulting to 90 days, with bounded tenant-scoped deletion.",
   },
   kb_page_versions: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "knowledge-team",
     notes: "Wiki revision history is the content audit trail and the only path to restore a page after a bad edit; insert-only, matching kb_article_versions. Growth is bounded by the VERSION_WINDOW_MS snapshot throttle, not by deletion. Decided 2026-09-02 (S10).",
   },
   webhook_deliveries: {
     decision: "RETAIN-BOUNDED",
     worker: "CronBuildRetentionService",
+    owner: "delivery-team",
     notes: "Completed delivery attempts are retained for 90 days; pending attempts are never removed by this worker.",
   },
   notifications: {
     decision: "PARTITION+ARCHIVE",
     worker: "NotificationRetentionService (detach+drop)",
+    owner: "communications-team",
     notes: "Partitioned monthly. 180-day retention.",
   },
   notification_events: {
     decision: "RETAIN-BOUNDED",
     worker: "CronNotificationRetentionService (body purge + record delete)",
+    owner: "communications-team",
     notes: "90-day body purge, 13-month record delete.",
   },
   notification_deliveries: {
     decision: "RETAIN-BOUNDED",
     worker: "CronNotificationRetentionService",
+    owner: "communications-team",
     notes: "90-day body purge, 13-month record delete.",
   },
   email_outbox: {
     decision: "RETAIN-BOUNDED",
     worker: "CronNotificationRetentionService",
+    owner: "communications-team",
     notes: "90-day body purge, 13-month record delete.",
   },
   documents: {
     decision: "RETAIN-BOUNDED",
     worker: "CronHrRetentionService (via hr_retention_policies, recordType=document)",
+    owner: "people-team",
     notes: "Policy-driven deletion or anonymization with legal-hold exclusion and bounded batches.",
   },
   helpdesk_tickets: {
     decision: "RETAIN-BOUNDED",
     worker: "CronHelpdeskRetentionService",
+    owner: "people-team",
     notes: "730-day retention after resolved_at; only resolved or closed tickets are eligible. forEachOrg, batch 200, legal-hold exclusion, comments cascade.",
   },
   performance_reviews: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "people-team",
     notes: "Employment-record obligation used in succession, compensation and dispute evidence. No deleted_at column; deletion needs an approved per-org statutory rule.",
   },
   mail_message_metadata: {
     decision: "RETAIN-BOUNDED",
     worker: "CronMailRetentionService",
+    owner: "communications-team",
     notes: "365-day retention from synced_at. A re-syncable projection of the provider mailbox, not the system of record. forEachOrg, batch 500.",
   },
   announcements: {
     decision: "RETAIN-BOUNDED",
     worker: "CronAnnouncementsRetentionService",
+    owner: "people-team",
     notes: "Expired past a 90-day grace and aged past 730 days. forEachOrg, batch 200 per phase; targets and reads cascade.",
   },
   notification_outbox: {
     decision: "RETAIN-BOUNDED",
     worker: "CronNotificationOutboxRetentionService",
+    owner: "communications-team",
     notes: "30-day retention for PROCESSED, 180-day for DEAD so dead-letter evidence outlives the 24h alert window. PENDING and IN_FLIGHT rows are never touched. forEachOrg, batch 500, per-org lease.",
   },
   outbox_events: {
     decision: "RETAIN-BOUNDED",
     worker: "CronOutboxRetentionService",
+    owner: "platform-reliability",
     notes: "30-day retention for terminal states (DELIVERED, DEAD, SUPPRESSED). PENDING and IN_FLIGHT rows are never touched. Global sweep (owner role, no tenant GUC), batch 1000. inbox_records processed_at < cutoff also swept.",
   },
   gdpr_export_jobs: {
     decision: "RETAIN-BOUNDED",
     worker: "CronGdprExportRetentionService",
+    owner: "people-team",
     notes:
       "The export artifact is a complete dump of one subject's personal data. 72h expiry from " +
       "GdprExportService.EXPIRY_MS; the sweep marks the row expired, deletes the object from " +
@@ -189,46 +223,55 @@ const RETENTION_MATRIX = {
   audit_logs: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "platform-reliability",
     notes: "Immutable audit obligation. No deleted_at column. DB-level triggers prevent mutation. Cannot be touched by any retention worker.",
   },
   hr_audit_logs: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "people-team",
     notes: "HR audit trail. Written only by retention sweep itself as a record of what was purged. Never deleted.",
   },
   payroll_runs: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "people-team",
     notes: "Financial record. Immutable after posting. Legal obligation to retain.",
   },
   hr_people: {
     decision: "RETAIN-BOUNDED",
     worker: "CronHrRetentionService (via hr_retention_policies)",
+    owner: "people-team",
     notes: "Soft-delete only. Legal-hold exclusion enforced. Policy-driven (hr_retention_policies table).",
   },
   hr_employments: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "people-team",
     notes: "Employment records carry payroll and statutory obligations. Not deletable.",
   },
   hr_reporting_lines: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "people-team",
     notes: "Effective-dated reporting history supports employment/payroll auditability and is bounded by employment history; no automated deletion is permitted without an approved statutory-retention rule.",
   },
   attendance: {
     decision: "RETAIN-BOUNDED",
     worker: "CronHrRetentionService (via hr_retention_policies, recordType=attendance)",
+    owner: "people-team",
     notes: "Physical delete allowed per policy. Legal-hold exclusion enforced.",
   },
   permissions: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "platform-reliability",
     notes: "RBAC permission catalog. Grows as features are added, shrinks on removal. Configuration state, not event-sourced. 3 MB is mostly index overhead on 731 rows.",
   },
   role_permission_grants: {
     decision: "KEEP-FOREVER",
     worker: null,
+    owner: "platform-reliability",
     notes: "Per-org role grants. Rows are deleted when grants are revoked or roles removed (cascading). Not append-only — size is bounded by org count × role count. No sweep needed.",
   },
 };
@@ -405,6 +448,12 @@ if (args.includes("--self-test")) {
     ),
     everyMatrixEntryHasNotes: Object.values(RETENTION_MATRIX).every(
       (entry) => typeof entry.notes === "string" && entry.notes.trim().length > 0,
+    ),
+    everyMatrixEntryHasOwner: Object.values(RETENTION_MATRIX).every(
+      (entry) => typeof entry.owner === "string" && entry.owner.trim().length > 0,
+    ),
+    everyMatrixOwnerIsCanonical: Object.values(RETENTION_MATRIX).every(
+      (entry) => RETENTION_OWNERS.has(entry.owner),
     ),
     keepForeverEntriesHaveNoWorker: Object.values(RETENTION_MATRIX)
       .filter((entry) => entry.decision === "KEEP-FOREVER")
