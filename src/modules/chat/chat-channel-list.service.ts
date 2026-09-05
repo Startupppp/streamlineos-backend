@@ -207,8 +207,8 @@ export class ChatChannelListService {
     const { lma, id } = cursor;
     if (lma !== null) {
       return sql`(
-        ${chatChannels.lastMessageAt} < ${lma}
-        OR (${chatChannels.lastMessageAt} = ${lma} AND ${chatChannels.id} < ${id})
+        ${chatChannels.lastMessageAt} < ${lma.toISOString()}::timestamptz
+        OR (${chatChannels.lastMessageAt} = ${lma.toISOString()}::timestamptz AND ${chatChannels.id} < ${id})
         OR ${chatChannels.lastMessageAt} IS NULL
       )`;
     }
