@@ -109,7 +109,10 @@ const HR_EMP_COUNT = 5100;
 const REPORTING_LINES = 1100;
 const NOTIFICATION_COUNT = 150;
 const LEAVE_REQUEST_COUNT = 60;
+const LEAVE_TODAY_COUNT = 50;
+const LEAVE_MINE_COUNT = 200;
 const ATTENDANCE_COUNT = 90;
+const ATTENDANCE_MINE_COUNT = 100;
 const TIMESHEET_COUNT = 200;
 const KB_PAGES_PER_SPACE = 60;
 const KB_VISITS_COUNT = 50;
@@ -431,6 +434,29 @@ async function seedLeave() {
       [LARGE_ORG, userIds[i], leaveType],
     ).catch((e) => warn(`leave_ledger ${i}`, e));
   }
+
+  const existingToday = await sql.unsafe(
+    `SELECT count(*)::int n FROM leave_requests
+     WHERE org_id = $1 AND status = 'APPROVED'
+       AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+
+  if (existingToday < LEAVE_TODAY_COUNT) {
+    log(`  inserting ${LEAVE_TODAY_COUNT - existingToday} spans-today approved leaves...`);
+    for (let i = 0; i < LEAVE_TODAY_COUNT - existingToday; i++) {
+      const uid = userIds[(i + 100) % userIds.length];
+      await sql.unsafe(
+        `INSERT INTO leave_requests (org_id, user_id, leave_type_id, status, start_date, end_date, created_at, updated_at)
+         SELECT $1, $2, $3, 'APPROVED', CURRENT_DATE - $4::int, CURRENT_DATE + 14, now(), now()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM leave_requests lr
+           WHERE lr.org_id = $1 AND lr.user_id = $2 AND lr.leave_type_id = $3 AND lr.start_date = CURRENT_DATE - $4::int
+         )`,
+        [LARGE_ORG, uid, leaveType, i % 30],
+      ).catch((e) => warn(`leave_today ${i}`, e));
+    }
+  }
 }
 
 async function seedAttendance() {
@@ -453,6 +479,123 @@ async function seedAttendance() {
       inserted++;
     }
   }
+}
+
+/**
+ * Seeds leave_requests rows owned by the benchmark membership so leave-requests-mine is
+ * non-vacuous. The benchmark filters on user_membership_id, which the base seedLeave() never
+ * sets. Runs after seedBuild/seedExtraTickets so ticket_assignees exist to resolve the
+ * benchmark member identity (matching resolveBudgetFixtures logic in benchmark-environment.mjs).
+ */
+async function seedLeaveMine() {
+  log("Seeding leave_requests with user_membership_id for leave-requests-mine benchmark...");
+
+  const [ticketMember] = await sql.unsafe(
+    `SELECT ta.membership_id, om.user_id
+     FROM build.ticket_assignees ta
+     INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
+     WHERE ta.org_id = $1
+     GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC LIMIT 1`,
+    [LARGE_ORG],
+  ).catch(() => []);
+  const [fallback] = await sql.unsafe(
+    `SELECT id AS membership_id, user_id FROM organization_members
+     WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1`,
+    [LARGE_ORG],
+  ).catch(() => []);
+  const member = ticketMember ?? fallback;
+  if (!member) { log("  no benchmark member — skipping"); return; }
+
+  const leaveType = await sql.unsafe(
+    `SELECT id FROM leave_types WHERE org_id = $1 LIMIT 1`,
+    [LARGE_ORG],
+  ).then((r) => r[0]?.id).catch(() => null);
+  if (!leaveType) { log("  no leave type — skipping"); return; }
+
+  const existing = await sql.unsafe(
+    `SELECT count(*)::int n FROM leave_requests WHERE org_id = $1 AND user_membership_id = $2`,
+    [LARGE_ORG, member.membership_id],
+  ).then((r) => r[0].n);
+
+  if (existing >= LEAVE_MINE_COUNT) {
+    log(`  ${existing} already present — skipping`);
+    return;
+  }
+
+  await sql.unsafe(
+    `INSERT INTO leave_requests (org_id, user_id, user_membership_id, leave_type_id, status, start_date, end_date, created_at, updated_at)
+     SELECT $1, $2, $3::int, $4, 'APPROVED',
+       CURRENT_DATE - (400 + s)::int,
+       CURRENT_DATE - (400 + s - 3)::int,
+       now() - (s || ' days')::interval, now()
+     FROM generate_series(1, $5::int) s
+     WHERE NOT EXISTS (
+       SELECT 1 FROM leave_requests lr
+       WHERE lr.org_id = $1 AND lr.user_id = $2 AND lr.leave_type_id = $4
+         AND lr.start_date = CURRENT_DATE - (400 + s)::int
+     )`,
+    [LARGE_ORG, member.user_id, member.membership_id, leaveType, LEAVE_MINE_COUNT],
+  ).catch((e) => warn("leave_requests_mine_seed", e));
+
+  log(`  seeded up to ${LEAVE_MINE_COUNT} rows for membership_id=${member.membership_id}`);
+}
+
+/**
+ * Ensures attendance rows for the benchmark membership carry user_membership_id so
+ * attendance-mine is non-vacuous. First updates existing rows for that user (seeded by
+ * seedAttendance without the membership link), then inserts additional rows if needed.
+ * Runs after seedBuild/seedExtraTickets so ticket_assignees exist.
+ */
+async function seedAttendanceMine() {
+  log("Seeding attendance with user_membership_id for attendance-mine benchmark...");
+
+  const [ticketMember] = await sql.unsafe(
+    `SELECT ta.membership_id, om.user_id
+     FROM build.ticket_assignees ta
+     INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
+     WHERE ta.org_id = $1
+     GROUP BY ta.membership_id, om.user_id ORDER BY count(*) DESC LIMIT 1`,
+    [LARGE_ORG],
+  ).catch(() => []);
+  const [fallback] = await sql.unsafe(
+    `SELECT id AS membership_id, user_id FROM organization_members
+     WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1`,
+    [LARGE_ORG],
+  ).catch(() => []);
+  const member = ticketMember ?? fallback;
+  if (!member) { log("  no benchmark member — skipping"); return; }
+
+  await sql.unsafe(
+    `UPDATE attendance SET user_membership_id = $1::int
+     WHERE org_id = $2 AND user_id = $3 AND user_membership_id IS NULL`,
+    [member.membership_id, LARGE_ORG, member.user_id],
+  ).catch((e) => warn("attendance update user_membership_id", e));
+
+  const existing = await sql.unsafe(
+    `SELECT count(*)::int n FROM attendance WHERE org_id = $1 AND user_membership_id = $2`,
+    [LARGE_ORG, member.membership_id],
+  ).then((r) => r[0].n);
+
+  if (existing >= ATTENDANCE_MINE_COUNT) {
+    log(`  ${existing} already present — skipping`);
+    return;
+  }
+
+  const toInsert = ATTENDANCE_MINE_COUNT - existing;
+  const startDay = Math.ceil(ATTENDANCE_COUNT / Math.min(userIds.length, 5));
+  await sql.unsafe(
+    `INSERT INTO attendance (org_id, user_id, user_membership_id, date, status, created_at)
+     SELECT $1, $2, $3::int, CURRENT_DATE - ($4 + s)::int, 'PRESENT', now()
+     FROM generate_series(0, 499) s
+     WHERE NOT EXISTS (
+       SELECT 1 FROM attendance a
+       WHERE a.org_id = $1 AND a.user_id = $2 AND a.date = CURRENT_DATE - ($4 + s)::int
+     )
+     LIMIT $5::int`,
+    [LARGE_ORG, member.user_id, member.membership_id, startDay, toInsert],
+  ).catch((e) => warn("attendance_mine_seed", e));
+
+  log(`  seeded up to ${ATTENDANCE_MINE_COUNT} rows for membership_id=${member.membership_id}`);
 }
 
 /**
@@ -1734,9 +1877,12 @@ async function reportCounts() {
     ["kb_page_visits", `SELECT count(*)::int FROM kb_page_visits WHERE org_id = $1`, [LARGE_ORG]],
     ["notifications", `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`, [LARGE_ORG]],
     ["leave_requests", `SELECT count(*)::int FROM leave_requests WHERE org_id = $1`, [LARGE_ORG]],
+    ["leave_requests/today", `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND status = 'APPROVED' AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE`, [LARGE_ORG]],
+    ["leave_requests/mine", `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND user_membership_id IS NOT NULL`, [LARGE_ORG]],
     ["leave_balances", `SELECT count(*)::int FROM leave_balances WHERE org_id = $1`, [LARGE_ORG]],
     ["hr_leave_ledger", `SELECT count(*)::int FROM hr_leave_ledger WHERE org_id = $1`, [LARGE_ORG]],
     ["attendance", `SELECT count(*)::int FROM attendance WHERE org_id = $1`, [LARGE_ORG]],
+    ["attendance/mine", `SELECT count(*)::int FROM attendance WHERE org_id = $1 AND user_membership_id IS NOT NULL`, [LARGE_ORG]],
     ["timesheets", `SELECT count(*)::int FROM timesheets WHERE org_id = $1`, [LARGE_ORG]],
     ["payroll_runs", `SELECT count(*)::int FROM payroll_runs WHERE org_id = $1`, [LARGE_ORG]],
     ["support_tickets", `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`, [LARGE_ORG]],
@@ -1746,12 +1892,29 @@ async function reportCounts() {
     ["gl_journals", `SELECT count(*)::int FROM gl_journals WHERE org_id = $1`, [LARGE_ORG]],
   ];
 
+  // A section that inserts nothing without throwing is invisible to trySection, and the
+  // three read-cost budgets it feeds then report "vacuous" forty minutes later instead of
+  // here. These floors are the benchmark's own minRows, so the seed fails where it broke.
+  const FLOORS = new Map([
+    ["leave_requests/today", 5],
+    ["leave_requests/mine", 20],
+    ["attendance/mine", 30],
+  ]);
+  const belowFloor = [];
+
   console.log("\n--- SEED ROW COUNTS ---");
   for (const [label, q, params] of checks) {
     const n = await sql.unsafe(q, params).then((r) => r[0]?.count ?? r[0]?.n ?? "?").catch(() => "ERR");
-    console.log(`  ${label.padEnd(28)} ${String(n).padStart(6)}`);
+    const floor = FLOORS.get(label);
+    if (floor !== undefined && (typeof n !== "number" || n < floor)) belowFloor.push(`${label} = ${n} (needs >= ${floor})`);
+    console.log(`  ${label.padEnd(28)} ${String(n).padStart(6)}${floor !== undefined ? `  (floor ${floor})` : ""}`);
   }
   console.log("-----------------------");
+  if (belowFloor.length > 0) {
+    console.log(`\n  FAIL: ${belowFloor.length} benchmark fixture(s) below floor — the read-cost budgets they feed would measure an empty set:`);
+    for (const line of belowFloor) console.log(`    ${line}`);
+    process.exitCode = 1;
+  }
   console.log(`  LARGE_ORG  = ${LARGE_ORG}`);
   console.log(`  SMALL_ORG  = ${SMALL_ORG}`);
   if (errors.length > 0) {
@@ -1784,6 +1947,8 @@ async function main() {
   await trySection("seedAttendance", seedAttendance);
   await trySection("seedBuild", seedBuild);
   await trySection("seedExtraTickets", seedExtraTickets);
+  await trySection("seedLeaveMine", seedLeaveMine);
+  await trySection("seedAttendanceMine", seedAttendanceMine);
   await trySection("seedChat", seedChat);
   await trySection("seedNotifications", seedNotifications);
   await trySection("seedKb", seedKb);
