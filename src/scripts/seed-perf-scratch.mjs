@@ -61,6 +61,10 @@ export const LEAVES_SPANNING_TODAY = 12;
  */
 export const UPCOMING_CALENDAR_EVENTS = 60;
 
+export const FIXTURE_LEAVE_REQUESTS_MIN = 25;
+
+export const FIXTURE_ATTENDANCE_MIN = 35;
+
 export const PERF_ORGS = [
   { id: LARGE_ORG, label: "large", weight: 1, name: "Scratch E2E Corp", slug: "scratch-e2e-corp" },
   { id: MID_ORG, label: "mid", weight: 0.1, name: "Scratch Mid Org", slug: "scratch-mid-org" },
@@ -148,6 +152,8 @@ if (process.argv.includes("--self-test")) {
     ["rejects an unparseable url", assertScratchTarget("not a url", []).ok, false],
     ["LEAVES_SPANNING_TODAY exceeds dashboard-leaves-today minRows (5)", LEAVES_SPANNING_TODAY >= 5, true],
     ["UPCOMING_CALENDAR_EVENTS meets the dashboard spec floor (60)", UPCOMING_CALENDAR_EVENTS >= 60, true],
+    ["FIXTURE_LEAVE_REQUESTS_MIN exceeds leave-requests-mine minRows (20)", FIXTURE_LEAVE_REQUESTS_MIN >= 20, true],
+    ["FIXTURE_ATTENDANCE_MIN exceeds attendance-mine minRows (30)", FIXTURE_ATTENDANCE_MIN >= 30, true],
     ["a weight never collapses a tenant to zero rows", scaled(100, 0.0001, 1) >= 1, true],
     ["weights are proportional", scaled(1000, 0.1, 1), 100],
     ["scale is proportional", scaled(1000, 1, 0.25), 250],
@@ -898,6 +904,27 @@ async function seedHr(ctx) {
     },
   );
 
+  await topUp(
+    `${ctx.label} leave_requests fixture membership`,
+    "leave_requests",
+    "org_id = $1 AND user_membership_id = $2",
+    [ctx.org, ctx.membership],
+    FIXTURE_LEAVE_REQUESTS_MIN,
+    async (have, need) => {
+      await sql.unsafe(
+        `INSERT INTO leave_requests (org_id, user_id, user_membership_id, leave_type_id, start_date, end_date, status, created_at, updated_at)
+         SELECT $1, $2, $3::int, $4::int,
+                (CURRENT_DATE - (($5::int + g + 200) || ' days')::interval)::date,
+                (CURRENT_DATE - (($5::int + g + 199) || ' days')::interval)::date,
+                (ARRAY['PENDING','APPROVED','REJECTED'])[1 + (g % 3)]::leave_status,
+                now() - (g || ' minutes')::interval, now()
+         FROM generate_series(1, $6::int) g
+         ON CONFLICT DO NOTHING`,
+        [ctx.org, ctx.userId, ctx.membership, leaveTypeId, have, need],
+      );
+    },
+  );
+
   await topUp(`${ctx.label} leave_balances`, "leave_balances", "org_id = $1", [ctx.org], Math.max(5, scaled(500, ctx.weight, SCALE)), async (have, need) => {
     await sql.unsafe(
       `INSERT INTO leave_balances (org_id, user_id, user_membership_id, leave_type_id, year, balance)
@@ -935,6 +962,26 @@ async function seedHr(ctx) {
       [ctx.org, have, need, ctx.memberCount],
     );
   });
+
+  await topUp(
+    `${ctx.label} attendance fixture membership`,
+    "attendance",
+    "org_id = $1 AND user_membership_id = $2",
+    [ctx.org, ctx.membership],
+    FIXTURE_ATTENDANCE_MIN,
+    async (have, need) => {
+      await sql.unsafe(
+        `INSERT INTO attendance (org_id, user_id, user_membership_id, date, status, created_at)
+         SELECT $1, $2, $3::int,
+                (CURRENT_DATE - (($4::int + g + 180) || ' days')::interval)::date,
+                (ARRAY['PRESENT','ABSENT','LEAVE','HALF_DAY'])[1 + (g % 4)],
+                now() - (g || ' hours')::interval
+         FROM generate_series(1, $5::int) g
+         ON CONFLICT DO NOTHING`,
+        [ctx.org, ctx.userId, ctx.membership, have, need],
+      );
+    },
+  );
 
   const ts = scaled(BASE.timesheets, ctx.weight, SCALE);
   await topUp(`${ctx.label} timesheets`, "timesheets", "org_id = $1", [ctx.org], ts, async (have, need) => {

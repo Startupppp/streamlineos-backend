@@ -571,7 +571,7 @@ export const BUDGETS = [
     id: "leave-requests-mine",
     ceiling: 5_000,
     minRows: 20,
-    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1`,
+    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND user_membership_id = $2`,
     // LeavesService.my filters `user_membership_id` and orders by `id DESC` (cursor pagination on
     // id, not on created_at). This budget filtered `user_id` and ordered by `created_at`, so it
     // measured `idx_leave_requests_user_id` and a sort the endpoint never performs, while
@@ -593,7 +593,7 @@ export const BUDGETS = [
     ceiling: 5_000,
     minRows: 30,
     maxScanRows: 200,
-    rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1`,
+    rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1 AND user_membership_id = $2`,
     // EmployeeAttendanceService.history filters `user_membership_id` and orders by
     // (date DESC, created_at DESC). Same membership migration as the notification budgets.
     params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
@@ -1515,7 +1515,7 @@ export const BUDGETS = [
     id: "dashboard-leaves-today",
     ceiling: 2_000,
     minRows: 5,
-    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1`,
+    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1 AND status = 'APPROVED' AND start_date <= $2::date AND end_date >= $2::date`,
     params: (f) => {
       const today = new Date().toISOString().slice(0, 10);
       return [f.orgId, today];
