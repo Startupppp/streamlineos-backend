@@ -1548,7 +1548,7 @@ async function seedNotificationExtras() {
     for (let i = existingSuppression + 1; i <= 3; i++) {
       await sql.unsafe(
         `INSERT INTO notification_suppression_rules (org_id, user_id, membership_id, scope_type, scope_key, reason, created_at)
-         VALUES ($1, $2, $3, 'GLOBAL', $4, 'opt_out', now())`,
+         VALUES ($1, $2, $3, 'GLOBAL', $4, 'MUTE', now())`,
         [LARGE_ORG, memberRow.user_id, memberRow.id, `seed-scope-${i}`],
       ).catch((e) => warn(`notification_suppression ${i}`, e));
     }

@@ -13,3 +13,7 @@ backups/
 .cell-capacity-history.json
 .cell-cost-history.json
 .load-driver-results.json
+
+.lane-a-rebuild.sh
+.lane-a.env
+.chain-gaps
