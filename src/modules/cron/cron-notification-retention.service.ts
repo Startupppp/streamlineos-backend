@@ -63,7 +63,7 @@ export class CronNotificationRetentionService {
         .where(
           sql`${emailOutbox.id} in (
             select id from ${emailOutbox}
-            where ${emailOutbox.createdAt} < ${bodyCutoff} and ${emailOutbox.html} <> ''
+            where ${emailOutbox.createdAt} < ${bodyCutoff.toISOString()}::timestamptz and ${emailOutbox.html} <> ''
             limit ${limit}
           )`,
         )
@@ -79,7 +79,7 @@ export class CronNotificationRetentionService {
         .where(
           sql`${emailOutbox.id} in (
             select id from ${emailOutbox}
-            where ${emailOutbox.createdAt} < ${recordCutoff}
+            where ${emailOutbox.createdAt} < ${recordCutoff.toISOString()}::timestamptz
             limit ${limit}
           )`,
         )

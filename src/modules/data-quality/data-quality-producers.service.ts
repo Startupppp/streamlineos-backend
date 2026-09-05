@@ -384,7 +384,7 @@ export class DataQualityProducersService {
           // the table rather than all of it.
           lt(businessParties.updatedAt, cutoff),
           lt(businessParties.createdAt, cutoff),
-          sql`COALESCE(${lastActivityAt}, ${businessParties.createdAt}) < ${cutoff}`,
+          sql`COALESCE(${lastActivityAt}, ${businessParties.createdAt}) < ${cutoff.toISOString()}::timestamptz`,
         ),
       )
       .orderBy(asc(businessParties.updatedAt))

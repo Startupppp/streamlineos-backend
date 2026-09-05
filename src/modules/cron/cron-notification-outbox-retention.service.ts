@@ -75,7 +75,7 @@ export class CronNotificationOutboxRetentionService {
             SELECT id FROM notification_outbox
             WHERE org_id = ${orgId}
               AND state IN ('PROCESSED', 'DEAD')
-              AND created_at < (CASE WHEN state = 'DEAD' THEN ${deadCutoff}::timestamptz ELSE ${cutoff}::timestamptz END)
+              AND created_at < (CASE WHEN state = 'DEAD' THEN ${deadCutoff.toISOString()}::timestamptz ELSE ${cutoff.toISOString()}::timestamptz END)
             LIMIT ${BATCH_SIZE}
           )`,
         )

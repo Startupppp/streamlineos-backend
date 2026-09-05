@@ -267,7 +267,7 @@ export class CronHrRetentionService {
           SELECT id FROM hr_people
           WHERE org_id = ${orgId}
             AND deleted_at IS NULL
-            AND created_at < ${cutoff}
+            AND created_at < ${cutoff.toISOString()}::timestamptz
             AND (user_id IS NULL OR user_id NOT IN (
               SELECT subject_user_id FROM hr_legal_holds
               WHERE org_id = ${orgId}
@@ -291,7 +291,7 @@ export class CronHrRetentionService {
           SELECT id FROM hr_cases
           WHERE org_id = ${orgId}
             AND deleted_at IS NULL
-            AND created_at < ${cutoff}
+            AND created_at < ${cutoff.toISOString()}::timestamptz
             AND (subject_employee_id IS NULL OR subject_employee_id NOT IN (
               SELECT subject_user_id FROM hr_legal_holds
               WHERE org_id = ${orgId}
@@ -313,7 +313,7 @@ export class CronHrRetentionService {
         sql`${attendance.id} IN (
           SELECT id FROM attendance
           WHERE org_id = ${orgId}
-            AND created_at < ${cutoff}
+            AND created_at < ${cutoff.toISOString()}::timestamptz
             AND user_id NOT IN (
               SELECT subject_user_id FROM hr_legal_holds
               WHERE org_id = ${orgId}

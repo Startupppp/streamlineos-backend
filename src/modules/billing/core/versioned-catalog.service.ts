@@ -62,7 +62,7 @@ export class VersionedCatalogService {
           lte(billingPriceVersions.effectiveFrom, now),
           or(
             isNull(billingPriceVersions.effectiveUntil),
-            sql`${billingPriceVersions.effectiveUntil} > ${now}`,
+            sql`${billingPriceVersions.effectiveUntil} > ${now.toISOString()}::timestamptz`,
           ),
         ),
       )
@@ -95,7 +95,7 @@ export class VersionedCatalogService {
           lte(billingPriceVersions.effectiveFrom, now),
           or(
             isNull(billingPriceVersions.effectiveUntil),
-            sql`${billingPriceVersions.effectiveUntil} > ${now}`,
+            sql`${billingPriceVersions.effectiveUntil} > ${now.toISOString()}::timestamptz`,
           ),
         ),
       )
@@ -148,7 +148,7 @@ export class VersionedCatalogService {
               lte(orgEntitlementOverrides.effectiveFrom, now),
               or(
                 isNull(orgEntitlementOverrides.effectiveUntil),
-                sql`${orgEntitlementOverrides.effectiveUntil} > ${now}`,
+                sql`${orgEntitlementOverrides.effectiveUntil} > ${now.toISOString()}::timestamptz`,
               ),
             ),
           )
@@ -258,7 +258,7 @@ export class VersionedCatalogService {
               lte(subscriptionItems.effectiveFrom, now),
               or(
                 isNull(subscriptionItems.effectiveUntil),
-                sql`${subscriptionItems.effectiveUntil} > ${now}`,
+                sql`${subscriptionItems.effectiveUntil} > ${now.toISOString()}::timestamptz`,
               ),
             ),
           )
@@ -282,7 +282,7 @@ export class VersionedCatalogService {
           lte(billingPlanEntitlements.effectiveFrom, now),
           or(
             isNull(billingPlanEntitlements.effectiveUntil),
-            sql`${billingPlanEntitlements.effectiveUntil} > ${now}`,
+            sql`${billingPlanEntitlements.effectiveUntil} > ${now.toISOString()}::timestamptz`,
           ),
         ),
       )

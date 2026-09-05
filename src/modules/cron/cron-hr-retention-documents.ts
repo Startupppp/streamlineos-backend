@@ -49,7 +49,7 @@ function selectGenericDocuments(
     .select({ id: documents.id, fileUrl: documents.fileUrl })
     .from(documents)
     .where(sql`${documents.orgId} = ${orgId}
-        AND ${documents.createdAt} < ${cutoff}
+        AND ${documents.createdAt} < ${cutoff.toISOString()}::timestamptz
         AND ${documents.fileUrl} <> 'retention://redacted'
         AND NOT EXISTS (
           SELECT 1 FROM hr_legal_hold_items hli
@@ -102,7 +102,7 @@ function selectOnboardingDocuments(
     .select({ id: onboardingDocuments.id, fileUrl: onboardingDocuments.fileUrl })
     .from(onboardingDocuments)
     .where(sql`${onboardingDocuments.orgId} = ${orgId}
-        AND ${onboardingDocuments.createdAt} < ${cutoff}
+        AND ${onboardingDocuments.createdAt} < ${cutoff.toISOString()}::timestamptz
         AND ${onboardingDocuments.fileUrl} <> 'retention://redacted'
         AND NOT EXISTS (
           SELECT 1 FROM hr_legal_hold_items hli
