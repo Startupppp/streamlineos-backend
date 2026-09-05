@@ -27,6 +27,7 @@ import { clients, contacts } from "../../db/schema/crm/contacts";
 import { leads } from "../../db/schema/crm/leads";
 import { PartyDivergenceService } from "./party-divergence.service";
 import { diffLegacyMirror, LEAD_MIRROR } from "./party-legacy-mirror";
+import { MAPPED_LEGACY_KINDS } from "./party-legacy-seam";
 import { updatePartyWithMirror } from "./party-legacy-writer";
 import {
   createMirroredLead,
@@ -37,6 +38,7 @@ import { createMirroredClient } from "./party-legacy-clients";
 import { createMirroredContact } from "./party-legacy-contacts";
 
 const ENABLED = process.env.CRM_DB_TESTS === "1";
+if (ENABLED) jest.setTimeout(60_000);
 const describeDb = ENABLED ? describe : describe.skip;
 
 /** Thrown to roll the transaction back once the assertions have run. */
@@ -241,7 +243,9 @@ describeDb("party-legacy-writer — real database", () => {
       expect(contact.twitterUrl).toBe("https://x.test/babbage");
 
       const report = await new PartyDivergenceService(tx).report(orgId);
-      expect(report.divergentCount).toEqual({ LEAD: 0, CLIENT: 0, CONTACT: 0 });
+      expect(report.divergentCount).toEqual(
+        Object.fromEntries(MAPPED_LEGACY_KINDS.map((kind) => [kind, 0])),
+      );
     });
   });
 

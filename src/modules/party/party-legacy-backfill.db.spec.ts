@@ -105,6 +105,26 @@ describeDb("legacy backfill — real database", () => {
     try {
       await sql.begin(async (tx) => {
         await tx.unsafe("SET LOCAL statement_timeout = '60s'").simple();
+        /**
+         * 0262 is idempotent apart from its two bare `ADD CONSTRAINT`s, so once
+         * it has been applied for real the replay below fails with "constraint
+         * already exists" and the file only passes on a database where the
+         * migration is still pending. Dropping them first makes it run
+         * identically either side of that, the same reason party-identifiers
+         * drops `party_identifiers`. Both drops are inside the rolled-back
+         * transaction, so the real schema is untouched.
+         */
+        await tx
+          .unsafe(
+            'ALTER TABLE "business_parties" DROP CONSTRAINT IF EXISTS "fk_business_parties_employer"',
+          )
+          .simple();
+        await tx
+          .unsafe(
+            'ALTER TABLE "business_parties" DROP CONSTRAINT IF EXISTS "chk_business_parties_employer_not_self"',
+          )
+          .simple();
+        await tx.unsafe('DROP TABLE IF EXISTS "crm_org_party_map" CASCADE').simple();
         await tx.unsafe(expand).simple();
         await tx.unsafe(companyExpand).simple();
         await tx.unsafe(companyMap).simple();

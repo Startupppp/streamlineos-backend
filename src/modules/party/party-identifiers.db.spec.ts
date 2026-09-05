@@ -117,7 +117,7 @@ describeDb("party identifiers — real database", () => {
           const column =
             format.kind === "email" ? "email" : format.kind === "phone" ? "phone" : "whatsapp_phone";
           await tx.unsafe(
-            `INSERT INTO business_parties (organization_id, name, ${column}) VALUES ($1, $2, $3)`,
+            `INSERT INTO business_parties (party_id, organization_id, name, ${column}) VALUES (gen_random_uuid()::text, $1, $2, $3)`,
             [orgId, `fixture ${marker} ${String(index)}`, format.written],
           );
         }
@@ -125,14 +125,14 @@ describeDb("party identifiers — real database", () => {
         // A soft-deleted record must not hold a claim: the deletion would
         // otherwise poison that address for everybody, permanently.
         await tx`
-          INSERT INTO business_parties (organization_id, name, email, deleted_at)
-          VALUES (${orgId}, ${`deleted ${marker}`}, ${`deleted-${marker}@example.test`}, now())`;
+          INSERT INTO business_parties (party_id, organization_id, name, email, deleted_at)
+          VALUES (gen_random_uuid()::text, ${orgId}, ${`deleted ${marker}`}, ${`deleted-${marker}@example.test`}, now())`;
 
         // Two records for one line. Exactly one of them may hold the claim.
         await tx`
-          INSERT INTO business_parties (organization_id, name, phone)
-          VALUES (${orgId}, ${`contested a ${marker}`}, '+1 (212) 555-0000'),
-                 (${orgId}, ${`contested b ${marker}`}, '+12125550000')`;
+          INSERT INTO business_parties (party_id, organization_id, name, phone)
+          VALUES (gen_random_uuid()::text, ${orgId}, ${`contested a ${marker}`}, '+1 (212) 555-0000'),
+                 (gen_random_uuid()::text, ${orgId}, ${`contested b ${marker}`}, '+12125550000')`;
 
         await tx.unsafe(backfill).simple();
 
