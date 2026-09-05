@@ -43,12 +43,14 @@ import {
 } from "./permissions";
 import type {
   AssignRolePermissionInput,
+  RevokeRolePermissionInput,
+} from "./dto/rbac.schemas";
+import type {
   DiscoveryGrantableResult,
   DiscoveryMemberEntry,
   DiscoveryPermissionEntry,
   DiscoveryTemplateEntry,
-  RevokeRolePermissionInput,
-} from "./dto/rbac.schemas";
+} from "./dto/rbac-response.schemas";
 import { AccessService } from "../access/access.service";
 import { ROLE_TEMPLATES } from "./role-templates.constants";
 

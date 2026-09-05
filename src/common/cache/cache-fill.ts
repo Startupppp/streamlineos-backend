@@ -95,6 +95,10 @@ export class CacheFiller {
 
   constructor(private readonly timedRedis: TimedRedisOp) {}
 
+  leaseKey(key: string): string {
+    return `cache:fill-lease:${key}`;
+  }
+
   /** Entries served from the degraded-path memo since boot. Non-zero means Redis was unreachable. */
   get outageMemoServedCount(): number {
     return this.outageMemoServed;
@@ -239,7 +243,7 @@ export class CacheFiller {
       return this.degraded(key, fetcher);
     }
 
-    const leaseKey = `cache:fill-lease:${key}`;
+    const leaseKey = this.leaseKey(key);
     const leaseToken = randomUUID();
     let acquired: boolean;
     try {
@@ -264,8 +268,14 @@ export class CacheFiller {
        * poll a key that will never satisfy them.
        */
       if (data === null) return data;
+      const serialized = JSON.stringify(data);
+      if (serialized === undefined) return data;
       try {
-        await this.timedRedis(() => redis.set(key, data, { ex: ttl }));
+        await this.timedRedis(() => redis.eval<[string, string], number>(
+          'if redis.call("get", KEYS[1]) == ARGV[1] then redis.call("set", KEYS[2], ARGV[2], "EX", ARGV[3]); return 1 else return 0 end',
+          [leaseKey, key],
+          [leaseToken, serialized, String(ttl)],
+        ));
       } catch {
         return data;
       }

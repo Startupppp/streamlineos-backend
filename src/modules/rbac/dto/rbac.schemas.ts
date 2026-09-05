@@ -69,31 +69,3 @@ export type SetRolePermissionsInput = z.infer<typeof setRolePermissionsSchema>;
 export type RoleMemberInput = z.infer<typeof roleMemberSchema>;
 export type SimulationCandidatesQuery = z.infer<typeof simulationCandidatesQuerySchema>;
 export type ListRolesQuery = z.infer<typeof listRolesQuerySchema>;
-
-export interface DiscoveryPermissionEntry {
-  name: string;
-  resource: string;
-  action: string;
-  description: string;
-  moduleKey: string | null;
-  scopable: boolean;
-}
-
-export interface DiscoveryGrantableResult {
-  grantableKeys: string[];
-  assignableRanks: number[];
-  allowedModules: string[] | null;
-}
-
-export interface DiscoveryTemplateEntry {
-  id: string;
-  name: string;
-  slug: string;
-  permissionCount: number;
-}
-
-export interface DiscoveryMemberEntry {
-  userId: string;
-  name: string | null;
-  email: string;
-}

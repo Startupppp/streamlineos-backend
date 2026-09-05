@@ -16,8 +16,20 @@ function buildRedis(values = new Map<string, unknown>()): Redis {
       values.set(key, next);
       return next;
     }),
-    eval: jest.fn(async (_script: string, keys: string[], args: string[]) => {
+    del: jest.fn(async (...keys: string[]) => {
+      let deleted = 0;
+      for (const key of keys) {
+        if (!values.delete(key)) continue;
+        deleted += 1;
+      }
+      return deleted;
+    }),
+    eval: jest.fn(async (script: string, keys: string[], args: string[]) => {
       if (values.get(keys[0]) !== args[0]) return 0;
+      if (script.includes('redis.call("set"') && keys[1] !== undefined) {
+        values.set(keys[1], JSON.parse(args[1] ?? "null"));
+        return 1;
+      }
       values.delete(keys[0]);
       return 1;
     }),
@@ -55,8 +67,12 @@ describe("CacheService", () => {
         values.set(key, value);
         return "OK";
       }),
-      eval: jest.fn(async (_script: string, keys: string[], args: string[]) => {
+      eval: jest.fn(async (script: string, keys: string[], args: string[]) => {
         if (values.get(keys[0]) !== args[0]) return 0;
+        if (script.includes('redis.call("set"') && keys[1] !== undefined) {
+          values.set(keys[1], JSON.parse(args[1] ?? "null"));
+          return 1;
+        }
         values.delete(keys[0]);
         return 1;
       }),
@@ -192,7 +208,10 @@ describe("tenant-aware wrappers", () => {
         return "OK";
       }),
       incr: jest.fn(async () => 1),
-      eval: jest.fn(async () => 1),
+      eval: jest.fn(async (_script: string, keys: string[], args: string[]) => {
+        if (keys.length === 2 && args.length === 3) captured.push(Number(args[2]));
+        return 1;
+      }),
     } as unknown as Redis;
 
     const cache = new CacheService(redis);
@@ -259,6 +278,28 @@ describe("tenant-aware wrappers", () => {
 
     expect(del).toHaveBeenCalledTimes(2);
     expect(cache.droppedInvalidationCount).toBe(0);
+  });
+
+  it("does not restore a stale value when invalidation lands during a fill", async () => {
+    const values = new Map<string, unknown>();
+    let release = (_value: { revision: number }): void => {
+      throw new Error("fill did not start");
+    };
+    const redis = buildRedis(values);
+    const cache = new CacheService(redis);
+    const pending = cache.cached(
+      "race-key",
+      () => new Promise<{ revision: number }>((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    await cache.invalidate("race-key");
+    release({ revision: 1 });
+
+    await expect(pending).resolves.toEqual({ revision: 1 });
+    expect(values.has("race-key")).toBe(false);
   });
 });
 

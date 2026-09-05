@@ -23,8 +23,12 @@ import {
   type UpdateHrAnnouncementInput,
 } from "./dto/announcements.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  announcementListResponseSchema,
+  announcementResponseSchema,
+} from "./dto/announcement-response.schema";
 
 const announcementIdParams = z.object({ announcementId: z.coerce.number().int().positive() }).strict();
 
@@ -35,6 +39,7 @@ export class AnnouncementsController {
 
   @Get()
   @Universal()
+  @ResponseSchema(announcementListResponseSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.service.list(u.orgId);
   }
@@ -42,6 +47,7 @@ export class AnnouncementsController {
   @Get("all")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
+  @ResponseSchema(announcementListResponseSchema)
   listAll(@CurrentUser() u: CurrentUserContext) {
     return this.service.listAll(u.orgId);
   }
@@ -50,6 +56,7 @@ export class AnnouncementsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
   @Validate({ body: createHrAnnouncementSchema })
+  @ResponseSchema(announcementResponseSchema)
   create(
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateHrAnnouncementInput,
@@ -66,6 +73,7 @@ export class AnnouncementsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
   @Validate({ params: announcementIdParams, body: updateHrAnnouncementSchema })
+  @ResponseSchema(announcementResponseSchema)
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,

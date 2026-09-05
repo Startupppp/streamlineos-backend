@@ -166,7 +166,9 @@ export class CacheService {
     this.fill.drop(key);
     const redis = this.redis;
     if (!redis) return;
-    await this.invalidateWithRetry("invalidate", key, () => redis.del(key));
+    await this.invalidateWithRetry("invalidate", key, () =>
+      redis.del(key, this.fill.leaseKey(key)),
+    );
   }
 
   /**
@@ -194,7 +196,7 @@ export class CacheService {
     for (const key of keys) this.fill.drop(key);
     const redis = this.redis;
     if (!redis) return;
-    const unique = [...new Set(keys)];
+    const unique = [...new Set(keys.flatMap((key) => [key, this.fill.leaseKey(key)]))];
     for (let i = 0; i < unique.length; i += CacheService.INVALIDATE_KEY_CHUNK) {
       const chunk = unique.slice(i, i + CacheService.INVALIDATE_KEY_CHUNK);
       const [head, ...rest] = chunk;
@@ -292,6 +294,8 @@ export class CacheService {
     const key = await this.region.scopedKey(orgId, localKey);
     this.fill.drop(key);
     if (!redis) return;
-    await this.invalidateWithRetry("invalidateForOrg", key, () => redis.del(key));
+    await this.invalidateWithRetry("invalidateForOrg", key, () =>
+      redis.del(key, this.fill.leaseKey(key)),
+    );
   }
 }

@@ -24,6 +24,16 @@ import {
   type AssignRolePermissionInput,
   type RevokeRolePermissionInput,
 } from "./dto/rbac.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  accessSnapshotResponseSchema,
+  discoveryGrantableResponseSchema,
+  discoveryMembersResponseSchema,
+  discoveryPermissionsResponseSchema,
+  discoveryTemplatesResponseSchema,
+  permissionCatalogResponseSchema,
+  rolePermissionMutationResponseSchema,
+} from "./dto/rbac-response.schemas";
 
 @Controller("rbac")
 @UseGuards(JwtAuthGuard)
@@ -36,6 +46,7 @@ export class RbacController {
   @Get("permissions")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @ResponseSchema(permissionCatalogResponseSchema)
   getPermissions() {
     return this.rbac.getAllPermissions();
   }
@@ -46,6 +57,7 @@ export class RbacController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   @Validate({ body: assignRolePermissionSchema })
+  @ResponseSchema(rolePermissionMutationResponseSchema)
   assignRolePermission(
     @Body() body: AssignRolePermissionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -58,6 +70,7 @@ export class RbacController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   @Validate({ body: revokeRolePermissionSchema })
+  @ResponseSchema(rolePermissionMutationResponseSchema)
   revokeRolePermission(
     @Body() body: RevokeRolePermissionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +80,7 @@ export class RbacController {
 
   @Get("access-snapshot")
   @Universal()
+  @ResponseSchema(accessSnapshotResponseSchema)
   getAccessSnapshot(@CurrentUser() u: CurrentUserContext) {
     return this.access.getAccessSnapshot(u.orgId, u.userId, u);
   }
@@ -75,6 +89,7 @@ export class RbacController {
   @AuthorizedInService(
     "RbacService.getDiscoveryPermissions narrows the catalog to the caller's allowedModules",
   )
+  @ResponseSchema(discoveryPermissionsResponseSchema)
   getDiscoveryPermissions(@CurrentUser() u: CurrentUserContext) {
     return this.rbac.getDiscoveryPermissions(u);
   }
@@ -83,6 +98,7 @@ export class RbacController {
   @AuthorizedInService(
     "RbacService.getDiscoveryGrantable narrows to what the caller themselves may delegate",
   )
+  @ResponseSchema(discoveryGrantableResponseSchema)
   getDiscoveryGrantable(@CurrentUser() u: CurrentUserContext) {
     return this.rbac.getDiscoveryGrantable(u);
   }
@@ -90,6 +106,7 @@ export class RbacController {
   @Get("discovery/templates")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @ResponseSchema(discoveryTemplatesResponseSchema)
   getDiscoveryTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.rbac.getDiscoveryTemplates(u);
   }
@@ -97,6 +114,7 @@ export class RbacController {
   @Get("discovery/members")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @ResponseSchema(discoveryMembersResponseSchema)
   getDiscoveryMembers(@CurrentUser() u: CurrentUserContext) {
     return this.rbac.getDiscoveryMembers(u.orgId);
   }

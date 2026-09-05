@@ -40,7 +40,11 @@ import {
 } from "./dto/rbac.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  roleTemplateCatalogResponseSchema,
+  seededRolesResponseSchema,
+} from "./dto/rbac-response.schemas";
 import { z } from "zod";
 
 const targetUserIdParams = z.object({ targetUserId: z.string().min(1) }).strict();
@@ -134,6 +138,7 @@ export class RolesController {
   @Idempotent("rbac.roles.seedDefaults")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @ResponseSchema(seededRolesResponseSchema)
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
     return this.seed.seedDefaultRoles(u.orgId);
   }
@@ -154,6 +159,7 @@ export class RolesController {
   // ROLE_TEMPLATES is a product constant, no actor and no tenant data; materializing one is the gated action.
   @Get("templates")
   @Universal()
+  @ResponseSchema(roleTemplateCatalogResponseSchema)
   templates() {
     return this.seed.listTemplates();
   }
