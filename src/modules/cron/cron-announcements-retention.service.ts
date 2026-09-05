@@ -88,7 +88,7 @@ export class CronAnnouncementsRetentionService {
             SELECT id FROM announcements
             WHERE org_id = ${orgId}
               AND expires_at IS NOT NULL
-              AND expires_at < ${cutoff}
+              AND expires_at < ${cutoff.toISOString()}::timestamptz
               AND author_id NOT IN (
                 SELECT subject_user_id FROM hr_legal_holds
                 WHERE org_id = ${orgId}
@@ -116,7 +116,7 @@ export class CronAnnouncementsRetentionService {
           sql`${announcements.id} IN (
             SELECT id FROM announcements
             WHERE org_id = ${orgId}
-              AND created_at < ${cutoff}
+              AND created_at < ${cutoff.toISOString()}::timestamptz
               AND author_id NOT IN (
                 SELECT subject_user_id FROM hr_legal_holds
                 WHERE org_id = ${orgId}

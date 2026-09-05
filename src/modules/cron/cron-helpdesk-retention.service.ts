@@ -73,7 +73,7 @@ export class CronHelpdeskRetentionService {
             WHERE org_id = ${orgId}
               AND status = 'DONE'
               AND resolved_at IS NOT NULL
-              AND resolved_at < ${cutoff}
+              AND resolved_at < ${cutoff.toISOString()}::timestamptz
               AND (user_id IS NULL OR user_id NOT IN (
                 SELECT subject_user_id FROM hr_legal_holds
                 WHERE org_id = ${orgId}

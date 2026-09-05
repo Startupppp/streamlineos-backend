@@ -93,7 +93,7 @@ export class CronMailRetentionService {
           sql`${mailMessageMetadata.id} IN (
             SELECT id FROM mail_message_metadata
             WHERE org_id = ${orgId}
-              AND synced_at < ${cutoff}
+              AND synced_at < ${cutoff.toISOString()}::timestamptz
               AND (user_membership_id IS NULL OR user_membership_id NOT IN (
                 SELECT m.id FROM organization_members m
                 WHERE m.org_id = ${orgId}
