@@ -44,7 +44,11 @@ export class HrPolicyAiService {
     const policies = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const rows = await tx.execute(sql`
+        const rows = await tx.execute<{
+          id: number;
+          policy_type: string;
+          name: string | null;
+        }>(sql`
           SELECT id, policy_type, name
           FROM hr_policies
           WHERE org_id = ${orgId}
@@ -53,7 +57,7 @@ export class HrPolicyAiService {
           ORDER BY priority DESC, created_at DESC
           LIMIT 20
         `);
-        return (rows as Array<Record<string, unknown>>).map((p) => ({
+        return rows.map((p) => ({
           id: Number(p.id),
           policyType: String(p.policy_type),
           scopeType: null as string | null,
@@ -106,7 +110,11 @@ export class HrPolicyAiService {
     const policies = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const rows = await tx.execute(sql`
+        const rows = await tx.execute<{
+          id: number;
+          policy_type: string;
+          name: string | null;
+        }>(sql`
           SELECT id, policy_type, name
           FROM hr_policies
           WHERE org_id = ${orgId}
@@ -115,7 +123,7 @@ export class HrPolicyAiService {
           ORDER BY priority DESC, created_at DESC
           LIMIT 20
         `);
-        return (rows as Array<Record<string, unknown>>).map((p) => ({
+        return rows.map((p) => ({
           id: Number(p.id),
           policyType: String(p.policy_type),
           scopeType: null as string | null,

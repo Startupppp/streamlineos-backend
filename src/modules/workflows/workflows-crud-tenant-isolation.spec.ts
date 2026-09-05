@@ -112,33 +112,66 @@ describe("WorkflowsCrudService — cross-tenant isolation", () => {
   });
 
   describe("deleteWorkflow", () => {
-    it("throws NotFoundException when workflow belongs to a different org (cross-tenant isolation)", async () => {
-      const findFirst = jest.fn().mockResolvedValue(null);
-      const db = {
-        query: { workflows: { findFirst } },
-        delete: jest.fn().mockReturnThis(),
-        where: jest.fn().mockResolvedValue([]),
-        insert: jest.fn().mockReturnThis(),
-        values: jest.fn().mockResolvedValue(undefined),
-      } as unknown as Db;
-
-      const svc = new WorkflowsCrudService(db);
-      await expect(svc.deleteWorkflow(ATTACKER_ORG, USER_ID, WORKFLOW_ID)).rejects.toThrow(NotFoundException);
-    });
-
-    it("deletes the workflow for the owning org (control)", async () => {
-      const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
+    function makeDeleteDb(workflowRow: { id: string } | null) {
+      const findFirst = jest.fn().mockResolvedValue(workflowRow);
+      const updateWhere = jest.fn().mockResolvedValue([]);
       const deleteWhere = jest.fn().mockResolvedValue([]);
       const insertValues = jest.fn().mockResolvedValue(undefined);
-      const db = {
-        query: { workflows: { findFirst } },
+      const tx = {
+        update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
         delete: jest.fn().mockReturnValue({ where: deleteWhere }),
         insert: jest.fn().mockReturnValue({ values: insertValues }),
+      };
+      const db = {
+        query: { workflows: { findFirst } },
+        transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx)),
+      } as unknown as Db;
+      return { db, tx, updateWhere, deleteWhere, insertValues };
+    }
+
+    it("throws NotFoundException when workflow belongs to a different org (cross-tenant isolation)", async () => {
+      const { db } = makeDeleteDb(null);
+      const svc = new WorkflowsCrudService(db);
+      await expect(svc.deleteWorkflow(ATTACKER_ORG, USER_ID, WORKFLOW_ID)).rejects.toThrow(NotFoundException);
+      expect((db as unknown as { transaction: jest.Mock }).transaction).not.toHaveBeenCalled();
+    });
+
+    it("detaches audit logs then deletes the workflow in one transaction (control)", async () => {
+      const { db, updateWhere, deleteWhere, insertValues } = makeDeleteDb({ id: WORKFLOW_ID });
+      const svc = new WorkflowsCrudService(db);
+      await expect(svc.deleteWorkflow(OWNER_ORG, USER_ID, WORKFLOW_ID)).resolves.not.toThrow();
+      expect(updateWhere).toHaveBeenCalledTimes(1);
+      expect(deleteWhere).toHaveBeenCalledTimes(1);
+      expect(insertValues).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "deleted", orgId: OWNER_ORG }),
+      );
+    });
+
+    it("sets workflowId=null on existing audit logs (bites if reverted: delete would fail 23503)", async () => {
+      const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
+      const callOrder: string[] = [];
+      const updateWhere = jest.fn().mockImplementation(() => { callOrder.push("update"); return Promise.resolve([]); });
+      const deleteWhere = jest.fn().mockImplementation(() => { callOrder.push("delete"); return Promise.resolve([]); });
+      const capturedPatches: Record<string, unknown>[] = [];
+      const tx = {
+        update: jest.fn().mockReturnValue({
+          set: jest.fn().mockImplementation((patch: Record<string, unknown>) => {
+            capturedPatches.push(patch);
+            return { where: updateWhere };
+          }),
+        }),
+        delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+      };
+      const db = {
+        query: { workflows: { findFirst } },
+        transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx)),
       } as unknown as Db;
 
       const svc = new WorkflowsCrudService(db);
-      await expect(svc.deleteWorkflow(OWNER_ORG, USER_ID, WORKFLOW_ID)).resolves.not.toThrow();
-      expect(deleteWhere).toHaveBeenCalledTimes(1);
+      await svc.deleteWorkflow(OWNER_ORG, USER_ID, WORKFLOW_ID);
+      expect(capturedPatches[0]).toMatchObject({ workflowId: null });
+      expect(callOrder).toEqual(["update", "delete"]);
     });
   });
 

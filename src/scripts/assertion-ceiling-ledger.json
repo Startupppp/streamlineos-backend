@@ -213,10 +213,6 @@
       "as": 0,
       "nonNull": 2
     },
-    "src/modules/ai/core/services/hr-helpdesk-ai.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/ai/core/services/hr-policy-ai.service.ts": {
       "as": 2,
       "nonNull": 0
@@ -1339,10 +1335,6 @@
     },
     "src/modules/notifications/notification-routing.service.ts": {
       "as": 2,
-      "nonNull": 0
-    },
-    "src/modules/notifications/notifications-read.service.ts": {
-      "as": 1,
       "nonNull": 0
     },
     "src/modules/notifications/providers/notification-email.provider.ts": {

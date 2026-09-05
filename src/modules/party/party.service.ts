@@ -368,7 +368,7 @@ export class PartyService {
     partyContactId: string,
     input: UpdateContactInput,
   ) {
-    await this.loadContact(organizationId, partyContactId);
+    const existing = await this.loadContact(organizationId, partyContactId);
 
     const patch: ContactPatch = {};
     if (input.firstName !== undefined) patch.firstName = input.firstName;
@@ -377,6 +377,8 @@ export class PartyService {
     if (input.phone !== undefined) patch.phone = input.phone ?? null;
     if (input.title !== undefined) patch.title = input.title ?? null;
     if (input.isPrimary !== undefined) patch.isPrimary = input.isPrimary;
+
+    if (Object.keys(patch).length === 0) return existing;
 
     const [updated] = await this.db
       .update(partyContacts)

@@ -90,7 +90,7 @@ export function parseTraceparent(header: string | undefined | null): SpanContext
   const match = TRACEPARENT.exec(header.trim().toLowerCase());
   if (!match) return null;
 
-  const [, traceId, spanId, flags] = match as unknown as [string, string, string, string];
+  const [, traceId, spanId, flags] = match;
   if (/^0+$/.test(traceId) || /^0+$/.test(spanId)) return null;
 
   return { traceId, spanId, sampled: (Number.parseInt(flags, 16) & 1) === 1 };

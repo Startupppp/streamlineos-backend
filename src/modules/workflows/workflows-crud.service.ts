@@ -159,15 +159,25 @@ export class WorkflowsCrudService {
     });
     if (!existing) throw new NotFoundException("Workflow not found");
 
-    await this.db
-      .delete(workflows)
-      .where(and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)));
-
-    await this.db.insert(workflowAuditLogs).values({
-      orgId,
-      workflowId,
-      actorId: userId,
-      event: "deleted",
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(workflowAuditLogs)
+        .set({ workflowId: null })
+        .where(
+          and(
+            eq(workflowAuditLogs.workflowId, workflowId),
+            eq(workflowAuditLogs.orgId, orgId),
+          ),
+        );
+      await tx
+        .delete(workflows)
+        .where(and(eq(workflows.id, workflowId), eq(workflows.orgId, orgId)));
+      await tx.insert(workflowAuditLogs).values({
+        orgId,
+        actorId: userId,
+        event: "deleted",
+        metadata: { deletedWorkflowId: workflowId },
+      });
     });
   }
 

@@ -146,10 +146,6 @@ export class UserProfileService {
     data: UpdatePreferencesInput,
   ) {
     await this.assertMember(orgId, userId);
-    const existing = await this.db.query.userPreferences.findFirst({
-      columns: { userId: true },
-      where: eq(userPreferences.userId, userId),
-    });
 
     const updateData: Record<string, unknown> = {};
     if (data.theme !== undefined) updateData.theme = data.theme;
@@ -165,6 +161,13 @@ export class UserProfileService {
       updateData.notificationPreferences = data.notificationPreferences;
     if (data.dashboardPreferences !== undefined)
       updateData.dashboardPreferences = data.dashboardPreferences;
+
+    if (Object.keys(updateData).length === 0) return { success: true };
+
+    const existing = await this.db.query.userPreferences.findFirst({
+      columns: { userId: true },
+      where: eq(userPreferences.userId, userId),
+    });
 
     if (existing) {
       await this.db

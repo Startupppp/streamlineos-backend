@@ -55,6 +55,13 @@ function sha256(content) {
 }
 
 function splitStatements(content) {
+  // A temporary table declared ON COMMIT DROP is a migration-local workspace.
+  // Splitting such a file into separate autocommit queries drops the table after
+  // its CREATE statement and makes the next statement fail. Send the complete
+  // file as one PostgreSQL simple-query unit; PostgreSQL executes its statements
+  // in one implicit transaction, while `unsafe` still avoids prepared statements.
+  if (/\bCREATE\s+TEMP(?:ORARY)?\s+TABLE\b/i.test(content) && /\bON\s+COMMIT\s+DROP\b/i.test(content))
+    return [content.replaceAll("--> statement-breakpoint", "")];
   if (content.includes("--> statement-breakpoint"))
     return content.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean);
   if (content.includes("CONCURRENTLY") && !content.includes("$$"))
@@ -130,13 +137,16 @@ async function main() {
     await ensureInfrastructure(sql);
 
     let entryIndex = 0;
+    // The ledger changes only through this process while a cold bootstrap runs.
+    // Reading all applied hashes once avoids one remote round trip per migration
+    // (hundreds of queries on resume) without weakening correctness.
+    const applied = await readApplied(sql);
 
     while (entryIndex < journal.entries.length) {
       const entry = journal.entries[entryIndex];
       const content = readFileSync(resolve(migrationsDir, `${entry.tag}.sql`), "utf8");
       const hash = sha256(content);
 
-      let applied = await readApplied(sql);
       if (applied.has(hash)) {
         skipped++;
         entryIndex++;
@@ -193,6 +203,7 @@ async function main() {
           await sql`
             INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
             VALUES (${hash}, ${entry.when})`;
+          applied.add(hash);
 
           migrationCompleted = true;
         } catch (connError) {
@@ -261,7 +272,23 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error("COLD CHAIN FAILED:", e instanceof Error ? e.message : e);
-  process.exitCode = 1;
-});
+if (process.argv.includes("--self-test")) {
+  const ordinary = "SELECT 1;\n--> statement-breakpoint\nSELECT 2;";
+  const temporary =
+    "CREATE TEMP TABLE work(id int) ON COMMIT DROP;\n" +
+    "--> statement-breakpoint\nINSERT INTO work VALUES (1);";
+  const cases = [
+    ["ordinary migration remains split", splitStatements(ordinary).length === 2],
+    ["ON COMMIT DROP migration remains one unit", splitStatements(temporary).length === 1],
+    ["transaction unit removes runner marker", !splitStatements(temporary)[0].includes("statement-breakpoint")],
+  ];
+  const failures = cases.filter(([, passed]) => !passed);
+  for (const [name, passed] of cases) console.log(`  ${passed ? "PASS" : "FAIL"}  ${name}`);
+  console.log(`SELF-TEST ${failures.length === 0 ? "PASSED" : "FAILED"}: ${cases.length - failures.length}/${cases.length}`);
+  process.exitCode = failures.length === 0 ? 0 : 1;
+} else {
+  main().catch((e) => {
+    console.error("COLD CHAIN FAILED:", e instanceof Error ? e.message : e);
+    process.exitCode = 1;
+  });
+}

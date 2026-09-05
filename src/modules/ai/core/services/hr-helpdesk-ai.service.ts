@@ -85,7 +85,11 @@ export class HrHelpdeskAiService {
     const ctx = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const empRows = await tx.execute(sql`
+        const empRows = await tx.execute<{
+          first_name: string | null;
+          last_name: string | null;
+          designation: string | null;
+        }>(sql`
           SELECT p.first_name, p.last_name, e.designation
           FROM hr_employments e
           JOIN hr_people p ON p.id = e.person_id
@@ -96,7 +100,7 @@ export class HrHelpdeskAiService {
         `);
 
         if (empRows.length > 0) {
-          const emp = empRows[0] as Record<string, unknown>;
+          const emp = empRows[0];
           return {
             employeeName: `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim(),
             currentTitle: emp.designation ? String(emp.designation) : null,
@@ -155,7 +159,11 @@ export class HrHelpdeskAiService {
     const ctx = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        const empRows = await tx.execute(sql`
+        const empRows = await tx.execute<{
+          first_name: string | null;
+          last_name: string | null;
+          designation: string | null;
+        }>(sql`
           SELECT p.first_name, p.last_name, e.designation
           FROM hr_employments e
           JOIN hr_people p ON p.id = e.person_id
@@ -166,7 +174,7 @@ export class HrHelpdeskAiService {
         `);
 
         if (empRows.length > 0) {
-          const emp = empRows[0] as Record<string, unknown>;
+          const emp = empRows[0];
           return {
             employeeName: `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.trim(),
             currentTitle: emp.designation ? String(emp.designation) : null,
