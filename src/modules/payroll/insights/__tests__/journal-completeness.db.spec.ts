@@ -198,28 +198,50 @@ describeDb("payroll journal completeness — real database", () => {
           profileIds.push(profileId);
         }
 
-        for (let i = 0; i < EMPLOYEES; i++) {
-          const profileId = profileIds[i % profileIds.length];
-          const employeeRows = await tx.execute<{ id: number }>(sql`
-            INSERT INTO payroll_run_employees
-              (org_id, run_id, user_id, profile_id, net, gross, status)
-            VALUES (${orgId}, ${runId}, ${`jc-${tag}-${i}`}, ${profileId},
-                    ${NET_PER_EMPLOYEE}, ${"87000.00"}, 'PENDING')
-            RETURNING id
-          `);
-          const runEmployeeId = Number(employeeRows[0]?.id);
-          if (!Number.isFinite(runEmployeeId)) throw new Error("failed to insert run employee fixture");
+        /**
+         * Two set-based statements, not 1,400 round trips.
+         *
+         * The row-at-a-time version below this comment used to insert each of the 100 run
+         * employees and each of their 13 line items with its own `tx.execute`. That is 1,400
+         * sequential round trips per test and 4,200 across the suite; against a Neon branch in
+         * another region at roughly 450 ms each, all three tests hit the 180 s cap having
+         * planted nothing. Nothing about the assertions was wrong — the fixture simply could
+         * not finish, which is a property of where the database is rather than of the journal.
+         *
+         * `generate_series` for the employees and a CROSS JOIN against the component table for
+         * their line items produce exactly the same rows: the profile assignment is still
+         * `profileIds[i % n]`, expressed as an array subscript, and the count is still checked
+         * against EXPECTED_LINE_ITEMS below rather than assumed.
+         */
+        const profileArray = sql.join(
+          profileIds.map((id) => sql`${id}`),
+          sql`, `,
+        );
+        await tx.execute(sql`
+          INSERT INTO payroll_run_employees
+            (org_id, run_id, user_id, profile_id, net, gross, status)
+          SELECT ${orgId}, ${runId}, ${`jc-${tag}-`} || g,
+                 (ARRAY[${profileArray}]::int[])[(g % ${profileIds.length}) + 1],
+                 ${NET_PER_EMPLOYEE}::numeric, ${"87000.00"}::numeric, 'PENDING'
+            FROM generate_series(0, ${EMPLOYEES - 1}) AS g
+        `);
 
-          for (const component of COMPONENTS) {
-            await tx.execute(sql`
-              INSERT INTO payroll_line_items
-                (org_id, run_id, run_employee_id, code, name, category, amount, calc_method, calc_explain)
-              VALUES (${orgId}, ${runId}, ${runEmployeeId}, ${component.code}, ${component.name},
-                      ${component.category}::salary_component_type,
-                      ${component.amount}::numeric, 'FIXED', ${"{}"}::jsonb)
-            `);
-          }
-        }
+        const componentRows = sql.join(
+          COMPONENTS.map(
+            (component) => sql`(${component.code}, ${component.name},
+                                ${component.category}::salary_component_type,
+                                ${component.amount}::numeric)`,
+          ),
+          sql`, `,
+        );
+        await tx.execute(sql`
+          INSERT INTO payroll_line_items
+            (org_id, run_id, run_employee_id, code, name, category, amount, calc_method, calc_explain)
+          SELECT ${orgId}, ${runId}, e.id, c.code, c.name, c.category, c.amount, 'FIXED', ${"{}"}::jsonb
+            FROM payroll_run_employees e
+            CROSS JOIN (VALUES ${componentRows}) AS c(code, name, category, amount)
+           WHERE e.org_id = ${orgId} AND e.run_id = ${runId}
+        `);
 
         const planted = await tx.execute<{ n: number }>(
           sql`SELECT count(*)::int AS n FROM payroll_line_items WHERE run_id = ${runId}`,

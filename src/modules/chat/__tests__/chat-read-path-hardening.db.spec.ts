@@ -31,7 +31,17 @@ import { CHAT_ENTITY_CHANNEL_CONFLICT } from "../chat-entity-channel-conflict-ta
 
 const MIGRATIONS_DIR = join(__dirname, "..", "..", "..", "..", "migrations");
 const ENABLED = process.env["CHAT_DB_TESTS"] === "1";
-const DB_URL = process.env["CHAT_PROBE_DATABASE_URL"] ?? process.env["APP_DATABASE_URL"];
+/**
+ * DATABASE_URL ahead of APP_DATABASE_URL. The CATALOG blocks below open with a discovery read
+ * (`SELECT id FROM organizations LIMIT 1`) that cannot set `app.organization_id` before it runs,
+ * so under the application role row-level security empties it and the suite fails claiming the
+ * database has no organisations. What these blocks pin is index shape and ON CONFLICT
+ * arbitration, neither of which depends on the issuing role.
+ */
+const DB_URL =
+  process.env["CHAT_PROBE_DATABASE_URL"] ??
+  process.env["DATABASE_URL"] ??
+  process.env["APP_DATABASE_URL"];
 const describeDb = ENABLED && DB_URL ? describe : describe.skip;
 
 /** Drizzle wraps driver errors: `err.code` is undefined and the SQLSTATE is on `.cause`. */

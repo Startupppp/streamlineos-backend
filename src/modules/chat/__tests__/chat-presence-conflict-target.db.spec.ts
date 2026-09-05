@@ -62,7 +62,16 @@ const INDEX_NAME = "uniq_chat_presence_org_membership";
 const MIGRATIONS_DIR = join(__dirname, "..", "..", "..", "..", "migrations");
 
 const ENABLED = process.env.CHAT_DB_TESTS === "1";
-const DB_URL = process.env.CHAT_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
+/**
+ * DATABASE_URL ahead of APP_DATABASE_URL. `ChatPresenceService` is constructed on a bare `db`
+ * here, so each of its statements is its own implicit transaction with no `app.organization_id`
+ * — in production that GUC comes from `TenantContextInterceptor`, which this suite does not
+ * boot. The fixture read is a discovery read besides, so it cannot set the GUC before it knows
+ * the org. What this pins is the catalog shape of the presence index and the idempotence of
+ * heartbeat/setStatus, neither of which the issuing role changes.
+ */
+const DB_URL =
+  process.env.CHAT_PROBE_DATABASE_URL ?? process.env.DATABASE_URL ?? process.env.APP_DATABASE_URL;
 const describeDb = ENABLED && DB_URL ? describe : describe.skip;
 
 /** Drizzle wraps driver errors: `err.code` is undefined and the SQLSTATE is on `.cause`. */

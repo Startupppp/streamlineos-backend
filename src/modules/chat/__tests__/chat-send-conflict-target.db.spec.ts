@@ -51,7 +51,17 @@ const HEAD_FORM: ConflictSpec = {
 };
 
 const ENABLED = process.env.CHAT_DB_TESTS === "1";
-const DB_URL = process.env.CHAT_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
+/**
+ * DATABASE_URL ahead of APP_DATABASE_URL, matching party-identifiers.db.spec.ts and the HR
+ * db-specs. Row-level security is live, and the fixture read below is a DISCOVERY read — it asks
+ * which channel to use — so it cannot set `app.organization_id` before it runs, and under the
+ * application role it returns nothing or raises "no tenant context". What this suite pins is the
+ * shape of `uniq_chat_messages_client_key` and how ON CONFLICT arbitrates against it; neither
+ * depends on which role issues the statement. RLS visibility is covered by the tenant-GUC specs,
+ * not here.
+ */
+const DB_URL =
+  process.env.CHAT_PROBE_DATABASE_URL ?? process.env.DATABASE_URL ?? process.env.APP_DATABASE_URL;
 const describeDb = ENABLED && DB_URL ? describe : describe.skip;
 
 class Rollback extends Error {}
