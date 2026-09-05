@@ -30,6 +30,8 @@ export const votePollSchema = z.object({
   optionIndex: z.number().int().min(0),
 }).strict();
 
+export const pollOptionsSchema = z.array(z.string());
+
 export const createCommunitySchema = z.object({
   name: z.string().min(2).max(100),
   description: z.string().max(500).optional(),

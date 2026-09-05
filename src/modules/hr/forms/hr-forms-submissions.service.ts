@@ -6,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 import { and, count, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -16,10 +17,11 @@ import { hrWorkflowObjectTypeEnum } from "../../../db/schema/hr/workflow-engine"
 import { HrAuditService } from "../core/hr-audit.service";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { HrFormsService } from "./hr-forms.service";
-import type {
-  ListSubmissionsQuery,
-  SubmitHrFormInput,
-  UpdateSubmissionStatusInput,
+import {
+  hrFormFieldSchema,
+  type ListSubmissionsQuery,
+  type SubmitHrFormInput,
+  type UpdateSubmissionStatusInput,
 } from "./dto/hr-forms.schemas";
 import type { HrFormField } from "../../../db/schema/hr/forms";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
@@ -120,7 +122,9 @@ export class HrFormsSubmissionsService {
           throw new BadRequestException("Form is not active");
         }
 
-        const visibleFields = form.schema.filter((f) => this.evaluateConditional(f, input.data));
+        const schemaParsed = z.array(hrFormFieldSchema).safeParse(form.schema);
+        if (!schemaParsed.success) throw new UnprocessableEntityException("Form schema is invalid");
+        const visibleFields = schemaParsed.data.filter((f) => this.evaluateConditional(f, input.data));
 
         const validator = this.buildZodValidator(visibleFields);
         const parseResult = validator.safeParse(input.data);
@@ -255,8 +259,11 @@ export class HrFormsSubmissionsService {
   }
 
   private maskSensitiveData(sub: typeof hrFormSubmissions.$inferSelect) {
+    const snapshotParsed = z.array(hrFormFieldSchema).safeParse(sub.formSchemaSnapshot);
     const sensitiveKeys = new Set(
-      sub.formSchemaSnapshot.filter((f) => f.sensitive).map((f) => f.key),
+      snapshotParsed.success
+        ? snapshotParsed.data.filter((f) => f.sensitive).map((f) => f.key)
+        : Object.keys(sub.data),
     );
     if (sensitiveKeys.size === 0) return sub;
     const maskedData = { ...sub.data };

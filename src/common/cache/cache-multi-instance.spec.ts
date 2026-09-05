@@ -33,8 +33,13 @@ function makeDelDeafRedis(): Redis {
       return Promise.resolve(n);
     },
     del: (_key: string): Promise<number> => Promise.resolve(0),
-    eval: (_s: string, keys: string[]): Promise<number> => {
-      for (const k of keys) store.delete(k);
+    eval: (script: string, keys: string[], args: string[]): Promise<number> => {
+      if (store.get(keys[0]) !== args[0]) return Promise.resolve(0);
+      if (script.includes('redis.call("set"') && keys[1] !== undefined) {
+        store.set(keys[1], JSON.parse(args[1] ?? "null"));
+        return Promise.resolve(1);
+      }
+      store.delete(keys[0]);
       return Promise.resolve(1);
     },
   } as unknown as Redis;

@@ -16,11 +16,12 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
-import type {
-  CreatePollInput,
-  MoodCheckinInput,
-  UpdatePollInput,
-  VotePollInput,
+import {
+  pollOptionsSchema,
+  type CreatePollInput,
+  type MoodCheckinInput,
+  type UpdatePollInput,
+  type VotePollInput,
 } from "./dto/engagement-extras.schemas";
 import { hasPatchValues } from "../../../common/db/patch-values";
 
@@ -172,7 +173,8 @@ export class EngagementMoodPollsService {
       throw new BadRequestException("Poll is not active.");
     if (poll.closesAt && poll.closesAt < new Date())
       throw new BadRequestException("Poll has closed.");
-    const opts = poll.options as string[];
+    const optsParsed = pollOptionsSchema.safeParse(poll.options);
+    const opts = optsParsed.success ? optsParsed.data : [];
     if (input.optionIndex < 0 || input.optionIndex >= opts.length) {
       throw new BadRequestException("Invalid option index.");
     }
@@ -201,7 +203,8 @@ export class EngagementMoodPollsService {
       .where(eq(hrPollVotes.pollId, pollId))
       .groupBy(hrPollVotes.optionIndex);
 
-    const opts = poll.options as string[];
+    const optsParsed = pollOptionsSchema.safeParse(poll.options);
+    const opts = optsParsed.success ? optsParsed.data : [];
     const counts = opts.map((option, idx) => ({
       option,
       optionIndex: idx,

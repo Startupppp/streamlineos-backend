@@ -185,7 +185,7 @@ async function main() {
                 alreadyPresent++;
                 if (VERBOSE)
                   console.log(`      present   [${entry.tag}] stmt ${statementIdx + 1}: ${code} ${error.message}`);
-                continue;
+                break;
               }
               if (MISSING_CODES.has(code)) {
                 missingHere++;
@@ -193,7 +193,7 @@ async function main() {
                 chainGaps.push(`${entry.tag} stmt ${statementIdx + 1}: ${code} ${error.message}`);
                 if (VERBOSE)
                   console.log(`      GAP       [${entry.tag}] stmt ${statementIdx + 1}: ${code} ${error.message}`);
-                continue;
+                break;
               }
               throw error;
               }

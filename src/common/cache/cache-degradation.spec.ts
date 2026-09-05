@@ -33,8 +33,12 @@ function fakeRedis(store: Map<string, unknown>, stats: FakeRedisStats): Redis {
       store.set(key, next);
       return next;
     }),
-    eval: jest.fn(async (_script: string, keys: string[], args: string[]) => {
+    eval: jest.fn(async (script: string, keys: string[], args: string[]) => {
       if (store.get(keys[0] ?? "") !== args[0]) return 0;
+      if (script.includes('redis.call("set"') && keys[1] !== undefined) {
+        store.set(keys[1], JSON.parse(args[1] ?? "null"));
+        return 1;
+      }
       store.delete(keys[0] ?? "");
       return 1;
     }),
@@ -199,7 +203,13 @@ describe("TTL jitter reaches every fill path", () => {
         return "OK";
       }),
       incr: jest.fn(async () => 1),
-      eval: jest.fn(async () => 1),
+      eval: jest.fn(async (script: string, keys: string[], args: string[]) => {
+        if (script.includes('redis.call("set"') && keys[1] !== undefined) {
+          const ttl = Number(args[2]);
+          if (ttl > 0) ttls.push(ttl);
+        }
+        return 1;
+      }),
     } as unknown as Redis;
     return { ttls, redis };
   }

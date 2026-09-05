@@ -60,6 +60,18 @@ export class CacheFiller {
   private static readonly OUTAGE_MEMO_MAX_KEYS = 2_000;
 
   /**
+   * Circuit-breaker thresholds.
+   *
+   * Once BREAKER_FAILURE_THRESHOLD consecutive Redis read/lease commands fail
+   * (timeout or connection refused), the breaker opens and subsequent commands
+   * are rejected synchronously — no process pays the full command timeout again.
+   * After BREAKER_PROBE_INTERVAL_MS exactly one probe is allowed through; a
+   * successful response closes the breaker and resets the failure count.
+   */
+  private static readonly BREAKER_FAILURE_THRESHOLD = 5;
+  private static readonly BREAKER_PROBE_INTERVAL_MS = 5_000;
+
+  /**
    * Substrings, not prefixes: `cachedForOrg` prepends the tenant (and a region
    * cell prefix before that), so `access:perms:<user>:v<n>` arrives as
    * `<cell>:<org>:access:perms:...` and a prefix test would miss every one.
@@ -93,6 +105,11 @@ export class CacheFiller {
   private readonly degradedFills = new Set<string>();
   private outageMemoServed = 0;
 
+  private breakerOpen = false;
+  private breakerOpenAt = 0;
+  private breakerProbeInFlight = false;
+  private consecutiveFailures = 0;
+
   constructor(private readonly timedRedis: TimedRedisOp) {}
 
   leaseKey(key: string): string {
@@ -102,6 +119,11 @@ export class CacheFiller {
   /** Entries served from the degraded-path memo since boot. Non-zero means Redis was unreachable. */
   get outageMemoServedCount(): number {
     return this.outageMemoServed;
+  }
+
+  /** True while the circuit breaker is open (Redis commands are being skipped). */
+  get isCircuitOpen(): boolean {
+    return this.breakerOpen;
   }
 
   /**
@@ -224,6 +246,44 @@ export class CacheFiller {
     }
   }
 
+  /**
+   * Wraps `timedRedis` with a circuit breaker for read and lease-acquisition
+   * commands (the critical-path calls in `loadOrFetch` and `awaitFill`).
+   *
+   * When the breaker is OPEN, the command is rejected synchronously — no process
+   * waits for the full command timeout. The write-back and lease-release paths
+   * keep their own `timedRedis` wrappers and best-effort `catch {}` blocks, so
+   * a write failure never opens the breaker while reads are healthy.
+   *
+   * On success the failure counter resets and the breaker closes. On failure the
+   * counter increments; once it reaches BREAKER_FAILURE_THRESHOLD (or a probe
+   * attempt fails), the breaker opens or its timer is reset.
+   */
+  private async breakeredRedis<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.breakerOpen) {
+      const canProbe =
+        !this.breakerProbeInFlight &&
+        Date.now() - this.breakerOpenAt >= CacheFiller.BREAKER_PROBE_INTERVAL_MS;
+      if (!canProbe) throw new Error("cache:breaker:open");
+      this.breakerProbeInFlight = true;
+    }
+    try {
+      const result = await this.timedRedis(operation);
+      this.consecutiveFailures = 0;
+      this.breakerOpen = false;
+      this.breakerProbeInFlight = false;
+      return result;
+    } catch (err) {
+      this.breakerProbeInFlight = false;
+      this.consecutiveFailures += 1;
+      if (this.consecutiveFailures >= CacheFiller.BREAKER_FAILURE_THRESHOLD || this.breakerOpen) {
+        this.breakerOpen = true;
+        this.breakerOpenAt = Date.now();
+      }
+      throw err;
+    }
+  }
+
   private degraded<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
     this.degradedFills.add(key);
     return fetcher();
@@ -237,7 +297,7 @@ export class CacheFiller {
   ): Promise<T> {
     if (!redis) return this.degraded(key, fetcher);
     try {
-      const hit = await this.timedRedis(() => redis.get<T>(key));
+      const hit = await this.breakeredRedis(() => redis.get<T>(key));
       if (hit !== null) return hit;
     } catch {
       return this.degraded(key, fetcher);
@@ -247,7 +307,7 @@ export class CacheFiller {
     const leaseToken = randomUUID();
     let acquired: boolean;
     try {
-      acquired = (await this.timedRedis(() => redis.set(leaseKey, leaseToken, {
+      acquired = (await this.breakeredRedis(() => redis.set(leaseKey, leaseToken, {
         ex: CacheFiller.FILL_LEASE_SECONDS,
         nx: true,
       }))) === "OK";
@@ -318,9 +378,9 @@ export class CacheFiller {
     while (Date.now() < deadline) {
       await this.delay(CacheFiller.FILL_POLL_MS);
       try {
-        const filled = await this.timedRedis(() => redis.get<T>(key));
+        const filled = await this.breakeredRedis(() => redis.get<T>(key));
         if (filled !== null) return filled;
-        const leaseHolder = await this.timedRedis(() => redis.get<string>(leaseKey));
+        const leaseHolder = await this.breakeredRedis(() => redis.get<string>(leaseKey));
         if (leaseHolder === null) return fetcher();
       } catch {
         return this.degraded(key, fetcher);
