@@ -13,23 +13,16 @@
  * the check and the value are separate things. So it is checked here instead,
  * against the real controller sources rather than a list somebody maintains.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { inventoryControllerPaths, mutatingInventoryRoutes } from "./inventory-mutating-routes";
+import {
+  COMMAND_CLASSIFICATION,
+  COMMAND_CLASS_RATIONALE,
+} from "./inventory-command-classification";
 
 const INVENTORY_ROOT = join(__dirname, "..");
 
-function controllerPaths(): string[] {
-  const found: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir)) {
-      const path = join(dir, entry);
-      if (statSync(path).isDirectory()) walk(path);
-      else if (path.endsWith(".controller.ts")) found.push(path);
-    }
-  };
-  walk(INVENTORY_ROOT);
-  return found.sort();
-}
 
 /** The body of the method whose parameter list contains `at`. */
 function enclosingMethodBody(source: string, at: number): string {
@@ -66,7 +59,7 @@ const METHOD_SIGNATURE = /\n {2}(?:async )?([A-Za-z0-9_]+)\s*\(/g;
 
 function handlersTakingAKey(): Handler[] {
   const out: Handler[] = [];
-  for (const path of controllerPaths()) {
+  for (const path of inventoryControllerPaths()) {
     const source = readFileSync(path, "utf8");
     const file = path.slice(path.indexOf("modules/inventory/"));
 
@@ -96,35 +89,9 @@ function handlersTakingAKey(): Handler[] {
   return out;
 }
 
-/**
- * The work order's minimum set, as `file::handler`. Anything here must take a
- * key. The general check below covers everything else, present and future.
- */
-const MUST_TAKE_A_KEY: ReadonlyArray<[string, string]> = [
-  ["stock/inv-stock.controller.ts", "createReservation"],
-  ["stock/inv-stock.controller.ts", "releaseReservation"],
-  ["stock/inv-stock.controller.ts", "createOpeningBalance"],
-  ["stock/inv-stock-transfers.controller.ts", "reserveTransfer"],
-  ["stock/inv-stock-transfers.controller.ts", "dispatchTransfer"],
-  ["stock/inv-stock-transfers.controller.ts", "completeTransfer"],
-  ["stock/inv-stock-transfers.controller.ts", "cancelTransfer"],
-  ["stock/inv-stock-adjustments.controller.ts", "createAdjustment"],
-  ["stock/inv-stock-adjustments.controller.ts", "approveAdjustment"],
-  ["stock/inv-stock-adjustments.controller.ts", "postAdjustment"],
-  ["sales-orders/inv-sales-orders.controller.ts", "confirm"],
-  ["sales-orders/inv-sales-orders.controller.ts", "reserve"],
-  ["sales-orders/inv-sales-orders.controller.ts", "pick"],
-  ["sales-orders/inv-sales-orders.controller.ts", "pack"],
-  ["sales-orders/inv-sales-orders.controller.ts", "ship"],
-  ["purchase-orders/inv-purchase-orders.controller.ts", "receiveGoods"],
-  ["purchase-orders/grn.controller.ts", "reverse"],
-  // Added after review: this one posts engine movements and took no key at all,
-  // so a retry raised a second recall document against the same lots. The
-  // general check above cannot see it — a handler that never asks for a key has
-  // nothing to drop — which is the limit of that check and the reason this list
-  // exists beside it.
-  ["quality/recalls.controller.ts", "create"],
-];
+
+
+const routes = mutatingInventoryRoutes();
 
 describe("A3 — idempotency coverage across inventory commands", () => {
   it("never demands a key and then drops it", () => {
@@ -141,15 +108,90 @@ describe("A3 — idempotency coverage across inventory commands", () => {
     expect(dropped).toEqual([]);
   });
 
-  it("takes a key on every command in the work order's minimum set", () => {
-    const present = new Set(
-      handlersTakingAKey().map((h) => `${h.file.replace("modules/inventory/", "")}::${h.name}`),
-    );
-    const missing = MUST_TAKE_A_KEY.map(([file, name]) => `${file}::${name}`).filter(
-      (key) => !present.has(key),
-    );
+  it("walks the whole surface, so a broken walk cannot pass as zero violations", () => {
+    // Every assertion below is a filter over `routes`. A walk that matched
+    // nothing would report an empty violation list and read as a pass, which
+    // is how the sibling placement ratchet nearly shipped inert. The numbers
+    // are floors, not targets: they are the measured population minus room to
+    // delete a controller without tripping the floor.
+    expect(inventoryControllerPaths().length).toBeGreaterThan(60);
+    expect(routes.length).toBeGreaterThan(200);
+    expect(routes.filter((r) => r.takesClientKey).length).toBeGreaterThan(50);
+    expect(routes.filter((r) => r.commands.length > 0).length).toBeGreaterThan(45);
+    // The census keys the classification on `<file>::<handler>`. Two routes
+    // sharing an id would let one of them inherit the other's classification.
+    expect(new Set(routes.map((r) => r.id)).size).toBe(routes.length);
+  });
+
+  it("takes a client key on every route that calls a command expecting one", () => {
+    // The derived replacement for `MUST_TAKE_A_KEY`, which was eighteen handler
+    // names typed out by hand. A service method whose signature declares an
+    // `idempotencyKey` is a command that intends to be replay-safe, and the
+    // only honest source for that value is the caller's header — a handler that
+    // reaches one without `@IdempotencyKey()` is either inventing a key or
+    // passing a constant. This is not a restatement of the old list: it is what
+    // would have caught `quality/recalls.controller::create`, which posted
+    // engine movements with no key at all, on its first run rather than in
+    // review. `RecallsService.create` declares the parameter.
+    const missing = routes
+      .filter((r) => !r.takesClientKey && r.commands.length > 0)
+      .map((r) => `${r.id} -> ${r.commands.join(", ")}`);
 
     expect(missing).toEqual([]);
+  });
+
+  it("classifies every mutating route, so a new one cannot land unexamined", () => {
+    // The whole point of T17. Taking a key is its own classification and is
+    // read off the source. Everything else has to be argued for in
+    // COMMAND_CLASSIFICATION, and an unclassified route is a failure rather
+    // than an absence — the shape `NO_DATA_ROUTES` and `CANNOT_INVALIDATE` use.
+    const classified = new Set(COMMAND_CLASSIFICATION.map((c) => c.route));
+    const unclassified = routes
+      .filter((r) => !r.takesClientKey && !classified.has(r.id))
+      .map((r) => `${r.verb} ${r.path} (${r.id})`);
+
+    expect(unclassified).toEqual([]);
+  });
+
+  it("keeps every classification pointed at a route that still exists", () => {
+    // An entry for a handler that has been renamed or deleted is a hole that
+    // reads as a rule, and it is how a list of this size rots. The same
+    // argument the migration exclusions and CANNOT_INVALIDATE make.
+    const live = new Set(routes.map((r) => r.id));
+    const stale = COMMAND_CLASSIFICATION.filter((c) => !live.has(c.route)).map((c) => c.route);
+
+    expect(stale).toEqual([]);
+  });
+
+  it("does not classify a route that takes a key, because taking one is the answer", () => {
+    // A keyed route with an entry here would mean the table had started to
+    // duplicate the source instead of exempting from it — the drift that turns
+    // an exemption list back into a coverage list.
+    const keyed = new Set(routes.filter((r) => r.takesClientKey).map((r) => r.id));
+    const redundant = COMMAND_CLASSIFICATION.filter((c) => keyed.has(c.route)).map((c) => c.route);
+
+    expect(redundant).toEqual([]);
+  });
+
+  it("gives every classification a reason somebody can read", () => {
+    const unreasoned = COMMAND_CLASSIFICATION.filter((c) => c.why.length < 60).map((c) => c.route);
+    expect(unreasoned).toEqual([]);
+    for (const rationale of Object.values(COMMAND_CLASS_RATIONALE))
+      expect(rationale.length).toBeGreaterThan(120);
+  });
+
+  it("records the routes a retry still duplicates, rather than leaving them uncounted", () => {
+    // DUPLICATES_ON_RETRY is a finding, not an exemption, and this assertion is
+    // the ratchet on it: the count may fall as keys are added, and may not rise
+    // without somebody changing this number and saying why. PRD §12.4's "all
+    // commands are idempotent" is false by exactly this many routes.
+    const findings = COMMAND_CLASSIFICATION.filter(
+      (c) => c.commandClass === "DUPLICATES_ON_RETRY",
+    );
+    expect(findings.length).toBeLessThanOrEqual(40);
+    // Not zero, and not silently zero: a walk that found nothing would satisfy
+    // the bound above.
+    expect(findings.length).toBeGreaterThan(30);
   });
 
   it("does not make a read-only POST ask for a key it has no use for", () => {
@@ -173,7 +215,7 @@ describe("A3 — idempotency coverage across inventory commands", () => {
     // Twenty handlers carried a hand-copied `if (!key) throw`, in three
     // different wordings, and the copies were what made the check separable
     // from the value in the first place.
-    const handRolled = controllerPaths()
+    const handRolled = inventoryControllerPaths()
       .filter((path) => /@Headers\(\s*["']idempotency-key["']/.test(readFileSync(path, "utf8")))
       .map((path) => path.slice(path.indexOf("modules/inventory/")));
 
