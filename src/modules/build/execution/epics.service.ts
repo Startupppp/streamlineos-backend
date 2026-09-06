@@ -37,6 +37,7 @@ export class EpicsService {
   }
 
   async createEpic(orgId: string, userId: string, projectId: number, input: CreateEpicInput) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [epic] = await this.db.transaction(async (tx) => {
 
       const nextNumber = await allocateTicketNumbers(tx, orgId, projectId);

@@ -48,6 +48,59 @@ describe("EpicsService — cross-tenant isolation", () => {
   });
 });
 
+describe("EpicsService — cross-tenant isolation — createEpic", () => {
+  it("throws 404 when project belongs to a different org (cross-tenant)", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
+    const transaction = jest.fn();
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      transaction,
+    } as unknown as Db;
+    const svc = new EpicsService(db);
+
+    await expect(svc.createEpic(ATTACKER_ORG, "u1", 1, { title: "Epic" })).rejects.toThrow(NotFoundException);
+
+    expect(transaction).not.toHaveBeenCalled();
+    const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
+    expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
+    expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
+  });
+
+  it("throws 404 when project does not exist (unknown id)", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
+    const transaction = jest.fn();
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      transaction,
+    } as unknown as Db;
+    const svc = new EpicsService(db);
+
+    await expect(svc.createEpic(OWNER_ORG, "u1", 999, { title: "Epic" })).rejects.toThrow(NotFoundException);
+
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("creates the epic when the project belongs to the caller's org (own project)", async () => {
+    const fakeEpic = { id: 1, orgId: OWNER_ORG, title: "Epic", type: "EPIC" };
+    const returning = jest.fn().mockResolvedValue([fakeEpic]);
+    const values = jest.fn().mockReturnValue({ returning });
+    const insert = jest.fn().mockReturnValue({ values });
+    const execute = jest.fn().mockResolvedValue([{ start: 1 }]);
+    const tx = { insert, execute };
+    const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+    const svc = new EpicsService(db);
+
+    const result = await svc.createEpic(OWNER_ORG, "u1", 1, { title: "Epic" });
+
+    expect(result).toEqual(fakeEpic);
+    expect(insert).toHaveBeenCalled();
+  });
+});
+
 describe("CyclesService — cross-tenant isolation", () => {
   it("listCycles refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });

@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, isNull } from "drizzle-orm";
 import { deals, tickets, crmPipelines } from "../../db/schema";
 import { businessParties } from "../../db/schema/party";
@@ -79,8 +79,9 @@ export class LeadStatusService {
     const isLost = semantics.lostKeys.includes(input.status);
 
     const existing = await loadLeadView(this.db, orgId, leadId);
+    if (!existing) throw new NotFoundException("Lead not found");
 
-    if (isConverted && existing && semantics.convertedKeys.includes(existing.status)) {
+    if (isConverted && semantics.convertedKeys.includes(existing.status)) {
       return { ok: false, reason: "already_converted" };
     }
 

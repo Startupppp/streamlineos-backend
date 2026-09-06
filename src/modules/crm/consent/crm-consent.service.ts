@@ -1,7 +1,8 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import {
+  contacts,
   crmContactChannelConsent,
   crmContactConsentEvents,
   crmSuppressionHashes,
@@ -222,6 +223,13 @@ export class CrmConsentService {
     await runInTenantTransaction(
       this.db,
       async (tx) => {
+        const [contact] = await tx
+          .select({ id: contacts.id })
+          .from(contacts)
+          .where(and(eq(contacts.id, input.contactId), eq(contacts.orgId, orgId), isNull(contacts.deletedAt)))
+          .limit(1);
+        if (!contact) throw new NotFoundException("Contact not found");
+
         const [existing] = await tx
           .select({ status: crmContactChannelConsent.status })
           .from(crmContactChannelConsent)
