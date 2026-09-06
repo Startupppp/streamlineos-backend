@@ -50180,16 +50180,6 @@
                                   }
                                 ]
                               },
-                              "meetingUrl": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
                               "description": {
                                 "anyOf": [
                                   {
@@ -50251,57 +50241,6 @@
                                     "type": "null"
                                   }
                                 ]
-                              },
-                              "linkedTicket": {
-                                "anyOf": [
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "id": {
-                                        "type": "integer",
-                                        "minimum": -9007199254740991,
-                                        "maximum": 9007199254740991
-                                      },
-                                      "key": {
-                                        "type": "string"
-                                      },
-                                      "title": {
-                                        "type": "string"
-                                      },
-                                      "projectId": {
-                                        "type": "integer",
-                                        "minimum": -9007199254740991,
-                                        "maximum": 9007199254740991
-                                      },
-                                      "status": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "required": [
-                                      "id",
-                                      "key",
-                                      "title",
-                                      "projectId",
-                                      "status"
-                                    ]
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "rrule": {
-                                "anyOf": [
-                                  {
-                                    "type": "string"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              },
-                              "isRecurring": {
-                                "type": "boolean"
                               }
                             },
                             "required": [
@@ -50776,6 +50715,247 @@
       }
     },
     "/calendar/events/{eventId}": {
+      "get": {
+        "operationId": "CalendarController_getEvent",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "startDate": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "endDate": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "allDay": {
+                          "type": "boolean"
+                        },
+                        "timezone": {
+                          "type": "string"
+                        },
+                        "color": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "category": {
+                          "type": "string"
+                        },
+                        "entityType": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "entityId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "location": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "meetingUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "creatorName": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "myRsvpStatus": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "linkedTicket": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "key": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "projectId": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "status": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "key",
+                                "title",
+                                "projectId",
+                                "status"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rrule": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "isRecurring": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "startDate",
+                        "endDate",
+                        "allDay",
+                        "timezone",
+                        "color",
+                        "category",
+                        "entityType",
+                        "entityId",
+                        "location",
+                        "meetingUrl",
+                        "description",
+                        "creatorName",
+                        "myRsvpStatus",
+                        "linkedTicket",
+                        "rrule",
+                        "isRecurring"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Calendar"
+        ],
+        "x-exposure": "universal",
+        "description": "Exposure: universal — any authenticated member, subject from the token"
+      },
       "put": {
         "operationId": "CalendarController_updateEvent",
         "parameters": [
@@ -235792,7 +235972,7 @@
     },
     "/support/kb/articles/{articleId}/attachments": {
       "get": {
-        "operationId": "SupportKbController_listAttachments",
+        "operationId": "SupportKbEngagementController_listAttachments",
         "parameters": [
           {
             "name": "articleId",
@@ -235827,14 +236007,14 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:view",
         "description": "Exposure: permission — support:kb:view"
       },
       "post": {
-        "operationId": "SupportKbController_createAttachment",
+        "operationId": "SupportKbEngagementController_createAttachment",
         "parameters": [
           {
             "name": "articleId",
@@ -235877,7 +236057,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:manage",
@@ -235938,7 +236118,7 @@
     },
     "/support/kb/articles/{articleId}/attachments/{attachmentId}": {
       "delete": {
-        "operationId": "SupportKbController_deleteAttachment",
+        "operationId": "SupportKbEngagementController_deleteAttachment",
         "parameters": [
           {
             "name": "articleId",
@@ -235991,7 +236171,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:manage",
@@ -236000,7 +236180,7 @@
     },
     "/support/kb/articles/{articleId}/attachments/{attachmentId}/download": {
       "get": {
-        "operationId": "SupportKbController_getAttachmentDownloadUrl",
+        "operationId": "SupportKbEngagementController_getAttachmentDownloadUrl",
         "parameters": [
           {
             "name": "articleId",
@@ -236047,7 +236227,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:view",
@@ -236056,7 +236236,7 @@
     },
     "/support/kb/articles/{articleId}/comments": {
       "get": {
-        "operationId": "SupportKbController_listComments",
+        "operationId": "SupportKbEngagementController_listComments",
         "parameters": [
           {
             "name": "articleId",
@@ -236091,14 +236271,14 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:view",
         "description": "Exposure: permission — support:kb:view"
       },
       "post": {
-        "operationId": "SupportKbController_createComment",
+        "operationId": "SupportKbEngagementController_createComment",
         "parameters": [
           {
             "name": "articleId",
@@ -236139,7 +236319,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:manage",
@@ -236169,7 +236349,7 @@
     },
     "/support/kb/articles/{articleId}/comments/{commentId}": {
       "delete": {
-        "operationId": "SupportKbController_deleteComment",
+        "operationId": "SupportKbEngagementController_deleteComment",
         "parameters": [
           {
             "name": "articleId",
@@ -236218,7 +236398,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:manage",
@@ -236227,7 +236407,7 @@
     },
     "/support/kb/articles/{articleId}/feedback": {
       "get": {
-        "operationId": "SupportKbController_listFeedback",
+        "operationId": "SupportKbEngagementController_listFeedback",
         "parameters": [
           {
             "name": "articleId",
@@ -236262,7 +236442,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:view",
@@ -236271,7 +236451,7 @@
     },
     "/support/kb/articles/{articleId}/index-status": {
       "get": {
-        "operationId": "SupportKbController_getArticleIndexStatus",
+        "operationId": "SupportKbEngagementController_getArticleIndexStatus",
         "parameters": [
           {
             "name": "articleId",
@@ -236308,7 +236488,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:view",
@@ -236317,7 +236497,7 @@
     },
     "/support/kb/articles/{articleId}/reindex": {
       "post": {
-        "operationId": "SupportKbController_reindexArticle",
+        "operationId": "SupportKbEngagementController_reindexArticle",
         "parameters": [
           {
             "name": "articleId",
@@ -236360,7 +236540,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:manage",
@@ -236370,7 +236550,7 @@
     },
     "/support/kb/ask": {
       "post": {
-        "operationId": "SupportKbController_askQuestion",
+        "operationId": "SupportKbEngagementController_askQuestion",
         "parameters": [],
         "responses": {
           "200": {
@@ -236399,7 +236579,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:view",
@@ -236680,7 +236860,7 @@
     },
     "/support/kb/reindex-all": {
       "post": {
-        "operationId": "SupportKbController_reindexAll",
+        "operationId": "SupportKbEngagementController_reindexAll",
         "parameters": [
           {
             "name": "afterArticleId",
@@ -236721,7 +236901,7 @@
           }
         },
         "tags": [
-          "SupportKb"
+          "SupportKbEngagement"
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:manage",
