@@ -1,6 +1,6 @@
 {
   "note": "Every top-level integer constant in every backend gate script, with the direction it may move. check:baseline-integrity fails on an unregistered constant (which is what a rename looks like), a stale registration (the other half of a rename), and any move in the unsafe direction. ratchet = may only decrease. floor = may only increase; lowering a floor is how a gate goes blind while printing OK. pinned = may not change without re-registering, used where the safe direction is genuinely not obvious.",
-  "measured": "2026-09-03",
+  "measured": "2026-09-06",
   "entries": {
     "baselines/authz-deny.json": {
       "uncoveredRatchet": {
@@ -12,10 +12,10 @@
     },
     "baselines/bare-throw.json": {
       "ratchet": {
-        "value": 2,
+        "value": 1,
         "direction": "ratchet",
         "owner": "degradation/platform DB and CRM/inventory release owner",
-        "reason": "search-index.spec.ts:231 (inside the APP_DATABASE_URL-gated describe, the one site of 220 execution triage could not reach) and inv-engine-misc-isolation-stock.spec.ts:194 (inventory, accepted residual R-9)."
+        "reason": "search-index.spec.ts:231 (inside the APP_DATABASE_URL-gated describe, the one site of 220 execution triage could not reach) and inv-engine-misc-isolation-stock.spec.ts:194 (inventory, accepted residual R-9). Banked 2 -> 1 on 2026-09-06 after the gate reported the improvement."
       }
     },
     "baselines/query-projection-baseline.json": {
@@ -43,7 +43,7 @@
         "value": 1,
         "direction": "ratchet",
         "owner": "CRM/inventory release owner",
-        "reason": "inv-engine-misc-isolation-ai.spec.ts:133 — inventory, accepted residual R-9, review 2026-12-01."
+        "reason": "inv-engine-misc-isolation-ai.spec.ts:133 \u2014 inventory, accepted residual R-9, review 2026-12-01."
       },
       "ratchets.TAUTOLOGY": {
         "value": 2,
@@ -66,8 +66,8 @@
       "ratchets.EARLY_RETURN": {
         "value": 5,
         "direction": "ratchet",
-        "owner": "platform DB · platform · surveys · timesheets",
-        "reason": "A NEW CLASS, not a raise of an existing number, and this gate correctly refused it until that was said out loud: adding it read as a net raise of 5 for vacuous-assertions.json. Measured 7 sites, 2 FIXED before baselining (soft-delete-predicates and recruitment-candidate-vault), 5 registered — 2 ENVIRONMENT guards (a live db handle, NODE_ENV) and 3 DOMAIN guards (it.each cases over wholly-@Public() controllers). Sized after the fixable ones were fixed, not to the breach."
+        "owner": "platform DB \u00b7 platform \u00b7 surveys \u00b7 timesheets",
+        "reason": "A NEW CLASS, not a raise of an existing number, and this gate correctly refused it until that was said out loud: adding it read as a net raise of 5 for vacuous-assertions.json. Measured 7 sites, 2 FIXED before baselining (soft-delete-predicates and recruitment-candidate-vault), 5 registered \u2014 2 ENVIRONMENT guards (a live db handle, NODE_ENV) and 3 DOMAIN guards (it.each cases over wholly-@Public() controllers). Sized after the fixable ones were fixed, not to the breach."
       }
     },
     "check-ai-charge-declared.mjs": {
@@ -203,7 +203,7 @@
         "value": 8,
         "direction": "ratchet",
         "owner": "api/platform owner",
-        "reason": "New constant, not a rename — registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe — it only turns resolved handlers back into honestly-unresolved ones."
+        "reason": "New constant, not a rename \u2014 registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe \u2014 it only turns resolved handlers back into honestly-unresolved ones."
       }
     },
     "check-drop-column-safety.mjs": {
@@ -235,7 +235,7 @@
         "value": 500,
         "direction": "ratchet",
         "owner": "release owner",
-        "reason": "CLAUDE.md §7's hard review limit. Policy, not debt; raising it would retire the rule by arithmetic."
+        "reason": "CLAUDE.md \u00a77's hard review limit. Policy, not debt; raising it would retire the rule by arithmetic."
       },
       "MIN_FILES": {
         "value": 2000,
@@ -425,7 +425,7 @@
         "value": 102,
         "direction": "ratchet",
         "owner": "perf/db owner",
-        "reason": "Growing-collection loop sites. Never raised; lowered 106 -> 102 while this registry was being written, which is how the shared working tree moves under a measurement — the value here is HEAD's, not the tree's."
+        "reason": "Growing-collection loop sites. Never raised; lowered 106 -> 102 while this registry was being written, which is how the shared working tree moves under a measurement \u2014 the value here is HEAD's, not the tree's."
       },
       "MIN_LOOP_NODES": {
         "value": 4800,
@@ -489,7 +489,7 @@
         "value": 3611,
         "direction": "ratchet",
         "owner": "every module lane that owns a controller; coordinated by the API contract owner (ticket 04)",
-        "reason": "Operations declaring NO response body schema. Registered 2026-09-03 by v2 ticket 30 at the TRUE measured figure, 3,617 of 3,642 uncovered (25 covered, 0.69%). The gate previously required 100% and reported 3642/3642 (100%) -- because its predicate accepted a bare 2xx response KEY, which NestJS auto-generates with no content for every handler, so the condition was true for every operation the moment the document was generated. Actual coverage of the property it claimed was 1 in 3,642 (0.027%). This is NOT a baseline raised to turn a regression green: it is the first honest measurement of a number that was never measured, and the 100%% requirement was NOT restored only because demanding it would red the pipeline on ~3,617 handlers across every module lane. Lower it as coverage lands; raising it retires the rule by arithmetic. LOWERED 3617 -> 3613 on 2026-09-04 by v2 ticket 04: the ratchet had been BREACHED at 3,621 because six newly added operations carried no response schema, and it was not raised to absorb them -- ten handlers were given a real @ResponseSchema(...) instead (POST/PUT /calendar/events, PATCH/DELETE /calendar/events/{eventId}/occurrences/{occurrenceStart}, and all six /platform/operator-access operations), each compared against the real handler return by ResponseContractInterceptor under NODE_ENV=test. 3,613 was MEASURED by rebuilding the document in memory from the working tree via generateOpenApiJson() and running this gate\u0027s own predicate over it (3,651 operations, 38 covered). It is provisional in one respect and the next reader must know it: the COMMITTED openapi.json still predates both those schemas and three routes other lanes added, so it measures 3,621 and this gate stays RED until the single end-of-wave regenerate -- at which point the figure must be RE-MEASURED and lowered again if it lands below 3,613, never raised if it lands above."
+        "reason": "Operations declaring NO response body schema. Registered 2026-09-03 by v2 ticket 30 at the TRUE measured figure, 3,617 of 3,642 uncovered (25 covered, 0.69%). The gate previously required 100% and reported 3642/3642 (100%) -- because its predicate accepted a bare 2xx response KEY, which NestJS auto-generates with no content for every handler, so the condition was true for every operation the moment the document was generated. Actual coverage of the property it claimed was 1 in 3,642 (0.027%). This is NOT a baseline raised to turn a regression green: it is the first honest measurement of a number that was never measured, and the 100%% requirement was NOT restored only because demanding it would red the pipeline on ~3,617 handlers across every module lane. Lower it as coverage lands; raising it retires the rule by arithmetic. LOWERED 3617 -> 3613 on 2026-09-04 by v2 ticket 04: the ratchet had been BREACHED at 3,621 because six newly added operations carried no response schema, and it was not raised to absorb them -- ten handlers were given a real @ResponseSchema(...) instead (POST/PUT /calendar/events, PATCH/DELETE /calendar/events/{eventId}/occurrences/{occurrenceStart}, and all six /platform/operator-access operations), each compared against the real handler return by ResponseContractInterceptor under NODE_ENV=test. 3,613 was MEASURED by rebuilding the document in memory from the working tree via generateOpenApiJson() and running this gate's own predicate over it (3,651 operations, 38 covered). It is provisional in one respect and the next reader must know it: the COMMITTED openapi.json still predates both those schemas and three routes other lanes added, so it measures 3,621 and this gate stays RED until the single end-of-wave regenerate -- at which point the figure must be RE-MEASURED and lowered again if it lands below 3,613, never raised if it lands above."
       }
     },
     "check-openapi-path-params.mjs": {
@@ -521,7 +521,7 @@
         "value": 300,
         "direction": "ratchet",
         "owner": "release owner",
-        "reason": "CLAUDE.md §7's 300-line target. Policy, not debt."
+        "reason": "CLAUDE.md \u00a77's 300-line target. Policy, not debt."
       },
       "BASELINE": {
         "value": 392,
@@ -718,8 +718,15 @@
         "direction": "floor"
       },
       "MIN_SELF_TEST_CHECKS": {
-        "value": 43,
-        "direction": "floor"
+        "value": 52,
+        "direction": "floor",
+        "reason": " Banked 43 -> 52 on 2026-09-06 after the gate reported the improvement."
+      },
+      "SCAN_FLOOR_SPEC_FILES": {
+        "value": 1500,
+        "direction": "floor",
+        "owner": "frontend platform owner",
+        "reason": "Anti-vacuity floor on the spec-file corpus the assertion scan walks; the live corpus is over 4,500, so this detects a collapsed glob rather than capping anything."
       }
     },
     "check-unbounded-reads.mjs": {
@@ -746,10 +753,10 @@
         "reason": "Per-root floor for src/db (364 measured)."
       },
       "MAX_SUPPRESSED_UNBOUNDED": {
-        "value": 651,
+        "value": 646,
         "direction": "ratchet",
         "owner": "backend platform owner",
-        "reason": "Unbounded reads hidden behind a FALSE-POSITIVE verdict, counted as instances. A verdict is keyed per FILE and carries one sentence, so a read added to an already-blessed file inherits a justification never written about it — /clients/clients.service.ts' unbounded CSV export of every client in the org sat under 'client reads bounded by clientId+orgId (single-record lookups)' and no other check in the gate moved. Measured at 651 with no headroom; lower it when you bound a read, and raising it means naming the newly hidden read here."
+        "reason": "Unbounded reads hidden behind a FALSE-POSITIVE verdict, counted as instances. A verdict is keyed per FILE and carries one sentence, so a read added to an already-blessed file inherits a justification never written about it \u2014 /clients/clients.service.ts' unbounded CSV export of every client in the org sat under 'client reads bounded by clientId+orgId (single-record lookups)' and no other check in the gate moved. Measured at 651 with no headroom; lower it when you bound a read, and raising it means naming the newly hidden read here. Banked 651 -> 646 on 2026-09-06 after the gate reported the improvement."
       },
       "ORDER_BY_LOOKBACK": {
         "value": 25,
@@ -802,6 +809,30 @@
         "direction": "floor",
         "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
         "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on partial-index targets the scan must find."
+      }
+    },
+    "check-date-in-sql-template.ts": {
+      "MIN_SQL_TEMPLATES": {
+        "value": 50,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Anti-vacuity floor: the scan must find at least this many sql`` templates or it reports a clean sweep because its collector stopped matching. The live scan sees roughly 1,900, so 50 is a collapse detector, not a target. Raising it is tightening; lowering it needs a reason."
+      }
+    },
+    "check-redundant-objects.ts": {
+      "MIN_DECLARED_TABLES": {
+        "value": 700,
+        "direction": "floor",
+        "owner": "database architecture owner",
+        "reason": "Anti-vacuity floor on the Drizzle declaration scan: below this the schema walk has stopped resolving and every live index would read as redundant. The catalog declares well over 700 tables."
+      }
+    },
+    "check-route-budgets.mjs": {
+      "WATERMARK_CEILING": {
+        "value": 42,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Ceiling on routes that may carry no declared budget. Measured at 42 when the watermark was introduced; it may only fall as budgets are declared, never rise."
       }
     }
   }
