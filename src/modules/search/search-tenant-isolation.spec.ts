@@ -37,7 +37,12 @@ describe("SearchService — cross-tenant isolation", () => {
     return {
       getPermissionsVersion: jest.fn().mockResolvedValue(1),
       getModuleState: jest.fn().mockResolvedValue(undefined),
-      buildModuleAvailabilityResolver: jest.fn().mockReturnValue(() => Promise.resolve({ available: false })),
+      buildModuleAvailabilityResolver: jest.fn().mockReturnValue({
+        isCoreModule: () => false,
+        getModuleMap: async () => ({}),
+        getUserDeniedModules: async () => new Set<string>(),
+        getPlanLockedModules: async () => [],
+      }),
       scopeFor: jest.fn().mockResolvedValue("none"),
     } as never;
   }

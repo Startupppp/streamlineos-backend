@@ -15,11 +15,12 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { applyScope } from "../access/apply-scope";
-import { authorize, type AccessResolver } from "../access/authorize";
+import { type AccessResolver } from "../access/authorize";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { logger } from "../../common/logger/logger.service";
 import { actingMembershipId } from "../../common/auth/principal";
+import { moduleAvailability, type ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
 
 const UNDEFINED_FUNCTION = "42883";
 
@@ -29,28 +30,8 @@ function isUndefinedFunction(err: unknown): boolean {
   return code === UNDEFINED_FUNCTION;
 }
 
-/**
- * Global search, reading identity from Party.
- *
- * Under RLS the `textlike` operator behind ILIKE is not leakproof, so the
- * planner skips the GIN/trigram index entirely. Each branch resolves candidates
- * through a SECURITY DEFINER id-probe (migrations 0275, 0425, 0475) owned by
- * the BYPASSRLS role. The probe returns ids only; the caller's query still runs
- * under RLS with its own DataScope and scope predicate. When the probe returns
- * more than the cap the term is too broad for an id list to pay for itself and
- * the branch falls back to plain ILIKE — independently of the other branches.
- */
-
 export type SearchResultType = "lead" | "deal" | "contact" | "client" | "ticket";
 
-/**
- * The party of the lead a contact came from, for the "own" scope only.
- *
- * A second reference to `business_parties` in the same query, so it needs a name
- * of its own. `converted_from_party_id` points straight at it — 0265 gave Party
- * the association `contacts.lead_id` was holding — so the map that used to sit
- * between them is gone from this predicate.
- */
 const leadOwnerParty = alias(businessParties, "search_lead_owner_party");
 
 const PARTY_SEARCH_CAP = 500;
@@ -83,22 +64,71 @@ export async function resolveSearchAccess(
   access: AccessResolver,
   user: CurrentUserContext,
 ): Promise<SearchAccess> {
-  const [leadResult, dealResult, contactResult, clientResult, buildResult] =
+  let moduleMapPromise: Promise<Record<string, boolean>> | undefined;
+  const memoGetModuleMap = (orgId: string): Promise<Record<string, boolean>> => {
+    if (!moduleMapPromise) {
+      moduleMapPromise = (async () => {
+        const crmState = await access.getModuleState(orgId, "crm");
+        const buildState = await access.getModuleState(orgId, "build");
+        return { crm: crmState ?? false, build: buildState ?? false };
+      })();
+    }
+    return moduleMapPromise;
+  };
+
+  const baseResolver = access.buildModuleAvailabilityResolver(memoGetModuleMap);
+
+  let deniedModulesPromise: Promise<Set<string>> | undefined;
+  let planLockedPromise: Promise<readonly string[]> | undefined;
+  const resolver: ModuleAvailabilityResolver = {
+    isCoreModule: (key) => baseResolver.isCoreModule(key),
+    getModuleMap: (orgId) => baseResolver.getModuleMap(orgId),
+    getUserDeniedModules: (orgId, userId) => {
+      if (!deniedModulesPromise)
+        deniedModulesPromise = baseResolver.getUserDeniedModules(orgId, userId);
+      return deniedModulesPromise;
+    },
+    getPlanLockedModules: (orgId) => {
+      if (!planLockedPromise)
+        planLockedPromise = baseResolver.getPlanLockedModules(orgId);
+      return planLockedPromise;
+    },
+  };
+  const [[crmAvail, buildAvail], [leadScope, dealScope, contactScope, clientScope, buildScope]] =
     await Promise.all([
-      authorize(access, user, "crm:leads:view"),
-      authorize(access, user, "crm:deals:read"),
-      authorize(access, user, "crm:contacts:view"),
-      authorize(access, user, "crm:clients:read"),
-      authorize(access, user, "build:tickets:view"),
+      Promise.all([
+        moduleAvailability(resolver, user.orgId, user.userId, "crm"),
+        moduleAvailability(resolver, user.orgId, user.userId, "build"),
+      ]),
+      Promise.all([
+        access.scopeFor(user, "crm:leads:view"),
+        access.scopeFor(user, "crm:deals:read"),
+        access.scopeFor(user, "crm:contacts:view"),
+        access.scopeFor(user, "crm:clients:read"),
+        access.scopeFor(user, "build:tickets:view"),
+      ]),
     ]);
+
   return {
-    leads: leadResult.allow ? leadResult.scope : null,
-    deals: dealResult.allow ? dealResult.scope : null,
-    contacts: contactResult.allow ? contactResult.scope : null,
-    clients: clientResult.allow ? clientResult.scope : null,
-    build: buildResult.allow ? buildResult.scope : null,
+    leads: crmAvail.available && leadScope !== "none" ? leadScope : null,
+    deals: crmAvail.available && dealScope !== "none" ? dealScope : null,
+    contacts: crmAvail.available && contactScope !== "none" ? contactScope : null,
+    clients: crmAvail.available && clientScope !== "none" ? clientScope : null,
+    build: buildAvail.available && buildScope !== "none" ? buildScope : null,
   };
 }
+
+// Kinds that have a SECURITY DEFINER id-probe SDF.
+type SdfKind = "lead" | "deal" | "contact" | "client" | "ticket";
+
+/**
+ * Outcome of a per-kind SDF probe after the combined UNION ALL.
+ *
+ *   ids === null           — ILIKE fallback (over cap or combined probe failed)
+ *   ids.length === 0       — no matches; caller must skip the hydration query
+ *   ids.length > 0         — caller uses an inArray condition
+ */
+type KindProbe = { ids: readonly string[] } | { ids: null };
 
 @Injectable()
 export class SearchService {
@@ -129,90 +159,75 @@ export class SearchService {
     );
   }
 
-  private async probeIds(
-    statement: SQL<unknown>,
-    probeName: string,
-  ): Promise<Record<string, unknown>[] | null> {
+  private async probeAllIds(
+    access: SearchAccess,
+    q: string,
+    needsTicketProbe: boolean,
+  ): Promise<ReadonlyMap<SdfKind, KindProbe>> {
+    type Part = { kind: SdfKind; stmt: SQL<unknown>; cap: number };
+    const parts: Part[] = [];
+
+    if (access.leads !== null)
+      parts.push({ kind: "lead", stmt: sql`SELECT 'lead' AS kind, id FROM app.search_lead_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`, cap: PARTY_SEARCH_CAP });
+    if (access.deals !== null)
+      parts.push({ kind: "deal", stmt: sql`SELECT 'deal' AS kind, id::text FROM app.search_deal_ids(${q}, ${DEAL_SEARCH_CAP + 1}) AS id`, cap: DEAL_SEARCH_CAP });
+    if (access.contacts !== null)
+      parts.push({ kind: "contact", stmt: sql`SELECT 'contact' AS kind, id FROM app.search_contact_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`, cap: PARTY_SEARCH_CAP });
+    if (access.clients !== null)
+      parts.push({ kind: "client", stmt: sql`SELECT 'client' AS kind, id FROM app.search_client_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`, cap: PARTY_SEARCH_CAP });
+    if (needsTicketProbe && access.build !== null)
+      parts.push({ kind: "ticket", stmt: sql`SELECT 'ticket' AS kind, id::text FROM app.search_ticket_ids(${q}, ${TICKET_ID_CAP + 1}) AS id`, cap: TICKET_ID_CAP });
+
+    const result = new Map<SdfKind, KindProbe>();
+    if (parts.length === 0) return result;
+
+    const unionStmt = sql.join(parts.map((p) => p.stmt), sql` UNION ALL `);
+    let rawRows: Record<string, unknown>[];
     try {
-      return await this.db.execute(statement);
+      rawRows = await this.db.execute<Record<string, unknown>>(unionStmt);
     } catch (err: unknown) {
       if (!isUndefinedFunction(err)) throw err;
-      logger.error(`search probe ${probeName} is missing; falling back to an unindexed scan`, {
-        cause: err instanceof Error ? err.message : String(err),
-      });
-      return null;
+      logger.error(
+        "search_*_ids combined probe returned 42883; all active kinds fall back to ILIKE",
+        { cause: err instanceof Error ? err.message : String(err) },
+      );
+      for (const { kind } of parts) result.set(kind, { ids: null });
+      return result;
     }
+
+    const byKind = new Map<string, string[]>();
+    for (const row of rawRows) {
+      const kind = String(row["kind"] ?? "");
+      const id = String(row["id"] ?? "");
+      const bucket = byKind.get(kind);
+      if (bucket) bucket.push(id);
+      else byKind.set(kind, [id]);
+    }
+
+    for (const { kind, cap } of parts) {
+      const ids = byKind.get(kind) ?? [];
+      result.set(kind, ids.length > cap ? { ids: null } : { ids });
+    }
+    return result;
   }
 
-  private async leadCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const fallback =
-      or(
-        ilike(businessParties.name, pattern),
-        ilike(businessParties.email, pattern),
-        ilike(businessParties.phone, pattern),
-        ilike(businessParties.companyName, pattern),
-      ) ?? sql`false`;
-    const rows = await this.probeIds(
-      sql`SELECT app.search_lead_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
-      "search_lead_party_ids",
-    );
-    if (rows === null) return fallback;
-    if (rows.length > PARTY_SEARCH_CAP) return fallback;
-    if (rows.length === 0) return sql`false`;
-    return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
+  private toPartyCond(probe: KindProbe | undefined, fallback: SQL<unknown>): SQL<unknown> | null {
+    if (probe === undefined || probe.ids === null) return fallback;
+    if (probe.ids.length === 0) return null;
+    return inArray(businessParties.partyId, [...probe.ids]);
   }
 
-  private async dealCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const fallback = or(ilike(deals.name, pattern), ilike(deals.contactPerson, pattern)) ?? sql`false`;
-    const rows = await this.probeIds(
-      sql`SELECT app.search_deal_ids(${q}, ${DEAL_SEARCH_CAP + 1}) AS id`,
-      "search_deal_ids",
-    );
-    if (rows === null) return fallback;
-    if (rows.length > DEAL_SEARCH_CAP) return fallback;
-    if (rows.length === 0) return sql`false`;
-    return inArray(deals.id, rows.map((r) => Number(r["id"])));
+  private toDealCond(probe: KindProbe | undefined, pattern: string): SQL<unknown> | null {
+    if (probe === undefined || probe.ids === null)
+      return or(ilike(deals.name, pattern), ilike(deals.contactPerson, pattern)) ?? sql`false`;
+    if (probe.ids.length === 0) return null;
+    return inArray(deals.id, probe.ids.map(Number));
   }
 
-  private async contactPartyCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const fallback =
-      or(
-        ilike(businessParties.name, pattern),
-        ilike(businessParties.email, pattern),
-        ilike(businessParties.companyName, pattern),
-      ) ?? sql`false`;
-    const rows = await this.probeIds(
-      sql`SELECT app.search_contact_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
-      "search_contact_party_ids",
-    );
-    if (rows === null) return fallback;
-    if (rows.length > PARTY_SEARCH_CAP) return fallback;
-    if (rows.length === 0) return sql`false`;
-    return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
-  }
-
-  private async clientPartyCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const fallback =
-      or(ilike(businessParties.name, pattern), ilike(businessParties.companyName, pattern)) ?? sql`false`;
-    const rows = await this.probeIds(
-      sql`SELECT app.search_client_party_ids(${q}, ${PARTY_SEARCH_CAP + 1}) AS id`,
-      "search_client_party_ids",
-    );
-    if (rows === null) return fallback;
-    if (rows.length > PARTY_SEARCH_CAP) return fallback;
-    if (rows.length === 0) return sql`false`;
-    return inArray(businessParties.partyId, rows.map((r) => String(r["id"])));
-  }
-
-  private async ticketTitleCondition(q: string, pattern: string): Promise<SQL<unknown>> {
-    const rows = await this.probeIds(
-      sql`SELECT app.search_ticket_ids(${q}, ${TICKET_ID_CAP + 1}) AS id`,
-      "search_ticket_ids",
-    );
-    if (rows === null) return ilike(tickets.title, pattern);
-    if (rows.length > TICKET_ID_CAP) return ilike(tickets.title, pattern);
-    if (rows.length === 0) return sql`false`;
-    return inArray(tickets.id, rows.map((r) => Number(r["id"])));
+  private toTicketCond(probe: KindProbe | undefined, pattern: string): SQL<unknown> | null {
+    if (probe === undefined || probe.ids === null) return ilike(tickets.title, pattern);
+    if (probe.ids.length === 0) return null;
+    return inArray(tickets.id, probe.ids.map(Number));
   }
 
   private async executeSearch(
@@ -229,17 +244,6 @@ export class SearchService {
     const numericTicket = /^\d+$/.test(q) ? Number(q) : null;
     const needsTicketProbe = access.build !== null && keyMatch === null && numericTicket === null;
 
-    /*
-     * A narrowed viewer sees a contact through what it is attached to: the lead
-     * it came from, or the deal it is on. Both associations are Party's now --
-     * `converted_from_party_id` and `primary_deal_id`, from 0265 -- so the two
-     * EXISTS below correlate to `business_parties` rather than to a `contacts`
-     * row, and this file stops joining the legacy table for two integers.
-     *
-     * The predicate is unchanged in what it admits: the same lead, the same deal,
-     * the same owner columns, the same `or`. `contacts.lead_id` and its party link
-     * are one relation under two spellings, kept equal by the mirror.
-     */
     const contactAccess = access.contacts;
     const contactScope =
       contactAccess === "all"
@@ -277,17 +281,21 @@ export class SearchService {
             )
           : sql`false`;
 
-    const [leadCond, dealCond, contactCond, clientCond, ticketTitleCond] = await Promise.all([
-      access.leads ? this.leadCondition(q, pattern) : Promise.resolve(sql`false`),
-      access.deals ? this.dealCondition(q, pattern) : Promise.resolve(sql`false`),
-      access.contacts ? this.contactPartyCondition(q, pattern) : Promise.resolve(sql`false`),
-      access.clients ? this.clientPartyCondition(q, pattern) : Promise.resolve(sql`false`),
-      needsTicketProbe ? this.ticketTitleCondition(q, pattern) : Promise.resolve(sql`false`),
-    ]);
+    const probes = await this.probeAllIds(access, q, needsTicketProbe);
+
+    const leadFallback = or(ilike(businessParties.name, pattern), ilike(businessParties.email, pattern), ilike(businessParties.phone, pattern), ilike(businessParties.companyName, pattern)) ?? sql`false`;
+    const contactFallback = or(ilike(businessParties.name, pattern), ilike(businessParties.email, pattern), ilike(businessParties.companyName, pattern)) ?? sql`false`;
+    const clientFallback = or(ilike(businessParties.name, pattern), ilike(businessParties.companyName, pattern)) ?? sql`false`;
+
+    const leadCond = this.toPartyCond(probes.get("lead"), leadFallback);
+    const dealCond = this.toDealCond(probes.get("deal"), pattern);
+    const contactCond = this.toPartyCond(probes.get("contact"), contactFallback);
+    const clientCond = this.toPartyCond(probes.get("client"), clientFallback);
+    const ticketTitleCond = this.toTicketCond(probes.get("ticket"), pattern);
 
     const ticketKey = keyMatch?.[1];
     const ticketNumStr = keyMatch?.[2];
-    const ticketWhere =
+    const ticketWhere: SQL<unknown> | null =
       ticketKey !== undefined && ticketNumStr !== undefined
         ? and(ilike(projects.key, ticketKey), eq(tickets.ticketNumber, Number(ticketNumStr))) ?? sql`false`
         : numericTicket !== null
@@ -295,7 +303,7 @@ export class SearchService {
           : ticketTitleCond;
 
     const [leadResults, dealResults, contactResults, clientResults, ticketResults] = await Promise.all([
-      access.leads
+      access.leads !== null && leadCond !== null
         ? this.db
         .select({
           id: leadPartyMap.leadId,
@@ -321,7 +329,7 @@ export class SearchService {
         .limit(maxPer)
         : Promise.resolve([]),
 
-      access.deals
+      access.deals !== null && dealCond !== null
         ? this.db
         .select({ id: deals.id, name: deals.name, value: deals.value, stage: deals.stage, contactPerson: deals.contactPerson })
         .from(deals)
@@ -337,7 +345,7 @@ export class SearchService {
         .limit(maxPer)
         : Promise.resolve([]),
 
-      access.contacts
+      access.contacts !== null && contactCond !== null
         ? this.db
         .select({
           id: contactPartyMap.contactId,
@@ -360,7 +368,7 @@ export class SearchService {
         .limit(maxPer)
         : Promise.resolve([]),
 
-      access.clients
+      access.clients !== null && clientCond !== null
         ? this.db
         .select({
           id: clientPartyMap.clientId,
@@ -385,7 +393,7 @@ export class SearchService {
         .limit(maxPer)
         : Promise.resolve([]),
 
-      access.build
+      access.build !== null && ticketWhere !== null
         ? this.db
         .select({
           id: tickets.id,

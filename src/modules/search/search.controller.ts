@@ -1,5 +1,4 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
-import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Universal } from "../../common/auth/universal.decorator";
@@ -10,7 +9,6 @@ import { SearchService } from "./search.service";
 import { searchQuerySchema, type SearchQueryInput } from "./dto/search.schemas";
 
 @Controller("search")
-@UseGuards(JwtAuthGuard)
 export class SearchController {
   constructor(private readonly search: SearchService) {}
 
