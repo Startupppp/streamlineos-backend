@@ -167,7 +167,7 @@ export class SearchService {
     const unionStmt = sql.join(parts.map((p) => p.stmt), sql` UNION ALL `);
     let rawRows: Record<string, unknown>[];
     try {
-      rawRows = await this.db.execute<Record<string, unknown>>(unionStmt);
+      rawRows = await this.db.execute(unionStmt);
     } catch (err: unknown) {
       if (!isUndefinedFunction(err)) throw err;
       logger.error(

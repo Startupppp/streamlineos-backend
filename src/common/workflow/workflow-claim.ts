@@ -17,6 +17,10 @@ interface DrainBacklog {
   readonly oldestDueSeconds: number | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export async function drainBacklog(db: Db): Promise<DrainBacklog> {
   let due = 0;
   let oldest = 0;
@@ -31,7 +35,7 @@ export async function drainBacklog(db: Db): Promise<DrainBacklog> {
         FROM workflow_runs
         WHERE organization_id = ${orgId} AND (${CLAIMABLE})
       `);
-      const row = ([...rows][0] ?? {}) as Record<string, unknown>;
+      const row: Record<string, unknown> = [...rows][0] ?? {};
       const orgDue = Number(row.due ?? 0);
       if (orgDue > 0) {
         due += orgDue;
@@ -68,12 +72,12 @@ export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> 
     `);
 
     for (const row of rows) {
-      const record = row as Record<string, unknown>;
+      const record: Record<string, unknown> = row;
       claimed.push({
         workflowRunId: String(record.workflow_run_id),
         organizationId: String(record.organization_id),
         workflowName: String(record.workflow_name),
-        input: (record.input ?? {}) as Record<string, unknown>,
+        input: isRecord(record.input) ? record.input : {},
         correlationId:
           typeof record.correlation_id === "string" ? record.correlation_id : null,
         attempt: Number(record.attempt ?? 0),

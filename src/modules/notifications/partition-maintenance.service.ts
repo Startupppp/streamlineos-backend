@@ -11,8 +11,14 @@ function usernameFromUrl(url: string): string {
   try { return new URL(url).username; } catch { return ""; }
 }
 
+function errorCode(err: unknown): string {
+  if (typeof err !== "object" || err === null) return "";
+  const record: Record<string, unknown> = { ...err };
+  return typeof record["code"] === "string" ? record["code"] : "";
+}
+
 function isLockTimeout(err: unknown): boolean {
-  const code = (err as { code?: string }).code;
+  const code = errorCode(err);
   const msg = err instanceof Error ? err.message : String(err);
   return code === "55P03" || msg.includes("lock_timeout") || msg.includes("does not exist");
 }
@@ -73,18 +79,14 @@ export class PartitionMaintenanceService {
       `;
       const hasDefaultPartition = modeRows[0]?.has_default === true;
 
-      if (hasDefaultPartition) {
+      const [oldest] = partitions;
+      if (hasDefaultPartition && oldest !== undefined) {
         // Plain DETACH queues every new reader behind its ACCESS EXCLUSIVE wait, so one partition per sweep under a 1 s timeout.
         this.logger.log(
           `RETENTION_DETACH: ${parent} detach-mode=plain, 1 of ${partitions.length} expired partitions attempted this sweep`,
         );
         await client.unsafe(`SET lock_timeout = ${LOCK_TIMEOUT_PLAIN}`);
-        const { detached: d, dropped: dr } = await this.detachOne(
-          client,
-          parent,
-          partitions[0]!,
-          false,
-        );
+        const { detached: d, dropped: dr } = await this.detachOne(client, parent, oldest, false);
         detached = d;
         dropped = dr;
       } else {

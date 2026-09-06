@@ -114,10 +114,7 @@ async function run() {
   }
 
   console.log("Constructing AccessService with stub dependencies...");
-  const mockVersionCache = new AccessVersionCache(
-    mockDb,
-    mockCache,
-  ) as AccessVersionCache & Record<string, unknown>;
+  const mockVersionCache = new AccessVersionCache(mockDb, mockCache);
   const svc = new AccessService(
     mockDb,
     mockCache,
@@ -143,9 +140,9 @@ async function run() {
     "kb:read", "notifications:view",
   ]) perms[key] = "all";
 
-  (mockVersionCache as Record<string, unknown>).versionCache = new Map([
-    [orgId, { version, expiresAt }],
-  ]);
+  const versionCacheFields: Record<string, unknown> = { ...mockVersionCache };
+  versionCacheFields["versionCache"] = new Map([[orgId, { version, expiresAt }]]);
+  Object.assign(mockVersionCache, { versionCache: versionCacheFields["versionCache"] });
 
   const permsKey = `${orgId}:${userId}:${version}`;
   (svc as Record<string, unknown>).permsCache = new Map([
