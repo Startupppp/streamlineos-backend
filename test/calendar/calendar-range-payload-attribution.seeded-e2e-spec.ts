@@ -81,7 +81,7 @@ describe("[seeded-e2e] calendar range payload attribution", () => {
 
     expect(res.status).toBe(200);
 
-    const body = res.body as { events?: unknown[] };
+    const body = (res.body as { data?: { events?: unknown[] } }).data ?? {};
     const events = body.events ?? [];
     expect(events.length).toBeGreaterThan(0);
 
@@ -110,7 +110,7 @@ describe("[seeded-e2e] calendar range payload attribution", () => {
     expect(perEvent * 400).toBeLessThan(150 * 1024);
   });
 
-  it("native range items carry none of the six stripped detail-only fields", async () => {
+  it("native range items carry none of the four removed fields and no description or creator name", async () => {
     const res = await request(server as never)
       .get("/v1/calendar/events")
       .set("Authorization", `Bearer ${token}`)
@@ -118,17 +118,18 @@ describe("[seeded-e2e] calendar range payload attribution", () => {
 
     expect(res.status).toBe(200);
 
-    const body = res.body as { events?: unknown[] };
+    const body = (res.body as { data?: { events?: unknown[] } }).data ?? {};
     const nativeEvents = (body.events ?? []).filter(
       (ev) => (ev as Record<string, unknown>)["source"] === "event",
     );
     expect(nativeEvents.length).toBeGreaterThan(0);
 
-    const stripped = ["rrule", "isRecurring", "meetingUrl", "linkedTicket", "description", "creatorName"];
+    const removed = ["rrule", "isRecurring", "meetingUrl", "linkedTicket"];
+    const emptied = ["description", "creatorName"];
     for (const ev of nativeEvents) {
-      const keys = Object.keys(ev as Record<string, unknown>);
-      for (const field of stripped)
-        expect([field, keys.includes(field)]).toEqual([field, false]);
+      const record = ev as Record<string, unknown>;
+      for (const field of removed) expect([field, field in record]).toEqual([field, false]);
+      for (const field of emptied) expect([field, record[field] ?? null]).toEqual([field, null]);
     }
   });
 
@@ -139,7 +140,7 @@ describe("[seeded-e2e] calendar range payload attribution", () => {
       .query({ start: WINDOW_START, end: WINDOW_END });
 
     expect(res.status).toBe(200);
-    const body = res.body as { events?: Array<Record<string, unknown>> };
+    const body = (res.body as { data?: { events?: Array<Record<string, unknown>> } }).data ?? {};
     const nativeEvent = (body.events ?? []).find(
       (ev) => (ev as Record<string, unknown>)["source"] === "event",
     ) as Record<string, unknown> | undefined;
@@ -156,7 +157,7 @@ describe("[seeded-e2e] calendar range payload attribution", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(detail.status).toBe(200);
-    const d = detail.body as Record<string, unknown>;
+    const d = (detail.body as { data?: Record<string, unknown> }).data ?? {};
     expect(d).toHaveProperty("meetingUrl");
     expect(d).toHaveProperty("description");
     expect(d).toHaveProperty("creatorName");
