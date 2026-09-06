@@ -116,7 +116,7 @@
       "note": "the keyset loop is correct in shape but has NO overall bound and accumulates every matching event into a Node array on an interactive request path \u00e2\u20ac\u201d ticket 20 measured 8,653 rows / ~87 pages for a 7-day window in the large tenant. Needs an explicit budget with a hasMore signal, not a LIMIT"
     },
     "/calendar/calendar-exception-loader.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "N+1-FIXED",
       "note": "for(;;) keyset page loop over calendar_event_exceptions; one query per page"
     },
     "/calendar/calendar-reminder-sweep.service.ts": {

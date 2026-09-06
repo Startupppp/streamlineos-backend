@@ -296,7 +296,7 @@ export async function resolveProbeFixtures(sql, orgId) {
       FROM build.ticket_assignees ta
       INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
       WHERE ta.org_id = ${orgId}
-      GROUP BY ta.membership_id, om.user_id ORDER BY n DESC LIMIT 1`)) ?? [null];
+      GROUP BY ta.membership_id, om.user_id ORDER BY n DESC, ta.membership_id ASC LIMIT 1`)) ?? [null];
   const [fallbackMember] = (await inTenant((tx) => tx`
       SELECT id AS membership_id, user_id FROM organization_members
       WHERE org_id = ${orgId} AND status = 'ACTIVE' ORDER BY id LIMIT 1`)) ?? [null];

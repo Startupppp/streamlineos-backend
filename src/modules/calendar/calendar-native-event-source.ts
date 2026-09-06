@@ -32,7 +32,7 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
   }
 
   async load(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
-    const { eventsData, linkedTicketMap, exceptionsByEvent } = await this.loader.load(
+    const { eventsData, exceptionsByEvent } = await this.loader.load(
       ctx.orgId,
       ctx.userId,
       ctx.start,
@@ -85,18 +85,9 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
             source: "event",
             timezone: event.timezone,
             location: event.location,
-            meetingUrl: event.meetingUrl,
-            description: event.description,
-            creatorName: event.creatorName ?? null,
             entityId: event.entityId,
             entityType: event.entityType,
             myRsvpStatus: event.rsvpStatus ?? null,
-            rrule: event.rrule,
-            isRecurring,
-            linkedTicket:
-              event.entityType === "ticket" && event.entityId
-                ? linkedTicketMap.get(Number(event.entityId)) ?? null
-                : null,
           },
         });
       }
@@ -117,18 +108,9 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
               source: "event",
               timezone: event.timezone,
               location: event.location,
-              meetingUrl: event.meetingUrl,
-              description: event.description,
-              creatorName: event.creatorName ?? null,
               entityId: event.entityId,
               entityType: event.entityType,
               myRsvpStatus: event.rsvpStatus ?? null,
-              rrule: event.rrule,
-              isRecurring,
-              linkedTicket:
-                event.entityType === "ticket" && event.entityId
-                  ? linkedTicketMap.get(Number(event.entityId)) ?? null
-                  : null,
             },
           });
         }

@@ -35,13 +35,36 @@ export const calendarEventItemSchema = z.object({
   source: z.enum(["event", "leave", "interview", "task", "holiday", "attendance"]),
   timezone: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
-  meetingUrl: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   creatorName: z.string().nullable().optional(),
   entityId: z.string().nullable().optional(),
   entityType: z.string().nullable().optional(),
   myRsvpStatus: z.string().nullable().optional(),
   projectId: z.number().int().nullable().optional(),
+});
+
+/**
+ * `GET /calendar/events/:eventId` — full single-event projection.
+ *
+ * Carries the fields stripped from the range response: description, meetingUrl,
+ * creatorName, linkedTicket, rrule, isRecurring. Backed by `CalendarService.getEvent`.
+ */
+export const calendarEventDetailSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  startDate: wireDate(),
+  endDate: wireDate(),
+  allDay: z.boolean(),
+  timezone: z.string(),
+  color: z.string().nullable(),
+  category: z.string(),
+  entityType: z.string().nullable(),
+  entityId: z.string().nullable(),
+  location: z.string().nullable(),
+  meetingUrl: z.string().nullable(),
+  description: z.string().nullable(),
+  creatorName: z.string().nullable(),
+  myRsvpStatus: z.string().nullable(),
   linkedTicket: z
     .object({
       id: z.number().int(),
@@ -50,10 +73,9 @@ export const calendarEventItemSchema = z.object({
       projectId: z.number().int(),
       status: z.string(),
     })
-    .nullable()
-    .optional(),
-  rrule: z.string().nullable().optional(),
-  isRecurring: z.boolean().optional(),
+    .nullable(),
+  rrule: z.string().nullable(),
+  isRecurring: z.boolean(),
 });
 
 /** `CalendarEventsResult` — `CalendarEventsAggregateService.getEvents`. */

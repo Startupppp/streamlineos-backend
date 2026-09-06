@@ -128,7 +128,7 @@ describeDb("perf seed forward window", () => {
          INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
         WHERE ta.org_id = $1
         GROUP BY ta.membership_id, om.user_id
-        ORDER BY count(*) DESC LIMIT 1`,
+        ORDER BY count(*) DESC, ta.membership_id ASC LIMIT 1`,
       [REFERENCE_ORG],
     ));
     const [calendarEvent] = await inTenant((tx) => tx.unsafe(

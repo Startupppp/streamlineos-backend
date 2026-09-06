@@ -50,10 +50,7 @@ const baseSchema = z
     PLACEMENT_SIGNING_KEY: z.preprocess(emptyToUndefined, deploymentSecret),
     PLACEMENT_SIGNING_KEY_ID: z.preprocess(emptyToUndefined, z.string().optional()),
     PLACEMENT_SIGNING_KEY_PREVIOUS: z.preprocess(emptyToUndefined, deploymentSecret),
-    PLACEMENT_SIGNING_KEY_PREVIOUS_ID: z.preprocess(
-      emptyToUndefined,
-      z.string().optional(),
-    ),
+    PLACEMENT_SIGNING_KEY_PREVIOUS_ID: z.preprocess(emptyToUndefined, z.string().optional()),
     ...poolEnvShape,
     BACKEND_JWT_SECRET: z
       .string()
@@ -78,14 +75,8 @@ const baseSchema = z
     CRON_SECRET: deploymentSecret,
     INTERNAL_API_SECRET: deploymentSecret,
     CONTACT_NOTIFICATION_EMAIL: optionalEmail,
-    WAITLIST_NOTIFICATION_EMAILS: z.preprocess(
-      emptyToUndefined,
-      z.string().trim().optional(),
-    ),
-    EMAIL_PROVIDER: z.preprocess(
-      emptyToUndefined,
-      z.enum(["zeptomail", "resend"]).optional(),
-    ),
+    WAITLIST_NOTIFICATION_EMAILS: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    EMAIL_PROVIDER: z.preprocess(emptyToUndefined, z.enum(["zeptomail", "resend"]).optional()),
     ZEPTOMAIL_API_URL: optionalUrl,
     ZEPTOMAIL_TOKEN: z.preprocess(
       emptyToUndefined,
@@ -105,16 +96,8 @@ const baseSchema = z
     EMAIL_FROM_ADDRESS: optionalEmail,
     UPSTASH_REDIS_REST_URL: z.string().url().optional(),
     UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
-    /**
-     * Milliseconds a Redis command may take before the cache gives up on it. Unset (or
-     * empty) uses cache.module.ts's 3000 ms default; below 100 that factory throws while
-     * the container is being built, so the bound is asserted here instead — at boot, in
-     * one aggregated message, rather than as a bare provider failure mid-construction.
-     */
-    REDIS_COMMAND_TIMEOUT_MS: z.preprocess(
-      emptyToUndefined,
-      z.coerce.number().int().min(100).optional(),
-    ),
+    /** Below 100ms the cache factory throws at boot; bound here so the error appears in the aggregated env-validation report. */
+    REDIS_COMMAND_TIMEOUT_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().min(100).optional()),
     TURNSTILE_SECRET_KEY: z.string().optional(),
     ABLY_API_KEY: z.string().optional(),
     ENCRYPTION_KEY: z
@@ -125,31 +108,8 @@ const baseSchema = z
     COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_OUTLOOK: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_GMAIL: z.string().optional(),
-    /**
-     * Authenticates the provider relay into `POST /webhooks/calendar/provider`, which is
-     * `@Public()` and cannot carry a session, so this shared secret is the only thing in
-     * front of it.
-     *
-     * Optional because unset is a real deployment posture, not an oversight: the receiver
-     * is simply not deployed, and `assertCalendarWebhookSecret` answers every delivery
-     * with 503 rather than accepting an unauthenticated one — it fails closed. Requiring
-     * it in production would refuse to boot every deployment that does not take calendar
-     * webhooks at all.
-     *
-     * The length bound is the part that has to be here. A truncated, placeholder or
-     * half-pasted value is otherwise indistinguishable from a good one until a provider
-     * calls back, and it weakens the single check guarding a public endpoint.
-     */
-    CALENDAR_PROVIDER_WEBHOOK_SECRET: z.preprocess(
-      emptyToUndefined,
-      z
-        .string()
-        .min(
-          32,
-          "CALENDAR_PROVIDER_WEBHOOK_SECRET must be at least 32 characters — it is the only check on the public calendar webhook endpoint. Leave it unset to keep the receiver undeployed (it then 503s every delivery).",
-        )
-        .optional(),
-    ),
+    /** Guards POST /webhooks/calendar/provider (@Public). Unset = receiver not deployed (it 503s deliveries). Min 32 chars — the only gate on that public endpoint. */
+    CALENDAR_PROVIDER_WEBHOOK_SECRET: z.preprocess(emptyToUndefined, z.string().min(32, "CALENDAR_PROVIDER_WEBHOOK_SECRET must be at least 32 characters — it is the only check on the public calendar webhook endpoint.").optional()),
     EMAIL_FROM_NAME: z.preprocess(emptyToUndefined, z.string().trim().optional()),
     EMAIL_APP_URL: optionalUrl,
     NOREPLY_EMAIL: optionalEmail,
@@ -249,24 +209,10 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
-    /**
-     * The in-process retention sweeps. Read as `!== "false"`, so unset leaves them ON —
-     * the enum is what stops `RETENTION_SCHEDULER_ENABLED=0` from reading as "off" to an
-     * operator while the scheduler keeps running. Same shape as OUTBOX_DISPATCH_ENABLED.
-     */
-    RETENTION_SCHEDULER_ENABLED: z.preprocess(
-      emptyToUndefined,
-      z.enum(["true", "false"]).optional(),
-    ),
-    /**
-     * Milliseconds between retention passes; unset uses 600000 (10 minutes). The reader
-     * falls back to that default on any unparseable value, so without this bound a typo
-     * runs at a cadence nobody chose and nothing ever says so.
-     */
-    RETENTION_SCHEDULER_TICK_MS: z.preprocess(
-      emptyToUndefined,
-      z.coerce.number().int().positive().optional(),
-    ),
+    /** `!== "false"` so unset leaves retention ON. Enum prevents `=0` silently disabling it (same shape as OUTBOX_DISPATCH_ENABLED). */
+    RETENTION_SCHEDULER_ENABLED: z.preprocess(emptyToUndefined, z.enum(["true", "false"]).optional()),
+    /** Milliseconds between retention passes; unset uses 600000ms. Bound prevents a typo from running at an unintended cadence. */
+    RETENTION_SCHEDULER_TICK_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
     AV_SCANNER: z.preprocess(
       emptyToUndefined,
       z.enum(["clamav", "virustotal"]).optional(),

@@ -1,7 +1,7 @@
 import { and, eq, gt } from "drizzle-orm";
 import { kbArticles } from "../../../db/schema";
 import { KbArticleReindexService } from "../../kb/retrieval/kb-article-reindex.service";
-import { SupportKbController } from "./support-kb.controller";
+import { SupportKbEngagementController } from "./support-kb-engagement.controller";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 /**
@@ -49,8 +49,7 @@ function boundParams(node: unknown): unknown[] {
 describe("support KB reindex is resumable (PRD-C077)", () => {
   describe("the controller's cursor", () => {
     const reindex = { reindexAll: jest.fn() };
-    const controller = new SupportKbController(
-      {} as never,
+    const controller = new SupportKbEngagementController(
       {} as never,
       {} as never,
       reindex as unknown as KbArticleReindexService,

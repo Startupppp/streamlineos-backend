@@ -1,25 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { CalendarEventItem, CalendarEventsResult, LinkedTicket } from "./calendar.types";
+import type { CalendarEventItem, CalendarEventsResult } from "./calendar.types";
 import type { CalendarEventProjection, CalendarSourceContext } from "./calendar-event-source";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import { CALENDAR_EVENTS_CAP } from "./dto/calendar.schemas";
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-
-function isLinkedTicket(v: unknown): v is LinkedTicket {
-  if (!isRecord(v)) return false;
-  return (
-    typeof v["id"] === "number" &&
-    typeof v["key"] === "string" &&
-    typeof v["title"] === "string" &&
-    typeof v["projectId"] === "number" &&
-    typeof v["status"] === "string"
-  );
-}
 
 function toItemSource(val: unknown): CalendarEventItem["source"] {
   if (
@@ -45,16 +30,12 @@ function projectionToItem(p: CalendarEventProjection): CalendarEventItem {
     source: toItemSource(p.meta["source"]),
     timezone: typeof p.meta["timezone"] === "string" ? p.meta["timezone"] : null,
     location: typeof p.meta["location"] === "string" ? p.meta["location"] : null,
-    meetingUrl: typeof p.meta["meetingUrl"] === "string" ? p.meta["meetingUrl"] : null,
     description: typeof p.meta["description"] === "string" ? p.meta["description"] : null,
     creatorName: typeof p.meta["creatorName"] === "string" ? p.meta["creatorName"] : null,
     entityId: typeof p.meta["entityId"] === "string" ? p.meta["entityId"] : null,
     entityType: typeof p.meta["entityType"] === "string" ? p.meta["entityType"] : null,
     myRsvpStatus: typeof p.meta["myRsvpStatus"] === "string" ? p.meta["myRsvpStatus"] : null,
     projectId: typeof p.meta["projectId"] === "number" ? p.meta["projectId"] : null,
-    linkedTicket: isLinkedTicket(p.meta["linkedTicket"]) ? p.meta["linkedTicket"] : null,
-    rrule: typeof p.meta["rrule"] === "string" ? p.meta["rrule"] : null,
-    isRecurring: p.meta["isRecurring"] === true,
   };
 }
 

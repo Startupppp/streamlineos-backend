@@ -91,12 +91,6 @@ export class SupportKbGapService {
     });
 
     if (!gatewayResult.ok) {
-      /**
-       * An exhausted AI credit wallet is an expected domain outcome — the tenant
-       * is being asked to top up, nothing is broken — so it is reported at warn.
-       * Only the kinds an operator can act on stay at error, which is what keeps
-       * the error stream a list of faults rather than a list of billing states.
-       */
       if (gatewayResult.kind === "quota_exceeded") {
         logger.warn("support kb-gap draft declined", { orgId, gapId, kind: gatewayResult.kind });
         throw new InsufficientAiCreditsException({ message: gatewayResult.message });
@@ -194,7 +188,7 @@ export class SupportKbGapService {
         proposedArticleTitle: kbArticles.title,
       })
       .from(supportKnowledgeGaps)
-      .leftJoin(kbArticles, eq(kbArticles.id, supportKnowledgeGaps.proposedArticleId))
+      .leftJoin(kbArticles, and(eq(kbArticles.id, supportKnowledgeGaps.proposedArticleId), isNull(kbArticles.archivedAt)))
       .where(
         and(
           eq(supportKnowledgeGaps.orgId, orgId),
@@ -298,9 +292,7 @@ export class SupportKbGapService {
     } | null;
     const parts: string[] = [];
     if (evidence?.searchQueries?.length)
-      parts.push(
-        `Search queries with no results:\n${evidence.searchQueries.map((q) => `- "${q.query}" (${q.count}x)`).join("\n")}`,
-      );
+      parts.push(`Search queries with no results:\n${evidence.searchQueries.map((q) => `- "${q.query}" (${q.count}x)`).join("\n")}`);
     if (evidence?.relatedTicketIds?.length)
       parts.push(`Related ticket count: ${evidence.relatedTicketIds.length}`);
     return parts.join("\n\n") || "No additional evidence";

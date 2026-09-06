@@ -1,3 +1,9 @@
+-- @irreversible
+-- Dropping the currency column would destroy denomination codes written to rows
+-- created after this migration was applied. Historic rows are intentionally left
+-- NULL; rows written after carry a real ISO-4217 code that cannot be recovered
+-- from any other column.
+--
 -- 1064 — name the denomination of the money in `revenue_events`
 -- =============================================================================
 -- Ticket: 10-billing-payments / PRD-C125 (tax/currency)

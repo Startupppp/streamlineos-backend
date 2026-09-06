@@ -57,6 +57,7 @@ import {
   calendarAttendeeListResponseSchema,
   calendarCreateEventResponseSchema,
   calendarDeleteEventResponseSchema,
+  calendarEventDetailSchema,
   calendarEventsResponseSchema,
   calendarOccurrenceExceptionResponseSchema,
   calendarRsvpResponseSchema,
@@ -136,6 +137,19 @@ export class CalendarController {
       query.start,
       query.end,
     );
+  }
+
+  @Get("events/:eventId")
+  @Universal()
+  @Validate({ params: eventIdParams })
+  @ResponseSchema(calendarEventDetailSchema)
+  async getEvent(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const event = await this.calendar.getEvent(u.orgId, u.userId, eventId);
+    if (!event) throw new NotFoundException("Event not found");
+    return event;
   }
 
   @Post("events")

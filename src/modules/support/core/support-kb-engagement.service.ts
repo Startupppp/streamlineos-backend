@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   kbArticleAttachments,
   kbArticleComments,
@@ -28,7 +28,7 @@ export class SupportKbEngagementService {
 
   private async ensureArticle(orgId: string, articleId: number) {
     const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId), isNull(kbArticles.archivedAt)),
       columns: { id: true },
     });
     if (!article) throw new NotFoundException("Article not found");
@@ -65,7 +65,7 @@ export class SupportKbEngagementService {
         updatedAt: kbArticleComments.updatedAt,
       })
       .from(kbArticleComments)
-      .leftJoin(users, eq(kbArticleComments.authorId, users.id))
+      .leftJoin(users, and(eq(kbArticleComments.authorId, users.id), isNull(users.deletedAt)))
       .where(and(eq(kbArticleComments.articleId, articleId), eq(kbArticleComments.orgId, orgId)))
       .orderBy(desc(kbArticleComments.createdAt))
       .limit(100);

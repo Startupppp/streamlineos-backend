@@ -480,7 +480,7 @@ async function main() {
         INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
         WHERE ta.org_id = ${ORG}
         GROUP BY ta.membership_id, om.user_id
-        ORDER BY n DESC LIMIT 1`)) ?? [null];
+        ORDER BY n DESC, ta.membership_id ASC LIMIT 1`)) ?? [null];
 
     const [channel] = (await tryFixture((tx) => tx`
         SELECT channel_id, count(*)::int n FROM chat_messages

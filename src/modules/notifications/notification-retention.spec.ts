@@ -7,7 +7,7 @@ jest.mock("postgres");
 
 import postgres from "postgres";
 
-const mockedPostgresFactory = postgres as jest.Mock;
+const mockedPostgresFactory = postgres as unknown as jest.Mock;
 
 const leaseRuns = {
   withLease: jest.fn(async (_key: string, _ttl: number, fn: () => Promise<unknown>) => ({
