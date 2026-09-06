@@ -76,7 +76,8 @@ function fillerOf(cache: CacheService): CacheFiller {
 }
 
 function breakerField(filler: CacheFiller): Record<string, unknown> {
-  return filler as unknown as Record<string, unknown>;
+  const held = (filler as unknown as Record<string, unknown>)["breaker"];
+  return held as Record<string, unknown>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -266,8 +267,9 @@ describe("PRD-C143 §3 — Redis outage without request storm", () => {
 
     const filler = fillerOf(cache);
     const fields = breakerField(filler);
-    fields["breakerOpen"] = false;
+    fields["open"] = false;
     fields["consecutiveFailures"] = 0;
+    fields["probeInFlight"] = false;
 
     await cache.cached("bite-post-2", loader);
     expect(readCallCount()).toBe(callsAfterOpen + 1);
@@ -277,7 +279,7 @@ describe("PRD-C143 §3 — Redis outage without request storm", () => {
 
     await cache.cached("restore-final", loader);
     expect(readCallCount()).toBe(callsBeforeReopen);
-    expect(breakerField(fillerOf(cache))["breakerOpen"]).toBe(true);
+    expect(breakerField(fillerOf(cache))["open"]).toBe(true);
   });
 
   it("a successful probe after the probe interval closes the breaker", async () => {
@@ -295,14 +297,14 @@ describe("PRD-C143 §3 — Redis outage without request storm", () => {
     const loader = jest.fn().mockResolvedValue({ data: "fresh" });
 
     for (let i = 0; i < 5; i++) await cache.cached(`probe-trip-${i}`, loader);
-    expect(breakerField(fillerOf(cache))["breakerOpen"]).toBe(true);
+    expect(breakerField(fillerOf(cache))["open"]).toBe(true);
 
     redisAlive = true;
-    breakerField(fillerOf(cache))["breakerOpenAt"] = Date.now() - 6_000;
+    breakerField(fillerOf(cache))["openAt"] = Date.now() - 6_000;
 
     await cache.cached("probe-target", loader);
 
-    expect(breakerField(fillerOf(cache))["breakerOpen"]).toBe(false);
+    expect(breakerField(fillerOf(cache))["open"]).toBe(false);
     expect(breakerField(fillerOf(cache))["consecutiveFailures"]).toBe(0);
   });
 
@@ -312,7 +314,7 @@ describe("PRD-C143 §3 — Redis outage without request storm", () => {
     const cache = new CacheService(redis, commandTimeoutMs);
 
     for (let i = 0; i < 5; i++) await cache.cached(`trip-auth-${i}`, jest.fn().mockResolvedValue(i));
-    expect(breakerField(fillerOf(cache))["breakerOpen"]).toBe(true);
+    expect(breakerField(fillerOf(cache))["open"]).toBe(true);
 
     const loader = jest.fn().mockResolvedValue("permitted");
     await cache.cached("access:perms:user-1:v3", loader);
