@@ -130,7 +130,7 @@ export async function loadChannelMemberPreview(
     // buys nothing while the state is unreachable and puts a column the client contract forbids one
     // spread away from the wire.
     .leftJoin(users, and(eq(users.id, organizationMembers.userId), isNull(users.deletedAt)))
-    .where(and(eq(chatChannelMembers.orgId, orgId), inArray(chatChannelMembers.channelId, channelIds)))
+    .where(and(eq(chatChannelMembers.orgId, orgId), inArray(chatChannelMembers.channelId, channelIds), isNull(chatChannelMembers.archivedAt)))
     .as("ranked_channel_members");
 
   const rows = await db.select().from(ranked).where(lte(ranked.memberRank, CHANNEL_LIST_MEMBER_PREVIEW));
