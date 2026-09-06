@@ -68,6 +68,7 @@
     "seed:scratch-e2e": "node src/scripts/seed-scratch-e2e.mjs",
     "seed:scratch-e2e:self-test": "node src/scripts/seed-scratch-e2e.mjs --self-test",
     "seed:scratch-e2e:purge": "node src/scripts/seed-scratch-e2e.mjs --purge",
+    "seed:multi-org-employment-fixture": "node --env-file=.env src/scripts/seed-multi-org-employment-fixture.mjs",
     "db:check-read-budgets": "node src/scripts/run-read-cost-budgets.mjs",
     "db:check-read-budgets:self-test": "node src/scripts/run-read-cost-budgets.mjs --self-test",
     "db:check-read-budgets:verify": "node src/scripts/__tests__/plan-walker.test.mjs",

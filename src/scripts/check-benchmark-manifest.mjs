@@ -517,7 +517,7 @@ function report(manifest, fresh) {
       }
     : null;
   if (fresh) {
-    console.log(`Request regression pass: ${requests.compared} route/profile comparisons`);
+    console.log(`Request regression pass: ${requests.compared} route/profile comparisons compared`);
     violations.push(...freshRl.violations);
     warnings.push(...freshRl.warnings);
   } else if (STRICT) {
@@ -721,6 +721,36 @@ function report(manifest, fresh) {
         const reasons = [...new Set(disarmed.slice(0, 2).map((a) => a.detail.split(": ").slice(1).join(": ")))];
         for (const r of reasons) console.log(`      disarmed: ${r.slice(0, 120)}`);
       }
+    }
+    if (requests) {
+      const rlDimMap = [
+        ["downstream-calls (exact)", ["downstreamCalls", "deferredDownstreamCalls"]],
+        ["requestDbCalls (combined-noise)", ["requestDbCalls"]],
+        ["responseBytes (combined-noise)", ["responseBytes"]],
+        ["memoryMb (combined-noise)", ["memoryMb"]],
+        ["latency (timing policy)", ["p50", "p95", "p99"]],
+      ];
+      console.log(`\n  Request-level regression gate — per-dimension (${requests.compared} route/profile pairs):`);
+      for (const [dim, metrics] of rlDimMap) {
+        const regs = requests.findings.filter((f) => metrics.includes(f.metric)).length;
+        const adv = requests.advisories.filter((a) => metrics.includes(a.metric));
+        const disarmedAdv = adv.filter((a) => a.detail.includes("DISARMED"));
+        const armed = regs === 0 && disarmedAdv.length === adv.length && adv.length > 0 ? "DISARMED" : "ARMED  ";
+        const regLabel = regs > 0 ? `${regs} REGRESSION(S)` : "0 regressions";
+        const advLabel = adv.length > 0 ? ` · ${adv.length} advisory (${disarmedAdv.length} disarmed)` : "";
+        console.log(`    ${armed}  ${dim.padEnd(32)} ${regLabel}${advLabel}`);
+      }
+      const fp = manifest.requestLevel?.noiseStudy?.falsePositives;
+      if (fp)
+        console.log(
+          `\n  request-level false-positive proof: ${fp.fired} of ${fp.comparisons} unchanged-code` +
+            ` cross-replicate comparisons would have failed the gate` +
+            ` (${((fp.rate ?? 0) * 100).toFixed(2)}%)`,
+        );
+      else
+        console.log(
+          `\n  request-level false-positive proof: NOT RECORDED — re-merge the captures to generate it`,
+        );
     }
   } else {
     console.log("\nRegression pass: NOT RUN — pass --against=<fresh measurement json> to ratchet.");
@@ -1275,6 +1305,96 @@ function selfTest() {
   refusedRoute.requestLevel.routes["GET /b@reference"] = { route: "GET /b", profile: "reference", status: "unmeasured", reason: "declined" };
   const refusedResult = evaluateRequestLevel(refusedRoute);
   check("a refused route is counted as refused, never as measured", refusedResult.refused === 1 && refusedResult.measured === 1);
+
+  // --- regression gate: the three fixed defects -----------------------------------
+
+  const makeRlCapture = (tenantProfile, fixtureHash, subjectHashBefore, route, routeStatus, dbCalls, memMb) => ({
+    requestLevel: {
+      method: "http-harness", command: "node x", role: "streamline_app", database: "scratch", cache: "none",
+      compression: false, samples: 40, warmup: 5, gcAvailable: true, atHead: true, readOnly: false,
+      workingTreeDirty: false,
+      tenants: [{ tenant: "org", profile: tenantProfile, fixtureHash, subjectHashBefore, scorable: true }],
+      routes: {
+        "GET /a@reference": {
+          route: "GET /a", profile: "reference", routeClass: "list", status: routeStatus, scored: true,
+          prdCeilingMs: 300, declaredLatencyP95Ms: 400, declaredDownstreamCalls: 0,
+          declaredResponseBytes: 5000, declaredMemoryMb: 8,
+          latencyMs: { p50: 5, p95: 10, p99: 12, min: 4, max: 15 },
+          requestDbCalls: dbCalls, downstreamCalls: 0, deferredDownstreamCalls: 0,
+          responseBytes: 800, memoryMb: memMb, overPrdCeiling: false,
+          downstreamAccounting: "request-and-after-commit-v1",
+        },
+      },
+      noiseStudy: {
+        routes: {
+          "GET /a@reference": {
+            requestDbCalls: { n: 3, min: 4, max: 6, maxAbsSwing: 2, maxRelSwing: 0.5 },
+            responseBytes: { n: 3, min: 800, max: 800, maxAbsSwing: 0, maxRelSwing: 0 },
+            memoryMb: { n: 3, min: 2.1, max: 2.3, maxAbsSwing: 0.2, maxRelSwing: 0.095 },
+          },
+        },
+      },
+    },
+  });
+
+  const rlCapBase = makeRlCapture("reference", "fixture-abc", "hash-before-1", "GET /a", "measured", 6, 2.3);
+  const rlCapFresh = makeRlCapture("reference", "fixture-abc", "hash-before-DIFFERENT", "GET /a", "measured", 6, 2.3);
+
+  const sameRefusalBase = makeRlCapture("reference", "fixture-abc", "hash-before-1", "GET /a", "measured", 6, 2.3);
+  sameRefusalBase.requestLevel.routes["GET /b@reference"] = { route: "GET /b", profile: "reference", status: "unmeasured", reason: "provider-backed" };
+  const sameRefusalFresh = makeRlCapture("reference", "fixture-abc", "hash-before-2", "GET /a", "measured", 6, 2.3);
+  sameRefusalFresh.requestLevel.routes["GET /b@reference"] = { route: "GET /b", profile: "reference", status: "unmeasured", reason: "provider-backed" };
+  const sameRefusalResult = evaluateRequestRegressions(sameRefusalBase, sameRefusalFresh);
+  check(
+    "defect 2: a route refused in both captures for the same declared reason is not a structural failure",
+    !sameRefusalResult.findings.some((f) => f.id === "GET /b@reference" && f.metric === "structure"),
+    "the 16 provider-backed routes that appeared as structure failures on every rerun are silent when both captures agree",
+  );
+
+  const mixedRefusalBase = makeRlCapture("reference", "fixture-abc", "hash-before-1", "GET /a", "measured", 6, 2.3);
+  mixedRefusalBase.requestLevel.routes["GET /c@reference"] = { route: "GET /c", profile: "reference", status: "measured", latencyMs: { p50: 5, p95: 10, p99: 12 }, requestDbCalls: 4, downstreamCalls: 0, deferredDownstreamCalls: 0, responseBytes: 500, memoryMb: 2.0, scored: true, downstreamAccounting: "request-and-after-commit-v1" };
+  const mixedRefusalFresh = makeRlCapture("reference", "fixture-abc", "hash-before-2", "GET /a", "measured", 6, 2.3);
+  mixedRefusalFresh.requestLevel.routes["GET /c@reference"] = { route: "GET /c", profile: "reference", status: "unmeasured", reason: "environment" };
+  const mixedRefusalResult = evaluateRequestRegressions(mixedRefusalBase, mixedRefusalFresh);
+  check(
+    "defect 2: a route measured in the baseline but not in the fresh capture IS a structural regression",
+    mixedRefusalResult.findings.some((f) => f.id === "GET /c@reference" && f.metric === "structure"),
+    "a route breaking between captures is real, not a refusal",
+  );
+
+  const diffHashFresh = makeRlCapture("reference", "fixture-abc", "hash-before-DIFFERENT", "GET /a", "measured", 6, 2.3);
+  const diffHashResult = evaluateRequestRegressions(rlCapBase, diffHashFresh);
+  check(
+    "defect 3: different subjectHashBefore does not trigger a comparability failure when fixtureHash matches",
+    !diffHashResult.findings.some((f) => f.metric === "comparability"),
+    "subjectHashBefore legitimately differs between two independent captures because the harness writes to the DB",
+  );
+
+  const diffFixtureFresh = makeRlCapture("reference", "fixture-WRONG", "hash-before-2", "GET /a", "measured", 6, 2.3);
+  const diffFixtureResult = evaluateRequestRegressions(rlCapBase, diffFixtureFresh);
+  check(
+    "defect 3: mismatched fixtureHash is still a comparability failure",
+    diffFixtureResult.findings.some((f) => f.metric === "comparability"),
+    "different fixture data means different subjects — not comparable",
+  );
+
+  const dbCallsWithinNoiseBase = makeRlCapture("reference", "fixture-abc", "hash-before-1", "GET /a", "measured", 6, 2.3);
+  const dbCallsWithinNoiseFresh = makeRlCapture("reference", "fixture-abc", "hash-before-2", "GET /a", "measured", 8, 2.3);
+  const dbCallsWithinResult = evaluateRequestRegressions(dbCallsWithinNoiseBase, dbCallsWithinNoiseFresh);
+  check(
+    "defect 1: requestDbCalls increasing within the combined noise band does not fire",
+    !dbCallsWithinResult.findings.some((f) => f.metric === "requestDbCalls"),
+    "base=6, fresh=8, combined band = max(4,6...(base max=6)) + max(...) = base+2 — actually 6 + combinedRange where combinedRange = max(max(base),max(fresh)) - min(min(base),min(fresh)) = max(6,8)-min(4,...)",
+  );
+
+  const dbCallsAboveNoiseBase = makeRlCapture("reference", "fixture-abc", "hash-before-1", "GET /a", "measured", 6, 2.3);
+  const dbCallsAboveNoiseFresh = makeRlCapture("reference", "fixture-abc", "hash-before-2", "GET /a", "measured", 20, 2.3);
+  const dbCallsAboveResult = evaluateRequestRegressions(dbCallsAboveNoiseBase, dbCallsAboveNoiseFresh);
+  check(
+    "defect 1: requestDbCalls genuinely above the combined noise band DOES fire",
+    dbCallsAboveResult.findings.some((f) => f.metric === "requestDbCalls"),
+    "base=6 (noiseStudy max=6), fresh=20 (noiseStudy max=6 — default unchanged) — combined range = max(6,6)-min(4,4) = 2; band = 6+2 = 8; 20 > 8 fires",
+  );
 
   const ok = results.every(Boolean);
   console.log(`\n${results.filter(Boolean).length}/${results.length} checks passed`);
