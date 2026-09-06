@@ -20,7 +20,7 @@ type PredicateToken =
 
 interface Comparison {
   column: string;
-  operator: "eq" | "in";
+  operator: "eq" | "in" | "isNull" | "isNotNull";
   values: unknown[];
 }
 
@@ -73,6 +73,8 @@ function parseConjunction(tokens: PredicateToken[]): Comparison[] {
     const symbol = operator.text.trim();
     if (symbol === "=") out.push({ column: token.name, operator: "eq", values: values.slice(0, 1) });
     else if (symbol === "in") out.push({ column: token.name, operator: "in", values });
+    else if (symbol === "is null") out.push({ column: token.name, operator: "isNull", values: [] });
+    else if (symbol === "is not null") out.push({ column: token.name, operator: "isNotNull", values: [] });
     else throw new Error(`isolation double: unsupported operator "${symbol}"`);
     i = cursor - 1;
   }
@@ -87,6 +89,8 @@ function rowMatches(row: Row, comparisons: Comparison[], ignoreTenantPredicate: 
   return comparisons.every((comparison) => {
     if (ignoreTenantPredicate && comparison.column === "org_id") return true;
     const actual = row[camelCase(comparison.column)];
+    if (comparison.operator === "isNull") return actual === null || actual === undefined;
+    if (comparison.operator === "isNotNull") return actual !== null && actual !== undefined;
     if (comparison.operator === "eq") return actual === comparison.values[0];
     return comparison.values.includes(actual);
   });
