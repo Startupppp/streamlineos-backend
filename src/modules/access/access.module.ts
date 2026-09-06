@@ -1,5 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 import { AccessService } from "./access.service";
+import { AccessVersionCache } from "./access-version-cache";
 import { EntitlementsService } from "./entitlements.service";
 import { MfaPolicyService } from "./mfa-policy.service";
 import { EntitlementsController } from "./entitlements.controller";
@@ -18,6 +19,7 @@ import { MFA_POLICY } from "../../common/auth/mfa-policy.token";
   controllers: [EntitlementsController, UserModuleAccessController],
   providers: [
     AccessService,
+    AccessVersionCache,
     EntitlementsService,
     MfaPolicyService,
     PermissionGuard,

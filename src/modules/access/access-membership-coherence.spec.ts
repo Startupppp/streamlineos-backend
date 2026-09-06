@@ -1,4 +1,5 @@
 import { AccessService } from "./access.service";
+import { AccessVersionCache } from "./access-version-cache";
 import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import type { Db } from "../../db/drizzle.module";
@@ -80,6 +81,7 @@ function makeInstance(
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
   );
 }
 

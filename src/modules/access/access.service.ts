@@ -4,8 +4,6 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
-import { eq } from "drizzle-orm";
-import { accessVersions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -13,13 +11,11 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { subscribeVersionBump } from "../../common/rbac/access-invalidate";
-import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 import type {
   AccessSnapshot,
   CachedPermissions,
   DataScope,
   PermsEntry,
-  VersionEntry,
 } from "./access.types";
 import { EntitlementsService } from "./entitlements.service";
 import { MfaPolicyService } from "./mfa-policy.service";
@@ -51,6 +47,7 @@ import {
 import { AccessSnapshotResolver } from "./access-snapshot.resolver";
 import { DeniedModulesResolver } from "./denied-modules.resolver";
 import { resolvePrincipalScope } from "./access-principal-scope";
+import { AccessVersionCache } from "./access-version-cache";
 
 export {
   broadest,
@@ -64,15 +61,12 @@ export {
 export type {
   DelegationRow,
 } from "./access-policy";
-const VERSION_CACHE_TTL_MS = 1_000;
-const SHARED_VERSION_TTL_SECONDS = 300;
+
 const PERMS_CACHE_TTL_MS = 30_000;
 const MEMBERSHIP_CACHE_TTL_MS = 15_000;
 
 @Injectable()
 export class AccessService implements OnModuleInit, OnModuleDestroy {
-  private readonly versionCache = new Map<string, VersionEntry>();
-  private readonly versionInFlight = new Map<string, Promise<number>>();
   private readonly permsCache = new Map<string, PermsEntry>();
   private readonly membershipAccessCache = new Map<string, MembershipAccessState>();
   private readonly permResolveInFlight = new Map<string, Promise<Map<string, DataScope>>>();
@@ -89,6 +83,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     private readonly cache: CacheService,
     private readonly entitlements: EntitlementsService,
     private readonly mfaPolicy: MfaPolicyService,
+    private readonly accessVersionCache: AccessVersionCache,
   ) {
     const readAccessTable = <Result>(
       read: () => PromiseLike<Result>,
@@ -131,19 +126,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    accessVersionChannel.useStore({
-      get: (orgId) => this.cache.get<number>(CACHE_KEYS.accessVersion(orgId)),
-      set: (orgId, version) =>
-        this.cache.set(
-          CACHE_KEYS.accessVersion(orgId),
-          version,
-          SHARED_VERSION_TTL_SECONDS,
-        ),
-      clear: (orgId) => this.cache.invalidate(CACHE_KEYS.accessVersion(orgId)),
-    });
+    this.accessVersionCache.configureStore();
     this.unsubscribeVersionBump = subscribeVersionBump((orgId) => {
-      this.versionCache.delete(orgId);
-      this.versionInFlight.delete(orgId);
+      this.accessVersionCache.clearForOrg(orgId);
       this.deleteOrgEntries(this.membershipAccessCache, orgId);
       this.deleteOrgEntries(this.permsCache, orgId);
       this.deniedModulesResolver.clearForOrg(orgId);
@@ -192,50 +177,8 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     return read();
   }
 
-  private async loadDurablePermissionsVersion(orgId: string): Promise<number> {
-    const row = await runInTenantTransaction(
-      this.db,
-      () =>
-        this.readAccessTable(
-          () =>
-            this.db.query.accessVersions.findFirst({
-              where: eq(accessVersions.orgId, orgId),
-              columns: { permissionsVersion: true },
-            }),
-        ),
-      { orgId },
-    );
-    return row?.permissionsVersion ?? 1;
-  }
-
   async getPermissionsVersion(orgId: string): Promise<number> {
-    const cached = this.versionCache.get(orgId);
-    if (cached && cached.expiresAt > Date.now()) return cached.version;
-
-    const existing = this.versionInFlight.get(orgId);
-    if (existing) return existing;
-
-    const load = accessVersionChannel
-      .read(orgId, () => this.loadDurablePermissionsVersion(orgId))
-      .then((version) => {
-        this.versionCache.set(orgId, {
-          version,
-          expiresAt: Date.now() + VERSION_CACHE_TTL_MS,
-        });
-        if (this.versionCache.size > 2000) {
-          const now = Date.now();
-          for (const [key, entry] of this.versionCache) {
-            if (entry.expiresAt <= now) this.versionCache.delete(key);
-          }
-        }
-        return version;
-      })
-      .finally(() => {
-        this.versionInFlight.delete(orgId);
-      });
-
-    this.versionInFlight.set(orgId, load);
-    return load;
+    return this.accessVersionCache.getVersion(orgId);
   }
 
   async resolveUserPermissions(

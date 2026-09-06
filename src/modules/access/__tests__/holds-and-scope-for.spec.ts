@@ -1,4 +1,5 @@
 import { AccessService } from "../access.service";
+import { AccessVersionCache } from "../access-version-cache";
 import type { DataScope } from "../access.types";
 import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
@@ -59,7 +60,7 @@ function buildService(resolved: Map<string, DataScope>): {
     isCoreModule: jest.fn().mockReturnValue(false),
   } as unknown as EntitlementsService;
 
-  const service = new AccessService(db, cache, entitlements, makeMfaPolicyStub());
+  const service = new AccessService(db, cache, entitlements, makeMfaPolicyStub(), new AccessVersionCache(db, cache));
   const resolveSpy = jest
     .spyOn(service, "resolveUserPermissions")
     .mockResolvedValue(resolved);

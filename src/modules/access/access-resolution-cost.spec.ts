@@ -1,4 +1,5 @@
 import { AccessService } from "./access.service";
+import { AccessVersionCache } from "./access-version-cache";
 import { poolTelemetry } from "../../db/pool-telemetry";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
@@ -93,6 +94,7 @@ function buildFixture(): CostFixture {
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
     ),
   };
 }

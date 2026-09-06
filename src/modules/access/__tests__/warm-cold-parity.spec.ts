@@ -1,4 +1,5 @@
 import { AccessService } from "../access.service";
+import { AccessVersionCache } from "../access-version-cache";
 import type { Db } from "../../../db/drizzle.module";
 
 const transactionCalls = { count: 0 };
@@ -75,6 +76,7 @@ function buildService(roleGrants: { permissionKey: string; scope: string }[]) {
     cache as never,
     entitlements as never,
     mfaPolicy as never,
+    new AccessVersionCache(db, cache as never),
   );
 }
 

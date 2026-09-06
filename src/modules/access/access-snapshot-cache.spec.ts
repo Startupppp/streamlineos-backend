@@ -4,6 +4,7 @@ jest.mock("../../common/relocation/relocation-traffic-tracker", () => ({
 }));
 
 import { AccessService } from "./access.service";
+import { AccessVersionCache } from "./access-version-cache";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { EntitlementsService } from "./entitlements.service";
@@ -85,14 +86,19 @@ function buildService() {
     getPlanLockedModules: jest.fn().mockResolvedValue([]),
   };
 
+  const versionCacheSvc = new AccessVersionCache(
+    db as unknown as Db,
+    cache as unknown as CacheService,
+  );
   const svc = new AccessService(
     db as unknown as Db,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    versionCacheSvc,
   );
 
-  svc["versionCache"].set(ORG_ID, { version: 1, expiresAt: Date.now() + 60_000 });
+  (versionCacheSvc as unknown as Record<string, unknown>)["versionCache"].set(ORG_ID, { version: 1, expiresAt: Date.now() + 60_000 });
 
   const computeSpy = jest
     .spyOn(svc["snapshotResolver"], "computeAccessSnapshot")
@@ -126,7 +132,7 @@ describe("AccessService.getAccessSnapshot — snapshot Redis cache", () => {
     await svc.getAccessSnapshot(ORG_ID, USER_ID, ctx);
     expect(computeSpy).toHaveBeenCalledTimes(1);
 
-    svc["versionCache"].set(ORG_ID, { version: 2, expiresAt: Date.now() + 60_000 });
+    (svc["accessVersionCache"] as unknown as Record<string, unknown>)["versionCache"].set(ORG_ID, { version: 2, expiresAt: Date.now() + 60_000 });
 
     await svc.getAccessSnapshot(ORG_ID, USER_ID, ctx);
     expect(computeSpy).toHaveBeenCalledTimes(2);

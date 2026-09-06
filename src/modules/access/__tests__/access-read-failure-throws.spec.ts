@@ -22,6 +22,7 @@ jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
 }));
 
 import { AccessService } from "../access.service";
+import { AccessVersionCache } from "../access-version-cache";
 import { DeniedModulesResolver } from "../denied-modules.resolver";
 import { UserModuleAccessService } from "../user-module-access.service";
 import { drainRolePermissionGrants, drainUserPermissionGrants } from "../access-grant-drains";
@@ -77,11 +78,13 @@ function buildService(db: unknown): AccessService {
     getModuleMap: jest.fn().mockResolvedValue({}),
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
+  const wrappedDb = withTenantTxMock(db as object) as unknown as Db;
   return new AccessService(
-    withTenantTxMock(db as object) as unknown as Db,
+    wrappedDb,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
   );
 }
 

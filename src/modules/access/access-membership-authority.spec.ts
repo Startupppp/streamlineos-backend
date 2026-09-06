@@ -3,6 +3,7 @@ import type { Db } from "../../db/drizzle.module";
 import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
 import type { EntitlementsService } from "./entitlements.service";
 import { AccessService } from "./access.service";
+import { AccessVersionCache } from "./access-version-cache";
 
 function buildService(membership: {
   isOwner: boolean;
@@ -41,6 +42,7 @@ function buildService(membership: {
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService),
   );
 }
 

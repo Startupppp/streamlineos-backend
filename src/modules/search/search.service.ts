@@ -20,7 +20,7 @@ import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { logger } from "../../common/logger/logger.service";
 import { actingMembershipId } from "../../common/auth/principal";
-import { moduleAvailability, type ModuleAvailabilityResolver } from "../../common/rbac/module-availability";
+import { moduleAvailability } from "../../common/rbac/module-availability";
 
 const UNDEFINED_FUNCTION = "42883";
 
@@ -76,24 +76,7 @@ export async function resolveSearchAccess(
     return moduleMapPromise;
   };
 
-  const baseResolver = access.buildModuleAvailabilityResolver(memoGetModuleMap);
-
-  let deniedModulesPromise: Promise<Set<string>> | undefined;
-  let planLockedPromise: Promise<readonly string[]> | undefined;
-  const resolver: ModuleAvailabilityResolver = {
-    isCoreModule: (key) => baseResolver.isCoreModule(key),
-    getModuleMap: (orgId) => baseResolver.getModuleMap(orgId),
-    getUserDeniedModules: (orgId, userId) => {
-      if (!deniedModulesPromise)
-        deniedModulesPromise = baseResolver.getUserDeniedModules(orgId, userId);
-      return deniedModulesPromise;
-    },
-    getPlanLockedModules: (orgId) => {
-      if (!planLockedPromise)
-        planLockedPromise = baseResolver.getPlanLockedModules(orgId);
-      return planLockedPromise;
-    },
-  };
+  const resolver = access.buildModuleAvailabilityResolver(memoGetModuleMap);
   const [[crmAvail, buildAvail], [leadScope, dealScope, contactScope, clientScope, buildScope]] =
     await Promise.all([
       Promise.all([

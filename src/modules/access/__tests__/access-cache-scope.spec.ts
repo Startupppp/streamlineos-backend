@@ -1,4 +1,5 @@
 import { AccessService } from "../access.service";
+import { AccessVersionCache } from "../access-version-cache";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
@@ -145,11 +146,13 @@ function buildService(
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   } as unknown as EntitlementsService;
 
+  const wrappedDb = withTenantTransactionMock(defaultDb) as unknown as Db;
   return new AccessService(
-    withTenantTransactionMock(defaultDb) as unknown as Db,
+    wrappedDb,
     cache,
     entitlements,
     makeMfaPolicyStub(),
+    new AccessVersionCache(wrappedDb, cache),
   );
 }
 
@@ -193,11 +196,13 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     } as unknown as EntitlementsService;
 
+    const wrappedDb2 = withTenantTransactionMock(db) as unknown as Db;
     const svc = new AccessService(
-      withTenantTransactionMock(db) as unknown as Db,
+      wrappedDb2,
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
+      new AccessVersionCache(wrappedDb2, cache as unknown as CacheService),
     );
 
     await svc.resolveUserPermissions("org-alpha", "user-1");
@@ -252,17 +257,21 @@ describe("AccessService.resolveUserPermissions - org-scoped Redis cache key", ()
       getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     } as unknown as EntitlementsService;
 
+    const dbForA = buildDbForOrg(10) as unknown as Db;
+    const dbForB = buildDbForOrg(20) as unknown as Db;
     const svcA = new AccessService(
-      buildDbForOrg(10) as unknown as Db,
+      dbForA,
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
+      new AccessVersionCache(dbForA, cache as unknown as CacheService),
     );
     const svcB = new AccessService(
-      buildDbForOrg(20) as unknown as Db,
+      dbForB,
       cache as unknown as CacheService,
       entitlements,
       makeMfaPolicyStub(),
+      new AccessVersionCache(dbForB, cache as unknown as CacheService),
     );
 
     await svcA.resolveUserPermissions("org-a", "user-shared");

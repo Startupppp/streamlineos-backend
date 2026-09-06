@@ -7,6 +7,7 @@ import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 
 import { AccessService } from "../access.service";
+import { AccessVersionCache } from "../access-version-cache";
 import {
   ALL_PERMISSION_NAMES,
   ROLE_DEFAULT_PERMISSIONS,
@@ -146,11 +147,13 @@ function buildService(db: unknown): AccessService {
         ),
     ),
   };
+  const wrappedDb = withTenantTransactionMock(db as object) as unknown as Db;
   return new AccessService(
-    withTenantTransactionMock(db as object) as unknown as Db,
+    wrappedDb,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
   );
 }
 

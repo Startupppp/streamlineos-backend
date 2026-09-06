@@ -7,6 +7,7 @@ import {
   AccessService,
   moduleOf,
 } from "./access.service";
+import { AccessVersionCache } from "./access-version-cache";
 import type { DataScope } from "./access.types";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
@@ -85,11 +86,13 @@ function buildService(db: unknown): AccessService {
     getModuleMap: jest.fn().mockResolvedValue({}),
     getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
   };
+  const wrappedDb = withTenantTxMock(db as object) as unknown as Db;
   return new AccessService(
-    withTenantTxMock(db as object) as unknown as Db,
+    wrappedDb,
     cache as unknown as CacheService,
     entitlements as unknown as EntitlementsService,
     makeMfaPolicyStub(),
+    new AccessVersionCache(wrappedDb, cache as unknown as CacheService),
   );
 }
 
@@ -370,11 +373,13 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
       getModuleMap: jest.fn().mockResolvedValue({}),
       getEffectiveModuleMap: jest.fn().mockResolvedValue({}),
     };
+    const versionCacheSvc = new AccessVersionCache(db as unknown as Db, cache as unknown as CacheService);
     const svc = new AccessService(
       db as unknown as Db,
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      versionCacheSvc,
     );
     svc.onModuleInit();
 
@@ -399,7 +404,7 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(2);
 
-    svc["versionCache"].delete("org-bump");
+    (versionCacheSvc as unknown as Record<string, unknown>)["versionCache"].delete("org-bump");
     cache.invalidateNamespace.mockClear();
     cache.invalidate.mockClear();
     currentVersion = 3;
@@ -539,11 +544,13 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const logWarnSpy = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
 
     const db1 = withTenantTxMock(makeDb());
+    const versionCacheSvc2 = new AccessVersionCache(db1 as unknown as Db, cache as unknown as CacheService);
     const svc = new AccessService(
       db1 as unknown as Db,
       cache as unknown as CacheService,
       entitlements as unknown as EntitlementsService,
       makeMfaPolicyStub(),
+      versionCacheSvc2,
     );
 
     await svc.resolveUserPermissions("org-dedup", "user-dedup");
@@ -551,7 +558,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const db2 = withTenantTxMock(makeDb());
     (svc as unknown as { db: unknown }).db = db2;
     cache.cached.mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn());
-    svc["versionCache"].clear();
+    (versionCacheSvc2 as unknown as Record<string, unknown>)["versionCache"].clear();
     svc["permsCache"].clear();
 
     await svc.resolveUserPermissions("org-dedup", "user-dedup2");

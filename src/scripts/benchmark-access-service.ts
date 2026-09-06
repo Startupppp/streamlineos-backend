@@ -25,6 +25,7 @@ import { resolve } from "node:path";
 process.chdir(resolve(__dirname, "../.."));
 
 import { AccessService } from "../modules/access/access.service";
+import { AccessVersionCache } from "../modules/access/access-version-cache";
 import { membershipCacheKey } from "../modules/access/access-permission.resolver";
 import type { CacheService } from "../common/cache/cache.service";
 import type { EntitlementsService } from "../modules/access/entitlements.service";
@@ -113,11 +114,16 @@ async function run() {
   }
 
   console.log("Constructing AccessService with stub dependencies...");
+  const mockVersionCache = new AccessVersionCache(
+    mockDb,
+    mockCache,
+  ) as AccessVersionCache & Record<string, unknown>;
   const svc = new AccessService(
     mockDb,
     mockCache,
     mockEntitlements,
     mockMfa,
+    mockVersionCache,
   ) as AccessService & Record<string, unknown>;
 
   const orgId = "bench-org-a1b2c3d4";
@@ -137,7 +143,7 @@ async function run() {
     "kb:read", "notifications:view",
   ]) perms[key] = "all";
 
-  (svc as Record<string, unknown>).versionCache = new Map([
+  (mockVersionCache as Record<string, unknown>).versionCache = new Map([
     [orgId, { version, expiresAt }],
   ]);
 

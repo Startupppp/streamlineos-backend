@@ -11,6 +11,7 @@ export interface AccessResolver {
   getModuleState(orgId: string, moduleKey: string): Promise<boolean | undefined>;
   buildModuleAvailabilityResolver: (
     getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
+    getDeniedModules?: (orgId: string, userId: string) => Promise<Set<string>>,
   ) => ModuleAvailabilityResolver;
 }
 
