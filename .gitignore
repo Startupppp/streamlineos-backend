@@ -22,3 +22,5 @@ backups/
 # Throwaway diagnostic and one-off patch scripts. Two were committed by accident
 # (.tmp-probe.mjs, .tmp-ticket-patch3.py) in a shared working tree.
 .tmp-*
+
+dist-local/
