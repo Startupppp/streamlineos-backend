@@ -152,9 +152,6 @@ const FINDING_VERDICTS = new Map([
   // ---- src/modules/gdpr ----------------------------------------------------
   ["src/modules/gdpr/dto/gdpr-export-outbox.schemas.ts:GdprExportRequestedPayload", { verdict: "WIRE", reason: "the payload contract for the live `gdpr.export.requested` outbox event. Nothing validates the payload on the consuming side today, which is the defect — the relay handler should parse with `gdprExportRequestedPayloadSchema` and take its argument type from here. Deleting it would remove a boundary contract rather than dead code" }],
 
-  // ---- src/modules/notifications -------------------------------------------
-  ["src/modules/notifications/dto/provider-result.schemas.ts:providerValidationResultSchema", { verdict: "REMOVE", reason: "surfaced when its only reader — the inferred type `ProviderValidationResultParsed` — was removed as dead. It is the Zod contract for `NotificationProvider.validateConfig()`, the sibling of `providerSendResultSchema`, which IS parsed at `notification-delivery-worker.service.ts:347`. The deeper finding: `validateConfig` is declared on `providers/notification-provider.interface.ts:11` and implemented by five providers, and NOTHING calls it anywhere in `src/` — the seam has no caller, so the schema has no boundary to guard. Removing the schema (and deciding the fate of the uncalled seam) belongs to the notifications workstream, which holds this module" }],
-
   // ---- src/modules/ai/core/dto ---------------------------------------------
   // Surfaced by fixing the module graph, not by new code: this finding was
   // previously RETAINED-BY-CONTRACT on the strength of a controller inside

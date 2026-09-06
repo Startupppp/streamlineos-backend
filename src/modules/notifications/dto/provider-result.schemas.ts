@@ -11,9 +11,4 @@ export const providerSendResultSchema = z.object({
   retryable: z.boolean().optional(),
 });
 
-export const providerValidationResultSchema = z.object({
-  valid: z.boolean(),
-  message: z.string().optional(),
-});
-
 export type ProviderSendResultParsed = z.infer<typeof providerSendResultSchema>;

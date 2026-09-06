@@ -22,20 +22,6 @@ export interface ChannelMemberUser {
   email?: string | null;
 }
 
-export interface ChannelMemberWire {
-  id: number;
-  channelId: number;
-  userId: string | null;
-  role: string;
-  lastReadAt: Date | null;
-  joinedAt: Date | null;
-  mutedUntil: Date | null;
-  archivedAt: Date | null;
-  isFavorite: boolean;
-  notificationPreference: string;
-  user: ChannelMemberUser | null;
-}
-
 /**
  * Every key a member carries on the wire from the detail route, and nothing else.
  *
