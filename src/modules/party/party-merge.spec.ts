@@ -411,3 +411,39 @@ describe("PartyMergeService and which record survives", () => {
     expect(recorded.inserts.filter((write) => write.table === partyMerges)).toEqual([]);
   });
 });
+
+describe("mergeSnapshotSchema array caps", () => {
+  const OVER_CAP = Array.from({ length: 101 }, (_, i) => String(i));
+
+  it("rejects movedContactIds with more than 100 entries", () => {
+    const result = mergeSnapshotSchema.safeParse({
+      survivorBefore: {},
+      mergedBefore: {},
+      movedContactIds: OVER_CAP,
+      addedRoles: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects movedIdentifierIds with more than 100 entries", () => {
+    const result = mergeSnapshotSchema.safeParse({
+      survivorBefore: {},
+      mergedBefore: {},
+      movedContactIds: [],
+      addedRoles: [],
+      movedIdentifierIds: OVER_CAP,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects movedEmployeePartyIds with more than 100 entries", () => {
+    const result = mergeSnapshotSchema.safeParse({
+      survivorBefore: {},
+      mergedBefore: {},
+      movedContactIds: [],
+      addedRoles: [],
+      movedEmployeePartyIds: OVER_CAP,
+    });
+    expect(result.success).toBe(false);
+  });
+});

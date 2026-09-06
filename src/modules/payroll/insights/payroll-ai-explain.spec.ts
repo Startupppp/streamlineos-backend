@@ -146,7 +146,9 @@ describe("PayrollAiExplainService", () => {
     const svc = await buildService(db, gateway);
     const abort = new AbortController();
     abort.abort();
-    await expect(svc.streamExplainPayslip("org-A", "user-A", 1, abort.signal)).rejects.toThrow();
+    const promise = svc.streamExplainPayslip("org-A", "user-A", 1, abort.signal);
+    await expect(promise).rejects.toThrow(DOMException);
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
     expect(db.select).not.toHaveBeenCalled();
     expect(gateway.streamTextWithUsage).not.toHaveBeenCalled();
   });

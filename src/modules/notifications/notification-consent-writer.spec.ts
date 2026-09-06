@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import { NotificationConsentService } from "./notification-consent.service";
 import type { Db } from "../../db/drizzle.module";
 
@@ -119,7 +120,15 @@ describe("NotificationConsentService", () => {
         destination: "+15550000",
         state: "GRANTED",
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(ForbiddenException);
+
+    await expect(
+      svc.record("org-1", "user-1", null, {
+        channel: "SMS",
+        destination: "+15550000",
+        state: "GRANTED",
+      }),
+    ).rejects.toThrow("Organization membership required");
   });
 
   it("withdrawing flips the live row and appends its own event", async () => {

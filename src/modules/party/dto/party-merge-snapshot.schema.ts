@@ -25,10 +25,10 @@ export const legacyIdsByKindSchema = z.object({
 export const mergeSnapshotSchema = z.object({
   survivorBefore: z.record(z.string(), z.unknown()),
   mergedBefore: z.record(z.string(), z.unknown()),
-  movedContactIds: z.array(z.string()),
+  movedContactIds: z.array(z.string()).max(100),
   addedRoles: z.array(z.string()),
-  movedIdentifierIds: z.array(z.string()).optional(),
-  movedEmployeePartyIds: z.array(z.string()).optional(),
+  movedIdentifierIds: z.array(z.string()).max(100).optional(),
+  movedEmployeePartyIds: z.array(z.string()).max(100).optional(),
   movedLegacyIds: legacyIdsByKindSchema.optional(),
 });
 

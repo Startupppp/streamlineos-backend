@@ -10,7 +10,7 @@ const CLAIMABLE = sql`
   OR (status = 'RUNNING' AND lease_expires_at IS NOT NULL AND lease_expires_at < now())
 `;
 
-export interface DrainBacklog {
+interface DrainBacklog {
   /** Runs that are due right now and nobody has taken. */
   readonly due: number;
   /** How long the oldest of them has been waiting. Null when nothing is due. */

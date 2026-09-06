@@ -6,7 +6,7 @@ import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import type { RunLifecycleStore } from "./workflow-runner";
 import type { JsonValue, RecordedStep, WorkflowStepStore } from "./workflow.types";
 
-export { DrainBacklog, drainBacklog, claimDueRuns } from "./workflow-claim";
+export { drainBacklog, claimDueRuns } from "./workflow-claim";
 
 /**
  * Database access for the runner — every statement inside a tenant transaction.
