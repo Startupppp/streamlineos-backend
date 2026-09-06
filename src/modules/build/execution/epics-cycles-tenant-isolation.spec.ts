@@ -3,6 +3,8 @@ import { NotFoundException } from "@nestjs/common";
 import { EpicsService } from "./epics.service";
 import { CyclesService } from "./cycles.service";
 
+type TxHandle = { insert: jest.Mock; execute: jest.Mock };
+
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
   if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
@@ -86,11 +88,11 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
     const values = jest.fn().mockReturnValue({ returning });
     const insert = jest.fn().mockReturnValue({ values });
     const execute = jest.fn().mockResolvedValue([{ start: 1 }]);
-    const tx: { insert: jest.Mock; execute: jest.Mock } = { insert, execute };
+    const tx: TxHandle = { insert, execute };
     const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
     const db = {
       query: { projects: { findFirst: projectFindFirst } },
-      transaction: jest.fn().mockImplementation((cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (handle: TxHandle) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
     const svc = new EpicsService(db);
 

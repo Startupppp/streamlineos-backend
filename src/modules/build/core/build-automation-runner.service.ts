@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
   projectAutomations,
+  projectStatuses,
   ticketComments,
   ticketLabelMappings,
   ticketLabels,
@@ -114,13 +115,32 @@ export class BuildAutomationRunnerService {
 
   private async executeAction(
     orgId: string,
+    projectId: number,
     ticketId: number,
+    ruleId: number,
     action: StoredAction,
     authorId: string | null,
   ): Promise<void> {
     const ticketWhere = and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId));
     switch (action.type) {
       case "set_status": {
+        const statusExists = await this.db.query.projectStatuses.findFirst({
+          where: and(
+            eq(projectStatuses.orgId, orgId),
+            eq(projectStatuses.projectId, projectId),
+            eq(projectStatuses.name, action.value),
+          ),
+          columns: { id: true },
+        });
+        if (!statusExists) {
+          logger.warn("BuildAutomationRunner: set_status skipped — status does not exist in project", {
+            ruleId,
+            projectId,
+            orgId,
+            status: action.value,
+          });
+          return;
+        }
         await this.db
           .update(tickets)
           .set({ status: action.value, updatedAt: new Date() })
@@ -210,7 +230,7 @@ export class BuildAutomationRunnerService {
         if (!matched) continue;
 
         for (const action of rule.actions) {
-          await this.executeAction(orgId, ticket.ticketId, action, rule.createdBy).catch(
+          await this.executeAction(orgId, ticket.projectId, ticket.ticketId, rule.id, action, rule.createdBy).catch(
             (error: unknown) => {
               logger.error("BuildAutomationRunner: action failed", {
                 ruleId: rule.id,

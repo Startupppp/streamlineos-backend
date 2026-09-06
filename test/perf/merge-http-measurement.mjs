@@ -31,12 +31,13 @@
  * Usage:
  *   node test/perf/merge-http-measurement.mjs --artifact=<capture.json> [--artifact=<second.json>]
  *   node test/perf/merge-http-measurement.mjs --artifact=<capture.json> --write
+ *   node test/perf/merge-http-measurement.mjs --artifact=<capture.json> --write --manifest=<other.json>
  *   node test/perf/merge-http-measurement.mjs --self-test
  */
 
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { noiseEnvelope } from "../../src/scripts/benchmark-regression.mjs";
 
@@ -404,6 +405,8 @@ function main() {
     process.exit(1);
   }
   const write = process.argv.includes("--write");
+  const manifestArg = process.argv.find((a) => a.startsWith("--manifest="));
+  const manifestPath = manifestArg === undefined ? MANIFEST_PATH : resolve(manifestArg.slice("--manifest=".length));
 
   const budgetsText = readFileSync(ROUTE_BUDGETS_PATH, "utf8");
   const budgets = JSON.parse(budgetsText).budgets ?? {};
@@ -428,9 +431,10 @@ function main() {
     return;
   }
 
-  const manifest = applyRequestLevel(JSON.parse(readFileSync(MANIFEST_PATH, "utf8")), requestLevel);
-  writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
-  process.stdout.write(`[merge-http-measurement] wrote requestLevel into contracts/benchmark-manifest.json\n`);
+  const manifest = applyRequestLevel(JSON.parse(readFileSync(manifestPath, "utf8")), requestLevel);
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const shown = relative(BACKEND_ROOT, manifestPath).split("\\").join("/");
+  process.stdout.write(`[merge-http-measurement] wrote requestLevel into ${shown}\n`);
 }
 
 // Guarded, so importing `applyRequestLevel` from another writer of the manifest does not run this

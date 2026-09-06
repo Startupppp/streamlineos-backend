@@ -678,6 +678,13 @@ async function seedBuild() {
     ).catch((e) => warn(`project_status ${sname}`, e));
   }
 
+  await sql.unsafe(
+    `INSERT INTO build.project_automations (org_id, project_id, name, trigger_event, conditions, actions, is_active, created_at, updated_at)
+     VALUES ($1, $2, 'Auto-progress on creation', 'ticket.created', '[]'::jsonb, '[{"type":"set_status","value":"IN_PROGRESS"}]'::jsonb, true, now(), now())
+     ON CONFLICT DO NOTHING`,
+    [LARGE_ORG, projectId],
+  ).catch((e) => warn("project_automation", e));
+
   for (const m of memberRows) {
     await sql.unsafe(
       `INSERT INTO build.project_members (org_id, project_id, membership_id, role, joined_at)

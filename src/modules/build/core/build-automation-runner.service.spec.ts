@@ -1,6 +1,11 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { logger } from "../../../common/logger/logger.service";
+
+jest.mock("../../../common/logger/logger.service", () => ({
+  logger: { warn: jest.fn(), error: jest.fn() },
+}));
 
 function makeRule(
   overrides: Partial<{
@@ -55,6 +60,12 @@ describe("BuildAutomationRunnerService", () => {
       ticketLabels: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
+      projectStatuses: {
+        findFirst: jest.fn().mockResolvedValue({ id: 7 }),
+      },
+      organizationMembers: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
     },
   };
 
@@ -70,6 +81,8 @@ describe("BuildAutomationRunnerService", () => {
     dbInsert.values.mockReturnThis();
     dbInsert.onConflictDoNothing.mockResolvedValue(undefined);
     mockDb.query.ticketLabels.findFirst.mockResolvedValue(null);
+    mockDb.query.projectStatuses.findFirst.mockResolvedValue({ id: 7 });
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -85,7 +98,8 @@ describe("BuildAutomationRunnerService", () => {
     return new Promise<void>((resolve) => setTimeout(resolve, 20));
   }
 
-  it("fires set_status action when a matching rule is returned by the query", async () => {
+  it("fires set_status action when the status exists in the project", async () => {
+    mockDb.query.projectStatuses.findFirst.mockResolvedValue({ id: 7 });
     dbSelect.where.mockResolvedValue([makeRule()]);
 
     service.runForTicketEvent("org-1", 1, "ticket.created", BASE_TICKET);
@@ -93,6 +107,29 @@ describe("BuildAutomationRunnerService", () => {
 
     expect(mockDb.update).toHaveBeenCalled();
     expect(mockSetFn).toHaveBeenCalledWith(expect.objectContaining({ status: "IN_PROGRESS" }));
+  });
+
+  it("skips set_status and logs a warning when the status does not exist in the project", async () => {
+    mockDb.query.projectStatuses.findFirst.mockResolvedValue(undefined);
+    dbSelect.where.mockResolvedValue([makeRule()]);
+
+    service.runForTicketEvent("org-1", 1, "ticket.created", BASE_TICKET);
+    await flush();
+
+    expect(mockDb.update).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "BuildAutomationRunner: set_status skipped — status does not exist in project",
+      expect.objectContaining({ ruleId: 1, projectId: 1, orgId: "org-1", status: "IN_PROGRESS" }),
+    );
+  });
+
+  it("does not throw when the target status is absent — the hook must not abort the transaction", async () => {
+    mockDb.query.projectStatuses.findFirst.mockResolvedValue(undefined);
+    dbSelect.where.mockResolvedValue([makeRule()]);
+
+    await expect(
+      service["execute"]("org-1", 1, "ticket.created", BASE_TICKET),
+    ).resolves.toBeUndefined();
   });
 
   it("does not fire when the rule condition does not match the ticket payload", async () => {

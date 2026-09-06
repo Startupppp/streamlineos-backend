@@ -1,8 +1,8 @@
-import { Injectable, Inject, NotFoundException } from "@nestjs/common";
-import { and, eq, desc } from "drizzle-orm";
+import { Injectable, Inject, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { and, eq, desc, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { projectAutomations } from "../../../db/schema";
+import { projectAutomations, projectStatuses } from "../../../db/schema";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -15,6 +15,35 @@ export class ProjectsAutomationsService {
     private readonly planLimits: PlanLimitsService,
     private readonly members: ProjectsMembersService,
   ) {}
+
+  private async assertSetStatusActionsValid(
+    orgId: string,
+    projectId: number,
+    actions: CreateAutomationInput["actions"],
+  ): Promise<void> {
+    const statusValues = [...new Set(
+      actions.filter((a) => a.type === "set_status").map((a) => a.value),
+    )];
+    if (statusValues.length === 0) return;
+
+    const existing = await this.db
+      .select({ name: projectStatuses.name })
+      .from(projectStatuses)
+      .where(
+        and(
+          eq(projectStatuses.orgId, orgId),
+          eq(projectStatuses.projectId, projectId),
+          inArray(projectStatuses.name, statusValues),
+        ),
+      );
+
+    const existingNames = new Set(existing.map((r) => r.name));
+    const missing = statusValues.filter((v) => !existingNames.has(v));
+    if (missing.length > 0)
+      throw new UnprocessableEntityException(
+        `Status ${missing.map((s) => `"${s}"`).join(", ")} does not exist in this project`,
+      );
+  }
 
   async listAutomations(u: CurrentUserContext, projectId: number) {
     await this.members.assertProjectAccess(u, projectId);
@@ -36,6 +65,7 @@ export class ProjectsAutomationsService {
   async createAutomation(u: CurrentUserContext, projectId: number, data: CreateAutomationInput) {
     await this.members.assertCanManageProject(u, projectId);
     await this.planLimits.assertWithinLimit(u.orgId, "automations");
+    await this.assertSetStatusActionsValid(u.orgId, projectId, data.actions);
 
     const [automation] = await this.db
       .insert(projectAutomations)
@@ -46,6 +76,9 @@ export class ProjectsAutomationsService {
 
   async updateAutomation(u: CurrentUserContext, projectId: number, automationId: number, data: UpdateAutomationInput) {
     await this.members.assertCanManageProject(u, projectId);
+    if (data.actions !== undefined)
+      await this.assertSetStatusActionsValid(u.orgId, projectId, data.actions);
+
     const [updated] = await this.db
       .update(projectAutomations)
       .set({ ...data, updatedAt: new Date() })

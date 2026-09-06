@@ -40,7 +40,11 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
     select: jest.fn().mockReturnValue(dbSelect),
     update: jest.fn().mockReturnValue({ set: updateSet }),
     insert: jest.fn(),
-    query: { ticketLabels: { findFirst: jest.fn().mockResolvedValue(null) } },
+    query: {
+      ticketLabels: { findFirst: jest.fn().mockResolvedValue(null) },
+      projectStatuses: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
+    },
   };
 
   beforeEach(async () => {
@@ -51,6 +55,8 @@ describe("BuildAutomationRunnerService — automations are deferred past the req
     mockDb.update.mockReturnValue({ set: updateSet });
     updateSet.mockReturnValue({ where: updateWhere });
     updateWhere.mockResolvedValue(undefined);
+    mockDb.query.projectStatuses.findFirst.mockResolvedValue({ id: 7 });
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [BuildAutomationRunnerService, { provide: DRIZZLE, useValue: mockDb }],
