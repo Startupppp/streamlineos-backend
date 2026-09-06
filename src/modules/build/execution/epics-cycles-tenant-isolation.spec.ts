@@ -86,11 +86,11 @@ describe("EpicsService — cross-tenant isolation — createEpic", () => {
     const values = jest.fn().mockReturnValue({ returning });
     const insert = jest.fn().mockReturnValue({ values });
     const execute = jest.fn().mockResolvedValue([{ start: 1 }]);
-    const tx = { insert, execute };
+    const tx: { insert: jest.Mock; execute: jest.Mock } = { insert, execute };
     const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
     const db = {
       query: { projects: { findFirst: projectFindFirst } },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
     const svc = new EpicsService(db);
 
