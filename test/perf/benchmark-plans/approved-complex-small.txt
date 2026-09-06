@@ -1,21 +1,21 @@
 # Retained plans for every statement that claims the 200 ms COMPLEX ceiling.
 # Tenant small (aaaaaaaa-1111-0000-0000-000000000002, 0.90% of rows), role streamline_app under RLS.
-# Release bf51e66a6542d28d80f6824ee26faf0034c19e78
+# Release 980b81013746be3e807a05ccf3147743272580f0
 
 ### scoped-board-page  (approved complex, tenant small)
-Limit  (cost=13.53..17.90 rows=4 width=25) (actual time=0.447..0.452 rows=19.00 loops=1)
+Limit  (cost=13.53..17.90 rows=4 width=25) (actual time=0.722..0.730 rows=19.00 loops=1)
   Output: t.id, (count(*) OVER w1), t.rank, t.created_at
   Buffers: shared hit=377
-  ->  WindowAgg  (cost=13.53..17.90 rows=4 width=25) (actual time=0.446..0.450 rows=19.00 loops=1)
+  ->  WindowAgg  (cost=13.53..17.90 rows=4 width=25) (actual time=0.721..0.727 rows=19.00 loops=1)
         Output: t.id, count(*) OVER w1, t.rank, t.created_at
         Window: w1 AS ()
         Storage: Memory  Maximum Storage: 17kB
         Buffers: shared hit=377
-        ->  Result  (cost=0.41..17.85 rows=4 width=17) (actual time=0.374..0.439 rows=19.00 loops=1)
+        ->  Result  (cost=0.41..17.85 rows=4 width=17) (actual time=0.571..0.701 rows=19.00 loops=1)
               Output: t.id, t.rank, t.created_at
               One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
               Buffers: shared hit=377
-              ->  Index Scan using idx_tickets_org_project_rank_covering on build.tickets t  (cost=0.41..17.85 rows=4 width=17) (actual time=0.364..0.427 rows=19.00 loops=1)
+              ->  Index Scan using idx_tickets_org_project_rank_covering on build.tickets t  (cost=0.41..17.85 rows=4 width=17) (actual time=0.549..0.676 rows=19.00 loops=1)
                     Output: t.id, t.rank, t.created_at
                     Index Cond: ((t.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (t.project_id = 22))
                     Filter: ((t.assignee_membership_id = 562) OR (t.reporter_membership_id = 562) OR (ANY (t.id = (hashed SubPlan 2).col1)))
@@ -23,11 +23,11 @@ Limit  (cost=13.53..17.90 rows=4 width=25) (actual time=0.447..0.452 rows=19.00 
                     Index Searches: 1
                     Buffers: shared hit=377
                     SubPlan 2
-                      ->  Result  (cost=0.28..1.44 rows=3 width=4) (actual time=0.011..0.015 rows=19.00 loops=1)
+                      ->  Result  (cost=0.28..1.44 rows=3 width=4) (actual time=0.024..0.029 rows=19.00 loops=1)
                             Output: ta.ticket_id
                             One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                             Buffers: shared hit=3
-                            ->  Index Only Scan using idx_ticket_assignees_org_user_ticket on build.ticket_assignees ta  (cost=0.28..1.44 rows=3 width=4) (actual time=0.008..0.010 rows=19.00 loops=1)
+                            ->  Index Only Scan using idx_ticket_assignees_org_user_ticket on build.ticket_assignees ta  (cost=0.28..1.44 rows=3 width=4) (actual time=0.019..0.023 rows=19.00 loops=1)
                                   Output: ta.org_id, ta.membership_id, ta.ticket_id
                                   Index Cond: ((ta.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (ta.membership_id = 562))
                                   Heap Fetches: 0
@@ -35,77 +35,77 @@ Limit  (cost=13.53..17.90 rows=4 width=25) (actual time=0.447..0.452 rows=19.00 
                                   Buffers: shared hit=3
 Planning:
   Buffers: shared hit=1
-Planning Time: 0.427 ms
-Execution Time: 0.486 ms
+Planning Time: 1.481 ms
+Execution Time: 0.940 ms
 
 ### my-work  (approved complex, tenant small)
-Limit  (cost=14.14..14.15 rows=4 width=20) (actual time=0.217..0.220 rows=19.00 loops=1)
+Limit  (cost=14.14..14.15 rows=4 width=20) (actual time=1.988..1.995 rows=19.00 loops=1)
   Output: t.id, (count(*) OVER w1), t.due_date, (CASE t.priority WHEN 'URGENT'::ticket_priority THEN 1 WHEN 'HIGH'::ticket_priority THEN 2 WHEN 'MEDIUM'::ticket_priority THEN 3 WHEN 'LOW'::ticket_priority THEN 4 ELSE 5 END)
   Buffers: shared hit=124
-  ->  Sort  (cost=14.14..14.15 rows=4 width=20) (actual time=0.217..0.219 rows=19.00 loops=1)
+  ->  Sort  (cost=14.14..14.15 rows=4 width=20) (actual time=1.986..1.991 rows=19.00 loops=1)
         Output: t.id, (count(*) OVER w1), t.due_date, (CASE t.priority WHEN 'URGENT'::ticket_priority THEN 1 WHEN 'HIGH'::ticket_priority THEN 2 WHEN 'MEDIUM'::ticket_priority THEN 3 WHEN 'LOW'::ticket_priority THEN 4 ELSE 5 END)
         Sort Key: t.due_date, (CASE t.priority WHEN 'URGENT'::ticket_priority THEN 1 WHEN 'HIGH'::ticket_priority THEN 2 WHEN 'MEDIUM'::ticket_priority THEN 3 WHEN 'LOW'::ticket_priority THEN 4 ELSE 5 END), t.id
         Sort Method: quicksort  Memory: 26kB
         Buffers: shared hit=124
-        ->  WindowAgg  (cost=14.03..14.10 rows=4 width=20) (actual time=0.208..0.213 rows=19.00 loops=1)
+        ->  WindowAgg  (cost=14.03..14.10 rows=4 width=20) (actual time=1.952..1.964 rows=19.00 loops=1)
               Output: t.id, count(*) OVER w1, t.due_date, CASE t.priority WHEN 'URGENT'::ticket_priority THEN 1 WHEN 'HIGH'::ticket_priority THEN 2 WHEN 'MEDIUM'::ticket_priority THEN 3 WHEN 'LOW'::ticket_priority THEN 4 ELSE 5 END
               Window: w1 AS ()
               Storage: Memory  Maximum Storage: 17kB
               Buffers: shared hit=124
-              ->  Unique  (cost=13.97..14.01 rows=4 width=12) (actual time=0.196..0.203 rows=19.00 loops=1)
+              ->  Unique  (cost=13.97..14.01 rows=4 width=12) (actual time=1.855..1.936 rows=19.00 loops=1)
                     Output: t.id, t.due_date, t.priority
                     Buffers: shared hit=124
-                    ->  Sort  (cost=13.97..13.98 rows=4 width=12) (actual time=0.196..0.198 rows=38.00 loops=1)
+                    ->  Sort  (cost=13.97..13.98 rows=4 width=12) (actual time=1.854..1.860 rows=38.00 loops=1)
                           Output: t.id, t.due_date, t.priority
                           Sort Key: t.id, t.due_date, t.priority
                           Sort Method: quicksort  Memory: 25kB
                           Buffers: shared hit=124
-                          ->  Append  (cost=0.54..13.93 rows=4 width=12) (actual time=0.037..0.185 rows=38.00 loops=1)
+                          ->  Append  (cost=0.54..13.93 rows=4 width=12) (actual time=0.088..1.825 rows=38.00 loops=1)
                                 Buffers: shared hit=124
-                                ->  Result  (cost=0.54..4.15 rows=1 width=12) (actual time=0.037..0.113 rows=19.00 loops=1)
+                                ->  Result  (cost=0.54..4.15 rows=1 width=12) (actual time=0.087..0.297 rows=19.00 loops=1)
                                       Output: t.id, t.due_date, t.priority
                                       One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                                       Buffers: shared hit=26
-                                      ->  Nested Loop  (cost=0.54..4.15 rows=1 width=12) (actual time=0.026..0.100 rows=19.00 loops=1)
+                                      ->  Nested Loop  (cost=0.54..4.15 rows=1 width=12) (actual time=0.062..0.268 rows=19.00 loops=1)
                                             Output: t.id, t.due_date, t.priority
                                             Inner Unique: true
                                             Join Filter: (p.id = t.project_id)
                                             Buffers: shared hit=26
-                                            ->  Index Scan using idx_tickets_org_assignee_updated_live on build.tickets t  (cost=0.29..2.51 rows=1 width=16) (actual time=0.011..0.019 rows=19.00 loops=1)
+                                            ->  Index Scan using idx_tickets_org_assignee_updated_live on build.tickets t  (cost=0.29..2.51 rows=1 width=16) (actual time=0.025..0.049 rows=19.00 loops=1)
                                                   Output: t.id, t.due_date, t.priority, t.project_id
                                                   Index Cond: ((t.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (t.assignee_membership_id = 562))
                                                   Index Searches: 1
                                                   Buffers: shared hit=7
-                                            ->  Seq Scan on build.projects p  (cost=0.00..1.38 rows=1 width=4) (actual time=0.002..0.002 rows=1.00 loops=19)
+                                            ->  Seq Scan on build.projects p  (cost=0.00..1.38 rows=1 width=4) (actual time=0.007..0.007 rows=1.00 loops=19)
                                                   Output: p.id
                                                   Filter: ((p.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (p.status <> 'ARCHIVED'::project_status))
                                                   Rows Removed by Filter: 20
                                                   Buffers: shared hit=19
-                                ->  Result  (cost=0.95..9.76 rows=3 width=12) (actual time=0.020..0.069 rows=19.00 loops=1)
+                                ->  Result  (cost=0.95..9.76 rows=3 width=12) (actual time=0.057..1.521 rows=19.00 loops=1)
                                       Output: t_1.id, t_1.due_date, t_1.priority
                                       One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                                       Buffers: shared hit=98
-                                      ->  Nested Loop  (cost=0.95..9.76 rows=3 width=12) (actual time=0.018..0.065 rows=19.00 loops=1)
+                                      ->  Nested Loop  (cost=0.95..9.76 rows=3 width=12) (actual time=0.046..1.506 rows=19.00 loops=1)
                                             Output: t_1.id, t_1.due_date, t_1.priority
                                             Inner Unique: true
                                             Buffers: shared hit=98
-                                            ->  Nested Loop  (cost=0.56..8.97 rows=3 width=16) (actual time=0.014..0.042 rows=19.00 loops=1)
+                                            ->  Nested Loop  (cost=0.56..8.97 rows=3 width=16) (actual time=0.037..1.421 rows=19.00 loops=1)
                                                   Output: t_1.id, t_1.due_date, t_1.priority, t_1.project_id
                                                   Inner Unique: true
                                                   Buffers: shared hit=60
-                                                  ->  Index Only Scan using idx_ticket_assignees_org_user_ticket on build.ticket_assignees ta  (cost=0.28..1.44 rows=3 width=4) (actual time=0.007..0.010 rows=19.00 loops=1)
+                                                  ->  Index Only Scan using idx_ticket_assignees_org_user_ticket on build.ticket_assignees ta  (cost=0.28..1.44 rows=3 width=4) (actual time=0.022..0.031 rows=19.00 loops=1)
                                                         Output: ta.org_id, ta.membership_id, ta.ticket_id
                                                         Index Cond: ((ta.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (ta.membership_id = 562))
                                                         Heap Fetches: 0
                                                         Index Searches: 1
                                                         Buffers: shared hit=3
-                                                  ->  Index Scan using tickets_pkey on build.tickets t_1  (cost=0.29..2.51 rows=1 width=16) (actual time=0.001..0.001 rows=1.00 loops=19)
+                                                  ->  Index Scan using tickets_pkey on build.tickets t_1  (cost=0.29..2.51 rows=1 width=16) (actual time=0.072..0.072 rows=1.00 loops=19)
                                                         Output: t_1.id, t_1.due_date, t_1.priority, t_1.project_id
                                                         Index Cond: (t_1.id = ta.ticket_id)
                                                         Filter: ((t_1.deleted_at IS NULL) AND (t_1.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text))
                                                         Index Searches: 19
                                                         Buffers: shared hit=57
-                                            ->  Index Scan using idx_projects_org_id_desc on build.projects p_1  (cost=0.14..0.17 rows=1 width=4) (actual time=0.001..0.001 rows=1.00 loops=19)
+                                            ->  Index Scan using idx_projects_org_id_desc on build.projects p_1  (cost=0.14..0.17 rows=1 width=4) (actual time=0.003..0.003 rows=1.00 loops=19)
                                                   Output: p_1.id
                                                   Index Cond: ((p_1.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (p_1.id = t_1.project_id))
                                                   Filter: (p_1.status <> 'ARCHIVED'::project_status)
@@ -113,172 +113,178 @@ Limit  (cost=14.14..14.15 rows=4 width=20) (actual time=0.217..0.220 rows=19.00 
                                                   Buffers: shared hit=38
 Planning:
   Buffers: shared hit=20
-Planning Time: 0.948 ms
-Execution Time: 0.267 ms
+Planning Time: 2.717 ms
+Execution Time: 2.136 ms
 
 ### chat-channel-list  (approved complex, tenant small)
-Limit  (cost=13.73..13.86 rows=50 width=42) (actual time=0.116..0.123 rows=50.00 loops=1)
+Limit  (cost=13.73..13.86 rows=50 width=42) (actual time=0.180..0.187 rows=50.00 loops=1)
   Output: c.id, c.name, c.type, c.last_message_at, c.is_private, m.last_read_at, m.is_favorite
   Buffers: shared hit=13
-  ->  Sort  (cost=13.73..13.87 rows=55 width=42) (actual time=0.116..0.119 rows=50.00 loops=1)
+  ->  Sort  (cost=13.73..13.87 rows=55 width=42) (actual time=0.179..0.182 rows=50.00 loops=1)
         Output: c.id, c.name, c.type, c.last_message_at, c.is_private, m.last_read_at, m.is_favorite
         Sort Key: c.last_message_at DESC
         Sort Method: quicksort  Memory: 32kB
         Buffers: shared hit=13
-        ->  Result  (cost=7.04..12.14 rows=55 width=42) (actual time=0.060..0.102 rows=55.00 loops=1)
+        ->  Result  (cost=7.04..12.14 rows=55 width=42) (actual time=0.098..0.155 rows=55.00 loops=1)
               Output: c.id, c.name, c.type, c.last_message_at, c.is_private, m.last_read_at, m.is_favorite
               One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
               Buffers: shared hit=13
-              ->  Hash Join  (cost=7.04..12.14 rows=55 width=42) (actual time=0.053..0.088 rows=55.00 loops=1)
+              ->  Hash Join  (cost=7.04..12.14 rows=55 width=42) (actual time=0.086..0.136 rows=55.00 loops=1)
                     Output: c.id, c.name, c.type, c.last_message_at, c.is_private, m.last_read_at, m.is_favorite
                     Inner Unique: true
                     Hash Cond: (m.channel_id = c.id)
                     Buffers: shared hit=13
-                    ->  Nested Loop  (cost=0.56..5.51 rows=55 width=13) (actual time=0.017..0.038 rows=55.00 loops=1)
+                    ->  Nested Loop  (cost=0.56..5.51 rows=55 width=13) (actual time=0.034..0.064 rows=55.00 loops=1)
                           Output: m.last_read_at, m.is_favorite, m.channel_id
                           Buffers: shared hit=8
-                          ->  Index Scan using uniq_org_members_org_user on public.organization_members om  (cost=0.28..3.00 rows=1 width=4) (actual time=0.010..0.010 rows=1.00 loops=1)
+                          ->  Index Scan using uniq_org_members_org_user on public.organization_members om  (cost=0.28..3.00 rows=1 width=4) (actual time=0.019..0.020 rows=1.00 loops=1)
                                 Output: om.id
                                 Index Cond: ((om.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (om.user_id = 'bbbbbbbb-smal-0001-0000-000000000001'::text))
                                 Filter: ((om.org_id = current_org_id_or_null()) OR (om.user_id = current_user_id_or_null()))
                                 Index Searches: 1
                                 Buffers: shared hit=3
-                          ->  Index Scan using idx_chat_channel_members_org_membership on public.chat_channel_members m  (cost=0.28..2.50 rows=1 width=17) (actual time=0.006..0.021 rows=55.00 loops=1)
+                          ->  Index Scan using idx_chat_channel_members_org_membership on public.chat_channel_members m  (cost=0.28..2.50 rows=1 width=17) (actual time=0.012..0.035 rows=55.00 loops=1)
                                 Output: m.last_read_at, m.is_favorite, m.channel_id, m.membership_id
                                 Index Cond: ((m.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (m.membership_id = om.id) AND (m.archived_at IS NULL))
                                 Index Searches: 1
                                 Buffers: shared hit=5
-                    ->  Hash  (cost=5.55..5.55 rows=55 width=33) (actual time=0.029..0.029 rows=55.00 loops=1)
+                    ->  Hash  (cost=5.55..5.55 rows=55 width=33) (actual time=0.047..0.047 rows=55.00 loops=1)
                           Output: c.id, c.name, c.type, c.last_message_at, c.is_private
                           Buckets: 1024  Batches: 1  Memory Usage: 12kB
                           Buffers: shared hit=5
-                          ->  Index Scan Backward using idx_chat_channels_last_msg on public.chat_channels c  (cost=0.14..5.55 rows=55 width=33) (actual time=0.004..0.020 rows=55.00 loops=1)
+                          ->  Index Scan Backward using idx_chat_channels_last_msg on public.chat_channels c  (cost=0.14..5.55 rows=55 width=33) (actual time=0.006..0.032 rows=55.00 loops=1)
                                 Output: c.id, c.name, c.type, c.last_message_at, c.is_private
                                 Index Cond: (c.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                                 Filter: (NOT c.is_archived)
                                 Index Searches: 1
                                 Buffers: shared hit=5
 Planning:
-  Buffers: shared hit=18
-Planning Time: 0.515 ms
-Execution Time: 0.155 ms
+  Buffers: shared hit=21
+Planning Time: 0.871 ms
+Execution Time: 0.240 ms
 
 ### kb-page-id-probe-sdf  (approved complex, tenant small)
-Function Scan on app.search_kb_page_ids  (cost=0.25..10.25 rows=1000 width=4) (actual time=0.287..0.289 rows=51.00 loops=1)
+Function Scan on app.search_kb_page_ids  (cost=0.25..10.25 rows=1000 width=4) (actual time=0.707..0.710 rows=51.00 loops=1)
   Output: search_kb_page_ids
   Function Call: search_kb_page_ids('policy'::text, 51)
   Buffers: shared hit=11
-Planning Time: 0.015 ms
-Execution Time: 0.298 ms
+Planning Time: 0.040 ms
+Execution Time: 0.729 ms
 
 ### org-people-list  (approved complex, tenant small)
-Limit  (cost=2.96..2.99 rows=15 width=133) (actual time=0.026..0.028 rows=15.00 loops=1)
+Limit  (cost=2.96..2.99 rows=15 width=133) (actual time=0.065..0.068 rows=15.00 loops=1)
   Output: organization_person_id, first_name, last_name, work_email, avatar_url, display_name, archived_at
   Buffers: shared hit=4
-  ->  Sort  (cost=2.96..2.99 rows=15 width=133) (actual time=0.025..0.026 rows=15.00 loops=1)
+  ->  Sort  (cost=2.96..2.99 rows=15 width=133) (actual time=0.065..0.066 rows=15.00 loops=1)
         Output: organization_person_id, first_name, last_name, work_email, avatar_url, display_name, archived_at
         Sort Key: organization_people.organization_person_id
         Sort Method: quicksort  Memory: 26kB
         Buffers: shared hit=4
-        ->  Result  (cost=0.15..2.66 rows=15 width=133) (actual time=0.013..0.019 rows=15.00 loops=1)
+        ->  Result  (cost=0.15..2.66 rows=15 width=133) (actual time=0.036..0.051 rows=15.00 loops=1)
               Output: organization_person_id, first_name, last_name, work_email, avatar_url, display_name, archived_at
               One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
               Buffers: shared hit=4
-              ->  Index Scan using idx_org_people_org on public.organization_people  (cost=0.15..2.66 rows=15 width=133) (actual time=0.007..0.012 rows=15.00 loops=1)
+              ->  Index Scan using idx_org_people_org on public.organization_people  (cost=0.15..2.66 rows=15 width=133) (actual time=0.020..0.032 rows=15.00 loops=1)
                     Output: organization_person_id, first_name, last_name, work_email, avatar_url, display_name, archived_at
                     Index Cond: (organization_people.organization_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                     Filter: (organization_people.deleted_at IS NULL)
                     Index Searches: 1
                     Buffers: shared hit=4
-Planning Time: 0.093 ms
-Execution Time: 0.040 ms
+Planning Time: 0.216 ms
+Execution Time: 0.097 ms
 
 ### employee-record-list-canonical  (approved complex, tenant small)
-Sort  (cost=12.28..12.28 rows=1 width=189) (actual time=0.121..0.124 rows=10.00 loops=1)
+Sort  (cost=12.28..12.28 rows=1 width=189) (actual time=0.428..0.432 rows=11.00 loops=1)
   Output: u.id, e.employee_number, e.designation, e.joining_date, e.department_id, e.location_id, mp.user_id, e.id
   Sort Key: e.id
   Sort Method: quicksort  Memory: 25kB
-  Buffers: shared hit=44
-  ->  Nested Loop Left Join  (cost=6.48..12.27 rows=1 width=189) (actual time=0.081..0.118 rows=10.00 loops=1)
+  Buffers: shared hit=63
+  ->  Nested Loop Left Join  (cost=6.48..12.27 rows=1 width=189) (actual time=0.237..0.411 rows=11.00 loops=1)
         Output: u.id, e.employee_number, e.designation, e.joining_date, e.department_id, e.location_id, mp.user_id, e.id
-        Buffers: shared hit=44
-        ->  Nested Loop  (cost=5.07..6.20 rows=1 width=36) (actual time=0.069..0.085 rows=10.00 loops=1)
+        Buffers: shared hit=63
+        ->  Nested Loop  (cost=5.07..6.20 rows=1 width=36) (actual time=0.208..0.255 rows=11.00 loops=1)
               Output: u.id
               Inner Unique: true
-              Buffers: shared hit=24
-              ->  HashAggregate  (cost=4.79..4.80 rows=1 width=36) (actual time=0.062..0.065 rows=10.00 loops=1)
+              Buffers: shared hit=35
+              ->  HashAggregate  (cost=4.79..4.80 rows=1 width=36) (actual time=0.164..0.170 rows=11.00 loops=1)
                     Output: m.user_id
                     Group Key: m.user_id
                     Batches: 1  Memory Usage: 32kB
-                    Buffers: shared hit=3
-                    ->  Limit  (cost=4.78..4.78 rows=1 width=44) (actual time=0.056..0.057 rows=10.00 loops=1)
+                    Buffers: shared hit=4
+                    ->  Limit  (cost=4.78..4.78 rows=1 width=44) (actual time=0.151..0.154 rows=11.00 loops=1)
                           Output: m.user_id, m.joined_at
-                          Buffers: shared hit=3
-                          ->  Sort  (cost=4.78..4.78 rows=1 width=44) (actual time=0.055..0.056 rows=10.00 loops=1)
+                          Buffers: shared hit=4
+                          ->  Sort  (cost=4.78..4.78 rows=1 width=44) (actual time=0.150..0.152 rows=11.00 loops=1)
                                 Output: m.user_id, m.joined_at
                                 Sort Key: m.joined_at DESC
                                 Sort Method: quicksort  Memory: 25kB
-                                Buffers: shared hit=3
-                                ->  Bitmap Heap Scan on public.organization_members m  (cost=3.15..4.77 rows=1 width=44) (actual time=0.040..0.049 rows=10.00 loops=1)
+                                Buffers: shared hit=4
+                                ->  Bitmap Heap Scan on public.organization_members m  (cost=3.15..4.77 rows=1 width=44) (actual time=0.114..0.137 rows=11.00 loops=1)
                                       Output: m.user_id, m.joined_at
                                       Recheck Cond: (((m.org_id = current_org_id_or_null()) AND (m.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)) OR ((m.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (m.user_id = current_user_id_or_null())))
                                       Filter: (((m.org_id = current_org_id_or_null()) OR (m.user_id = current_user_id_or_null())) AND (m.status = 'ACTIVE'::membership_status))
-                                      Heap Blocks: exact=2
-                                      Buffers: shared hit=3
-                                      ->  BitmapOr  (cost=3.15..3.15 rows=1 width=0) (actual time=0.018..0.018 rows=0.00 loops=1)
+                                      Heap Blocks: exact=3
+                                      Buffers: shared hit=4
+                                      ->  BitmapOr  (cost=3.15..3.15 rows=1 width=0) (actual time=0.054..0.054 rows=0.00 loops=1)
                                             Buffers: shared hit=1
-                                            ->  Bitmap Index Scan on idx_org_members_org_status  (cost=0.00..1.51 rows=1 width=0) (actual time=0.014..0.014 rows=10.00 loops=1)
+                                            ->  Bitmap Index Scan on idx_org_members_org_status  (cost=0.00..1.51 rows=1 width=0) (actual time=0.042..0.042 rows=11.00 loops=1)
                                                   Index Cond: ((m.org_id = current_org_id_or_null()) AND (m.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text))
                                                   Index Searches: 1
                                                   Buffers: shared hit=1
-                                            ->  Bitmap Index Scan on uniq_org_members_org_user  (cost=0.00..1.64 rows=1 width=0) (actual time=0.003..0.003 rows=0.00 loops=1)
+                                            ->  Bitmap Index Scan on uniq_org_members_org_user  (cost=0.00..1.64 rows=1 width=0) (actual time=0.006..0.006 rows=0.00 loops=1)
                                                   Index Cond: ((m.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (m.user_id = current_user_id_or_null()))
                                                   Index Searches: 0
-              ->  Index Only Scan using users_pkey on public.users u  (cost=0.28..1.39 rows=1 width=36) (actual time=0.002..0.002 rows=1.00 loops=10)
+              ->  Index Only Scan using users_pkey on public.users u  (cost=0.28..1.39 rows=1 width=36) (actual time=0.007..0.007 rows=1.00 loops=11)
                     Output: u.id
                     Index Cond: (u.id = m.user_id)
-                    Heap Fetches: 0
-                    Index Searches: 10
-                    Buffers: shared hit=21
-        ->  Nested Loop Left Join  (cost=1.41..6.06 rows=1 width=190) (actual time=0.003..0.003 rows=0.00 loops=10)
+                    Heap Fetches: 8
+                    Index Searches: 11
+                    Buffers: shared hit=31
+        ->  Nested Loop Left Join  (cost=1.41..6.06 rows=1 width=190) (actual time=0.013..0.013 rows=0.09 loops=11)
               Output: p.user_id, e.employee_number, e.designation, e.joining_date, e.department_id, e.location_id, e.id, mp.user_id
-              Buffers: shared hit=20
-              ->  Result  (cost=0.27..0.47 rows=1 width=41) (actual time=0.003..0.003 rows=0.00 loops=10)
+              Buffers: shared hit=28
+              ->  Result  (cost=0.27..0.47 rows=1 width=41) (actual time=0.007..0.008 rows=0.09 loops=11)
                     Output: p.user_id, p.id
                     One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
-                    Buffers: shared hit=20
-                    ->  Index Scan using uniq_hr_people_org_user_live on public.hr_people p  (cost=0.27..0.47 rows=1 width=41) (actual time=0.001..0.001 rows=0.00 loops=10)
+                    Buffers: shared hit=23
+                    ->  Index Scan using uniq_hr_people_org_user_live on public.hr_people p  (cost=0.27..0.47 rows=1 width=41) (actual time=0.004..0.004 rows=0.09 loops=11)
                           Output: p.user_id, p.id
                           Index Cond: ((p.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (p.user_id = u.id))
-                          Index Searches: 10
-                          Buffers: shared hit=20
-              ->  Nested Loop Left Join  (cost=1.14..5.58 rows=1 width=157) (never executed)
+                          Index Searches: 11
+                          Buffers: shared hit=23
+              ->  Nested Loop Left Join  (cost=1.14..5.58 rows=1 width=157) (actual time=0.060..0.062 rows=1.00 loops=1)
                     Output: e.employee_number, e.designation, e.joining_date, e.department_id, e.location_id, e.id, e.person_id, mp.user_id
-                    ->  Nested Loop Left Join  (cost=0.56..3.35 rows=1 width=124) (never executed)
+                    Buffers: shared hit=5
+                    ->  Nested Loop Left Join  (cost=0.56..3.35 rows=1 width=124) (actual time=0.046..0.048 rows=1.00 loops=1)
                           Output: e.employee_number, e.designation, e.joining_date, e.department_id, e.location_id, e.id, e.person_id, rl.manager_employment_id
-                          ->  Result  (cost=0.28..1.60 rows=1 width=120) (never executed)
+                          Buffers: shared hit=5
+                          ->  Result  (cost=0.28..1.60 rows=1 width=120) (actual time=0.021..0.022 rows=1.00 loops=1)
                                 Output: e.employee_number, e.designation, e.joining_date, e.department_id, e.location_id, e.id, e.person_id
                                 One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
-                                ->  Index Scan using idx_hr_employments_person on public.hr_employments e  (cost=0.28..1.60 rows=1 width=120) (never executed)
+                                Buffers: shared hit=3
+                                ->  Index Scan using idx_hr_employments_person on public.hr_employments e  (cost=0.28..1.60 rows=1 width=120) (actual time=0.018..0.018 rows=1.00 loops=1)
                                       Output: e.employee_number, e.designation, e.joining_date, e.department_id, e.location_id, e.id, e.person_id
                                       Index Cond: (e.person_id = p.id)
                                       Filter: (e.is_primary AND (e.deleted_at IS NULL) AND (e.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text))
-                                      Index Searches: 0
-                          ->  Result  (cost=0.28..1.74 rows=1 width=8) (never executed)
+                                      Index Searches: 1
+                                      Buffers: shared hit=3
+                          ->  Result  (cost=0.28..1.74 rows=1 width=8) (actual time=0.024..0.024 rows=0.00 loops=1)
                                 Output: rl.employment_id, rl.manager_employment_id
                                 One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
-                                ->  Index Scan using idx_hr_reporting_lines_org_emp on public.hr_reporting_lines rl  (cost=0.28..1.74 rows=1 width=8) (never executed)
+                                Buffers: shared hit=2
+                                ->  Index Scan using idx_hr_reporting_lines_org_emp on public.hr_reporting_lines rl  (cost=0.28..1.74 rows=1 width=8) (actual time=0.019..0.019 rows=0.00 loops=1)
                                       Output: rl.id, rl.org_id, rl.employment_id, rl.manager_employment_id, rl.line_type, rl.effective_from, rl.effective_to, rl.created_by, rl.created_at, rl.created_by_membership_id
                                       Index Cond: ((rl.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (rl.employment_id = e.id))
                                       Filter: ((rl.effective_from <= CURRENT_DATE) AND (rl.effective_to >= CURRENT_DATE) AND (rl.line_type = 'primary'::hr_reporting_line_type))
-                                      Index Searches: 0
-                    ->  Nested Loop Left Join  (cost=0.57..2.22 rows=1 width=41) (never executed)
+                                      Index Searches: 1
+                                      Buffers: shared hit=2
+                    ->  Nested Loop Left Join  (cost=0.57..2.22 rows=1 width=41) (actual time=0.012..0.013 rows=0.00 loops=1)
                           Output: me.id, mp.user_id
                           Inner Unique: true
-                          ->  Result  (cost=0.28..0.63 rows=1 width=8) (never executed)
+                          ->  Result  (cost=0.28..0.63 rows=1 width=8) (actual time=0.012..0.012 rows=0.00 loops=1)
                                 Output: me.id, me.person_id
                                 One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
-                                ->  Index Scan using hr_employments_pkey on public.hr_employments me  (cost=0.28..0.63 rows=1 width=8) (never executed)
+                                ->  Index Scan using hr_employments_pkey on public.hr_employments me  (cost=0.28..0.63 rows=1 width=8) (actual time=0.008..0.008 rows=0.00 loops=1)
                                       Output: me.id, me.person_id
                                       Index Cond: (me.id = rl.manager_employment_id)
                                       Filter: ((me.deleted_at IS NULL) AND (me.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text))
@@ -296,178 +302,178 @@ Sort  (cost=12.28..12.28 rows=1 width=189) (actual time=0.121..0.124 rows=10.00 
                                             Filter: ((mp.deleted_at IS NULL) AND (mp.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text))
                                             Index Searches: 0
 Planning:
-  Buffers: shared hit=65
-Planning Time: 1.234 ms
-Execution Time: 0.197 ms
+  Buffers: shared hit=81
+Planning Time: 2.302 ms
+Execution Time: 0.623 ms
 
 ### employee-reporting-line-lookup  (approved complex, tenant small)
-Limit  (cost=0.28..28.17 rows=100 width=12) (actual time=0.051..0.748 rows=51.00 loops=1)
+Limit  (cost=0.28..28.17 rows=100 width=12) (actual time=0.062..1.107 rows=51.00 loops=1)
   Output: employment_id, manager_employment_id, effective_from
   Buffers: shared hit=1027
-  ->  Result  (cost=0.28..116.83 rows=418 width=12) (actual time=0.050..0.743 rows=51.00 loops=1)
+  ->  Result  (cost=0.28..116.83 rows=418 width=12) (actual time=0.062..1.100 rows=51.00 loops=1)
         Output: employment_id, manager_employment_id, effective_from
         One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
         Buffers: shared hit=1027
-        ->  Index Scan using idx_hr_reporting_lines_org_emp on public.hr_reporting_lines rl  (cost=0.28..116.83 rows=418 width=12) (actual time=0.032..0.718 rows=51.00 loops=1)
+        ->  Index Scan using idx_hr_reporting_lines_org_emp on public.hr_reporting_lines rl  (cost=0.28..116.83 rows=418 width=12) (actual time=0.040..1.070 rows=51.00 loops=1)
               Output: id, org_id, employment_id, manager_employment_id, line_type, effective_from, effective_to, created_by, created_at, created_by_membership_id
               Index Cond: (rl.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
               Filter: ((rl.effective_from <= CURRENT_DATE) AND (rl.effective_to >= CURRENT_DATE) AND (rl.line_type = 'primary'::hr_reporting_line_type))
               Rows Removed by Filter: 1449
               Index Searches: 1
               Buffers: shared hit=1027
-Planning Time: 0.219 ms
-Execution Time: 0.778 ms
+Planning Time: 0.261 ms
+Execution Time: 1.146 ms
 
 ### search-tickets-sdf  (approved complex, tenant small)
-Function Scan on app.search_ticket_ids  (cost=0.25..10.25 rows=1000 width=4) (actual time=0.526..0.528 rows=20.00 loops=1)
+Function Scan on app.search_ticket_ids  (cost=0.25..10.25 rows=1000 width=4) (actual time=0.911..0.913 rows=20.00 loops=1)
   Output: search_ticket_ids
   Function Call: search_ticket_ids('ticket'::text, 20)
   Buffers: shared hit=26
-Planning Time: 0.013 ms
-Execution Time: 0.535 ms
+Planning Time: 0.014 ms
+Execution Time: 0.922 ms
 
 ### search-lead-party-sdf  (approved complex, tenant small)
-Function Scan on app.search_lead_party_ids  (cost=0.25..10.25 rows=1000 width=32) (actual time=0.509..0.511 rows=20.00 loops=1)
+Function Scan on app.search_lead_party_ids  (cost=0.25..10.25 rows=1000 width=32) (actual time=1.125..1.129 rows=20.00 loops=1)
   Output: search_lead_party_ids
   Function Call: search_lead_party_ids('a'::text, 20)
   Buffers: shared hit=25
-Planning Time: 0.011 ms
-Execution Time: 0.517 ms
+Planning Time: 0.026 ms
+Execution Time: 1.141 ms
 
 ### search-deal-sdf  (approved complex, tenant small)
-Function Scan on app.search_deal_ids  (cost=0.25..10.25 rows=1000 width=4) (actual time=0.299..0.300 rows=20.00 loops=1)
+Function Scan on app.search_deal_ids  (cost=0.25..10.25 rows=1000 width=4) (actual time=0.893..0.896 rows=20.00 loops=1)
   Output: search_deal_ids
   Function Call: search_deal_ids('a'::text, 20)
   Buffers: shared hit=9
-Planning Time: 0.010 ms
-Execution Time: 0.306 ms
+Planning Time: 0.037 ms
+Execution Time: 0.934 ms
 
 ### search-contact-party-sdf  (approved complex, tenant small)
-Function Scan on app.search_contact_party_ids  (cost=0.25..10.25 rows=1000 width=32) (actual time=0.495..0.496 rows=20.00 loops=1)
+Function Scan on app.search_contact_party_ids  (cost=0.25..10.25 rows=1000 width=32) (actual time=1.006..1.010 rows=20.00 loops=1)
   Output: search_contact_party_ids
   Function Call: search_contact_party_ids('a'::text, 20)
   Buffers: shared hit=23
-Planning Time: 0.010 ms
-Execution Time: 0.502 ms
+Planning Time: 0.018 ms
+Execution Time: 1.022 ms
 
 ### search-client-party-sdf  (approved complex, tenant small)
-Function Scan on app.search_client_party_ids  (cost=0.25..10.25 rows=1000 width=32) (actual time=0.363..0.364 rows=20.00 loops=1)
+Function Scan on app.search_client_party_ids  (cost=0.25..10.25 rows=1000 width=32) (actual time=0.750..0.754 rows=20.00 loops=1)
   Output: search_client_party_ids
   Function Call: search_client_party_ids('a'::text, 20)
   Buffers: shared hit=21
-Planning Time: 0.011 ms
-Execution Time: 0.370 ms
+Planning Time: 0.018 ms
+Execution Time: 0.763 ms
 
 ### leave-balances-org  (approved complex, tenant small)
-Limit  (cost=11.22..11.25 rows=10 width=52) (actual time=0.020..0.022 rows=10.00 loops=1)
+Limit  (cost=11.22..11.25 rows=10 width=52) (actual time=0.066..0.068 rows=10.00 loops=1)
   Output: id, user_id, leave_type_id, year, balance
   Buffers: shared hit=3
-  ->  Sort  (cost=11.22..11.25 rows=10 width=52) (actual time=0.020..0.021 rows=10.00 loops=1)
+  ->  Sort  (cost=11.22..11.25 rows=10 width=52) (actual time=0.065..0.065 rows=10.00 loops=1)
         Output: id, user_id, leave_type_id, year, balance
         Sort Key: leave_balances.user_id, leave_balances.year DESC
         Sort Method: quicksort  Memory: 26kB
         Buffers: shared hit=3
-        ->  Result  (cost=0.28..11.05 rows=10 width=52) (actual time=0.013..0.015 rows=10.00 loops=1)
+        ->  Result  (cost=0.28..11.05 rows=10 width=52) (actual time=0.045..0.052 rows=10.00 loops=1)
               Output: id, user_id, leave_type_id, year, balance
               One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
               Buffers: shared hit=3
-              ->  Index Scan using idx_leave_balances_org_year_type on public.leave_balances  (cost=0.28..11.05 rows=10 width=52) (actual time=0.007..0.009 rows=10.00 loops=1)
+              ->  Index Scan using idx_leave_balances_org_year_type on public.leave_balances  (cost=0.28..11.05 rows=10 width=52) (actual time=0.024..0.028 rows=10.00 loops=1)
                     Output: id, org_id, user_id, leave_type_id, balance, year, user_membership_id
                     Index Cond: (leave_balances.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                     Index Searches: 1
                     Buffers: shared hit=3
-Planning Time: 0.064 ms
-Execution Time: 0.033 ms
+Planning Time: 0.171 ms
+Execution Time: 0.096 ms
 
 ### leave-accrual-ledger-dedup  (approved complex, tenant small)
-Result  (cost=0.28..2.75 rows=1 width=40) (actual time=0.018..0.029 rows=15.00 loops=1)
+Result  (cost=0.28..2.75 rows=1 width=40) (actual time=0.042..0.062 rows=15.00 loops=1)
   Output: user_id, leave_type_id
   One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
   Buffers: shared hit=27
-  ->  Index Scan using idx_hr_leave_ledger_user_type_date on public.hr_leave_ledger  (cost=0.28..2.75 rows=1 width=40) (actual time=0.014..0.023 rows=15.00 loops=1)
+  ->  Index Scan using idx_hr_leave_ledger_user_type_date on public.hr_leave_ledger  (cost=0.28..2.75 rows=1 width=40) (actual time=0.030..0.048 rows=15.00 loops=1)
         Output: id, org_id, user_id, leave_type_id, txn_type, days, effective_date, period, source, source_id, note, payroll_status, created_by, created_at, user_membership_id
         Index Cond: ((hr_leave_ledger.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (hr_leave_ledger.leave_type_id = ANY ('{3}'::integer[])))
         Filter: ((hr_leave_ledger.period = '2026-09'::text) AND (hr_leave_ledger.txn_type = 'accrual'::hr_leave_txn_type) AND (hr_leave_ledger.source = 'cron'::hr_leave_ledger_source))
         Rows Removed by Filter: 10
         Index Searches: 1
         Buffers: shared hit=27
-Planning Time: 0.070 ms
-Execution Time: 0.040 ms
+Planning Time: 0.153 ms
+Execution Time: 0.087 ms
 
 ### leave-accrual-balance-read  (approved complex, tenant small)
-Result  (cost=0.28..2.50 rows=1 width=44) (actual time=0.015..0.018 rows=10.00 loops=1)
+Result  (cost=0.28..2.50 rows=1 width=44) (actual time=0.031..0.035 rows=10.00 loops=1)
   Output: user_id, leave_type_id, balance
   One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
   Buffers: shared hit=3
-  ->  Index Scan using idx_leave_balances_org_year_type on public.leave_balances  (cost=0.28..2.50 rows=1 width=44) (actual time=0.009..0.010 rows=10.00 loops=1)
+  ->  Index Scan using idx_leave_balances_org_year_type on public.leave_balances  (cost=0.28..2.50 rows=1 width=44) (actual time=0.019..0.021 rows=10.00 loops=1)
         Output: id, org_id, user_id, leave_type_id, balance, year, user_membership_id
         Index Cond: ((leave_balances.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (leave_balances.year = 2026) AND (leave_balances.leave_type_id = ANY ('{3}'::integer[])))
         Index Searches: 1
         Buffers: shared hit=3
-Planning Time: 0.063 ms
-Execution Time: 0.033 ms
+Planning Time: 0.140 ms
+Execution Time: 0.057 ms
 
 ### accounting-receivables-list  (approved complex, tenant small)
-Limit  (cost=50.80..50.87 rows=30 width=158) (actual time=0.631..0.636 rows=30.00 loops=1)
+Limit  (cost=50.80..50.87 rows=30 width=158) (actual time=1.366..1.374 rows=30.00 loops=1)
   Output: c.id, c.name, c.state, c.gstin, (count(DISTINCT i.id)), ((COALESCE((sum(i.total)), '0'::numeric) - COALESCE((COALESCE(sum(p.amount), '0'::numeric)), '0'::numeric))), (count(*) OVER w1), (COALESCE(sum(p.amount), '0'::numeric))
   Buffers: shared hit=61
-  ->  Sort  (cost=50.80..50.87 rows=30 width=158) (actual time=0.631..0.633 rows=30.00 loops=1)
+  ->  Sort  (cost=50.80..50.87 rows=30 width=158) (actual time=1.365..1.370 rows=30.00 loops=1)
         Output: c.id, c.name, c.state, c.gstin, (count(DISTINCT i.id)), ((COALESCE((sum(i.total)), '0'::numeric) - COALESCE((COALESCE(sum(p.amount), '0'::numeric)), '0'::numeric))), (count(*) OVER w1), (COALESCE(sum(p.amount), '0'::numeric))
         Sort Key: ((COALESCE((sum(i.total)), '0'::numeric) - COALESCE((COALESCE(sum(p.amount), '0'::numeric)), '0'::numeric))) DESC, c.name
         Sort Method: quicksort  Memory: 27kB
         Buffers: shared hit=61
-        ->  WindowAgg  (cost=48.53..50.06 rows=30 width=158) (actual time=0.607..0.616 rows=30.00 loops=1)
+        ->  WindowAgg  (cost=48.53..50.06 rows=30 width=158) (actual time=1.321..1.337 rows=30.00 loops=1)
               Output: c.id, c.name, c.state, c.gstin, (count(DISTINCT i.id)), (COALESCE((sum(i.total)), '0'::numeric) - COALESCE((COALESCE(sum(p.amount), '0'::numeric)), '0'::numeric)), count(*) OVER w1, (COALESCE(sum(p.amount), '0'::numeric))
               Window: w1 AS ()
               Storage: Memory  Maximum Storage: 18kB
               Buffers: shared hit=61
-              ->  GroupAggregate  (cost=6.32..49.61 rows=30 width=150) (actual time=0.584..0.597 rows=30.00 loops=1)
+              ->  GroupAggregate  (cost=6.32..49.61 rows=30 width=150) (actual time=1.282..1.306 rows=30.00 loops=1)
                     Output: c.id, (COALESCE(sum(p.amount), '0'::numeric)), c.name, c.state, c.gstin, count(DISTINCT i.id), sum(i.total)
                     Group Key: c.id, (COALESCE(sum(p.amount), '0'::numeric))
                     Buffers: shared hit=61
-                    ->  Incremental Sort  (cost=6.32..48.94 rows=30 width=119) (actual time=0.486..0.531 rows=389.00 loops=1)
+                    ->  Incremental Sort  (cost=6.32..48.94 rows=30 width=119) (actual time=1.100..1.174 rows=389.00 loops=1)
                           Output: c.id, (COALESCE(sum(p.amount), '0'::numeric)), c.name, c.state, c.gstin, i.id, i.total
                           Sort Key: c.id, (COALESCE(sum(p.amount), '0'::numeric)), i.id
                           Presorted Key: c.id
                           Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 28kB  Peak Memory: 28kB
                           Pre-sorted Groups: 1  Sort Method: quicksort  Average Memory: 41kB  Peak Memory: 41kB
                           Buffers: shared hit=61
-                          ->  Result  (cost=4.88..47.59 rows=30 width=119) (actual time=0.106..0.376 rows=389.00 loops=1)
+                          ->  Result  (cost=4.88..47.59 rows=30 width=119) (actual time=0.251..0.839 rows=389.00 loops=1)
                                 Output: c.id, (COALESCE(sum(p.amount), '0'::numeric)), c.name, c.state, c.gstin, i.id, i.total
                                 One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                                 Buffers: shared hit=61
-                                ->  Merge Left Join  (cost=4.88..47.59 rows=30 width=119) (actual time=0.098..0.332 rows=389.00 loops=1)
+                                ->  Merge Left Join  (cost=4.88..47.59 rows=30 width=119) (actual time=0.232..0.755 rows=389.00 loops=1)
                                       Output: c.id, c.name, c.state, c.gstin, i.id, i.total, (COALESCE(sum(p.amount), '0'::numeric))
                                       Merge Cond: (c.id = i.client_id)
                                       Buffers: shared hit=61
-                                      ->  Merge Left Join  (cost=4.48..10.25 rows=30 width=110) (actual time=0.026..0.034 rows=30.00 loops=1)
+                                      ->  Merge Left Join  (cost=4.48..10.25 rows=30 width=110) (actual time=0.056..0.091 rows=30.00 loops=1)
                                             Output: c.id, c.name, c.state, c.gstin, (COALESCE(sum(p.amount), '0'::numeric))
                                             Inner Unique: true
                                             Merge Cond: (c.id = i2.client_id)
                                             Buffers: shared hit=4
-                                            ->  Index Scan using uniq_clients_org_id on public.clients c  (cost=0.27..5.93 rows=30 width=78) (actual time=0.010..0.013 rows=30.00 loops=1)
+                                            ->  Index Scan using uniq_clients_org_id on public.clients c  (cost=0.27..5.93 rows=30 width=78) (actual time=0.021..0.045 rows=30.00 loops=1)
                                                   Output: c.id, c.org_id, c.lead_id, c.name, c.email, c.phone, c.company, c.designation, c.city, c.state, c.gstin, c.is_vendor, c.investment_value, c.status, c.account_manager_id, c.notes, c.health_score, c.health_status, c.last_health_check, c.churn_risk_score, c.churn_risk_reasoning, c.converted_at, c.created_at, c.updated_at, c.account_manager_membership_id
                                                   Index Cond: (c.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                                                   Index Searches: 1
                                                   Buffers: shared hit=3
-                                            ->  GroupAggregate  (cost=4.21..4.23 rows=1 width=36) (actual time=0.015..0.015 rows=0.00 loops=1)
+                                            ->  GroupAggregate  (cost=4.21..4.23 rows=1 width=36) (actual time=0.033..0.034 rows=0.00 loops=1)
                                                   Output: i2.client_id, COALESCE(sum(p.amount), '0'::numeric)
                                                   Group Key: i2.client_id
                                                   Buffers: shared hit=1
-                                                  ->  Sort  (cost=4.21..4.21 rows=1 width=20) (actual time=0.014..0.015 rows=0.00 loops=1)
+                                                  ->  Sort  (cost=4.21..4.21 rows=1 width=20) (actual time=0.032..0.034 rows=0.00 loops=1)
                                                         Output: i2.client_id, p.amount
                                                         Sort Key: i2.client_id
                                                         Sort Method: quicksort  Memory: 25kB
                                                         Buffers: shared hit=1
-                                                        ->  Result  (cost=0.53..4.20 rows=1 width=20) (actual time=0.013..0.014 rows=0.00 loops=1)
+                                                        ->  Result  (cost=0.53..4.20 rows=1 width=20) (actual time=0.029..0.030 rows=0.00 loops=1)
                                                               Output: i2.client_id, p.amount
                                                               One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                                                               Buffers: shared hit=1
-                                                              ->  Nested Loop  (cost=0.53..4.20 rows=1 width=20) (actual time=0.011..0.011 rows=0.00 loops=1)
+                                                              ->  Nested Loop  (cost=0.53..4.20 rows=1 width=20) (actual time=0.025..0.026 rows=0.00 loops=1)
                                                                     Output: p.amount, i2.client_id
                                                                     Inner Unique: true
                                                                     Buffers: shared hit=1
-                                                                    ->  Seq Scan on public.payments p  (cost=0.00..1.44 rows=1 width=20) (actual time=0.011..0.011 rows=0.00 loops=1)
+                                                                    ->  Seq Scan on public.payments p  (cost=0.00..1.44 rows=1 width=20) (actual time=0.024..0.024 rows=0.00 loops=1)
                                                                           Output: p.id, p.org_id, p.invoice_id, p.amount, p.payment_date, p.payment_method, p.reference_number, p.notes, p.created_by, p.created_at, p.created_by_membership_id
                                                                           Filter: (p.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                                                                           Rows Removed by Filter: 3
@@ -476,11 +482,11 @@ Limit  (cost=50.80..50.87 rows=30 width=158) (actual time=0.631..0.636 rows=30.0
                                                                           Output: i2.client_id, i2.id
                                                                           Index Cond: ((i2.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (i2.id = p.invoice_id))
                                                                           Index Searches: 0
-                                      ->  Result  (cost=0.15..61.99 rows=373 width=13) (actual time=0.071..0.252 rows=361.00 loops=1)
+                                      ->  Result  (cost=0.15..61.99 rows=373 width=13) (actual time=0.172..0.573 rows=361.00 loops=1)
                                             Output: i.id, i.total, i.client_id
                                             One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                                             Buffers: shared hit=57
-                                            ->  Index Scan using idx_invoices_client on public.invoices i  (cost=0.15..61.99 rows=373 width=13) (actual time=0.069..0.226 rows=361.00 loops=1)
+                                            ->  Index Scan using idx_invoices_client on public.invoices i  (cost=0.15..61.99 rows=373 width=13) (actual time=0.168..0.526 rows=361.00 loops=1)
                                                   Output: i.id, i.total, i.client_id
                                                   Filter: (i.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                                                   Rows Removed by Filter: 859
@@ -488,41 +494,41 @@ Limit  (cost=50.80..50.87 rows=30 width=158) (actual time=0.631..0.636 rows=30.0
                                                   Buffers: shared hit=57
 Planning:
   Buffers: shared hit=8
-Planning Time: 0.450 ms
-Execution Time: 0.688 ms
+Planning Time: 1.080 ms
+Execution Time: 1.498 ms
 
 ### build-all-work  (approved complex, tenant small)
-Limit  (cost=29.86..29.99 rows=51 width=82) (actual time=0.665..0.670 rows=51.00 loops=1)
+Limit  (cost=29.86..29.99 rows=51 width=82) (actual time=1.780..1.789 rows=51.00 loops=1)
   Output: t.id, t.title, t.status, t.priority, t.type, t.due_date, t.rank, t.created_at, t.updated_at, p.id, p.key, p.name
   Buffers: shared hit=224
-  ->  Sort  (cost=29.86..30.88 rows=405 width=82) (actual time=0.664..0.666 rows=51.00 loops=1)
+  ->  Sort  (cost=29.86..30.88 rows=405 width=82) (actual time=1.778..1.782 rows=51.00 loops=1)
         Output: t.id, t.title, t.status, t.priority, t.type, t.due_date, t.rank, t.created_at, t.updated_at, p.id, p.key, p.name
         Sort Key: t.rank, t.id
         Sort Method: top-N heapsort  Memory: 39kB
         Buffers: shared hit=224
-        ->  Result  (cost=0.68..16.35 rows=405 width=82) (actual time=0.045..0.460 rows=545.00 loops=1)
+        ->  Result  (cost=0.68..16.35 rows=405 width=82) (actual time=0.325..1.285 rows=545.00 loops=1)
               Output: t.id, t.title, t.status, t.priority, t.type, t.due_date, t.rank, t.created_at, t.updated_at, p.id, p.key, p.name
               One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
               Buffers: shared hit=224
-              ->  Nested Loop  (cost=0.68..16.35 rows=405 width=82) (actual time=0.036..0.391 rows=545.00 loops=1)
+              ->  Nested Loop  (cost=0.68..16.35 rows=405 width=82) (actual time=0.301..1.160 rows=545.00 loops=1)
                     Output: t.id, t.title, t.status, t.priority, t.type, t.due_date, t.rank, t.created_at, t.updated_at, p.id, p.key, p.name
                     Buffers: shared hit=224
-                    ->  Nested Loop  (cost=0.14..3.75 rows=1 width=30) (actual time=0.022..0.024 rows=1.00 loops=1)
+                    ->  Nested Loop  (cost=0.14..3.75 rows=1 width=30) (actual time=0.220..0.227 rows=1.00 loops=1)
                           Output: p.id, p.key, p.name, pm.project_id
                           Inner Unique: true
                           Join Filter: (p.id = pm.project_id)
                           Buffers: shared hit=3
-                          ->  Seq Scan on build.projects p  (cost=0.00..1.38 rows=1 width=26) (actual time=0.014..0.015 rows=1.00 loops=1)
+                          ->  Seq Scan on build.projects p  (cost=0.00..1.38 rows=1 width=26) (actual time=0.041..0.047 rows=1.00 loops=1)
                                 Output: p.id, p.key, p.name
                                 Filter: ((p.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (p.status <> 'ARCHIVED'::project_status))
                                 Rows Removed by Filter: 24
                                 Buffers: shared hit=1
-                          ->  Index Scan using idx_project_members_org_member_membership on build.project_members pm  (cost=0.14..2.36 rows=1 width=4) (actual time=0.007..0.007 rows=1.00 loops=1)
+                          ->  Index Scan using idx_project_members_org_member_membership on build.project_members pm  (cost=0.14..2.36 rows=1 width=4) (actual time=0.163..0.164 rows=1.00 loops=1)
                                 Output: pm.project_id
                                 Index Cond: ((pm.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (pm.membership_id = 562))
                                 Index Searches: 1
                                 Buffers: shared hit=2
-                    ->  Index Scan using idx_tickets_org_project_status on build.tickets t  (cost=0.29..12.17 rows=18 width=60) (actual time=0.013..0.305 rows=545.00 loops=1)
+                    ->  Index Scan using idx_tickets_org_project_status on build.tickets t  (cost=0.29..12.17 rows=18 width=60) (actual time=0.078..0.836 rows=545.00 loops=1)
                           Output: t.id, t.title, t.status, t.priority, t.type, t.due_date, t.rank, t.created_at, t.updated_at, t.project_id
                           Index Cond: ((t.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (t.project_id = p.id))
                           Filter: (t.deleted_at IS NULL)
@@ -530,127 +536,127 @@ Limit  (cost=29.86..29.99 rows=51 width=82) (actual time=0.665..0.670 rows=51.00
                           Buffers: shared hit=221
 Planning:
   Buffers: shared hit=9
-Planning Time: 0.697 ms
-Execution Time: 0.698 ms
+Planning Time: 3.675 ms
+Execution Time: 2.007 ms
 
 ### module-access-roster  (approved complex, tenant small)
-Limit  (cost=10.50..10.52 rows=1 width=177) (actual time=0.128..0.132 rows=5.00 loops=1)
+Limit  (cost=10.50..10.52 rows=1 width=177) (actual time=18.690..18.701 rows=5.00 loops=1)
   Output: ra.organization_membership_id, om.user_id, u.name, u.email, u.image
-  Buffers: shared hit=64
-  ->  Unique  (cost=10.50..10.52 rows=1 width=177) (actual time=0.128..0.131 rows=5.00 loops=1)
+  Buffers: shared hit=67
+  ->  Unique  (cost=10.50..10.52 rows=1 width=177) (actual time=18.688..18.698 rows=5.00 loops=1)
         Output: ra.organization_membership_id, om.user_id, u.name, u.email, u.image
-        Buffers: shared hit=64
-        ->  Sort  (cost=10.50..10.50 rows=1 width=177) (actual time=0.128..0.129 rows=5.00 loops=1)
+        Buffers: shared hit=67
+        ->  Sort  (cost=10.50..10.50 rows=1 width=177) (actual time=18.687..18.692 rows=5.00 loops=1)
               Output: ra.organization_membership_id, om.user_id, u.name, u.email, u.image
               Sort Key: u.name, ra.organization_membership_id, om.user_id, u.email, u.image
               Sort Method: quicksort  Memory: 25kB
-              Buffers: shared hit=64
-              ->  Result  (cost=4.08..10.49 rows=1 width=177) (actual time=0.065..0.121 rows=5.00 loops=1)
+              Buffers: shared hit=67
+              ->  Result  (cost=4.08..10.49 rows=1 width=177) (actual time=0.133..18.166 rows=5.00 loops=1)
                     Output: ra.organization_membership_id, om.user_id, u.name, u.email, u.image
                     One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
-                    Buffers: shared hit=64
-                    ->  Nested Loop  (cost=4.08..10.49 rows=1 width=177) (actual time=0.057..0.113 rows=5.00 loops=1)
+                    Buffers: shared hit=67
+                    ->  Nested Loop  (cost=4.08..10.49 rows=1 width=177) (actual time=0.116..18.146 rows=5.00 loops=1)
                           Output: ra.organization_membership_id, om.user_id, u.name, u.email, u.image
                           Inner Unique: true
-                          Buffers: shared hit=64
-                          ->  Nested Loop  (cost=3.69..9.77 rows=1 width=181) (actual time=0.048..0.088 rows=7.00 loops=1)
+                          Buffers: shared hit=67
+                          ->  Nested Loop  (cost=3.69..9.77 rows=1 width=181) (actual time=0.098..18.032 rows=7.00 loops=1)
                                 Output: ra.organization_membership_id, ra.role_id, om.user_id, u.name, u.email, u.image
                                 Inner Unique: true
-                                Buffers: shared hit=51
-                                ->  Nested Loop  (cost=3.42..7.27 rows=1 width=44) (actual time=0.041..0.070 rows=7.00 loops=1)
+                                Buffers: shared hit=54
+                                ->  Nested Loop  (cost=3.42..7.27 rows=1 width=44) (actual time=0.087..0.387 rows=7.00 loops=1)
                                       Output: ra.organization_membership_id, ra.role_id, om.user_id
-                                      Buffers: shared hit=30
-                                      ->  Bitmap Heap Scan on public.organization_members om  (cost=3.15..4.77 rows=1 width=77) (actual time=0.030..0.042 rows=10.00 loops=1)
+                                      Buffers: shared hit=33
+                                      ->  Bitmap Heap Scan on public.organization_members om  (cost=3.15..4.77 rows=1 width=77) (actual time=0.069..0.309 rows=11.00 loops=1)
                                             Output: om.user_id, om.org_id, om.id
                                             Recheck Cond: (((om.org_id = current_org_id_or_null()) AND (om.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)) OR ((om.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (om.user_id = current_user_id_or_null())))
                                             Filter: (((om.org_id = current_org_id_or_null()) OR (om.user_id = current_user_id_or_null())) AND (om.status = 'ACTIVE'::membership_status))
-                                            Heap Blocks: exact=2
-                                            Buffers: shared hit=3
-                                            ->  BitmapOr  (cost=3.15..3.15 rows=1 width=0) (actual time=0.013..0.013 rows=0.00 loops=1)
+                                            Heap Blocks: exact=3
+                                            Buffers: shared hit=4
+                                            ->  BitmapOr  (cost=3.15..3.15 rows=1 width=0) (actual time=0.023..0.025 rows=0.00 loops=1)
                                                   Buffers: shared hit=1
-                                                  ->  Bitmap Index Scan on idx_org_members_org_status  (cost=0.00..1.51 rows=1 width=0) (actual time=0.010..0.010 rows=10.00 loops=1)
+                                                  ->  Bitmap Index Scan on idx_org_members_org_status  (cost=0.00..1.51 rows=1 width=0) (actual time=0.018..0.018 rows=11.00 loops=1)
                                                         Index Cond: ((om.org_id = current_org_id_or_null()) AND (om.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text))
                                                         Index Searches: 1
                                                         Buffers: shared hit=1
-                                                  ->  Bitmap Index Scan on uniq_org_members_org_user  (cost=0.00..1.64 rows=1 width=0) (actual time=0.002..0.002 rows=0.00 loops=1)
+                                                  ->  Bitmap Index Scan on uniq_org_members_org_user  (cost=0.00..1.64 rows=1 width=0) (actual time=0.004..0.004 rows=0.00 loops=1)
                                                         Index Cond: ((om.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (om.user_id = current_user_id_or_null()))
                                                         Index Searches: 0
-                                      ->  Index Only Scan using uniq_role_assignments_org_membership_role on public.role_assignments ra  (cost=0.27..2.49 rows=1 width=45) (actual time=0.002..0.002 rows=0.70 loops=10)
+                                      ->  Index Only Scan using uniq_role_assignments_org_membership_role on public.role_assignments ra  (cost=0.27..2.49 rows=1 width=45) (actual time=0.005..0.006 rows=0.64 loops=11)
                                             Output: ra.org_id, ra.organization_membership_id, ra.role_id
                                             Index Cond: ((ra.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (ra.organization_membership_id = om.id))
                                             Heap Fetches: 7
-                                            Index Searches: 10
-                                            Buffers: shared hit=27
-                                ->  Index Scan using users_pkey on public.users u  (cost=0.28..2.49 rows=1 width=173) (actual time=0.002..0.002 rows=1.00 loops=7)
+                                            Index Searches: 11
+                                            Buffers: shared hit=29
+                                ->  Index Scan using users_pkey on public.users u  (cost=0.28..2.49 rows=1 width=173) (actual time=0.010..0.010 rows=1.00 loops=7)
                                       Output: u.name, u.email, u.image, u.id
                                       Index Cond: (u.id = om.user_id)
                                       Index Searches: 7
                                       Buffers: shared hit=21
-                          ->  Index Only Scan using idx_roles_org_module_name_id on public.roles r  (cost=0.14..0.46 rows=1 width=4) (actual time=0.003..0.003 rows=0.71 loops=7)
+                          ->  Index Only Scan using idx_roles_org_module_name_id on public.roles r  (cost=0.14..0.46 rows=1 width=4) (actual time=0.012..0.012 rows=0.71 loops=7)
                                 Output: r.org_id, r.module_key, r.name, r.id
                                 Index Cond: ((r.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (r.module_key = 'hr'::text) AND (r.id = ra.role_id))
                                 Heap Fetches: 5
                                 Index Searches: 7
                                 Buffers: shared hit=13
 Planning:
-  Buffers: shared hit=18
-Planning Time: 0.913 ms
-Execution Time: 0.175 ms
+  Buffers: shared hit=21
+Planning Time: 7.507 ms
+Execution Time: 18.804 ms
 
 ### dashboard-stats-attendance-count  (approved complex, tenant small)
-Aggregate  (cost=1.41..1.42 rows=1 width=4) (actual time=0.011..0.012 rows=1.00 loops=1)
+Aggregate  (cost=1.41..1.42 rows=1 width=4) (actual time=0.047..0.048 rows=1.00 loops=1)
   Output: (count(*))::integer
   Buffers: shared hit=2
-  ->  Result  (cost=0.29..1.40 rows=1 width=0) (actual time=0.010..0.011 rows=0.00 loops=1)
+  ->  Result  (cost=0.29..1.40 rows=1 width=0) (actual time=0.044..0.044 rows=0.00 loops=1)
         One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
         Buffers: shared hit=2
-        ->  Index Only Scan using idx_attendance_org_date_status on public.attendance  (cost=0.29..1.40 rows=1 width=0) (actual time=0.006..0.006 rows=0.00 loops=1)
+        ->  Index Only Scan using idx_attendance_org_date_status on public.attendance  (cost=0.29..1.40 rows=1 width=0) (actual time=0.023..0.023 rows=0.00 loops=1)
               Output: org_id, date, status
               Index Cond: ((attendance.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (attendance.date = '2026-09-06'::date))
               Heap Fetches: 0
               Index Searches: 1
               Buffers: shared hit=2
-Planning Time: 0.062 ms
-Execution Time: 0.025 ms
+Planning Time: 0.203 ms
+Execution Time: 0.096 ms
 
 ### dashboard-team-attendance  (approved complex, tenant small)
-Result  (cost=1.13..5.58 rows=1 width=177) (actual time=0.021..0.023 rows=1.00 loops=1)
+Result  (cost=1.13..5.58 rows=1 width=177) (actual time=0.061..0.063 rows=1.00 loops=1)
   Output: a.user_id, u.name, u.image, a.check_in, a.check_out, a.status, a.created_at
   One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
   Buffers: shared hit=9
   InitPlan 2
-    ->  Result  (cost=0.31..0.32 rows=1 width=4) (actual time=0.009..0.009 rows=1.00 loops=1)
+    ->  Result  (cost=0.31..0.32 rows=1 width=4) (actual time=0.023..0.023 rows=1.00 loops=1)
           Output: (InitPlan 1).col1
           Buffers: shared hit=3
           InitPlan 1
-            ->  Limit  (cost=0.29..0.31 rows=1 width=4) (actual time=0.008..0.008 rows=1.00 loops=1)
+            ->  Limit  (cost=0.29..0.31 rows=1 width=4) (actual time=0.021..0.021 rows=1.00 loops=1)
                   Output: attendance.date
                   Buffers: shared hit=3
-                  ->  Result  (cost=0.29..3.87 rows=142 width=4) (actual time=0.008..0.008 rows=1.00 loops=1)
+                  ->  Result  (cost=0.29..3.87 rows=142 width=4) (actual time=0.021..0.021 rows=1.00 loops=1)
                         Output: attendance.date
                         One-Time Filter: (current_org_id() = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                         Buffers: shared hit=3
-                        ->  Index Only Scan Backward using idx_attendance_org_date_status on public.attendance  (cost=0.29..3.87 rows=142 width=4) (actual time=0.006..0.006 rows=1.00 loops=1)
+                        ->  Index Only Scan Backward using idx_attendance_org_date_status on public.attendance  (cost=0.29..3.87 rows=142 width=4) (actual time=0.017..0.017 rows=1.00 loops=1)
                               Output: attendance.org_id, attendance.date, attendance.status
                               Index Cond: (attendance.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text)
                               Heap Fetches: 0
                               Index Searches: 1
                               Buffers: shared hit=3
-  ->  Nested Loop  (cost=0.81..5.26 rows=1 width=177) (actual time=0.017..0.017 rows=1.00 loops=1)
+  ->  Nested Loop  (cost=0.81..5.26 rows=1 width=177) (actual time=0.041..0.042 rows=1.00 loops=1)
         Output: a.user_id, a.check_in, a.check_out, a.status, a.created_at, u.name, u.image
         Inner Unique: true
         Buffers: shared hit=9
-        ->  Index Scan using idx_attendance_org_date_status on public.attendance a  (cost=0.29..2.50 rows=1 width=67) (actual time=0.013..0.013 rows=1.00 loops=1)
+        ->  Index Scan using idx_attendance_org_date_status on public.attendance a  (cost=0.29..2.50 rows=1 width=67) (actual time=0.033..0.034 rows=1.00 loops=1)
               Output: a.id, a.org_id, a.user_id, a.date, a.check_in, a.check_out, a.status, a.work_hours, a.break_hours, a.breaks, a.location_data, a.is_overtime, a.auto_checked_out, a.location_verified, a.created_at, a.worker_id, a.worker_engagement_id, a.user_membership_id
               Index Cond: ((a.org_id = 'aaaaaaaa-1111-0000-0000-000000000002'::text) AND (a.date = (InitPlan 2).col1))
               Index Searches: 1
               Buffers: shared hit=6
-        ->  Index Scan using users_pkey on public.users u  (cost=0.28..2.49 rows=1 width=146) (actual time=0.002..0.002 rows=1.00 loops=1)
+        ->  Index Scan using users_pkey on public.users u  (cost=0.28..2.49 rows=1 width=146) (actual time=0.005..0.005 rows=1.00 loops=1)
               Output: u.name, u.image, u.id
               Index Cond: (u.id = a.user_id)
               Index Searches: 1
               Buffers: shared hit=3
 Planning:
   Buffers: shared hit=3
-Planning Time: 0.270 ms
-Execution Time: 0.043 ms
+Planning Time: 0.570 ms
+Execution Time: 0.107 ms

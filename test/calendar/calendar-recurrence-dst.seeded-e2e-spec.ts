@@ -165,7 +165,7 @@ describe("[seeded-e2e] calendar recurrence across a DST boundary", () => {
 
   it("keeps the occurrence duration intact across the transition", async () => {
     const items = (await readWindow("2026-03-01T00:00:00.000Z", "2026-04-10T00:00:00.000Z")).filter(
-      (item) => item.isRecurring,
+      (item) => createdEventIds.some((id) => item.id.startsWith(`event-${String(id)}-`)),
     );
     expect(items.length).toBeGreaterThan(0);
     const durations = new Set(
