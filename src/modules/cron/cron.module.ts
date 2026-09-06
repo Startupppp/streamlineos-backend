@@ -40,6 +40,7 @@ import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
 import { NotificationRetentionService } from "../notifications/notification-retention.service";
+import { PartitionMaintenanceService } from "../notifications/partition-maintenance.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
 import { CronInvitationExpiryService } from "./cron-invitation-expiry.service";
@@ -159,6 +160,7 @@ import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.ser
     CronNotificationDeliveryService,
     CronNotificationRetentionService,
     NotificationRetentionService,
+    PartitionMaintenanceService,
     CronFinanceService,
     CronCrmTasksService,
     CronIdempotencyService,
