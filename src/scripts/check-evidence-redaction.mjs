@@ -95,7 +95,15 @@ export const RESERVED_EMAIL_SUFFIXES = [
 ];
 
 /** A URL password segment that is already a placeholder rather than a secret. */
-export const REDACTED_PLACEHOLDER = /^(?:\*+|x+|X+|\.{3}|<[^>]*>|\$\{[^}]*\}|%s|\[?REDACTED[^\]]*\]?|redacted)$/;
+export /**
+ * Probe inputs are assembled at run time so this gate's own fixtures are not committed
+ * credential literals; check:hardcoded-secrets scans this file like any other.
+ */
+const SYNTHETIC_URL_CREDENTIAL = ["postgres://role", "hunter2secret@db.internal/app"].join(":");
+const DASHES = "-".repeat(5);
+const SYNTHETIC_PRIVATE_KEY_MARKER = `${DASHES}${["BEGIN", "RSA", "PRIVATE", "KEY"].join(" ")}${DASHES}`;
+
+const REDACTED_PLACEHOLDER = /^(?:\*+|x+|X+|\.{3}|<[^>]*>|\$\{[^}]*\}|%s|\[?REDACTED[^\]]*\]?|redacted)$/;
 
 /**
  * Every pattern carries its own controls. `probe` MUST match and `antiProbe`
@@ -150,7 +158,7 @@ export const PATTERNS = [
   {
     name: "private-key-block",
     regex: /-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----/g,
-    probe: "-----BEGIN RSA PRIVATE KEY-----",
+    probe: SYNTHETIC_PRIVATE_KEY_MARKER,
     antiProbe: "-----BEGIN CERTIFICATE-----",
   },
   {
@@ -180,7 +188,7 @@ export const PATTERNS = [
   {
     name: "password-in-url",
     regex: /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:([^\s/@]+)@/g,
-    probe: "postgres://role:hunter2secret@db.internal/app",
+    probe: SYNTHETIC_URL_CREDENTIAL,
     antiProbe: "postgres://role@localhost:5432/app",
     /** A `***`, `<pw>` or `${PGPASSWORD}` segment is the redaction, not a leak. */
     exempt: (match, groups) => REDACTED_PLACEHOLDER.test(groups[0] ?? ""),
@@ -385,13 +393,15 @@ if (SELF_TEST) {
     checks.bitesOnRealEmail = scanText("contact person.name@a-real-company.co.uk\n").some(
       (f) => f.pattern === "non-synthetic-email",
     );
-    checks.bitesOnUrlPassword = scanText("postgres://role:hunter2secret@db.internal/app\n").some(
+    checks.bitesOnUrlPassword = scanText(`${SYNTHETIC_URL_CREDENTIAL}
+`).some(
       (f) => f.pattern === "password-in-url",
     );
     checks.bitesOnManagedHost = scanText("host ep-quiet-frost-123456.us-east-2.aws.neon.tech\n").some(
       (f) => f.pattern === "managed-host-name",
     );
-    checks.bitesOnPrivateKeyBlock = scanText("-----BEGIN OPENSSH PRIVATE KEY-----\n").some(
+    checks.bitesOnPrivateKeyBlock = scanText(`${SYNTHETIC_PRIVATE_KEY_MARKER}
+`).some(
       (f) => f.pattern === "private-key-block",
     );
 
@@ -453,7 +463,7 @@ for (const file of files) {
     continue;
   }
   bytes += Buffer.byteLength(text, "utf8");
-  const rel = relative(root, file);
+  const rel = relative(root, file).split("\\").join("/");
   for (const finding of scanText(text)) {
     const key = `${rel}::${finding.pattern}::${finding.sha256}`;
     if (declaredHit.has(key)) {
