@@ -112,10 +112,10 @@ export class SupportAiTriageAnalysisService {
   }
 
   async findDuplicates(orgId: string, ticketId: number) {
+    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
     if (!this.aiGateway.isEmbeddingConfigured()) return null;
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.supportAi) return null;
-    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
     const candidates = await this.embHelper.upsertAndSearchSimilar(
       orgId,
       ticketId,
@@ -137,10 +137,10 @@ export class SupportAiTriageAnalysisService {
   }
 
   async findRootCauseCluster(orgId: string, ticketId: number, userId?: string) {
+    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
     if (!this.aiGateway.isEmbeddingConfigured()) return null;
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.supportAi) return null;
-    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
     const candidates = await this.embHelper.upsertAndSearchSimilar(
       orgId,
       ticketId,

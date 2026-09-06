@@ -6,11 +6,6 @@
     "DELETE /crm/sla/policies/:policyId -> 204",
     "DELETE /deals/:dealId -> 204",
     "DELETE /leads/:leadId -> 204",
-    "GET /build/:projectId/automations -> 200",
-    "GET /build/:projectId/custom-states -> 200",
-    "GET /build/:projectId/labels -> 200",
-    "GET /build/:projectId/members -> 200",
-    "GET /build/:projectId/roster -> 200",
     "GET /crm/blueprints/:blueprintId/transitions -> 200",
     "GET /crm/campaigns/:campaignId/leads -> 200",
     "GET /crm/consent/contacts/:contactId -> 200",
@@ -22,21 +17,12 @@
     "GET /leads/:leadId/timeline -> 200",
     "GET /public/kb/widget/:orgId -> 200",
     "GET /public/kb/widget/:orgId/script -> 200",
-    "GET /public/org/:orgId -> 200",
-    "POST /build/:projectId/custom-fields -> 201",
-    "POST /build/:projectId/labels -> 201"
+    "GET /public/org/:orgId -> 200"
   ],
-  "serverErrors": [
-    "POST /build/:projectId/intake -> 500",
-    "POST /build/:projectId/modules -> 500",
-    "POST /build/:projectId/views -> 500",
-    "POST /build/:projectId/webhooks -> 500"
-  ],
+  "serverErrors": [],
   "leaks": [
     "DELETE /billing/marketplace/:appId/install -> 200",
-    "POST /billing/marketplace/:appId/install -> 201",
-    "POST /crm/consent/contacts/:contactId -> 200",
-    "POST /public/intake/:projectId -> 201"
+    "POST /billing/marketplace/:appId/install -> 201"
   ],
   "inconclusive": [
     "PATCH /leads/:leadId/status -> 409"
@@ -46,11 +32,6 @@
     "DELETE /crm/sla/policies/:policyId -> 204": "EXCLUDED SCOPE — CRM. Same 204-on-nothing shape.",
     "DELETE /deals/:dealId -> 204": "EXCLUDED SCOPE — CRM. Same 204-on-nothing shape.",
     "DELETE /leads/:leadId -> 204": "EXCLUDED SCOPE — CRM. Same 204-on-nothing shape.",
-    "GET /build/:projectId/automations -> 200": "OTHER TERRITORY — build module owner. The org predicate answers and :projectId is never asserted, so another org's project id and an id belonging to nobody both return this org's rows.",
-    "GET /build/:projectId/custom-states -> 200": "OTHER TERRITORY — build module owner. Same unasserted :projectId.",
-    "GET /build/:projectId/labels -> 200": "OTHER TERRITORY — build module owner. Same unasserted :projectId.",
-    "GET /build/:projectId/members -> 200": "OTHER TERRITORY — build module owner. Same unasserted :projectId.",
-    "GET /build/:projectId/roster -> 200": "OTHER TERRITORY — build module owner. Same unasserted :projectId.",
     "GET /crm/blueprints/:blueprintId/transitions -> 200": "EXCLUDED SCOPE — CRM.",
     "GET /crm/campaigns/:campaignId/leads -> 200": "EXCLUDED SCOPE — CRM.",
     "GET /crm/consent/contacts/:contactId -> 200": "EXCLUDED SCOPE — CRM. The write verb on the same path is a measured leak; see leaks below.",
@@ -63,16 +44,8 @@
     "GET /public/kb/widget/:orgId -> 200": "NOT A CROSS-TENANT PROBE — @Public() route whose path :orgId IS the tenant selector. The sweep binds an org parameter to the SOURCE org for the control, the probe and the absent-id request alike, so all three answers are identical by construction and nothing was asked. The surface is asserted by bola-public-org-selector.spec.ts, not by this box.",
     "GET /public/kb/widget/:orgId/script -> 200": "NOT A CROSS-TENANT PROBE — same @Public() org selector.",
     "GET /public/org/:orgId -> 200": "NOT A CROSS-TENANT PROBE — same @Public() org selector. Read in source: OrgService.getOrgName does 404 an organisation that does not exist.",
-    "POST /build/:projectId/custom-fields -> 201": "OTHER TERRITORY — build module owner. Creates under the caller's own org for any :projectId, so nothing crosses and no 404 is produced.",
-    "POST /build/:projectId/labels -> 201": "OTHER TERRITORY — build module owner. Same shape.",
-    "POST /build/:projectId/intake -> 500": "OTHER TERRITORY — build module owner. A cross-tenant :projectId reaches a handler that assumes the project is the caller's; the 500 hides whatever the real refusal would have been.",
-    "POST /build/:projectId/modules -> 500": "OTHER TERRITORY — build module owner. Same shape.",
-    "POST /build/:projectId/views -> 500": "OTHER TERRITORY — build module owner. Same shape.",
-    "POST /build/:projectId/webhooks -> 500": "OTHER TERRITORY — build module owner. Same shape.",
     "DELETE /billing/marketplace/:appId/install -> 200": "NOT A CROSS-TENANT PROBE — :appId is a row in the global marketplace_apps catalog. The DELETE removes the CALLER's own installation record (scoped by u.orgId from the JWT) — the prober uninstalls the app it installed in its own org during the BOLA install probe. No source-org installation record is read, written or deleted.",
-    "POST /billing/marketplace/:appId/install -> 201": "NOT A CROSS-TENANT PROBE — :appId is a row in the global marketplace_apps catalog, not a per-tenant object. The probe installs the same globally-available app into the prober's own org via u.orgId from the JWT; no source-org data is read or disclosed. Confirmed in MarketplaceService.installApp: marketplaceApps is queried without an org_id predicate and the resulting appInstallations row is always scoped to the caller's org.",
-    "POST /crm/consent/contacts/:contactId -> 200": "EXCLUDED SCOPE — CRM, and already analysed in reports/15e-esign-404-and-bola-body-synthesis.md. No cross-tenant row is READ; the consent row that lands carries the prober's own org. It is pinned as a leak rather than demoted because the answer is a cross-PLATFORM existence oracle: a contact id that exists somewhere answers 200 and one that exists nowhere answers 500, because crm_contact_channel_consent.contact_id carries a BARE foreign key where its sibling contact_party_id is correctly composite. Fix is two lines and belongs to the CRM owner.",
-    "POST /public/intake/:projectId -> 201": "PRODUCT DECISION — @Public() intake form. Anyone may submit to any project id by design; the id is the form's address. The finding that survives is that a project id which exists answers 201 and one that does not answers 400, so the endpoint enumerates project ids across the platform. The fix is to address the form by an unguessable token rather than a sequential integer project id. Owner: public-surface owner.",
+    "POST /billing/marketplace/:appId/install -> 201": "NOT A CROSS-TENANT PROBE — :appId is a row in the global marketplace_apps catalog. The POST creates an installation record scoped to the CALLER's own org (u.orgId from JWT) — the prober installs the app in its own org, not the source org. No source-org installation record is read, written or accessed.",
     "PATCH /leads/:leadId/status -> 409": "EXCLUDED SCOPE — CRM. The cross-tenant answer is 409, not 404; the control succeeded, so the route is scored and the verdict is inconclusive rather than a pass."
   }
 }

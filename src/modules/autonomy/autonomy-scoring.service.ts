@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
@@ -477,6 +477,15 @@ export class AutonomyScoringService {
 
   /** Mark one queue item as looked at. Does not change the decision itself. */
   async markReviewed(organizationId: string, userId: string, shadowScoreId: string) {
+    const score = await this.db.query.autonomyShadowScores.findFirst({
+      where: and(
+        eq(autonomyShadowScores.organizationId, organizationId),
+        eq(autonomyShadowScores.autonomyShadowScoreId, shadowScoreId),
+      ),
+      columns: { autonomyShadowScoreId: true },
+    });
+    if (!score) throw new NotFoundException("Shadow score not found");
+
     const updated = await this.db
       .update(autonomyShadowScores)
       .set({ reviewedAt: new Date(), reviewedByUserId: userId })

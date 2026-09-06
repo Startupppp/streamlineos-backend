@@ -134,9 +134,11 @@ export class ReviewCyclesService {
   }
 
   async deleteCycle(orgId: string, cycleId: number) {
-    await this.db
+    const deleted = await this.db
       .delete(reviewCycles)
-      .where(and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)));
+      .where(and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)))
+      .returning({ id: reviewCycles.id });
+    if (deleted.length === 0) throw new NotFoundException("Review cycle not found.");
     return { success: true };
   }
 }

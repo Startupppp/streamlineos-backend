@@ -29,6 +29,11 @@ export class GeofencingService {
   }
 
   async remove(orgId: string, id: number) {
-    await this.db.update(geofences).set({ isActive: false }).where(and(eq(geofences.id, id), eq(geofences.orgId, orgId)));
+    const [fence] = await this.db
+      .update(geofences)
+      .set({ isActive: false })
+      .where(and(eq(geofences.id, id), eq(geofences.orgId, orgId)))
+      .returning({ id: geofences.id });
+    if (!fence) throw new NotFoundException("Geofence not found");
   }
 }

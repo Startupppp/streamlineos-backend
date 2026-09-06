@@ -160,9 +160,9 @@ export class SupportAiTriageService {
   }
 
   async suggestKbArticles(user: CurrentUserContext, ticketId: number) {
+    const ticket = await this.data.getTicketOrThrow(user.orgId, ticketId);
     if (!this.data.isEmbeddingsConfigured()) return null;
     if (!(await this.data.isAvailable(user.orgId))) return null;
-    const ticket = await this.data.getTicketOrThrow(user.orgId, ticketId);
     const articles = await this.data.searchKbForTicket(
       user,
       redactSensitiveData(
