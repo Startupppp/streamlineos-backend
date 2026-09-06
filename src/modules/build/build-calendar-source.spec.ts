@@ -17,7 +17,8 @@ function buildDb(rows: unknown[]): unknown {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockResolvedValue(rows),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue(rows),
       }),
     }),
   };

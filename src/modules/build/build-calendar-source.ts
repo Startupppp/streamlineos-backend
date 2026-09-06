@@ -8,7 +8,7 @@ import type {
   CalendarEventSource,
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
-import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
+import { CalendarSourceRegistry, CALENDAR_PER_SOURCE_CAP } from "../calendar/calendar-source.registry";
 
 function dateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -60,7 +60,8 @@ export class BuildCalendarSource implements CalendarEventSource, OnModuleInit {
           gte(tickets.dueDate, dateOnly(start)),
           lte(tickets.dueDate, dateOnly(end)),
         ),
-      );
+      )
+      .limit(CALENDAR_PER_SOURCE_CAP);
 
     const projections: CalendarEventProjection[] = [];
     for (const row of rows) {

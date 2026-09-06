@@ -24,10 +24,8 @@ import type {
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { WEEKDAY_NAMES, dateOnly, dateAtNoon, enumerateDates, loadAttendanceOnly } from "./hr-calendar-sub-sources";
+import { WEEKDAY_NAMES, HR_CALENDAR_READ_BATCH_SIZE, dateOnly, dateAtNoon, enumerateDates, loadAttendanceOnly } from "./hr-calendar-sub-sources";
 import { findActiveHrCalendarMembership } from "./hr-calendar-membership";
-
-const HR_CALENDAR_READ_BATCH_SIZE = 500;
 
 @Injectable()
 export class HrCalendarSource implements CalendarEventSource {

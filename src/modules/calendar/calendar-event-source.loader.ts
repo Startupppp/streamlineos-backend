@@ -1,7 +1,7 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { calendarEvents, eventAttendees, organizationMembers, projects, tickets, users } from "../../db/schema";
-import { CALENDAR_EVENTS_CAP } from "./dto/calendar.schemas";
+import { CALENDAR_PER_SOURCE_CAP } from "./calendar-source.registry";
 import { loadExceptionsByEvent } from "./calendar-exception-loader";
 import type { CalendarEventException } from "./calendar-occurrence.service";
 import type { LinkedTicket } from "./calendar.types";
@@ -127,7 +127,7 @@ export class CalendarEventSourceLoader {
     const rows = await this.database
       .select({ membershipId: organizationMembers.id, name: users.name })
       .from(organizationMembers)
-      .leftJoin(users, eq(users.id, organizationMembers.userId))
+      .leftJoin(users, and(eq(users.id, organizationMembers.userId), isNull(users.deletedAt)))
       .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.id, membershipIds)));
     for (const row of rows) names.set(row.membershipId, row.name);
     return names;
@@ -149,7 +149,7 @@ export class CalendarEventSourceLoader {
       })
       .from(tickets)
       .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketEntityIds)));
+      .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ticketEntityIds), isNull(projects.deletedAt)));
   }
 
   /**
@@ -163,11 +163,12 @@ export class CalendarEventSourceLoader {
    * for the non-recurring one and the partial `idx_calendar_events_org_recurring_start`
    * for the recurring one.
    *
-   * Both branches are limited to CALENDAR_EVENTS_CAP so a single call replaces the
-   * former cursor-paginated loop. Merging in memory is correct: each branch is ordered
-   * by (start_date, id) and limited by the same value, so a row in the global first
-   * CALENDAR_EVENTS_CAP is necessarily in the first CALENDAR_EVENTS_CAP of its own
-   * branch and the merge can never skip one.
+   * Both branches are limited to CALENDAR_PER_SOURCE_CAP so a single call replaces
+   * the former cursor-paginated loop. Merging in memory is correct: each branch is
+   * ordered by (start_date, id) and limited by the same value, so a row in the global
+   * first CALENDAR_PER_SOURCE_CAP is necessarily in the first CALENDAR_PER_SOURCE_CAP
+   * of its own branch and the merge can never skip one. This cap matches the registry's
+   * per-source truncation, so fetchEvents never fetches more rows than are served.
    */
   private async candidatePage(
     orgId: string,
@@ -187,7 +188,7 @@ export class CalendarEventSourceLoader {
         .from(calendarEvents)
         .where(and(eq(calendarEvents.orgId, orgId), range, visible))
         .orderBy(asc(calendarEvents.startDate), asc(calendarEvents.id))
-        .limit(CALENDAR_EVENTS_CAP);
+        .limit(CALENDAR_PER_SOURCE_CAP);
 
     const [nonRecurring, recurring] = await Promise.all([
       branch(
@@ -208,7 +209,7 @@ export class CalendarEventSourceLoader {
 
     return [...nonRecurring, ...recurring]
       .sort((a, b) => a.startDate.getTime() - b.startDate.getTime() || a.id - b.id)
-      .slice(0, CALENDAR_EVENTS_CAP);
+      .slice(0, CALENDAR_PER_SOURCE_CAP);
   }
 
   /**

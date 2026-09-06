@@ -6,6 +6,7 @@ import type { AttendancePolicyService } from "./time/attendance-policy.service";
 import type { CalendarEventProjection, CalendarSourceContext } from "../calendar/calendar-event-source";
 
 export const WEEKDAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+export const HR_CALENDAR_READ_BATCH_SIZE = 500;
 
 export function dateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -63,7 +64,8 @@ export async function loadAttendanceOnly(
         gte(attendance.date, startStr),
         lte(attendance.date, endStr),
       ))
-      .orderBy(desc(attendance.createdAt)),
+      .orderBy(desc(attendance.createdAt))
+      .limit(HR_CALENDAR_READ_BATCH_SIZE),
     db
       .select({ id: wfhRequests.id, date: wfhRequests.date })
       .from(wfhRequests)
