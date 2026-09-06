@@ -7,9 +7,7 @@
  */
 
 import type { Db } from "../../db/drizzle.types";
-import { AutonomyScoringService } from "./autonomy-scoring.service";
-import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
-import { DataQualityHealthService } from "../data-quality/dataset-health.service";
+import { AutonomySettingsService } from "./autonomy-settings.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -53,18 +51,10 @@ function makeDb(rows: unknown[]) {
   return { db, where };
 }
 
-function mockDeps() {
-  return {
-    gateway: {} as unknown as AiGatewayService,
-    datasetHealth: {} as unknown as DataQualityHealthService,
-  };
-}
-
-describe("AutonomyScoringService — cross-tenant isolation", () => {
+describe("AutonomySettingsService — cross-tenant isolation", () => {
   it("returns defaults for a different org (cross-tenant isolation — no data leakage)", async () => {
     const { db, where } = makeDb([]);
-    const { gateway, datasetHealth } = mockDeps();
-    const svc = new AutonomyScoringService(db, gateway, datasetHealth);
+    const svc = new AutonomySettingsService(db);
 
     const result = await svc.settingsFor(ATTACKER_ORG);
 
@@ -76,8 +66,7 @@ describe("AutonomyScoringService — cross-tenant isolation", () => {
 
   it("returns stored settings for the owning org (same-tenant control)", async () => {
     const { db } = makeDb([SETTINGS_ROW]);
-    const { gateway, datasetHealth } = mockDeps();
-    const svc = new AutonomyScoringService(db, gateway, datasetHealth);
+    const svc = new AutonomySettingsService(db);
 
     const result = await svc.settingsFor(OWNER_ORG);
 

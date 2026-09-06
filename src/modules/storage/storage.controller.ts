@@ -26,7 +26,7 @@ import { AuthorizedInService } from "../../common/auth/authorized-in-service.dec
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
-import { NoTenantTransaction, runInNewTenantTransaction } from "../../common/tenant";
+import { runInNewTenantTransaction } from "../../common/tenant";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -114,7 +114,6 @@ export class StorageController {
   @MultipartAction({ file: "file", fields: { folder: "string" } })
   @ResponseSchema(storageUploadResponseSchema)
   @AuthorizedInService("assertUploadAllowed")
-  @NoTenantTransaction()
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,

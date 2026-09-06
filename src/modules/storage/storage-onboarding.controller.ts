@@ -23,7 +23,6 @@ import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
-import { NoTenantTransaction } from "../../common/tenant";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { StorageService } from "./storage.service";
 import { MediaTransformRunner } from "./media-transform.runner";
@@ -57,7 +56,6 @@ export class OnboardingDocumentsController {
   @ResponseSchema(onboardingDocumentResponseSchema)
   @Universal()
   @HttpCode(201)
-  @NoTenantTransaction()
   @MultipartAction({ file: "file", fields: { type: "string" }, requiredFields: ["type"] })
   @Validate({ body: uploadBodySchema })
   @UseInterceptors(

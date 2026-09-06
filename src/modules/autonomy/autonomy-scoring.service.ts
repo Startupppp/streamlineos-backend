@@ -6,11 +6,9 @@ import {
   aiUsageLogs,
   autonomousDecisions,
   autonomyCorrections,
-  autonomySettings,
   autonomyShadowScores,
 } from "../../db/schema";
 import {
-  AUTONOMY_SETTINGS_DEFAULTS,
   type ShadowVerdict,
 } from "../../db/schema/crm/autonomy-scoring";
 import { DECISION_KINDS } from "../../db/schema/crm/autonomous-decisions";
@@ -19,7 +17,6 @@ import { DataQualityHealthService } from "../data-quality/dataset-health.service
 import { capText, RECORDED_CONVERSATION_CHARS } from "./decision-record";
 import {
   needsHumanReview,
-  normaliseSampleRate,
   shouldShadowScore,
 } from "./shadow-scoring";
 import {
@@ -31,6 +28,7 @@ import {
   SHADOW_SYSTEM_PROMPT,
   type ShadowVerdictResult,
 } from "./shadow-scorer.schemas";
+import { AutonomySettingsService } from "./autonomy-settings.service";
 
 /**
  * Measuring a system that acts without asking.
@@ -48,6 +46,7 @@ export class AutonomyScoringService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
     private readonly datasetHealth: DataQualityHealthService,
+    private readonly settings: AutonomySettingsService,
   ) {}
 
   // ── Settings ──────────────────────────────────────────────────────────────
@@ -59,53 +58,15 @@ export class AutonomyScoringService {
    * changed anything, and it must behave identically to one that explicitly set
    * the defaults.
    */
-  async settingsFor(organizationId: string) {
-    const [row] = await this.db
-      .select()
-      .from(autonomySettings)
-      .where(eq(autonomySettings.organizationId, organizationId))
-      .limit(1);
-
-    return {
-      shadowSampleRate: row
-        ? normaliseSampleRate(row.shadowSampleRate)
-        : AUTONOMY_SETTINGS_DEFAULTS.shadowSampleRate,
-      shadowDailyCap: row?.shadowDailyCap ?? AUTONOMY_SETTINGS_DEFAULTS.shadowDailyCap,
-      holdWindowSeconds: row?.holdWindowSeconds ?? AUTONOMY_SETTINGS_DEFAULTS.holdWindowSeconds,
-    };
+  settingsFor(organizationId: string) {
+    return this.settings.settingsFor(organizationId);
   }
 
-  async updateSettings(
+  updateSettings(
     organizationId: string,
     patch: { shadowSampleRate?: number; shadowDailyCap?: number; holdWindowSeconds?: number },
   ) {
-    await this.db
-      .insert(autonomySettings)
-      .values({
-        organizationId,
-        ...(patch.shadowSampleRate !== undefined
-          ? { shadowSampleRate: patch.shadowSampleRate.toFixed(3) }
-          : {}),
-        ...(patch.shadowDailyCap !== undefined ? { shadowDailyCap: patch.shadowDailyCap } : {}),
-        ...(patch.holdWindowSeconds !== undefined
-          ? { holdWindowSeconds: patch.holdWindowSeconds }
-          : {}),
-      })
-      .onConflictDoUpdate({
-        target: autonomySettings.organizationId,
-        set: {
-          ...(patch.shadowSampleRate !== undefined
-            ? { shadowSampleRate: patch.shadowSampleRate.toFixed(3) }
-            : {}),
-          ...(patch.shadowDailyCap !== undefined ? { shadowDailyCap: patch.shadowDailyCap } : {}),
-          ...(patch.holdWindowSeconds !== undefined
-            ? { holdWindowSeconds: patch.holdWindowSeconds }
-            : {}),
-          updatedAt: new Date(),
-        },
-      });
-
-    return this.settingsFor(organizationId);
+    return this.settings.updateSettings(organizationId, patch);
   }
 
   // ── The second pass ───────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { AutonomyService } from "./autonomy.service";
 import { AutonomyActionsService } from "./autonomy-actions.service";
 import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
+import { AutonomySettingsService } from "./autonomy-settings.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
 import { AutonomyHoldWorkflow } from "./autonomy-hold.workflow";
 import { AutonomyReversalService } from "./autonomy-reversal.service";
@@ -50,6 +51,7 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
     AutonomyActionsService,
     AutonomyReversalService,
     AutonomyReviewService,
+    AutonomySettingsService,
     AutonomyScoringService,
     AutonomyHoldService,
     AutonomyHoldWorkflow,

@@ -94,6 +94,7 @@ export class TimesheetsAiService {
     const { options, evidence } = await this.preparePeriodSummary(u, periodId);
     const stream = await this.gateway.streamTextWithUsage({
       ...options,
+      charge: true,
       signal,
     });
     return { ...stream, evidence };
@@ -148,6 +149,7 @@ export class TimesheetsAiService {
   ): Promise<AiTextStream> {
     return this.gateway.streamTextWithUsage({
       ...this.prepareDescription(u, input),
+      charge: true,
       signal,
     });
   }
@@ -187,6 +189,7 @@ export class TimesheetsAiService {
   ): Promise<AiTextStream> {
     return this.gateway.streamTextWithUsage({
       ...(await this.prepareRejection(u, periodId, input)),
+      charge: true,
       signal,
     });
   }
@@ -233,6 +236,7 @@ export class TimesheetsAiService {
   ): Promise<AiTextStream> {
     return this.gateway.streamTextWithUsage({
       ...(await this.prepareReports(u, query)),
+      charge: true,
       signal,
     });
   }
@@ -286,6 +290,7 @@ export class TimesheetsAiService {
   ): Promise<AiTextStream> {
     return this.gateway.streamTextWithUsage({
       ...(await this.prepareBilling(u, input)),
+      charge: true,
       signal,
     });
   }

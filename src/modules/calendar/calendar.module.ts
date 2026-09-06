@@ -16,6 +16,7 @@ import { CalendarProviderSyncSweepService } from "./calendar-provider-sync-sweep
 import { CalendarAttendeesService } from "./calendar-attendees.service";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
+import { CalendarEventDetailService } from "./calendar-event-detail.service";
 import { CalendarSyncStatusService } from "./calendar-sync-status.service";
 import { CalendarProviderWebhookService } from "./calendar-provider-webhook.service";
 import { CalendarProviderWebhookController } from "./calendar-provider-webhook.controller";
@@ -34,6 +35,7 @@ import { CalendarProviderWebhookController } from "./calendar-provider-webhook.c
     CalendarExportService,
     CalendarSyncStatusService,
     CalendarProviderWebhookService,
+    CalendarEventDetailService,
     CalendarService,
     CalendarConflictService,
     CalendarReminderSweepService,

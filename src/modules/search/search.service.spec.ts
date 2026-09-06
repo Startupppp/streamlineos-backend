@@ -134,12 +134,13 @@ describe("SearchService — statement plan", () => {
       scopeFor: jest.fn(async (_u: unknown, key: string) => opts.scope[key] ?? "none"),
       getModuleState: jest.fn(async (_o: unknown, moduleKey: string) => opts.moduleState[moduleKey] ?? false),
       getPermissionsVersion: jest.fn().mockResolvedValue(1),
-      buildModuleAvailabilityResolver: (getModuleMap: (orgId: string) => Promise<Record<string, boolean>>) =>
-        moduleAvailabilityResolver({
+      buildModuleAvailabilityResolver(getModuleMap: (orgId: string) => Promise<Record<string, boolean>>) {
+        return moduleAvailabilityResolver({
           isCoreModule: isCoreModuleKey,
           getModuleMap,
           getPlanLockedModules: async () => [],
-        }),
+        });
+      },
     } as unknown as AccessService;
   }
 
