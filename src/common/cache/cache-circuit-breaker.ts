@@ -1,4 +1,4 @@
-import type { TimedRedisOp } from "./cache-fill";
+import type { TimedRedisOp } from "./cache-redis-op.types";
 
 const FAILURE_THRESHOLD = 5;
 const PROBE_INTERVAL_MS = 5_000;

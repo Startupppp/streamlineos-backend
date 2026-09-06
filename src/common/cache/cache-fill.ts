@@ -1,8 +1,10 @@
 import { Redis } from "@upstash/redis";
 import { randomUUID } from "node:crypto";
 import { CacheCircuitBreaker } from "./cache-circuit-breaker";
+import type { TimedRedisOp } from "./cache-redis-op.types";
 
-export type TimedRedisOp = <T>(operation: () => Promise<T>) => Promise<T>;
+export type { TimedRedisOp };
+
 
 export type TtlSpec<T> = number | ((result: T) => number);
 
