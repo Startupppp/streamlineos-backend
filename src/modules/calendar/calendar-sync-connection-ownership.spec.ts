@@ -115,6 +115,7 @@ function makeService(db: Db): CalendarService {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 }
 

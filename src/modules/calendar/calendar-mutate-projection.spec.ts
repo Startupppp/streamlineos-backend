@@ -82,6 +82,7 @@ function makeService(db: unknown): CalendarService {
     {} as never,
     new CalendarRecurrenceService(db as Db),
     new CalendarExportService(db as Db),
+    {} as never,
   );
 }
 

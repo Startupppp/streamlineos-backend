@@ -28,6 +28,7 @@ function serviceWith(db: Db) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 }
 

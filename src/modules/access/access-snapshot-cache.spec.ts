@@ -98,7 +98,7 @@ function buildService() {
     versionCacheSvc,
   );
 
-  (versionCacheSvc as unknown as Record<string, unknown>)["versionCache"].set(ORG_ID, { version: 1, expiresAt: Date.now() + 60_000 });
+  (versionCacheSvc as unknown as Record<string, Map<string, { version: number; expiresAt: number }>>)["versionCache"].set(ORG_ID, { version: 1, expiresAt: Date.now() + 60_000 });
 
   const computeSpy = jest
     .spyOn(svc["snapshotResolver"], "computeAccessSnapshot")
@@ -132,7 +132,7 @@ describe("AccessService.getAccessSnapshot — snapshot Redis cache", () => {
     await svc.getAccessSnapshot(ORG_ID, USER_ID, ctx);
     expect(computeSpy).toHaveBeenCalledTimes(1);
 
-    (svc["accessVersionCache"] as unknown as Record<string, unknown>)["versionCache"].set(ORG_ID, { version: 2, expiresAt: Date.now() + 60_000 });
+    (svc["accessVersionCache"] as unknown as Record<string, Map<string, { version: number; expiresAt: number }>>)["versionCache"].set(ORG_ID, { version: 2, expiresAt: Date.now() + 60_000 });
 
     await svc.getAccessSnapshot(ORG_ID, USER_ID, ctx);
     expect(computeSpy).toHaveBeenCalledTimes(2);

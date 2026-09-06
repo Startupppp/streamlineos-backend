@@ -169,6 +169,7 @@ describe("a delete leaves a tombstone that still names the event it removed", ()
       {} as never,
       new CalendarRecurrenceService(db),
       new CalendarExportService(db),
+      {} as never,
     );
 
     const result = await svc.deleteEvent(ORG, DELETER, EVENT_ID);

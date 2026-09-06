@@ -404,7 +404,7 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     await svc.resolveUserPermissions("org-bump", "user-bump");
     expect(db.query.accessVersions.findFirst).toHaveBeenCalledTimes(2);
 
-    (versionCacheSvc as unknown as Record<string, unknown>)["versionCache"].delete("org-bump");
+    (versionCacheSvc as unknown as Record<string, Map<string, { version: number; expiresAt: number }>>)["versionCache"].delete("org-bump");
     cache.invalidateNamespace.mockClear();
     cache.invalidate.mockClear();
     currentVersion = 3;
@@ -558,7 +558,7 @@ describe("AccessService.resolveUserPermissions — unknown permission keys are o
     const db2 = withTenantTxMock(makeDb());
     (svc as unknown as { db: unknown }).db = db2;
     cache.cached.mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn());
-    (versionCacheSvc2 as unknown as Record<string, unknown>)["versionCache"].clear();
+    (versionCacheSvc2 as unknown as Record<string, Map<string, { version: number; expiresAt: number }>>)["versionCache"].clear();
     svc["permsCache"].clear();
 
     await svc.resolveUserPermissions("org-dedup", "user-dedup2");

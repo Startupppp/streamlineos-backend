@@ -226,6 +226,7 @@ describe("1. the series' recurrence rule reaches the provider", () => {
       {} as never,
       new CalendarRecurrenceService(db),
       new CalendarExportService(db),
+      {} as never,
     );
 
     await svc.createEvent(ORG, USER, {
@@ -487,6 +488,7 @@ describe("4. a delete takes its place in the event's version chain", () => {
       {} as never,
       new CalendarRecurrenceService(db),
       new CalendarExportService(db),
+      {} as never,
     );
 
     await svc.deleteEvent(ORG, USER, EVENT_ID);

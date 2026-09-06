@@ -29,6 +29,7 @@ function makeService(db: unknown, conflict?: unknown): CalendarService {
     {} as never,
     recurrence,
     calendarExport,
+    {} as never,
   );
 }
 

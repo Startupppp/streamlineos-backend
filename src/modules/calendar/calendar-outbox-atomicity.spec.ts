@@ -33,6 +33,7 @@ function makeServiceWith(db: unknown, conflictOverride?: unknown): CalendarServi
     {} as never,
     recurrence,
     calendarExport,
+    {} as never,
   );
 }
 
