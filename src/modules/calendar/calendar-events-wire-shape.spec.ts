@@ -81,7 +81,7 @@ describe("GET /calendar/events — the shape the read path returns", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("native events carry no detail-only fields in the range response", async () => {
+  it("native events carry none of the four opaque detail-only fields in the range response", async () => {
     const { events } = await readEvents([
       visibleRow({ rrule: "FREQ=WEEKLY;COUNT=2", description: "long desc", meetingUrl: "https://meet.example.com/x" }),
     ]);
@@ -91,8 +91,16 @@ describe("GET /calendar/events — the shape the read path returns", () => {
     expect(ev).not.toHaveProperty("isRecurring");
     expect(ev).not.toHaveProperty("meetingUrl");
     expect(ev).not.toHaveProperty("linkedTicket");
-    expect(ev).not.toHaveProperty("description");
-    expect(ev).not.toHaveProperty("creatorName");
+  });
+
+  it("native events have description and creatorName as null in the range (text stripped, key retained for non-native)", async () => {
+    const { events } = await readEvents([
+      visibleRow({ description: "should not appear in range", creatorName: "Alice" }),
+    ]);
+    expect(events.length).toBeGreaterThan(0);
+    const ev = events[0];
+    expect(ev?.description).toBeNull();
+    expect(ev?.creatorName).toBeNull();
   });
 
   it("recurring and one-off native events both satisfy the compact schema", async () => {
