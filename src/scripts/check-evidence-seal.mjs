@@ -84,8 +84,19 @@ const DECLARED_UNSEALED = [
   { seal: "evidence/artifact-hashes.json", file: "perf-budget-manifest.md", reason: "named in the seal's own `covers` as out of scope" },
 ];
 
+const TEXT_EVIDENCE = /\.(md|txt|json|sql|mjs|ts|js|csv|log|yml|yaml|sh|ps1|patch|diff|conf|ini)$/i;
+
+/**
+ * Text evidence is hashed with line endings normalised, because a Windows checkout
+ * rewrites LF to CRLF and that is a transport artifact, not a change to what was
+ * attested. Seals in this tree were taken on both forms, so a byte hash can never be
+ * green for all of them on one platform. Binary evidence is still hashed byte for byte.
+ */
 export function sha256File(filePath) {
-  return createHash("sha256").update(readFileSync(filePath)).digest("hex");
+  const bytes = readFileSync(filePath);
+  const normalised = bytes.toString("utf8").split("\r\n").join("\n");
+  const content = TEXT_EVIDENCE.test(filePath) ? Buffer.from(normalised, "utf8") : bytes;
+  return createHash("sha256").update(content).digest("hex");
 }
 
 export function findSeals(root) {
