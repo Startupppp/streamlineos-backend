@@ -19,8 +19,8 @@
  * against a real catalog, in the house `.db.spec.ts` style, inside a transaction
  * that is rolled back — the database is left exactly as it was found.
  *
- *   HR_DB_TESTS=1 DATABASE_URL=postgresql://…  \
- *     npx jest --runInBand --testPathPattern="feedback-results-shape"
+ *   DATABASE_URL=postgresql://…  \
+ *     pnpm test:db-specs --testPathPattern="feedback-results-shape"
  */
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -35,17 +35,13 @@ import {
 } from "../../../db/schema";
 import { FeedbackService } from "./feedback.service";
 
-const ENABLED = process.env.HR_DB_TESTS === "1";
-const DB_URL = process.env.HR_PROBE_DATABASE_URL ?? process.env.DATABASE_URL;
-const describeDb = ENABLED && DB_URL ? describe : describe.skip;
-
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
 
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.HR_PROBE_DATABASE_URL ?? process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for HR_DB_TESTS");
+  if (!raw) throw new Error("feedback-results-shape.db.spec.ts requires HR_PROBE_DATABASE_URL or DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
@@ -67,7 +63,7 @@ interface Probe {
   after: Results;
 }
 
-describeDb("GET /hr/feedback/results/:subjectId — wire shape", () => {
+describe("GET /hr/feedback/results/:subjectId — wire shape", () => {
   let client: ReturnType<typeof connect>;
   let db: Db;
   let probe: Probe;
@@ -101,11 +97,11 @@ describeDb("GET /hr/feedback/results/:subjectId — wire shape", () => {
           .where(eq(schema.organizationMembers.status, "ACTIVE"))
           .limit(1);
         if (!member)
-          throw new Error("HR_DB_TESTS needs one ACTIVE organization member to scope fixtures to");
+          throw new Error("feedback-results-shape.db.spec.ts needs one ACTIVE organization member to scope fixtures to");
 
         const reviewers = await tx.select({ id: schema.users.id }).from(schema.users).limit(3);
         if (reviewers.length < 3)
-          throw new Error("HR_DB_TESTS needs three users to act as distinct reviewers");
+          throw new Error("feedback-results-shape.db.spec.ts needs three users to act as distinct reviewers");
 
         const service = new FeedbackService(tx);
         const before = await service.getResults(member.orgId, member.userId);

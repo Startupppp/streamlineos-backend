@@ -29,23 +29,17 @@ import {
  * reaches a role in a real database. That is what this file is for, and it is
  * why it needs a database rather than a fixture.
  *
- * Opt-in, like the other database specs here, so the default hermetic run is
- * unaffected:
- *
- *   CRM_DB_TESTS=1 npx jest --runInBand --testPathPattern="crm-permissions-reach"
+ * Run via `pnpm test:db-specs` (jest-db.json).
  */
 
-const ENABLED = process.env.CRM_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-describeDb("every CRM permission reaches somebody", () => {
+describe("every CRM permission reaches somebody", () => {
   let sql: ReturnType<typeof postgres>;
 
   beforeAll(() => {
     // Jest does not boot the app, so nothing has loaded `.env` for us.
     if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
     const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("DATABASE_URL is required for this spec");
+    if (!url) throw new Error("crm-permissions-reach-somebody.db.spec.ts requires DATABASE_URL");
     sql = postgres(url, { max: 1, prepare: false });
   });
 

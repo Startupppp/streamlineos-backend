@@ -3,9 +3,8 @@
  * row and the Party it mirrors cannot be observed disagreeing, because they are
  * written in one transaction with the Party first.
  *
- * Guarded by CRM_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   CRM_DB_TESTS=1 npx jest --runInBand --testPathPattern="party-legacy-writer.db"
+ * Run via `pnpm test:db-specs`. The default hermetic jest config ignores this file.
+ *   DATABASE_URL=... npx jest --config jest-db.json --runInBand --testPathPattern="party-legacy-writer.db"
  *
  * Atomicity is the property a mocked database cannot demonstrate. A fake rolls
  * back whatever it was told to roll back; only a real savepoint, and a real
@@ -36,9 +35,7 @@ import {
 import { createMirroredClient } from "./party-legacy-clients";
 import { createMirroredContact } from "./party-legacy-contacts";
 
-const ENABLED = process.env.CRM_DB_TESTS === "1";
-if (ENABLED) jest.setTimeout(60_000);
-const describeDb = ENABLED ? describe : describe.skip;
+jest.setTimeout(60_000);
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
@@ -46,7 +43,7 @@ class Rollback extends Error {}
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for CRM_DB_TESTS");
+  if (!raw) throw new Error("party-legacy-writer.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), {
@@ -58,7 +55,7 @@ function connect() {
   });
 }
 
-describeDb("party-legacy-writer — real database", () => {
+describe("party-legacy-writer — real database", () => {
   let client: ReturnType<typeof connect>;
   let db: Db;
 
@@ -78,7 +75,7 @@ describeDb("party-legacy-writer — real database", () => {
       await db.transaction(async (tx) => {
         const [org] = await tx.select({ id: schema.organizations.id }).from(schema.organizations).limit(1);
         if (!org)
-          throw new Error("CRM_DB_TESTS needs at least one organization to scope fixtures to");
+          throw new Error("party-legacy-writer.db.spec.ts requires at least one seeded organization");
         captured = await body(tx, org.id);
         throw new Rollback();
       });

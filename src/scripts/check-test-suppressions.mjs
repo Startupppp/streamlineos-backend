@@ -89,42 +89,45 @@ const QUARANTINE_BASELINE = 6;
  * so a hand-written skip cannot be laundered into this class by hiding behind a
  * variable.
  *
- * 28 -> 29 on 2026-09-03 for `chat/__tests__/chat-send-conflict-target.db.spec.ts`, the regression
- * spec for the ON CONFLICT arbiter defect that had every chat message send returning 500 at journal
- * head. Its DB half is gated on `CHAT_DB_TESTS=1` in the established `.db.spec.ts` house style,
- * because a 42P10 comes from Postgres index inference at PLAN time and only a real catalog can
- * observe it. This is not a laundered skip: the spec's HERMETIC half always runs with no database —
- * it compiles the production conflict spec to SQL and asserts the arbiter predicate is emitted, and
- * reverting the fix fails 3 tests, 2 of them in that always-on half.
+ * ── 2026-09-07: 76 -> 20, BY RETIRING THE CLASS RATHER THAN REPRICING IT ────
  *
- * ── 2026-09-04: HELD AT 29, DELIBERATELY, WITH THE GATE RED ──────────────────
+ * This number spent the 10-10 release RED at 76 against 29, and the raise was
+ * refused twice. The note that stood here committed in writing that "the next
+ * request to raise it should retire an existing conditional site instead of
+ * adding to the count". That is what happened, so the history is kept short:
  *
- * The 10-10 release closed with this gate FAILING at 66. The raise was considered
- * and REFUSED. Recording why, because a red gate with no note reads as an oversight
- * and the next person will be tempted to type 66:
+ *   * 56 `*.db.spec.ts` files each opened with
+ *     `const describeDb = ENABLED && DB_URL ? describe : describe.skip`.
+ *     That ternary WAS the suppression, and it existed only because the default
+ *     `jest` run walked those files on machines with no database.
+ *   * They are now selected by SUITE instead, exactly as `*.e2e-spec.ts` already
+ *     was: `jest-db.json` selects the 56, `pnpm test:db-specs` runs them, and the
+ *     default `jest` config ignores `\.db\.spec\.ts$`. With the file unreachable
+ *     from the hermetic run the gate is redundant, so it is gone, and each spec
+ *     now THROWS naming the variable it needs when its database is absent.
+ *     A missing prerequisite fails loudly; it can no longer skip.
+ *   * 19 of the 56 also held a hermetic half that ran in the default suite. That
+ *     half was SPLIT into a sibling `*.spec.ts` rather than left to fall out of
+ *     the run silently — 16 files, 71 tests, all passing with no database.
+ *     Splitting a file is the standard way to lose coverage by accident; it was
+ *     counted before and after on purpose.
  *
- *   * +37 arrived with the release's own regression specs. 40 changed spec files
- *     carry a runtime gate; 27 of those have NO unconditional `describe` at all.
- *   * Those 27 therefore asserted NOTHING, anywhere. `grep -rl "DB_TESTS"
- *     .github/workflows` returned nothing across all seven workflow files: not one
- *     `.db.spec.ts` ran on any machine, in any job, on any trigger.
- *   * That is precisely the condition this ratchet prices. A number raised to fit
- *     a net that runs nowhere would have converted a measurable debt into a green
- *     tick, which is the single failure mode the cap exists to prevent.
- *   * The entry above commits in writing that "the next request to raise it should
- *     retire an existing conditional site instead of adding to the count". Raising
- *     by 37 the day after writing that would make the note worthless.
+ * 29 -> 20 on the same change. A ratchet is lowered to the measured value, never
+ * raised to fit one: 20 is what the tree now holds, and it can only make this
+ * gate stricter. The survivors are the genuinely infrastructure-gated ones —
+ * 9 `*.eval.spec.ts` needing an AI provider key, 6 `src/degradation/**` needing
+ * a real S3/Ably/read-replica, and the seeded-E2E and perf specs that need
+ * specific tenant fixtures to mean anything.
  *
- * What was done instead: db-gates.yml now has a `Database-gated spec suites`
- * step that runs all 46 with the 23 env gates set against the bootstrapped
- * Postgres, on the nightly and on demand, UNPROVEN and labelled as such.
+ * This also dissolves the tension recorded against PRD-C018, which said every new
+ * DB-gated spec written to close it pushed this count up. A new `*.db.spec.ts`
+ * now joins `jest-db.json` and adds NOTHING to this class.
  *
- * The condition for moving this number is therefore explicit, and it is not a
- * judgement call: that step must be green on a run somebody has read, and
- * promoted off its `if:` to every event. Until then 29 stands and the gate is
- * honestly red. Do not raise it to make a release green.
+ * `db-gates.yml`'s `Database-gated spec suites` step stays `if:`-guarded: that job
+ * has no seed step, and some suites read seeded rows. That guard is a CI-coverage
+ * question now, not this ratchet's — the class it priced no longer exists.
  */
-const CONDITIONAL_BASELINE = 29;
+const CONDITIONAL_BASELINE = 20;
 
 const SITE_RE =
   /(^|[^A-Za-z0-9_$.])(?:(it|test|describe)\s*\.\s*(skip|todo|failing)|(xit|xdescribe))\s*\(/g;

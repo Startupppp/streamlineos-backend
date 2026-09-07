@@ -19,8 +19,8 @@
  * This needs a real database: the defect is a row count crossing a `LIMIT`, and
  * a mocked `db` returns the array it was handed no matter what the limit says.
  *
- * Guarded by PAYROLL_DB_TESTS=1:
- *   PAYROLL_DB_TESTS=1 DATABASE_URL=... npx jest --runInBand \
+ * Run via `pnpm test:db-specs`. The default hermetic jest config ignores this file.
+ *   DATABASE_URL=... npx jest --config jest-db.json --runInBand \
  *     --testPathPattern="journal-reversal.db"
  *
  * MONEY UNITS. Line debit/credit are numeric(15,2) rupee strings, as the column
@@ -44,10 +44,7 @@ import type { Db } from "../../../../db/drizzle.types";
 /** The relational-query surface `JournalOutboxService` reaches through `db.query`. */
 const querySchema = { organizationMembers };
 
-const ENABLED = process.env.PAYROLL_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-if (ENABLED) jest.setTimeout(300_000);
+jest.setTimeout(300_000);
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
@@ -55,7 +52,7 @@ class Rollback extends Error {}
 function connect(): ReturnType<typeof postgres> {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for PAYROLL_DB_TESTS");
+  if (!raw) throw new Error("journal-reversal.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const plaintext =
@@ -81,7 +78,7 @@ const PER_LINE = "125.00";
  */
 const OVERSIZED_LINE_PAIRS = 620;
 
-describeDb("journal batch reversal — real database", () => {
+describe("journal batch reversal — real database", () => {
   let client: ReturnType<typeof postgres>;
   let db: Db;
 
@@ -120,13 +117,13 @@ describeDb("journal batch reversal — real database", () => {
           sql`SELECT id FROM organizations ORDER BY id LIMIT 1`,
         );
         const orgId = orgRows[0]?.id;
-        if (!orgId) throw new Error("PAYROLL_DB_TESTS needs at least one organization");
+        if (!orgId) throw new Error("journal-reversal.db.spec.ts requires at least one seeded organization");
 
         const userRows = await tx.execute<{ id: string }>(
           sql`SELECT id FROM users ORDER BY id LIMIT 1`,
         );
         const userId = userRows[0]?.id;
-        if (!userId) throw new Error("PAYROLL_DB_TESTS needs at least one user");
+        if (!userId) throw new Error("journal-reversal.db.spec.ts requires at least one seeded user");
 
         const tag = randomUUID().slice(0, 8);
         const lineCount = pairs * 2;

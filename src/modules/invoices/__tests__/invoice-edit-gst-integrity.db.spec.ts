@@ -1,10 +1,9 @@
 /**
  * Real-database regression tests for editing a DRAFT invoice's line items.
  *
- * Guarded by INV_DB_TESTS=1, the same flag as invoice-numbering.db.spec.ts, so
- * the default hermetic `jest` run is unaffected. Run with:
- *   INV_DB_TESTS=1 DATABASE_URL=... PGSSLMODE=disable \
- *     npx jest --runInBand --testPathPattern="invoice-edit-gst-integrity.db"
+ * Run with:
+ *   DATABASE_URL=... PGSSLMODE=disable \
+ *     pnpm test:db-specs --testPathPattern="invoice-edit-gst-integrity.db"
  *
  * Why a real database rather than a mock. The defect being pinned is a
  * DISAGREEMENT between three stores of the same fact — the `tax_amount` column,
@@ -42,16 +41,13 @@ import {
   INVOICE_SOURCE_TYPE,
 } from "../../accounting/posting/journal-posting.data";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
 
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
+  if (!raw) throw new Error("invoice-edit-gst-integrity.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), {
@@ -68,7 +64,7 @@ function rupees(value: string | null | undefined): number {
   return Math.round(Number(value ?? 0) * 100);
 }
 
-describeDb("editing a draft invoice's lines — real database", () => {
+describe("editing a draft invoice's lines — real database", () => {
   let client: ReturnType<typeof connect>;
   let db: Db;
 
@@ -131,7 +127,7 @@ describeDb("editing a draft invoice's lines — real database", () => {
           .from(schema.users)
           .limit(1);
         if (!org || !user) {
-          throw new Error("INV_DB_TESTS needs at least one organization and one user");
+          throw new Error("invoice-edit-gst-integrity.db.spec.ts needs at least one organization and one user");
         }
         const services = await buildServices(tx);
         captured = await body({ tx, orgId: org.id, userId: user.id, ...services });

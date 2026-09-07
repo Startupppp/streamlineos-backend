@@ -44,36 +44,23 @@
  * the service a jest mock whose `.values()` records its argument and whose
  * `.onConflictDoUpdate()` resolves to `[]`. It asserts the INSERT names the
  * caller's org — which the broken code did — and never looks at the `set`, and a
- * mock could not raise the policy error in any case. So this spec has two halves:
+ * mock could not raise the policy error in any case.
  *
- *   HERMETIC — no database. Compiles the production statement and asserts the
- *   emitted `do update set` re-owns user_id, org_id and membership_id, and that
- *   the index it arbitrates is declared total (which is what makes a bare target
- *   legal here, unlike chat_messages). Runs in the default suite; red at head.
+ * The hermetic half (SQL shape, Drizzle config assertions) lives in
+ * `push-subscription-ownership.spec.ts` and runs in the default suite.
+ * This file covers the real-catalog and RLS probes and runs only via
+ * pnpm test:db-specs (filter with --testPathPattern="push-subscription-ownership.db").
  *
- *   CATALOG — the real thing, house `.db.spec.ts` style, as the non-owner app
- *   role with a real tenant GUC. Everything runs in a transaction that is rolled
- *   back.
- *
- *     PUSH_DB_TESTS=1 APP_DATABASE_URL=postgresql://streamline_app:…@…/scratch_head_1010 \
- *       npx jest --runInBand --testPathPattern="push-subscription-ownership"
+ *   APP_DATABASE_URL=postgresql://streamline_app:…@…/scratch_head_1010 \
+ *   pnpm test:db-specs --testPathPattern="push-subscription-ownership.db"
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, getTableName, sql } from "drizzle-orm";
-import { getTableConfig } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { organizations, pushSubscriptions } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import { PushService } from "./push.service";
-import {
-  PUSH_ENDPOINT_CONFLICT,
-  pushSubscriptionOwnership,
-} from "./push-subscription-ownership";
-
-const ENABLED = process.env.PUSH_DB_TESTS === "1";
-const DB_URL = process.env.PUSH_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
-const describeDb = ENABLED && DB_URL ? describe : describe.skip;
 
 const CONFIG = { VAPID_PUBLIC_KEY: "test-key" };
 
@@ -90,71 +77,18 @@ function sqlstateOf(error: unknown): string | undefined {
   return undefined;
 }
 
-describe("push subscription ownership — hermetic", () => {
-  it("the unique it arbitrates is declared TOTAL, which is what makes a bare target legal", () => {
-    // A partial unique cannot be inferred from a bare column list (42P10 at plan
-    // time — the chat_messages P0). This one is a column-level `.unique()`, so it
-    // carries no predicate and needs none spelled at the call site.
-    const endpoint = getTableConfig(pushSubscriptions).columns.find((c) => c.name === "endpoint");
-    expect(endpoint?.isUnique).toBe(true);
-    expect(
-      getTableConfig(pushSubscriptions).indexes.some((index) =>
-        (index as unknown as { config: { columns: Array<{ name?: string }>; where?: unknown } }).config.columns.some(
-          (column) => column.name === "endpoint",
-        ),
-      ),
-    ).toBe(false);
-    expect(Object.keys(PUSH_ENDPOINT_CONFLICT)).toEqual(["target"]);
-  });
-
-  it("the upsert re-owns user_id, org_id and membership_id — the head form re-owned neither", () => {
-    const offline = drizzle(postgres("postgres://unused@127.0.0.1:1/unused", { max: 1 }));
-    const values = {
-      userId: "u2",
-      orgId: "org-b",
-      endpoint: "https://fcm.example/e",
-      p256dh: "p2",
-      auth: "a2",
-    };
-    const compile = (set: Record<string, unknown>) =>
-      offline.insert(pushSubscriptions).values(values).onConflictDoUpdate({
-        ...PUSH_ENDPOINT_CONFLICT,
-        set,
-      }).toSQL().sql;
-
-    const head = compile({ p256dh: values.p256dh, auth: values.auth });
-    const shipped = compile(pushSubscriptionOwnership(values));
-
-    expect(head).not.toContain('"user_id" =');
-    expect(head).not.toContain('"org_id" =');
-    expect(shipped).toContain('on conflict ("endpoint") do update set');
-    expect(shipped).toContain('"user_id" =');
-    expect(shipped).toContain('"org_id" =');
-    expect(shipped).toContain('"membership_id" =');
-  });
-
-  it("re-ownership nulls membership_id, because (org_id, membership_id) is a composite FK", () => {
-    expect(pushSubscriptionOwnership({ userId: "u", orgId: "o", p256dh: "p", auth: "a" })).toEqual({
-      userId: "u",
-      orgId: "o",
-      membershipId: null,
-      p256dh: "p",
-      auth: "a",
-      userAgent: null,
-    });
-  });
-});
-
-describeDb("push subscription ownership — real catalog and RLS", () => {
+describe("push subscription ownership — real catalog and RLS", () => {
   let client: postgres.Sql;
   let orgA: string;
   let orgB: string;
 
   beforeAll(async () => {
-    client = postgres(DB_URL as string, { max: 1, prepare: false, onnotice: () => undefined });
+    const dbUrl = process.env.PUSH_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
+    if (!dbUrl) throw new Error("APP_DATABASE_URL (or PUSH_PROBE_DATABASE_URL) required");
+    client = postgres(dbUrl, { max: 1, prepare: false, onnotice: () => undefined });
     const rows = await drizzle(client).select({ id: organizations.id }).from(organizations).limit(2);
     if (rows.length < 2)
-      throw new Error("PUSH_DB_TESTS needs a database with at least two organizations rows");
+      throw new Error("push-subscription-ownership.db.spec: database needs at least two organizations rows");
     orgA = rows[0]!.id;
     orgB = rows[1]!.id;
   });
@@ -245,7 +179,6 @@ describeDb("push subscription ownership — real catalog and RLS", () => {
       await db
         .insert(pushSubscriptions)
         .values({ userId: "probe-u2", orgId: orgA, endpoint, p256dh: "P2", auth: "A2" })
-        // The exact head form: keys only, ownership untouched.
         .onConflictDoUpdate({ target: pushSubscriptions.endpoint, set: { p256dh: "P2", auth: "A2" } });
       const after = await db
         .select({ userId: pushSubscriptions.userId })
@@ -260,11 +193,6 @@ describeDb("push subscription ownership — real catalog and RLS", () => {
   it("a browser already registered in another tenant re-registers instead of raising 42501", async () => {
     const endpoint = `https://fcm.example/cross-${randomUUID()}`;
 
-    // Seed the org-A row and leave it committed only for the length of this probe:
-    // the cross-tenant claim has to run against a row it cannot see, so the seed
-    // cannot live in the same rolled-back transaction as the claim. Even the seed
-    // needs a tenant GUC — `app.current_org_id()` RAISES 42501 when unset, so the
-    // app role cannot touch this table at all without one.
     await client.begin(async (tx) => {
       await tx`SELECT set_config('app.organization_id', ${orgA}, true)`;
       await tx`INSERT INTO push_subscriptions (user_id, org_id, endpoint, p256dh, auth)

@@ -23,10 +23,11 @@
  * The listing is now wrapped in `runInTenantTransaction(..., { orgId })`, which is what makes
  * the decorator safe.
  *
+ * Run with:
  *   APP_DATABASE_URL="postgresql://streamline_app:…@localhost:5432/scratch_head_1010" \
  *   DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable KB_DB_TESTS=1 \
- *   npx jest --runInBand --testPathPattern="kb-page-reindex-placement.db"
+ *   PGSSLMODE=disable \
+ *   pnpm test:db-specs --testPathPattern="kb-page-reindex-placement.db"
  */
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, isNull, ne } from "drizzle-orm";
@@ -36,26 +37,12 @@ import * as schema from "../../../db/schema";
 import { kbPages } from "../../../db/schema";
 import { createTenantAwareDb } from "../../../common/tenant/tenant-db";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { NO_TENANT_TRANSACTION } from "../../../common/tenant/no-tenant-transaction.decorator";
-import { KbPageIndexingController } from "./kb-page-indexing.controller";
-
-const ENABLED = process.env.KB_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-describe("KB reindex handlers opt out of the request transaction", () => {
-  it.each([
-    ["reindexPage", KbPageIndexingController.prototype.reindexPage],
-    ["reindexAllPages", KbPageIndexingController.prototype.reindexAllPages],
-  ])("%s carries @NoTenantTransaction", (_name, handler) => {
-    expect(Reflect.getMetadata(NO_TENANT_TRANSACTION, handler)).toBe(true);
-  });
-});
 
 const suffix = randomUUID().slice(0, 8);
 const ORG = `kbrix-${suffix}`;
 const PROBE_USER = `kbrix-user-${suffix}`;
 
-describeDb("KB reindex listing supplies its own tenant context", () => {
+describe("KB reindex listing supplies its own tenant context", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let appDb: ReturnType<typeof createTenantAwareDb>;
@@ -64,7 +51,7 @@ describeDb("KB reindex listing supplies its own tenant context", () => {
     const ownerUrl = process.env.DATABASE_URL;
     const appUrl = process.env.APP_DATABASE_URL;
     if (!ownerUrl || !appUrl)
-      throw new Error("KB_DB_TESTS needs DATABASE_URL (owner, seeds) and APP_DATABASE_URL (RLS role)");
+      throw new Error("DATABASE_URL (owner, seeds) and APP_DATABASE_URL (RLS role) are required");
 
     owner = postgres(ownerUrl, { prepare: false, max: 2, connect_timeout: 30 });
     appClient = postgres(appUrl, { prepare: false, max: 2, connect_timeout: 30 });
@@ -80,7 +67,6 @@ describeDb("KB reindex listing supplies its own tenant context", () => {
       await tx`UPDATE organizations SET owner_membership_id = ${member?.id} WHERE id = ${ORG}`;
     });
 
-    // One live page, so the policy actually has a row to evaluate its qual against.
     await owner`
       INSERT INTO kb_pages (org_id, title, content, content_text, status, visibility)
       VALUES (${ORG}, 'Reindex probe', '{}'::jsonb, 'body', 'published', 'org')`;
@@ -104,8 +90,6 @@ describeDb("KB reindex listing supplies its own tenant context", () => {
   );
 
   it("the unwrapped listing — what @NoTenantTransaction alone would have left — silently sees nothing", async () => {
-    // No ambient context, so the tenant-aware proxy falls through to the pool with no GUC and
-    // the policy's `_or_null` org resolves to NULL: every row fails the qual, silently.
     const unscoped = await appDb
       .select({ id: kbPages.id })
       .from(kbPages)
@@ -114,7 +98,6 @@ describeDb("KB reindex listing supplies its own tenant context", () => {
       .limit(101);
     expect(unscoped).toEqual([]);
 
-    // The tenant does own pages — the owner connection, which bypasses RLS, can see them.
     const [seeded] = await owner<{ n: number }[]>`
       SELECT count(*)::int AS n FROM kb_pages WHERE org_id = ${ORG} AND deleted_at IS NULL`;
     expect(seeded?.n).toBeGreaterThan(0);

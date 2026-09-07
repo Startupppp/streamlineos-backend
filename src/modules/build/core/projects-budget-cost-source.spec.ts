@@ -2,8 +2,8 @@
  * The hermetic half of the project-budget cost defect. No database.
  *
  * `projects-budget-actual-cost.db.spec.ts` proves the arithmetic against a real
- * Postgres, but it is gated on `BUILD_DB_TESTS=1`, so on a machine with no
- * database it proves nothing. This file always runs and pins the one structural
+ * Postgres, so it runs only in the `jest-db.json` suite and proves nothing on a
+ * machine with no database. This file always runs and pins the one structural
  * fact the defect turned on: **where the money comes from**.
  *
  * `getBudget` used to cost billable hours at `project_members.hourly_rate_minor`.

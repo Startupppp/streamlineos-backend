@@ -29,8 +29,8 @@
  * Bank-detail decryption is stubbed: envelope encryption is not what is under
  * test, and stubbing it keeps the fixture from needing a live key ring.
  *
- * Guarded by PAYROLL_DB_TESTS=1 so the default hermetic jest run is unaffected.
- *   PAYROLL_DB_TESTS=1 DATABASE_URL=... npx jest --runInBand \
+ * Run via `pnpm test:db-specs`. The default hermetic jest config ignores this file.
+ *   DATABASE_URL=... npx jest --config jest-db.json --runInBand \
  *     --testPathPattern="batch-creator-idempotent-replay.db"
  *
  * Everything happens inside a transaction that is rolled back.
@@ -52,10 +52,7 @@ import type { BankDetails } from "../../../../common/hr/canonical-bank-details";
 /** The relational-query surface `createBatch` reaches through `db.query`. */
 const querySchema = { payrollRuns, payrollBankBatches };
 
-const ENABLED = process.env.PAYROLL_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-if (ENABLED) jest.setTimeout(180_000);
+jest.setTimeout(180_000);
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
@@ -63,7 +60,7 @@ class Rollback extends Error {}
 function connect(): ReturnType<typeof postgres> {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for PAYROLL_DB_TESTS");
+  if (!raw) throw new Error("batch-creator-idempotent-replay.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const plaintext =
@@ -126,7 +123,7 @@ type Replay = {
   secondError: string | null;
 };
 
-describeDb("payout batch idempotent replay — real database", () => {
+describe("payout batch idempotent replay — real database", () => {
   let client: ReturnType<typeof postgres>;
   let db: Db;
 
@@ -149,7 +146,7 @@ describeDb("payout batch idempotent replay — real database", () => {
           sql`SELECT id FROM organizations ORDER BY id LIMIT 1`,
         );
         const orgId = orgRows[0]?.id;
-        if (!orgId) throw new Error("PAYROLL_DB_TESTS needs at least one organization");
+        if (!orgId) throw new Error("batch-creator-idempotent-replay.db.spec.ts requires at least one seeded organization");
 
         // payroll_bank_batch_items.user_id and payroll_run_events.actor_id both
         // carry a real FK to users, so the fixture borrows real identities.
@@ -158,7 +155,7 @@ describeDb("payout batch idempotent replay — real database", () => {
         );
         const payeeIds = userRows.map((row) => String(row.id));
         if (payeeIds.length < PAYEES)
-          throw new Error(`PAYROLL_DB_TESTS needs at least ${PAYEES} users`);
+          throw new Error(`batch-creator-idempotent-replay.db.spec.ts requires at least ${PAYEES} seeded users`);
         const actorId = payeeIds[0];
         if (!actorId) throw new Error("no actor");
 
@@ -261,7 +258,7 @@ describeDb("payout batch idempotent replay — real database", () => {
           sql`SELECT id FROM organizations ORDER BY id LIMIT 1`,
         );
         const orgId = orgRows[0]?.id;
-        if (!orgId) throw new Error("PAYROLL_DB_TESTS needs at least one organization");
+        if (!orgId) throw new Error("batch-creator-idempotent-replay.db.spec.ts requires at least one seeded organization");
         const userRows = await tx.execute<{ id: string }>(
           sql`SELECT id FROM users ORDER BY id LIMIT ${PAYEES}`,
         );

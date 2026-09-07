@@ -27,53 +27,21 @@
  *
  * Read-only: this spec creates nothing and writes nothing. It reads pg_class.
  *
- *   COMPLIANCE_DB_TESTS=1 DATABASE_URL=postgres://neondb_owner@localhost:5432/scratch_gates_head \
- *     npx jest --runInBand --testPathPattern="retention-coverage-gate.db"
+ *   DATABASE_URL=postgres://neondb_owner@localhost:5432/scratch_gates_head \
+ *     node ./node_modules/jest/bin/jest.js --config ./jest-db.json --runInBand --testPathPattern="retention-coverage-gate.db"
  */
-import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
 import postgres from "postgres";
+import { runGate, GateRun } from "./retention-coverage-gate-helpers";
 
-const ENABLED = process.env.COMPLIANCE_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
+if (!process.env.DATABASE_URL)
+  throw new Error("retention-coverage-gate.db.spec.ts requires DATABASE_URL");
 
-if (ENABLED) jest.setTimeout(180_000);
-
-const BACKEND_ROOT = resolve(__dirname, "../..");
-const GATE = resolve(BACKEND_ROOT, "src/scripts/check-retention-coverage.mjs");
-
-interface GateRun {
-  readonly status: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-/** Runs the gate exactly as the npm script does, and never throws on a non-zero exit. */
-function runGate(args: readonly string[], env: NodeJS.ProcessEnv): GateRun {
-  try {
-    const stdout = execFileSync(process.execPath, [GATE, ...args], {
-      cwd: BACKEND_ROOT,
-      encoding: "utf8",
-      env: { ...env, NODE_OPTIONS: "--max-old-space-size=1024" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return { status: 0, stdout, stderr: "" };
-  } catch (err) {
-    const e = err as { status?: number; stdout?: string; stderr?: string };
-    return { status: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
-  }
-}
+jest.setTimeout(180_000);
 
 function envWithDatabaseUrl(): NodeJS.ProcessEnv {
   const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is required when COMPLIANCE_DB_TESTS=1");
+  if (!url) throw new Error("DATABASE_URL is required for retention-coverage-gate.db.spec.ts");
   return { ...process.env, DATABASE_URL: url };
-}
-
-function envWithoutDatabaseUrl(): NodeJS.ProcessEnv {
-  const stripped = { ...process.env };
-  delete stripped.DATABASE_URL;
-  return stripped;
 }
 
 interface Summary {
@@ -88,7 +56,7 @@ function summaryOf(run: GateRun): Summary {
   return parsed.summary;
 }
 
-describeDb("check:retention-coverage — the gate measures a corpus before it reports on one", () => {
+describe("check:retention-coverage — the gate measures a corpus before it reports on one", () => {
   let sql: ReturnType<typeof postgres>;
   let tablesInSchema = 0;
 
@@ -126,21 +94,8 @@ describeDb("check:retention-coverage — the gate measures a corpus before it re
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')`;
 
-      // The bug, stated as arithmetic: tables the old formula rounded away to 0 MB.
       expect(Number(row?.lost ?? 0)).toBeGreaterThan(0);
       expect(Number(row?.num_form ?? 0)).toBeGreaterThan(Number(row?.int_form ?? 0));
-    });
-
-    it("the shipped query divides by a numeric literal, and is the one the gate runs", () => {
-      const run = runGate(["--print-query"], envWithoutDatabaseUrl());
-      expect(run.status).toBe(0);
-      const printed = JSON.parse(run.stdout) as {
-        totalMbExpression: string;
-        catalogueQuery: string;
-      };
-      expect(printed.totalMbExpression).toMatch(/\/\s*1048576\.\d/);
-      expect(printed.totalMbExpression).not.toMatch(/\/\s*1048576\s*(?![.\d])/);
-      expect(printed.catalogueQuery).toContain(printed.totalMbExpression);
     });
 
     it("--threshold-mb below 1 now widens the selection instead of being inert", () => {
@@ -148,8 +103,6 @@ describeDb("check:retention-coverage — the gate measures a corpus before it re
       const atOne = runGate([], env);
       const atOneTenth = runGate(["--threshold-mb=0.1"], env);
 
-      // Both may legitimately exit 1 (an uncovered table is a real finding); what is
-      // asserted is that lowering the threshold changed what the gate looked at.
       expect([0, 1]).toContain(atOne.status);
       expect([0, 1]).toContain(atOneTenth.status);
       expect(summaryOf(atOneTenth).highGrowthTables).toBeGreaterThan(
@@ -163,26 +116,15 @@ describeDb("check:retention-coverage — the gate measures a corpus before it re
       const run = runGate(["--threshold-mb=100000"], envWithDatabaseUrl());
       expect(run.status).toBe(2);
       expect(run.stderr).toContain("INCONCLUSIVE");
-      // The distinguishing detail: the old script printed exactly this summary and exited 0.
       expect(run.stderr).toMatch(/0 cleared 100000 MB/);
     });
 
     it("an unmigrated schema is INCONCLUSIVE rather than a clean sweep of nothing", () => {
-      // `template1` is a real, reachable database with no application tables in `public`.
       const url = new URL(envWithDatabaseUrl().DATABASE_URL as string);
       url.pathname = "/template1";
       const run = runGate([], { ...process.env, DATABASE_URL: url.toString() });
       expect(run.status).toBe(2);
       expect(run.stderr).toContain("INCONCLUSIVE");
-    });
-
-    it("an absent DATABASE_URL is INCONCLUSIVE, not a silent fallback to .env", () => {
-      const run = runGate([], envWithoutDatabaseUrl());
-      expect(run.status).toBe(2);
-      expect(run.stderr).toContain("INCONCLUSIVE");
-      // dotenv.config() used to substitute the .env connection string here AND write a
-      // banner to stdout, which made the JSON report unparseable. Both are gone.
-      expect(run.stdout).toBe("");
     });
   });
 

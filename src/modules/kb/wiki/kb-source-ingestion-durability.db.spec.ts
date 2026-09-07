@@ -18,8 +18,8 @@
  *
  *   APP_DATABASE_URL="postgresql://streamline_app:…@localhost:5432/scratch_head_1010" \
  *   DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable KB_DB_TESTS=1 \
- *   npx jest --runInBand --testPathPattern="kb-source-ingestion-durability.db"
+ *   PGSSLMODE=disable npx jest --config jest-db.json --runInBand \
+ *   --testPathPattern="kb-source-ingestion-durability.db"
  */
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
@@ -37,15 +37,12 @@ import { KbSourceAdapter } from "../retrieval/kb-content-adapter";
 import { KbSourcesService } from "./kb-sources.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-const ENABLED = process.env.KB_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 const suffix = randomUUID().slice(0, 8);
 const ORG = `kbsrc-${suffix}`;
 const PROBE_USER = `kbsrc-user-${suffix}`;
 const CHUNKS_WRITTEN = 3;
 
-describeDb("KB source ingestion is durable, not only after-commit", () => {
+describe("KB source ingestion is durable, not only after-commit", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let appDb: ReturnType<typeof createTenantAwareDb>;
@@ -58,7 +55,7 @@ describeDb("KB source ingestion is durable, not only after-commit", () => {
     const ownerUrl = process.env.DATABASE_URL;
     const appUrl = process.env.APP_DATABASE_URL;
     if (!ownerUrl || !appUrl)
-      throw new Error("KB_DB_TESTS needs DATABASE_URL (owner, seeds) and APP_DATABASE_URL (RLS role)");
+      throw new Error("kb-source-ingestion-durability.db.spec.ts requires DATABASE_URL (owner, seeds) and APP_DATABASE_URL (RLS role)");
 
     owner = postgres(ownerUrl, { prepare: false, max: 2, connect_timeout: 30 });
     appClient = postgres(appUrl, { prepare: false, max: 2, connect_timeout: 30 });

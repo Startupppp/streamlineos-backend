@@ -50,11 +50,11 @@
  * `audit_logs` is append-only at the database boundary (`app.prevent_audit_log_mutation`),
  * so an audit row this spec committed could never be cleaned up again.
  *
- *   GDPR_DB_TESTS=1 \
  *   APP_DATABASE_URL="postgresql://streamline_app:…@localhost:5432/scratch_head_1010" \
  *   DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
  *   PGSSLMODE=disable TZ=Asia/Kolkata \
- *     npx jest --runInBand --testPathPattern="gdpr-subject-erasure-global-identity.db"
+ *     node ./node_modules/jest/bin/jest.js --config jest-db.json --runInBand \
+ *     --testPathPattern="gdpr-subject-erasure-global-identity.db"
  */
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -87,9 +87,7 @@ import {
   subjectHasSurvivingMembership,
 } from "./gdpr-subject-erasure-identity";
 
-const ENABLED = process.env.GDPR_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-if (ENABLED) jest.setTimeout(180_000);
+jest.setTimeout(180_000);
 
 const suffix = randomUUID().slice(0, 8);
 const ORG_A = `gdpr-a-${suffix}`;
@@ -114,7 +112,7 @@ interface ErasureObservation {
   person: { firstName: string; workEmail: string | null; phone: string | null } | undefined;
 }
 
-describeDb("GDPR erasure — a multi-org subject keeps their global identity", () => {
+describe("GDPR erasure — a multi-org subject keeps their global identity", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let base: ReturnType<typeof drizzle<typeof schema>>;
@@ -127,7 +125,7 @@ describeDb("GDPR erasure — a multi-org subject keeps their global identity", (
     const appUrl = process.env.APP_DATABASE_URL;
     if (!ownerUrl || !appUrl)
       throw new Error(
-        "GDPR_DB_TESTS needs DATABASE_URL (owner, for the seed graph) and APP_DATABASE_URL (the RLS role)",
+        "gdpr-subject-erasure-global-identity.db.spec.ts requires DATABASE_URL (owner, for the seed graph) and APP_DATABASE_URL (the RLS role)",
       );
 
     owner = postgres(ownerUrl, { prepare: false, max: 2, connect_timeout: 30 });

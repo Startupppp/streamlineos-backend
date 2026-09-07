@@ -1,8 +1,8 @@
 /**
  * Real-database regression for per-row isolation in HrImportService.commitAll.
  *
- * Guarded by HR_DB_TESTS=1. Run with:
- *   HR_DB_TESTS=1 DATABASE_URL=... npx jest --runInBand \
+ * Run with `pnpm test:db-specs` or:
+ *   DATABASE_URL=... node ./node_modules/jest/bin/jest.js --config jest-db.json --runInBand \
  *     --testPathPattern="hr-import-row-savepoint.db"
  *
  * commitAll opens ONE transaction for the whole job and calls commitRow(tx, ...)
@@ -21,15 +21,12 @@
 import dotenv from "dotenv";
 import postgres from "postgres";
 
-const ENABLED = process.env.HR_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 function connect() {
   if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
     dotenv.config({ path: ".env" });
   }
   const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for HR_DB_TESTS");
+  if (!raw) throw new Error("hr-import-row-savepoint.db.spec.ts requires DATABASE_URL or APP_DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const ssl = url.hostname === "localhost" || url.hostname === "127.0.0.1" ? false : "require";
@@ -38,7 +35,7 @@ function connect() {
 
 const ABORTED_TRANSACTION = "25P02";
 
-describeDb("hr import per-row commit isolation — real database", () => {
+describe("hr import per-row commit isolation — real database", () => {
   let sql: ReturnType<typeof connect>;
 
   beforeAll(() => {

@@ -1,9 +1,8 @@
 /**
  * Real-database regression for the payroll-input reimbursement snapshot's units.
  *
- * Guarded by HR_DB_TESTS=1 so the default hermetic `jest` run is unaffected.
- * Run with:
- *   HR_DB_TESTS=1 DATABASE_URL=... npx jest --runInBand \
+ * Run with `pnpm test:db-specs` or:
+ *   DATABASE_URL=... node ./node_modules/jest/bin/jest.js --config jest-db.json --runInBand \
  *     --testPathPattern="payroll-inputs-reimbursement-units.db"
  *
  * Why this needs a real Postgres rather than a mocked db: the defect is a unit
@@ -27,9 +26,6 @@ import { buildReimbursementPayload } from "../payroll-inputs-money";
 import { buildCalcPullsFromSections } from "../../../payroll/runs/lib/input-puller";
 import { toPaise } from "../../../payroll/runs/lib/money";
 
-const ENABLED = process.env.HR_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 function connect() {
   if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
     dotenv.config({ path: ".env" });
@@ -37,7 +33,7 @@ function connect() {
   // DATABASE_URL (owner) first: hr_insurance_claims carries a tenant_isolation
   // RLS policy and this spec sets no app.current_org_id GUC.
   const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for HR_DB_TESTS");
+  if (!raw) throw new Error("payroll-inputs-reimbursement-units.db.spec.ts requires DATABASE_URL or APP_DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const ssl = url.hostname === "localhost" || url.hostname === "127.0.0.1" ? false : "require";
@@ -50,7 +46,7 @@ const CLAIM_MINOR_UNITS = 30_000;
 const EXPECTED_TOTAL_RUPEES = 800;
 const EXPECTED_PAYSLIP_PAISE = 80_000;
 
-describeDb("payroll-input reimbursement snapshot — real database units", () => {
+describe("payroll-input reimbursement snapshot — real database units", () => {
   let sql: ReturnType<typeof connect>;
 
   beforeAll(() => {

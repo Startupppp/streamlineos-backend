@@ -24,14 +24,12 @@
  * lands in "live-but-undeclared" (1,187 objects), which that gate reports and never
  * fails. Only the catalog knows, so this runs against the catalog.
  *
- *   FK_DB_TESTS=1 FK_PROBE_DATABASE_URL=postgresql://… \
- *     npx jest --runInBand --testPathPattern="duplicate-foreign-keys"
+ *   FK_PROBE_DATABASE_URL=postgresql://… \
+ *     npx jest --config jest-db.json --runInBand --testPathPattern="duplicate-foreign-keys"
  */
 import postgres from "postgres";
 
-const ENABLED = process.env.FK_DB_TESTS === "1";
 const DB_URL = process.env.FK_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
-const describeDb = ENABLED && DB_URL ? describe : describe.skip;
 
 /**
  * The grouping key is every column pg_constraint uses to define a foreign key's
@@ -54,11 +52,12 @@ const DUPLICATE_GROUPS = `
   HAVING count(*) > 1
    ORDER BY 1, 2`;
 
-describeDb("duplicate foreign keys", () => {
+describe("duplicate foreign keys", () => {
   let client: postgres.Sql;
 
   beforeAll(() => {
-    client = postgres(DB_URL as string, { max: 1, prepare: false, onnotice: () => undefined });
+    if (!DB_URL) throw new Error("duplicate-foreign-keys.db.spec.ts requires FK_PROBE_DATABASE_URL or APP_DATABASE_URL");
+    client = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => undefined });
   });
 
   afterAll(async () => {

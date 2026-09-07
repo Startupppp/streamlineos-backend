@@ -1,8 +1,8 @@
 /**
  * Real-database regression for attendance-import duplication.
  *
- * Guarded by HR_DB_TESTS=1. Run with:
- *   HR_DB_TESTS=1 DATABASE_URL=... npx jest --runInBand \
+ * Run with `pnpm test:db-specs` or:
+ *   DATABASE_URL=... node ./node_modules/jest/bin/jest.js --config jest-db.json --runInBand \
  *     --testPathPattern="hr-import-attendance-idempotency.db"
  *
  * commitAttendance guarded against duplicates with `.onConflictDoNothing()`,
@@ -26,9 +26,6 @@ import type { Db } from "../../../../db/drizzle.types";
 import { HrImportCommitService } from "../hr-import-commit.service";
 import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "../../../../../test/helpers/probe-org";
 
-const ENABLED = process.env.HR_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 const WORK_EMAIL = "attendance-idem-probe@synthetic.invalid";
 const DATE = "2026-07-06";
 const ROLLBACK = "__rollback__";
@@ -38,14 +35,14 @@ function connect() {
     dotenv.config({ path: ".env" });
   }
   const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for HR_DB_TESTS");
+  if (!raw) throw new Error("hr-import-attendance-idempotency.db.spec.ts requires DATABASE_URL or APP_DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const ssl = url.hostname === "localhost" || url.hostname === "127.0.0.1" ? false : "require";
   return postgres(url.toString(), { prepare: false, max: 4, ssl, connect_timeout: 30 });
 }
 
-describeDb("attendance import idempotency — real database", () => {
+describe("attendance import idempotency — real database", () => {
   let client: ReturnType<typeof connect>;
   let db: Db;
   let service: HrImportCommitService;

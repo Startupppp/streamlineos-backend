@@ -29,11 +29,9 @@
  * the transaction would 500 in production and pass a mocked test — and that a soft-deleted
  * row is still visible to the resolver. A double answers whatever it was told.
  *
- *   PUBLIC_DB_TESTS=1 \
  *   APP_DATABASE_URL="postgresql://streamline_app:…@localhost:5432/scratch_head_1010" \
  *   DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable TZ=Asia/Kolkata \
- *     npx jest --runInBand --testPathPattern="intake-project-lifecycle.db"
+ *   PGSSLMODE=disable TZ=Asia/Kolkata pnpm test:db-specs
  */
 import { randomUUID } from "node:crypto";
 import { BadRequestException } from "@nestjs/common";
@@ -47,16 +45,14 @@ import * as schema from "../../db/schema";
 import { createTenantAwareDb } from "../../common/tenant/tenant-db";
 import { IntakeService } from "./intake.service";
 
-const ENABLED = process.env.PUBLIC_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-if (ENABLED) jest.setTimeout(180_000);
+jest.setTimeout(180_000);
 
 const suffix = randomUUID().slice(0, 8);
 const ORG = `intake-${suffix}`;
 const OWNER = `intake-owner-${suffix}`;
 const REFUSAL = "Invalid request";
 
-describeDb("public intake — a deleted project does not accept anonymous submissions", () => {
+describe("public intake — a deleted project does not accept anonymous submissions", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let service: IntakeService;
@@ -68,7 +64,7 @@ describeDb("public intake — a deleted project does not accept anonymous submis
     const appUrl = process.env.APP_DATABASE_URL;
     if (!ownerUrl || !appUrl)
       throw new Error(
-        "PUBLIC_DB_TESTS needs DATABASE_URL (owner, for the seed graph) and APP_DATABASE_URL (the RLS role)",
+        "intake-project-lifecycle.db.spec.ts requires DATABASE_URL (owner role) and APP_DATABASE_URL (the RLS role)",
       );
 
     owner = postgres(ownerUrl, { prepare: false, max: 2, connect_timeout: 30 });

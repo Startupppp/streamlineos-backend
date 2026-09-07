@@ -1,9 +1,7 @@
 /**
  * Real-database tests for the stock engine.
  *
- * Guarded by INV_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   INV_DB_TESTS=1 npx jest --runInBand --testPathPattern="stock-engine.db"
+ * Run with: pnpm test:db-specs (filter with --testPathPattern="stock-engine.db").
  *
  * These exist because the mocked engine specs cannot catch the defects that
  * actually shipped: the idempotency claim aborted its own transaction, and the
@@ -14,9 +12,6 @@ import { randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import postgres from "postgres";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 function connect() {
   if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
     // jest-setup.ts does not load .env; these specs are opt-in and need the real URL.
@@ -25,13 +20,13 @@ function connect() {
   // DATABASE_URL first: these specs create and drop scratch tables, which the
   // RLS-enforced application role is not permitted to do.
   const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
+  if (!raw) throw new Error("DATABASE_URL required");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), { prepare: false, max: 10, ssl: "require", connect_timeout: 30 });
 }
 
-describeDb("stock engine — real database", () => {
+describe("stock engine — real database", () => {
   let sql: ReturnType<typeof postgres>;
 
   beforeAll(() => {
@@ -55,8 +50,6 @@ describeDb("stock engine — real database", () => {
           ON CONFLICT DO NOTHING
           RETURNING id
         `;
-        // The transaction must still be usable — this is the read the engine
-        // performs to decide between replay and reclaim.
         const existing = await tx`SELECT id FROM inv_test_idem WHERE k = ${key}`;
         return { claimedRows: claimed.length, existingRows: existing.length };
       });
@@ -100,7 +93,6 @@ describeDb("stock engine — real database", () => {
       await sql`CREATE TABLE IF NOT EXISTS inv_test_level (id int PRIMARY KEY, on_hand numeric(18,4) NOT NULL)`;
       await sql`INSERT INTO inv_test_level (id, on_hand) VALUES (1, 1) ON CONFLICT (id) DO UPDATE SET on_hand = 1`;
 
-      // Genuinely parallel: both transactions are started before either resolves.
       const claim = async () =>
         sql.begin(async (tx) => {
           const [row] = await tx`SELECT on_hand FROM inv_test_level WHERE id = 1 FOR UPDATE`;
@@ -133,7 +125,6 @@ describeDb("stock engine — real database", () => {
       };
 
       const results = await Promise.all([claimUnsafe(), claimUnsafe()]);
-      // Read-then-write with no lock lets both through and drives stock negative.
       expect(results.filter((r) => r === "won").length).toBe(2);
       const [final] = await sql`SELECT on_hand FROM inv_test_level_nolock WHERE id = 1`;
       expect(Number(final!.on_hand)).toBe(-1);
@@ -148,7 +139,6 @@ describeDb("stock engine — real database", () => {
       await sql`TRUNCATE inv_test_ledger`;
       await sql`INSERT INTO inv_test_snapshot (id, on_hand) VALUES (1, 0) ON CONFLICT (id) DO UPDATE SET on_hand = 0`;
 
-      // Deterministic pseudo-random sequence — no Math.random, so a failure reproduces.
       const deltas: number[] = [];
       let seed = 20260811;
       for (let i = 0; i < 60; i++) {

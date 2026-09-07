@@ -22,10 +22,9 @@
  * arithmetic on `numeric(6,2) x numeric(10,2)`. A mocked builder returns
  * whatever row it was handed and would confirm a broken value.
  *
- * Opt-in, like the other database specs in this repo, so the default hermetic
- * run is unaffected:
+ * Run with:
  *
- *   DATABASE_URL=... BUILD_DB_TESTS=1 npx jest --runInBand \
+ *   DATABASE_URL=... npx jest --config jest-db.json --runInBand \
  *     --testPathPattern="projects-budget-actual-cost.db"
  */
 import { randomUUID } from "node:crypto";
@@ -40,8 +39,6 @@ import type { DataScope } from "../../access/access.types";
 import { ProjectsBudgetService } from "./projects-budget.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-const ENABLED = process.env.BUILD_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -164,7 +161,7 @@ async function dropFixtures(sql: Sql, fixtures: Fixture[]): Promise<void> {
   });
 }
 
-describeDb("project budget — actual cost comes from stamped timesheet rates", () => {
+describe("project budget — actual cost comes from stamped timesheet rates", () => {
   let sql: Sql;
   let db: Db;
   let service: ProjectsBudgetService;
@@ -172,7 +169,7 @@ describeDb("project budget — actual cost comes from stamped timesheet rates", 
 
   beforeAll(async () => {
     const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("DATABASE_URL is required for BUILD_DB_TESTS");
+    if (!url) throw new Error("projects-budget-actual-cost.db.spec.ts requires DATABASE_URL");
     sql = postgres(url, { max: 2, prepare: false });
     db = drizzle(sql, { schema });
     service = await buildService(db);

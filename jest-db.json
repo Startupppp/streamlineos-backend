@@ -1,0 +1,18 @@
+{
+  "moduleFileExtensions": ["js", "mjs", "json", "ts"],
+  "rootDir": ".",
+  "roots": ["<rootDir>/src", "<rootDir>/test"],
+  "testEnvironment": "node",
+  "testRegex": "\\.db\\.spec\\.ts$",
+  "testPathIgnorePatterns": ["node_modules", "dist"],
+  "transform": {
+    "^.+\\.ts$": ["ts-jest", { "tsconfig": { "isolatedModules": true } }],
+    "^.+\\.(j|mj)s$": ["ts-jest", { "tsconfig": { "allowJs": true, "isolatedModules": true }, "diagnostics": false }]
+  },
+  "transformIgnorePatterns": [
+    "/node_modules/(?!(?:\\.pnpm/)?(?:@scure|otplib|@otplib|@noble|@composio|@openrouter|@ai-sdk|@workflow|@standard-schema|eventsource-parser|ai)[@/+])"
+  ],
+  "setupFiles": ["<rootDir>/src/test/jest-setup.ts"],
+  "moduleNameMapper": { "^src/(.*)$": "<rootDir>/src/$1", "^test/(.*)$": "<rootDir>/test/$1" },
+  "workerIdleMemoryLimit": "1GB"
+}

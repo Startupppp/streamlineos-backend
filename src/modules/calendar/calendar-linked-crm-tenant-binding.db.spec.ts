@@ -32,9 +32,9 @@
  * pins that this connection can in fact read org B's deal, so a guard that did nothing would be
  * observed doing nothing.
  *
- * Guarded by CALENDAR_DB_TESTS=1 so the default hermetic run is unaffected. Run with:
- *   CALENDAR_DB_TESTS=1 DATABASE_URL=postgres://neondb_owner@localhost:5432/scratch_gates_head \
- *     npx jest --runInBand --forceExit --testPathPattern="calendar-linked-crm-tenant-binding"
+ * Run with:
+ *   DATABASE_URL=postgres://neondb_owner@localhost:5432/scratch_gates_head \
+ *     npx jest --config jest-db.json --runInBand --forceExit --testPathPattern="calendar-linked-crm-tenant-binding"
  *
  * Everything happens inside a transaction that is rolled back, fixtures included.
  */
@@ -46,16 +46,13 @@ import { NotFoundException } from "@nestjs/common";
 import { assertLinkedCrmRecordsInOrg } from "./calendar-linked-crm";
 import type { TenantTx } from "../../db/drizzle.types";
 
-const ENABLED = process.env.CALENDAR_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-if (ENABLED) jest.setTimeout(120_000);
+jest.setTimeout(120_000);
 
 class Rollback extends Error {}
 
 function connect() {
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for CALENDAR_DB_TESTS");
+  if (!raw) throw new Error("calendar-linked-crm-tenant-binding.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
@@ -125,7 +122,7 @@ async function seed(tx: TenantTx): Promise<Seed> {
   };
 }
 
-describeDb("calendar linked deal/lead — tenant binding against a real database", () => {
+describe("calendar linked deal/lead — tenant binding against a real database", () => {
   let client: ReturnType<typeof connect>;
 
   beforeAll(() => {

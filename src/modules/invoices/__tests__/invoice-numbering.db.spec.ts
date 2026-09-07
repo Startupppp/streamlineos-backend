@@ -1,8 +1,7 @@
 /**
  * Real-database test for invoice number race-safety.
  *
- * Guarded by INV_DB_TESTS=1 — same flag as stock-engine.db.spec.ts.
- * Run with: INV_DB_TESTS=1 npx jest --runInBand --testPathPattern="invoice-numbering.db"
+ * Run with: pnpm test:db-specs (filter with --testPathPattern="invoice-numbering.db").
  *
  * The service uses pg_advisory_xact_lock(hashtext(orgId || 'invoice')) inside
  * the transaction, then counts ALL org invoices (unfiltered — no status or
@@ -18,15 +17,12 @@ import { randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import postgres from "postgres";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 function connect() {
   if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
     dotenv.config({ path: ".env" });
   }
   const raw = process.env.DATABASE_URL ?? process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
+  if (!raw) throw new Error("DATABASE_URL required");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   // TLS is hardcoded nowhere else in this repo's DB tooling; honouring PGSSLMODE
@@ -40,7 +36,7 @@ function connect() {
   });
 }
 
-describeDb("invoice numbering — real database", () => {
+describe("invoice numbering — real database", () => {
   let sql: ReturnType<typeof connect>;
 
   beforeAll(() => {

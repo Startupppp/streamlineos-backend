@@ -55,7 +55,8 @@
  * The two halves below are written so that the MODEL of the database refuses an
  * untenanted read, which is the one property every existing fake gets wrong.
  *
- *   SERVICE — no database, runs in the default suite, red without the fix.
+ *   SERVICE — no database, runs in the default suite; lives in
+ *   `chat-assistant-tenant-context.spec.ts`, red without the fix.
  *     Drives the real `ChatAssistantService`, the real `ChatHistoryService`, the
  *     real `fetchChatContext`, the real `createTenantAwareDb` proxy and the real
  *     `runInTenantTransaction` against a handle that denies any table access
@@ -67,11 +68,10 @@
  *   transaction, and that `processChat` completes end to end. Every write is
  *   rolled back.
  *
- *     AI_DB_TESTS=1 \
  *     APP_DATABASE_URL="postgresql://streamline_app:…@localhost:5432/scratch_head_1010" \
  *     DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
  *     PGSSLMODE=disable TZ=Asia/Kolkata \
- *     npx jest --runInBand --testPathPattern="chat-assistant-tenant-context"
+ *     npx jest --config jest-db.json --runInBand --testPathPattern="chat-assistant-tenant-context"
  */
 jest.mock("ai", () => ({
   streamText: jest.fn(() => ({})),
@@ -85,290 +85,24 @@ jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.f
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
 
-import { NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../../../../db/schema";
-import { projects } from "../../../../db/schema";
-import { eq } from "drizzle-orm";
 import { createTenantAwareDb, type DbWithClient } from "../../../../common/tenant/tenant-db";
-import { getTenantContext } from "../../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
-import { primeRelocationTrafficTracker } from "../../../../common/relocation/relocation-traffic-tracker";
-import { humanSessionPrincipal } from "../../../../common/auth/principal";
-import { getPostgresErrorDetails } from "../../../../common/db/postgres-error";
-import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import type { Db } from "../../../../db/drizzle.module";
-import type { AiCreditLedger } from "../gateway/credit-ledger.interface";
-import type { AiUsageService } from "./ai-usage.service";
-import { ChatAssistantService } from "./chat-assistant.service";
 import { ChatHistoryService } from "./chat-history.service";
 import { fetchChatContext } from "./chat-assistant-context";
-
-/** The literal text `app.current_org_id()` raises. Matched, not paraphrased. */
-const DENIED_MESSAGE =
-  "no tenant context: app.organization_id is not set for this transaction";
-
-const DENIED = /no tenant context/;
+import { actorFor, makeLedger, buildService, sqlstateOfRejection } from "./chat-assistant-tenant-context-fixtures";
 
 /** The SQLSTATE `app.current_org_id()` raises with. */
 const INSUFFICIENT_PRIVILEGE = "42501";
-
-/**
- * Drizzle wraps every driver error in a `DrizzleQueryError` whose message is
- * `Failed query: <sql>` and which carries no `code` — the SQLSTATE is one
- * `cause` link down. Asserting on the wrapper's message would pass for any
- * failed query at all, so the catalog half reads the code off the driver error
- * through the repo's own classifier.
- */
-async function sqlstateOfRejection(run: () => Promise<unknown>): Promise<string | undefined> {
-  const error: unknown = await run().then(
-    () => undefined,
-    (e: unknown) => e,
-  );
-  expect(error).toBeDefined();
-  return getPostgresErrorDetails(error).code;
-}
-
-function actorFor(orgId: string, userId: string, membershipId: number): CurrentUserContext {
-  return {
-    userId,
-    orgId,
-    role: "ADMIN",
-    isOrgOwner: false,
-    sessionId: "sess_chat_guc",
-    tokenScopes: null,
-    principal: humanSessionPrincipal(membershipId, false),
-  };
-}
-
-function makeLedger(): jest.Mocked<AiCreditLedger> {
-  return {
-    reserve: jest.fn().mockResolvedValue({ reservationId: 4242 }),
-    settle: jest.fn().mockResolvedValue(undefined),
-    release: jest.fn().mockResolvedValue(undefined),
-  } as jest.Mocked<AiCreditLedger>;
-}
-
-function makeUsageSvc(): jest.Mocked<AiUsageService> {
-  return { track: jest.fn().mockResolvedValue(undefined) } as unknown as jest.Mocked<AiUsageService>;
-}
-
-/**
- * Builds the real service over a real `ChatHistoryService` on `db`. Only the
- * things the defect is not about — the credit ledger, the concurrency limiter,
- * the copilot tool sets, the provider — are stubbed. `fetchContext` is NOT
- * stubbed; the whole point is where it runs from.
- */
-function buildService(db: Db, ledger: jest.Mocked<AiCreditLedger>): ChatAssistantService {
-  const noop = { buildTools: jest.fn().mockReturnValue({}) };
-  const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
-  const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
-  const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
-
-  return new ChatAssistantService(
-    db,
-    { ask: jest.fn(), summarize: jest.fn() } as unknown as never,
-    new ChatHistoryService(db),
-    noop as unknown as never,
-    noop as unknown as never,
-    noop as unknown as never,
-    noop as unknown as never,
-    noop as unknown as never,
-    noop as unknown as never,
-    noop as unknown as never,
-    noop as unknown as never,
-    toolAccess as unknown as never,
-    moduleRef as unknown as never,
-    makeUsageSvc(),
-    ledger,
-    null,
-    limiter as unknown as never,
-  );
-}
-
-/* ----------------------------------------------------------------- SERVICE */
-
-/**
- * A Drizzle-shaped builder that resolves to `rows`. Every chained method
- * (`.from`, `.innerJoin`, `.where`, `.orderBy`, `.limit`, `.values`, `.set`,
- * `.returning`) answers with itself, and awaiting it yields `rows`.
- */
-function thenableChain(rows: readonly unknown[]): object {
-  let chain: object;
-  chain = new Proxy(
-    {},
-    {
-      get(_target, prop) {
-        if (typeof prop === "symbol") return undefined;
-        if (prop === "then")
-          return (
-            onFulfilled: (value: readonly unknown[]) => unknown,
-            onRejected?: (reason: unknown) => unknown,
-          ) => Promise.resolve(rows).then(onFulfilled, onRejected);
-        return () => chain;
-      },
-    },
-  );
-  return chain;
-}
-
-/** `db.query.<table>.findFirst()` / `.findMany()`, guarded like a real read. */
-function relationalQuery(guard: () => void): object {
-  const table = new Proxy(
-    {},
-    {
-      get(_target, prop) {
-        if (typeof prop === "symbol") return undefined;
-        return async () => {
-          guard();
-          return prop === "findFirst" ? undefined : [];
-        };
-      },
-    },
-  );
-  return new Proxy(
-    {},
-    { get: (_target, prop) => (typeof prop === "symbol" ? undefined : table) },
-  );
-}
-
-interface DenyingHandle {
-  db: Db;
-  /** Statements that reached the handle, in order, tagged tenanted or not. */
-  readonly log: string[];
-}
-
-/**
- * Models the one property every existing chat fake gets wrong: a statement
- * against an RLS table is REFUSED unless it carries the tenant GUC, and the GUC
- * exists only inside a tenant transaction. `execute` is unguarded because the
- * statement `withTenant` runs first is `SELECT set_config(…)`, which touches no
- * policy — that is what establishes the context for everything after it.
- */
-function denyingHandle(): DenyingHandle {
-  const log: string[] = [];
-
-  const guard = (): void => {
-    const tenanted = getTenantContext() !== undefined;
-    log.push(tenanted ? "tenanted" : "untenanted");
-    if (!tenanted) throw new Error(DENIED_MESSAGE);
-  };
-
-  const statement = (): object => {
-    guard();
-    return thenableChain([]);
-  };
-
-  const handle = {
-    select: statement,
-    insert: statement,
-    update: statement,
-    delete: statement,
-    execute: async () => [],
-    query: relationalQuery(guard),
-    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(handle),
-    __client: { end: async () => undefined },
-  };
-
-  // The single seam against a type built outside this file: a stand-in for a
-  // Drizzle client, the idiom the spec suite already uses everywhere.
-  return { db: createTenantAwareDb(handle as unknown as DbWithClient), log };
-}
-
-/**
- * `withTenant` refreshes the relocation-target cache on the bare pool by design —
- * `organization_relocations` carries `relrowsecurity = f`, so a real deployment
- * answers it without a GUC. Priming the cache keeps that one legitimate
- * untenanted read out of the log the assertions below read, and out of the
- * 30-second window that would otherwise make it fire in one test and not the next.
- */
-beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
-
-describe("the model of the database used below refuses an untenanted statement", () => {
-  it("denies a read issued outside a tenant transaction", async () => {
-    const { db } = denyingHandle();
-    await expect(
-      (async () => db.select().from(projects).where(eq(projects.orgId, "org")))(),
-    ).rejects.toThrow(DENIED);
-  });
-
-  it("allows the same read inside one", async () => {
-    const { db } = denyingHandle();
-    await expect(
-      runInNewTenantTransaction(db, "org", async () =>
-        db.select().from(projects).where(eq(projects.orgId, "org")),
-      ),
-    ).resolves.toEqual([]);
-  });
-});
-
-describe("ChatAssistantService.processChat carries a tenant context (SERVICE)", () => {
-  const ORG = "org_chat_guc";
-  const USER = "user_chat_guc";
-  const ACTOR = actorFor(ORG, USER, 11);
-
-  beforeEach(() => jest.clearAllMocks());
-
-  it("does not 500 on the bare pool under @NoTenantTransaction()", async () => {
-    const { db } = denyingHandle();
-    const ledger = makeLedger();
-    const svc = buildService(db, ledger);
-
-    await expect(
-      svc.processChat([{ role: "user", content: "how many open tickets do I have?" }], ACTOR),
-    ).resolves.toBeDefined();
-
-    expect(ledger.release).not.toHaveBeenCalled();
-  });
-
-  it("issues every pre-stream statement inside a tenant transaction", async () => {
-    const { db, log } = denyingHandle();
-    const svc = buildService(db, makeLedger());
-
-    await svc
-      .processChat([{ role: "user", content: "hello" }], ACTOR)
-      .catch(() => undefined);
-
-    expect(log.length).toBeGreaterThan(0);
-    expect(log).not.toContain("untenanted");
-  });
-
-  /**
-   * The outcome assertion is now `rejects`, and that is the FIX being pinned,
-   * not a relaxation. Conversation 77 does not belong to this actor in the model
-   * below — nothing does — and `appendMessageToConversation` used to key its
-   * SELECT and both UPDATEs on the bare `id`, so the turn completed and wrote
-   * into a conversation the caller had no claim to. Completing is the defect;
-   * a `NotFoundException` is the corrected behaviour, and it is a stricter
-   * assertion than the `toBeDefined()` it replaces. The tenant-context claim
-   * this test exists for is unchanged and still checked on the line below: the
-   * ownership SELECT is issued, and it is issued inside a tenant transaction.
-   */
-  it("also carries one on the conversation-scoped append, which refuses a conversation the caller does not own", async () => {
-    const { db, log } = denyingHandle();
-    const svc = buildService(db, makeLedger());
-
-    await expect(
-      svc.processChat([{ role: "user", content: "hello" }], ACTOR, 77),
-    ).rejects.toBeInstanceOf(NotFoundException);
-
-    expect(log.length).toBeGreaterThan(0);
-    expect(log).not.toContain("untenanted");
-  });
-});
-
-/* ----------------------------------------------------------------- CATALOG */
-
-const ENABLED = process.env.AI_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
 
 const suffix = randomUUID().slice(0, 8);
 const DB_ORG = `aichat-${suffix}`;
 const DB_USER = `aichat-user-${suffix}`;
 
-describeDb("Ask-OS chat against a live Postgres as the app role (CATALOG)", () => {
+describe("Ask-OS chat against a live Postgres as the app role (CATALOG)", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let appDb: DbWithClient;
@@ -379,7 +113,7 @@ describeDb("Ask-OS chat against a live Postgres as the app role (CATALOG)", () =
     const appUrl = process.env.APP_DATABASE_URL;
     if (!ownerUrl || !appUrl)
       throw new Error(
-        "AI_DB_TESTS needs DATABASE_URL (owner, seeds) and APP_DATABASE_URL (the non-owner RLS role)",
+        "DATABASE_URL (owner, seeds) and APP_DATABASE_URL (the non-owner RLS role) are both required",
       );
 
     owner = postgres(ownerUrl, { prepare: false, max: 2, connect_timeout: 30 });
@@ -388,8 +122,6 @@ describeDb("Ask-OS chat against a live Postgres as the app role (CATALOG)", () =
       Object.assign(drizzle(appClient, { schema }), { __client: appClient }),
     );
 
-    // organizations ⇄ organization_members is circular and DEFERRABLE, so both
-    // go in inside one transaction with the owner pointer corrected before commit.
     await owner.begin(async (tx) => {
       await tx`SET CONSTRAINTS ALL DEFERRED`;
       await tx`INSERT INTO users (id, email, name) VALUES (${DB_USER}, ${`${DB_USER}@ai-chat.invalid`}, 'Ask-OS probe')`;

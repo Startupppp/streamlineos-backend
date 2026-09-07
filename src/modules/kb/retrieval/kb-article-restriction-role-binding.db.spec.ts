@@ -22,8 +22,8 @@
  *
  *   APP_DATABASE_URL="postgresql://streamline_app@localhost:5432/scratch_head_1010" \
  *   DATABASE_URL="postgresql://neondb_owner@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable KB_DB_TESTS=1 \
- *   npx jest --runInBand --testPathPattern="kb-article-restriction-role-binding.db"
+ *   PGSSLMODE=disable \
+ *   pnpm test:db-specs --testPathPattern="kb-article-restriction-role-binding.db"
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -35,16 +35,13 @@ import { createTenantAwareDb } from "../../../common/tenant/tenant-db";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { KbCandidateService } from "./kb-candidate.service";
 
-const ENABLED = process.env.KB_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 const suffix = randomUUID().slice(0, 8);
 const ORG = `kbrestr-${suffix}`;
 const PROBE_USER = `kbrestr-user-${suffix}`;
 const ROLE_A = `KBRESTR_A_${suffix.toUpperCase()}`;
 const ROLE_B = `KBRESTR_B_${suffix.toUpperCase()}`;
 
-describeDb("KB article restriction filter binds role slugs as an array", () => {
+describe("KB article restriction filter binds role slugs as an array", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let base: ReturnType<typeof drizzle<typeof schema>>;
@@ -57,7 +54,7 @@ describeDb("KB article restriction filter binds role slugs as an array", () => {
     const ownerUrl = process.env.DATABASE_URL;
     const appUrl = process.env.APP_DATABASE_URL;
     if (!ownerUrl || !appUrl)
-      throw new Error("KB_DB_TESTS needs DATABASE_URL (owner, seeds) and APP_DATABASE_URL (RLS role)");
+      throw new Error("kb-article-restriction-role-binding.db.spec.ts requires DATABASE_URL (owner) and APP_DATABASE_URL (RLS role)");
 
     owner = postgres(ownerUrl, { prepare: false, max: 2, connect_timeout: 30 });
     appClient = postgres(appUrl, { prepare: false, max: 2, connect_timeout: 30 });

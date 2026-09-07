@@ -4,10 +4,10 @@
  *
  * Two halves, because neither alone is sufficient.
  *
- * The declaration half runs in the default hermetic suite. It catches the one
- * shape Drizzle can express and get wrong — a SET NULL foreign key with no
- * nullable member at all — at the moment the schema is edited, before any
- * migration is written.
+ * The declaration half lives in `set-null-column-lists.spec.ts` and runs in the
+ * default hermetic suite. It catches the one shape Drizzle can express and get
+ * wrong — a SET NULL foreign key with no nullable member at all — at the moment
+ * the schema is edited, before any migration is written.
  *
  * The catalog half needs a bootstrapped database, because the column list lives
  * only in `pg_constraint.confdelsetcols`. Drizzle cannot declare it and
@@ -29,7 +29,6 @@ import {
 } from "./set-null-column-lists";
 
 const GATE_URL = process.env.SET_NULL_GATE_DATABASE_URL;
-const describeCatalog = GATE_URL ? describe : describe.skip;
 
 type UnreachableRow = {
   schema: string;
@@ -48,21 +47,7 @@ type ColumnSetRow = {
 
 const declarations = () => deriveSetNullDeclarations(schema as Record<string, unknown>);
 
-describe("ON DELETE SET NULL declarations", () => {
-  it("declares no SET NULL foreign key whose columns are all non-nullable", () => {
-    const offenders = declarations().unreachable.map(
-      (fk) => `${fk.table}.${fk.constraint} (${fk.columns.join(", ")})`,
-    );
-    expect(offenders).toEqual([]);
-  });
-
-  it("finds composite SET NULL foreign keys that the catalog must carry a column list for", () => {
-    const needList = declarations().declared.filter((fk) => fk.requiresColumnList);
-    expect(needList.length).toBeGreaterThan(0);
-  });
-});
-
-describeCatalog("ON DELETE SET NULL column lists in pg_catalog", () => {
+describe("ON DELETE SET NULL column lists in pg_catalog", () => {
   let sql: postgres.Sql;
 
   beforeAll(() => {
@@ -95,9 +80,8 @@ describeCatalog("ON DELETE SET NULL column lists in pg_catalog", () => {
       if (!row) continue;
       const expected = [...fk.setNullColumns].sort();
       const actual = [...(row.set_null_columns ?? [])].sort();
-      if (expected.join(",") !== actual.join(",")) {
+      if (expected.join(",") !== actual.join(","))
         mismatches.push(`${key}: catalog nulls [${actual.join(", ")}], declaration implies [${expected.join(", ")}]`);
-      }
     }
     expect(mismatches).toEqual([]);
   });

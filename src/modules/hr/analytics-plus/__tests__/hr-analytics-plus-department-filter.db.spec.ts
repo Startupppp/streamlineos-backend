@@ -1,8 +1,8 @@
 /**
  * Real-database regression for the analytics-plus department filter.
  *
- * Guarded by HR_DB_TESTS=1. Run with:
- *   HR_DB_TESTS=1 DATABASE_URL=... npx jest --runInBand \
+ * Run with `pnpm test:db-specs` or:
+ *   DATABASE_URL=... node ./node_modules/jest/bin/jest.js --config jest-db.json --runInBand \
  *     --testPathPattern="hr-analytics-plus-department-filter.db"
  *
  * /leave-trends, /compliance-gaps and /drilldown all accepted a departmentId,
@@ -24,9 +24,6 @@ import type { Db } from "../../../../db/drizzle.types";
 import { fetchLeaveTrends, fetchComplianceGaps } from "../hr-analytics-plus-trends";
 import { fetchDrilldownPage } from "../hr-analytics-plus-drilldown";
 import { departmentMemberFilter } from "../hr-analytics-plus-department-filter";
-
-const ENABLED = process.env.HR_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
 
 /**
  * The seeded reference tenant, not the `kbprobe-a` this file used to name. That org is created
@@ -53,14 +50,14 @@ function connect() {
     dotenv.config({ path: ".env" });
   }
   const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for HR_DB_TESTS");
+  if (!raw) throw new Error("hr-analytics-plus-department-filter.db.spec.ts requires DATABASE_URL or APP_DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const ssl = url.hostname === "localhost" || url.hostname === "127.0.0.1" ? false : "require";
   return postgres(url.toString(), { prepare: false, max: 4, ssl, connect_timeout: 30 });
 }
 
-describeDb("hr analytics-plus department filter — real database", () => {
+describe("hr analytics-plus department filter — real database", () => {
   let sql_: ReturnType<typeof connect>;
   let db: Db;
 

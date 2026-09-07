@@ -22,128 +22,40 @@
  * (org_id, source_type, source_id, source_event) and source_id IS that varied id
  * (provider-bridge.service.ts). One real payment, N debits of BANK_CLEARING.
  *
- * Two halves, and the first runs everywhere:
- *
- *   HERMETIC — pins the precedence itself. The header may cross-check the signed
- *   envelope; it may never BE the key. No database.
- *
  *   CATALOG — executes the production insert against the real unique index and
  *   counts rows, because the amplification is a property of Postgres index
- *   inference, not of the resolver. Guarded by BILLING_DB_TESTS=1 in the house
- *   `.db.spec.ts` style; everything runs inside a transaction that is rolled back.
+ *   inference, not of the resolver. Everything runs inside a transaction that
+ *   is rolled back.
  *
- *     BILLING_DB_TESTS=1 DATABASE_URL=postgresql://… \
- *       npx jest --runInBand --testPathPattern="payment-webhook-event-id-precedence"
+ *   DATABASE_URL=postgresql://… \
+ *     pnpm test:db-specs --testNamePattern="webhook event id precedence — real arbiter"
  */
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { organizations, paymentProviders, paymentWebhookEvents } from "../../../db/schema";
 import { resolveProviderEventId } from "./payment-webhook-receiver.service";
+import { headResolveProviderEventId, SIGNED_BODY } from "./payment-webhook-event-id-precedence-fixtures";
 
-/** The exact precedence that shipped at journal head, kept so the net proves it bites. */
-function headResolveProviderEventId(
-  header: string | undefined,
-  normalized: { providerEventId?: string },
-  rawBody: string,
-): { ok: true; id: string } | { ok: false } {
-  const supplied = header?.trim();
-  if (supplied && normalized.providerEventId && supplied !== normalized.providerEventId) {
-    return { ok: false };
-  }
-  return {
-    ok: true,
-    id: supplied || normalized.providerEventId || createHash("sha256").update(rawBody).digest("hex"),
-  };
-}
-
-/** One captured, correctly-signed Razorpay-shaped body. No top-level `id`, as Razorpay sends. */
-const SIGNED_BODY = JSON.stringify({
-  event: "payment.captured",
-  payload: {
-    payment: {
-      entity: { id: "pay_replay_001", amount: 49900, currency: "INR", status: "captured" },
-    },
-  },
-});
-
-const BODY_DIGEST = createHash("sha256").update(SIGNED_BODY).digest("hex");
-
-describe("webhook event id precedence — hermetic", () => {
-  it("an unsigned header never becomes the key when the signed envelope carries no id", () => {
-    // The vulnerable branch, and the ordinary Razorpay branch.
-    const resolved = resolveProviderEventId("attacker-chosen-1", {}, SIGNED_BODY);
-    expect(resolved).toEqual({ ok: true, id: BODY_DIGEST });
-    expect(resolved).not.toEqual({ ok: true, id: "attacker-chosen-1" });
-  });
-
-  it("N different headers over ONE signed body collapse to ONE key", () => {
-    const keys = new Set(
-      Array.from({ length: 25 }, (_, i) => resolveProviderEventId(`forged-${i}`, {}, SIGNED_BODY)).map(
-        (r) => (r.ok ? r.id : "rejected"),
-      ),
-    );
-    expect(keys).toEqual(new Set([BODY_DIGEST]));
-  });
-
-  it("the head form is what produced N keys — this is the defect, stated", () => {
-    const keys = new Set(
-      Array.from({ length: 25 }, (_, i) => headResolveProviderEventId(`forged-${i}`, {}, SIGNED_BODY)).map(
-        (r) => (r.ok ? r.id : "rejected"),
-      ),
-    );
-    expect(keys.size).toBe(25);
-  });
-
-  it("a signed envelope id still wins over the body digest", () => {
-    expect(resolveProviderEventId(undefined, { providerEventId: "evt_signed" }, SIGNED_BODY)).toEqual({
-      ok: true,
-      id: "evt_signed",
-    });
-  });
-
-  it("an agreeing header changes nothing", () => {
-    expect(resolveProviderEventId("evt_signed", { providerEventId: "evt_signed" }, SIGNED_BODY)).toEqual({
-      ok: true,
-      id: "evt_signed",
-    });
-  });
-
-  it("a disagreeing header is still a 400, not a silently ignored one", () => {
-    expect(resolveProviderEventId("header-id", { providerEventId: "body-id" }, "{}")).toEqual({ ok: false });
-  });
-
-  it("an empty signed id falls through to the digest rather than collapsing every event onto ''", () => {
-    expect(resolveProviderEventId(undefined, { providerEventId: "   " }, SIGNED_BODY)).toEqual({
-      ok: true,
-      id: BODY_DIGEST,
-    });
-  });
-
-  it("the digest is stable across calls, so a genuine provider retry still dedupes", () => {
-    expect(resolveProviderEventId(undefined, {}, SIGNED_BODY)).toEqual(
-      resolveProviderEventId("some-header", {}, SIGNED_BODY),
-    );
-  });
-});
-
-const ENABLED = process.env.BILLING_DB_TESTS === "1";
 const DB_URL = process.env.BILLING_PROBE_DATABASE_URL ?? process.env.DATABASE_URL;
-const describeDb = ENABLED && DB_URL ? describe : describe.skip;
+if (!DB_URL)
+  throw new Error(
+    "payment-webhook-event-id-precedence.db.spec requires BILLING_PROBE_DATABASE_URL or DATABASE_URL",
+  );
 
 class Rollback extends Error {}
 
-describeDb("webhook event id precedence — real arbiter", () => {
+describe("webhook event id precedence — real arbiter", () => {
   let client: postgres.Sql;
   let db: ReturnType<typeof drizzle>;
   let orgId: string;
 
   beforeAll(async () => {
-    client = postgres(DB_URL as string, { max: 1, prepare: false, onnotice: () => undefined });
+    client = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => undefined });
     db = drizzle(client);
     const [row] = await db.select({ id: organizations.id }).from(organizations).limit(1);
-    if (!row) throw new Error("BILLING_DB_TESTS needs a database with at least one organizations row");
+    if (!row) throw new Error("payment-webhook-event-id-precedence.db.spec needs a database with at least one organizations row");
     orgId = row.id;
   });
 

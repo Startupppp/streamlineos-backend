@@ -1,12 +1,12 @@
 /**
  * Real-database proof that KB vector retrieval hands back the pool it was asked for.
  *
- * Guarded by `KB_DB_TESTS=1` so the default hermetic `jest` run is unaffected and CI
- * without a database does not fail. Run with:
+ * Run via `pnpm test:db-specs` (uses jest-db.json, which selects *.db.spec.ts only).
+ * The default hermetic jest config ignores this file entirely.
  *
  *   APP_DATABASE_URL="postgresql://streamline_app:...@localhost:5432/scratch_head_1010" \
  *   DATABASE_URL="postgresql://tarunchintakunta@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable KB_DB_TESTS=1 npx jest --runInBand --testPathPattern="kb-vector-recall.db"
+ *   PGSSLMODE=disable npx jest --config jest-db.json --runInBand --testPathPattern="kb-vector-recall.db"
  *
  * WHY A REAL DATABASE. `kb-hnsw-iterative-scan.spec.ts` mocks `db.execute` and matches the
  * SQL text. It certifies that the `SET LOCAL hnsw.iterative_scan` statement is *issued*; it
@@ -39,9 +39,6 @@ import { createTenantAwareDb } from "../../../common/tenant/tenant-db";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { KbCandidateService } from "./kb-candidate.service";
 
-const ENABLED = process.env.KB_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 /** Chunks the target tenant owns. Must exceed CAP so a full pool is actually available. */
 const TENANT_CHUNKS = 320;
 /** Chunks belonging to a second tenant, so the org predicate has something to exclude. */
@@ -60,7 +57,7 @@ function connect(url: string, max: number) {
   return postgres(url, { prepare: false, max, connect_timeout: 30 });
 }
 
-describeDb("KB vectorChunkIds — candidate pool recall against Postgres", () => {
+describe("KB vectorChunkIds — candidate pool recall against Postgres", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let appDb: ReturnType<typeof createTenantAwareDb>;
@@ -72,7 +69,7 @@ describeDb("KB vectorChunkIds — candidate pool recall against Postgres", () =>
     const ownerUrl = process.env.DATABASE_URL;
     const appUrl = process.env.APP_DATABASE_URL;
     if (!ownerUrl || !appUrl)
-      throw new Error("KB_DB_TESTS needs both DATABASE_URL (owner, seeds) and APP_DATABASE_URL (RLS role)");
+      throw new Error("kb-vector-recall.db.spec.ts requires DATABASE_URL (owner, seeds) and APP_DATABASE_URL (RLS role)");
 
     owner = connect(ownerUrl, 2);
     appClient = connect(appUrl, 2);

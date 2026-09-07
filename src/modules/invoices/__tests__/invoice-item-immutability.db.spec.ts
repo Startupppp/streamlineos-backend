@@ -17,10 +17,9 @@
  * a mocked `tx.update()` returns whatever it was told to. Only the real UPDATE,
  * refused by the real trigger, shows it.
  *
- * Guarded by INV_DB_TESTS=1, the flag the sibling `.db.spec` files use, so the
- * default hermetic `jest` run is unaffected. Run with:
- *   INV_DB_TESTS=1 PGSSLMODE=disable DATABASE_URL=... \
- *     npx jest --runInBand --testPathPattern="invoice-item-immutability.db"
+ * Run with:
+ *   PGSSLMODE=disable DATABASE_URL=... \
+ *     pnpm test:db-specs --testPathPattern="invoice-item-immutability.db"
  *
  * Everything runs inside a transaction that is rolled back, fixtures included.
  */
@@ -32,9 +31,6 @@ import * as schema from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import { PG_CHECK_VIOLATION, isCheckViolation } from "../../../common/db/postgres-error";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
 
@@ -44,7 +40,7 @@ type NestedTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
+  if (!raw) throw new Error("invoice-item-immutability.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), {
@@ -56,7 +52,7 @@ function connect() {
   });
 }
 
-describeDb("invoice_items are immutable once their invoice leaves DRAFT — real database", () => {
+describe("invoice_items are immutable once their invoice leaves DRAFT — real database", () => {
   let client: ReturnType<typeof connect>;
   let db: Db;
 
@@ -91,7 +87,7 @@ describeDb("invoice_items are immutable once their invoice leaves DRAFT — real
           .limit(1);
         const [user] = await tx.select({ id: schema.users.id }).from(schema.users).limit(1);
         if (!org || !user)
-          throw new Error("INV_DB_TESTS needs at least one organization and one user");
+          throw new Error("invoice-item-immutability.db.spec.ts needs at least one organization and one user");
 
         const [invoice] = await tx
           .insert(schema.invoices)

@@ -3,9 +3,8 @@
  * holding an email address, a telephone number or a WhatsApp number has an
  * identifier row for it.
  *
- * Guarded by CRM_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   CRM_DB_TESTS=1 npx jest --runInBand --testPathPattern="party-identifiers.db"
+ * Run via `pnpm test:db-specs`. The default hermetic jest config ignores this file.
+ *   DATABASE_URL=... npx jest --config jest-db.json --runInBand --testPathPattern="party-identifiers.db"
  *
  * Totality is the one property a mocked database cannot demonstrate — a fake
  * answers whatever it was told to answer, so a backfill whose anti-join is
@@ -30,10 +29,6 @@ import dotenv from "dotenv";
 import postgres from "postgres";
 import { normaliseIdentifier, type IdentifierKind } from "../ingress/inbound-event";
 
-const ENABLED = process.env.CRM_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-/** Read on demand: the default hermetic run loads this file only to skip it. */
 const migration = (name: string): string =>
   readFileSync(join(__dirname, "..", "..", "..", "migrations", name), "utf8");
 
@@ -45,7 +40,7 @@ function connect() {
   // DATABASE_URL, not APP_DATABASE_URL: applying the migration needs DDL rights
   // the RLS-enforced application role does not have.
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for CRM_DB_TESTS");
+  if (!raw) throw new Error("party-identifiers.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), {
@@ -76,7 +71,7 @@ const FORMATS: { kind: IdentifierKind; written: string }[] = [
   { kind: "whatsapp", written: "0044 7700 900123" },
 ];
 
-describeDb("party identifiers — real database", () => {
+describe("party identifiers — real database", () => {
   // Every test here drops party_identifiers and re-runs the backfill across the
   // tenant's whole business_parties table, which `withBackfill` already declares
   // may take up to 60s (`SET LOCAL statement_timeout`). Jest's unstated 5s default
@@ -117,7 +112,7 @@ describeDb("party identifiers — real database", () => {
 
         const [org] = await tx`SELECT id FROM organizations LIMIT 1`;
         if (!org)
-          throw new Error("CRM_DB_TESTS needs at least one organization to scope fixtures to");
+          throw new Error("party-identifiers.db.spec.ts requires at least one seeded organization");
         const orgId = org.id as string;
         const marker = randomUUID().slice(0, 8);
 

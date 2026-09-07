@@ -9,9 +9,8 @@
  * connection to see it. `due_at is null` as a sort key and a keyset that has to
  * step across the null group are the same kind of claim.
  *
- * Guarded by CRM_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   CRM_DB_TESTS=1 npx jest --runInBand --testPathPattern="activity-cursors.db"
+ * Run with:
+ *   npx jest --config jest-db.json --runInBand --testPathPattern="activity-cursors.db"
  *
  * Everything happens inside a transaction that is rolled back, fixtures
  * included, so the tests leave the database exactly as they found it.
@@ -27,10 +26,7 @@ import type { AuditService } from "../../common/audit/audit.service";
 import type { Db } from "../../db/drizzle.types";
 import type { TaskPage } from "./task-list";
 
-const ENABLED = process.env.CRM_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-if (ENABLED) jest.setTimeout(120_000);
+jest.setTimeout(120_000);
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
@@ -38,7 +34,7 @@ class Rollback extends Error {}
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for CRM_DB_TESTS");
+  if (!raw) throw new Error("activity-cursors.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), {
@@ -72,7 +68,7 @@ const IN_DUE_ORDER = [
   "Someday: tidy the notes",
 ];
 
-describeDb("activity cursors — real database", () => {
+describe("activity cursors — real database", () => {
   let client: ReturnType<typeof postgres>;
   let db: Db;
 
@@ -102,7 +98,7 @@ describeDb("activity cursors — real database", () => {
 
         const org = await tx.execute<{ id: string }>(sql`SELECT id FROM organizations LIMIT 1`);
         const orgId = org[0]?.id;
-        if (!orgId) throw new Error("CRM_DB_TESTS needs at least one organization to scope fixtures to");
+        if (!orgId) throw new Error("activity-cursors.db.spec.ts needs at least one organization to scope fixtures to");
         const userId = `mt-${randomUUID()}`;
         const partyId = randomUUID();
 

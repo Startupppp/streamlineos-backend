@@ -14,8 +14,8 @@
  * fixture. Rows are seeded under a unique id prefix on an existing organisation
  * and deleted in `finally`, leaving the database as it was found.
  *
- *   ACCESS_DB_TESTS=1 DATABASE_URL=postgresql://… \
- *     npx jest --runInBand --testPathPattern="delegation-grant-drain.db"
+ *   DATABASE_URL=postgresql://… \
+ *     npx jest --config jest-db.json --runInBand --testPathPattern="delegation-grant-drain.db"
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, gt, like } from "drizzle-orm";
@@ -35,11 +35,9 @@ import {
 } from "../../../db/schema";
 import { drainDelegatedPermissionGrants } from "../access-grant-drains";
 
-const ENABLED = process.env.ACCESS_DB_TESTS === "1";
 const DB_URL = process.env.ACCESS_PROBE_DATABASE_URL ?? process.env.DATABASE_URL ?? "";
-const describeDb = ENABLED && DB_URL !== "" ? describe : describe.skip;
 
-if (ENABLED) jest.setTimeout(180_000);
+jest.setTimeout(180_000);
 
 /** Mirrors `GRANT_PAGE_SIZE` in access-grant-drains.ts. */
 const PAGE_SIZE = 500;
@@ -50,7 +48,7 @@ const DELEGATION_COUNT = 4;
 const SUFFIX = randomUUID().slice(0, 8);
 const ID_PREFIX = `drain-probe-${SUFFIX}-`;
 
-describeDb("drainDelegatedPermissionGrants — real catalog", () => {
+describe("drainDelegatedPermissionGrants — real catalog", () => {
   let client: postgres.Sql;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let orgId: string;
@@ -59,6 +57,7 @@ describeDb("drainDelegatedPermissionGrants — real catalog", () => {
   let seededKeys: string[][] = [];
 
   beforeAll(async () => {
+    if (!DB_URL) throw new Error("delegation-grant-drain.db.spec.ts requires ACCESS_PROBE_DATABASE_URL or DATABASE_URL");
     client = postgres(DB_URL, {
       max: 1,
       prepare: false,

@@ -1,8 +1,8 @@
 /**
  * Real-database regression for the HR dashboard's attendance-rate grain.
  *
- * Guarded by HR_DB_TESTS=1. Run with:
- *   HR_DB_TESTS=1 DATABASE_URL=... npx jest --runInBand \
+ * Run with `pnpm test:db-specs` or:
+ *   DATABASE_URL=... node ./node_modules/jest/bin/jest.js --config jest-db.json --runInBand \
  *     --testPathPattern="hr-dashboard-attendance-grain.db"
  *
  * `attendance` is a session table — its only unique indexes are on the
@@ -25,15 +25,12 @@ import type { Db } from "../../../../db/drizzle.types";
 import { buildAttendanceAnalytics } from "../hr-dashboard-attendance";
 import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "../../../../../test/helpers/probe-org";
 
-const ENABLED = process.env.HR_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 function connect() {
   if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
     dotenv.config({ path: ".env" });
   }
   const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for HR_DB_TESTS");
+  if (!raw) throw new Error("hr-dashboard-attendance-grain.db.spec.ts requires DATABASE_URL or APP_DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const ssl = url.hostname === "localhost" || url.hostname === "127.0.0.1" ? false : "require";
@@ -55,7 +52,7 @@ function elapsedWeekdaysThisMonth(count: number): string[] {
   return days;
 }
 
-describeDb("HR dashboard attendance analytics — session grain", () => {
+describe("HR dashboard attendance analytics — session grain", () => {
   let sql: ReturnType<typeof connect>;
   let db: Db;
   let days: string[];

@@ -26,11 +26,8 @@
  * `payroll_run_employees` rows — `status <> 'HELD'`, `hold_reason IS NULL`,
  * `coalesce(net_payout_currency, net) > 0` — and only a database evaluates it.
  *
- * Guarded by PAYROLL_DB_TESTS=1 so the default hermetic `jest` run is unaffected.
- *   PAYROLL_DB_TESTS=1 DATABASE_URL=... npx jest --runInBand \
- *     --testPathPattern="payout-run-completion.db"
- *
- * Everything happens inside a transaction that is rolled back.
+ * Run via `pnpm test:db-specs` (jest-db.json). Everything happens inside a
+ * transaction that is rolled back.
  *
  * MONEY UNITS. Fixture amounts are rupee strings with two decimals, matching
  * `numeric(15,2)`. The posting intent's `net` is the same rupee wire format,
@@ -51,10 +48,7 @@ import type { Db } from "../../../../../db/drizzle.types";
 /** The relational-query surface `checkRunCompletion` reaches through `db.query`. */
 const querySchema = { organizationMembers, payrollBankBatches };
 
-const ENABLED = process.env.PAYROLL_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-if (ENABLED) jest.setTimeout(180_000);
+jest.setTimeout(180_000);
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
@@ -62,7 +56,7 @@ class Rollback extends Error {}
 function connect(): ReturnType<typeof postgres> {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for PAYROLL_DB_TESTS");
+  if (!raw) throw new Error("payout-run-completion.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const plaintext =
@@ -95,7 +89,7 @@ type Outcome = {
 /** How the one payee who is not paid comes to be missing from the batch. */
 type Exclusion = "held" | "unbatched";
 
-describeDb("payroll run completion — real database", () => {
+describe("payroll run completion — real database", () => {
   let client: ReturnType<typeof postgres>;
   let db: Db;
 
@@ -123,7 +117,7 @@ describeDb("payroll run completion — real database", () => {
           sql`SELECT id FROM organizations ORDER BY id LIMIT 1`,
         );
         const orgId = orgRows[0]?.id;
-        if (!orgId) throw new Error("PAYROLL_DB_TESTS needs at least one organization");
+        if (!orgId) throw new Error("payout-run-completion.db.spec.ts: seed DB needs at least one organization");
 
         // payroll_run_events.actor_id and payroll_bank_batch_items.user_id both
         // carry a real FK to users, so the fixture borrows an existing identity.
@@ -131,7 +125,7 @@ describeDb("payroll run completion — real database", () => {
           sql`SELECT id FROM users ORDER BY id LIMIT 1`,
         );
         const actorId = userRows[0]?.id;
-        if (!actorId) throw new Error("PAYROLL_DB_TESTS needs at least one user");
+        if (!actorId) throw new Error("payout-run-completion.db.spec.ts: seed DB needs at least one user");
 
         const tag = randomUUID().slice(0, 8);
         const month = "2999-08";

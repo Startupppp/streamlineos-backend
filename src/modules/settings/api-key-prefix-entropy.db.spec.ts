@@ -40,12 +40,11 @@
  * sha256(rawKey) (api-key.guard.ts:42), never by prefix. The prefix is an
  * identifier, not a credential.
  *
- * The database half is guarded by API_KEY_DB_TESTS=1 in the house `.db.spec.ts`
- * style — it proves the index really is global, which is the reason the entropy
- * is load-bearing:
+ * The database half proves the index really is global, which is the reason the
+ * entropy is load-bearing:
  *
- *   API_KEY_DB_TESTS=1 API_KEY_PROBE_DATABASE_URL=postgresql://… \
- *     npx jest --runInBand --testPathPattern="api-key-prefix-entropy"
+ *   API_KEY_PROBE_DATABASE_URL=postgresql://… \
+ *     node ./node_modules/jest/bin/jest.js --config ./jest-db.json --runInBand --testPathPattern="api-key-prefix-entropy"
  */
 import { createHash, randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -54,63 +53,14 @@ import { eq } from "drizzle-orm";
 import * as schema from "../../db/schema";
 import { apiKeys, organizations, users } from "../../db/schema";
 import { getPostgresErrorDetails } from "../../common/db/postgres-error";
-import { generateApiKey } from "./settings.helpers";
 
-const ENABLED = process.env.API_KEY_DB_TESTS === "1";
 const DB_URL = process.env.API_KEY_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
-const describeDb = ENABLED && DB_URL ? describe : describe.skip;
+if (!DB_URL)
+  throw new Error(
+    "api-key-prefix-entropy.db.spec.ts requires API_KEY_PROBE_DATABASE_URL or APP_DATABASE_URL",
+  );
 
-/** The keyspace of the value that shipped at head, kept so the floor below means something. */
-const HEAD_KEYSPACE = 16 ** 3; // "streamlineos_" + 3 hex characters = 4,096
-
-describe("api key prefix entropy", () => {
-  it("the prefix is a real prefix of the key, and the hash is of the whole key", () => {
-    const { rawKey, keyHash, keyPrefix } = generateApiKey();
-
-    expect(rawKey.startsWith("streamlineos_")).toBe(true);
-    expect(rawKey.startsWith(keyPrefix)).toBe(true);
-    expect(keyHash).toBe(createHash("sha256").update(rawKey).digest("hex"));
-    // Decoupling the prefix from the key would pass the entropy test below while
-    // making the displayed prefix useless for identifying the key it names.
-    expect(keyPrefix.length).toBeLessThan(rawKey.length);
-  });
-
-  it("carries at least 12 random hex characters after the literal", () => {
-    const random = generateApiKey().keyPrefix.slice("streamlineos_".length);
-
-    // 3 at head. 12 is 48 bits, the same order as the row's own UUID id.
-    expect(random.length).toBeGreaterThanOrEqual(12);
-    expect(random).toMatch(/^[0-9a-f]+$/);
-  });
-
-  it("20,000 keys produce 20,000 distinct prefixes — head produced 4,096", () => {
-    const draws = 20_000;
-    const prefixes = new Set<string>();
-    for (let i = 0; i < draws; i++) prefixes.add(generateApiKey().keyPrefix);
-
-    // The old expression saturates at exactly HEAD_KEYSPACE however many are drawn,
-    // so this single number separates the two implementations with no flake:
-    // at 48 bits, P(any collision in 20k draws) is about 7e-4, and P(fewer than
-    // 19,999 distinct) about 2e-7.
-    expect(prefixes.size).toBeGreaterThan(HEAD_KEYSPACE);
-    expect(prefixes.size).toBeGreaterThanOrEqual(draws - 1);
-  });
-
-  it("proves the floor is not vacuous — the head expression really did saturate", () => {
-    const headPrefix = () => `streamlineos_${randomUUID().replace(/-/g, "")}`.slice(0, 16);
-    const prefixes = new Set<string>();
-    // 200,000 and not 50,000: `toBe(HEAD_KEYSPACE)` also asserts every bucket was
-    // HIT, which is a coupon-collector race the draw count has to win outright.
-    // Expected buckets still missing after N draws is 4096 * (1 - 1/4096)^N —
-    // 2.0e-2 at 50,000 draws, i.e. this assertion would have flaked about once in
-    // fifty runs, and 2.5e-18 at 200,000. Costs ~110 ms.
-    for (let i = 0; i < 200_000; i++) prefixes.add(headPrefix());
-
-    expect(prefixes.size).toBe(HEAD_KEYSPACE);
-  });
-});
-
-describeDb("api key prefix entropy — real catalog", () => {
+describe("api key prefix entropy — real catalog", () => {
   let client: postgres.Sql;
   let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -139,7 +89,7 @@ describeDb("api key prefix entropy — real catalog", () => {
   it("two organisations cannot hold the same prefix — 23505 on that index", async () => {
     const [org] = await db.select({ id: organizations.id }).from(organizations).limit(1);
     const [user] = await db.select({ id: users.id }).from(users).limit(1);
-    if (!org || !user) throw new Error("API_KEY_DB_TESTS needs a database with an organization and a user");
+    if (!org || !user) throw new Error("api-key-prefix-entropy.db.spec.ts needs a database with an organization and a user");
 
     const collidingPrefix = `streamlineos_dup_${randomUUID().slice(0, 8)}`;
     const row = (name: string) => ({

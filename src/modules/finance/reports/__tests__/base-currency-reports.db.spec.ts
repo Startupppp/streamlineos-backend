@@ -11,9 +11,10 @@
  * entry entered the total at its face value and INR 8,350 of revenue was
  * published as INR 100.
  *
- * Guarded by FIN_DB_TESTS=1. Run with:
- *   FIN_DB_TESTS=1 DATABASE_URL=... PGSSLMODE=disable \
- *     npx jest --runInBand --testPathPattern="base-currency-reports.db"
+ * Run with `pnpm test:db-specs` or:
+ *   DATABASE_URL=... PGSSLMODE=disable \
+ *     node ./node_modules/jest/bin/jest.js --config jest-db.json --runInBand \
+ *     --testPathPattern="base-currency-reports.db"
  *
  * A mocked db cannot show this: the defect is in the SQL handed to `sum()`, and
  * a fake `select` returns whatever it was told to. Only a real ledger with a
@@ -40,13 +41,10 @@ import type { NotificationDispatchService } from "../../../notifications/notific
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
-const ENABLED = process.env.FIN_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for FIN_DB_TESTS");
+  if (!raw) throw new Error("base-currency-reports.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const sslmode = url.searchParams.get("sslmode");
@@ -78,7 +76,7 @@ const COMBINED_BASE = "8390.00";
 /** What the raw-column sum published instead: USD 100 added to INR 40. */
 const RAW_TRANSACTION_SUM = "140.00";
 
-describeDb("finance reports are base currency — real database", () => {
+describe("finance reports are base currency — real database", () => {
   let sql: ReturnType<typeof connect>;
   let db: Db;
   let posting: FinancePostingService;

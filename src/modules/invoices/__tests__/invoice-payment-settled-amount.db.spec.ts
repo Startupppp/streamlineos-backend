@@ -13,9 +13,9 @@
  *    the payment register and the AR subledger recorded different money for the
  *    same receipt.
  *
- * Guarded by INV_DB_TESTS=1. Run with:
- *   INV_DB_TESTS=1 DATABASE_URL=... PGSSLMODE=disable \
- *     npx jest --runInBand --testPathPattern="invoice-payment-settled-amount.db"
+ * Run with:
+ *   DATABASE_URL=... PGSSLMODE=disable \
+ *     pnpm test:db-specs --testPathPattern="invoice-payment-settled-amount.db"
  *
  * Only Postgres shows either one. The scale divergence exists only once the
  * column types are real — a mocked db stores whatever string it is handed at
@@ -44,13 +44,10 @@ import type { CacheService } from "../../../common/cache/cache.service";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CrmAutomationBusService } from "../../crm/automation-studio/crm-automation-bus.service";
 
-const ENABLED = process.env.INV_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for INV_DB_TESTS");
+  if (!raw) throw new Error("invoice-payment-settled-amount.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const sslmode = url.searchParams.get("sslmode");
@@ -70,7 +67,7 @@ const SUFFIX = randomUUID().slice(0, 8);
 const ORG_ID = `inv-pay-${SUFFIX}`;
 const USER_ID = `inv-pay-user-${SUFFIX}`;
 
-describeDb("invoice payments record one exact quantity — real database", () => {
+describe("invoice payments record one exact quantity — real database", () => {
   let sql: ReturnType<typeof connect>;
   let db: Db;
   let service: InvoicesPaymentService;

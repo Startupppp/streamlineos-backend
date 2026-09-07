@@ -18,8 +18,8 @@
  *
  *   APP_DATABASE_URL="postgresql://streamline_app@localhost:5432/scratch_head_1010" \
  *   DATABASE_URL="postgresql://neondb_owner@localhost:5432/scratch_head_1010" \
- *   PGSSLMODE=disable KB_DB_TESTS=1 \
- *   npx jest --runInBand --testPathPattern="kb-checkpoint-no-ambient-tx.db"
+ *   PGSSLMODE=disable \
+ *   pnpm test:db-specs --testPathPattern="kb-checkpoint-no-ambient-tx.db"
  */
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
@@ -30,9 +30,6 @@ import { createTenantAwareDb } from "../../../common/tenant/tenant-db";
 import { getTenantContext, runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 
-const ENABLED = process.env.KB_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 const suffix = randomUUID().slice(0, 8);
 const ORG = `kbnoctx-${suffix}`;
 const PROBE_USER = `kbnoctx-user-${suffix}`;
@@ -42,7 +39,7 @@ const DIM = 1536;
 
 const vector = (): number[] => Array.from({ length: DIM }, (_, i) => (i === 0 ? 1 : 0));
 
-describeDb("KB ingestion checkpoints are readable with no ambient tenant context", () => {
+describe("KB ingestion checkpoints are readable with no ambient tenant context", () => {
   let owner: ReturnType<typeof postgres>;
   let appClient: ReturnType<typeof postgres>;
   let base: ReturnType<typeof drizzle<typeof schema>>;
@@ -52,7 +49,7 @@ describeDb("KB ingestion checkpoints are readable with no ambient tenant context
     const ownerUrl = process.env.DATABASE_URL;
     const appUrl = process.env.APP_DATABASE_URL;
     if (!ownerUrl || !appUrl)
-      throw new Error("KB_DB_TESTS needs DATABASE_URL (owner, seeds) and APP_DATABASE_URL (RLS role)");
+      throw new Error("kb-checkpoint-no-ambient-tx.db.spec.ts requires DATABASE_URL (owner) and APP_DATABASE_URL (RLS role)");
 
     owner = postgres(ownerUrl, { prepare: false, max: 2, connect_timeout: 30 });
     appClient = postgres(appUrl, { prepare: false, max: 2, connect_timeout: 30 });

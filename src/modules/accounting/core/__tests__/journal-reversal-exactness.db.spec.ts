@@ -11,9 +11,9 @@
  * then no longer equalled credits, `assertBalanced` threw, and — journal entries
  * being immutable — a posted entry became permanently uncorrectable.
  *
- * Guarded by ACCT_DB_TESTS=1. Run with:
- *   ACCT_DB_TESTS=1 DATABASE_URL=... PGSSLMODE=disable \
- *     npx jest --runInBand --testPathPattern="journal-reversal-exactness.db"
+ * Run with:
+ *   DATABASE_URL=... PGSSLMODE=disable \
+ *     npx jest --config jest-db.json --runInBand --testPathPattern="journal-reversal-exactness.db"
  *
  * A mocked db cannot show this. The corruption happens between reading a real
  * `numeric(18,4)` back out of Postgres and writing it again; a fake `select`
@@ -42,13 +42,11 @@ import type { NotificationDispatchService } from "../../../notifications/notific
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
-const ENABLED = process.env.ACCT_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
 
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for ACCT_DB_TESTS");
+  if (!raw) throw new Error("journal-reversal-exactness.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const sslmode = url.searchParams.get("sslmode");
@@ -74,7 +72,7 @@ const USER_ID = `acct-rev-user-${SUFFIX}`;
  */
 const LARGE_AMOUNT = "92750470145163.6827";
 
-describeDb("journal reversal is exact at ledger scale — real database", () => {
+describe("journal reversal is exact at ledger scale — real database", () => {
   let sql: ReturnType<typeof connect>;
   let db: Db;
   let posting: FinancePostingService;

@@ -22,14 +22,16 @@
  *
  * The catalog and plan half is `chat-read-path-hardening.db.spec.ts`.
  */
-import { PgDialect } from "drizzle-orm/pg-core";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { PgDialect, getTableConfig } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
-import { chatChannels } from "../../../db/schema";
+import { chatChannels, chatMessages, chatReplyReminders } from "../../../db/schema";
 import { ChatSearchService } from "../chat-search.service";
 import { ChatMessageTimelineService } from "../chat-message-timeline.service";
 import { ChatSavedService } from "../chat-saved.service";
@@ -254,5 +256,113 @@ describe("entity channel conflict target — the arbiter carries its predicate",
       /on conflict \("org_id","entity_type","entity_id"\) where .*entity_type.* do nothing/,
     );
     expect(shipped).not.toContain(`"entity_id") do nothing`);
+  });
+});
+
+const MIGRATIONS_DIR = join(__dirname, "..", "..", "..", "..", "migrations");
+
+function stripSqlComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+}
+
+type IndexState = { partial: boolean; unique: boolean; createdBy: string } | null;
+
+function replayIndexState(indexName: string): IndexState {
+  const journal: { entries: Array<{ when: number; tag: string }> } = JSON.parse(
+    readFileSync(join(MIGRATIONS_DIR, "meta", "_journal.json"), "utf8"),
+  );
+  const ordered = [...journal.entries].sort((a, b) => a.when - b.when);
+  const create = new RegExp(
+    String.raw`CREATE\s+(UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"?${indexName}"?`,
+    "i",
+  );
+  const drop = new RegExp(
+    String.raw`DROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?"?${indexName}"?`,
+    "i",
+  );
+
+  let state: IndexState = null;
+  for (const entry of ordered) {
+    const raw = readFileSync(join(MIGRATIONS_DIR, `${entry.tag}.sql`), "utf8");
+    for (const chunk of raw.split("--> statement-breakpoint")) {
+      const statement = stripSqlComments(chunk);
+      if (drop.test(statement)) state = null;
+      const made = create.exec(statement);
+      if (made) {
+        state = {
+          partial: /\)\s*WHERE\s/i.test(statement),
+          unique: Boolean(made[1]),
+          createdBy: entry.tag,
+        };
+      }
+    }
+  }
+  return state;
+}
+
+function declaredIndex(
+  table: typeof chatMessages | typeof chatChannels | typeof chatReplyReminders,
+  name: string,
+) {
+  const found = getTableConfig(table).indexes.find(
+    (index) => (index as unknown as { config: { name: string } }).config.name === name,
+  );
+  return (found as unknown as { config: { unique?: boolean; where?: unknown } } | undefined)
+    ?.config;
+}
+
+describe("chat read-path indexes — migration corpus agrees with the declaration", () => {
+  it("idx_chat_messages_channel_position is TOTAL in both, which is what lets list() use it", () => {
+    expect(declaredIndex(chatMessages, "idx_chat_messages_channel_position")?.where).toBeUndefined();
+    expect(replayIndexState("idx_chat_messages_channel_position")).toEqual({
+      partial: false,
+      unique: false,
+      createdBy: "1058_chat_read_path_indexes",
+    });
+  });
+
+  it("idx_chat_messages_org_reply exists and is partial on reply_to_id", () => {
+    const declared = declaredIndex(chatMessages, "idx_chat_messages_org_reply");
+    expect(declared).toBeDefined();
+    expect(declared?.unique).toBeFalsy();
+    expect(declared?.where).toBeDefined();
+    expect(replayIndexState("idx_chat_messages_org_reply")).toEqual({
+      partial: true,
+      unique: false,
+      createdBy: "1058_chat_read_path_indexes",
+    });
+  });
+
+  it("uniq_chat_channels_org_entity is UNIQUE and partial in both", () => {
+    const declared = declaredIndex(chatChannels, "uniq_chat_channels_org_entity");
+    expect(declared?.unique).toBe(true);
+    expect(declared?.where).toBeDefined();
+    expect(replayIndexState("uniq_chat_channels_org_entity")).toEqual({
+      partial: true,
+      unique: true,
+      createdBy: "1058_chat_read_path_indexes",
+    });
+  });
+
+  it("the plain idx_chat_channels_org_entity it replaces is gone from the declaration", () => {
+    expect(declaredIndex(chatChannels, "idx_chat_channels_org_entity")).toBeUndefined();
+  });
+
+  it("idx_chat_reply_reminders_pending exists and is partial on the pending predicate", () => {
+    const declared = declaredIndex(chatReplyReminders, "idx_chat_reply_reminders_pending");
+    expect(declared).toBeDefined();
+    expect(declared?.where).toBeDefined();
+    expect(replayIndexState("idx_chat_reply_reminders_pending")).toEqual({
+      partial: true,
+      unique: false,
+      createdBy: "1060_chat_reply_reminder_pending_index",
+    });
+    expect(declaredIndex(chatReplyReminders, "idx_chat_reply_reminders_due")).toBeDefined();
+  });
+
+  it("the replay can see a partial creation at all — 0980 really created one", () => {
+    const state = replayIndexState("uniq_chat_messages_client_key");
+    expect(state?.partial).toBe(true);
+    expect(state?.unique).toBe(true);
   });
 });

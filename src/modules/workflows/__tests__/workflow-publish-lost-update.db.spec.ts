@@ -25,26 +25,20 @@
  * locks under READ COMMITTED. So this spec runs two genuine concurrent
  * transactions against a real catalog and asserts exactly one wins.
  *
- * Guarded by WORKFLOW_DB_TESTS=1 in the house `.db.spec.ts` style. Fixtures are
- * committed (concurrency needs two transactions, so a single rolled-back one
- * cannot express it) and removed again in `afterAll` — the org row cascades.
- *
- *   WORKFLOW_DB_TESTS=1 DATABASE_URL=postgresql://…/scratch_head_1010 PGSSLMODE=disable \
- *     npx jest --runInBand --testPathPattern="workflow-publish-lost-update.db"
+ * Fixtures are committed (concurrency needs two transactions, so a single
+ * rolled-back one cannot express it) and removed again in `afterAll` — the org
+ * row cascades. Run via `pnpm test:db-specs` (jest-db.json).
  */
 import { randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import postgres from "postgres";
 
-const ENABLED = process.env.WORKFLOW_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-if (ENABLED) jest.setTimeout(120_000);
+jest.setTimeout(120_000);
 
 function connect(): ReturnType<typeof postgres> {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for WORKFLOW_DB_TESTS");
+  if (!raw) throw new Error("workflow-publish-lost-update.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const plaintext =
@@ -68,7 +62,7 @@ interface PublishOutcome {
   readVersion: number;
 }
 
-describeDb("workflow publish — concurrent publishes, real database", () => {
+describe("workflow publish — concurrent publishes, real database", () => {
   let sql: ReturnType<typeof postgres>;
   /**
    * One connection per racer, not two `begin`s on a shared pool.

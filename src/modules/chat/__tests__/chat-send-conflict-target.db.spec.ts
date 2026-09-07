@@ -11,62 +11,33 @@
  * A mocked database cannot see this. `chat-send-idempotency.spec.ts` asserts the
  * conflict target and passed against the broken value, because index inference
  * happens inside Postgres and a fake answers whatever it was told to answer.
- * So this spec has two halves, and the first one runs everywhere:
+ * The hermetic half is in `chat-send-conflict-target.spec.ts`. Everything here
+ * executes against a real partial index inside a transaction that is rolled back.
  *
- *   HERMETIC — compiles the production conflict spec into SQL and asserts the
- *   emitted `on conflict` clause carries a predicate whenever the declared index
- *   it arbitrates is partial. No database. This alone would have caught it, and
- *   it also catches the drizzle-orm 0.45.2 trap that `onConflictDoNothing` reads
- *   `where` while `onConflictDoUpdate` reads `targetWhere` — a `targetWhere`
- *   passed to the former is silently dropped and re-emits the broken SQL.
- *
- *   CATALOG — executes the real statement against a real partial index and
- *   proves both directions: the head form raises 42P10, the shipped form does
- *   not, a retry on the same key is a no-op, and null keys still insert. Guarded
- *   by CHAT_DB_TESTS=1 in the house `.db.spec.ts` style. Everything runs inside a
- *   transaction that is rolled back, so the database is left as it was found.
- *
- *     CHAT_DB_TESTS=1 CHAT_PROBE_DATABASE_URL=postgresql://… \
- *       npx jest --runInBand --testPathPattern="chat-send-conflict-target"
+ *   CHAT_PROBE_DATABASE_URL=postgresql://… \
+ *     node ./node_modules/jest/bin/jest.js --config ./jest-db.json --runInBand \
+ *       --testPathPattern="chat-send-conflict-target.db"
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, getTableName, type SQL } from "drizzle-orm";
-import { getTableConfig, type IndexColumn } from "drizzle-orm/pg-core";
+import { type IndexColumn } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { chatChannels, chatMessages } from "../../../db/schema";
 import { CHAT_MESSAGE_CLIENT_KEY_CONFLICT } from "../chat-message-conflict-target";
 
-/**
- * The parameter `onConflictDoNothing` actually takes in drizzle-orm 0.45.2. Written out
- * rather than derived from the builder: `db.insert(t)` returns a PgInsertBuilder, which
- * has no `onConflictDoNothing` until `.values()` has been applied, so deriving it from
- * `typeof db.insert` does not compile — the mistake `check:spec-typecheck` caught.
- */
 type ConflictSpec = { target: IndexColumn[]; where?: SQL };
 
-/** The exact value that shipped at journal head, kept so the net proves it bites. */
 const HEAD_FORM: ConflictSpec = {
   target: [chatMessages.orgId, chatMessages.channelId, chatMessages.clientKey],
 };
 
-const ENABLED = process.env.CHAT_DB_TESTS === "1";
-/**
- * DATABASE_URL ahead of APP_DATABASE_URL, matching party-identifiers.db.spec.ts and the HR
- * db-specs. Row-level security is live, and the fixture read below is a DISCOVERY read — it asks
- * which channel to use — so it cannot set `app.organization_id` before it runs, and under the
- * application role it returns nothing or raises "no tenant context". What this suite pins is the
- * shape of `uniq_chat_messages_client_key` and how ON CONFLICT arbitrates against it; neither
- * depends on which role issues the statement. RLS visibility is covered by the tenant-GUC specs,
- * not here.
- */
 const DB_URL =
   process.env.CHAT_PROBE_DATABASE_URL ?? process.env.DATABASE_URL ?? process.env.APP_DATABASE_URL;
-const describeDb = ENABLED && DB_URL ? describe : describe.skip;
+if (!DB_URL) throw new Error("CHAT_PROBE_DATABASE_URL (or DATABASE_URL) is required to run this suite");
 
 class Rollback extends Error {}
 
-/** Drizzle wraps driver errors: `err.code` is undefined and the SQLSTATE is on `.cause`. */
 function sqlstateOf(error: unknown): string | undefined {
   let cursor: unknown = error;
   for (let hop = 0; hop < 6 && cursor !== null && cursor !== undefined; hop++) {
@@ -77,59 +48,20 @@ function sqlstateOf(error: unknown): string | undefined {
   return undefined;
 }
 
-function clientKeyIndex() {
-  const declared = getTableConfig(chatMessages).indexes.find(
-    (index) => (index as unknown as { config: { name: string } }).config.name === "uniq_chat_messages_client_key",
-  );
-  return (declared as unknown as { config: { unique?: boolean; where?: unknown } } | undefined)?.config;
-}
-
-describe("chat send conflict target — hermetic", () => {
-  it("the index it arbitrates is unique AND partial, which is what makes a bare target 42P10", () => {
-    const index = clientKeyIndex();
-    expect(index).toBeDefined();
-    expect(index?.unique).toBe(true);
-    expect(index?.where).toBeDefined();
-  });
-
-  it("the production conflict spec emits an arbiter predicate, and the head form does not", () => {
-    const offline = drizzle(postgres("postgres://unused@127.0.0.1:1/unused", { max: 1 }));
-    const compile = (config: ConflictSpec) =>
-      offline
-        .insert(chatMessages)
-        .values({ orgId: "o", channelId: 1, content: "x", clientKey: "k", channelPosition: 0 })
-        .onConflictDoNothing(config)
-        .toSQL().sql;
-
-    const shipped = compile(CHAT_MESSAGE_CLIENT_KEY_CONFLICT);
-    const head = compile(HEAD_FORM);
-
-    expect(head).toContain(`on conflict ("org_id","channel_id","client_key") do nothing`);
-    expect(shipped).toMatch(/on conflict \("org_id","channel_id","client_key"\) where .*client_key.* do nothing/);
-    expect(shipped).not.toContain(`"client_key") do nothing`);
-  });
-
-  it("spells the arbiter predicate the key onConflictDoNothing actually reads", () => {
-    // drizzle-orm 0.45.2: onConflictDoNothing takes { target, where }; only
-    // onConflictDoUpdate takes targetWhere. A targetWhere here is dropped in silence.
-    expect(Object.keys(CHAT_MESSAGE_CLIENT_KEY_CONFLICT).sort()).toEqual(["target", "where"]);
-  });
-});
-
-describeDb("chat send conflict target — real partial index", () => {
+describe("chat send conflict target — real partial index", () => {
   let client: postgres.Sql;
   let db: ReturnType<typeof drizzle>;
   let orgId: string;
   let channelId: number;
 
   beforeAll(async () => {
-    client = postgres(DB_URL as string, { max: 1, prepare: false, onnotice: () => undefined });
+    client = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => undefined });
     db = drizzle(client);
     const [row] = await db
       .select({ orgId: chatChannels.orgId, id: chatChannels.id })
       .from(chatChannels)
       .limit(1);
-    if (!row) throw new Error("CHAT_DB_TESTS needs a database with at least one chat_channels row");
+    if (!row) throw new Error("this suite needs a database with at least one chat_channels row");
     orgId = row.orgId;
     channelId = row.id;
   });

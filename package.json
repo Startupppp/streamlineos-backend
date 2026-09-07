@@ -395,7 +395,7 @@
     "check:baseline-integrity:emit": "node src/scripts/check-baseline-integrity.mjs --emit",
     "check:gate-wiring": "node src/scripts/check-gate-wiring.mjs",
     "check:gate-wiring:self-test": "node src/scripts/check-gate-wiring.mjs --self-test",
-    "test:db-specs": "node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --runInBand --forceExit --testPathPattern='\\.db\\.spec\\.ts$'"
+    "test:db-specs": "node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --config ./jest-db.json --runInBand --forceExit"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",
@@ -490,6 +490,7 @@
     "testRegex": ".*\\.spec\\.ts$",
     "testPathIgnorePatterns": [
       "e2e-spec",
+      "\\.db\\.spec\\.ts$",
       "node_modules",
       "dist"
     ],

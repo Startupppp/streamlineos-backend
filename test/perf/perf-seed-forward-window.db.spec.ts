@@ -24,18 +24,16 @@
  * declares — importing them rather than restating them, so a budget that is rewritten is
  * re-pinned automatically — and asserts the row count the budget's own `minRows` requires.
  *
- *   PERF_SEED_DB_TESTS=1 \
  *   PERF_SEED_DATABASE_URL=postgres://streamline_app@127.0.0.1:5432/scratch_perf_seed \
- *   PGSSLMODE=disable npx jest --runInBand --testPathPattern="perf-seed-forward-window"
+ *   PGSSLMODE=disable pnpm test:db-specs
  */
 import postgres from "postgres";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const ENABLED = process.env.PERF_SEED_DB_TESTS === "1";
 const DB_URL = process.env.PERF_SEED_DATABASE_URL ?? process.env.APP_DATABASE_URL;
-const describeDb = ENABLED && DB_URL ? describe : describe.skip;
+if (!DB_URL) throw new Error("perf-seed-forward-window.db.spec.ts requires PERF_SEED_DATABASE_URL or APP_DATABASE_URL");
 
 const REFERENCE_ORG = process.env.PERF_SEED_ORG_ID ?? "aaaaaaaa-1111-0000-0000-000000000001";
 
@@ -98,8 +96,8 @@ function resolveDeclaredBudgets(fixtures: Record<string, unknown>): ResolvedBudg
   return JSON.parse(stdout) as ResolvedBudget[];
 }
 
-describeDb("perf seed forward window", () => {
-  const sql = postgres(DB_URL as string, {
+describe("perf seed forward window", () => {
+  const sql = postgres(DB_URL, {
     max: 1,
     prepare: false,
     ssl: process.env.PGSSLMODE === "disable" ? false : "require",

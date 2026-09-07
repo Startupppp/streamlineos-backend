@@ -20,9 +20,8 @@
  * Postgres holding more than a thousand rows can answer whether the read covers
  * the run.
  *
- * Guarded by PAYROLL_DB_TESTS=1 so the default hermetic `jest` run is unaffected
- * and CI without a database does not fail. Run with:
- *   PAYROLL_DB_TESTS=1 DATABASE_URL=... npx jest --runInBand \
+ * Run via `pnpm test:db-specs`. The default hermetic jest config ignores this file.
+ *   DATABASE_URL=... npx jest --config jest-db.json --runInBand \
  *     --testPathPattern="journal-completeness.db"
  *
  * Everything happens inside a transaction that is rolled back, fixtures
@@ -43,10 +42,7 @@ import { JournalService } from "../journal.service";
 import type { AccountingMappingsService } from "../accounting-mappings.service";
 import type { Db } from "../../../../db/drizzle.types";
 
-const ENABLED = process.env.PAYROLL_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
-if (ENABLED) jest.setTimeout(180_000);
+jest.setTimeout(180_000);
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
@@ -54,7 +50,7 @@ class Rollback extends Error {}
 function connect(): ReturnType<typeof postgres> {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for PAYROLL_DB_TESTS");
+  if (!raw) throw new Error("journal-completeness.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const plaintext =
@@ -136,7 +132,7 @@ const mappingsService = {
   getMappings: async (): Promise<Map<string, string>> => MAPPINGS,
 } as unknown as AccountingMappingsService;
 
-describeDb("payroll journal completeness — real database", () => {
+describe("payroll journal completeness — real database", () => {
   let client: ReturnType<typeof postgres>;
   let db: Db;
 
@@ -165,7 +161,7 @@ describeDb("payroll journal completeness — real database", () => {
           sql`SELECT id FROM organizations ORDER BY id LIMIT 1`,
         );
         const orgId = orgRows[0]?.id;
-        if (!orgId) throw new Error("PAYROLL_DB_TESTS needs at least one organization to scope fixtures to");
+        if (!orgId) throw new Error("journal-completeness.db.spec.ts requires at least one seeded organization");
 
         // A month no live run can collide with; the read keys on (org, month, REGULAR).
         const month = "2999-07";

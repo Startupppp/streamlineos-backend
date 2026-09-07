@@ -2,9 +2,9 @@
  * Real-database test for one invariant of an executed payment run: the payment
  * register, the AP subledger and the bill must all record the SAME amount.
  *
- * Guarded by FIN_DB_TESTS=1. Run with:
- *   FIN_DB_TESTS=1 DATABASE_URL=... PGSSLMODE=disable \
- *     npx jest --runInBand --testPathPattern="payment-run-settled-amount.db"
+ * Run with:
+ *   DATABASE_URL=... PGSSLMODE=disable \
+ *     npx jest --config jest-db.json --runInBand --testPathPattern="payment-run-settled-amount.db"
  *
  * Only Postgres shows this. `vendor_payments.amount` is `numeric(12,2)` while
  * `fin_vendor_payment_allocations.amount`, `fin_payment_run_items.amount` and
@@ -38,13 +38,11 @@ import type { NotificationDispatchService } from "../../../notifications/notific
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
-const ENABLED = process.env.FIN_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
 
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for FIN_DB_TESTS");
+  if (!raw) throw new Error("payment-run-settled-amount.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const sslmode = url.searchParams.get("sslmode");
@@ -68,7 +66,7 @@ const ITEM_AMOUNT = "100.0050";
 /** The ordinary case: already whole paise, and it must survive the fix untouched. */
 const CLEAN_AMOUNT = "250.0000";
 
-describeDb("payment run execution — settled amount agreement", () => {
+describe("payment run execution — settled amount agreement", () => {
   let sql: ReturnType<typeof connect>;
   let db: Db;
   let executor: PaymentRunExecutorService;

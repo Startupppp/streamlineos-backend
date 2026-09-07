@@ -9,10 +9,9 @@
  * statement that sums the raw columns therefore adds USD 100 to INR 40 and
  * publishes 140.
  *
- * Guarded by ACCT_DB_TESTS=1 so the default hermetic `jest` run is unaffected
- * and CI without a database does not fail. Run with:
- *   ACCT_DB_TESTS=1 DATABASE_URL=... PGSSLMODE=disable \
- *     npx jest --runInBand --testPathPattern="base-currency-statements.db"
+ * Run with:
+ *   DATABASE_URL=... PGSSLMODE=disable \
+ *     npx jest --config jest-db.json --runInBand --testPathPattern="base-currency-statements.db"
  *
  * A mocked db cannot show this defect: the assertion is about what SQL
  * `sum()` is handed, and a fake `select` returns whatever it was told to. Only a
@@ -41,13 +40,10 @@ import type { NotificationDispatchService } from "../../../notifications/notific
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
-const ENABLED = process.env.ACCT_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for ACCT_DB_TESTS");
+  if (!raw) throw new Error("DATABASE_URL is required");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   // A local Postgres has no TLS; a hosted one requires it. Derive rather than
@@ -79,7 +75,7 @@ const DOMESTIC_BASE = "40.0000";
 /** INR 8350 + INR 40. The figure every statement below must publish. */
 const COMBINED_BASE = "8390.00";
 
-describeDb("base-currency statements — real database", () => {
+describe("base-currency statements — real database", () => {
   let sql: ReturnType<typeof connect>;
   let db: Db;
   let posting: FinancePostingService;

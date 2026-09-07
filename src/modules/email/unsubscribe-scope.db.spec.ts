@@ -43,16 +43,12 @@
  * `email_suppressions` never had. `email_suppressions` keeps its documented meaning:
  * bounces and complaints only.
  *
- *   HERMETIC — no database. The routing semantics the fix depends on, the
- *   GET-does-not-mutate split, and that an unverifiable token writes nothing.
+ * The hermetic half is in `unsubscribe-scope.spec.ts`. Everything here runs as the
+ * non-owner app role and is rolled back.
  *
- *   CATALOG — the real thing, house `.db.spec.ts` style, as the non-owner app role.
- *   Proves the untenanted write really is denied, that the scoped rule lands, that
- *   it is idempotent, that no email suppression is written, and that the routing
- *   query finds it. Everything is rolled back.
- *
- *     EMAIL_DB_TESTS=1 APP_DATABASE_URL=postgresql://streamline_app:…@…/scratch_head_1010 \
- *       npx jest --runInBand --testPathPattern="unsubscribe-scope"
+ *   APP_DATABASE_URL=postgresql://streamline_app:…@…/scratch_head_1010 \
+ *     node ./node_modules/jest/bin/jest.js --config ./jest-db.json --runInBand \
+ *       --testPathPattern="unsubscribe-scope.db"
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
@@ -65,33 +61,15 @@ import {
 } from "../../db/schema";
 import type { TenantTx } from "../../db/drizzle.types";
 import type { NotificationEventKey } from "../notifications/notification-events.catalog";
-import { computeRouting } from "../notifications/notification-routing-computation";
-import type {
-  NotificationChannel,
-  NotificationEventDefinition,
-  SuppressionReason,
-} from "../notifications/notification.types";
+import type { UnsubscribePayload } from "./unsubscribe-token";
 import {
-  UNSUBSCRIBE_SCOPE_RULES,
   writeUnsubscribeRule,
 } from "./unsubscribe-suppression";
-import type { UnsubscribePayload } from "./unsubscribe-token";
 
-const ENABLED = process.env.EMAIL_DB_TESTS === "1";
-const DB_URL = process.env.EMAIL_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
-const describeDb = ENABLED && DB_URL ? describe : describe.skip;
-
-/**
- * The catalog key for a chat mention is `chat.message.mention`; this spec used to say
- * `chat.mention`, which has never existed in `NOTIFICATION_EVENT_CATALOG`. A TYPE
- * unsubscribe writes the token's `scopeKey` verbatim, so the round-trip below was
- * pinning a rule against an event no send could ever match. Annotated with
- * `NotificationEventKey` rather than left to widen to `string` — `eventKey` on
- * `NotificationEventDefinition` is deliberately widened to break a circular import, so
- * nothing else here would catch a rename — which makes a catalog rename fail the
- * typecheck instead of quietly resurrecting a ghost event.
- */
 const EVENT_KEY: NotificationEventKey = "chat.message.mention";
+
+const DB_URL = process.env.EMAIL_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
+if (!DB_URL) throw new Error("EMAIL_PROBE_DATABASE_URL (or APP_DATABASE_URL) is required to run this suite");
 
 class Rollback extends Error {}
 
@@ -105,71 +83,7 @@ function sqlstateOf(error: unknown): string | undefined {
   return undefined;
 }
 
-function definition(overrides: Partial<NotificationEventDefinition>): NotificationEventDefinition {
-  return {
-    eventKey: EVENT_KEY,
-    displayName: "You were mentioned",
-    category: "CHAT",
-    sourceModule: "chat",
-    defaultChannels: ["EMAIL"],
-    allowedChannels: ["EMAIL", "IN_APP"],
-    mandatory: false,
-    ...overrides,
-  } as NotificationEventDefinition;
-}
-
-function routeWithEmailRule(mandatory: boolean) {
-  const suppressed = new Map<NotificationChannel, SuppressionReason>([
-    ["EMAIL", "UNSUBSCRIBE" as SuppressionReason],
-  ]);
-  return computeRouting({
-    definition: definition({ mandatory }),
-    priority: "NORMAL",
-    now: new Date("2026-01-05T12:00:00Z"),
-    prefs: {
-      channelEnabled: { IN_APP: true, EMAIL: true, PUSH: true, SMS: true, WHATSAPP: true, WEBHOOK: true },
-      // `QuietHoursConfig` has no `enabled` flag: a null start/end IS the off state
-      // (`isWithinQuietHours` returns false the moment either fails to parse), which is
-      // what this fixture wants — quiet hours must not be what stops the send.
-      quietHours: { start: null, end: null, timezone: "UTC", includeWeekends: false },
-      categories: {},
-      modulePreferences: {},
-      eventPreferences: {},
-      allowCriticalOverride: true,
-    },
-    orgPolicy: null,
-    availableChannels: new Set<NotificationChannel>(["IN_APP", "EMAIL"]),
-    suppressedChannels: suppressed,
-    consentedChannels: new Set<NotificationChannel>(),
-  });
-}
-
-describe("one-click unsubscribe — hermetic", () => {
-  it("every token scope maps to a rule the routing query actually matches", () => {
-    // notification-routing.service.ts:236-246 matches scope_type against these three
-    // LOWERCASE literals plus 'all'; a rule written with any other spelling is
-    // never read, which is the failure mode this table has today.
-    expect(UNSUBSCRIBE_SCOPE_RULES.TYPE).toEqual({ scopeType: "event", useTokenKey: true });
-    expect(UNSUBSCRIBE_SCOPE_RULES.CATEGORY).toEqual({ scopeType: "category", useTokenKey: true });
-    expect(UNSUBSCRIBE_SCOPE_RULES.ALL_NON_MANDATORY).toEqual({ scopeType: "all", useTokenKey: false });
-  });
-
-  it("an EMAIL suppression rule stops a non-mandatory send and does not stop a mandatory one", () => {
-    const optional = routeWithEmailRule(false);
-    const mandatory = routeWithEmailRule(true);
-
-    const emailOf = (result: ReturnType<typeof routeWithEmailRule>) =>
-      result.channels.find((decision) => decision.channel === "EMAIL");
-
-    expect(emailOf(optional)?.action).toBe("SUPPRESS");
-    expect(emailOf(optional)?.reason).toBe("UNSUBSCRIBE");
-    // The whole reason an unsubscribe belongs in this table and not in
-    // email_suppressions: a payslip or a security alert still ships.
-    expect(emailOf(mandatory)?.action).toBe("SEND");
-  });
-});
-
-describeDb("one-click unsubscribe — real catalog and RLS", () => {
+describe("one-click unsubscribe — real catalog and RLS", () => {
   let client: postgres.Sql;
   let orgId: string;
 
@@ -185,9 +99,9 @@ describeDb("one-click unsubscribe — real catalog and RLS", () => {
   });
 
   beforeAll(async () => {
-    client = postgres(DB_URL as string, { max: 1, prepare: false, onnotice: () => undefined });
+    client = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => undefined });
     const [row] = await drizzle(client).select({ id: organizations.id }).from(organizations).limit(1);
-    if (!row) throw new Error("EMAIL_DB_TESTS needs a database with at least one organizations row");
+    if (!row) throw new Error("this suite needs a database with at least one organizations row");
     orgId = row.id;
   });
 
@@ -224,7 +138,6 @@ describeDb("one-click unsubscribe — real catalog and RLS", () => {
   it("the head write is denied outright on the untenanted pool — the endpoint suppressed nothing", async () => {
     const captured = await drizzle(client)
       .transaction(async (tx) => {
-        // No set_config: exactly the handle a @Public() route gets.
         await tx.insert(emailSuppressions).values({
           email: "probe-unsub@example.com",
           orgId,

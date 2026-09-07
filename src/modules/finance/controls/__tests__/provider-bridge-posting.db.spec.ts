@@ -1,10 +1,10 @@
 /**
  * Real-database tests for the provider-payment finance bridge.
  *
- * Guarded by FIN_DB_TESTS=1 so the default hermetic `jest` run is unaffected and
- * CI without a database does not fail. Run with:
- *   FIN_DB_TESTS=1 DATABASE_URL=... PGSSLMODE=disable \
- *     npx jest --runInBand --testPathPattern="provider-bridge-posting.db"
+ * Run with `pnpm test:db-specs` or:
+ *   DATABASE_URL=... PGSSLMODE=disable \
+ *     node ./node_modules/jest/bin/jest.js --config jest-db.json --runInBand \
+ *     --testPathPattern="provider-bridge-posting.db"
  *
  * A mocked db cannot show either defect these pin. The first is a foreign-key
  * violation raised by Postgres (`journal_entries.posted_by` REFERENCES
@@ -32,13 +32,10 @@ import type { AuditService } from "../../../../common/audit/audit.service";
 import type { CacheService } from "../../../../common/cache/cache.service";
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 
-const ENABLED = process.env.FIN_DB_TESTS === "1";
-const describeDb = ENABLED ? describe : describe.skip;
-
 function connect() {
   if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required for FIN_DB_TESTS");
+  if (!raw) throw new Error("provider-bridge-posting.db.spec.ts requires DATABASE_URL");
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   // A local Postgres has no TLS; a hosted one requires it. Derive rather than
@@ -62,7 +59,7 @@ const USER_ID = `fin-bridge-user-${SUFFIX}`;
 /** USD -> INR on the payment date. Rate is a scale-8 numeric in fin_exchange_rates. */
 const USD_INR = "83.5000000";
 
-describeDb("provider payment bridge — real database", () => {
+describe("provider payment bridge — real database", () => {
   let sql: ReturnType<typeof connect>;
   let db: Db;
   let bridge: ProviderBridgeService;

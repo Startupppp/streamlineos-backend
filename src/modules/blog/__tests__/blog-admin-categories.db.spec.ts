@@ -19,8 +19,8 @@
  * `org_id` — the blog is a single platform-level publication — so the fixtures
  * are suffixed and deleted in `finally`, leaving the database as it was found.
  *
- *   BLOG_DB_TESTS=1 BLOG_PROBE_DATABASE_URL=postgresql://… \
- *     npx jest --runInBand --testPathPattern="blog-admin-categories.db"
+ *   BLOG_PROBE_DATABASE_URL=postgresql://… \
+ *     npx jest --config jest-db.json --runInBand --testPathPattern="blog-admin-categories.db"
  */
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
@@ -37,20 +37,19 @@ import { blogCategories, blogPosts } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { BlogService } from "../blog.service";
 
-const ENABLED = process.env.BLOG_DB_TESTS === "1";
 const DB_URL = process.env.BLOG_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
-const describeDb = ENABLED && DB_URL !== undefined ? describe : describe.skip;
 
-if (ENABLED) jest.setTimeout(120_000);
+jest.setTimeout(120_000);
 
-describeDb("blog admin categories — counts every post, not just published ones", () => {
+describe("blog admin categories — counts every post, not just published ones", () => {
   let client: postgres.Sql;
   let service: BlogService;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   const createdCategoryIds: string[] = [];
 
   beforeAll(() => {
-    client = postgres(DB_URL ?? "", { max: 1, prepare: false, onnotice: () => undefined });
+    if (!DB_URL) throw new Error("blog-admin-categories.db.spec.ts requires BLOG_PROBE_DATABASE_URL or APP_DATABASE_URL");
+    client = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => undefined });
     db = drizzle(client, { schema });
     // Redis null: reads degrade to the database, which is what these two
     // projections do anyway — neither consults the cache.
