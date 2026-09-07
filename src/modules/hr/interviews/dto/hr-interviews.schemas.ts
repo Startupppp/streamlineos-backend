@@ -44,7 +44,6 @@ export type SelfInterviewListInput = z.infer<typeof selfInterviewListSchema>;
 
 export const hiringFlowListSchema = z.object({
   limit: pageSizeField(50, 100),
-  offset: z.coerce.number().min(0).default(0),
 }).strict();
 export type HiringFlowListInput = z.infer<typeof hiringFlowListSchema>;
 

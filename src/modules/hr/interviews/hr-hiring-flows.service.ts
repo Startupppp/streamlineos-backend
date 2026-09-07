@@ -20,10 +20,10 @@ export class HrHiringFlowsService {
     private readonly cache: CacheService,
   ) {}
 
-  listFlows(orgId: string, limit: number, offset: number) {
+  listFlows(orgId: string, limit: number) {
     return this.cache.cachedVersioned(
       `hr:hiring-flows:${orgId}`,
-      `list:${limit}:${offset}`,
+      `list:${limit}`,
       async () => {
         const where = eq(hiringFlows.orgId, orgId);
         const [rows, [totalRow]] = await Promise.all([
@@ -31,15 +31,12 @@ export class HrHiringFlowsService {
             where,
             orderBy: [desc(hiringFlows.isDefault), desc(hiringFlows.createdAt)],
             limit,
-            offset,
             with: { rounds: { orderBy: (r, { asc }) => [asc(r.orderIndex)] } },
           }),
           this.db.select({ total: count() }).from(hiringFlows).where(where),
         ]);
-        // The controller pages by `limit`/`offset`, so the page number the envelope
-        // reports has to be derived from the offset rather than passed in.
         return buildListResponse(rows, Number(totalRow?.total ?? 0), {
-          page: limit > 0 ? Math.floor(offset / limit) + 1 : 1,
+          page: 1,
           pageSize: limit,
         });
       },

@@ -59,7 +59,7 @@ export class HrHiringFlowsController {
     @Query() query: HiringFlowListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.flows.listFlows(u.orgId, query.limit, query.offset);
+    return this.flows.listFlows(u.orgId, query.limit);
   }
 
   @Post()
