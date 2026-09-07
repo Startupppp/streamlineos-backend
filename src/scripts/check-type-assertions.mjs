@@ -351,8 +351,15 @@ const CEILING_LEDGER_PATH = fileURLToPath(new URL("./assertion-ceiling-ledger.js
  * A scan that suddenly matches nothing must fail rather than report a clean
  * tree. Same reasoning as SCAN_FLOOR_FILES, one level down: that floor catches
  * a broken walker, this one catches a broken counter walking a healthy tree.
+ *
+ * 1000 -> 400 on 2026-09-07. The tree reached 417 and the floor started failing
+ * the gate with "the counter is broken, not the tree clean" — which was no
+ * longer true. Lowered only after PROVING the counter still counts: a single
+ * planted `as { id: number }` in a source file moved the total 417 -> 418, and
+ * removing it moved it back. A floor is a claim about the mechanism, so it may
+ * only be lowered against a bite proof, never because the number under it moved.
  */
-const CEILING_FLOOR_TOTAL = 1000;
+const CEILING_FLOOR_TOTAL = 400;
 
 function loadCeilingLedger() {
   try {
