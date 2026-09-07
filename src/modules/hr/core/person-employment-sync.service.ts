@@ -15,6 +15,12 @@ import {
   type EnsurePersonEmploymentInput,
   type EnsurePersonEmploymentResult,
 } from "./person-employment-sync.types";
+import {
+  ensureManyFromUsers,
+  type EnsureManyInput,
+  type EnsureManyRow,
+} from "./person-employment-sync-batch";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
 @Injectable()
 export class PersonEmploymentSyncService {
@@ -57,6 +63,22 @@ export class PersonEmploymentSyncService {
       .returning({ organizationPersonId: organizationPeople.organizationPersonId });
     if (!created) throw new Error("Failed to create canonical person record");
     return created.organizationPersonId;
+  }
+
+  /**
+   * Batched `ensureFromUser` for an import: fixed statement count for any batch
+   * size, and one audit INSERT instead of one per person.
+   */
+  async ensureManyFromUsers(
+    orgId: string,
+    actorId: string | null,
+    inputs: readonly EnsureManyInput[],
+    tx: DbOrTx,
+  ): Promise<EnsureManyRow[]> {
+    const outcome = await ensureManyFromUsers(tx, orgId, inputs);
+    if (outcome.auditEntries.length > 0)
+      await this.audit.logMany({ orgId, actorId, entries: outcome.auditEntries }, tx);
+    return outcome.rows;
   }
 
   async ensureFromUser(

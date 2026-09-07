@@ -58,16 +58,35 @@ function isolationArg(where: jest.Mock, findMany: jest.Mock, findFirst?: jest.Mo
   return (findMany.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
 }
 
+function bulkOnboardingCollaborators() {
+  const cache = {
+    invalidate: jest.fn(),
+    invalidateMany: jest.fn(),
+    invalidateNamespace: jest.fn(),
+    invalidateNamespaceMany: jest.fn(),
+    invalidateNamespaceForOrg: jest.fn(),
+  };
+  return [
+    { logCritical: jest.fn() } as never,
+    { invalidateAfterMutation: jest.fn() } as never,
+    cache as never,
+    { canManageOrganizationMembership: jest.fn().mockResolvedValue(true) } as never,
+    { assertWithinLimit: jest.fn() } as never,
+    { recordSeatEvents: jest.fn() } as never,
+    { sendWelcomeEmail: jest.fn() } as never,
+    { runAutomationsForEvent: jest.fn() } as never,
+    { dispatch: jest.fn() } as never,
+    { ensureManyFromUsers: jest.fn().mockResolvedValue([]) } as never,
+  ] as const;
+}
+
 describe("EmployeeBulkOnboardingService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
 
   it("scopes department query to actor org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
-    const mockAudit = { logCritical: jest.fn() };
-    const mockOnboarding = { onboardEmployee: jest.fn().mockResolvedValue({ userId: "u1" }) };
-    const mockHierarchyCache = { invalidateAfterMutation: jest.fn() };
-    const svc = new EmployeeBulkOnboardingService(db, mockAudit as never, mockOnboarding as never, mockHierarchyCache as never);
+    const svc = new EmployeeBulkOnboardingService(db, ...bulkOnboardingCollaborators());
     const actor = { orgId: ATTACKER, userId: "u-attacker", isOrgOwner: false };
     await svc.onboardEmployeesBulk(actor as never, []);
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
@@ -75,10 +94,7 @@ describe("EmployeeBulkOnboardingService — cross-tenant isolation", () => {
 
   it("scopes department query to owner org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([]);
-    const mockAudit = { logCritical: jest.fn() };
-    const mockOnboarding = { onboardEmployee: jest.fn().mockResolvedValue({ userId: "u1" }) };
-    const mockHierarchyCache = { invalidateAfterMutation: jest.fn() };
-    const svc = new EmployeeBulkOnboardingService(db, mockAudit as never, mockOnboarding as never, mockHierarchyCache as never);
+    const svc = new EmployeeBulkOnboardingService(db, ...bulkOnboardingCollaborators());
     const actor = { orgId: OWNER, userId: "u-owner", isOrgOwner: false };
     await svc.onboardEmployeesBulk(actor as never, []);
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);

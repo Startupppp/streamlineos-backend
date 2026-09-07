@@ -4,6 +4,7 @@ import { hrAuditLogs } from "../../../db/schema/hr/core-audit";
 import { organizationMembers } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { ListAuditLogsInput } from "./dto/hr-core.schemas";
 import {
   decodeAuditLogCursor,
@@ -36,7 +37,7 @@ export class HrAuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   private async resolveMembershipId(
-    db: Db,
+    db: DbOrTx,
     orgId: string,
     userId: string,
   ): Promise<number | null> {
@@ -98,7 +99,7 @@ export class HrAuditService {
       userAgent?: string;
       entries: readonly HrAuditEntry[];
     },
-    tx?: Db,
+    tx?: DbOrTx,
   ): Promise<void> {
     if (params.entries.length === 0) return;
     const db = tx ?? this.db;

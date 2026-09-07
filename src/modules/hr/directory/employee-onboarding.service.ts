@@ -28,7 +28,7 @@ import { appUrl } from "../../email/app-url";
 import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
-import { type BankDetails } from "../onboarding/core/crypto.helpers";
+import { toBankDetails } from "./bulk-onboarding/bulk-onboarding-bank-details";
 import { syncCanonicalEmploymentFields } from "../../../common/hr/sync-canonical-employment-fields";
 import { sealSensitive } from "../../../common/security/sensitive-field";
 import { sealBankDetails } from "../../../common/hr/canonical-bank-details";
@@ -51,11 +51,6 @@ import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
-type BankDetailsInput = NonNullable<OnboardEmployeeInput["bankDetails"]> & {
-  pfUanNumber?: string;
-  esiIpNumber?: string;
-};
-
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 function randomEmployeeCode(length: number): string {
@@ -63,18 +58,6 @@ function randomEmployeeCode(length: number): string {
   let out = "";
   for (let i = 0; i < length; i += 1) out += EMP_CODE_ALPHABET[bytes[i] % EMP_CODE_ALPHABET.length];
   return out;
-}
-
-function toBankDetails(input: BankDetailsInput): BankDetails {
-  return {
-    accountNumber: input.accountNumber ?? "",
-    bankName: input.bankName ?? "",
-    branch: input.branch ?? "",
-    ifsc: input.ifsc ?? "",
-    accountHolder: input.accountHolder ?? "",
-    ...(input.pfUanNumber !== undefined ? { pfUanNumber: input.pfUanNumber } : {}),
-    ...(input.esiIpNumber !== undefined ? { esiIpNumber: input.esiIpNumber } : {}),
-  };
 }
 
 @Injectable()
