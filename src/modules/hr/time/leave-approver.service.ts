@@ -99,16 +99,9 @@ export class LeaveApproverService {
     const idsToCheck = uniqueCandidateIds.filter(id => id !== subjectUserId);
     if (idsToCheck.length === 0) return null;
 
-    const resolvedPermissions = new Map<string, Map<string, DataScope>>();
-    await Promise.all(
-      idsToCheck.map(async id => {
-        resolvedPermissions.set(id, await this.access.resolveUserPermissions(orgId, id));
-      }),
-    );
-
     for (const candidateId of idsToCheck) {
-      const permissions = resolvedPermissions.get(candidateId);
-      if (!coversAnotherMember(permissions?.get(LEAVE_APPROVE_PERMISSION) ?? "none")) continue;
+      const permissions = await this.access.resolveUserPermissions(orgId, candidateId);
+      if (!coversAnotherMember(permissions.get(LEAVE_APPROVE_PERMISSION) ?? "none")) continue;
 
       const candidate = candidateById.get(candidateId);
       if (candidate) {

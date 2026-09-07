@@ -408,8 +408,8 @@
       "note": "chunked multi-key read â€” the loop steps by MEMBER_READ_BATCH_SIZE and each iteration reads a whole batch with inArray"
     },
     "/hr/time/leave-approver.service.ts": {
-      "verdict": "N+1-FIXED",
-      "note": "N+1-FIXED 2026-09-07: replaced sequential per-candidate resolveUserPermissions calls with Promise.all to preload all permission maps before the loop; iteration over the ordered candidate list is now purely in-memory."
+      "verdict": "BOUNDED",
+      "note": "BOUNDED 2026-09-07. The earlier 'N+1-FIXED via Promise.all' claim was withdrawn: preloading every candidate's permissions did not batch the work, it removed the loop's early exit, so a path that typically resolved ONE candidate always resolved all of them. Concurrency hid the cost in wall-clock while raising it in total. The sequential loop with its early return is restored. There is no bulk resolver to batch into - AccessService exposes only resolveUserPermissions(orgId, userId), and membersWithPermission returns PermissionMember {userId, membershipId} with no DataScope, which is the field the loop actually tests. Bounded instead by APPROVER_CANDIDATE_LIMIT = 100 on the candidate list and by returning at the first candidate whose scope covers another member. Pinned by leave-approver-query-count.spec.ts: 2 statements at 1 and at 50 candidates, and exactly 1 resolution when the first candidate covers."
     },
     "/inventory/channels/channels.service.ts": {
       "verdict": "EXCLUDED-MODULE",
