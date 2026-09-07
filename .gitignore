@@ -15,6 +15,10 @@ backups/
 .load-driver-results.json
 .artifacts/
 
+# Agent-harness daemon state. 12 files were committed here, including a daemon.pid
+# holding one contributor's live process id; the frontend already ignores this path.
+.claude-flow
+
 .chain-gaps
 .lane-*
 .seed-bite.log
