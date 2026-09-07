@@ -1,5 +1,14 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { blogPostStatusEnum } from "../../../db/schema/common/enums";
 import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
+
+export const adminPostListQuerySchema = z.object({
+  page: pageNumberField,
+  limit: pageSizeField(20),
+  search: z.string().trim().min(1).max(200).optional(),
+  status: z.enum(blogPostStatusEnum.enumValues).optional(),
+}).strict();
 
 export const postCreateSchema = z.object({
   title: z.string().min(1).max(256),
@@ -56,3 +65,4 @@ export type PostUpdateInput = z.infer<typeof postUpdateSchema>;
 export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
 export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
 export type FeedInput = z.infer<typeof feedSchema>;
+export type AdminPostListQuery = z.infer<typeof adminPostListQuerySchema>;

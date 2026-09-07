@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { z } from "zod";
@@ -17,6 +18,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BlogService } from "./blog.service";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { itemsPagedSchema } from "../../common/openapi/response-envelopes";
 import {
   blogPostWithRelationsSchema,
   blogPostSchema,
@@ -29,10 +31,12 @@ import {
   postUpdateSchema,
   categoryCreateSchema,
   categoryUpdateSchema,
+  adminPostListQuerySchema,
   type PostCreateInput,
   type PostUpdateInput,
   type CategoryCreateInput,
   type CategoryUpdateInput,
+  type AdminPostListQuery,
 } from "./dto/blog.schemas";
 
 const postIdParams = z.object({ postId: z.string().uuid() }).strict();
@@ -45,9 +49,10 @@ export class BlogAdminController {
 
   @Get("posts")
   @RequirePermission("blog:posts:manage")
-  @ResponseSchema(blogPostWithRelationsSchema.array())
-  listPosts() {
-    return this.blog.listAdminPosts();
+  @Validate({ query: adminPostListQuerySchema })
+  @ResponseSchema(itemsPagedSchema(blogPostWithRelationsSchema))
+  listPosts(@Query() query: AdminPostListQuery) {
+    return this.blog.listAdminPosts(query);
   }
 
   @Get("posts/:postId")

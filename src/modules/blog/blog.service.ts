@@ -12,6 +12,7 @@ import type {
   FeedInput,
   PostCreateInput,
   PostUpdateInput,
+  AdminPostListQuery,
 } from "./dto/blog.schemas";
 
 const POST_WITH = { category: true, author: true } as const;
@@ -25,16 +26,32 @@ export class BlogService {
     private readonly cache: CacheService,
   ) {}
 
-  listAdminPosts() {
+  listAdminPosts(query: AdminPostListQuery) {
+    const limit = Math.min(query.limit, BLOG_ADMIN_LIST_CAP);
+    const conditions = [];
+    if (query.status) conditions.push(eq(blogPosts.status, query.status));
+    if (query.search) conditions.push(like(sql`lower(${blogPosts.title})`, `%${query.search.toLowerCase()}%`));
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    // Every filter is in the key: a filtered result under an unfiltered key serves one caller's rows to the next.
+    const key = `list:p${query.page}:l${limit}:s${query.status ?? "all"}:q${query.search ?? ""}`;
     return this.cache.cachedVersioned(
       ADMIN_POSTS_CACHE_NAMESPACE,
-      "list",
-      () =>
-        this.db.query.blogPosts.findMany({
-          with: POST_WITH,
-          orderBy: [desc(blogPosts.updatedAt)],
-          limit: BLOG_ADMIN_LIST_CAP,
-        }),
+      key,
+      async () => {
+        const [items, totalRows] = await Promise.all([
+          this.db.query.blogPosts.findMany({
+            where,
+            with: POST_WITH,
+            orderBy: [desc(blogPosts.updatedAt)],
+            limit,
+            offset: (query.page - 1) * limit,
+          }),
+          this.db.select({ value: count() }).from(blogPosts).where(where),
+        ]);
+        const total = totalRows[0]?.value ?? 0;
+        return { items, total, page: query.page, totalPages: Math.max(1, Math.ceil(total / limit)) };
+      },
       CACHE_TTL.MEDIUM,
     );
   }
