@@ -34,7 +34,7 @@
     "DELETE /leads/:leadId -> 204": "EXCLUDED SCOPE — CRM. Same 204-on-nothing shape.",
     "GET /crm/blueprints/:blueprintId/transitions -> 200": "EXCLUDED SCOPE — CRM.",
     "GET /crm/campaigns/:campaignId/leads -> 200": "EXCLUDED SCOPE — CRM.",
-    "GET /crm/consent/contacts/:contactId -> 200": "EXCLUDED SCOPE — CRM. The write verb on the same path is a measured leak; see leaks below.",
+    "GET /crm/consent/contacts/:contactId -> 200": "EXCLUDED SCOPE — CRM. The write verb on the same path WAS a measured cross-tenant leak on 2026-09-06 (control 200, probe 200, {\"success\":true}); 2f9fd242c gave CrmConsentService.record an org-scoped contact lookup that throws NotFound, and it answers 404 at 565e45832 across two full sweeps and a targeted recheck. It is therefore correctly absent from leaks — this note previously pointed at a leaks entry that never existed.",
     "GET /crm/customer-360/company/:companyId/timeline -> 200": "EXCLUDED SCOPE — CRM.",
     "GET /deals/:dealId/activities -> 200": "EXCLUDED SCOPE — CRM.",
     "GET /deals/:dealId/transitions -> 200": "EXCLUDED SCOPE — CRM.",
