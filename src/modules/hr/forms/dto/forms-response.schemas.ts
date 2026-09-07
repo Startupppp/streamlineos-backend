@@ -56,7 +56,7 @@ export const hrFormSubmissionRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   formId: z.number().int(),
-  formSchemaSnapshot: z.array(z.unknown()),
+  formSchemaSnapshot: z.array(hrFormFieldSchema),
   submittedBy: z.string().nullable(),
   submittedByName: z.string().nullable(),
   subjectEmployeeId: z.number().int().nullable(),
