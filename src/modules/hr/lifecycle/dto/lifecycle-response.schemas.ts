@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { terminationStatusEnum } from "../../../../db/schema/common/enums";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
 
@@ -150,7 +151,7 @@ export const terminationItemSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   userId: z.string(),
-  status: z.string(),
+  status: z.enum(terminationStatusEnum.enumValues),
   reasons: z.array(z.string()),
   detailedExplanation: z.string(),
   effectiveDate: z.string(),

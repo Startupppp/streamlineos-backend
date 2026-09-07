@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hrSafetyIncidentTypeEnum, hrSafetyIncidentSeverityEnum, hrSafetyIncidentStatusEnum } from "../../../../db/schema/hr/safety";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
 
@@ -92,13 +93,13 @@ export const hrSafetyIncidentSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   incidentNumber: z.string(),
-  type: z.string(),
+  type: z.enum(hrSafetyIncidentTypeEnum.enumValues),
   location: z.string(),
   occurredAt: wireDate(),
   reportedBy: z.string(),
   description: z.string(),
-  severity: z.string(),
-  status: z.string(),
+  severity: z.enum(hrSafetyIncidentSeverityEnum.enumValues),
+  status: z.enum(hrSafetyIncidentStatusEnum.enumValues),
   medicalAttention: z.boolean(),
   confidentialMedicalNote: z.string().nullable(),
   createdAt: wireDate(),
