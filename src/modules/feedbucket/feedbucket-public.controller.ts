@@ -60,67 +60,16 @@ import {
   feedbucketPublicSubmitSchema,
   feedbucketPublicAiAssistSchema,
 } from "./dto/feedbucket-response.schemas";
-
-const publicKeyParams = z.object({ publicKey: z.string().min(1) }).strict();
-
-
-const ALLOWED_IMAGE_MIMES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-]);
-const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024;
-const MAX_RECORDING_BYTES = 100 * 1024 * 1024;
-
-function projectFolder(widget: typeof feedbucketWidgets.$inferSelect): string {
-  return widget.projectId
-    ? `project-${widget.projectId}`
-    : `org-${widget.orgId}`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-
-function originHostname(req: Request): string | undefined {
-  const originHeader = req.headers["origin"];
-  const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
-  const refererHeader = req.headers["referer"];
-  const referer = Array.isArray(refererHeader)
-    ? refererHeader[0]
-    : refererHeader;
-  const src = origin ?? referer;
-  if (!src) return undefined;
-  try {
-    return new URL(src).hostname;
-  } catch {
-    return undefined;
-  }
-}
-
-function parseMultipartField(raw: unknown, fieldName: string): unknown {
-  if (
-    fieldName === "consoleLogs" ||
-    fieldName === "metadata" ||
-    fieldName === "networkLogs"
-  ) {
-    if (typeof raw === "string") {
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return raw;
-      }
-    }
-  }
-  return raw;
-}
+import {
+  publicKeyParams,
+  ALLOWED_IMAGE_MIMES,
+  MAX_SCREENSHOT_BYTES,
+  MAX_RECORDING_BYTES,
+  projectFolder,
+  escapeHtml,
+  originHostname,
+  parseMultipartField,
+} from "./feedbucket-public.helpers";
 
 @Public()
 @Controller("public/feedbucket")
