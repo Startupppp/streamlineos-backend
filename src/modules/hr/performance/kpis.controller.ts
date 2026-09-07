@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Post, Patch, Delete, Body, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -13,11 +13,13 @@ import {
   createFrameworkSchema,
   updateFrameworkSchema,
   createCompetencySchema,
+  listCompetenciesSchema,
   type CreateKpiInput,
   type UpdateKpiInput,
   type CreateFrameworkInput,
   type UpdateFrameworkInput,
   type CreateCompetencyInput,
+  type ListCompetenciesInput,
 } from "./dto/kpis.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -107,9 +109,13 @@ export class KpisController {
   @ResponseSchema(listCompetenciesResponseSchema)
   @Get("frameworks/:frameworkId/competencies")
   @RequirePermission("hr:performance:view")
-  @Validate({ params: frameworkIdParams })
-  listCompetencies(@Param("frameworkId", ParseIntPipe) frameworkId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.service.listCompetencies(u.orgId, frameworkId);
+  @Validate({ params: frameworkIdParams, query: listCompetenciesSchema })
+  listCompetencies(
+    @Param("frameworkId", ParseIntPipe) frameworkId: number,
+    @Query() query: ListCompetenciesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.service.listCompetencies(u.orgId, frameworkId, query);
   }
 
   @ResponseSchema(createCompetencyResponseSchema)

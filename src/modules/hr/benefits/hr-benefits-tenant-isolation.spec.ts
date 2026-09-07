@@ -57,7 +57,7 @@ describe("HrTravelVisitsService — cross-tenant isolation", () => {
   it("hides travel visits from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new HrTravelVisitsService(db);
-    await svc.listVisits(ATTACKER, 10);
+    await svc.listVisits(ATTACKER, 10, { limit: 50 });
     const arg = where.mock.calls[0]?.[0] ?? (findMany.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
     expect(sqlValues(arg)).toContain(ATTACKER);
   });
@@ -67,14 +67,14 @@ describe("HrTravelVisitsService — cross-tenant isolation", () => {
     Object.assign(db, { query: { travelRequests: { findFirst: jest.fn().mockResolvedValue(undefined) } } });
     const svc = new HrTravelVisitsService(db);
 
-    await expect(svc.listVisits(ATTACKER, 10)).rejects.toThrow(NotFoundException);
+    await expect(svc.listVisits(ATTACKER, 10, { limit: 50 })).rejects.toThrow(NotFoundException);
     expect(where).not.toHaveBeenCalled();
   });
 
   it("returns travel visits for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new HrTravelVisitsService(db);
-    await svc.listVisits(OWNER, 10);
+    await svc.listVisits(OWNER, 10, { limit: 50 });
     const arg = where.mock.calls[0]?.[0] ?? (findMany.mock.calls[0]?.[0] as Record<string, unknown> | undefined)?.["where"];
     expect(sqlValues(arg)).toContain(OWNER);
   });

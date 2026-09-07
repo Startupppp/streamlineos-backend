@@ -31,7 +31,6 @@ export const updateHrWebhookSchema = z.object({
  * `listDeliveriesSchema` below, which the same file already got right.
  */
 export const listHrWebhooksSchema = z.object({
-  page: pageNumberField,
   limit: pageSizeField(50, 100),
 }).strict();
 

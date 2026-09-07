@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const decimalString = z
   .string()
@@ -76,3 +77,9 @@ export type UpdateKpiInput = z.infer<typeof updateKpiSchema>;
 export type CreateFrameworkInput = z.infer<typeof createFrameworkSchema>;
 export type UpdateFrameworkInput = z.infer<typeof updateFrameworkSchema>;
 export type CreateCompetencyInput = z.infer<typeof createCompetencySchema>;
+
+export const listCompetenciesSchema = z.object({
+  cursor: z.string().trim().min(1).max(2048).optional(),
+  limit: pageSizeField(50, 100),
+}).strict();
+export type ListCompetenciesInput = z.infer<typeof listCompetenciesSchema>;

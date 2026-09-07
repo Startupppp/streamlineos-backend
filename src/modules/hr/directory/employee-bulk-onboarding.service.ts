@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
 import { orgUnits } from "../../../db/schema";
 import { nextDepartmentCode, toDepartmentCode } from "../../organization/hierarchy/lib/department-code";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -10,6 +10,7 @@ import { EmployeeOnboardingService } from "./employee-onboarding.service";
 import type { BulkOnboardEmployeeRow, OnboardEmployeeInput } from "./dto/hr-directory.schemas";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 
 @Injectable()
 export class EmployeeBulkOnboardingService {
@@ -22,22 +23,32 @@ export class EmployeeBulkOnboardingService {
 
   async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]) {
     let hierarchyChanged = false;
-    const orgDeptRows = await this.db
-      .select({
-        id: orgUnits.id,
-        name: orgUnits.name,
-        code: orgUnits.code,
-      })
-      .from(orgUnits)
-      .where(
-        and(
-          eq(orgUnits.orgId, actor.orgId),
-          eq(orgUnits.kind, "DEPARTMENT"),
-          isNull(orgUnits.deletedAt),
-          sql`${orgUnits.status} <> 'ARCHIVED'`,
-        ),
-      )
-      .limit(500);
+    const orgDeptRows: Array<{ id: string; name: string; code: string }> = [];
+    let afterOrgUnitId = "";
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const chunk = await this.db
+        .select({
+          id: orgUnits.id,
+          name: orgUnits.name,
+          code: orgUnits.code,
+        })
+        .from(orgUnits)
+        .where(
+          and(
+            eq(orgUnits.orgId, actor.orgId),
+            eq(orgUnits.kind, "DEPARTMENT"),
+            isNull(orgUnits.deletedAt),
+            sql`${orgUnits.status} <> 'ARCHIVED'`,
+            gt(orgUnits.id, afterOrgUnitId),
+          ),
+        )
+        .orderBy(asc(orgUnits.id))
+        .limit(HR_SCAN_PAGE);
+      if (chunk.length === 0) break;
+      orgDeptRows.push(...chunk);
+      if (chunk.length < HR_SCAN_PAGE) break;
+      afterOrgUnitId = chunk[chunk.length - 1].id;
+    }
 
     const orgDeptByKey = new Map<string, string>();
     const usedCodes = new Set<string>();

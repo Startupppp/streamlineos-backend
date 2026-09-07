@@ -6,6 +6,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -16,7 +17,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { HrTravelVisitsService } from "./hr-travel-visits.service";
-import { createVisitLogSchema, type CreateVisitLogInput } from "./dto/benefits.schemas";
+import { createVisitLogSchema, listVisitLogsSchema, type CreateVisitLogInput, type ListVisitLogsInput } from "./dto/benefits.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
@@ -33,12 +34,13 @@ export class HrTravelVisitsController {
   @ResponseSchema(listTravelVisitsResponseSchema)
   @Get(":travelRequestId")
   @RequirePermission("hr:benefits:view")
-  @Validate({ params: travelRequestIdParams })
+  @Validate({ params: travelRequestIdParams, query: listVisitLogsSchema })
   listVisits(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
+    @Query() query: ListVisitLogsInput,
   ) {
-    return this.service.listVisits(u.orgId, travelRequestId);
+    return this.service.listVisits(u.orgId, travelRequestId, query);
   }
 
   @ResponseSchema(addTravelVisitResponseSchema)

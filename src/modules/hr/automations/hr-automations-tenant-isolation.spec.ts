@@ -79,7 +79,7 @@ describe("HrWebhooksService — cross-tenant isolation", () => {
   it("hides webhook subscriptions from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany, countWhere } = makeDb([]);
     const svc = new HrWebhooksService(db);
-    await svc.listSubscriptions(ATTACKER, 1, 10);
+    await svc.listSubscriptions(ATTACKER, 10);
     const arg = getIsolationArg(where, findMany);
     expect(sqlValues(arg)).toContain(ATTACKER);
     expect(sqlValues(countWhere.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -88,7 +88,7 @@ describe("HrWebhooksService — cross-tenant isolation", () => {
   it("returns subscriptions for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany, countWhere } = makeDb([ROW]);
     const svc = new HrWebhooksService(db);
-    const result = await svc.listSubscriptions(OWNER, 1, 10);
+    const result = await svc.listSubscriptions(OWNER, 10);
     const arg = getIsolationArg(where, findMany);
     expect(sqlValues(arg)).toContain(OWNER);
     expect(sqlValues(countWhere.mock.calls[0]?.[0])).toContain(OWNER);
@@ -106,7 +106,7 @@ describe("HrAutomationEngineService — cross-tenant isolation", () => {
     const { db, where, findMany, countWhere } = makeDb([]);
     const mockActions = { execute: jest.fn() };
     const svc = new HrAutomationEngineService(db, mockActions as never, null);
-    await svc.listRules(ATTACKER, { page: 1, limit: 10 });
+    await svc.listRules(ATTACKER, { limit: 10 });
     const arg = getIsolationArg(where, findMany);
     expect(sqlValues(arg)).toContain(ATTACKER);
     expect(sqlValues(countWhere.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -116,7 +116,7 @@ describe("HrAutomationEngineService — cross-tenant isolation", () => {
     const { db, where, findMany, countWhere } = makeDb([ROW]);
     const mockActions = { execute: jest.fn() };
     const svc = new HrAutomationEngineService(db, mockActions as never, null);
-    const result = await svc.listRules(OWNER, { page: 1, limit: 10 });
+    const result = await svc.listRules(OWNER, { limit: 10 });
     const arg = getIsolationArg(where, findMany);
     expect(sqlValues(arg)).toContain(OWNER);
     expect(sqlValues(countWhere.mock.calls[0]?.[0])).toContain(OWNER);

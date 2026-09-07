@@ -78,7 +78,6 @@ export class HrAutomationsController {
       search: query.search,
       triggerEvent: query.triggerEvent,
       isEnabled: query.isEnabled,
-      page: query.page,
       limit: query.limit,
     });
   }

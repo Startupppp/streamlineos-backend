@@ -210,6 +210,7 @@ export const teamDetailSchema = z.object({
   name: z.string().nullable(),
   managerId: z.string().nullable(),
   managerName: z.string().nullable(),
+  membersTruncated: z.boolean(),
   members: z.array(teamMemberSchema),
 });
 

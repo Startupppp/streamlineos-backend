@@ -131,7 +131,6 @@ export type ToggleHrAutomationRuleInput = z.infer<typeof toggleHrAutomationRuleS
  * arrived as unvalidated strings. `isEnabled` keeps its tri-state: absent means "either".
  */
 export const listHrAutomationRulesSchema = z.object({
-  page: pageNumberField,
   limit: pageSizeField(50, 100),
   search: z.string().trim().min(1).max(200).optional(),
   triggerEvent: hrAutomationEventSchema.optional(),

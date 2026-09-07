@@ -53,6 +53,13 @@ export const createFrameworkResponseSchema = z.array(frameworkSchema);
 
 export const updateFrameworkResponseSchema = z.array(frameworkSchema);
 
-export const listCompetenciesResponseSchema = z.array(competencySchema);
+export const listCompetenciesResponseSchema = z.object({
+  data: z.array(competencySchema),
+  pagination: z.object({
+    limit: z.number().int(),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  }),
+});
 
 export const createCompetencyResponseSchema = z.array(competencySchema);

@@ -88,6 +88,7 @@ export const joinCommunityResponseSchema = successSchema;
 export const leaveCommunityResponseSchema = successSchema;
 
 export const communityMembersResponseSchema = communitySchema.extend({
+  membersTruncated: z.boolean(),
   members: z.array(z.object({ userId: z.string(), role: z.enum(["member", "moderator"]) })),
 });
 

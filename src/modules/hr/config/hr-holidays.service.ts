@@ -1,10 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, lte, or, sql } from "drizzle-orm";
 import { holidays, organizationMembers, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 import type {
   CreateHolidayInput,
   UpdateHolidayInput,
@@ -119,38 +120,36 @@ export class HrHolidaysService {
     message?: string,
   ): Promise<void> {
     try {
-      const memberIds = await this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(eq(organizationMembers.orgId, orgId))
-        .limit(500);
-      if (memberIds.length === 0) return;
-
-      const activeUsers = await this.db
-        .select({ id: users.id })
-        .from(users)
-        .where(
-          and(
-            inArray(
-              users.id,
-              memberIds.map((m) => m.userId),
+      let afterMembershipId = 0;
+      for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+        const recipients = await this.db
+          .select({ membershipId: organizationMembers.id, userId: organizationMembers.userId })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(users.isActive, true),
+              gt(organizationMembers.id, afterMembershipId),
             ),
-            eq(users.isActive, true),
-          ),
-        )
-        .limit(500);
+          )
+          .orderBy(asc(organizationMembers.id))
+          .limit(HR_SCAN_PAGE);
+        if (recipients.length === 0) return;
 
-      if (activeUsers.length > 0) {
         await this.dispatch.emit({
           eventKey: "hr.holiday.announced",
           orgId,
-          targetUserIds: activeUsers.map((u) => u.id),
+          targetUserIds: recipients.map((r) => r.userId),
           entityType: "holiday",
           entityId: holidayId ? String(holidayId) : undefined,
           title: name,
           message: message ?? `Holiday on ${date}`,
           variables: { holidayName: name, date, message: message ?? null },
         });
+
+        if (recipients.length < HR_SCAN_PAGE) return;
+        afterMembershipId = recipients[recipients.length - 1].membershipId;
       }
     } catch (error) {
       logger.error("Failed to send holiday announcement", { orgId, error });

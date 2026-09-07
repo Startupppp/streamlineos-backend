@@ -8,7 +8,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
   createAttendanceRegularizationSchema,
   type CreateAttendanceRegularizationInput,
@@ -30,7 +30,7 @@ const listRegularizationsSchema = z.object({
   status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  page: pageNumberField,
+  cursor: z.string().min(1).max(512).optional(),
   limit: pageSizeField(20, 100),
 });
 

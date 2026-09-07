@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, type SQL } from "drizzle-orm";
 import {
   kpiDefinitions,
   competencyFrameworks,
@@ -8,6 +8,9 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { hasPatchValues } from "../../../common/db/patch-values";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfterIntValue } from "../../../common/pagination/keyset";
+import type { ListCompetenciesInput } from "./dto/kpis.schemas";
 
 @Injectable()
 export class KpisService {
@@ -138,7 +141,7 @@ export class KpisService {
     return this.db.update(competencyFrameworks).set(data).where(scope).returning();
   }
 
-  async listCompetencies(orgId: string, frameworkId: number) {
+  async listCompetencies(orgId: string, frameworkId: number, query: ListCompetenciesInput) {
     const framework = await this.db
       .select({ id: competencyFrameworks.id })
       .from(competencyFrameworks)
@@ -151,11 +154,26 @@ export class KpisService {
       .limit(1);
     if (framework.length === 0)
       throw new NotFoundException("Framework not found.");
-    return this.db
+
+    const conditions: SQL[] = [
+      eq(competencies.orgId, orgId),
+      eq(competencies.frameworkId, frameworkId),
+    ];
+    const position = decodeCursor(query.cursor);
+    if (position)
+      conditions.push(keysetAfterIntValue(competencies.id, competencies.id, position));
+
+    const rows = await this.db
       .select()
       .from(competencies)
-      .where(eq(competencies.frameworkId, frameworkId))
-      .limit(500);
+      .where(and(...conditions))
+      .orderBy(asc(competencies.id))
+      .limit(query.limit + 1);
+
+    return buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: String(row.id),
+      id: String(row.id),
+    }));
   }
 
   async createCompetency(

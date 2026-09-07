@@ -66,7 +66,7 @@ export class HrWebhooksController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListHrWebhooksInput,
   ) {
-    return this.webhooks.listSubscriptions(u.orgId, query.page, query.limit);
+    return this.webhooks.listSubscriptions(u.orgId, query.limit);
   }
 
   @Get(":subscriptionId")

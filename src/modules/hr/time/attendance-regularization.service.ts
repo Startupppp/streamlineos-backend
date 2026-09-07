@@ -18,6 +18,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { AuditService } from "../../../common/audit/audit.service";
 import { requireOrganizationMembershipId } from "./organization-membership";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { boundHrReadLimit } from "../hr-read-limits";
 
 export interface CreateRegularizationInput {
   attendanceDate: string;
@@ -31,7 +34,7 @@ export interface ListRegularizationsQuery {
   status?: string;
   startDate?: string;
   endDate?: string;
-  page?: number;
+  cursor?: string;
   limit?: number;
 }
 
@@ -137,10 +140,18 @@ export class AttendanceRegularizationService {
       throw new ForbiddenException("Not authorized to view other users' regularizations.");
     }
 
-    const pageSize = Math.min(query.limit ?? 20, 100);
-    const offset = ((query.page ?? 1) - 1) * pageSize;
+    const pageSize = boundHrReadLimit(query.limit ?? 20);
+    const position = decodeCursor(query.cursor);
 
     const conditions = [eq(hrAttendanceRegularizations.orgId, u.orgId)];
+    if (position)
+      conditions.push(
+        keysetBeforeId(
+          hrAttendanceRegularizations.createdAt,
+          hrAttendanceRegularizations.id,
+          position,
+        ),
+      );
     if (targetUserId) {
       const targetMembershipId = targetUserId === u.userId
         ? actingMembershipId(u.principal)
@@ -154,12 +165,17 @@ export class AttendanceRegularizationService {
 
     const rows = await this.db.query.hrAttendanceRegularizations.findMany({
       where: and(...conditions),
-      orderBy: [desc(hrAttendanceRegularizations.createdAt)],
-      limit: pageSize,
-      offset,
+      orderBy: [
+        desc(hrAttendanceRegularizations.createdAt),
+        desc(hrAttendanceRegularizations.id),
+      ],
+      limit: pageSize + 1,
     });
 
-    return { data: rows, page: query.page ?? 1, limit: pageSize };
+    return buildCursorPage(rows, pageSize, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async apply(u: CurrentUserContext, regularizationId: number) {

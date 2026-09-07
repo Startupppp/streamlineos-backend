@@ -58,7 +58,7 @@ describe("a sub-resource list whose parent id is outside the caller's org answer
     ],
     ["GET /kb/articles/:articleId/tags", (db, org) => new KbTagsService(db).getArticleTags(org, 1)],
     ["GET /goals/:goalId/links", (db, org) => new GoalLinksService(db).getLinks(org, 1)],
-    ["GET /hr/travel-visits/:travelRequestId", (db, org) => new HrTravelVisitsService(db).listVisits(org, 1)],
+    ["GET /hr/travel-visits/:travelRequestId", (db, org) => new HrTravelVisitsService(db).listVisits(org, 1, { limit: 50 })],
     [
       "GET /hr/enterprise/comp/planning/cycles/:cycleId/budget-pools",
       (db, org) =>

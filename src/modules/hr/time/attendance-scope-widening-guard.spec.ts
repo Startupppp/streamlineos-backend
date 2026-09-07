@@ -86,7 +86,7 @@ describe("AttendanceRegularizationService scope-widening guard", () => {
     (resolveAttendanceScope as jest.Mock).mockResolvedValue("own" satisfies DataScope);
     const actor = makeUser("actor-1");
     await expect(
-      svc.list(actor, { userId: "other-user", page: 1, limit: 20 }),
+      svc.list(actor, { userId: "other-user", limit: 20 }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -94,7 +94,7 @@ describe("AttendanceRegularizationService scope-widening guard", () => {
     (resolveAttendanceScope as jest.Mock).mockResolvedValue("none" satisfies DataScope);
     const actor = makeUser("actor-1");
     await expect(
-      svc.list(actor, { userId: "other-user", page: 1, limit: 20 }),
+      svc.list(actor, { userId: "other-user", limit: 20 }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

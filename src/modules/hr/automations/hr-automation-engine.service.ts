@@ -205,10 +205,8 @@ export class HrAutomationEngineService {
     };
   }
 
-  async listRules(orgId: string, params: { search?: string; triggerEvent?: string; isEnabled?: boolean; page: number; limit: number }) {
-    const { page } = params;
+  async listRules(orgId: string, params: { search?: string; triggerEvent?: string; isEnabled?: boolean; limit: number }) {
     const limit = boundHrReadLimit(params.limit);
-    const offset = (page - 1) * limit;
 
     const baseWhere = and(
       eq(hrAutomationRules.orgId, orgId),
@@ -223,12 +221,11 @@ export class HrAutomationEngineService {
         where: baseWhere,
         orderBy: [desc(hrAutomationRules.createdAt)],
         limit,
-        offset,
       }),
       this.db.select({ total: count() }).from(hrAutomationRules).where(baseWhere),
     ]);
 
-    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page, pageSize: limit });
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page: 1, pageSize: limit });
   }
 
   async getRule(orgId: string, ruleId: number) {

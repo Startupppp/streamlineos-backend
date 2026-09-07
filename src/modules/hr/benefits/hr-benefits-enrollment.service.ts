@@ -11,6 +11,7 @@ import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.serv
 import { HrBenefitsPlansService } from "./hr-benefits-plans.service";
 import type { EnrollInput, WaiveInput, CreateDependentInput, PatchDependentInput } from "./dto/benefits.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { HR_SCAN_PAGE } from "../hr-read-limits";
 
 @Injectable()
 export class HrBenefitsEnrollmentService {
@@ -138,7 +139,7 @@ export class HrBenefitsEnrollmentService {
         .from(hrDependents)
         .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)))
         .orderBy(hrDependents.name)
-        .limit(200),
+        .limit(HR_SCAN_PAGE),
     ]);
 
     const enrollments = enrollmentRows.map((r) => ({ ...r.enrollment, plan: r.plan }));
@@ -161,7 +162,7 @@ export class HrBenefitsEnrollmentService {
       .from(hrDependents)
       .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)))
       .orderBy(hrDependents.name)
-      .limit(200);
+      .limit(HR_SCAN_PAGE);
   }
 
   async addDependent(orgId: string, userId: string, membershipId: number | null, data: CreateDependentInput) {

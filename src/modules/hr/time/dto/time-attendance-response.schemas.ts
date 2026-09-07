@@ -193,6 +193,9 @@ export const regularizationApplyResponseSchema = z.object({
 
 export const regularizationListResponseSchema = z.object({
   data: z.array(regularizationRowSchema),
-  page: z.number().int(),
-  limit: z.number().int(),
+  pagination: z.object({
+    limit: z.number().int(),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  }),
 });

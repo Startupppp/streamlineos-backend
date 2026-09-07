@@ -81,6 +81,12 @@ export const createVisitLogSchema = z.object({
 }).strict();
 export type CreateVisitLogInput = z.infer<typeof createVisitLogSchema>;
 
+export const listVisitLogsSchema = z.object({
+  cursor: z.string().trim().min(1).max(2048).optional(),
+  limit: pageSizeField(50, 100),
+}).strict();
+export type ListVisitLogsInput = z.infer<typeof listVisitLogsSchema>;
+
 export const benefitPlansQuerySchema = z.object({
   cursor: z.string().trim().min(1).max(2048).optional(),
   status: z.enum(["draft", "active", "archived"]).optional(),

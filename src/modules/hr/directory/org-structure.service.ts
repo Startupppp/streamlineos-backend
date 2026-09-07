@@ -18,6 +18,7 @@ import type { DataScope } from "../../access/access.types";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import { OrgChartService } from "./org-chart.service";
+import { HR_SCAN_PAGE } from "../hr-read-limits";
 export type { OrgChartPage } from "./org-chart.service";
 
 export interface HeadcountGroup {
@@ -255,15 +256,17 @@ export class OrgStructureService {
             }),
           ),
         )
-        .limit(500),
+        .limit(HR_SCAN_PAGE + 1),
     ]);
 
     if (!deptRow) throw new NotFoundException("Team not found");
 
-    const factsMap = await this.employment.getFactsBatch(orgId, memberships.map((m) => m.id));
+    const membersTruncated = memberships.length > HR_SCAN_PAGE;
+    const members = membersTruncated ? memberships.slice(0, HR_SCAN_PAGE) : memberships;
+    const factsMap = await this.employment.getFactsBatch(orgId, members.map((m) => m.id));
 
     const visibleManager = deptRow.headUserId
-      ? memberships.find((member) => member.id === deptRow.headUserId)
+      ? members.find((member) => member.id === deptRow.headUserId)
       : undefined;
 
     return {
@@ -271,7 +274,8 @@ export class OrgStructureService {
       name: deptRow.name,
       managerId: visibleManager?.id ?? null,
       managerName: visibleManager?.name ?? null,
-      members: memberships.map((m) => ({
+      membersTruncated,
+      members: members.map((m) => ({
         ...m,
         designation: factsMap.get(m.id)?.designation ?? null,
       })),

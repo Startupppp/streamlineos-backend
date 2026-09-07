@@ -193,7 +193,7 @@ describe("HR Time services — cross-tenant isolation", () => {
       const mockAccess = makeAccessMock();
       const svc = new AttendanceRegularizationService(db, {} as never, mockAccess as never, {} as never, {} as never);
       const ctx = { orgId: ATTACKER, userId: "user-1", isOrgOwner: true } as never;
-      const result = await svc.list(ctx, { page: 1, limit: 10 });
+      const result = await svc.list(ctx, { limit: 10 });
       expect(result.data).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -205,7 +205,7 @@ describe("HR Time services — cross-tenant isolation", () => {
       const mockAccess = makeAccessMock();
       const svc = new AttendanceRegularizationService(db, {} as never, mockAccess as never, {} as never, {} as never);
       const ctx = { orgId: OWNER, userId: "user-1", isOrgOwner: true } as never;
-      const result = await svc.list(ctx, { page: 1, limit: 10 });
+      const result = await svc.list(ctx, { limit: 10 });
       expect(result.data).toHaveLength(1);
     });
   });

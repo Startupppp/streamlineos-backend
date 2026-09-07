@@ -124,7 +124,14 @@ const travelVisitSchema = z.object({
   createdAt: wireDate(),
 });
 
-export const listTravelVisitsResponseSchema = z.array(travelVisitSchema);
+export const listTravelVisitsResponseSchema = z.object({
+  data: z.array(travelVisitSchema),
+  pagination: z.object({
+    limit: z.number().int(),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  }),
+});
 export const addTravelVisitResponseSchema = travelVisitSchema;
 
 export const deletePlanResponseSchema = z.object({ ok: z.literal(true) });
