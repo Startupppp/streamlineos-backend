@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { terminationStatusEnum } from "../../../../db/schema/common/enums";
+import { terminationStatusEnum, onboardingDocumentStatusEnum } from "../../../../db/schema/common/enums";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
 
@@ -269,7 +269,7 @@ export const onboardingDocListItemSchema = z.object({
   fileSize: z.number().int().nullable(),
   mimeType: z.string().nullable(),
   version: z.number().int(),
-  status: z.string(),
+  status: z.enum(onboardingDocumentStatusEnum.enumValues),
   reviewedBy: z.string().nullable(),
   reviewedAt: nullableWireDate(),
   remarks: z.string().nullable(),
