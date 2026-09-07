@@ -45,6 +45,7 @@ export class SalaryStructureTemplatesService {
         effectiveTo: salaryStructureTemplates.effectiveTo,
         isActive: salaryStructureTemplates.isActive,
         createdAt: salaryStructureTemplates.createdAt,
+        updatedAt: salaryStructureTemplates.updatedAt,
       })
       .from(salaryStructureTemplates)
       .where(and(...conditions))
