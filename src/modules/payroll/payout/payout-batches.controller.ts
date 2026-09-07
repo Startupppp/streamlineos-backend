@@ -42,7 +42,17 @@ import {
   type BankReturnImportInput,
 } from "./dto/payout.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  batchListSchema,
+  batchDetailSchema,
+  createBatchResponseSchema,
+  successSchema,
+  bankDetailsResponseSchema,
+  importBankReturnResponseSchema,
+  payoutValidationResponseSchema,
+} from "./dto/payout-response.schemas";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -62,6 +72,7 @@ export class PayoutRunController {
   @Get("validation")
   @RequirePermission("payroll:bank:manage")
   @Validate({ params: runIdParams })
+  @ResponseSchema(payoutValidationResponseSchema)
   validate(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +98,7 @@ export class PayoutRunController {
   @RequirePermission("payroll:bank:manage")
   @Idempotent("payroll.payout.batch.create")
   @Validate({ params: runIdParams, body: createBatchSchema })
+  @ResponseSchema(createBatchResponseSchema)
   createBatch(
     @Param("runId", ParseIntPipe) runId: number,
     @Body() body: CreateBatchInput,
@@ -109,6 +121,7 @@ export class PayoutBatchesController {
   @Get("batches")
   @RequirePermission("payroll:bank:manage")
   @Validate({ query: batchesQuerySchema })
+  @ResponseSchema(batchListSchema)
   listBatches(
     @Query() query: BatchesQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -119,6 +132,7 @@ export class PayoutBatchesController {
   @Get("batches/:batchId")
   @RequirePermission("payroll:bank:manage")
   @Validate({ params: batchIdParams, query: batchDetailQuerySchema })
+  @ResponseSchema(batchDetailSchema)
   getBatch(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Query() query: BatchDetailQueryInput,
@@ -136,6 +150,7 @@ export class PayoutBatchesController {
   @Get("batches/:batchId/file")
   @RequirePermission("payroll:bank:manage")
   @Validate({ params: batchIdParams })
+  @ApiOkResponse({ content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } })
   async getBatchFile(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -159,6 +174,7 @@ export class PayoutBatchesController {
   @RequirePermission("payroll:bank:manage")
   @Idempotent("payroll.payout.batch.mark-sent")
   @Validate({ params: batchIdParams })
+  @ResponseSchema(successSchema)
   markSent(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -171,6 +187,7 @@ export class PayoutBatchesController {
   @RequirePermission("payroll:bank:manage")
   @Idempotent("payroll.payout.batch.mark-paid")
   @Validate({ params: batchIdParams, body: markBatchPaidSchema })
+  @ResponseSchema(successSchema)
   markBatchPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body() body: MarkBatchPaidInput,
@@ -184,6 +201,7 @@ export class PayoutBatchesController {
   @RequirePermission("payroll:bank:manage")
   @Idempotent("payroll.bank-return.import")
   @Validate({ params: batchIdParams, body: bankReturnImportSchema })
+  @ResponseSchema(importBankReturnResponseSchema)
   importReturn(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body() body: BankReturnImportInput,
@@ -197,6 +215,7 @@ export class PayoutBatchesController {
   @RequirePermission("payroll:bank:manage")
   @Idempotent("payroll.payout.item.mark-paid")
   @Validate({ params: batchItemIdParams, body: markItemPaidSchema })
+  @ResponseSchema(successSchema)
   markItemPaid(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -211,6 +230,7 @@ export class PayoutBatchesController {
   @RequirePermission("payroll:bank:manage")
   @Idempotent("payroll.payout.item.mark-failed")
   @Validate({ params: batchItemIdParams, body: markItemFailedSchema })
+  @ResponseSchema(successSchema)
   markItemFailed(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -230,6 +250,7 @@ export class PayoutEmployeeBankController {
   @Get("bank")
   @RequirePermission("payroll:bank:view")
   @Validate({ params: employeeUserIdParams })
+  @ResponseSchema(bankDetailsResponseSchema)
   getBankDetails(
     @Param("employeeUserId") employeeUserId: string,
     @CurrentUser() u: CurrentUserContext,

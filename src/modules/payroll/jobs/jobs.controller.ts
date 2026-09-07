@@ -20,7 +20,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
 import { PayrollJobsWorkerService } from "./payroll-jobs-worker.service";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { payrollJobListSchema, payrollJobRowSchema, enqueueJobResponseSchema } from "./dto/jobs-response.schemas";
 import { listJobsQuerySchema, enqueueJobSchema, type ListJobsQuery, type EnqueueJobInput } from "./dto/jobs.schemas";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
@@ -37,6 +38,7 @@ export class PayrollJobsController {
   @Get()
   @RequirePermission("payroll:runs:view")
   @Validate({ query: listJobsQuerySchema })
+  @ResponseSchema(payrollJobListSchema)
   async list(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListJobsQuery,
@@ -50,6 +52,7 @@ export class PayrollJobsController {
   @Get(":jobId")
   @RequirePermission("payroll:runs:view")
   @Validate({ params: jobIdParams })
+  @ResponseSchema(payrollJobRowSchema)
   get(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -61,6 +64,7 @@ export class PayrollJobsController {
   @HttpCode(201)
   @RequirePermission("payroll:runs:manage")
   @Validate({ body: enqueueJobSchema })
+  @ResponseSchema(enqueueJobResponseSchema)
   async enqueue(
     @CurrentUser() u: CurrentUserContext,
     @Body() body: EnqueueJobInput,
@@ -89,6 +93,7 @@ export class PayrollJobsController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: jobIdParams })
+  @ResponseSchema(payrollJobRowSchema)
   async retry(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,

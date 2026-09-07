@@ -28,6 +28,8 @@ import {
   type CursorListQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { salaryTemplateListSchema, salaryTemplateRowSchema } from "./dto/hr-payroll-response.schemas";
 import { z } from "zod";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
@@ -42,6 +44,7 @@ export class SalaryStructureTemplatesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:view")
   @Validate({ query: cursorListQuerySchema })
+  @ResponseSchema(salaryTemplateListSchema)
   list(@CurrentUser() u: CurrentUserContext, @Query() query: CursorListQueryInput) {
     return this.service.list(u.orgId, query.cursor, query.limit);
   }
@@ -51,6 +54,7 @@ export class SalaryStructureTemplatesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   @Validate({ body: createSalaryStructureTemplateSchema })
+  @ResponseSchema(salaryTemplateRowSchema)
   create(
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateSalaryStructureTemplateInput,
@@ -62,6 +66,7 @@ export class SalaryStructureTemplatesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   @Validate({ params: templateIdParams, body: updateSalaryStructureTemplateSchema })
+  @ResponseSchema(salaryTemplateRowSchema)
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -75,6 +80,7 @@ export class SalaryStructureTemplatesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   @Validate({ params: templateIdParams })
+  @NoContentResponse()
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("templateId", ParseIntPipe) templateId: number,

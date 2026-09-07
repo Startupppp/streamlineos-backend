@@ -33,6 +33,12 @@ import {
   type ListPageQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  reimbursementListResponseSchema,
+  reimbursementCreatedSchema,
+  successSchema,
+} from "./dto/hr-payroll-response.schemas";
 import { z } from "zod";
 
 const reimbursementIdParams = z
@@ -51,6 +57,7 @@ export class HrPayrollReimbursementsController {
   @Get()
   @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
   @Validate({ query: listPageQuerySchema })
+  @ResponseSchema(reimbursementListResponseSchema)
   async list(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListPageQueryInput,
@@ -70,6 +77,7 @@ export class HrPayrollReimbursementsController {
   @HttpCode(201)
   @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
   @Validate({ body: createReimbursementSchema })
+  @ResponseSchema(reimbursementCreatedSchema)
   create(
     @Body() body: CreateReimbursementInput,
     @CurrentUser() u: CurrentUserContext,
@@ -85,6 +93,7 @@ export class HrPayrollReimbursementsController {
   @Patch(":reimbursementId")
   @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
   @Validate({ params: reimbursementIdParams, body: patchReimbursementSchema })
+  @ResponseSchema(successSchema)
   async update(
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
     @Body() body: PatchReimbursementInput,

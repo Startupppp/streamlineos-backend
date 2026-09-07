@@ -26,7 +26,8 @@ import {
 } from "./dto/insights.schemas";
 import { CalendarService } from "./calendar.service";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { calendarEventRowSchema, generateCalendarResponseSchema } from "./dto/insights-response.schemas";
 import { z } from "zod";
 
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +41,7 @@ export class PayrollInsightsCalendarController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:runs:view")
+  @ResponseSchema(calendarEventRowSchema.array())
   list(
     @CurrentUser() u: CurrentUserContext,
     @Query("from") from?: string,
@@ -53,6 +55,7 @@ export class PayrollInsightsCalendarController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
+  @ResponseSchema(generateCalendarResponseSchema)
   generate(@CurrentUser() u: CurrentUserContext, @Query("month") month: string) {
     return this.calendarService.generateMonth(u.orgId, month);
   }
@@ -62,6 +65,7 @@ export class PayrollInsightsCalendarController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
   @Validate({ body: createCalendarEventSchema })
+  @ResponseSchema(calendarEventRowSchema)
   create(
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateCalendarEvent,
@@ -73,6 +77,7 @@ export class PayrollInsightsCalendarController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
   @Validate({ params: eventIdParams, body: patchCalendarEventSchema })
+  @ResponseSchema(calendarEventRowSchema)
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("eventId", ParseIntPipe) eventId: number,
@@ -86,6 +91,7 @@ export class PayrollInsightsCalendarController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")
   @Validate({ params: eventIdParams })
+  @NoContentResponse()
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("eventId", ParseIntPipe) eventId: number,

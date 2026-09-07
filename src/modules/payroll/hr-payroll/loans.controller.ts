@@ -31,6 +31,8 @@ import {
   type ListPageQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { loanListResponseSchema, loanRowSchema, successSchema } from "./dto/hr-payroll-response.schemas";
 import { z } from "zod";
 
 const loanIdParams = z
@@ -55,6 +57,7 @@ export class LoansController {
   @Get()
   @RequirePermission("hr:payroll:view")
   @Validate({ query: listPageQuerySchema })
+  @ResponseSchema(loanListResponseSchema)
   async list(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListPageQueryInput,
@@ -73,6 +76,7 @@ export class LoansController {
   @HttpCode(201)
   @RequirePermission("hr:payroll:view")
   @Validate({ body: createLoanSchema })
+  @ResponseSchema(loanRowSchema)
   async create(
     @Body() body: CreateLoanInput,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +93,7 @@ export class LoansController {
   @Patch(":loanId")
   @RequirePermission("hr:payroll:view")
   @Validate({ params: loanIdParams, body: updateLoanSchema })
+  @ResponseSchema(successSchema)
   async update(
     @Param("loanId", ParseIntPipe) loanId: number,
     @Body() body: UpdateLoanInput,

@@ -30,6 +30,12 @@ import {
   type ListPayslipTemplatesQuery,
 } from "./dto/payout.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  payslipTemplateListSchema,
+  payslipTemplateRowSchema,
+  previewTemplateResponseSchema,
+} from "./dto/payout-response.schemas";
 import { z } from "zod";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +49,7 @@ export class PayslipTemplatesController {
   @Get()
   @RequirePermission("payroll:payslips:view")
   @Validate({ query: listPayslipTemplatesQuerySchema })
+  @ResponseSchema(payslipTemplateListSchema)
   list(@CurrentUser() u: CurrentUserContext, @Query() query: ListPayslipTemplatesQuery) {
     return this.templates.list(u.orgId, query.cursor, query.limit);
   }
@@ -51,6 +58,7 @@ export class PayslipTemplatesController {
   @HttpCode(200)
   @RequirePermission("payroll:payslips:manage")
   @Validate({ body: previewTemplateSchema })
+  @ResponseSchema(previewTemplateResponseSchema)
   preview(
     @Body() body: PreviewTemplateInput,
   ) {
@@ -61,6 +69,7 @@ export class PayslipTemplatesController {
   @HttpCode(201)
   @RequirePermission("payroll:payslips:manage")
   @Validate({ body: createTemplateSchema })
+  @ResponseSchema(payslipTemplateRowSchema)
   create(
     @Body() body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -71,6 +80,7 @@ export class PayslipTemplatesController {
   @Patch(":templateId")
   @RequirePermission("payroll:payslips:manage")
   @Validate({ params: templateIdParams, body: patchTemplateSchema })
+  @ResponseSchema(payslipTemplateRowSchema)
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body() body: PatchTemplateInput,
@@ -83,6 +93,7 @@ export class PayslipTemplatesController {
   @HttpCode(204)
   @RequirePermission("payroll:payslips:manage")
   @Validate({ params: templateIdParams })
+  @NoContentResponse()
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

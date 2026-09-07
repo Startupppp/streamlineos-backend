@@ -29,7 +29,13 @@ import {
   type IncentivesQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  incentiveListResponseSchema,
+  incentiveConfigRowSchema,
+  incentiveStatsSchema,
+  successSchema,
+} from "./dto/hr-payroll-response.schemas";
 import { z } from "zod";
 
 const incentiveIdParams = z.object({ incentiveId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +49,7 @@ export class IncentivesController {
   @Get()
   @RequirePermission("hr:payroll:view")
   @Validate({ query: incentivesQuerySchema })
+  @ResponseSchema(incentiveListResponseSchema)
   list(
     @Query() query: IncentivesQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -52,6 +59,7 @@ export class IncentivesController {
 
   @Get("config")
   @RequirePermission("hr:payroll:view")
+  @ResponseSchema(incentiveConfigRowSchema.array())
   listConfig(@CurrentUser() u: CurrentUserContext) {
     return this.incentives.getIncentiveConfigs(u.orgId);
   }
@@ -60,6 +68,7 @@ export class IncentivesController {
   @HttpCode(201)
   @RequirePermission("hr:payroll:approve")
   @Validate({ body: createIncentiveConfigSchema })
+  @ResponseSchema(incentiveConfigRowSchema)
   createConfig(
     @Body() body: CreateIncentiveConfigInput,
     @CurrentUser() u: CurrentUserContext,
@@ -69,6 +78,7 @@ export class IncentivesController {
 
   @Get("stats")
   @RequirePermission("hr:payroll:view")
+  @ResponseSchema(incentiveStatsSchema)
   stats(@CurrentUser() u: CurrentUserContext) {
     return this.incentives.getIncentiveStats(u.orgId);
   }
@@ -77,6 +87,7 @@ export class IncentivesController {
   @Idempotent("payroll.incentive.approve")
   @RequirePermission("hr:payroll:approve")
   @Validate({ params: incentiveIdParams, body: approveIncentiveSchema })
+  @ResponseSchema(successSchema)
   async approve(
     @Param("incentiveId", ParseIntPipe) incentiveId: number,
     @Body() body: ApproveIncentiveInput,
@@ -92,6 +103,7 @@ export class IncentivesController {
   @Idempotent("payroll.incentive.reject")
   @RequirePermission("hr:payroll:approve")
   @Validate({ params: incentiveIdParams })
+  @ResponseSchema(successSchema)
   async reject(
     @Param("incentiveId", ParseIntPipe) incentiveId: number,
     @CurrentUser() u: CurrentUserContext,

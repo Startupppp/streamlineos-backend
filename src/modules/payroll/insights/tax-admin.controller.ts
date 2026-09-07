@@ -26,7 +26,9 @@ import {
   type TaxDeclarationsQuery,
 } from "./dto/insights.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { taxDeclarationListSchema, taxDeclarationListItemSchema } from "./dto/insights-response.schemas";
 import { z } from "zod";
 
 const declarationIdParams = z
@@ -42,6 +44,7 @@ export class TaxAdminController {
   @Get("declarations")
   @RequirePermission("payroll:tax:view")
   @Validate({ query: taxDeclarationsQuerySchema })
+  @ResponseSchema(taxDeclarationListSchema)
   listDeclarations(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: TaxDeclarationsQuery,
@@ -59,6 +62,7 @@ export class TaxAdminController {
   @Idempotent("payroll.tax-declaration.approve")
   @RequirePermission("payroll:tax:manage")
   @Validate({ params: declarationIdParams })
+  @ResponseSchema(taxDeclarationListItemSchema)
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
@@ -70,6 +74,7 @@ export class TaxAdminController {
   @Idempotent("payroll.tax-declaration.reject")
   @RequirePermission("payroll:tax:manage")
   @Validate({ params: declarationIdParams, body: rejectDeclarationSchema })
+  @ResponseSchema(taxDeclarationListItemSchema)
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
@@ -81,6 +86,7 @@ export class TaxAdminController {
   @Get("export")
   @RequirePermission("payroll:reports:export")
   @Validate({ query: taxDeclarationsQuerySchema })
+  @ApiOkResponse({ content: { "text/csv": { schema: { type: "string" } } } })
   async export(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: TaxDeclarationsQuery,

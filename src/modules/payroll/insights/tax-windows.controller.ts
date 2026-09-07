@@ -24,6 +24,8 @@ import {
 } from "../hr-payroll/dto/payroll.schemas";
 import { TaxWindowsService } from "./tax-windows.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { taxWindowRowSchema } from "./dto/insights-response.schemas";
 import { z } from "zod";
 
 const windowIdParams = z.object({ windowId: z.coerce.number().int().positive() }).strict();
@@ -36,6 +38,7 @@ export class TaxWindowsController {
   constructor(private readonly taxWindowsService: TaxWindowsService) {}
 
   @Get()
+  @ResponseSchema(taxWindowRowSchema.array())
   list(@CurrentUser() u: CurrentUserContext) {
     return this.taxWindowsService.list(u.orgId);
   }
@@ -43,6 +46,7 @@ export class TaxWindowsController {
   @Post()
   @HttpCode(201)
   @Validate({ body: createTaxWindowBodySchema })
+  @ResponseSchema(taxWindowRowSchema)
   create(
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateTaxWindowBody,
@@ -52,6 +56,7 @@ export class TaxWindowsController {
 
   @Patch(":windowId")
   @Validate({ params: windowIdParams, body: patchTaxWindowBodySchema })
+  @ResponseSchema(taxWindowRowSchema)
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("windowId", ParseIntPipe) windowId: number,
