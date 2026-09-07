@@ -14,7 +14,7 @@ export const surveyParticipantRowSchema = z.object({
   name: z.string().nullable(),
   email: z.string().nullable(),
   phone: z.string().nullable(),
-  status: z.enum(["invited", "opened", "started", "completed", "unsubscribed", "bounced"]),
+  status: z.enum(["invited", "delivered", "opened", "started", "partial", "completed", "disqualified", "bounced", "unsubscribed", "expired"]),
   accessTokenHash: z.string().nullable(),
   metadata: z.record(z.string(), z.unknown()),
   invitedAt: nullableWireDate(),

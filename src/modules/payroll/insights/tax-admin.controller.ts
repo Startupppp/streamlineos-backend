@@ -28,7 +28,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { ApiOkResponse } from "@nestjs/swagger";
-import { taxDeclarationListSchema, taxDeclarationListItemSchema } from "./dto/insights-response.schemas";
+import { taxDeclarationListSchema, taxDeclarationRowSchema } from "./dto/insights-response.schemas";
 import { z } from "zod";
 
 const declarationIdParams = z
@@ -62,7 +62,7 @@ export class TaxAdminController {
   @Idempotent("payroll.tax-declaration.approve")
   @RequirePermission("payroll:tax:manage")
   @Validate({ params: declarationIdParams })
-  @ResponseSchema(taxDeclarationListItemSchema)
+  @ResponseSchema(taxDeclarationRowSchema)
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
@@ -74,7 +74,7 @@ export class TaxAdminController {
   @Idempotent("payroll.tax-declaration.reject")
   @RequirePermission("payroll:tax:manage")
   @Validate({ params: declarationIdParams, body: rejectDeclarationSchema })
-  @ResponseSchema(taxDeclarationListItemSchema)
+  @ResponseSchema(taxDeclarationRowSchema)
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,

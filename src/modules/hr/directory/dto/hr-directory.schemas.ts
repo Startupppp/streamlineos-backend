@@ -330,3 +330,8 @@ export type AssignAssetInput = z.infer<typeof assignAssetSchema>;
 export type PatchAssetInput = z.infer<typeof patchAssetSchema>;
 export type CreateAccessRequestInput = z.infer<typeof createAccessRequestSchema>;
 export type PatchAccessRequestInput = z.infer<typeof patchAccessRequestSchema>;
+
+export const employeeUserQuerySchema = z.object({
+  userId: z.string().min(1).optional(),
+}).strict();
+export type EmployeeUserQueryInput = z.infer<typeof employeeUserQuerySchema>;

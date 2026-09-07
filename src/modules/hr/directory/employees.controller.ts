@@ -35,6 +35,7 @@ import { buildEmployeeProfilePdf } from "./profile-pdf";
 import {
   availabilitySchema,
   bulkOnboardEmployeesSchema,
+  employeeUserQuerySchema,
   findExpertSchema,
   listEmployeesSchema,
   onboardEmployeeSchema,
@@ -42,6 +43,7 @@ import {
   updateEmployeeSchema,
   type AvailabilityInput,
   type BulkOnboardEmployeesInput,
+  type EmployeeUserQueryInput,
   type FindExpertInput,
   type ListEmployeesInput,
   type OnboardEmployeeInput,
@@ -156,11 +158,12 @@ export class EmployeesController {
   @Get("stats")
   @ResponseSchema(employeeStatsSchema)
   @RequirePermission("hr:employees:view")
+  @Validate({ query: employeeUserQuerySchema })
   async stats(
-    @Query("userId") userId: string | undefined,
+    @Query() query: EmployeeUserQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const targetId = await this.resolveTargetUserId(currentUser, userId);
+    const targetId = await this.resolveTargetUserId(currentUser, query.userId);
     return this.analytics.getStats(currentUser.orgId, targetId);
   }
 
@@ -227,21 +230,23 @@ export class EmployeesController {
   @Get("projects")
   @ResponseSchema(employeeProjectsSchema)
   @RequirePermission("hr:employees:view")
+  @Validate({ query: employeeUserQuerySchema })
   async projects(
-    @Query("userId") userId: string | undefined,
+    @Query() query: EmployeeUserQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.employees.getProjects(currentUser.orgId, await this.resolveTargetUserId(currentUser, userId));
+    return this.employees.getProjects(currentUser.orgId, await this.resolveTargetUserId(currentUser, query.userId));
   }
 
   @Get("tickets")
   @ResponseSchema(employeeTicketsSchema)
   @RequirePermission("hr:employees:view")
+  @Validate({ query: employeeUserQuerySchema })
   async tickets(
-    @Query("userId") userId: string | undefined,
+    @Query() query: EmployeeUserQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.employees.getTickets(currentUser.orgId, await this.resolveTargetUserId(currentUser, userId));
+    return this.employees.getTickets(currentUser.orgId, await this.resolveTargetUserId(currentUser, query.userId));
   }
 
   @Get(":employeeId/reports-to-me")

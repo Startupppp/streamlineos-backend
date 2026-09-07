@@ -30,7 +30,7 @@ export const surveyResponseSessionRowSchema = z.object({
   passed: z.boolean().nullable(),
   segment: z.string().nullable(),
   metadata: z.record(z.string(), z.unknown()),
-  status: z.enum(["in_progress", "submitted", "abandoned", "expired"]),
+  status: z.enum(["in_progress", "submitted", "invalid", "excluded", "deleted_by_policy"]),
 });
 
 export const surveyPublicLiveSessionChoiceSchema = z.object({
@@ -42,7 +42,23 @@ export const surveyPublicLiveSessionChoiceSchema = z.object({
   sortOrder: z.number().int(),
 });
 
-export const surveyPublicLiveSessionSchema = surveyResponseSessionRowSchema.and(
+const surveyLiveSessionRowSchema = z.object({
+  id: z.number().int(),
+  orgId: z.string(),
+  surveyId: z.number().int(),
+  versionId: z.number().int(),
+  hostUserId: z.string().nullable(),
+  hostMembershipId: z.number().int().nullable(),
+  sessionCode: z.string(),
+  status: z.enum(["draft", "waiting", "active", "paused", "ended"]),
+  currentQuestionId: z.number().int().nullable(),
+  startedAt: nullableWireDate(),
+  endedAt: nullableWireDate(),
+  settings: z.record(z.string(), z.unknown()),
+  createdAt: wireDate(),
+});
+
+export const surveyPublicLiveSessionSchema = surveyLiveSessionRowSchema.and(
   z.object({
     currentQuestion: z.object({
       id: z.number().int(),

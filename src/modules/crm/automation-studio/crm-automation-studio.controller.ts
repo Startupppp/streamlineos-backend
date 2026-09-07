@@ -25,11 +25,13 @@ import {
   createSequenceStepSchema,
   reorderSequenceStepsSchema,
   enrollInSequenceSchema,
+  listEnrollmentsQuerySchema,
   type CreateSequenceInput,
   type UpdateSequenceInput,
   type CreateSequenceStepInput,
   type ReorderSequenceStepsInput,
   type EnrollInSequenceInput,
+  type ListEnrollmentsQueryInput,
 } from "./dto/automation-studio.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -162,13 +164,13 @@ export class CrmAutomationStudioController {
   @Get(":sequenceId/enrollments")
   @RequirePermission("crm:sequences:manage")
   @ResponseSchema(enrollmentsListSchema)
-  @Validate({ params: sequenceIdParams })
+  @Validate({ params: sequenceIdParams, query: listEnrollmentsQuerySchema })
   listEnrollments(
     @Param("sequenceId") sequenceId: string,
-    @Query("cursor") cursor: string | undefined,
+    @Query() query: ListEnrollmentsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sequences.listEnrollments(u.orgId, sequenceId, cursor);
+    return this.sequences.listEnrollments(u.orgId, sequenceId, query.cursor);
   }
 
   @Post(":sequenceId/enrollments")

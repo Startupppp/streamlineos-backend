@@ -81,3 +81,8 @@ export const updateAutomationRuleSchema = z
 
 export type CreateAutomationRuleInput = z.infer<typeof createAutomationRuleSchema>;
 export type UpdateAutomationRuleInput = z.infer<typeof updateAutomationRuleSchema>;
+
+export const automationRunsQuerySchema = z.object({
+  cursor: z.string().min(1).max(2048).optional(),
+}).strict();
+export type AutomationRunsQueryInput = z.infer<typeof automationRunsQuerySchema>;

@@ -35,6 +35,7 @@ export class TaxAdminService {
         id: taxDeclarations.id,
         orgId: taxDeclarations.orgId,
         userId: taxDeclarations.userId,
+        userMembershipId: taxDeclarations.userMembershipId,
         financialYear: taxDeclarations.financialYear,
         regime: taxDeclarations.regime,
         hra: taxDeclarations.hra,
@@ -50,6 +51,7 @@ export class TaxAdminService {
         verifiedAt: taxDeclarations.verifiedAt,
         reviewNote: taxDeclarations.reviewNote,
         createdAt: taxDeclarations.createdAt,
+        updatedAt: taxDeclarations.updatedAt,
         userName: users.name,
         userEmail: users.email,
       })

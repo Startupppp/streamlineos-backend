@@ -32,7 +32,7 @@ import {
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { bonusListResponseSchema, bonusRowSchema } from "./dto/hr-payroll-response.schemas";
+import { bonusListResponseSchema, bonusCreatedSchema } from "./dto/hr-payroll-response.schemas";
 import { z } from "zod";
 
 const bonusIdParams = z.object({ bonusId: z.coerce.number().int().positive() }).strict();
@@ -72,7 +72,7 @@ export class BonusesController {
   @RequirePermission("hr:bonuses:manage")
   @HttpCode(201)
   @Validate({ body: createBonusSchema })
-  @ResponseSchema(bonusRowSchema)
+  @ResponseSchema(bonusCreatedSchema)
   create(
     @Body() body: CreateBonusInput,
     @CurrentUser() u: CurrentUserContext,
@@ -83,7 +83,7 @@ export class BonusesController {
   @Patch(":bonusId")
   @RequirePermission("hr:bonuses:manage")
   @Validate({ params: bonusIdParams, body: patchBonusSchema })
-  @ResponseSchema(bonusRowSchema)
+  @ResponseSchema(bonusCreatedSchema)
   async update(
     @Param("bonusId", ParseIntPipe) bonusId: number,
     @Body() body: PatchBonusInput,

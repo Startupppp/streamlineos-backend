@@ -30,8 +30,10 @@ import { RichDocumentsService } from "./rich-documents.service";
 import { LettersService } from "./letters.service";
 import {
   ackSchema,
+  complianceCalendarQuerySchema,
   createDocumentSchema,
   createRichDocumentSchema,
+  documentExpiryQuerySchema,
   listDocumentsSchema,
   listRichDocumentsSchema,
   renderLetterSchema,
@@ -40,8 +42,10 @@ import {
   updateDocumentSchema,
   updateRichDocumentSchema,
   type AckInput,
+  type ComplianceCalendarQueryInput,
   type CreateDocumentInput,
   type CreateRichDocumentInput,
+  type DocumentExpiryQueryInput,
   type ListDocumentsInput,
   type ListRichDocumentsInput,
   type RenderLetterInput,
@@ -185,11 +189,12 @@ export class DocumentsController {
   @ResponseSchema(documentExpiryResponseSchema)
   @Get("document-expiry")
   @RequirePermission("hr:documents:view")
+  @Validate({ query: documentExpiryQuerySchema })
   async documentExpiry(
-    @Query("days") days: string | undefined,
+    @Query() query: DocumentExpiryQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const daysAhead = Math.min(Math.max(Number(days) || 30, 1), 365);
+    const daysAhead = Math.min(Math.max(query.days ?? 30, 1), 365);
     const scope = await resolveDocumentsScope(this.access, currentUser);
     return this.documents.expiry(currentUser.orgId, currentUser.userId, scope, daysAhead, actingMembershipId(currentUser.principal));
   }
@@ -340,13 +345,14 @@ export class DocumentsController {
   @ResponseSchema(complianceCalendarResponseSchema)
   @Get("compliance/calendar")
   @RequirePermission("hr:compliance:manage")
+  @Validate({ query: complianceCalendarQuerySchema })
   complianceCalendar(
-    @Query("year") year: string | undefined,
-    @Query("month") month: string | undefined,
+    @Query() query: ComplianceCalendarQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    const y = parseInt(year ?? String(new Date().getFullYear()), 10);
-    const m = parseInt(month ?? String(new Date().getMonth() + 1), 10);
+    const now = new Date();
+    const y = query.year ?? now.getFullYear();
+    const m = query.month ?? now.getMonth() + 1;
     return this.compliance.calendar(currentUser.orgId, y, m);
   }
 }

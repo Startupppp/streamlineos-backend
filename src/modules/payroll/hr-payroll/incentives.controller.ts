@@ -33,6 +33,7 @@ import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-oper
 import {
   incentiveListResponseSchema,
   incentiveConfigRowSchema,
+  incentiveConfigCreatedSchema,
   incentiveStatsSchema,
   successSchema,
 } from "./dto/hr-payroll-response.schemas";
@@ -68,7 +69,7 @@ export class IncentivesController {
   @HttpCode(201)
   @RequirePermission("hr:payroll:approve")
   @Validate({ body: createIncentiveConfigSchema })
-  @ResponseSchema(incentiveConfigRowSchema)
+  @ResponseSchema(incentiveConfigCreatedSchema)
   createConfig(
     @Body() body: CreateIncentiveConfigInput,
     @CurrentUser() u: CurrentUserContext,

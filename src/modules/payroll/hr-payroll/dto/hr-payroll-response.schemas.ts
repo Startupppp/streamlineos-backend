@@ -24,6 +24,8 @@ export const bonusRowSchema = z.object({
 export const bonusListItemSchema = bonusRowSchema;
 export const bonusListResponseSchema = cursorPageSchema(bonusListItemSchema);
 
+export const bonusCreatedSchema = bonusRowSchema.omit({ userName: true, userEmail: true });
+
 export const fnfRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -90,6 +92,8 @@ export const incentiveConfigRowSchema = z.object({
   createdAt: wireDate(),
   createdByName: z.string().nullable(),
 });
+
+export const incentiveConfigCreatedSchema = incentiveConfigRowSchema.omit({ createdByName: true });
 
 export const incentiveStatsSchema = z.object({
   thisMonth: z.string(),

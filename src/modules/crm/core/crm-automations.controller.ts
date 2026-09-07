@@ -22,8 +22,10 @@ import { CrmAutomationsService } from "./crm-automations.service";
 import {
   createAutomationRuleSchema,
   updateAutomationRuleSchema,
+  automationRunsQuerySchema,
   type CreateAutomationRuleInput,
   type UpdateAutomationRuleInput,
+  type AutomationRunsQueryInput,
 } from "./dto/automation-rules.schemas";
 import {
   testAutomationRuleSchema,
@@ -150,12 +152,12 @@ export class CrmAutomationsController {
   @Get("automations/:ruleId/runs")
   @RequirePermission("crm:automations:manage")
   @ResponseSchema(automationRunsPageSchema)
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, query: automationRunsQuerySchema })
   getRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Query("cursor") cursor: string | undefined,
+    @Query() query: AutomationRunsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.automations.getRuns(u.orgId, ruleId, cursor);
+    return this.automations.getRuns(u.orgId, ruleId, query.cursor);
   }
 }

@@ -8,21 +8,21 @@ const kbAskCitationSchema = z.discriminatedUnion("kind", [
     slug: z.string(),
     title: z.string(),
     spaceId: z.number().int().nullable(),
-    updatedAt: z.string(),
+    updatedAt: wireDate(),
   }),
   z.object({
     kind: z.literal("page"),
     pageId: z.number().int(),
     title: z.string(),
     spaceId: z.number().int().nullable(),
-    updatedAt: z.string(),
+    updatedAt: wireDate(),
   }),
   z.object({
     kind: z.literal("source"),
     sourceId: z.number().int(),
     title: z.string(),
     spaceId: z.number().int().nullable(),
-    updatedAt: z.string(),
+    updatedAt: wireDate(),
   }),
 ]);
 

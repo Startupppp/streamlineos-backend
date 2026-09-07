@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema, itemsPagedSchema } from "../../../../common/openapi/response-envelopes";
+import { fnfRowSchema } from "../../hr-payroll/dto/hr-payroll-response.schemas";
 
 export const calendarEventRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
-  month: z.string(),
+  month: z.string().nullable(),
   type: z.string(),
   date: z.string(),
   title: z.string(),
@@ -69,6 +70,8 @@ export const taxDeclarationListItemSchema = z.object({
 
 export const taxDeclarationListSchema = cursorPageSchema(taxDeclarationListItemSchema);
 
+export const taxDeclarationRowSchema = taxDeclarationListItemSchema.omit({ userName: true, userEmail: true });
+
 export const fnfGetOneSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -111,31 +114,13 @@ export const fnfStatementSchema = z.object({
   status: z.string(),
 });
 
-export const fnfInsightsListSchema = itemsPagedSchema(fnfGetOneSchema);
-
-export const fnfRowSchema = z.object({
-  id: z.number().int(),
-  orgId: z.string(),
-  userId: z.string(),
-  resignationId: z.number().int().nullable(),
-  basicDues: z.string(),
-  leaveEncashment: z.string(),
-  bonusDue: z.string(),
-  deductions: z.string(),
-  loanRecovery: z.string(),
-  netPayable: z.string(),
-  status: z.string(),
-  userMembershipId: z.number().int().nullable(),
-  approvedBy: z.string().nullable(),
-  notes: z.string().nullable(),
-  reimbursementsDue: z.string(),
-  assetRecovery: z.string(),
-  noticeRecovery: z.string(),
-  otherDeductions: z.string(),
-  statementPublishedAt: nullableWireDate(),
-  createdAt: wireDate(),
-  updatedAt: wireDate(),
+const fnfInsightsListItemSchema = fnfRowSchema.extend({
+  user: z.object({ name: z.string().nullable(), email: z.string() }).nullable().optional(),
 });
+
+export const fnfInsightsListSchema = itemsPagedSchema(fnfInsightsListItemSchema);
+
+export { fnfRowSchema };
 
 export const updateFnfResultSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(false) }),

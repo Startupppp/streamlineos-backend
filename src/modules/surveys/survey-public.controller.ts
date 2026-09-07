@@ -100,7 +100,7 @@ export class SurveyPublicController {
   @Public()
   @Post(":collectorToken/session/:sessionId/submit")
   @Validate({ params: collectorTokensessionIdParams, body: submitSessionSchema })
-  @ResponseSchema(publicSuccessSchema)
+  @ResponseSchema(surveyResponseSessionSchema)
   async submit(
     @Param("sessionId") sessionId: number,
     @Body() body: SubmitSessionInput,

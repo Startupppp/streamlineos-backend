@@ -9,7 +9,7 @@ export const surveyAttemptRowSchema = z.object({
   participantId: z.number().int().nullable(),
   sessionId: z.number().int().nullable(),
   attemptNumber: z.number().int(),
-  status: z.enum(["pending", "in_progress", "passed", "failed", "expired"]),
+  status: z.enum(["not_started", "in_progress", "submitted", "passed", "failed", "expired"]),
   score: z.number().int().nullable(),
   passed: z.boolean().nullable(),
   startedAt: nullableWireDate(),

@@ -130,3 +130,14 @@ export type CreateRichDocumentInput = z.infer<typeof createRichDocumentSchema>;
 export type UpdateRichDocumentInput = z.infer<typeof updateRichDocumentSchema>;
 export type RenderLetterInput = z.infer<typeof renderLetterSchema>;
 export type SaveLetterInput = z.infer<typeof saveLetterSchema>;
+
+export const complianceCalendarQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+}).strict();
+export type ComplianceCalendarQueryInput = z.infer<typeof complianceCalendarQuerySchema>;
+
+export const documentExpiryQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
+}).strict();
+export type DocumentExpiryQueryInput = z.infer<typeof documentExpiryQuerySchema>;
