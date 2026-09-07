@@ -16,7 +16,7 @@ export class CrmBlueprintsService {
 
   async create(u: CurrentUserContext, input: CreateBlueprintInput) {
     const [row] = await this.db.insert(crmBlueprints).values({ orgId: u.orgId, ...input }).returning();
-    void this.auditLog(u, "crm_blueprint.created", row!.id, { name: input.name, pipelineId: input.pipelineId });
+    void this.auditLog(u, "crm_blueprint.created", row.id, { name: input.name, pipelineId: input.pipelineId });
     return row;
   }
 
@@ -24,7 +24,7 @@ export class CrmBlueprintsService {
     await this.assertOwner(u.orgId, blueprintId);
     const [row] = await this.db.update(crmBlueprints).set({ ...input, updatedAt: new Date() }).where(and(eq(crmBlueprints.id, blueprintId), eq(crmBlueprints.orgId, u.orgId))).returning();
     if (!row) throw new NotFoundException("Blueprint not found");
-    void this.auditLog(u, "crm_blueprint.updated", blueprintId, input as Record<string, unknown>);
+    void this.auditLog(u, "crm_blueprint.updated", blueprintId, Object.fromEntries(Object.entries(input)));
     return row;
   }
 
@@ -84,7 +84,7 @@ export class CrmBlueprintsService {
 
     if (!stage) return { allowed: true, requiresApproval: false, missingFields: [] };
 
-    const allowedKeys = stage.allowedNextStageKeys as string[] | null;
+    const allowedKeys = stage.allowedNextStageKeys;
     if (allowedKeys !== null && !allowedKeys.includes(toStageKey)) {
       return { allowed: false, requiresApproval: false, missingFields: [] };
     }
@@ -118,7 +118,7 @@ export class CrmBlueprintsService {
       }
     }
 
-    const requiredActivityKeys = (transition.requiredActivityTypeKeys as string[]) ?? [];
+    const requiredActivityKeys = transition.requiredActivityTypeKeys ?? [];
     if (requiredActivityKeys.length > 0) {
       const entityId = typeof record["id"] === "number" ? record["id"] : undefined;
       if (entityId !== undefined) {
@@ -141,7 +141,7 @@ export class CrmBlueprintsService {
       }
     }
 
-    const requiredFields = (transition.requiredFields as string[]) ?? [];
+    const requiredFields = transition.requiredFields ?? [];
     const missingFields = requiredFields.filter((f) => {
       const v = record[f];
       return v === null || v === undefined || v === "";

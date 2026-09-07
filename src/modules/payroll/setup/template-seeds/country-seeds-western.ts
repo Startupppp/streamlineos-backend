@@ -1,7 +1,5 @@
 import type { PayrollTemplateSeed } from "../../payroll.types";
-import { DEFAULT_PAYROLL_TOGGLES, PAYROLL_TEMPLATE_KEYS } from "../../payroll.types";
-
-type PayrollTemplateKey = (typeof PAYROLL_TEMPLATE_KEYS)[number];
+import { DEFAULT_PAYROLL_TOGGLES } from "../../payroll.types";
 
 const COUNTRY_STANDARD_TOGGLES = {
   ...DEFAULT_PAYROLL_TOGGLES,
@@ -21,7 +19,7 @@ const COUNTRY_STANDARD_TOGGLES = {
 };
 
 export const US_STANDARD_SEED: PayrollTemplateSeed = {
-  key: "US_STANDARD" as PayrollTemplateKey,
+  key: "US_STANDARD",
   name: "US Standard Payroll",
   description: "FICA (Social Security + Medicare), Federal Withholding, and 401(k) placeholder for US salaried employees.",
   bestFor: "US-based companies with salaried W-2 employees requiring FICA and federal withholding compliance",
@@ -141,7 +139,7 @@ export const US_STANDARD_SEED: PayrollTemplateSeed = {
 };
 
 export const UK_STANDARD_SEED: PayrollTemplateSeed = {
-  key: "UK_STANDARD" as PayrollTemplateKey,
+  key: "UK_STANDARD",
   name: "UK Standard Payroll",
   description: "PAYE income tax withholding, National Insurance (employee and employer), and workplace pension auto-enrolment for UK employees.",
   bestFor: "UK-registered employers running payroll for PAYE employees with full RTI compliance",

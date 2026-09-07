@@ -1,7 +1,5 @@
 import type { PayrollTemplateSeed } from "../../payroll.types";
-import { DEFAULT_PAYROLL_TOGGLES, PAYROLL_TEMPLATE_KEYS } from "../../payroll.types";
-
-type PayrollTemplateKey = (typeof PAYROLL_TEMPLATE_KEYS)[number];
+import { DEFAULT_PAYROLL_TOGGLES } from "../../payroll.types";
 
 const COUNTRY_STANDARD_TOGGLES = {
   ...DEFAULT_PAYROLL_TOGGLES,
@@ -21,10 +19,12 @@ const COUNTRY_STANDARD_TOGGLES = {
 };
 
 export const UAE_STANDARD_SEED: PayrollTemplateSeed = {
-  key: "UAE_STANDARD" as PayrollTemplateKey,
+  key: "UAE_STANDARD",
   name: "UAE Standard Payroll",
-  description: "Typical UAE salary structure (Basic + Housing + Transport allowances) with no income tax, WPS-compliant payout, and gratuity accrual.",
-  bestFor: "UAE-registered entities running payroll for expatriate and national employees in WPS-compliant environments",
+  description:
+    "Typical UAE salary structure (Basic + Housing + Transport allowances) with no income tax, WPS-compliant payout, and gratuity accrual.",
+  bestFor:
+    "UAE-registered entities running payroll for expatriate and national employees in WPS-compliant environments",
   complexity: "SIMPLE",
   badge: "UAE",
   category: "COUNTRY_STANDARD",
@@ -114,10 +114,12 @@ export const UAE_STANDARD_SEED: PayrollTemplateSeed = {
 };
 
 export const SG_STANDARD_SEED: PayrollTemplateSeed = {
-  key: "SG_STANDARD" as PayrollTemplateKey,
+  key: "SG_STANDARD",
   name: "SG Standard Payroll",
-  description: "CPF contributions (employee 20% + employer 17% on ordinary wages), itemized payslip, and annual AWS bonus provision for Singapore employees.",
-  bestFor: "Singapore-registered companies employing Singapore citizens and permanent residents",
+  description:
+    "CPF contributions (employee 20% + employer 17% on ordinary wages), itemized payslip, and annual AWS bonus provision for Singapore employees.",
+  bestFor:
+    "Singapore-registered companies employing Singapore citizens and permanent residents",
   complexity: "MODERATE",
   badge: "SG",
   category: "COUNTRY_STANDARD",
@@ -193,10 +195,12 @@ export const SG_STANDARD_SEED: PayrollTemplateSeed = {
 };
 
 export const AU_STANDARD_SEED: PayrollTemplateSeed = {
-  key: "AU_STANDARD" as PayrollTemplateKey,
+  key: "AU_STANDARD",
   name: "AU Standard Payroll",
-  description: "PAYG withholding, Superannuation Guarantee (12%), and Single Touch Payroll compliant structure for Australian employees.",
-  bestFor: "Australian businesses running payroll for permanent and casual employees under STP Phase 2",
+  description:
+    "PAYG withholding, Superannuation Guarantee (12%), and Single Touch Payroll compliant structure for Australian employees.",
+  bestFor:
+    "Australian businesses running payroll for permanent and casual employees under STP Phase 2",
   complexity: "MODERATE",
   badge: "AU",
   category: "COUNTRY_STANDARD",

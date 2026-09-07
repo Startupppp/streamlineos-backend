@@ -14,6 +14,16 @@ import type { Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { hrFormSubmissions } from "../../../db/schema/hr/forms";
 import { hrWorkflowObjectTypeEnum } from "../../../db/schema/hr/workflow-engine";
+
+function isHrWorkflowObjectType(value: string): value is (typeof hrWorkflowObjectTypeEnum.enumValues)[number] {
+  return hrWorkflowObjectTypeEnum.enumValues.some((v) => v === value);
+}
+
+function toNonEmptyStringTuple(values: string[]): [string, ...string[]] {
+  const [first, ...rest] = values;
+  if (first === undefined) throw new Error("Expected at least one option value");
+  return [first, ...rest];
+}
 import { HrAuditService } from "../core/hr-audit.service";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { HrFormsService } from "./hr-forms.service";
@@ -59,7 +69,7 @@ export class HrFormsSubmissionsService {
           break;
         case "select":
           schema = field.options?.length
-            ? z.enum(field.options.map((o) => o.value) as [string, ...string[]])
+            ? z.enum(toNonEmptyStringTuple(field.options.map((o) => o.value)))
             : z.string();
           break;
         case "multi_select":
@@ -157,11 +167,10 @@ export class HrFormsSubmissionsService {
           return [sub];
         });
 
-        const validWorkflowTypes = new Set<string>(hrWorkflowObjectTypeEnum.enumValues);
-        if (form.workflowObjectType && submittedByUserId && validWorkflowTypes.has(form.workflowObjectType)) {
+        if (form.workflowObjectType && submittedByUserId && isHrWorkflowObjectType(form.workflowObjectType)) {
           this.workflowEngine.startWorkflow({
             orgId,
-            objectType: form.workflowObjectType as typeof hrWorkflowObjectTypeEnum.enumValues[number],
+            objectType: form.workflowObjectType,
             objectId: String(submission.id),
             requestedByUserId: submittedByUserId,
             subjectEmployeeId: input.subjectEmployeeId ? String(input.subjectEmployeeId) : submittedByUserId,

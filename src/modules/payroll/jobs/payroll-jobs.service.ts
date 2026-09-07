@@ -15,6 +15,12 @@ export type PayrollJobType =
   | "PDF_PUBLISH"
   | "FILING_EXPORT";
 
+const PAYROLL_JOB_TYPES: readonly PayrollJobType[] = ["GENERATE", "RECALCULATE", "PDF_PUBLISH", "FILING_EXPORT"];
+
+export function isPayrollJobType(value: string): value is PayrollJobType {
+  return PAYROLL_JOB_TYPES.some((t) => t === value);
+}
+
 @Injectable()
 export class PayrollJobsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}

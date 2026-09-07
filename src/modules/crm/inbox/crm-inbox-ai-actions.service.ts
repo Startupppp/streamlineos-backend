@@ -38,7 +38,7 @@ export class CrmInboxAiActionsService {
       leadStatusOptions.map((o) => ({
         key: o.key,
         isTerminal: o.isTerminal ?? false,
-        metadata: (o.metadata as Record<string, unknown> | null) ?? null,
+        metadata: o.metadata ?? null,
       })),
     );
 
@@ -96,7 +96,7 @@ export class CrmInboxAiActionsService {
               ),
             )
             .limit(3)
-        : Promise.resolve([] as { id: number; name: string }[]),
+        : Promise.resolve<{ id: number; name: string }[]>([]),
 
       this.db
         .select({ id: quotes.id, quoteNumber: quotes.quoteNumber, dealId: quotes.dealId })

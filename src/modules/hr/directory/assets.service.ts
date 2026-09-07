@@ -46,6 +46,9 @@ export class AssetsService {
       .orderBy(desc(assetReturns.createdAt))
       .limit(100);
 
+    const assetType: string | null = null;
+    const serialNumber: string | null = null;
+
     return rows.map((r) => {
       const name = `${r.userFirstName ?? ""} ${r.userLastName ?? ""}`.trim();
       const employeeName = name || r.userEmail || null;
@@ -55,8 +58,8 @@ export class AssetsService {
         userId: r.userId,
         assetId: r.assetId,
         assetName: r.assetName,
-        assetType: null as string | null,
-        serialNumber: null as string | null,
+        assetType,
+        serialNumber,
         status: r.status,
         returnedAt: r.returnedAt,
         condition: r.condition,

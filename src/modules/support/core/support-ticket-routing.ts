@@ -1,6 +1,6 @@
 import { logger } from "../../../common/logger/logger.service";
 import type { RoutableTicket, RoutingOutcome } from "./support-macros-routing";
-import { ticketPrioritySchema } from "./dto/support-tickets.schemas";
+import { ticketPrioritySchema, ticketStatusSchema, type TicketStatus } from "./dto/support-tickets.schemas";
 import type { CreateTicketInput, TicketPriority } from "./dto/support.schemas";
 
 /**
@@ -16,6 +16,11 @@ import type { CreateTicketInput, TicketPriority } from "./dto/support.schemas";
  */
 export function isTicketPriority(value: string): value is TicketPriority {
   return ticketPrioritySchema.safeParse(value).success;
+}
+
+/** Same reasoning as {@link isTicketPriority}: narrow via the schema, not a second hand-written list. */
+export function isTicketStatus(value: string): value is TicketStatus {
+  return ticketStatusSchema.safeParse(value).success;
 }
 
 /**

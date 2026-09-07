@@ -8,6 +8,8 @@ import {
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateTicketInput, TicketAttachmentInput, TicketPriority } from "./dto/support.schemas";
 
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 export interface TicketSource {
   channel: string;
   messageId?: string | null;
@@ -28,7 +30,7 @@ export interface InsertTicketParams {
 }
 
 export async function resolveActiveMembershipId(
-  db: Db,
+  db: Db | Tx,
   orgId: string,
   userId: string | null | undefined,
 ): Promise<number | null> {
@@ -44,7 +46,7 @@ export async function resolveActiveMembershipId(
   return member?.id ?? null;
 }
 
-export async function insertTicketWithOpeningMessage(tx: Db, params: InsertTicketParams) {
+export async function insertTicketWithOpeningMessage(tx: Db | Tx, params: InsertTicketParams) {
   const {
     orgId,
     userId,

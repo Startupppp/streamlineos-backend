@@ -17,7 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
+import { PayrollJobsService } from "./payroll-jobs.service";
 import { PayrollJobsWorkerService } from "./payroll-jobs-worker.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -71,7 +71,7 @@ export class PayrollJobsController {
   ) {
     const job = await this.jobs.enqueue({
       orgId: u.orgId,
-      jobType: body.jobType as PayrollJobType,
+      jobType: body.jobType,
       actorId: u.userId,
       resourceType: body.runId ? "payroll_run" : undefined,
       resourceId: body.runId ? String(body.runId) : undefined,

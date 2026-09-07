@@ -13,7 +13,7 @@ export interface AutomationRule extends CreateAutomationInput {
   id: string;
 }
 
-const automationRuleSchema = createAutomationSchema.extend({ id: z.string() });
+const automationRuleSchema = createAutomationSchema.extend({ id: z.string() }).strip();
 
 @Injectable()
 export class SurveyAutomationService {

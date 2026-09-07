@@ -4,12 +4,13 @@ import { and, eq, isNotNull, lt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollJobs } from "../../../db/schema";
-import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
+import { PayrollJobsService, isPayrollJobType, type PayrollJobType } from "./payroll-jobs.service";
 import { GenerateService } from "../runs/generate.service";
 import { PublishingService } from "../payout/publishing.service";
 import { PayrollFilingsService } from "../filings/filings.service";
 import { isTransientDbError } from "../../../common/db/transient-error";
 import { forEachOrg, withTenant, runWithTenantContext } from "../../../common/tenant";
+import { asRecord } from "../../../common/openapi/zod-operation-contracts";
 
 type ClaimedPayrollJob = typeof payrollJobs.$inferSelect;
 
@@ -60,13 +61,15 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     let failed = 0;
     for (const job of claimed) {
       try {
+        const jobType = job.jobType;
+        if (!isPayrollJobType(jobType)) throw new Error(`Unknown job type: ${jobType}`);
         await this.inTenant(job.orgId, async () => {
           await this.jobs.setProgress(job.orgId, job.id, 10);
-          const result = await this.execute(job.jobType as PayrollJobType, {
+          const result = await this.execute(jobType, {
             orgId: job.orgId,
             actorId: job.createdBy ?? "system",
             resourceId: job.resourceId,
-            payload: (job.payload ?? {}) as Record<string, unknown>,
+            payload: asRecord(job.payload) ?? {},
           });
           await this.jobs.succeed(job.orgId, job.id, result);
         });

@@ -107,13 +107,12 @@ const boardColumnSchema = z.object({
 export const leadBoardSchema = z.record(z.string(), boardColumnSchema);
 
 export const leadStatsSchema = z.object({
-  activeClients: z.number().int(),
-  inactiveClients: z.number().int(),
-  totalCalls: z.number().int(),
-  inPersonMeetings: z.number().int(),
-  followUpDue: z.number().int(),
-  totalLeads: z.number().int(),
+  total: z.number().int(),
+  byStatus: z.record(z.string(), z.number().int()),
   conversionRate: z.number(),
+  totalPotentialValue: z.number(),
+  unassigned: z.number().int(),
+  thisMonth: z.number().int(),
 });
 
 export const leadActivitySchema = z.object({

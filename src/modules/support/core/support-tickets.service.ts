@@ -126,7 +126,7 @@ export class SupportTicketsService {
     const { firstResponseDueAt, resolutionDueAt } = this.sla.computeDueDates(resolvedPolicy, new Date());
 
     const ticket = await this.db.transaction(async (tx) =>
-      insertTicketWithOpeningMessage(tx as Db, {
+      insertTicketWithOpeningMessage(tx, {
         orgId,
         userId,
         input,
@@ -215,7 +215,7 @@ export class SupportTicketsService {
     );
 
     await this.db.transaction(async (tx) => {
-      await (tx as Db)
+      await tx
         .update(supportTickets)
         .set(updateData)
         .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));

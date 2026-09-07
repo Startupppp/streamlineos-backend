@@ -28,6 +28,13 @@ const ExplainResponseSchema = z.object({
 export type ExplainFactor = z.infer<typeof ExplainFactorSchema>;
 export type ExplainResponse = z.infer<typeof ExplainResponseSchema>;
 
+const ReorderSuggestionPayloadSchema = z.object({
+  productVariantId: z.number(),
+  suggestedQty: z.number(),
+  vendorId: z.number().nullable(),
+  warehouseId: z.number().nullable(),
+});
+
 export interface InsightNarration {
   explanation: string;
   factors: ExplainFactor[];
@@ -298,7 +305,7 @@ export class InvAiExplainService {
       orgId,
       userId,
       action: "inventory:create-draft-po",
-      payload: { suggestion, explanation: result.data } as Record<string, unknown>,
+      payload: { suggestion, explanation: result.data },
       idempotencyKey: `reorder-${orgId}-${variantId}-${Date.now()}`,
       ttlSeconds: 120,
     });
@@ -318,12 +325,11 @@ export class InvAiExplainService {
     });
 
     const payload = confirmed.payload;
-    const suggestion = payload["suggestion"] as {
-      productVariantId: number;
-      suggestedQty: number;
-      vendorId: number | null;
-      warehouseId: number | null;
-    };
+    const parsedSuggestion = ReorderSuggestionPayloadSchema.safeParse(payload["suggestion"]);
+    if (!parsedSuggestion.success) {
+      throw new ServiceUnavailableException("Reorder proposal payload is malformed");
+    }
+    const suggestion = parsedSuggestion.data;
 
     if (!suggestion.vendorId) {
       throw new NotFoundException("No vendor associated with this reorder suggestion — assign a vendor to the reorder rule first");

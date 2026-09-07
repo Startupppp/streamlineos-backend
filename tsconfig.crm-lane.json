@@ -1,4 +1,4 @@
 { "extends": "./tsconfig.json", "include": [], "files": [
   "src/@types/express.d.ts",
-  "src/modules/crm/core/territory-match.service.ts"
+  "src/modules/crm/metadata/crm-blueprints.service.ts"
 ] }

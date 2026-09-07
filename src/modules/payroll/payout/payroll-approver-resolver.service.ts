@@ -19,7 +19,7 @@ export class PayrollApproverResolverService {
 
   async resolveApprovers(orgId: string, requiredPermission: string): Promise<string[]> {
     const slugsWithPerm = Object.entries(ROLE_DEFAULT_PERMISSIONS)
-      .filter(([, perms]) => (perms as string[]).includes(requiredPermission))
+      .filter(([, perms]) => perms.some((p) => p === requiredPermission))
       .map(([slug]) => slug);
 
     const [grantRows, defaultRoleRows, ownerRows] = await Promise.all([

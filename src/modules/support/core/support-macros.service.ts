@@ -11,7 +11,6 @@ import {
   organizations,
   organizationMembers,
 } from "../../../db/schema";
-import { supportTicketPriorityEnum, supportTicketStatusEnum } from "../../../db/schema/common/enums";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { appUrl } from "../../email/app-url";
@@ -29,6 +28,7 @@ import {
   type RoutableTicket,
   type RoutingOutcome,
 } from "./support-macros-routing";
+import { isTicketPriority, isTicketStatus } from "./support-ticket-routing";
 
 @Injectable()
 export class SupportMacrosService {
@@ -149,8 +149,12 @@ export class SupportMacrosService {
     const rendered = await this.renderMacroBody(orgId, userId, input.ticketId, macro.body);
 
     const ticketUpdate: Partial<typeof supportTickets.$inferInsert> = {};
-    if (macro.actions?.setStatus) ticketUpdate.status = macro.actions.setStatus as (typeof supportTickets.$inferInsert)["status"];
-    if (macro.actions?.setPriority) ticketUpdate.priority = macro.actions.setPriority as (typeof supportTickets.$inferInsert)["priority"];
+    if (macro.actions?.setStatus && isTicketStatus(macro.actions.setStatus)) {
+      ticketUpdate.status = macro.actions.setStatus;
+    }
+    if (macro.actions?.setPriority && isTicketPriority(macro.actions.setPriority)) {
+      ticketUpdate.priority = macro.actions.setPriority;
+    }
     if (Object.keys(ticketUpdate).length > 0) {
       ticketUpdate.updatedAt = new Date();
       await this.db

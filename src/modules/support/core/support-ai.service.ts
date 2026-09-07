@@ -13,6 +13,7 @@ import { SupportAiTriageAnalysisService } from "./support-ai-triage-analysis.ser
 import { SupportAiTranslationService } from "./support-ai-translation.service";
 import { SupportAiReportHelper, type AiReportFilters } from "./support-ai-report.helper";
 import type { ResolveAiSuggestionInput } from "./dto/support.schemas";
+import { isTicketPriority } from "./support-ticket-routing";
 
 @Injectable()
 export class SupportAiService {
@@ -107,12 +108,10 @@ export class SupportAiService {
     const payload = suggestion.payload;
     switch (suggestion.type) {
       case "priority": {
-        const VALID_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
-        type ValidPriority = (typeof VALID_PRIORITIES)[number];
         const raw = String(payload.priority ?? "");
-        if (!VALID_PRIORITIES.includes(raw as ValidPriority)) return;
+        if (!isTicketPriority(raw)) return;
         await this.db.update(supportTickets)
-          .set({ priority: raw as ValidPriority, updatedAt: new Date() })
+          .set({ priority: raw, updatedAt: new Date() })
           .where(and(eq(supportTickets.id, suggestion.ticketId), eq(supportTickets.orgId, orgId)));
         return;
       }

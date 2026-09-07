@@ -99,7 +99,7 @@ export class PayoutBatchesService {
       .orderBy(desc(payrollBankBatches.generatedAt), desc(payrollBankBatches.id))
       .limit(pageLimit + 1);
 
-    return buildCursorPage(rows as BatchRow[], pageLimit, (row) => ({
+    return buildCursorPage(rows, pageLimit, (row) => ({
       sortValue: (row.generatedAt ?? new Date(0)).toISOString(),
       id: String(row.id),
     }));
@@ -159,8 +159,8 @@ export class PayoutBatchesService {
       .limit(pageLimit + 1);
 
     return {
-      batch: batch[0] as BatchRow,
-      items: buildIdCursorPage(itemRows as BatchItemRow[], pageLimit, (row) => row.id),
+      batch: batch[0],
+      items: buildIdCursorPage(itemRows, pageLimit, (row) => row.id),
     };
   }
 

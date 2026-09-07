@@ -175,7 +175,7 @@ export class CrmInboxQueriesService {
             .from(deals)
             .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, openStageKeys), not(sql`EXISTS (SELECT 1 FROM deal_activities da WHERE da.deal_id = ${deals.id} AND da.created_at >= ${fourteenDaysAgo.toISOString()})`)))
             .limit(10)
-        : Promise.resolve([] as { id: number; name: string; stage: string; assignedToId: string | null }[]),
+        : Promise.resolve<{ id: number; name: string; stage: string; assignedToId: string | null }[]>([]),
 
       this.db
         .select({

@@ -148,12 +148,12 @@ export class CrmDataQualityService {
         LIMIT ${OFFENDER_LIMIT}
       `,
     );
-    const emailOffenders = (emailDups as Array<Record<string, unknown>>).map((r) => ({
+    const emailOffenders = emailDups.map((r) => ({
       id: String(r["ids"] ?? ""),
       name: String(r["names"] ?? ""),
       detail: `Duplicate email: ${String(r["email"] ?? "")}`,
     }));
-    const phoneOffenders = (phoneDups as Array<Record<string, unknown>>).map((r) => ({
+    const phoneOffenders = phoneDups.map((r) => ({
       id: String(r["ids"] ?? ""),
       name: String(r["names"] ?? ""),
       detail: `Duplicate phone: ${String(r["phone"] ?? "")}`,
@@ -198,7 +198,7 @@ export class CrmDataQualityService {
         LIMIT ${OFFENDER_LIMIT}
       `,
     );
-    const offenders = (dups as Array<Record<string, unknown>>).map((r) => ({
+    const offenders = dups.map((r) => ({
       id: String(r["ids"] ?? ""),
       name: String(r["names"] ?? ""),
       detail: `Normalized: ${String(r["norm_name"] ?? "")}`,

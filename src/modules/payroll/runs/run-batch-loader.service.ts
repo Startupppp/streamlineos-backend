@@ -116,7 +116,7 @@ export class RunBatchLoaderService {
             .from(payrollInputs)
             .where(and(eq(payrollInputs.runId, runId), inArray(payrollInputs.userId, userIds)))
             .limit(MAX_RUN_INPUT_ROWS)
-        : Promise.resolve([] as RunInputRow[]),
+        : Promise.resolve([]),
       profileIds.length > 0
         ? this.loadComponentsByProfile(orgId, profileIds)
         : Promise.resolve(new Map<number, ResolvedComponent[]>()),
@@ -132,7 +132,7 @@ export class RunBatchLoaderService {
             .from(bonuses)
             .where(and(eq(bonuses.orgId, orgId), inArray(bonuses.userMembershipId, membershipIds), eq(bonuses.status, "APPROVED"), eq(bonuses.month, month)))
             .limit(MAX_RUN_INPUT_ROWS)
-        : Promise.resolve([] as BonusRow[]),
+        : Promise.resolve([]),
       toggles.incentives && userIds.length > 0
         ? this.db
             .select({
@@ -152,7 +152,7 @@ export class RunBatchLoaderService {
               ),
             )
             .limit(MAX_RUN_INPUT_ROWS)
-        : Promise.resolve([] as IncentiveRow[]),
+        : Promise.resolve([]),
       toggles.reimbursements && membershipIds.length > 0
         ? this.db
             .select({ id: reimbursements.id, userId: reimbursements.userId, amount: reimbursements.amount, category: reimbursements.category })
@@ -170,14 +170,14 @@ export class RunBatchLoaderService {
               ),
             )
             .limit(MAX_RUN_INPUT_ROWS)
-        : Promise.resolve([] as ReimbursementRow[]),
+        : Promise.resolve([]),
       toggles.loans && membershipIds.length > 0
         ? this.db
             .select()
             .from(salaryLoans)
             .where(and(eq(salaryLoans.orgId, orgId), inArray(salaryLoans.userMembershipId, membershipIds), eq(salaryLoans.status, "ACTIVE")))
             .limit(MAX_RUN_INPUT_ROWS)
-        : Promise.resolve([] as (typeof salaryLoans.$inferSelect)[]),
+        : Promise.resolve([]),
       toggles.tds && userIds.length > 0
         ? this.db
             .select({
@@ -202,7 +202,7 @@ export class RunBatchLoaderService {
               ),
             )
             .limit(MAX_RUN_INPUT_ROWS)
-        : Promise.resolve([] as TaxDeclarationRow[]),
+        : Promise.resolve([]),
     ]);
 
     const loanIds = loanRows.map((l) => l.id);

@@ -23,7 +23,7 @@ import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { loadRunEmployeePayeeById } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { toCalculationSnapshot } from "../payroll.types";
-import type { PayslipTemplateConfig } from "./dto/payout.schemas";
+import { normalizePayslipTemplateConfig } from "./dto/payout.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { computeSnapshotHash } from "./payslip-bulk-publisher.service";
@@ -167,20 +167,7 @@ export class PayslipDownloadService {
       : undefined;
 
     const layout = templateRow?.layout ?? "CLASSIC";
-    const rawConfig = templateRow?.config;
-    const config: PayslipTemplateConfig =
-      rawConfig && typeof rawConfig === "object"
-        ? {
-            accent: "#0f2b7f",
-            showEmployerContributions: false,
-            showYtd: false,
-            ...(rawConfig as Partial<PayslipTemplateConfig>),
-          }
-        : {
-            accent: "#0f2b7f",
-            showEmployerContributions: false,
-            showYtd: false,
-          };
+    const config = normalizePayslipTemplateConfig(templateRow?.config);
 
     const pdfData = buildPayslipPdfData({
       snapshot,

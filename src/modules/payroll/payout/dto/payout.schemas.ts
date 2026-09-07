@@ -8,6 +8,19 @@ export const payslipConfigSchema = z.object({
 });
 export type PayslipTemplateConfig = z.infer<typeof payslipConfigSchema>;
 
+const DEFAULT_PAYSLIP_TEMPLATE_CONFIG: PayslipTemplateConfig = payslipConfigSchema.parse({});
+
+/**
+ * `payroll_templates.config`/`payroll_run_employees` styling overrides are an
+ * untyped JSONB column — every reader merges the stored value over the schema
+ * defaults so a partial or legacy row still yields a complete config.
+ */
+export function normalizePayslipTemplateConfig(raw: unknown): PayslipTemplateConfig {
+  const stored: Partial<PayslipTemplateConfig> =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Partial<PayslipTemplateConfig>) : {};
+  return { ...DEFAULT_PAYSLIP_TEMPLATE_CONFIG, ...stored };
+}
+
 export const approvalActionSchema = z.object({
   comment: z.string().max(1000).optional(),
 }).strict();

@@ -5,6 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { payslipTemplates } from "../../../db/schema";
 import { renderPayslipHtml } from "./lib/payslip-renderer";
 import type { CreateTemplateInput, PatchTemplateInput, PayslipTemplateConfig, PreviewTemplateInput } from "./dto/payout.schemas";
+import { normalizePayslipTemplateConfig } from "./dto/payout.schemas";
 import type { CalculationSnapshot } from "../payroll.types";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import {
@@ -97,10 +98,7 @@ export class PayslipTemplatesService {
 
     if (!template) throw new NotFoundException("Template not found");
 
-    const rawConfig = template.config;
-    const existingConfig: PayslipTemplateConfig = rawConfig && typeof rawConfig === "object"
-      ? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false, ...(rawConfig as Partial<PayslipTemplateConfig>) }
-      : { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false };
+    const existingConfig = normalizePayslipTemplateConfig(template.config);
     const mergedConfig: PayslipTemplateConfig | undefined =
       data.config !== undefined ? { ...existingConfig, ...data.config } : undefined;
 

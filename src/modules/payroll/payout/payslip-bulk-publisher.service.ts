@@ -34,7 +34,7 @@ import {
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { normalizePayrollToggles, toCalculationSnapshot } from "../payroll.types";
 import type { CalculationSnapshot } from "../payroll.types";
-import type { PayslipTemplateConfig } from "./dto/payout.schemas";
+import { normalizePayslipTemplateConfig } from "./dto/payout.schemas";
 import { PAYROLL_READ_CAP } from "../lib/query-bounds";
 
 export function computeSnapshotHash(snapshot: CalculationSnapshot): string {
@@ -140,10 +140,7 @@ export class PayslipBulkPublisherService {
     const total = payees.length;
 
     const layout = defaultTemplate?.layout ?? "CLASSIC";
-    const rawTemplateConfig = defaultTemplate?.config;
-    const config: PayslipTemplateConfig = rawTemplateConfig && typeof rawTemplateConfig === "object"
-      ? { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false, ...(rawTemplateConfig as Partial<PayslipTemplateConfig>) }
-      : { accent: "#0f2b7f", showEmployerContributions: false, showYtd: false };
+    const config = normalizePayslipTemplateConfig(defaultTemplate?.config);
 
     const existingPubs = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
