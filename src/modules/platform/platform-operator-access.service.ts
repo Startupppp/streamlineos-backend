@@ -137,6 +137,8 @@ export class PlatformOperatorAccessService {
       .where(eq(operatorAccessGrants.grantId, grantId))
       .limit(1);
     if (!grant) throw new NotFoundException("Grant not found");
+    if (grant.operatorUserId === approverId)
+      throw new ForbiddenException("Self-approval not permitted: the operator receiving access cannot approve their own grant");
     if (grant.status === "active" && grant.approverId === approverId)
       return { orgId: grant.orgId, operatorUserId: grant.operatorUserId };
     if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");

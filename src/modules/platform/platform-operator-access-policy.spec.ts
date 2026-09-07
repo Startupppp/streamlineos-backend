@@ -213,4 +213,91 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
       });
     });
   });
+
+  describe("approveGrant: the beneficiary may never approve their own grant", () => {
+    function grantDb(grant: Record<string, unknown>) {
+      const limit = jest.fn().mockResolvedValue([grant]);
+      const where = jest.fn().mockReturnValue({ limit });
+      const from = jest.fn().mockReturnValue({ where });
+      return {
+        select: jest.fn().mockReturnValue({ from }),
+        transaction: jest.fn(),
+        insert: jest.fn(),
+      };
+    }
+
+    it("denies when a third party filed the request and the operator approves it", async () => {
+      const db = grantDb({
+        grantId: "g1",
+        grantedBy: "op-carol",
+        approverId: null,
+        status: "pending",
+        orgId: "org-1",
+        operatorUserId: "op-alice",
+      });
+      const svc = await buildService(db);
+
+      await expect(svc.approveGrant("g1", "op-alice")).rejects.toBeInstanceOf(ForbiddenException);
+      expect(db.transaction).not.toHaveBeenCalled();
+    });
+
+    it("(bite proof) the grantedBy check alone does not catch it — requester and beneficiary differ", async () => {
+      const db = grantDb({
+        grantId: "g1",
+        grantedBy: "op-carol",
+        approverId: null,
+        status: "pending",
+        orgId: "org-1",
+        operatorUserId: "op-alice",
+      });
+      const svc = await buildService(db);
+
+      await expect(svc.approveGrant("g1", "op-alice")).rejects.toThrow(
+        "the operator receiving access cannot approve their own grant",
+      );
+    });
+
+    it("does not replay a legacy grant that was already approved by its own beneficiary", async () => {
+      const db = grantDb({
+        grantId: "g1",
+        grantedBy: "op-carol",
+        approverId: "op-alice",
+        status: "active",
+        orgId: "org-1",
+        operatorUserId: "op-alice",
+      });
+      const svc = await buildService(db);
+
+      await expect(svc.approveGrant("g1", "op-alice")).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("still allows an independent approver", async () => {
+      const updateChain = {
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]),
+      };
+      const tx = {
+        execute: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockReturnValue(updateChain),
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+      };
+      const db = grantDb({
+        grantId: "g1",
+        grantedBy: "op-carol",
+        approverId: null,
+        status: "pending",
+        orgId: "org-1",
+        operatorUserId: "op-alice",
+      });
+      db.transaction = jest.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx));
+      const svc = await buildService(db);
+
+      await expect(svc.approveGrant("g1", "op-bob")).resolves.toEqual({
+        orgId: "org-1",
+        operatorUserId: "op-alice",
+      });
+      expect(tx.update).toHaveBeenCalled();
+    });
+  });
 });
