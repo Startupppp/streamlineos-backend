@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const recordLayoutGroupSchema = z.object({
   id: z.string(),
-  label: z.string(),
+  title: z.string(),
   fields: z.array(z.string()),
 });
 
