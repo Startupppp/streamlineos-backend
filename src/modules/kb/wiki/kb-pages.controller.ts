@@ -48,6 +48,8 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
 import {
   kbPageTreeSchema,
+  kbPageSchema,
+  kbPageListSchema,
   kbPageWithAncestorsSchema,
   kbPageSearchResponseSchema,
   kbPageSoftDeleteSchema,
@@ -95,21 +97,21 @@ export class KbPagesController {
 
   @Get("pages/recent")
   @RequirePermission("kb:pages:view")
-  @ResponseSchema(kbPageWithAncestorsSchema.array())
+  @ResponseSchema(kbPageListSchema)
   async getRecent(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.visits.getRecent(u);
   }
 
   @Get("pages/favorites")
   @RequirePermission("kb:pages:view")
-  @ResponseSchema(kbPageWithAncestorsSchema.array())
+  @ResponseSchema(kbPageListSchema)
   async getFavorites(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.visits.getFavorites(u);
   }
 
   @Get("pages/trash")
   @RequirePermission("kb:pages:view")
-  @ResponseSchema(kbPageTreeSchema)
+  @ResponseSchema(kbPageListSchema)
   async getTrash(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.tree.getTrash(u);
   }
@@ -129,7 +131,7 @@ export class KbPagesController {
   @HttpCode(201)
   @RequirePermission("kb:pages:create")
   @Validate({ body: createPageSchema })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async create(
     @Body() body: CreatePageInput,
     @CurrentUser() u: CurrentUserContext,
@@ -152,7 +154,7 @@ export class KbPagesController {
   @Patch("pages/:pageId")
   @RequirePermission("kb:pages:update")
   @Validate({ params: pageIdParams, body: updatePageSchema })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async update(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body() body: UpdatePageInput,
@@ -180,7 +182,7 @@ export class KbPagesController {
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
   @Validate({ params: pageIdParams })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async duplicate(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -309,7 +311,7 @@ export class KbPagesController {
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
   @Validate({ params: pageIdversionNumberParams })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async restoreVersion(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
@@ -322,7 +324,7 @@ export class KbPagesController {
   @Patch("pages/:pageId/lock")
   @RequirePermission("kb:pages:manage")
   @Validate({ params: pageIdParams, body: lockPageSchema })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async lock(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body() body: LockPageInput,
@@ -334,7 +336,7 @@ export class KbPagesController {
   @Patch("pages/:pageId/visibility")
   @RequirePermission("kb:pages:update")
   @Validate({ params: pageIdParams, body: setVisibilitySchema })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async setVisibility(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body() body: SetVisibilityInput,
@@ -350,7 +352,7 @@ export class KbPagesController {
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   @Validate({ params: pageIdParams })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async publish(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -363,7 +365,7 @@ export class KbPagesController {
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   @Validate({ params: pageIdParams })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async archive(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -376,7 +378,7 @@ export class KbPagesController {
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   @Validate({ params: pageIdParams })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async unarchive(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -388,7 +390,7 @@ export class KbPagesController {
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
   @Validate({ params: pageIdParams, body: verifyPageSchema })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async verify(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body() body: VerifyPageInput,
@@ -402,7 +404,7 @@ export class KbPagesController {
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
   @Validate({ params: pageIdParams })
-  @ResponseSchema(kbPageWithAncestorsSchema)
+  @ResponseSchema(kbPageSchema)
   async markStale(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,

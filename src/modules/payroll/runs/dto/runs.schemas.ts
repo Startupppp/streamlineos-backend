@@ -14,6 +14,11 @@ export const runTypeSchema = z.enum([
   "CORRECTION",
   "FINAL_SETTLEMENT",
 ]);
+export type RunType = z.infer<typeof runTypeSchema>;
+
+export function isRunType(value: string): value is RunType {
+  return runTypeSchema.options.some((t) => t === value);
+}
 
 export const createRunSchema = z
   .object({
@@ -25,7 +30,8 @@ export const createRunSchema = z
       .optional(),
     sourceRunId: z.number().int().positive().optional(),
     entityId: z.number().int().positive().optional(),
-  }).strict()
+  })
+  .strict()
   .superRefine((val, ctx) => {
     if (
       (val.runType === "OFF_CYCLE" ||
@@ -90,133 +96,159 @@ export const exportRunsQuerySchema = z
       .string()
       .regex(/^\d{4}-\d{2}$/)
       .optional(),
-    runType: z
-      .enum(["REGULAR", "BONUS", "OFF_CYCLE", "CORRECTION", "FINAL_SETTLEMENT"])
-      .optional(),
+    runType: runTypeSchema.optional(),
   })
   .strict();
 export type ExportRunsQuery = z.infer<typeof exportRunsQuerySchema>;
 
-export const patchInputSchema = z.object({
-  scheduledDays: z.string().optional(),
-  paidDays: z.string().optional(),
-  lopDays: z.string().optional(),
-  overtimeHours: z.string().optional(),
-  billableHours: z.string().optional(),
-  reason: z.string().min(1).max(500),
-}).strict();
+export const patchInputSchema = z
+  .object({
+    scheduledDays: z.string().optional(),
+    paidDays: z.string().optional(),
+    lopDays: z.string().optional(),
+    overtimeHours: z.string().optional(),
+    billableHours: z.string().optional(),
+    reason: z.string().min(1).max(500),
+  })
+  .strict();
 export type PatchInputInput = z.infer<typeof patchInputSchema>;
 
-export const resolveExceptionSchema = z.object({
-  note: z.string().max(500).optional(),
-}).strict();
+export const resolveExceptionSchema = z
+  .object({
+    note: z.string().max(500).optional(),
+  })
+  .strict();
 export type ResolveExceptionInput = z.infer<typeof resolveExceptionSchema>;
 
-export const overrideExceptionSchema = z.object({
-  reason: z.string().min(1).max(500),
-}).strict();
+export const overrideExceptionSchema = z
+  .object({
+    reason: z.string().min(1).max(500),
+  })
+  .strict();
 export type OverrideExceptionInput = z.infer<typeof overrideExceptionSchema>;
 
-export const setEmployeeHoldSchema = z.object({
-  hold: z.boolean(),
-  reason: z.string().max(500).optional(),
-}).strict();
+export const setEmployeeHoldSchema = z
+  .object({
+    hold: z.boolean(),
+    reason: z.string().max(500).optional(),
+  })
+  .strict();
 export type SetEmployeeHoldInput = z.infer<typeof setEmployeeHoldSchema>;
 
-export const addRunAdjustmentSchema = z.object({
-  type: z.enum(["EARNING", "DEDUCTION"]),
-  name: z.string().min(1).max(100),
-  amount: z
-    .string()
-    .regex(/^\d+(\.\d{1,2})?$/, "Must be a positive decimal string"),
-  note: z.string().min(1).max(500),
-}).strict();
+export const addRunAdjustmentSchema = z
+  .object({
+    type: z.enum(["EARNING", "DEDUCTION"]),
+    name: z.string().min(1).max(100),
+    amount: z
+      .string()
+      .regex(/^\d+(\.\d{1,2})?$/, "Must be a positive decimal string"),
+    note: z.string().min(1).max(500),
+  })
+  .strict();
 export type AddRunAdjustmentInput = z.infer<typeof addRunAdjustmentSchema>;
 
-export const loanAdjustmentSchema = z.object({
-  loanId: z.number().int().positive(),
-  type: z.enum(["SKIP_EMI", "EXTRA_RECOVERY", "FORECLOSURE", "MANUAL_ADJUST"]),
-  amount: z
-    .string()
-    .regex(/^\d+(\.\d{1,2})?$/)
-    .optional(),
-  reason: z.string().min(1).max(500),
-}).strict();
+export const loanAdjustmentSchema = z
+  .object({
+    loanId: z.number().int().positive(),
+    type: z.enum([
+      "SKIP_EMI",
+      "EXTRA_RECOVERY",
+      "FORECLOSURE",
+      "MANUAL_ADJUST",
+    ]),
+    amount: z
+      .string()
+      .regex(/^\d+(\.\d{1,2})?$/)
+      .optional(),
+    reason: z.string().min(1).max(500),
+  })
+  .strict();
 export type LoanAdjustmentInput = z.infer<typeof loanAdjustmentSchema>;
 
-export const commandCenterQuerySchema = z.object({
-  month: z
-    .string()
-    .regex(/^\d{4}-\d{2}$/)
-    .optional(),
-}).strict();
+export const commandCenterQuerySchema = z
+  .object({
+    month: z
+      .string()
+      .regex(/^\d{4}-\d{2}$/)
+      .optional(),
+  })
+  .strict();
 export type CommandCenterQuery = z.infer<typeof commandCenterQuerySchema>;
 
-export const listProfilesQuerySchema = z.object({
-  cursor: z.string().trim().min(1).max(2048).optional(),
-  limit: pageSizeField(20, 100),
-  search: z.string().optional(),
-  workerType: z
-    .enum(["EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR"])
-    .optional(),
-  status: z.enum(["UPCOMING", "ACTIVE", "SUPERSEDED"]).optional(),
-  costCenter: z.string().optional(),
-}).strict();
+export const listProfilesQuerySchema = z
+  .object({
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(20, 100),
+    search: z.string().optional(),
+    workerType: z
+      .enum(["EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR"])
+      .optional(),
+    status: z.enum(["UPCOMING", "ACTIVE", "SUPERSEDED"]).optional(),
+    costCenter: z.string().optional(),
+  })
+  .strict();
 export type ListProfilesQuery = z.infer<typeof listProfilesQuerySchema>;
 
-export const createProfileSchema = z.object({
-  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  annualCtc: z.string().regex(/^\d+(\.\d{1,2})?$/),
-  workerType: z
-    .enum(["EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR"])
-    .optional()
-    .default("EMPLOYEE"),
-  currency: z.string().length(3).optional().default("INR"),
-  payoutCurrency: z.string().length(3).optional(),
-  taxRegime: z.enum(["OLD", "NEW"]).optional(),
-  costCenter: z.string().max(100).optional(),
-  components: z
-    .array(
-      z.object({
-        componentId: z.number().int().positive(),
-        calcMethodOverride: z
-          .enum([
-            "FIXED",
-            "MANUAL",
-            "FORMULA",
-            "TIMESHEET_BASED",
-            "PERCENT_OF_BASIC",
-            "PERCENT_OF_GROSS",
-            "ATTENDANCE_BASED",
-          ])
-          .optional(),
-        amount: z.string().optional(),
-        percent: z.string().optional(),
-        formulaOverride: z.string().max(500).optional(),
-      }),
-    )
-    .max(200)
-    .optional()
-    .default([]),
-}).strict();
+export const createProfileSchema = z
+  .object({
+    effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    annualCtc: z.string().regex(/^\d+(\.\d{1,2})?$/),
+    workerType: z
+      .enum(["EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR"])
+      .optional()
+      .default("EMPLOYEE"),
+    currency: z.string().length(3).optional().default("INR"),
+    payoutCurrency: z.string().length(3).optional(),
+    taxRegime: z.enum(["OLD", "NEW"]).optional(),
+    costCenter: z.string().max(100).optional(),
+    components: z
+      .array(
+        z.object({
+          componentId: z.number().int().positive(),
+          calcMethodOverride: z
+            .enum([
+              "FIXED",
+              "MANUAL",
+              "FORMULA",
+              "TIMESHEET_BASED",
+              "PERCENT_OF_BASIC",
+              "PERCENT_OF_GROSS",
+              "ATTENDANCE_BASED",
+            ])
+            .optional(),
+          amount: z.string().optional(),
+          percent: z.string().optional(),
+          formulaOverride: z.string().max(500).optional(),
+        }),
+      )
+      .max(200)
+      .optional()
+      .default([]),
+  })
+  .strict();
 export type CreateProfileInput = z.infer<typeof createProfileSchema>;
 
 export const patchProfileSchema = createProfileSchema
   .partial()
-  .omit({ effectiveFrom: true }).strict();
+  .omit({ effectiveFrom: true })
+  .strict();
 export type PatchProfileInput = z.infer<typeof patchProfileSchema>;
 
-export const inputsQuerySchema = z.object({
-  userId: z.string().optional(),
-  cursor: z.string().trim().min(1).max(2048).optional(),
-  limit: pageSizeField(50, 100),
-}).strict();
+export const inputsQuerySchema = z
+  .object({
+    userId: z.string().optional(),
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(50, 100),
+  })
+  .strict();
 export type InputsQuery = z.infer<typeof inputsQuerySchema>;
 
-export const exceptionFilterSchema = z.object({
-  severity: z.enum(["BLOCKER", "WARNING", "INFO"]).optional(),
-  status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
-  cursor: z.string().trim().min(1).max(2048).optional(),
-  limit: pageSizeField(50, 100),
-}).strict();
+export const exceptionFilterSchema = z
+  .object({
+    severity: z.enum(["BLOCKER", "WARNING", "INFO"]).optional(),
+    status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(50, 100),
+  })
+  .strict();
 export type ExceptionFilterInput = z.infer<typeof exceptionFilterSchema>;

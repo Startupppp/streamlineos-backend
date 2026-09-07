@@ -277,6 +277,9 @@ export class RunsService {
       .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
       .limit(1);
 
-    return (version[0]?.toggles as PayrollToggles) ?? null;
+    const rawToggles = version[0]?.toggles;
+    return rawToggles && typeof rawToggles === "object" && !Array.isArray(rawToggles)
+      ? (rawToggles as PayrollToggles)
+      : null;
   }
 }

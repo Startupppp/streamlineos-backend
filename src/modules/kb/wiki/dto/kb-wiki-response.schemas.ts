@@ -212,6 +212,10 @@ export const kbPageWithAncestorsSchema = kbPageSchema.extend({
   isFavorite: z.boolean(),
 });
 
+export const kbPageListItemSchema = kbPageSchema.omit({ content: true, contentText: true });
+
+export const kbPageListSchema = z.array(kbPageListItemSchema);
+
 export const kbPageSearchResponseSchema = z.object({
   items: z.array(
     z.object({

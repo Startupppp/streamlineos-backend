@@ -84,7 +84,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Patch(":poId")
-  @ResponseSchema(invPoSchema)
+  @ResponseSchema(getPoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:update")
   @Validate({ params: poIdParams, body: updatePoSchema })

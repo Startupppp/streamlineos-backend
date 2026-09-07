@@ -212,7 +212,14 @@ export const leadsSalesLeaderboardSchema = z.array(
   z.object({
     userId: z.string(),
     name: z.string().nullable(),
-    count: z.number().int(),
+    image: z.string().nullable(),
+    totalCalls: z.number().int(),
+    totalMeetings: z.number().int(),
+    totalEmails: z.number().int(),
+    leadsAssigned: z.number().int(),
+    leadsConverted: z.number().int(),
+    totalRevenue: z.number(),
+    score: z.number(),
   }),
 );
 
@@ -227,7 +234,16 @@ export const leadsSalesTeamCapacitySchema = z.array(
 
 export const leadsSlaAlertsSchema = z.object({
   total: z.number().int(),
-  leads: z.array(leadPartySchema),
+  leads: z.array(
+    z.object({
+      leadId: z.number().int(),
+      leadName: z.string(),
+      status: z.string(),
+      assignedTo: z.string().nullable(),
+      hoursSinceUpdate: z.number().int(),
+      priority: z.string(),
+    }),
+  ),
 });
 
 export const leadsFollowUpsSchema = z.object({

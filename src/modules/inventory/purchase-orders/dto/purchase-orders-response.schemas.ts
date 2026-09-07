@@ -4,6 +4,12 @@ import { itemsPagedSchema } from "../../../../common/openapi/response-envelopes"
 
 const userRefSchema = z.object({ id: z.string(), name: z.string().nullable() });
 const vendorRefSchema = z.object({ id: z.number().int(), name: z.string(), code: z.string() });
+const grnPurchaseOrderRefSchema = z.object({
+  id: z.number().int(),
+  poNumber: z.string(),
+  vendorId: z.number().int(),
+  vendor: z.object({ id: z.number().int(), name: z.string() }).nullable().optional(),
+});
 
 export const invPoSchema = z.object({
   id: z.number().int(),
@@ -117,17 +123,13 @@ export const getPoResponseSchema = invPoSchema.extend({
 
 export const listGrnsResponseSchema = itemsPagedSchema(
   grnSchema.extend({
-    po: z.object({
-      id: z.number().int(),
-      poNumber: z.string(),
-      vendor: vendorRefSchema.optional(),
-    }).optional(),
+    purchaseOrder: grnPurchaseOrderRefSchema.nullable().optional(),
   }),
 );
 
 export const getGrnResponseSchema = grnSchema.extend({
-  po: z.object({ id: z.number().int(), poNumber: z.string() }).optional(),
-  creator: userRefSchema.optional(),
+  purchaseOrder: grnPurchaseOrderRefSchema.nullable().optional(),
+  creator: userRefSchema.nullable().optional(),
 });
 
 export const reverseGrnResponseSchema = z.object({

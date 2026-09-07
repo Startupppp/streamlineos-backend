@@ -189,7 +189,7 @@ const ALLOWED_MATH_NAMES = new Set(["Math", "abs", "floor", "ceil", "round", "mi
 export function validateFormula(formula: string): { valid: boolean; unknownIdentifiers: string[] } {
   const identifiers = formula.match(FORMULA_ID_RE) ?? [];
   const unknownIdentifiers = identifiers.filter(
-    (id) => !ALLOWED_FORMULA_IDS.has(id as typeof FORMULA_VARIABLES[number]) && !ALLOWED_MATH_NAMES.has(id),
+    (id) => !ALLOWED_FORMULA_IDS.has(id) && !ALLOWED_MATH_NAMES.has(id),
   );
   return { valid: unknownIdentifiers.length === 0, unknownIdentifiers };
 }

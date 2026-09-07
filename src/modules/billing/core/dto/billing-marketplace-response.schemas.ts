@@ -70,6 +70,8 @@ const orgAiCreditsSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   balance: z.number(),
+  lifetimeGranted: z.number(),
+  lifetimeConsumed: z.number(),
   autoTopUpEnabled: z.boolean(),
   autoTopUpPackId: z.number().int().nullable(),
   autoTopUpThreshold: z.number().nullable(),
@@ -77,7 +79,8 @@ const orgAiCreditsSchema = z.object({
   updatedAt: wireDate(),
 });
 
-export const aiCreditsWalletResponseSchema = orgAiCreditsSchema.extend({
+export const aiCreditsWalletResponseSchema = z.object({
+  wallet: orgAiCreditsSchema,
   recentTransactions: z.array(aiCreditTransactionSchema),
   packs: z.array(aiCreditPackSchema),
 });

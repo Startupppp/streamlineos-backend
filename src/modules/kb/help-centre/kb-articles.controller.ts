@@ -96,7 +96,7 @@ export class KbArticlesController {
   @Patch("articles/:articleId")
   @RequirePermission("kb:articles:update")
   @Validate({ params: articleIdParams, body: updateArticleSchema })
-  @ResponseSchema(kbArticleSchema)
+  @ResponseSchema(kbArticleWithTagsSchema)
   async update(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: UpdateArticleInput,
@@ -198,7 +198,7 @@ export class KbArticlesController {
   @RequirePermission("kb:articles:update")
   @HttpCode(200)
   @Validate({ params: articleIdversionNumberParams })
-  @ResponseSchema(kbArticleWithTagsSchema)
+  @ResponseSchema(kbArticleSchema)
   async restore(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
