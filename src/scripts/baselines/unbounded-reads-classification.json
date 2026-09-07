@@ -3163,6 +3163,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "NEWLY VISIBLE 2026-09-03: src/db entered this gate's corpus for the first time. Bounded by eq(coupons.code, coupon.code) \u2014 an existence check on one code, inside a seed script that is never on a request path."
+    },
+    "/build/core/projects-automations.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Select with no LIMIT, but the row set is bounded by the request",
+      "justification": "IN-list is the distinct set_status values of the request's own actions, tenant- and project-scoped. The actions array was uncapped when this was flagged; createAutomationSchema now caps conditions and actions at 50 each and their strings at 200/2000, so the IN-list has a hard ceiling of 50 2026-09-07"
     }
   }
 }
