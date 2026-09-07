@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { HR_AUTOMATION_EVENTS } from "../hr-automation-events";
 
 const HTTPS_URL = z
@@ -35,7 +35,6 @@ export const listHrWebhooksSchema = z.object({
 }).strict();
 
 export const listDeliveriesSchema = z.object({
-  page: pageNumberField,
   limit: pageSizeField(50, 100),
 }).strict();
 

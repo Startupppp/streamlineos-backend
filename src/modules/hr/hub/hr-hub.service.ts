@@ -31,10 +31,7 @@ const INTERVIEW_QUERY: InterviewListInput = {
   candidateId: undefined,
   upcoming: undefined,
   relevant: "true",
-  page: 1,
-  pageSize: 50,
   limit: 50,
-  offset: 0,
 };
 
 @Injectable()

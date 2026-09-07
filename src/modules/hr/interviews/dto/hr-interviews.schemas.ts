@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField, optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const upsertSlaSchema = z.object({
   stage: z.string().min(1),
@@ -13,28 +13,10 @@ export const interviewListSchema = z
     candidateId: z.coerce.number().int().positive().optional(),
     upcoming: z.enum(["true", "false"]).optional(),
     relevant: z.enum(["true", "false"]).optional(),
-    page: optionalPageNumberField(),
-    pageSize: optionalPageSizeField(),
-    /** @deprecated prefer page/pageSize */
-    limit: optionalPageSizeField(),
-    /** @deprecated prefer page/pageSize */
-    offset: z.coerce.number().int().min(0).optional(),
-  }).strict()
-  .transform((q) => {
-    const pageSize = q.pageSize ?? q.limit ?? 20;
-    const page =
-      q.page ?? (q.offset != null ? Math.floor(q.offset / pageSize) + 1 : 1);
-    return {
-      candidateId: q.candidateId,
-      upcoming: q.upcoming,
-      relevant: q.relevant,
-      page,
-      pageSize,
-      limit: pageSize,
-      offset: (page - 1) * pageSize,
-    };
-  });
-export type InterviewListInput = z.output<typeof interviewListSchema>;
+    limit: pageSizeField(20, 100),
+  })
+  .strict();
+export type InterviewListInput = z.infer<typeof interviewListSchema>;
 
 export const selfInterviewListSchema = z.object({
   page: pageNumberField,

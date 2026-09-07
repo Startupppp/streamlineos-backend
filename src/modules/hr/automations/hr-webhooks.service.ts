@@ -153,7 +153,6 @@ export class HrWebhooksService {
   async listDeliveries(orgId: string, subscriptionId: number, params: ListDeliveriesInput) {
     const limit = boundHrReadLimit(params.limit);
     await this.getSubscription(orgId, subscriptionId);
-    const offset = (params.page - 1) * limit;
     const where = and(
       eq(hrWebhookDeliveries.orgId, orgId),
       eq(hrWebhookDeliveries.subscriptionId, subscriptionId),
@@ -161,13 +160,12 @@ export class HrWebhooksService {
     const [rows, [totalRow]] = await Promise.all([
       this.db.query.hrWebhookDeliveries.findMany({
         where,
-        orderBy: [desc(hrWebhookDeliveries.createdAt)],
+        orderBy: [desc(hrWebhookDeliveries.createdAt), desc(hrWebhookDeliveries.id)],
         limit,
-        offset,
       }),
       this.db.select({ total: count() }).from(hrWebhookDeliveries).where(where),
     ]);
-    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page: params.page, pageSize: limit });
+    return buildListResponse(rows, Number(totalRow?.total ?? 0), { page: 1, pageSize: limit });
   }
 
   getEvents() {

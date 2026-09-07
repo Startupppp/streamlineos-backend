@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, Optional } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
 import {
   leaveBalances,
   leaveRequests,
@@ -20,6 +20,7 @@ import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
 import type { DataScope } from "../../access/access.types";
 import { LeaveLedgerService } from "./leave-ledger.service";
 import { requireOrganizationMembershipId } from "./organization-membership";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 
 const TEAM_LEAVES_CAP = 500;
 
@@ -345,12 +346,13 @@ export class LeavesService {
     };
   }
 
-  async calendar(orgId: string, month: number, year: number) {
-    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
-    const lastDay = new Date(year, month, 0).getDate();
-    const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-
-    const rows = await this.db
+  /**
+   * One capped keyset page of a calendar month. The month is read whole — a day missing
+   * a colleague's leave is wrong, not short — so `calendar` walks these pages on the
+   * primary key rather than truncating at one oversized read.
+   */
+  private calendarPage(orgId: string, monthStart: string, monthEnd: string, afterId: number) {
+    return this.db
       .select({
         id: leaveRequests.id,
         userId: leaveRequests.userId,
@@ -370,9 +372,26 @@ export class LeavesService {
           eq(leaveRequests.orgId, orgId),
           lte(leaveRequests.startDate, monthEnd),
           gte(leaveRequests.endDate, monthStart),
+          gt(leaveRequests.id, afterId),
         ),
       )
-      .limit(500);
+      .orderBy(asc(leaveRequests.id))
+      .limit(HR_SCAN_PAGE);
+  }
+
+  async calendar(orgId: string, month: number, year: number) {
+    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+    const rows: Awaited<ReturnType<LeavesService["calendarPage"]>> = [];
+    let afterId = 0;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const chunk = await this.calendarPage(orgId, monthStart, monthEnd, afterId);
+      rows.push(...chunk);
+      if (chunk.length < HR_SCAN_PAGE) break;
+      afterId = chunk[chunk.length - 1].id;
+    }
 
     const leaveTypeIds = [
       ...new Set(rows.map((r) => r.leaveTypeId).filter((id): id is number => id !== null)),

@@ -1,24 +1,53 @@
 import { Injectable, Inject, NotFoundException } from "@nestjs/common";
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrCalibrationEntries, reviewCycles, performanceReviews } from "../../../db/schema/hr/performance";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 
 @Injectable()
 export class CalibrationService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listEntries(orgId: string, cycleId: number) {
+  private async assertCycle(orgId: string, cycleId: number) {
     const cycle = await this.db.query.reviewCycles.findFirst({
       columns: { id: true },
       where: and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)),
     });
     if (!cycle) throw new NotFoundException("Review cycle not found");
-    return this.db
-      .select()
-      .from(hrCalibrationEntries)
-      .where(and(eq(hrCalibrationEntries.orgId, orgId), eq(hrCalibrationEntries.cycleId, cycleId)))
-      .limit(500);
+  }
+
+  /** Walks the whole cycle in capped keyset pages — a 9-box grid missing rows is wrong data, not a short page. */
+  private async scanAll<TRow extends { id: number }>(
+    page: (afterId: number) => Promise<TRow[]>,
+  ): Promise<TRow[]> {
+    const rows: TRow[] = [];
+    let afterId = 0;
+    for (let scanned = 0; scanned < HR_SCAN_MAX_PAGES; scanned++) {
+      const chunk = await page(afterId);
+      rows.push(...chunk);
+      if (chunk.length < HR_SCAN_PAGE) break;
+      afterId = chunk[chunk.length - 1].id;
+    }
+    return rows;
+  }
+
+  async listEntries(orgId: string, cycleId: number) {
+    await this.assertCycle(orgId, cycleId);
+    return this.scanAll((afterId) =>
+      this.db
+        .select()
+        .from(hrCalibrationEntries)
+        .where(
+          and(
+            eq(hrCalibrationEntries.orgId, orgId),
+            eq(hrCalibrationEntries.cycleId, cycleId),
+            gt(hrCalibrationEntries.id, afterId),
+          ),
+        )
+        .orderBy(asc(hrCalibrationEntries.id))
+        .limit(HR_SCAN_PAGE),
+    );
   }
 
   async upsertEntry(
@@ -66,24 +95,45 @@ export class CalibrationService {
   }
 
   async getNineBox(orgId: string, cycleId: number) {
-    const entries = await this.db
-      .select({
-        employeeId: hrCalibrationEntries.employeeId,
-        postRating: hrCalibrationEntries.postRating,
-        note: hrCalibrationEntries.note,
-      })
-      .from(hrCalibrationEntries)
-      .where(and(eq(hrCalibrationEntries.orgId, orgId), eq(hrCalibrationEntries.cycleId, cycleId)))
-      .limit(500);
-
-    const reviews = await this.db
-      .select({
-        userId: performanceReviews.userId,
-        overallRating: performanceReviews.overallRating,
-      })
-      .from(performanceReviews)
-      .where(and(eq(performanceReviews.orgId, orgId), eq(performanceReviews.cycleId, cycleId)))
-      .limit(500);
+    const [entries, reviews] = await Promise.all([
+      this.scanAll((afterId) =>
+        this.db
+          .select({
+            id: hrCalibrationEntries.id,
+            employeeId: hrCalibrationEntries.employeeId,
+            postRating: hrCalibrationEntries.postRating,
+            note: hrCalibrationEntries.note,
+          })
+          .from(hrCalibrationEntries)
+          .where(
+            and(
+              eq(hrCalibrationEntries.orgId, orgId),
+              eq(hrCalibrationEntries.cycleId, cycleId),
+              gt(hrCalibrationEntries.id, afterId),
+            ),
+          )
+          .orderBy(asc(hrCalibrationEntries.id))
+          .limit(HR_SCAN_PAGE),
+      ),
+      this.scanAll((afterId) =>
+        this.db
+          .select({
+            id: performanceReviews.id,
+            userId: performanceReviews.userId,
+            overallRating: performanceReviews.overallRating,
+          })
+          .from(performanceReviews)
+          .where(
+            and(
+              eq(performanceReviews.orgId, orgId),
+              eq(performanceReviews.cycleId, cycleId),
+              gt(performanceReviews.id, afterId),
+            ),
+          )
+          .orderBy(asc(performanceReviews.id))
+          .limit(HR_SCAN_PAGE),
+      ),
+    ]);
 
     const reviewMap = new Map(reviews.map((r) => [r.userId, Number(r.overallRating ?? 0)]));
 

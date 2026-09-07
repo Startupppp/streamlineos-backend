@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   helpdeskTickets,
   hrHelpdeskComments,
@@ -23,7 +23,8 @@ import {
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { keysetAfterId, keysetBeforeId, type KeysetPosition } from "../../../common/pagination/keyset";
+import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 import type {
   AddCommentInput,
   CreateInput,
@@ -134,7 +135,18 @@ export class HrHelpdeskService {
       throw new ForbiddenException("Access denied.");
     }
 
-    const comments = await this.db
+    const comments = await this.scanComments(orgId, ticketId);
+
+    return { ...ticket, comments };
+  }
+
+  /**
+   * A ticket thread is read whole — a comment silently dropped off the end reads as
+   * nobody having answered. Walked in capped `(created_at, id)` keyset pages, the tie-breaker
+   * being the primary key so a same-second pair can neither repeat nor be skipped.
+   */
+  private commentPage(orgId: string, ticketId: number, after: KeysetPosition | null) {
+    return this.db
       .select({
         id: hrHelpdeskComments.id,
         body: hrHelpdeskComments.body,
@@ -145,11 +157,30 @@ export class HrHelpdeskService {
       })
       .from(hrHelpdeskComments)
       .leftJoin(users, eq(users.id, hrHelpdeskComments.authorId))
-      .where(and(eq(hrHelpdeskComments.ticketId, ticketId), eq(hrHelpdeskComments.orgId, orgId)))
-      .orderBy(hrHelpdeskComments.createdAt)
-      .limit(500);
+      .where(
+        and(
+          eq(hrHelpdeskComments.ticketId, ticketId),
+          eq(hrHelpdeskComments.orgId, orgId),
+          ...(after
+            ? [keysetAfterId(hrHelpdeskComments.createdAt, hrHelpdeskComments.id, after)]
+            : []),
+        ),
+      )
+      .orderBy(asc(hrHelpdeskComments.createdAt), asc(hrHelpdeskComments.id))
+      .limit(HR_SCAN_PAGE);
+  }
 
-    return { ...ticket, comments };
+  private async scanComments(orgId: string, ticketId: number) {
+    const comments: Awaited<ReturnType<HrHelpdeskService["commentPage"]>> = [];
+    let after: KeysetPosition | null = null;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page++) {
+      const chunk = await this.commentPage(orgId, ticketId, after);
+      comments.push(...chunk);
+      if (chunk.length < HR_SCAN_PAGE) break;
+      const last = chunk[chunk.length - 1];
+      after = { sortValue: last.createdAt, id: String(last.id) };
+    }
+    return comments;
   }
 
   async create(orgId: string, userId: string, body: CreateInput) {

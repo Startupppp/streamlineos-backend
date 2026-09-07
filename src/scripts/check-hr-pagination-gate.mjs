@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = join(SCRIPT_DIR, "../modules/hr");
 const MIN_FILES = 60;
-const BASELINE = 18;
+const BASELINE = 9;
 
 const OFFSET_EXPLICIT = /\.offset\s*\(/;
 const OFFSET_NAMED = /\boffset\s*:/;

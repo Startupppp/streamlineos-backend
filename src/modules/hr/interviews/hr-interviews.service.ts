@@ -97,8 +97,7 @@ export class HrInterviewsService {
           interviewer: { columns: { id: true, name: true, image: true } },
           panelMembers: { columns: { userId: true } },
         },
-        orderBy: [desc(interviews.scheduledAt)],
-        offset: query.offset,
+        orderBy: [desc(interviews.scheduledAt), desc(interviews.id)],
       }),
       this.db
         .select({ total: count() })
@@ -113,8 +112,8 @@ export class HrInterviewsService {
     }));
 
     return buildListResponse(items, Number(totalRow.total), {
-      page: query.page,
-      pageSize: query.pageSize,
+      page: 1,
+      pageSize: query.limit,
     });
   }
 
