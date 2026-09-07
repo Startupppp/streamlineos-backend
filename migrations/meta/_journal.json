@@ -4866,6 +4866,13 @@
       "when": 1803000010146,
       "tag": "1068_c142_hr_leave_ledger_dedup_index",
       "breakpoints": true
+    },
+    {
+      "idx": 828,
+      "version": "7",
+      "when": 1803000010147,
+      "tag": "1069_operator_access_log_append_only",
+      "breakpoints": true
     }
   ]
 }

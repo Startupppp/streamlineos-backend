@@ -191,7 +191,7 @@ describe("client ip cannot be forged by the caller", () => {
     }
 
     const SOURCES = walk(resolve(BACKEND_ROOT, "src")).map((file) => ({
-      path: relative(BACKEND_ROOT, file),
+      path: relative(BACKEND_ROOT, file).split("\\").join("/"),
       content: readFileSync(file, "utf8"),
     }));
 

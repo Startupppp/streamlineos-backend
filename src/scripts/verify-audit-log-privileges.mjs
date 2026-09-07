@@ -2,11 +2,15 @@
 /* global process */
 
 /**
- * Verify the deployed application role cannot mutate the immutable audit log.
+ * Verify the deployed application role cannot mutate either append-only trail:
+ * audit_logs (0928/0930) and operator_access_log (1069, the break-glass record).
  *
  * This deliberately connects with APP_DATABASE_URL (the application role),
  * not the owner connection. A source migration or owner-role query cannot
  * prove the privilege boundary used by the running service.
+ *
+ * Every trail must pass. One trail passing while another is mutable is a fail,
+ * not a partial pass -- the weaker of the two is the one an attacker uses.
  *
  * Usage:
  *   node src/scripts/verify-audit-log-privileges.mjs
@@ -73,9 +77,10 @@ const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {} });
 try {
   const rows = await sql`
     SELECT
+      target.relname AS table_name,
       current_user AS role,
-      has_table_privilege(current_user, 'public.audit_logs', 'UPDATE') AS can_update,
-      has_table_privilege(current_user, 'public.audit_logs', 'DELETE') AS can_delete,
+      has_table_privilege(current_user, 'public.' || target.relname, 'UPDATE') AS can_update,
+      has_table_privilege(current_user, 'public.' || target.relname, 'DELETE') AS can_delete,
       EXISTS (
         SELECT 1
         FROM pg_trigger t
@@ -84,26 +89,38 @@ try {
         JOIN pg_proc p ON p.oid = t.tgfoid
         JOIN pg_namespace fn ON fn.oid = p.pronamespace
         WHERE n.nspname = 'public'
-          AND c.relname = 'audit_logs'
-          AND t.tgname = 'audit_logs_append_only'
+          AND c.relname = target.relname
+          AND t.tgname = target.trgname
           AND NOT t.tgisinternal
           AND t.tgenabled <> 'D'
           AND fn.nspname = 'app'
-          AND p.proname = 'prevent_audit_log_mutation'
+          AND p.proname = target.fnname
           AND (t.tgtype::integer & 16) <> 0
           AND (t.tgtype::integer & 8) <> 0
       ) AS trigger_present
+    FROM (VALUES
+      ('audit_logs', 'audit_logs_append_only', 'prevent_audit_log_mutation'),
+      ('operator_access_log', 'operator_access_log_append_only', 'prevent_operator_access_log_mutation')
+    ) AS target(relname, trgname, fnname)
   `;
-  const row = rows[0];
-  if (!row) throw new Error("audit privilege query returned no row");
-  const result = evaluatePrivilegeRow({
-    role: row.role,
-    canUpdate: row.can_update,
-    canDelete: row.can_delete,
-    triggerPresent: row.trigger_present,
-  });
-  process.stdout.write(JSON.stringify(result) + "\n");
-  if (!result.isAppRole || !result.updateRevoked || !result.deleteRevoked || !result.triggerPresent) process.exitCode = 1;
+  if (rows.length !== 2) throw new Error(`append-only privilege query returned ${rows.length} rows, expected 2`);
+  const results = rows.map((row) => ({
+    table: String(row.table_name),
+    ...evaluatePrivilegeRow({
+      role: row.role,
+      canUpdate: row.can_update,
+      canDelete: row.can_delete,
+      triggerPresent: row.trigger_present,
+    }),
+  }));
+  process.stdout.write(JSON.stringify(results) + "\n");
+  const failed = results.filter(
+    (r) => !r.isAppRole || !r.updateRevoked || !r.deleteRevoked || !r.triggerPresent,
+  );
+  if (failed.length > 0) {
+    process.stderr.write(`APPEND-ONLY BOUNDARY FAILED: ${failed.map((r) => r.table).join(", ")}\n`);
+    process.exitCode = 1;
+  }
 } catch (error) {
   process.stderr.write(`AUDIT PRIVILEGE QUERY FAILED: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 2;

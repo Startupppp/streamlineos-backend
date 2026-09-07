@@ -123,9 +123,10 @@ describe("audit_logs immutability — repository contract (not deployed evidence
       join(resolve(BACKEND_SRC, "scripts/verify-audit-log-privileges.mjs")),
       "utf8",
     );
-    expect(verifier).toContain("t.tgname = 'audit_logs_append_only'");
+    expect(verifier).toContain("'audit_logs', 'audit_logs_append_only', 'prevent_audit_log_mutation'");
+    expect(verifier).toContain("t.tgname = target.trgname");
     expect(verifier).toContain("fn.nspname = 'app'");
-    expect(verifier).toContain("p.proname = 'prevent_audit_log_mutation'");
+    expect(verifier).toContain("p.proname = target.fnname");
     expect(verifier).toContain("t.tgenabled <> 'D'");
     expect(verifier).toContain("(t.tgtype::integer & 16) <> 0");
     expect(verifier).toContain("(t.tgtype::integer & 8) <> 0");
