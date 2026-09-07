@@ -86,46 +86,28 @@ const MIN_RELATION_KEYS = 80;
  */
 const RELATION_BASELINE = new Map([
   [
-    "assigneeMembership",
+    "finalReviewer",
     {
       files: [
-        "modules/support/core/support-sla.service.ts",
-        "modules/support/core/support-ticket-messages.service.ts",
-        "modules/support/core/support-tickets.service.ts",
+        "modules/hr/lifecycle/exit.service.ts",
+        "modules/hr/lifecycle/termination-read.service.ts",
       ],
       reason:
-        "the client declares assignee/assigneeId and reads neither — no assignee picker or avatar exists in the ticket UI. Latent: the first component to trust the type breaks.",
+        "joined to derive a scalar, never shipped as a relation. The progress timeline reads `record.finalReviewer?.name` into its `actor` field and the termination detail does the same; no response schema declares the relation, so the client could not read it under this name if it tried. Removed from the resignation LIST join 2026-09-07, where nothing consumed it at all.",
     },
   ],
   [
-    "creatorMembership",
+    "initiator",
     {
-      files: [
-        "modules/support/core/support-macros.service.ts",
-        "modules/support/core/support-ticket-messages.service.ts",
-        "modules/support/core/support-tickets.service.ts",
-      ],
-      reason: "same as assigneeMembership — declared as creator/createdBy, read by nothing.",
-    },
-  ],
-  [
-    "csm",
-    {
-      files: ["modules/crm/core/crm-ce-dashboard.service.ts"],
-      reason: "CRM is out of the 10/10 release scope. Untriaged, deliberately.",
+      files: ["modules/hr/lifecycle/termination-read.service.ts"],
+      reason:
+        "same shape as finalReviewer on the termination detail — joined for a name the handler folds into its own projection, not declared by any response schema.",
     },
   ],
   [
     "currentLocation",
     {
       files: ["modules/inventory/traceability/inv-traceability.service.ts"],
-      reason: "Inventory is out of the 10/10 release scope. Untriaged, deliberately.",
-    },
-  ],
-  [
-    "poster",
-    {
-      files: ["modules/inventory/stock/inv-stock-adjustments.service.ts"],
       reason: "Inventory is out of the 10/10 release scope. Untriaged, deliberately.",
     },
   ],

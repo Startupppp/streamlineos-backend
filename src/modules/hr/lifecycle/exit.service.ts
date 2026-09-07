@@ -80,9 +80,7 @@ export class ExitService {
         where,
         with: {
           user: { columns: { id: true, name: true, email: true, image: true } },
-          checklists: true,
           hrReviewer: { columns: { id: true, name: true } },
-          finalReviewer: { columns: { id: true, name: true } },
         },
         orderBy: [desc(resignations.createdAt)],
         limit,
