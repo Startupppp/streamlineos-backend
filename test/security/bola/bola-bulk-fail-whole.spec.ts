@@ -6,6 +6,7 @@ import { KbTagsService } from "src/modules/kb/core/kb-tags.service";
 import { ApprovalsBulkService } from "src/modules/timesheets/core/approvals-bulk.service";
 import type { ApprovalsService } from "src/modules/timesheets/core/approvals.service";
 import type { TimesheetsAuditService } from "src/modules/timesheets/core/timesheets-audit.service";
+import type { RateResolverService } from "src/modules/timesheets/core/rate-resolver.service";
 import type { CacheService } from "src/common/cache/cache.service";
 import type { AuditService } from "src/common/audit/audit.service";
 import type { EmailService } from "src/modules/email/email.service";
@@ -282,6 +283,7 @@ describe("BOLA probe — timesheet bulk approvals refuse a mixed-tenant period l
       db,
       { record: jest.fn() } as unknown as TimesheetsAuditService,
       approvals,
+      { resolveMany: jest.fn().mockResolvedValue([]) } as unknown as RateResolverService,
     );
     return { bulk, rec, approvals };
   };
