@@ -36,6 +36,16 @@ export const createSchema = z.object({
   priority: z.string().default("WARM"),
 }).strict();
 
+export const LEAD_QUALIFICATION_FIELD = "bantQualification";
+
+export const leadQualificationSchema = z.object({
+  budget: z.boolean(),
+  authority: z.boolean(),
+  need: z.boolean(),
+  timeline: z.boolean(),
+  notes: z.string().max(5000),
+}).strict();
+
 export const updateSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional().or(z.literal("")),
@@ -52,6 +62,7 @@ export const updateSchema = z.object({
   tags: z.array(z.string()).optional(),
   lostReason: z.string().optional(),
   priority: z.string().optional(),
+  qualification: leadQualificationSchema.optional(),
 }).strict();
 
 export const ingestSchema = z
@@ -71,4 +82,5 @@ export const ingestSchema = z
 export type ListInput = z.infer<typeof listSchema>;
 export type CreateInput = z.infer<typeof createSchema>;
 export type UpdateInput = z.infer<typeof updateSchema>;
+export type LeadQualification = z.infer<typeof leadQualificationSchema>;
 export type IngestInput = z.infer<typeof ingestSchema>;
