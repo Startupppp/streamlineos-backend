@@ -109,7 +109,15 @@ async function seed(tx: TenantTx): Promise<Seed> {
     ["leadB", orgB],
   ] as const) {
     const rows = await tx.execute(sql`insert into leads (org_id, name) values (${org}, ${key}) returning id`);
-    ids[key] = Number((rows as unknown as { id: number }[])[0]?.id);
+    const leadId = Number((rows as unknown as { id: number }[])[0]?.id);
+    ids[key] = leadId;
+    const partyId = `party-${key}-${randomUUID()}`;
+    await tx.execute(
+      sql`insert into business_parties (party_id, organization_id, name) values (${partyId}, ${org}, ${key})`,
+    );
+    await tx.execute(
+      sql`insert into lead_party_map (organization_id, lead_id, party_id) values (${org}, ${leadId}, ${partyId})`,
+    );
   }
   return {
     orgA,

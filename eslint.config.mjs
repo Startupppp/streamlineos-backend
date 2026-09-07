@@ -173,6 +173,7 @@ export default tseslint.config(
       "src/modules/accounting/core/accounting-payables-query.service.ts",
       "src/modules/accounting/core/accounting-receivables.service.ts",
       "src/modules/accounting/core/accounting-vendor-query.service.ts",
+      "src/modules/calendar/calendar-linked-crm-tenant-binding.db.spec.ts",
       "src/modules/finance/ap/bills-due-check.service.ts",
       "src/modules/finance/ap/payment-runs.service.ts",
       "src/modules/finance/ap/recurring-bills.service.ts",

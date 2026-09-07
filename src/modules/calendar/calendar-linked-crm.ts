@@ -1,7 +1,8 @@
 import { NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { deals, leads } from "../../db/schema";
+import { deals } from "../../db/schema";
 import type { TenantTx } from "../../db/drizzle.types";
+import { isLegacyResolved, resolveLegacyParty } from "../party/party-legacy-seam";
 
 /**
  * Authorizes the two CRM object references a calendar event may carry.
@@ -18,6 +19,12 @@ import type { TenantTx } from "../../db/drizzle.types";
  * Call it inside the mutation's transaction and BEFORE the write, so a refused reference
  * leaves nothing behind. A miss is 404, never 403: a 403 on a deal id the caller cannot see
  * would confirm that the deal exists.
+ *
+ * The lead reference resolves through `resolveLegacyParty` rather than `leads` directly —
+ * `leads` is an identity table the Party seam already covers, and a party-backed lookup keeps
+ * the same 404-on-miss contract without adding a reader of the table the identity migration is
+ * retiring. `deals` has no Party equivalent (it is a pipeline record, not an identity), so it
+ * stays a direct read.
  */
 export async function assertLinkedCrmRecordsInOrg(
   tx: TenantTx,
@@ -34,11 +41,10 @@ export async function assertLinkedCrmRecordsInOrg(
     if (found.length === 0) throw new NotFoundException("Deal not found");
   }
   if (linkedLeadId !== undefined && linkedLeadId !== null) {
-    const found = await tx
-      .select({ id: leads.id })
-      .from(leads)
-      .where(and(eq(leads.id, linkedLeadId), eq(leads.orgId, orgId)))
-      .limit(1);
-    if (found.length === 0) throw new NotFoundException("Lead not found");
+    const resolved = await resolveLegacyParty(tx, orgId, {
+      kind: "LEAD",
+      legacyId: linkedLeadId,
+    });
+    if (!isLegacyResolved(resolved)) throw new NotFoundException("Lead not found");
   }
 }

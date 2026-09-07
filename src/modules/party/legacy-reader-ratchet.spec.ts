@@ -41,6 +41,10 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/accounting/core/accounting-payables-query.service.ts",
   "src/modules/accounting/core/accounting-receivables.service.ts",
   "src/modules/accounting/core/accounting-vendor-query.service.ts",
+  // Raw SQL in a fixture, not a production read. It seeds a lead in each of two
+  // organisations to prove the calendar guard refuses the other tenant's; the
+  // service it tests resolves through the seam and reads no legacy table.
+  "src/modules/calendar/calendar-linked-crm-tenant-binding.db.spec.ts",
   "src/modules/finance/ap/bills-due-check.service.ts",
   "src/modules/finance/ap/payment-runs.service.ts",
   "src/modules/finance/ap/recurring-bills.service.ts",
