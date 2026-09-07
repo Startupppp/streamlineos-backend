@@ -347,7 +347,7 @@ export class FeedbucketAiService {
   async createTicketFromAnalysis(
     u: CurrentUserContext,
     submissionId: number,
-  ): Promise<{ ticketId: number; ticketType: string }> {
+  ): Promise<{ ticketId: number; ticketType: FeedbackAnalysis["suggestedTicketType"] }> {
     await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
     const submission = await this.loadSubmission(u.orgId, submissionId);
