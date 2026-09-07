@@ -23,12 +23,15 @@ function isSlateNode(value: unknown): value is SlateNode {
   return typeof value === "object" && value !== null;
 }
 
+function isTipTapNode(value: unknown): value is TipTapNode {
+  return typeof value === "object" && value !== null;
+}
+
 function walkNodes(node: unknown, visitor: (n: TipTapNode) => void): void {
-  if (typeof node !== "object" || node === null) return;
-  const n = node as TipTapNode;
-  visitor(n);
-  if (Array.isArray(n.content)) {
-    for (const child of n.content) walkNodes(child, visitor);
+  if (!isTipTapNode(node)) return;
+  visitor(node);
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) walkNodes(child, visitor);
   }
 }
 

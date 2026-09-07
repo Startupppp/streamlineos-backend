@@ -435,7 +435,7 @@ export class KbPagesService {
       )
       SELECT id, title FROM ancestors ORDER BY depth DESC
     `);
-    return (rows as Array<Record<string, unknown>>).map((row) => ({
+    return rows.map((row) => ({
       id: Number(row.id),
       title: String(row.title ?? ""),
     }));

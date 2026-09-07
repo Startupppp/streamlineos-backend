@@ -206,7 +206,7 @@ export class HrImportService {
               const rowRef = await this.commitService.commitRow(
                 rowTx,
                 orgId,
-                job.entity as HrImportEntity,
+                job.entity,
                 row.payload,
               );
               if (rowRef) await this.commitService.markRowCommitted(rowTx, row.id, rowRef);
@@ -222,7 +222,7 @@ export class HrImportService {
           }
         }
 
-        afterId = rows[rows.length - 1]!.id;
+        afterId = rows[rows.length - 1].id;
         if (rows.length < IMPORT_ROW_BATCH_SIZE) break;
       }
 
@@ -282,11 +282,14 @@ export class HrImportService {
         if (rows.length === 0) break;
         for (const row of rows) {
           if (row.createdRecordRef) {
-            await this.commitService.rollbackRef(tx, row.createdRecordRef);
+            await this.commitService.rollbackRef(tx, {
+              table: row.createdRecordRef.table,
+              id: Number(row.createdRecordRef.id),
+            });
           }
         }
 
-        afterId = rows[rows.length - 1]!.id;
+        afterId = rows[rows.length - 1].id;
         if (rows.length < IMPORT_ROW_BATCH_SIZE) break;
       }
 

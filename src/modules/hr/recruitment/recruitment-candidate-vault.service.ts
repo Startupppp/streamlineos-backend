@@ -282,7 +282,7 @@ export class RecruitmentCandidateVaultService {
         type: "AUDIT" as const,
         id: `audit-${e.id}`,
         label: e.action,
-        detail: e.metadata as Record<string, unknown> | null,
+        detail: e.metadata,
         actor: e.userName,
         at: e.createdAt,
       })),
@@ -316,10 +316,8 @@ export class RecruitmentCandidateVaultService {
     ];
 
     return events
-      .filter((e) => e.at !== null)
-      .sort(
-        (a, b) => new Date(b.at!).getTime() - new Date(a.at!).getTime(),
-      );
+      .filter((e): e is typeof e & { at: Date } => e.at !== null)
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   }
 
   private async ensureCandidate(

@@ -25,10 +25,10 @@ export class PayrollComponentsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string, input: ListComponentsInput) {
-    const filters: SQL[] = [eq(salaryComponents.orgId, orgId)];
+    const filters: (SQL | undefined)[] = [eq(salaryComponents.orgId, orgId)];
 
     if (input.type) {
-      filters.push(eq(salaryComponents.type, input.type as ComponentRow["type"]));
+      filters.push(eq(salaryComponents.type, input.type));
     }
     if (input.active !== undefined) {
       filters.push(eq(salaryComponents.isActive, input.active));
@@ -38,7 +38,7 @@ export class PayrollComponentsService {
         or(
           ilike(salaryComponents.name, `%${input.search}%`),
           ilike(salaryComponents.code, `%${input.search}%`),
-        ) as SQL,
+        ),
       );
     }
 

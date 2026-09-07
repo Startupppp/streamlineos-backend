@@ -194,7 +194,7 @@ export class SupportAiTriageAnalysisService {
         rootCause: gatewayResult.data.rootCause,
         summary: gatewayResult.data.summary,
       },
-      related[0]!.similarity,
+      related[0].similarity,
     );
   }
 }

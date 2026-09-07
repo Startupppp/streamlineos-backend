@@ -146,7 +146,9 @@ export class CrmSalesDashboardService {
       probability: d.probability ?? 0,
     }));
 
-    const repIds = leaderboardRaw.map((r) => r.salesRepId).filter(Boolean) as number[];
+    const repIds = leaderboardRaw
+      .map((r) => r.salesRepId)
+      .filter((salesRepId): salesRepId is NonNullable<typeof salesRepId> => salesRepId !== null);
     const people = repIds.length
       ? await this.db.query.crmPeople.findMany({
           where: (p, { inArray }) => inArray(p.id, repIds),
@@ -194,7 +196,7 @@ export class CrmSalesDashboardService {
       limit: 7,
     });
     const salesActivity = salesActivities.map((a) => ({
-      type: a.type as "deal_won" | "meeting" | "proposal" | "call" | "email",
+      type: a.type,
       message: a.message,
       time: a.time,
       person: a.person ?? "",

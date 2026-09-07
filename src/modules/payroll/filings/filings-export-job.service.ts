@@ -3,6 +3,7 @@ import type { payrollJobs } from "../../../db/schema";
 import { PayrollJobsService } from "../jobs/payroll-jobs.service";
 import { PayrollEntitiesService } from "../entities/entities.service";
 import { FILING_CAPABILITY, type PrepareExportBody } from "./filings.service";
+import { asRecord } from "../../../common/openapi/zod-operation-contracts";
 
 export const FILING_EXPORT_RESOURCE_TYPE = "payroll_filing_export";
 
@@ -78,7 +79,7 @@ export class PayrollFilingsExportJobService {
   }
 
   private viewExportJob(job: PayrollJobRow): FilingExportJobView {
-    const result = (job.result ?? {}) as Record<string, unknown>;
+    const result = asRecord(job.result) ?? {};
     return {
       jobId: job.id,
       status: job.status,

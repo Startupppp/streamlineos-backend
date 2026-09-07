@@ -136,7 +136,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
       const count = Number(row.count ?? 0);
       if (row.status === "ACTIVE") {
         totalActive += count;
-        mrr += (PLAN_PRICES_PAISE[row.plan as Plan] ?? 0) * count;
+        mrr += (PLAN_PRICES_PAISE[row.plan] ?? 0) * count;
       }
       if (row.status === "TRIAL") totalTrial += count;
     }
@@ -199,7 +199,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
       .groupBy(subscriptions.plan);
 
     const subscriptionMrr = rows.reduce(
-      (total, row) => total + (PLAN_PRICES_PAISE[row.plan as Plan] ?? 0) * Number(row.count ?? 0),
+      (total, row) => total + (PLAN_PRICES_PAISE[row.plan] ?? 0) * Number(row.count ?? 0),
       0,
     );
     const { mrr } = await this.getMetrics(orgId);

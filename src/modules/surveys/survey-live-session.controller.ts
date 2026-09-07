@@ -97,6 +97,6 @@ export class SurveyLiveSessionController {
       return { participantCount, revealed: false, question: null };
     }
     const results = await this.liveParticipants.getQuestionResults(u.orgId, sessionId, session.currentQuestionId);
-    return { participantCount, revealed: Boolean((session.settings as { revealed?: boolean })?.revealed), question: results };
+    return { participantCount, revealed: session.settings?.["revealed"] === true, question: results };
   }
 }

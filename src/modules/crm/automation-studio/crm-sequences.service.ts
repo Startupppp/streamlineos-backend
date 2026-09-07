@@ -12,6 +12,12 @@ import type {
   EnrollInSequenceInput,
 } from "./dto/automation-studio.schemas";
 
+function pgErrorCode(err: unknown): string | undefined {
+  return err && typeof err === "object" && "code" in err && typeof err.code === "string"
+    ? err.code
+    : undefined;
+}
+
 @Injectable()
 export class CrmSequencesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -34,7 +40,7 @@ export class CrmSequencesService {
         .returning();
       return { sequence };
     } catch (err) {
-      const code = (err as { code?: string }).code;
+      const code = pgErrorCode(err);
       if (code === "23505") throw new ConflictException("A sequence with this name already exists");
       throw err;
     }
@@ -58,7 +64,7 @@ export class CrmSequencesService {
         .returning();
       return sequence ? { sequence } : null;
     } catch (err) {
-      const code = (err as { code?: string }).code;
+      const code = pgErrorCode(err);
       if (code === "23505") throw new ConflictException("A sequence with this name already exists");
       throw err;
     }

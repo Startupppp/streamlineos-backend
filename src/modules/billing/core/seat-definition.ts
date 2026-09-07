@@ -36,16 +36,19 @@ export function lockMembersQuota(orgId: string): SQL {
   return lockQuota(orgId, "members");
 }
 
-export type SeatEventType =
-  | "INVITE_SENT"
-  | "INVITE_ACCEPTED"
-  | "INVITE_EXPIRED"
-  | "INVITE_CANCELLED"
-  | "MEMBER_SUSPENDED"
-  | "MEMBER_REACTIVATED"
-  | "MEMBER_DEACTIVATED"
-  | "GUEST_ADDED"
-  | "GUEST_REMOVED";
+export const SEAT_EVENT_TYPES = [
+  "INVITE_SENT",
+  "INVITE_ACCEPTED",
+  "INVITE_EXPIRED",
+  "INVITE_CANCELLED",
+  "MEMBER_SUSPENDED",
+  "MEMBER_REACTIVATED",
+  "MEMBER_DEACTIVATED",
+  "GUEST_ADDED",
+  "GUEST_REMOVED",
+] as const;
+
+export type SeatEventType = (typeof SEAT_EVENT_TYPES)[number];
 
 /** `quantity_delta` is looked up here, never chosen by a caller, so the inclusion rules cannot drift per call site. */
 export const SEAT_EVENT_DELTAS: Record<SeatEventType, number> = {
@@ -59,5 +62,3 @@ export const SEAT_EVENT_DELTAS: Record<SeatEventType, number> = {
   GUEST_ADDED: 1,
   GUEST_REMOVED: -1,
 };
-
-export const SEAT_EVENT_TYPES = Object.keys(SEAT_EVENT_DELTAS) as SeatEventType[];

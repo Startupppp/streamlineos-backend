@@ -35,6 +35,10 @@ function backoffMs(attempt: number): number {
   return Math.min(60 * 60_000, Math.pow(2, attempt) * 60_000);
 }
 
+function isHrAutomationEvent(value: string): value is HrAutomationEvent {
+  return HR_AUTOMATION_EVENTS.some((event) => event === value);
+}
+
 @Injectable()
 export class HrWebhooksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -188,7 +192,8 @@ export class HrWebhooksService {
     });
     if (!sub) throw new NotFoundException("Webhook subscription not found");
 
-    const sampleEvent: HrAutomationEvent = (sub.events[0] as HrAutomationEvent | undefined) ?? "employee.created";
+    const firstEvent = sub.events[0];
+    const sampleEvent: HrAutomationEvent = firstEvent !== undefined && isHrAutomationEvent(firstEvent) ? firstEvent : "employee.created";
     const payload = HR_EVENT_SAMPLE_PAYLOADS[sampleEvent] ?? {};
 
     const [delivery] = await this.db
@@ -232,12 +237,15 @@ export class HrWebhooksService {
       .set({ status: "pending", attempts: 0, error: null, lastAttemptAt: null })
       .where(eq(hrWebhookDeliveries.id, deliveryId));
 
+    if (!isHrAutomationEvent(delivery.event)) {
+      throw new BadRequestException("Delivery references an unknown automation event");
+    }
     void this.attemptDelivery(
       sub.id,
       sub.url,
       sub.secret,
       deliveryId,
-      delivery.event as HrAutomationEvent,
+      delivery.event,
       delivery.payload,
       0,
     );
@@ -402,13 +410,13 @@ export class HrWebhooksService {
     await Promise.allSettled(
       eligible.map((d) => {
         const sub = subMap.get(d.subscriptionId);
-        if (!sub) return Promise.resolve();
+        if (!sub || !isHrAutomationEvent(d.event)) return Promise.resolve();
         return this.attemptDelivery(
           sub.id,
           sub.url,
           sub.secret,
           d.id,
-          d.event as HrAutomationEvent,
+          d.event,
           d.payload,
           d.attempts,
         );

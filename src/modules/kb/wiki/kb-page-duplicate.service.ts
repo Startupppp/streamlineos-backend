@@ -137,7 +137,7 @@ export class KbPageDuplicateService {
       )
       SELECT id FROM subtree
     `);
-    const ids = (idRows as Array<Record<string, unknown>>).map((row) => Number(row.id));
+    const ids = idRows.map((row) => Number(row.id));
     if (ids.length === 0) return new Map();
     const pages = await tx
       .select(KB_PAGE_COLUMNS)

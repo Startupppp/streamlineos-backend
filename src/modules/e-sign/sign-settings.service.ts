@@ -106,7 +106,7 @@ export class SignSettingsService {
       actorUserId: userId,
       eventType: "admin_setting_changed",
       eventMessage: "Updated SignOS organization settings",
-      eventPayload: input as Record<string, unknown>,
+      eventPayload: { ...input },
     });
     return updated;
   }

@@ -27,6 +27,7 @@ import {
   decodePayrollTimestampCursor,
   payrollCursorPosition,
 } from "../payroll-cursor";
+import { asRecord } from "../../../common/openapi/zod-operation-contracts";
 
 export function resolveStatutoryTaxId(
   canonicalTaxId: string | null | undefined,
@@ -65,6 +66,10 @@ export const FILING_CAPABILITY = {
   },
   note: "StreamlineOS prepares statutory export artifacts (CSV summaries from payroll run lines) and tracks challan/acknowledgement references. Filing with EPFO/ESIC/tax portals is not automatic until a provider is connected. Form 16 PDFs are period summaries only — not official Income-tax certificates or TRACES XML.",
 };
+
+export function isFilingExportType(value: string): value is FilingExportType {
+  return FILING_CAPABILITY.supportedTypes.some((t) => t === value);
+}
 
 /**
  * Filing workflows are export-first until provider integrations exist.
@@ -139,12 +144,13 @@ export class PayrollFilingsService {
     body: string;
   }> {
     const row = await this.get(orgId, filingId);
-    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    const payload = asRecord(row.payload) ?? {};
+    const artifact = asRecord(payload.artifact);
     const csv =
       typeof payload.csv === "string"
         ? payload.csv
-        : typeof (payload.artifact as { csv?: string } | undefined)?.csv === "string"
-          ? (payload.artifact as { csv: string }).csv
+        : typeof artifact?.csv === "string"
+          ? artifact.csv
           : null;
     if (!csv) {
       throw new NotFoundException("Export CSV not available for this filing");
@@ -172,12 +178,12 @@ export class PayrollFilingsService {
     if (row.filingType !== "FORM16") {
       throw new BadRequestException("Form 16 PDF is only available for FORM16 filings");
     }
-    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    const payload = asRecord(row.payload) ?? {};
     const rows = Array.isArray(payload.rows) ? payload.rows : [];
-    const match = rows.find(
-      (r): r is Record<string, unknown> =>
-        !!r && typeof r === "object" && String((r as Record<string, unknown>).userId) === userId,
-    );
+    const match = rows.find((r): r is Record<string, unknown> => {
+      const rec = asRecord(r);
+      return rec != null && String(rec.userId) === userId;
+    });
     if (!match) {
       throw new NotFoundException("Employee row not found on this Form 16 filing");
     }
@@ -220,7 +226,7 @@ export class PayrollFilingsService {
     if (row.filingType !== "FORM16") {
       throw new BadRequestException("Not a FORM16 filing");
     }
-    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    const payload = asRecord(row.payload) ?? {};
     const rows = Array.isArray(payload.rows) ? payload.rows : [];
     return {
       filingId,
@@ -249,10 +255,10 @@ export class PayrollFilingsService {
     actorId: string,
     body: PrepareExportBody,
   ) {
-    const filingType = body.filingType as FilingExportType;
-    if (!FILING_CAPABILITY.supportedTypes.includes(filingType)) {
+    if (!isFilingExportType(body.filingType)) {
       throw new BadRequestException(`Unsupported filing type: ${body.filingType}`);
     }
+    const filingType = body.filingType;
 
     // Entity ownership + country isolation (India export builders only).
     let entityId = body.entityId ?? null;

@@ -6,6 +6,7 @@ import {
   hrPayrollInputSnapshots,
 } from "../../../../db/schema/payroll/input-capture";
 import { daysInMonth } from "./money";
+import { asRecord } from "../../../../common/openapi/zod-operation-contracts";
 
 export interface PulledInputs {
   userId: string;
@@ -139,9 +140,10 @@ export async function loadLockedSectionsByUser(
     .limit(Math.max(1, userIds.length * 100));
 
   for (const snap of snaps) {
-    if (!snap.payload || typeof snap.payload !== "object") continue;
+    const payload = asRecord(snap.payload);
+    if (!payload) continue;
     const sections = byUser.get(snap.userId) ?? new Map<string, SnapshotPayload>();
-    sections.set(snap.section, snap.payload as SnapshotPayload);
+    sections.set(snap.section, payload);
     byUser.set(snap.userId, sections);
   }
   return byUser;
@@ -234,8 +236,8 @@ export function buildCalcPullsFromSections(
   const consumedReimbursementIds: number[] = [];
 
   for (const raw of items) {
-    if (!raw || typeof raw !== "object") continue;
-    const item = raw as Record<string, unknown>;
+    const item = asRecord(raw);
+    if (!item) continue;
     const amount = item.amount;
     const category = typeof item.category === "string" ? item.category : "OTHER";
     const amountStr =
@@ -251,7 +253,7 @@ export function buildCalcPullsFromSections(
   }
 
   const loansRaw = Array.isArray(deduction.activeLoans) ? deduction.activeLoans : [];
-  const activeLoans = loansRaw
+  const activeLoans: LockedCalcPulls["activeLoans"] = loansRaw
     .filter((l): l is Record<string, unknown> => !!l && typeof l === "object")
     .map((l) => ({
       id: num(l.id),
@@ -259,7 +261,7 @@ export function buildCalcPullsFromSections(
       amount: String(l.amount ?? "0"),
       paidEmis: num(l.paidEmis),
       totalEmis: l.totalEmis == null ? null : num(l.totalEmis),
-      adjustment: null as { type: string; amount: string | null } | null,
+      adjustment: null,
     }))
     .filter((l) => l.id > 0);
 

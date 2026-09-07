@@ -11,6 +11,7 @@ import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { forEachOrg } from "../../../common/tenant";
 import { readCount } from "./quota-counts";
+import { assertOneOf } from "./lib/enum-guard";
 
 export const RESERVATION_STATUSES = ["ACTIVE", "SETTLED", "RELEASED", "EXPIRED"] as const;
 
@@ -145,7 +146,7 @@ export class UsageMeteringService {
           id: inserted.id,
           meterKey: input.meterKey,
           reservedQuantity: input.quantity,
-          status: "ACTIVE" as ReservationStatus,
+          status: "ACTIVE",
           expiresAt,
           replayed: false,
         };
@@ -297,7 +298,10 @@ export class UsageMeteringService {
       .limit(1);
 
     if (!existing) return null;
-    return { ...existing, status: existing.status as ReservationStatus };
+    return {
+      ...existing,
+      status: assertOneOf(RESERVATION_STATUSES, existing.status, "billing_usage_reservations.status"),
+    };
   }
 
   async rebuildRollup(

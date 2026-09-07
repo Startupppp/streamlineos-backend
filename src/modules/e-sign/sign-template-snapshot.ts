@@ -59,8 +59,8 @@ export interface TemplateField {
 export interface TemplateSnapshot {
   subject?: string;
   message?: string;
-  routingMode: string;
-  ccTiming: string;
+  routingMode: RoutingMode;
+  ccTiming: CcTiming;
   allowDecline: boolean;
   expirationDays: number;
   reminderEnabled: boolean;
@@ -88,13 +88,17 @@ const nullableText = (value: unknown): string | null => (value != null ? String(
 const num = (value: unknown, fallback: number): number => (typeof value === "number" ? value : fallback);
 const nullableNum = (value: unknown): number | null => (typeof value === "number" ? value : null);
 
+function enumValue<T extends string>(candidates: readonly T[], value: unknown, fallback: T): T {
+  return candidates.find((candidate) => candidate === value) ?? fallback;
+}
+
 function parseRole(value: unknown): TemplateRole {
   const role = asRecord(value);
   return {
     roleName: text(role["roleName"], ""),
-    recipientType: text(role["recipientType"], "signer"),
+    recipientType: enumValue(signRecipientTypeEnum.enumValues, role["recipientType"], "signer"),
     routingOrder: num(role["routingOrder"], 0),
-    authMethod: text(role["authMethod"], "email_link"),
+    authMethod: enumValue(signAuthMethodEnum.enumValues, role["authMethod"], "email_link"),
   };
 }
 
@@ -119,7 +123,7 @@ function parseField(value: unknown): TemplateField {
   return {
     roleName: text(field["roleName"], ""),
     documentIndex: num(field["documentIndex"], 0),
-    fieldType: text(field["fieldType"], ""),
+    fieldType: enumValue(signFieldTypeEnum.enumValues, field["fieldType"], "text"),
     label: nullableText(field["label"]),
     pageNumber: num(field["pageNumber"], 1),
     x: num(field["x"], 0),
@@ -143,8 +147,8 @@ export function parseTemplateSnapshot(json: Record<string, unknown>): TemplateSn
   return {
     subject: optionalText(json["subject"]),
     message: optionalText(json["message"]),
-    routingMode: text(json["routingMode"], "parallel"),
-    ccTiming: text(json["ccTiming"], "on_complete"),
+    routingMode: enumValue(signRoutingModeEnum.enumValues, json["routingMode"], "parallel"),
+    ccTiming: enumValue(signCcTimingEnum.enumValues, json["ccTiming"], "on_complete"),
     allowDecline: Boolean(json["allowDecline"]),
     expirationDays: num(json["expirationDays"], 30),
     reminderEnabled: Boolean(json["reminderEnabled"]),

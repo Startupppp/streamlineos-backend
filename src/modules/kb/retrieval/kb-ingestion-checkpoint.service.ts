@@ -86,7 +86,7 @@ export class KbIngestionCheckpointService {
       { orgId },
     );
 
-    return new Map(rows.map((r) => [r.chunkIndex, r.embedding as number[]]));
+    return new Map(rows.map((r) => [r.chunkIndex, r.embedding]));
   }
 
   async saveCheckpoints(

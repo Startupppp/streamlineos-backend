@@ -29,7 +29,6 @@ import {
   type PreviewQuery,
   type UpdatePolicyInput,
 } from "./dto/hr-policy.schemas";
-import type { PolicyType } from "./hr-policy-types";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -127,7 +126,7 @@ export class HrPoliciesController {
   ) {
     return this.service.simulate(u.orgId, {
       employeeId: body.employeeId,
-      policyType: body.policyType as PolicyType,
+      policyType: body.policyType,
       date: body.date,
       rules: body.rules,
     });
@@ -219,7 +218,7 @@ export class HrPoliciesController {
     return this.service.preview(
       u.orgId,
       query.employeeId,
-      policy.policyType as PolicyType,
+      policy.policyType,
       query.date,
     );
   }

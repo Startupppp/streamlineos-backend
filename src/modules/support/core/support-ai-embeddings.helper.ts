@@ -70,7 +70,7 @@ export class SupportAiEmbeddingsHelper {
       or(
         eq(supportTickets.status, "OPEN"),
         eq(supportTickets.status, "IN_PROGRESS"),
-      )!,
+      ) ?? sql`false`,
     ];
 
     return this.db

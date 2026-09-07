@@ -409,8 +409,8 @@ export class PayrollInputsBuildService {
         periodId: period.id,
         userId,
         section,
-        payload: payload as Record<string, unknown>,
-        sourceRefs: (sourceRefs ?? null) as Record<string, unknown> | null,
+        payload,
+        sourceRefs: sourceRefs ?? null,
       });
 
       snapshotValues.push(

@@ -11,6 +11,7 @@ import {
   organizations,
   organizationMembers,
 } from "../../../db/schema";
+import { supportTicketPriorityEnum, supportTicketStatusEnum } from "../../../db/schema/common/enums";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { appUrl } from "../../email/app-url";
@@ -49,9 +50,10 @@ export class SupportMacrosService {
   listMacros(orgId: string, _userId: string, membershipId: number | null, query: ListMacrosInput) {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const privateVisible = eq(supportMacros.createdByMembershipId, membershipId);
+    const visibility = or(sql`${supportMacros.visibility} != 'private'`, privateVisible) ?? sql`false`;
     const conditions = [
       eq(supportMacros.orgId, orgId),
-      or(sql`${supportMacros.visibility} != 'private'`, privateVisible)!,
+      visibility,
     ];
     if (query.category) conditions.push(eq(supportMacros.category, query.category));
     if (query.search) {

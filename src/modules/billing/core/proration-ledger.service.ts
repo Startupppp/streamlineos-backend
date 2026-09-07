@@ -7,6 +7,7 @@ import { billingProrationLines } from "../../../db/schema";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { computeProrationMinor, type RoundingRule } from "./proration-math";
 import { VersionedCatalogService } from "./versioned-catalog.service";
+import { assertOneOf } from "./lib/enum-guard";
 
 export const PRORATION_LINE_TYPES = ["UPGRADE", "DOWNGRADE", "QUANTITY_CHANGE"] as const;
 
@@ -191,7 +192,7 @@ export class ProrationLedgerService {
     if (!existing) return null;
     return {
       ...existing,
-      lineType: existing.lineType as ProrationLineType,
+      lineType: assertOneOf(PRORATION_LINE_TYPES, existing.lineType, "billing_proration_lines.line_type"),
       oldPriceVersionId: existing.oldPriceVersionId ?? null,
       newPriceVersionId: existing.newPriceVersionId ?? null,
       replayed: true,

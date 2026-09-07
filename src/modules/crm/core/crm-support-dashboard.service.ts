@@ -216,18 +216,11 @@ export class CrmSupportDashboardService {
       RESOLVED: "#10B981",
       CLOSED: "#6366F1",
     };
-    const ticketStatusBreakdown = [
-      "OPEN",
-      "IN_PROGRESS",
-      "WAITING",
-      "RESOLVED",
-      "CLOSED",
-    ].map((status) => ({
+    const ticketStatusBreakdown = (
+      ["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"] as const
+    ).map((status) => ({
       label: STATUS_LABELS[status],
-      value:
-        statusMap.get(
-          status as "OPEN" | "IN_PROGRESS" | "WAITING" | "RESOLVED" | "CLOSED",
-        ) ?? 0,
+      value: statusMap.get(status) ?? 0,
       color: STATUS_COLORS[status],
     }));
 
@@ -245,7 +238,7 @@ export class CrmSupportDashboardService {
 
     const assigneeIds = assigneeAggs
       .map((a) => a.assigneeId)
-      .filter(Boolean) as string[];
+      .filter((assigneeId): assigneeId is NonNullable<typeof assigneeId> => assigneeId !== null);
     let assigneeUsers: {
       id: string;
       name: string | null;
@@ -297,12 +290,10 @@ export class CrmSupportDashboardService {
       MEDIUM: "#3B82F6",
       LOW: "#10B981",
     };
-    const ticketsByPriority = ["URGENT", "HIGH", "MEDIUM", "LOW"].map(
+    const ticketsByPriority = (["URGENT", "HIGH", "MEDIUM", "LOW"] as const).map(
       (priority) => ({
         label: PRIORITY_LABELS[priority],
-        value:
-          priorityMap.get(priority as "URGENT" | "HIGH" | "MEDIUM" | "LOW") ??
-          0,
+        value: priorityMap.get(priority) ?? 0,
         color: PRIORITY_COLORS[priority],
       }),
     );

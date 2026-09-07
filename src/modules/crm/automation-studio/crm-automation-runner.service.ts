@@ -9,7 +9,6 @@ import {
   tasks,
   deals,
   organizationMembers,
-  taskEntityTypeEnum,
 } from "../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD } from "../crm-party-reads";
@@ -17,7 +16,7 @@ import type { CrmAutomationCondition, AutomationGraphNode } from "../../../db/sc
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
-import type { StudioEventPayload, RunStepLog } from "./types";
+import { isTaskEntityType, type StudioEventPayload, type RunStepLog } from "./types";
 import { evaluateConditions, type StudioCondition } from "./crm-automation-condition-evaluator";
 import { updateMirroredLeads } from "../../party/party-legacy-leads";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
@@ -32,10 +31,6 @@ const STUDIO_OPERATORS: readonly StudioCondition["operator"][] = [
 
 function isStudioOperator(value: unknown): value is StudioCondition["operator"] {
   return typeof value === "string" && STUDIO_OPERATORS.some((operator) => operator === value);
-}
-
-function isTaskEntityType(value: string): value is (typeof taskEntityTypeEnum.enumValues)[number] {
-  return taskEntityTypeEnum.enumValues.some((entityType) => entityType === value);
 }
 
 @Injectable()

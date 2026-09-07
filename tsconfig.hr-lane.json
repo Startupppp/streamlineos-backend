@@ -3,6 +3,8 @@
   "include": [],
   "files": [
     "src/@types/express.d.ts",
-    "src/modules/hr/governance/delegations/delegations.service.ts"
+    "src/modules/hr/workflows/hr-workflow-instances.service.ts",
+    "src/modules/hr/workflows/hr-workflow-approver.service.ts",
+    "src/modules/hr/policies/hr-policies.controller.ts"
   ]
 }

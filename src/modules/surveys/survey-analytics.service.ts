@@ -70,7 +70,7 @@ export class SurveyAnalyticsService {
 
       const choiceDistribution: Record<number, number> = {};
       for (const answer of answers) {
-        for (const choiceId of (answer.choiceIds as number[] | null) ?? []) {
+        for (const choiceId of answer.choiceIds ?? []) {
           choiceDistribution[choiceId] = (choiceDistribution[choiceId] ?? 0) + 1;
         }
       }

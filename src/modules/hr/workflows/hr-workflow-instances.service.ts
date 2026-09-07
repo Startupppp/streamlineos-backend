@@ -30,6 +30,12 @@ interface ResolvedStep {
   approverValue?: string | null;
 }
 
+function isResolvedStepArray(steps: unknown[]): steps is ResolvedStep[] {
+  return steps.every(
+    (s) => typeof s === "object" && s !== null && "stepOrder" in s && "approverType" in s,
+  );
+}
+
 @Injectable()
 export class HrWorkflowInstancesService {
   constructor(
@@ -253,8 +259,8 @@ export class HrWorkflowInstancesService {
     const allMembershipIds = [
       membershipId,
       ...delegations
-        .filter((d) => d.endsAt >= now && d.delegatorMembershipId != null)
-        .map((d) => d.delegatorMembershipId as number),
+        .filter((d): d is typeof d & { delegatorMembershipId: number } => d.endsAt >= now && d.delegatorMembershipId != null)
+        .map((d) => d.delegatorMembershipId),
     ];
 
     const candidates = await this.db
@@ -294,8 +300,9 @@ export class HrWorkflowInstancesService {
 
     const approversByInstance = new Map<number, string[]>();
     for (const instance of candidates) {
-      const steps = (instance.definitionSnapshot as { steps: ResolvedStep[] }).steps;
-      const currentStep = steps.find((s) => s.stepOrder === instance.currentStepOrder);
+      const snapshotSteps = instance.definitionSnapshot.steps;
+      if (!isResolvedStepArray(snapshotSteps)) continue;
+      const currentStep = snapshotSteps.find((s) => s.stepOrder === instance.currentStepOrder);
       if (!currentStep) continue;
       approversByInstance.set(
         instance.id,

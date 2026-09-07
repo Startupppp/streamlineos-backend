@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { surveyForms, surveySections, surveyQuestions, surveyQuestionChoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -23,7 +23,7 @@ export class SurveyFormsService {
     if (filters.status) conditions.push(eq(surveyForms.status, filters.status));
     if (filters.mode) conditions.push(eq(surveyForms.mode, filters.mode));
     if (filters.search) {
-      conditions.push(or(ilike(surveyForms.title, `%${filters.search}%`), ilike(surveyForms.description, `%${filters.search}%`))!);
+      conditions.push(or(ilike(surveyForms.title, `%${filters.search}%`), ilike(surveyForms.description, `%${filters.search}%`)) ?? sql`false`);
     }
 
     const where = and(...conditions);
@@ -90,7 +90,7 @@ export class SurveyFormsService {
             versionId: draftVersion.id,
             sectionId,
             questionKey: `q_${survey.id}_${sectionIndex}_${questionIndex}`,
-            type: question.type as (typeof surveyQuestions.$inferInsert)["type"],
+            type: question.type,
             title: question.title,
             required: question.required ?? false,
             variableName: question.variableName ?? null,

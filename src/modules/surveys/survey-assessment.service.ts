@@ -15,6 +15,19 @@ interface AssessmentSettings {
   certificateOnPass?: boolean;
 }
 
+function readAssessmentSettings(settings: Record<string, unknown> | null): AssessmentSettings {
+  const passScore = settings?.["passScore"];
+  const attemptsAllowed = settings?.["attemptsAllowed"];
+  const timeLimitMinutes = settings?.["timeLimitMinutes"];
+  const certificateOnPass = settings?.["certificateOnPass"];
+  return {
+    passScore: typeof passScore === "number" ? passScore : undefined,
+    attemptsAllowed: typeof attemptsAllowed === "number" ? attemptsAllowed : undefined,
+    timeLimitMinutes: typeof timeLimitMinutes === "number" ? timeLimitMinutes : undefined,
+    certificateOnPass: typeof certificateOnPass === "boolean" ? certificateOnPass : undefined,
+  };
+}
+
 @Injectable()
 export class SurveyAssessmentService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -45,7 +58,7 @@ export class SurveyAssessmentService {
     if (survey.mode !== "assessment") throw new BadRequestException("Survey is not in assessment mode");
     if (!survey.activeVersionId) throw new BadRequestException("Assessment has not been published");
 
-    const settings = (survey.settings ?? {}) as AssessmentSettings;
+    const settings = readAssessmentSettings(survey.settings);
     const priorAttempts = participantId
       ? await this.db.query.surveyAssessmentAttempts.findMany({
           where: and(eq(surveyAssessmentAttempts.orgId, orgId), eq(surveyAssessmentAttempts.surveyId, surveyId), eq(surveyAssessmentAttempts.participantId, participantId)),
@@ -79,7 +92,7 @@ export class SurveyAssessmentService {
     const survey = await this.db.query.surveyForms.findFirst({ where: and(eq(surveyForms.id, surveyId), eq(surveyForms.orgId, orgId)) });
     if (!survey) return null;
 
-    const settings = (survey.settings ?? {}) as AssessmentSettings;
+    const settings = readAssessmentSettings(survey.settings);
     const passScore = settings.passScore ?? 0;
     const passed = score >= passScore;
 

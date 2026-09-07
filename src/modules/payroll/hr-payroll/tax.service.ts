@@ -33,7 +33,11 @@ export class TaxService {
       .limit(10);
   }
 
-  async createOrUpdate(orgId: string, userId: string, data: Partial<DeclarationInsert>) {
+  async createOrUpdate(
+    orgId: string,
+    userId: string,
+    data: Partial<DeclarationInsert> & { financialYear: string },
+  ) {
     const existing = await this.db
       .select({ id: taxDeclarations.id })
       .from(taxDeclarations)
@@ -41,7 +45,7 @@ export class TaxService {
         and(
           eq(taxDeclarations.orgId, orgId),
           eq(taxDeclarations.userId, userId),
-          eq(taxDeclarations.financialYear, (data.financialYear as string) ?? ""),
+          eq(taxDeclarations.financialYear, data.financialYear),
         ),
       )
       .limit(1);
@@ -57,7 +61,7 @@ export class TaxService {
 
     const [created] = await this.db
       .insert(taxDeclarations)
-      .values({ ...data, orgId, userId } as DeclarationInsert)
+      .values({ ...data, orgId, userId })
       .returning();
     return created;
   }
@@ -72,7 +76,11 @@ export class TaxService {
     return item;
   }
 
-  async addProof(orgId: string, declarationId: number, data: Partial<ProofInsert>) {
+  async addProof(
+    orgId: string,
+    declarationId: number,
+    data: Partial<ProofInsert> & { category: string; amount: string },
+  ) {
     const [declaration] = await this.db
       .select({ id: taxDeclarations.id })
       .from(taxDeclarations)
@@ -81,7 +89,7 @@ export class TaxService {
     if (!declaration) throw new NotFoundException("Tax declaration not found");
     const [item] = await this.db
       .insert(investmentProofs)
-      .values({ ...data, orgId, declarationId } as ProofInsert)
+      .values({ ...data, orgId, declarationId })
       .returning();
     return item;
   }

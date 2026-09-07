@@ -29,6 +29,14 @@ export const missingConsentQuerySchema = z
   .object({ channel: channelEnum })
   .strict();
 
+export const unsubscribePayloadSchema = z
+  .object({
+    orgId: z.string().min(1),
+    contactId: z.number().int().positive(),
+    channel: channelEnum,
+  })
+  .strict();
+
 export type ContactParam = z.infer<typeof contactParamSchema>;
 export type RecordConsentInput = z.infer<typeof recordConsentSchema>;
 export type MissingConsentQuery = z.infer<typeof missingConsentQuerySchema>;

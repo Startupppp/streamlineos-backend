@@ -152,13 +152,13 @@ export class CrmPeopleService {
     const personAccounts = accounts.map((a) => ({
       name: a.name,
       revenue: Number(a.revenue),
-      health: a.health as "healthy" | "at_risk" | "critical",
+      health: a.health,
       since: a.customerSince ?? "—",
       renewalDate: a.renewalDate ?? "",
     }));
 
     const personActivities = activities.map((a) => ({
-      type: a.type as "deal_won" | "meeting" | "proposal" | "call" | "email" | "ticket" | "escalation",
+      type: a.type,
       message: a.message,
       time: a.time,
     }));

@@ -1,6 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import { crmCampaigns, crmOptions, crmPipelineStages, deals } from "../../../db/schema";
+import { crmCampaigns, crmCampaignStatusEnum, crmOptions, crmPipelineStages, deals } from "../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD, leadPriority, leadSource, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -10,6 +10,10 @@ import { buildCursorPage, buildIdCursorPage, decodeCursor } from "../../../commo
 import { keysetBefore } from "../../../common/pagination/keyset";
 import type { CampaignCreateInput, CampaignUpdateInput, CampaignListQuery } from "./dto/campaigns.schemas";
 
+function isCampaignStatus(value: string): value is (typeof crmCampaignStatusEnum.enumValues)[number] {
+  return crmCampaignStatusEnum.enumValues.some((status) => status === value);
+}
+
 @Injectable()
 export class CrmCampaignsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -18,7 +22,11 @@ export class CrmCampaignsService {
     const limit = query.limit;
     const position = decodeCursor(query.cursor);
     const baseConditions = [eq(crmCampaigns.orgId, orgId), isNull(crmCampaigns.deletedAt)];
-    if (query.status) baseConditions.push(eq(crmCampaigns.status, query.status as never));
+    if (query.status) {
+      if (!isCampaignStatus(query.status))
+        throw new BadRequestException(`Unknown campaign status: ${query.status}`);
+      baseConditions.push(eq(crmCampaigns.status, query.status));
+    }
     const where = position
       ? and(...baseConditions, keysetBefore(crmCampaigns.createdAt, crmCampaigns.id, position))
       : and(...baseConditions);
@@ -58,6 +66,9 @@ export class CrmCampaignsService {
   }
 
   async update(orgId: string, campaignId: number, input: CampaignUpdateInput) {
+    if (input.status !== undefined && !isCampaignStatus(input.status))
+      throw new BadRequestException(`Unknown campaign status: ${input.status}`);
+
     const [updated] = await this.db.update(crmCampaigns)
       .set({
         ...(input.name !== undefined && { name: input.name }),
@@ -68,7 +79,7 @@ export class CrmCampaignsService {
           budgetAllocated: input.budgetAllocated === null ? null : input.budgetAllocated.toString(),
         }),
         ...(input.utmCampaignKey !== undefined && { utmCampaignKey: input.utmCampaignKey }),
-        ...(input.status !== undefined && { status: input.status as never }),
+        ...(input.status !== undefined && { status: input.status }),
         ...(input.description !== undefined && { description: input.description }),
         ...(input.targetAudience !== undefined && { targetAudience: input.targetAudience }),
         ...(input.ownerId !== undefined && { ownerId: input.ownerId }),

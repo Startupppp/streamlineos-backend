@@ -47,7 +47,7 @@ export class SoFulfillmentService {
 
     await this.db.transaction(async (tx) => {
       for (const line of so.lines) {
-        const existingReservation = await (tx as Db).query.invStockReservations.findFirst({
+        const existingReservation = await tx.query.invStockReservations.findFirst({
           where: and(
             eq(invStockReservations.orgId, orgId),
             eq(invStockReservations.sourceType, "inv_sales_order"),
@@ -108,7 +108,7 @@ export class SoFulfillmentService {
       }
 
       const newStatus = allReserved ? "RESERVED" : "PARTIALLY_RESERVED";
-      await (tx as Db).update(invSalesOrders)
+      await tx.update(invSalesOrders)
         .set({ status: newStatus, updatedAt: new Date() })
         .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
     });
@@ -204,7 +204,7 @@ export class SoFulfillmentService {
       const packageNumber = await this.numSeq.next(orgId, "PACKAGE");
 
       const pickLists = await this.db.query.invPickLists.findMany({
-        where: and(eq(invPickLists.orgId, orgId), eq(invPickLists.soId!, soId)),
+        where: and(eq(invPickLists.orgId, orgId), eq(invPickLists.soId, soId)),
         with: { lines: true },
       });
 
@@ -378,20 +378,20 @@ export class SoFulfillmentService {
       );
 
       if (serialIds.length > 0) {
-        await (tx as Db).update(invSerialNumbers)
+        await tx.update(invSerialNumbers)
           .set({ status: "SHIPPED" })
           .where(inArray(invSerialNumbers.id, serialIds));
       }
 
       if (lineShippedQtyMap.size > 0) {
         for (const [lineId, shippedQty] of lineShippedQtyMap) {
-          await (tx as Db).update(invSoLines)
+          await tx.update(invSoLines)
             .set({ quantityShipped: sql`${invSoLines.quantityShipped} + ${shippedQty}` })
             .where(and(eq(invSoLines.id, lineId), eq(invSoLines.soId, soId)));
         }
       }
 
-      const [ship] = await (tx as Db).insert(invShipments).values({
+      const [ship] = await tx.insert(invShipments).values({
         orgId,
         shipmentNumber,
         soId,
@@ -403,7 +403,7 @@ export class SoFulfillmentService {
         createdBy: userId,
       }).returning();
 
-      await (tx as Db).insert(invShipmentLines).values(
+      await tx.insert(invShipmentLines).values(
         movements.map((m) => ({
           shipmentId: ship.id,
           soLineId: m.soLineId,
@@ -414,7 +414,7 @@ export class SoFulfillmentService {
         }))
       );
 
-      await (tx as Db).update(invSalesOrders)
+      await tx.update(invSalesOrders)
         .set({ status: newStatus, shippedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 

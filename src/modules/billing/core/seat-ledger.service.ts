@@ -6,7 +6,8 @@ import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { billingSeatEvents } from "../../../db/schema";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { readCount } from "./quota-counts";
-import { SEAT_EVENT_DELTAS, lockMembersQuota, seatCount, type SeatEventType } from "./seat-definition";
+import { SEAT_EVENT_DELTAS, SEAT_EVENT_TYPES, lockMembersQuota, seatCount, type SeatEventType } from "./seat-definition";
+import { assertOneOf } from "./lib/enum-guard";
 
 export interface SeatEventInput {
   orgId: string;
@@ -132,7 +133,11 @@ export class SeatLedgerService {
       .limit(1);
 
     if (!existing) return null;
-    return { ...existing, eventType: existing.eventType as SeatEventType, replayed: true };
+    return {
+      ...existing,
+      eventType: assertOneOf(SEAT_EVENT_TYPES, existing.eventType, "billing_seat_events.event_type"),
+      replayed: true,
+    };
   }
 
   async reconcileBilledQuantity(orgId: string): Promise<SeatReconciliation> {
@@ -211,7 +216,7 @@ export class SeatLedgerService {
 
         return rows.map((row) => ({
           ...row,
-          eventType: row.eventType as SeatEventType,
+          eventType: assertOneOf(SEAT_EVENT_TYPES, row.eventType, "billing_seat_events.event_type"),
           replayed: false,
         }));
       },

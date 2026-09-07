@@ -2,13 +2,14 @@ import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { PAYROLL_TOGGLE_KEYS, PAYROLL_TEMPLATE_KEYS } from "../../payroll.types";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
+import { payrollTemplateCategoryEnum, salaryComponentTypeEnum } from "../../../../db/schema";
 
 export const toggleOverridesSchema = z
   .record(z.string(), z.boolean())
   .optional();
 
 export const listTemplatesSchema = z.object({
-  category: z.string().trim().optional(),
+  category: z.enum(payrollTemplateCategoryEnum.enumValues).optional(),
   complexity: z.enum(["SIMPLE", "MODERATE", "ADVANCED"]).optional(),
   country: z.string().trim().max(10).optional(),
   search: z.string().trim().max(200).optional(),
@@ -104,7 +105,7 @@ export const createPolicyVersionSchema = z.object({
 export type CreatePolicyVersionInput = z.infer<typeof createPolicyVersionSchema>;
 
 export const listComponentsSchema = z.object({
-  type: z.string().trim().optional(),
+  type: z.enum(salaryComponentTypeEnum.enumValues).optional(),
   active: queryBoolean.optional(),
   search: z.string().trim().max(200).optional(),
   cursor: z.string().trim().min(1).max(2048).optional(),
@@ -121,7 +122,7 @@ export const createComponentSchema = z.object({
     .max(30)
     .regex(/^[A-Z0-9_]+$/, "Code must be uppercase letters, digits, or underscores"),
   name: z.string().trim().min(1).max(100),
-  type: z.enum(["EARNING", "DEDUCTION", "EMPLOYER_CONTRIBUTION", "REIMBURSEMENT", "TAX", "ADJUSTMENT"]),
+  type: z.enum(salaryComponentTypeEnum.enumValues),
   calcMethod: z.enum(["FIXED", "PERCENT_OF_BASIC", "PERCENT_OF_GROSS", "FORMULA", "ATTENDANCE_BASED", "TIMESHEET_BASED", "MANUAL"]),
   amount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
   percent: z.string().regex(/^\d+(\.\d{1,4})?$/).optional(),

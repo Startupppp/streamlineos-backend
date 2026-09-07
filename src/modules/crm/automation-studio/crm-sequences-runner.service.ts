@@ -8,6 +8,7 @@ import { PARTY_OF_LEAD } from "../crm-party-reads";
 import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
+import { isTaskEntityType } from "./types";
 
 interface FlushResult {
   processed: number;
@@ -204,10 +205,11 @@ export class CrmSequencesRunnerService {
       }
       case "call_task": {
         const dueInDays = typeof cfg["dueInDays"] === "number" ? cfg["dueInDays"] : 1;
+        const upperEntityType = entityType.toUpperCase();
         await this.db.insert(tasks).values({
           orgId,
           title: String(cfg["taskTitle"] ?? "Follow-up call"),
-          entityType: entityType.toUpperCase() as "LEAD" | "DEAL" | "CONTACT",
+          entityType: isTaskEntityType(upperEntityType) ? upperEntityType : null,
           entityId: parseInt(entityId, 10),
           type: "CALL",
           assigneeId: typeof cfg["assigneeId"] === "string" ? cfg["assigneeId"] : null,
@@ -216,10 +218,11 @@ export class CrmSequencesRunnerService {
         return;
       }
       case "whatsapp_task": {
+        const upperEntityType = entityType.toUpperCase();
         await this.db.insert(tasks).values({
           orgId,
           title: String(cfg["taskTitle"] ?? "WhatsApp follow-up"),
-          entityType: entityType.toUpperCase() as "LEAD" | "DEAL" | "CONTACT",
+          entityType: isTaskEntityType(upperEntityType) ? upperEntityType : null,
           entityId: parseInt(entityId, 10),
           type: "WHATSAPP",
           assigneeId: typeof cfg["assigneeId"] === "string" ? cfg["assigneeId"] : null,

@@ -16,7 +16,7 @@ import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { normalizedPaymentWebhookEventSchema } from "./dto/webhook.schemas";
+import { normalizedPaymentWebhookEventSchema, rawEntitySchema } from "./dto/webhook.schemas";
 import { minorUnitsToDecimalString } from "./currency-minor-units";
 
 /**
@@ -31,15 +31,15 @@ function redactPayload(
 ): Record<string, unknown> {
   const summary: Record<string, unknown> = {};
   for (const entityKey of Object.keys(payload)) {
-    const entity = (
-      payload[entityKey] as { entity?: Record<string, unknown> } | undefined
-    )?.entity;
+    const wrapper = payload[entityKey];
+    const entity =
+      wrapper && typeof wrapper === "object" && "entity" in wrapper ? wrapper.entity : undefined;
     if (!entity || typeof entity !== "object") continue;
     summary[entityKey] = {
-      id: entity.id,
-      status: entity.status,
-      amount: entity.amount,
-      currency: entity.currency,
+      id: Reflect.get(entity, "id"),
+      status: Reflect.get(entity, "status"),
+      amount: Reflect.get(entity, "amount"),
+      currency: Reflect.get(entity, "currency"),
     };
   }
   return summary;
@@ -363,10 +363,8 @@ export class PaymentWebhookReceiverService {
     for (const key of Object.keys(payload)) {
       const wrapper = payload[key];
       if (wrapper && typeof wrapper === "object" && "entity" in wrapper) {
-        const entity = (wrapper as { entity?: unknown }).entity;
-        if (entity && typeof entity === "object") {
-          return entity as Record<string, unknown>;
-        }
+        const parsed = rawEntitySchema.safeParse(wrapper.entity);
+        if (parsed.success) return parsed.data;
       }
     }
     return null;

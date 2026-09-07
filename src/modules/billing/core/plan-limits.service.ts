@@ -16,6 +16,7 @@ import {
   type PlanTier,
 } from "./plan-entitlements.constants";
 import { canUseFeature, minPlanFor, type Feature } from "../../ai/core/billing/feature-gates";
+import { keysOf, buildRecord } from "./lib/typed-record";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { NotificationsService } from "../../notifications/notifications.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -172,13 +173,12 @@ export class PlanLimitsService {
     const baseMembersLimit = catalog.members[plan];
     const seatLimit = negotiatedSeats !== null ? negotiatedSeats : baseMembersLimit;
 
-    const limitKeys = Object.keys(catalog) as LimitKey[];
-    const limits = {} as Record<LimitKey, { limit: number | null; used: number }>;
-    for (const key of limitKeys) {
+    const limitKeys = keysOf(catalog);
+    const limits = buildRecord(limitKeys, (key) => {
       let limit = catalog[key][plan];
       if (key === "members" && negotiatedSeats !== null) limit = negotiatedSeats;
-      limits[key] = { limit, used: usageRow[key] };
-    }
+      return { limit, used: usageRow[key] };
+    });
 
     return {
       tier,
@@ -209,9 +209,7 @@ export class PlanLimitsService {
           (SELECT COUNT(*)::int FROM candidates WHERE org_id = ${orgId})                                                                  AS "hrCandidates",
           (SELECT COUNT(*)::int FROM job_postings WHERE org_id = ${orgId})                                                                AS "hrJobPostings"
       `);
-      const counts = {} as Record<LimitKey, number>;
-      for (const key of Object.keys(LIMIT_KEY_LABELS) as LimitKey[]) counts[key] = readCount(rows, key);
-      return counts;
+      return buildRecord(keysOf(LIMIT_KEY_LABELS), (key) => readCount(rows, key));
     } catch (err: unknown) {
       this.logger.error(`Usage count query failed`, { orgId, cause: err instanceof Error ? err.message : String(err) });
       throw new ServiceUnavailableException("Plan usage could not be determined. The write is refused until usage is verifiable.");

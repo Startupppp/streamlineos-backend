@@ -38,11 +38,12 @@ export class SurveyResponseService {
     if (!survey || survey.status !== "published" || !survey.activeVersionId) {
       throw new NotFoundException("This survey is not currently accepting responses");
     }
+    const activeVersionId = survey.activeVersionId;
 
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const version = await tx.query.surveyVersions.findFirst({ where: eq(surveyVersions.id, survey.activeVersionId!) });
+        const version = await tx.query.surveyVersions.findFirst({ where: eq(surveyVersions.id, activeVersionId) });
         await this.collectors.incrementCounter(collector.id, "opens");
 
         return {
@@ -62,6 +63,7 @@ export class SurveyResponseService {
     }
     if (collector.status !== "active") throw new BadRequestException("This collector is not active");
     if (collector.expiresAt && collector.expiresAt < new Date()) throw new BadRequestException("This collector has expired");
+    const activeVersionId = survey.activeVersionId;
 
     return runInTenantTransaction(
       this.db,
@@ -78,7 +80,7 @@ export class SurveyResponseService {
           .values({
             orgId: survey.orgId,
             surveyId: survey.id,
-            versionId: survey.activeVersionId!,
+            versionId: activeVersionId,
             collectorId: collector.id,
             participantId,
             anonymous: !input.accessToken && !input.participantEmail,
@@ -168,9 +170,10 @@ export class SurveyResponseService {
   ): (typeof surveyAnswers.$inferInsert)[] {
     return answers.map((answer) => {
       let score: number | null = null;
-      if (answer.choiceIds?.length) {
+      const choiceIds = answer.choiceIds;
+      if (choiceIds?.length) {
         const choices = choicesByQuestion.get(answer.questionId) ?? [];
-        const selected = choices.filter((c) => answer.choiceIds!.includes(c.id));
+        const selected = choices.filter((c) => choiceIds.includes(c.id));
         if (selected.length) score = selected.reduce((sum, c) => sum + (c.score ?? 0), 0);
       }
       return {

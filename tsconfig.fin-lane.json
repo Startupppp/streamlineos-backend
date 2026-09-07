@@ -1,5 +1,4 @@
 { "extends": "./tsconfig.json", "include": [], "files": [
   "src/@types/express.d.ts",
-  "src/modules/billing/core/invoice-snapshot.service.ts",
-  "src/modules/billing/core/lib/enum-guard.ts"
+  "src/modules/inventory/sales-orders/so-fulfillment.service.ts"
 ] }

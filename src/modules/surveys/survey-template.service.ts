@@ -1,4 +1,7 @@
 import { Injectable } from "@nestjs/common";
+import { surveyQuestionTypeEnum } from "../../db/schema/surveys/structure";
+
+type SurveyQuestionType = (typeof surveyQuestionTypeEnum.enumValues)[number];
 
 export interface SurveyTemplateDefinition {
   key: string;
@@ -9,7 +12,7 @@ export interface SurveyTemplateDefinition {
   sections: Array<{
     title: string;
     questions: Array<{
-      type: string;
+      type: SurveyQuestionType;
       title: string;
       required?: boolean;
       variableName?: string;

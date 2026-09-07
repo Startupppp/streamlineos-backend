@@ -196,7 +196,7 @@ export class CrmCeDashboardService {
               client: c.name,
               value: Number(c.renewalValue),
               date: c.renewalDate,
-              health: c.health as "healthy" | "at_risk" | "critical",
+              health: c.health,
             },
           ]
         : [],
@@ -205,7 +205,7 @@ export class CrmCeDashboardService {
     const keyAccounts = keyAccountCompanies.map((c) => ({
       name: c.name,
       revenue: Number(c.revenue),
-      health: c.health as "healthy" | "at_risk" | "critical",
+      health: c.health,
       csm: c.csm
         ? `${c.csm.name.split(" ")[0]} ${c.csm.name.split(" ")[1]?.[0] ?? ""}.`
         : "Unassigned",
@@ -213,7 +213,7 @@ export class CrmCeDashboardService {
     }));
 
     const customerInteractions = ceActivities.map((a) => ({
-      type: a.type as "call" | "email" | "meeting" | "ticket" | "escalation",
+      type: a.type,
       message: a.message,
       time: a.time,
       person: a.person ?? "",

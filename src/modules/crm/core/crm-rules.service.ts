@@ -174,18 +174,14 @@ export class CrmRulesService {
     effectiveType: string,
     sampleLead: SampleLeadForPreview,
   ): Promise<string | null> {
-    const config = (rule.config ?? {}) as {
-      weights?: Record<string, number>;
-      leastLoadedWindowDays?: number;
-      fallbackUserId?: string;
-    };
+    const config = rule.config;
 
     if (effectiveType === "assign_user") {
       return rule.assignToUserId ?? null;
     }
 
     if (effectiveType === "round_robin") {
-      const candidates = (rule.roundRobinUserIds ?? []) as string[];
+      const candidates = rule.roundRobinUserIds ?? [];
       if (candidates.length === 0) return null;
       return candidates[0] ?? null;
     }
@@ -194,7 +190,7 @@ export class CrmRulesService {
       const weights = config.weights ?? {};
       const entries = Object.entries(weights);
       if (entries.length === 0) {
-        const candidates = (rule.roundRobinUserIds ?? []) as string[];
+        const candidates = rule.roundRobinUserIds ?? [];
         return candidates[0] ?? null;
       }
       const total = entries.reduce((sum, [, w]) => sum + w, 0);
@@ -207,7 +203,7 @@ export class CrmRulesService {
     }
 
     if (effectiveType === "least_loaded") {
-      const candidates = (rule.roundRobinUserIds ?? []) as string[];
+      const candidates = rule.roundRobinUserIds ?? [];
       if (candidates.length === 0) return null;
 
       const rows = await this.db

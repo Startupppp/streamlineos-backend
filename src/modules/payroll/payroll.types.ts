@@ -81,6 +81,10 @@ export const PAYROLL_TOGGLE_KEYS = [
 export type PayrollToggleKey = (typeof PAYROLL_TOGGLE_KEYS)[number];
 export type PayrollToggles = Record<PayrollToggleKey, boolean>;
 
+export function isPayrollToggleKey(key: string): key is PayrollToggleKey {
+  return PAYROLL_TOGGLE_KEYS.some((k) => k === key);
+}
+
 export const DEFAULT_PAYROLL_TOGGLES: PayrollToggles = {
   pf: false,
   esi: false,
@@ -141,6 +145,15 @@ export function normalizePayrollToggles(raw: unknown): PayrollToggles {
  */
 export function toPayrollPolicyConfig(raw: unknown): PayrollPolicyConfig | null {
   return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as PayrollPolicyConfig) : null;
+}
+
+/**
+ * Same JSONB seam, for `payroll_templates.default_components` — a template
+ * seed literal is already `TemplateComponentDef[]`, the persisted jsonb column
+ * is not, so every reader needs the array-shape check before trusting it.
+ */
+export function toTemplateComponentDefs(raw: unknown): TemplateComponentDef[] {
+  return Array.isArray(raw) ? (raw as TemplateComponentDef[]) : [];
 }
 
 export interface TemplateComponentDef {

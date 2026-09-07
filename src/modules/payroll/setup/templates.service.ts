@@ -11,8 +11,8 @@ import type { Db } from "../../../db/drizzle.module";
 import { PAYROLL_TEMPLATE_SEEDS } from "./payroll-template-seeds";
 import { computeTemplatePreview } from "./lib/template-preview";
 import type { ListTemplatesInput, TemplatePreviewInput, DuplicateTemplateInput } from "./dto/setup.schemas";
-import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
-import type { TemplateComponentDef, PayrollToggles } from "../payroll.types";
+import { normalizePayrollToggles, toTemplateComponentDefs } from "../payroll.types";
+import type { PayrollToggles } from "../payroll.types";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
 import {
@@ -92,10 +92,10 @@ export class PayrollTemplatesService {
   async list(orgId: string, input: ListTemplatesInput & { country?: string }) {
     await this.ensureSystemTemplatesExist();
 
-    const filters: SQL[] = [or(isNull(payrollTemplates.orgId), eq(payrollTemplates.orgId, orgId)) as SQL];
+    const filters: (SQL | undefined)[] = [or(isNull(payrollTemplates.orgId), eq(payrollTemplates.orgId, orgId))];
 
     if (input.category) {
-      filters.push(eq(payrollTemplates.category, input.category as TemplateRow["category"]));
+      filters.push(eq(payrollTemplates.category, input.category));
     }
     if (input.complexity) {
       filters.push(eq(payrollTemplates.complexity, input.complexity));
@@ -105,7 +105,7 @@ export class PayrollTemplatesService {
         or(
           ilike(payrollTemplates.name, `%${input.search}%`),
           ilike(payrollTemplates.description, `%${input.search}%`),
-        ) as SQL,
+        ),
       );
     }
 
@@ -183,14 +183,10 @@ export class PayrollTemplatesService {
 
   async preview(orgId: string, templateId: number, input: TemplatePreviewInput) {
     const template = await this.getById(orgId, templateId);
-    const rawComponents = template.defaultComponents;
-    const components: TemplateComponentDef[] = Array.isArray(rawComponents) ? (rawComponents as TemplateComponentDef[]) : [];
-    const overrides: Partial<PayrollToggles> = input.toggleOverrides && typeof input.toggleOverrides === "object" ? (input.toggleOverrides as Partial<PayrollToggles>) : {};
-    const rawDefaultToggles = template.defaultToggles;
+    const components = toTemplateComponentDefs(template.defaultComponents);
     const effectiveToggles: PayrollToggles = {
-      ...DEFAULT_PAYROLL_TOGGLES,
-      ...(rawDefaultToggles && typeof rawDefaultToggles === "object" ? (rawDefaultToggles as Partial<PayrollToggles>) : {}),
-      ...overrides,
+      ...normalizePayrollToggles(template.defaultToggles),
+      ...(input.toggleOverrides ?? {}),
     };
     const preview = computeTemplatePreview(components, input.annualCtc);
     return { template: { id: template.id, key: template.key, name: template.name }, effectiveToggles, ...preview };

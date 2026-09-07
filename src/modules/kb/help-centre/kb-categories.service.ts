@@ -164,7 +164,7 @@ export class KbCategoriesService {
       )
       SELECT COALESCE(MAX(depth), 0) AS depth FROM chain
     `);
-    return Number((rows as Array<Record<string, unknown>>)[0]?.depth ?? 0);
+    return Number(rows[0]?.depth ?? 0);
   }
 
   private async isAncestorOf(orgId: string, ancestorId: number, nodeId: number): Promise<boolean> {
@@ -181,6 +181,6 @@ export class KbCategoriesService {
       )
       SELECT 1 AS found FROM chain WHERE id = ${ancestorId} LIMIT 1
     `);
-    return (rows as Array<Record<string, unknown>>).length > 0;
+    return rows.length > 0;
   }
 }

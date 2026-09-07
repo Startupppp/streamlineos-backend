@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import {
   SQL,
   and,
@@ -132,15 +132,14 @@ export class EmployeesService {
     if (departmentId != null) baseConditions.push(eq(hrEmployments.departmentId, departmentId));
     if (role) baseConditions.push(eq(organizationMembers.role, role));
     if (cursor) {
-      baseConditions.push(
-        or(
-          gt(normalizedName, cursor.name),
-          and(
-            eq(normalizedName, cursor.name),
-            gt(users.id, cursor.employeeUserId),
-          ),
-        )!,
+      const cursorCondition = or(
+        gt(normalizedName, cursor.name),
+        and(
+          eq(normalizedName, cursor.name),
+          gt(users.id, cursor.employeeUserId),
+        ),
       );
+      if (cursorCondition) baseConditions.push(cursorCondition);
     }
 
     const searchCondition = search ? await this.employeeSearchCondition(search) : undefined;
@@ -317,21 +316,27 @@ export class EmployeesService {
     const employmentIlike = or(
       ilike(hrEmployments.employeeNumber, `%${search}%`),
       ilike(hrEmployments.designation, `%${search}%`),
-    )!;
+    );
+    if (!employmentIlike) throw new InternalServerErrorException("Failed to build employee search fallback");
     const rows = await this.db.execute(
       sql`SELECT app.search_hr_person_ids(${search}, ${EmployeesService.EMPLOYEE_SEARCH_CAP + 1}) AS id`,
     );
     if (rows.length === 0) return employmentIlike;
-    if (rows.length > EmployeesService.EMPLOYEE_SEARCH_CAP)
-      return or(
+    if (rows.length > EmployeesService.EMPLOYEE_SEARCH_CAP) {
+      const wideFallback = or(
         ilike(users.name, `%${search}%`),
         ilike(users.email, `%${search}%`),
         ilike(users.firstName, `%${search}%`),
         ilike(users.lastName, `%${search}%`),
         employmentIlike,
-      )!;
+      );
+      if (!wideFallback) throw new InternalServerErrorException("Failed to build employee search fallback");
+      return wideFallback;
+    }
     const ids = rows.map((r) => Number(r["id"]));
-    return or(inArray(hrPeople.id, ids), employmentIlike)!;
+    const condition = or(inArray(hrPeople.id, ids), employmentIlike);
+    if (!condition) throw new InternalServerErrorException("Failed to build employee search condition");
+    return condition;
   }
 
 }

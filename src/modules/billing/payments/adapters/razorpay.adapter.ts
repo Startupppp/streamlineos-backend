@@ -5,7 +5,12 @@ import { outboundRequest, OutboundRequestError } from "../../../../common/http/o
 import { callProvider, type FailureClass } from "../../../../common/outbound/call-provider";
 import { ProviderCircuitBreaker } from "../../../../common/outbound/provider-circuit-breaker";
 import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
-import { webhookEnvelopeSchema } from "../dto/webhook.schemas";
+import {
+  webhookEnvelopeSchema,
+  rawWebhookIdSchema,
+  rawPaymentEntitySchema,
+  tenantCredentialFieldsSchema,
+} from "../dto/webhook.schemas";
 interface TenantRazorpayCredentials {
   readonly keyId: string | null;
   readonly secret: string | null;
@@ -21,6 +26,7 @@ const razorpayOrderResponseSchema = z.object({
 const razorpayOrderErrorSchema = z.object({
   error: z.object({ description: z.string().optional() }).optional(),
 });
+
 
 function constantTimeEquals(expected: string, provided: string): boolean {
   const a = Buffer.from(expected, "utf8");
@@ -187,26 +193,27 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
     const parsed = webhookEnvelopeSchema.safeParse(raw);
     if (!parsed.success) return { ok: false, error: "invalid_payload" };
 
-    const providerEventId =
-      typeof (raw as { id?: unknown }).id === "string" ? (raw as { id: string }).id : undefined;
+    const idParsed = rawWebhookIdSchema.safeParse(raw);
+    const providerEventId = idParsed.success ? idParsed.data.id : undefined;
     const providerPayload = parsed.data.payload;
     const payment = providerPayload.payment;
     const entity = payment && typeof payment === "object" && "entity" in payment ? payment.entity : undefined;
-    const normalizedEntity = entity && typeof entity === "object"
+    const entityParsed = entity && typeof entity === "object" ? rawPaymentEntitySchema.safeParse(entity) : null;
+    const normalizedEntity = entityParsed?.success
       ? Object.fromEntries(
           Object.entries({
-            id: (entity as Record<string, unknown>).id,
-            orderId: (entity as Record<string, unknown>).order_id,
-            amount: (entity as Record<string, unknown>).amount,
-            fee: (entity as Record<string, unknown>).fee,
-            currency: (entity as Record<string, unknown>).currency,
-            status: (entity as Record<string, unknown>).status,
-            method: (entity as Record<string, unknown>).method,
-            email: (entity as Record<string, unknown>).email,
-            description: (entity as Record<string, unknown>).description,
-            notes: (entity as Record<string, unknown>).notes,
-            invoiceId: (entity as Record<string, unknown>).invoice_id,
-            createdAt: (entity as Record<string, unknown>).created_at,
+            id: entityParsed.data.id,
+            orderId: entityParsed.data.order_id,
+            amount: entityParsed.data.amount,
+            fee: entityParsed.data.fee,
+            currency: entityParsed.data.currency,
+            status: entityParsed.data.status,
+            method: entityParsed.data.method,
+            email: entityParsed.data.email,
+            description: entityParsed.data.description,
+            notes: entityParsed.data.notes,
+            invoiceId: entityParsed.data.invoice_id,
+            createdAt: entityParsed.data.created_at,
           }).filter(([, value]) => value !== undefined),
         )
       : undefined;
@@ -224,14 +231,12 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
   }
 
   private toTenantCredentials(credentials: unknown): TenantRazorpayCredentials {
-    if (!credentials || typeof credentials !== "object") {
-      return { keyId: null, secret: null, webhookSecret: null };
-    }
-    const value = credentials as Record<string, unknown>;
+    const parsed = tenantCredentialFieldsSchema.safeParse(credentials);
+    if (!parsed.success) return { keyId: null, secret: null, webhookSecret: null };
     return {
-      keyId: typeof value.keyId === "string" ? value.keyId : null,
-      secret: typeof value.secret === "string" ? value.secret : null,
-      webhookSecret: typeof value.webhookSecret === "string" ? value.webhookSecret : null,
+      keyId: parsed.data.keyId ?? null,
+      secret: parsed.data.secret ?? null,
+      webhookSecret: parsed.data.webhookSecret ?? null,
     };
   }
 }

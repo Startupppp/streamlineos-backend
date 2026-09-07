@@ -11,6 +11,10 @@ import { EmploymentFactsService } from "../../directory/employment-facts.service
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import type { HrWorkflowObjectType, ResolvedStep } from "./hr-workflow-engine.types";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
 @Injectable()
 export class HrWorkflowApproverService {
   constructor(
@@ -107,8 +111,8 @@ export class HrWorkflowApproverService {
     const parts = expression.split(".");
     let value: unknown = employee;
     for (const part of parts.slice(1)) {
-      if (value !== null && typeof value === "object" && part in (value as Record<string, unknown>)) {
-        value = (value as Record<string, unknown>)[part];
+      if (isRecord(value) && part in value) {
+        value = value[part];
       } else {
         value = undefined;
         break;

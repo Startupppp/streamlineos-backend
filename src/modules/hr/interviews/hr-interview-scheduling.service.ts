@@ -192,12 +192,16 @@ export class HrInterviewSchedulingService {
         .returning();
 
       await tx.insert(interviewPanelMembers).values(
-        input.interviewers.map((uid) => ({
-          interviewId: created.id,
-          orgId,
-          userId: uid,
-          userMembershipId: membershipByUserId.get(uid)!,
-        })),
+        input.interviewers.map((uid) => {
+          const uidMembershipId = membershipByUserId.get(uid);
+          if (uidMembershipId == null) throw new BadRequestException("Active organization membership required.");
+          return {
+            interviewId: created.id,
+            orgId,
+            userId: uid,
+            userMembershipId: uidMembershipId,
+          };
+        }),
       );
 
       return created;
@@ -302,11 +306,15 @@ export class HrInterviewSchedulingService {
         .returning();
 
       await tx.insert(bookingLinkInterviewers).values(
-        input.interviewerIds.map((uid) => ({
-          bookingLinkId: created.id,
-          userId: uid,
-          userMembershipId: membershipByUserId.get(uid)!,
-        })),
+        input.interviewerIds.map((uid) => {
+          const uidMembershipId = membershipByUserId.get(uid);
+          if (uidMembershipId == null) throw new BadRequestException("Active organization membership required.");
+          return {
+            bookingLinkId: created.id,
+            userId: uid,
+            userMembershipId: uidMembershipId,
+          };
+        }),
       );
 
       return created;
@@ -432,7 +440,7 @@ export class HrInterviewSchedulingService {
 
   private async requireActiveMember(orgId: string, userId: string) {
     const members = await this.requireActiveMembers(orgId, [userId]);
-    return members[0]!;
+    return members[0];
   }
 
   private async requireActiveMembers(orgId: string, userIds: readonly string[]) {

@@ -452,7 +452,7 @@ export class KbPageTreeService {
       )
       SELECT id FROM subtree
     `);
-    return (rows as Array<Record<string, unknown>>).map((row) => Number(row.id));
+    return rows.map((row) => Number(row.id));
   }
 
 }

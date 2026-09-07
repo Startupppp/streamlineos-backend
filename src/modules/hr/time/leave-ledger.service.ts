@@ -107,7 +107,7 @@ export class LeaveLedgerService {
     let balance = 0;
     for (const row of rows) {
       const amt = Number(row.total ?? 0);
-      if (CREDIT_TYPES.has(row.txnType as TxnType)) {
+      if (CREDIT_TYPES.has(row.txnType)) {
         balance += amt;
       } else {
         balance -= amt;
@@ -162,24 +162,25 @@ export class LeaveLedgerService {
     const byUser = new Map<string, LeaveSummaryRow>();
 
     const ensureUser = (userId: string): LeaveSummaryRow => {
-      if (!byUser.has(userId)) {
-        byUser.set(userId, {
-          userId,
-          paidLeaveDays: 0,
-          unpaidLeaveDays: 0,
-          halfDayCount: 0,
-          hourlyLeaveHours: 0,
-          compOffUsed: 0,
-          encashmentDays: 0,
-        });
-      }
-      return byUser.get(userId)!;
+      const existing = byUser.get(userId);
+      if (existing) return existing;
+      const created: LeaveSummaryRow = {
+        userId,
+        paidLeaveDays: 0,
+        unpaidLeaveDays: 0,
+        halfDayCount: 0,
+        hourlyLeaveHours: 0,
+        compOffUsed: 0,
+        encashmentDays: 0,
+      };
+      byUser.set(userId, created);
+      return created;
     };
 
     for (const row of ledgerRows) {
       const entry = ensureUser(row.userId);
       const amt = Number(row.totalDays ?? 0);
-      switch (row.txnType as TxnType) {
+      switch (row.txnType) {
         case "consumption":
           entry.paidLeaveDays += amt;
           break;

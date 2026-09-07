@@ -48,9 +48,9 @@ export class KbCommentsService {
       .where(and(...conditions))
       .orderBy(asc(kbArticleComments.createdAt), asc(kbArticleComments.id))
       .limit(PAGE_SIZE);
-    return rows.map(function toCommentWithAuthor(row) {
+    return rows.map(function toCommentWithAuthor(row): CommentWithAuthor {
       const { authorName, ...comment } = row;
-      return { ...comment, authorName } as CommentWithAuthor;
+      return { ...comment, authorName };
     });
   }
 

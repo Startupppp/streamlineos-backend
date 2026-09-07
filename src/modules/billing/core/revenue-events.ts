@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
-import type { Plan } from "./dto/billing.schemas";
+import { isOneOf } from "./lib/enum-guard";
+import { planSchema, type Plan } from "./dto/billing.schemas";
 
 export const REVENUE_EVENT_TYPE = "billing.revenue-event";
 
@@ -77,7 +78,7 @@ export function classifyPlanChange(
 
   if (existing.plan === nextPlan) return null;
 
-  const previousPrice = PLAN_PRICES_PAISE[existing.plan as Plan] ?? 0;
+  const previousPrice = isOneOf(planSchema.options, existing.plan) ? PLAN_PRICES_PAISE[existing.plan] : 0;
   const delta = nextPrice - previousPrice;
   if (delta === 0) return null;
   return {

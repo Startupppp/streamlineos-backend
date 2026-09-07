@@ -18,7 +18,7 @@ function remapQuestionIds(node: unknown, idMap: Map<number, number>): unknown {
   if (Array.isArray(node)) return node.map((item) => remapQuestionIds(item, idMap));
   if (node && typeof node === "object") {
     const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    for (const [key, value] of Object.entries(node)) {
       if (key === "questionId" && typeof value === "number" && idMap.has(value)) {
         out[key] = idMap.get(value);
       } else {
@@ -28,6 +28,15 @@ function remapQuestionIds(node: unknown, idMap: Map<number, number>): unknown {
     return out;
   }
   return node;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function remapQuestionIdsInRecord(node: Record<string, unknown>, idMap: Map<number, number>): Record<string, unknown> {
+  const remapped = remapQuestionIds(node, idMap);
+  return isRecord(remapped) ? remapped : {};
 }
 
 @Injectable()
@@ -245,9 +254,9 @@ export class SurveyVersionService {
           surveyId,
           versionId: newVersion.id,
           sourceQuestionId: questionIdMap.get(rule.sourceQuestionId) ?? rule.sourceQuestionId,
-          condition: remapQuestionIds(rule.condition, questionIdMap) as Record<string, unknown>,
-          action: remapQuestionIds(rule.action, questionIdMap) as Record<string, unknown>,
-          target: rule.target ? (remapQuestionIds(rule.target, questionIdMap) as Record<string, unknown>) : null,
+          condition: remapQuestionIdsInRecord(rule.condition, questionIdMap),
+          action: remapQuestionIdsInRecord(rule.action, questionIdMap),
+          target: rule.target ? remapQuestionIdsInRecord(rule.target, questionIdMap) : null,
           sortOrder: rule.sortOrder,
         })),
       );

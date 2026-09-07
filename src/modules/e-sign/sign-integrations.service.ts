@@ -8,12 +8,17 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { appUrl } from "../email/app-url";
 import { organizationMembers } from "../../db/schema";
 import type { signEnvelopes } from "../../db/schema";
+import { AUTOMATION_TRIGGERS } from "../../db/schema/automation/rules";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 
 type SignEnvelopeRow = typeof signEnvelopes.$inferSelect;
 
 export type SignEnvelopeEventKey = "sent" | "completed" | "declined" | "voided" | "expired";
+
+function isAutomationTrigger(value: string): value is AutomationTrigger {
+  return AUTOMATION_TRIGGERS.some((trigger) => trigger === value);
+}
 
 /**
  * Defer to commit where there is an ambient transaction, otherwise run inline.
@@ -81,9 +86,10 @@ export class SignIntegrationsService {
   }
 
   private runAutomations(orgId: string, eventName: string, payload: Record<string, unknown>): void {
+    if (!isAutomationTrigger(eventName)) return;
     afterCommit(() =>
       this.automation
-        .runAutomationsForEvent(orgId, eventName as AutomationTrigger, payload)
+        .runAutomationsForEvent(orgId, eventName, payload)
         .catch(logSideEffectFailure("sign automations", { orgId, eventName })),
     );
   }

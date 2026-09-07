@@ -110,7 +110,7 @@ export class SupportAiTriageService {
         or(
           sql`${supportMacros.visibility} != 'private'`,
           eq(supportMacros.createdByMembershipId, membershipId),
-        )!,
+        ) ?? sql`false`,
       ),
       columns: { id: true, title: true, body: true },
       limit: 100,

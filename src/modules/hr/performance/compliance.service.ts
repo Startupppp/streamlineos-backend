@@ -212,18 +212,18 @@ export class ComplianceService {
 
     const events: CalendarEvent[] = [
       ...expiringDocs
-        .filter((d) => d.expiryDate !== null)
+        .filter((d): d is typeof d & { expiryDate: string } => d.expiryDate !== null)
         .map((d) => ({
-          date: d.expiryDate as string,
+          date: d.expiryDate,
           type: "document_expiry" as const,
           title: `Document expiring: ${d.name}`,
           entityId: d.id,
           entityName: d.name,
         })),
       ...expiringCerts
-        .filter((c) => c.expiryDate !== null)
+        .filter((c): c is typeof c & { expiryDate: string } => c.expiryDate !== null)
         .map((c) => ({
-          date: c.expiryDate as string,
+          date: c.expiryDate,
           type: "certification_expiry" as const,
           title: `Certification expiring: ${c.name}`,
           entityId: c.id,

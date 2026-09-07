@@ -49,7 +49,8 @@ export class SurveyLiveParticipantService {
     const responseSession = await this.db.query.surveyResponseSessions.findFirst({
       where: and(eq(surveyResponseSessions.id, responseSessionId), eq(surveyResponseSessions.orgId, orgId)),
     });
-    if (!responseSession || (responseSession.metadata as { liveSessionId?: number })?.liveSessionId !== liveSessionId) {
+    const storedLiveSessionId = responseSession?.metadata?.["liveSessionId"];
+    if (!responseSession || storedLiveSessionId !== liveSessionId) {
       throw new NotFoundException("Participant not found for this session");
     }
     return responseSession;
@@ -62,12 +63,13 @@ export class SurveyLiveParticipantService {
     const responseSession = await this.getResponseSessionForToken(session.orgId, session.id, input.participantToken);
 
     let score: number | null = null;
-    if (input.choiceIds?.length) {
+    const choiceIds = input.choiceIds;
+    if (choiceIds?.length) {
       const choices = await this.db.query.surveyQuestionChoices.findMany({
         where: eq(surveyQuestionChoices.questionId, input.questionId),
         limit: MAX_QUESTION_CHOICES,
       });
-      const selected = choices.filter((c) => input.choiceIds!.includes(c.id));
+      const selected = choices.filter((c) => choiceIds.includes(c.id));
       if (selected.length) score = selected.reduce((sum, c) => sum + (c.score ?? 0), 0);
     }
 
@@ -114,7 +116,7 @@ export class SurveyLiveParticipantService {
     for (const row of grouped) {
       const answers = Number(row.answers);
       responseCount += answers;
-      for (const choiceId of (row.choiceIds as number[] | null) ?? []) {
+      for (const choiceId of row.choiceIds ?? []) {
         choiceCounts[choiceId] = (choiceCounts[choiceId] ?? 0) + answers;
       }
     }

@@ -34,6 +34,14 @@ type ReviewRow = typeof kbPageReviews.$inferSelect;
 const REVIEW_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
 const REVIEW_TYPES = ["approval", "freshness"] as const;
 
+function isReviewStatus(value: string): value is ReviewRow["status"] {
+  return REVIEW_STATUSES.some((status) => status === value);
+}
+
+function isReviewType(value: string): value is ReviewRow["type"] {
+  return REVIEW_TYPES.some((type) => type === value);
+}
+
 type ReviewWithContext = ReviewRow & {
   pageTitle: string | null;
   requestedByName: string | null;
@@ -98,11 +106,11 @@ export class KbPageReviewsService {
     );
 
     const conditions = [eq(kbPageReviews.orgId, user.orgId)];
-    if (status && REVIEW_STATUSES.includes(status as ReviewRow["status"])) {
-      conditions.push(eq(kbPageReviews.status, status as ReviewRow["status"]));
+    if (status && isReviewStatus(status)) {
+      conditions.push(eq(kbPageReviews.status, status));
     }
-    if (type && REVIEW_TYPES.includes(type as ReviewRow["type"])) {
-      conditions.push(eq(kbPageReviews.type, type as ReviewRow["type"]));
+    if (type && isReviewType(type)) {
+      conditions.push(eq(kbPageReviews.type, type));
     }
     if (!(await reviewerCanSeeAllReviews(user, this.access))) {
       const membershipId = this.actorMembershipId(user);

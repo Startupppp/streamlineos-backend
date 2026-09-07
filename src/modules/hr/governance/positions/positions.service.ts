@@ -379,10 +379,12 @@ export class PositionsService {
   async simulateScenario(orgId: string, scenarioId: number) {
     const scenario = await this.getScenarioById(orgId, scenarioId);
 
-    const changes = scenario.changes as Record<string, unknown>;
+    const changes = scenario.changes;
 
-    const positionMoves = (changes["positionMoves"] as unknown[]) ?? [];
-    const reportingMoves = (changes["reportingMoves"] as unknown[]) ?? [];
+    const positionMovesRaw = changes["positionMoves"];
+    const positionMoves = Array.isArray(positionMovesRaw) ? positionMovesRaw : [];
+    const reportingMovesRaw = changes["reportingMoves"];
+    const reportingMoves = Array.isArray(reportingMovesRaw) ? reportingMovesRaw : [];
 
     return {
       scenarioId,

@@ -106,7 +106,7 @@ export class SoLifecycleService {
         );
       }
 
-      await (tx as Db)
+      await tx
         .update(invSalesOrders)
         .set({ status: "CANCELLED", updatedAt: new Date() })
         .where(

@@ -145,7 +145,7 @@ export class SoCoreService {
     const variantCostMap = new Map(variants.map((v) => [v.id, v.costPrice]));
 
     const so = await this.db.transaction(async (tx) => {
-      const [header] = await (tx as Db)
+      const [header] = await tx
         .insert(invSalesOrders)
         .values({
           orgId,
@@ -165,7 +165,7 @@ export class SoCoreService {
         })
         .returning();
 
-      await (tx as Db).insert(invSoLines).values(
+      await tx.insert(invSoLines).values(
         data.lines.map((line) => ({
           soId: header.id,
           productVariantId: line.productVariantId,
@@ -220,9 +220,9 @@ export class SoCoreService {
 
     await this.db.transaction(async (tx) => {
       if (data.lines) {
-        await (tx as Db).delete(invSoLines).where(eq(invSoLines.soId, soId));
+        await tx.delete(invSoLines).where(eq(invSoLines.soId, soId));
 
-        await (tx as Db).insert(invSoLines).values(
+        await tx.insert(invSoLines).values(
           (data.lines ?? []).map((line) => ({
             soId,
             productVariantId: line.productVariantId,
@@ -237,7 +237,7 @@ export class SoCoreService {
       }
 
       if (Object.keys(patch).length > 0) {
-        await (tx as Db)
+        await tx
           .update(invSalesOrders)
           .set({ ...patch, updatedAt: new Date() })
           .where(

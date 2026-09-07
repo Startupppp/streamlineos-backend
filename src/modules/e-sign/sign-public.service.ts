@@ -226,8 +226,8 @@ export class SignPublicService {
         passed =
           Boolean(input.otpCode) &&
           recipient.otpCodeHash === this.tokens.hash(input.otpCode ?? "") &&
-          Boolean(recipient.otpExpiresAt) &&
-          recipient.otpExpiresAt!.getTime() > Date.now();
+          recipient.otpExpiresAt != null &&
+          recipient.otpExpiresAt.getTime() > Date.now();
       } else {
         throw new BadRequestException(`Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing`);
       }

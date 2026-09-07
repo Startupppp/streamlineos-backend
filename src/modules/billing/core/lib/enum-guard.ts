@@ -8,3 +8,10 @@ export function assertOneOf<T extends string>(
   }
   throw new Error(`Invalid ${label} value: ${value}`);
 }
+
+export function isOneOf<T extends string>(values: readonly T[], value: string): value is T {
+  for (const candidate of values) {
+    if (candidate === value) return true;
+  }
+  return false;
+}

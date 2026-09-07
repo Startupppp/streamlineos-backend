@@ -38,6 +38,10 @@ const RED = rgb(0.7, 0.1, 0.1);
 
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+function amountRow(label: string, amount: number): [string, number] {
+  return [label, amount];
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -205,9 +209,9 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Buffer> 
 
   const earningsRows: [string, number][] = [
     ["Basic Salary", data.basicSalary],
-    ...(data.hra > 0 ? [["HRA", data.hra] as [string, number]] : []),
-    ...(data.allowances > 0 ? [["Special Allowance", data.allowances] as [string, number]] : []),
-    ...(data.overtimeAmount > 0 ? [["Overtime", data.overtimeAmount] as [string, number]] : []),
+    ...(data.hra > 0 ? [amountRow("HRA", data.hra)] : []),
+    ...(data.allowances > 0 ? [amountRow("Special Allowance", data.allowances)] : []),
+    ...(data.overtimeAmount > 0 ? [amountRow("Overtime", data.overtimeAmount)] : []),
   ];
 
   const professionalTax = data.professionalTax ?? 200;

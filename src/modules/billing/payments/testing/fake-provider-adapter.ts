@@ -1,4 +1,11 @@
+import { z } from "zod";
 import type { PaymentProviderAdapter, PaymentProviderRuntime, PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
+import { rawWebhookIdSchema, rawPaymentEntitySchema, tenantCredentialFieldsSchema } from "../dto/webhook.schemas";
+
+const fakeEnvelopeSchema = z.object({
+  event: z.string(),
+  payload: z.record(z.string(), z.unknown()),
+});
 
 export const FAKE_WEBHOOK_SECRET = "fake-webhook-secret-at-least-32chars";
 export const FAKE_VALID_WEBHOOK_SIG = "fake-valid-webhook-signature";
@@ -10,8 +17,9 @@ export class FakeProviderAdapter implements PaymentProviderAdapter {
   constructor(readonly providerKey: string = "razorpay") {}
 
   configure(_credentials: unknown): PaymentProviderRuntime {
-    const credentials = _credentials && typeof _credentials === "object" ? _credentials as { keyId?: unknown; secret?: unknown; webhookSecret?: unknown } : {};
-    const keyId = typeof credentials.keyId === "string" ? credentials.keyId : FAKE_PUBLIC_KEY_ID;
+    const parsedCredentials = tenantCredentialFieldsSchema.safeParse(_credentials);
+    const credentials = parsedCredentials.success ? parsedCredentials.data : {};
+    const keyId = credentials.keyId ?? FAKE_PUBLIC_KEY_ID;
     const hasSecret = typeof credentials.secret === "string" || typeof credentials.webhookSecret === "string";
     return {
       isReady: () => hasSecret,
@@ -43,37 +51,44 @@ export class FakeProviderAdapter implements PaymentProviderAdapter {
 
       normalizeWebhook: (rawBody): PaymentWebhookNormalization => {
     try {
-      const raw = JSON.parse(rawBody) as { id?: unknown; event?: unknown; payload?: unknown };
-      if (typeof raw.event !== "string" || !raw.payload || typeof raw.payload !== "object") {
+      const raw: unknown = JSON.parse(rawBody);
+      const parsedEnvelope = fakeEnvelopeSchema.safeParse(raw);
+      if (!parsedEnvelope.success) {
         return { ok: false, error: "invalid_payload" };
       }
-      const providerEventId = typeof raw.id === "string" ? raw.id : undefined;
-      const payload = raw.payload as Record<string, unknown>;
+      const parsedId = rawWebhookIdSchema.safeParse(raw);
+      const providerEventId = parsedId.success ? parsedId.data.id : undefined;
+      const payload = parsedEnvelope.data.payload;
       const payment = payload.payment;
       const entity = payment && typeof payment === "object" && "entity" in payment
-        ? (payment as { entity?: unknown }).entity
+        ? payment.entity
         : undefined;
-      if (!entity || typeof entity !== "object") {
-        return { ok: true, eventType: raw.event, payload, providerEventId };
+      const entityParsed = entity && typeof entity === "object" ? rawPaymentEntitySchema.safeParse(entity) : null;
+      if (!entityParsed?.success) {
+        return { ok: true, eventType: parsedEnvelope.data.event, payload, providerEventId };
       }
-      const value = entity as Record<string, unknown>;
       const normalizedEntity = Object.fromEntries(
         Object.entries({
-          id: value.id,
-          orderId: value.order_id,
-          amount: value.amount,
-          fee: value.fee,
-          currency: value.currency,
-          status: value.status,
-          method: value.method,
-          email: value.email,
-          description: value.description,
-          notes: value.notes,
-          invoiceId: value.invoice_id,
-          createdAt: value.created_at,
+          id: entityParsed.data.id,
+          orderId: entityParsed.data.order_id,
+          amount: entityParsed.data.amount,
+          fee: entityParsed.data.fee,
+          currency: entityParsed.data.currency,
+          status: entityParsed.data.status,
+          method: entityParsed.data.method,
+          email: entityParsed.data.email,
+          description: entityParsed.data.description,
+          notes: entityParsed.data.notes,
+          invoiceId: entityParsed.data.invoice_id,
+          createdAt: entityParsed.data.created_at,
         }).filter(([, entry]) => entry !== undefined),
       );
-      return { ok: true, eventType: raw.event, payload: { ...payload, payment: { entity: normalizedEntity } }, providerEventId };
+      return {
+        ok: true,
+        eventType: parsedEnvelope.data.event,
+        payload: { ...payload, payment: { entity: normalizedEntity } },
+        providerEventId,
+      };
     } catch {
       return { ok: false, error: "invalid_json" };
     }
