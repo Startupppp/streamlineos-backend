@@ -17,7 +17,8 @@ import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { ExecutiveBriefService } from "./executive-brief.service";
-import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { executiveBriefGetLatestResponseSchema, executiveBriefGenerateResponseSchema } from "../dto/ai-response.schemas";
 import { AiRequestAbortInterceptor } from "../streaming";
 import { respondWithAiTextStream } from "../streaming/ai-text-stream-route";
 import type { Request, Response } from "express";
@@ -32,6 +33,7 @@ export class ExecutiveBriefController {
 
   @RequirePermission("ai:executive-brief:view")
   @Get()
+  @ResponseSchema(executiveBriefGetLatestResponseSchema)
   async getLatest(@CurrentUser() u: CurrentUserContext) {
     return this.service.getLatest(u.orgId);
   }
@@ -41,6 +43,7 @@ export class ExecutiveBriefController {
   @UseRateLimit("ai:invoke")
   @Post("generate")
   @BodylessAction()
+  @ResponseSchema(executiveBriefGenerateResponseSchema)
   async generate(@CurrentUser() u: CurrentUserContext) {
     return this.service.generate(u.orgId, u.userId);
   }

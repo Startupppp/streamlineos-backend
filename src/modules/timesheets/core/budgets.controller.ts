@@ -25,6 +25,9 @@ import {
   type UpdateBudgetInput,
 } from "./dto/budgets.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import { budgetListResponseSchema, budgetItemSchema } from "./dto/timesheets-response.schemas";
 import { z } from "zod";
 
 const budgetIdParams = z.object({ budgetId: z.coerce.number().int().positive() }).strict();
@@ -37,6 +40,7 @@ export class TimesheetBudgetsController {
 
   @Get()
   @RequirePermission("timesheets:budgets:view")
+  @ResponseSchema(budgetListResponseSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.budgets.list(u.orgId);
   }
@@ -45,6 +49,7 @@ export class TimesheetBudgetsController {
   @HttpCode(201)
   @RequirePermission("timesheets:budgets:manage")
   @Validate({ body: createBudgetSchema })
+  @ResponseSchema(budgetItemSchema)
   create(
     @Body() body: CreateBudgetInput,
     @CurrentUser() u: CurrentUserContext,
@@ -55,6 +60,7 @@ export class TimesheetBudgetsController {
   @Patch(":budgetId")
   @RequirePermission("timesheets:budgets:manage")
   @Validate({ params: budgetIdParams, body: updateBudgetSchema })
+  @ResponseSchema(budgetItemSchema)
   update(
     @Param("budgetId", ParseIntPipe) budgetId: number,
     @Body() body: UpdateBudgetInput,
@@ -67,6 +73,7 @@ export class TimesheetBudgetsController {
   @HttpCode(204)
   @RequirePermission("timesheets:budgets:manage")
   @Validate({ params: budgetIdParams })
+  @NoContentResponse()
   remove(
     @Param("budgetId", ParseIntPipe) budgetId: number,
     @CurrentUser() u: CurrentUserContext,

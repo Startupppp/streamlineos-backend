@@ -1,4 +1,5 @@
 import { Controller, Get, Param, ParseIntPipe, Query, Res, UseGuards } from "@nestjs/common";
+import { ApiOkResponse } from "@nestjs/swagger";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -20,6 +21,26 @@ export class StatementsController {
   constructor(private readonly svc: StatementsService) {}
 
   @Get(":clientId")
+  @ApiOkResponse({
+    description: "Customer statement (JSON or CSV)",
+    content: {
+      "application/json": {
+        schema: {
+          type: "object",
+          properties: {
+            clientId: { type: "number" },
+            clientName: { type: "string" },
+            from: { type: "string", nullable: true },
+            to: { type: "string", nullable: true },
+            openingBalance: { type: "number" },
+            closingBalance: { type: "number" },
+            lines: { type: "array", items: { type: "object" } },
+          },
+        },
+      },
+      "text/csv": { schema: { type: "string" } },
+    },
+  })
   @RequirePermission("accounting:receivables:read")
   @Validate({ params: clientIdParams, query: customerStatementSchema })
   async statement(

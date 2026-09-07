@@ -32,7 +32,15 @@ import {
 } from "./dto/hr-webhook.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  webhookSubscriptionListSchema,
+  webhookSubscriptionDetailSchema,
+  webhookSubscriptionCreateSchema,
+  webhookDeliveryListSchema,
+  webhookTestResponseSchema,
+  successSchema,
+} from "./dto/automation-response.schemas";
 
 const subscriptionIdParams = z.object({ subscriptionId: z.coerce.number().int().positive() }).strict();
 const subscriptionIddeliveryIdParams = z.object({ subscriptionId: z.coerce.number().int().positive(), deliveryId: z.coerce.number().int().positive() }).strict();
@@ -44,12 +52,14 @@ export class HrWebhooksController {
   constructor(private readonly webhooks: HrWebhooksService) {}
 
   @Get("events")
+  @ResponseSchema(z.object({ events: z.array(z.object({ value: z.string(), fields: z.record(z.string(), z.unknown()).optional(), samplePayload: z.record(z.string(), z.unknown()).optional() })) }))
   @RequirePermission("hr:integrations:manage")
   getEvents() {
     return this.webhooks.getEvents();
   }
 
   @Get()
+  @ResponseSchema(webhookSubscriptionListSchema)
   @RequirePermission("hr:integrations:manage")
   @Validate({ query: listHrWebhooksSchema })
   list(
@@ -60,6 +70,7 @@ export class HrWebhooksController {
   }
 
   @Get(":subscriptionId")
+  @ResponseSchema(webhookSubscriptionDetailSchema)
   @RequirePermission("hr:integrations:manage")
   @Validate({ params: subscriptionIdParams })
   getOne(
@@ -70,6 +81,7 @@ export class HrWebhooksController {
   }
 
   @Post()
+  @ResponseSchema(webhookSubscriptionCreateSchema)
   @HttpCode(201)
   @RequirePermission("hr:integrations:manage")
   @Validate({ body: createHrWebhookSchema })
@@ -84,6 +96,7 @@ export class HrWebhooksController {
   }
 
   @Patch(":subscriptionId")
+  @ResponseSchema(webhookSubscriptionDetailSchema)
   @RequirePermission("hr:integrations:manage")
   @Validate({ params: subscriptionIdParams, body: updateHrWebhookSchema })
   update(
@@ -95,6 +108,7 @@ export class HrWebhooksController {
   }
 
   @Delete(":subscriptionId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:integrations:manage")
   @Validate({ params: subscriptionIdParams })
@@ -106,6 +120,7 @@ export class HrWebhooksController {
   }
 
   @Post(":subscriptionId/test")
+  @ResponseSchema(webhookTestResponseSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:integrations:manage")
@@ -118,6 +133,7 @@ export class HrWebhooksController {
   }
 
   @Get(":subscriptionId/deliveries")
+  @ResponseSchema(webhookDeliveryListSchema)
   @RequirePermission("hr:integrations:manage")
   @Validate({ params: subscriptionIdParams, query: listDeliveriesSchema })
   listDeliveries(
@@ -129,6 +145,7 @@ export class HrWebhooksController {
   }
 
   @Post(":subscriptionId/deliveries/:deliveryId/redeliver")
+  @ResponseSchema(successSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:integrations:manage")

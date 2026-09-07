@@ -12,7 +12,15 @@ import { assertCronSecret } from "./cron-secret";
 import { CronBillingService } from "./cron-billing.service";
 import { AiJobsWorkerService } from "../ai/jobs/ai-jobs-worker.service";
 import { CronLeaseService } from "./cron-lease.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import {
+  trialExpirySweepResponseSchema,
+  monthlyPlanGrantsResponseSchema,
+  aiReservationsSweepResponseSchema,
+  autoTopUpFlushResponseSchema,
+  providerWebhookRedriveResponseSchema,
+  aiJobsFlushResponseSchema,
+} from "./dto/cron-billing-response.schemas";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -24,6 +32,7 @@ export class CronBillingController {
   ) {}
 
   @Get("trial-expiry")
+  @ResponseSchema(trialExpirySweepResponseSchema)
   getTrialExpiry(@Headers("authorization") authorization?: string) {
     return this.runTrialExpiry(authorization);
   }
@@ -31,11 +40,13 @@ export class CronBillingController {
   @Post("trial-expiry")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(trialExpirySweepResponseSchema)
   postTrialExpiry(@Headers("authorization") authorization?: string) {
     return this.runTrialExpiry(authorization);
   }
 
   @Get("monthly-plan-grants")
+  @ResponseSchema(monthlyPlanGrantsResponseSchema)
   getMonthlyPlanGrants(@Headers("authorization") authorization?: string) {
     return this.runMonthlyPlanGrants(authorization);
   }
@@ -43,11 +54,13 @@ export class CronBillingController {
   @Post("monthly-plan-grants")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(monthlyPlanGrantsResponseSchema)
   postMonthlyPlanGrants(@Headers("authorization") authorization?: string) {
     return this.runMonthlyPlanGrants(authorization);
   }
 
   @Get("ai-reservations-sweep")
+  @ResponseSchema(aiReservationsSweepResponseSchema)
   getAiReservationsSweep(@Headers("authorization") authorization?: string) {
     return this.runAiReservationsSweep(authorization);
   }
@@ -55,11 +68,13 @@ export class CronBillingController {
   @Post("ai-reservations-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(aiReservationsSweepResponseSchema)
   postAiReservationsSweep(@Headers("authorization") authorization?: string) {
     return this.runAiReservationsSweep(authorization);
   }
 
   @Get("auto-topup-flush")
+  @ResponseSchema(autoTopUpFlushResponseSchema)
   getAutoTopUpFlush(@Headers("authorization") authorization?: string) {
     return this.runAutoTopUpFlush(authorization);
   }
@@ -67,11 +82,13 @@ export class CronBillingController {
   @Post("auto-topup-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(autoTopUpFlushResponseSchema)
   postAutoTopUpFlush(@Headers("authorization") authorization?: string) {
     return this.runAutoTopUpFlush(authorization);
   }
 
   @Get("provider-webhook-redrive")
+  @ResponseSchema(providerWebhookRedriveResponseSchema)
   getProviderWebhookRedrive(@Headers("authorization") authorization?: string) {
     return this.runProviderWebhookRedrive(authorization);
   }
@@ -79,11 +96,13 @@ export class CronBillingController {
   @Post("provider-webhook-redrive")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(providerWebhookRedriveResponseSchema)
   postProviderWebhookRedrive(@Headers("authorization") authorization?: string) {
     return this.runProviderWebhookRedrive(authorization);
   }
 
   @Get("ai-jobs-flush")
+  @ResponseSchema(aiJobsFlushResponseSchema)
   getAiJobsFlush(@Headers("authorization") authorization?: string) {
     return this.runAiJobsFlush(authorization);
   }
@@ -91,6 +110,7 @@ export class CronBillingController {
   @Post("ai-jobs-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(aiJobsFlushResponseSchema)
   postAiJobsFlush(@Headers("authorization") authorization?: string) {
     return this.runAiJobsFlush(authorization);
   }

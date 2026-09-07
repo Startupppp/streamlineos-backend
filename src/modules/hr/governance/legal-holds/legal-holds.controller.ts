@@ -32,7 +32,8 @@ import {
 } from "./legal-holds.dto";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../../common/openapi/zod-operation-contracts";
+import { listLegalHoldsResponseSchema, createLegalHoldResponseSchema, getLegalHoldResponseSchema, updateLegalHoldResponseSchema, releaseLegalHoldResponseSchema, listLegalHoldItemsResponseSchema, attachHoldItemResponseSchema } from "../dto/governance-response.schemas"
 
 const holdIdParams = z.object({ holdId: z.coerce.number().int().positive() }).strict();
 const holdIditemIdParams = z.object({ holdId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +44,7 @@ const holdIditemIdParams = z.object({ holdId: z.coerce.number().int().positive()
 export class LegalHoldsController {
   constructor(private readonly service: LegalHoldsService) {}
 
+  @ResponseSchema(listLegalHoldsResponseSchema)
   @Get()
   @RequirePermission("hr:legalhold:view")
   @Validate({ query: listLegalHoldsSchema })
@@ -53,6 +55,7 @@ export class LegalHoldsController {
     return this.service.list(user.orgId, query);
   }
 
+  @ResponseSchema(createLegalHoldResponseSchema)
   @Post()
   @RequirePermission("hr:legalhold:manage")
   @Validate({ body: createLegalHoldSchema })
@@ -64,6 +67,7 @@ export class LegalHoldsController {
     return this.service.create(user.orgId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(getLegalHoldResponseSchema)
   @Get(":holdId")
   @RequirePermission("hr:legalhold:view")
   @Validate({ params: holdIdParams })
@@ -74,6 +78,7 @@ export class LegalHoldsController {
     return this.service.getById(user.orgId, holdId);
   }
 
+  @ResponseSchema(updateLegalHoldResponseSchema)
   @Patch(":holdId")
   @RequirePermission("hr:legalhold:manage")
   @Validate({ params: holdIdParams, body: updateLegalHoldSchema })
@@ -86,6 +91,7 @@ export class LegalHoldsController {
     return this.service.update(user.orgId, holdId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(releaseLegalHoldResponseSchema)
   @Post(":holdId/release")
   @BodylessAction()
   @RequirePermission("hr:legalhold:manage")
@@ -98,6 +104,7 @@ export class LegalHoldsController {
     return this.service.release(user.orgId, holdId, user.userId, req.ip);
   }
 
+  @NoContentResponse()
   @Delete(":holdId")
   @RequirePermission("hr:legalhold:manage")
   @HttpCode(204)
@@ -110,6 +117,7 @@ export class LegalHoldsController {
     await this.service.softDelete(user.orgId, holdId, user.userId, req.ip);
   }
 
+  @ResponseSchema(listLegalHoldItemsResponseSchema)
   @Get(":holdId/items")
   @RequirePermission("hr:legalhold:view")
   @Validate({ params: holdIdParams })
@@ -120,6 +128,7 @@ export class LegalHoldsController {
     return this.service.listItems(user.orgId, holdId);
   }
 
+  @ResponseSchema(attachHoldItemResponseSchema)
   @Post(":holdId/items")
   @RequirePermission("hr:legalhold:manage")
   @Validate({ params: holdIdParams, body: attachHoldItemSchema })
@@ -132,6 +141,7 @@ export class LegalHoldsController {
     return this.service.attachItem(user.orgId, holdId, user.userId, body, req.ip);
   }
 
+  @NoContentResponse()
   @Delete(":holdId/items/:itemId")
   @RequirePermission("hr:legalhold:manage")
   @HttpCode(204)

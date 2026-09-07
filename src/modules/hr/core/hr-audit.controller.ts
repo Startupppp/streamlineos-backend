@@ -8,6 +8,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { HrAuditService } from "./hr-audit.service";
 import { listAuditLogsSchema, type ListAuditLogsInput } from "./dto/hr-core.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { auditLogPageSchema } from "./dto/core-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/audit-logs")
@@ -16,6 +18,7 @@ export class HrAuditController {
   constructor(private readonly audit: HrAuditService) {}
 
   @Get()
+  @ResponseSchema(auditLogPageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:audit:view")
   @Validate({ query: listAuditLogsSchema })

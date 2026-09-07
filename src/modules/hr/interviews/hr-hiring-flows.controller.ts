@@ -33,6 +33,14 @@ import {
 } from "./dto/hr-interviews.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hiringFlowListResponseSchema,
+  hiringFlowSchema,
+  hiringFlowWithRoundsSchema,
+  hiringRoundSchema,
+  successSchema,
+} from "./dto/interviews-response.schemas";
 
 const flowIdParams = z.object({ flowId: z.coerce.number().int().positive() }).strict();
 const flowIdroundIdParams = z.object({ flowId: z.coerce.number().int().positive(), roundId: z.coerce.number().int().positive() }).strict();
@@ -44,6 +52,7 @@ export class HrHiringFlowsController {
   constructor(private readonly flows: HrHiringFlowsService) {}
 
   @Get()
+  @ResponseSchema(hiringFlowListResponseSchema)
   @RequirePermission("hr:interviews:view")
   @Validate({ query: hiringFlowListSchema })
   list(
@@ -55,6 +64,7 @@ export class HrHiringFlowsController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(hiringFlowSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: createHiringFlowSchema })
   create(
@@ -65,6 +75,7 @@ export class HrHiringFlowsController {
   }
 
   @Get(":flowId")
+  @ResponseSchema(hiringFlowWithRoundsSchema)
   @RequirePermission("hr:interviews:view")
   @Validate({ params: flowIdParams })
   getOne(
@@ -75,6 +86,7 @@ export class HrHiringFlowsController {
   }
 
   @Patch(":flowId")
+  @ResponseSchema(hiringFlowSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: flowIdParams, body: updateHiringFlowSchema })
   update(
@@ -86,6 +98,7 @@ export class HrHiringFlowsController {
   }
 
   @Delete(":flowId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: flowIdParams })
   remove(
@@ -96,6 +109,7 @@ export class HrHiringFlowsController {
   }
 
   @Get(":flowId/rounds")
+  @ResponseSchema(z.array(hiringRoundSchema))
   @RequirePermission("hr:interviews:view")
   @Validate({ params: flowIdParams })
   listRounds(
@@ -107,6 +121,7 @@ export class HrHiringFlowsController {
 
   @Post(":flowId/rounds")
   @HttpCode(201)
+  @ResponseSchema(hiringRoundSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: flowIdParams, body: createRoundSchema })
   createRound(
@@ -118,6 +133,7 @@ export class HrHiringFlowsController {
   }
 
   @Patch(":flowId/rounds/:roundId")
+  @ResponseSchema(hiringRoundSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: flowIdroundIdParams, body: updateRoundSchema })
   updateRound(
@@ -130,6 +146,7 @@ export class HrHiringFlowsController {
   }
 
   @Delete(":flowId/rounds/:roundId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: flowIdroundIdParams })
   removeRound(

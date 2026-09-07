@@ -18,6 +18,13 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  gitConnectionsListResponseSchema,
+  gitConnectionCreateResponseSchema,
+  gitConnectionUpdateResponseSchema,
+  gitConnectionDeleteResponseSchema,
+} from "./dto/git-connections-response.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { GitConnectionsService } from "./git-connections.service";
 import {
@@ -39,6 +46,7 @@ export class GitConnectionsController {
   constructor(private readonly connections: GitConnectionsService) {}
 
   @Get()
+  @ResponseSchema(gitConnectionsListResponseSchema)
   @RequirePermission("integrations:git:view")
   @Validate({ query: gitConnectionsListSchema })
   listConnections(
@@ -51,6 +59,7 @@ export class GitConnectionsController {
   @Post()
   @HttpCode(201)
   @Idempotent("integrations.gitConnection.create")
+  @ResponseSchema(gitConnectionCreateResponseSchema)
   @RequirePermission("integrations:git:manage")
   @Validate({ body: createGitConnectionSchema })
   createConnection(
@@ -61,6 +70,7 @@ export class GitConnectionsController {
   }
 
   @Patch(":connectionId")
+  @ResponseSchema(gitConnectionUpdateResponseSchema)
   @RequirePermission("integrations:git:manage")
   @Validate({ params: connectionIdParams, body: updateGitConnectionSchema })
   updateConnection(
@@ -72,6 +82,7 @@ export class GitConnectionsController {
   }
 
   @Delete(":connectionId")
+  @ResponseSchema(gitConnectionDeleteResponseSchema)
   @RequirePermission("integrations:git:manage")
   @Validate({ params: connectionIdParams })
   deleteConnection(

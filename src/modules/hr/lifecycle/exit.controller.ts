@@ -44,7 +44,17 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { resolveExitAdmin } from "./exit-scope";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  resignationListSchema,
+  resignationSchema,
+  exitAnalyticsSchema,
+  experienceLetterCreateResponseSchema,
+  exitLetterSchema,
+  uploadedFileUrlSchema,
+  resignationProgressSchema,
+  successSchema,
+} from "./dto/lifecycle-response.schemas";
 
 const resignationIdParams = z.object({ resignationId: z.coerce.number().int().positive() }).strict();
 
@@ -66,6 +76,7 @@ export class ExitController {
   }
 
   @Get()
+  @ResponseSchema(resignationListSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ query: listResignationsQuerySchema })
   async list(
@@ -76,6 +87,7 @@ export class ExitController {
   }
 
   @Post()
+  @ResponseSchema(resignationSchema)
   @HttpCode(201)
   @RequirePermission("hr:exit:create")
   @Validate({ body: resignationCreateSchema })
@@ -92,6 +104,7 @@ export class ExitController {
   }
 
   @Patch(":resignationId/hr-review")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:exit:manage")
   @Validate({ params: resignationIdParams, body: resignationHrReviewSchema })
   hrReview(
@@ -103,6 +116,7 @@ export class ExitController {
   }
 
   @Patch(":resignationId/final-review")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:exit:approve")
   @Validate({ params: resignationIdParams, body: resignationFinalReviewSchema })
   finalReview(
@@ -114,6 +128,7 @@ export class ExitController {
   }
 
   @Patch(":resignationId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams, body: resignationUpdateSchema })
   async update(
@@ -130,12 +145,14 @@ export class ExitController {
   }
 
   @Get("analytics")
+  @ResponseSchema(exitAnalyticsSchema)
   @RequirePermission("hr:exit:manage")
   getAnalytics(@CurrentUser() currentUser: CurrentUserContext) {
     return this.exit.getAnalytics(currentUser.orgId);
   }
 
   @Post("experience-letter")
+  @ResponseSchema(experienceLetterCreateResponseSchema)
   @HttpCode(201)
   @RequirePermission("hr:exit:manage")
   @Validate({ body: experienceLetterSchema })
@@ -147,6 +164,7 @@ export class ExitController {
   }
 
   @Get(":resignationId/letter")
+  @ResponseSchema(exitLetterSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async getLetter(
@@ -163,6 +181,7 @@ export class ExitController {
   }
 
   @Get(":resignationId/file")
+  @ResponseSchema(uploadedFileUrlSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async getUploadedLetter(
@@ -200,6 +219,7 @@ export class ExitController {
   }
 
   @Get(":resignationId/progress")
+  @ResponseSchema(resignationProgressSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async getProgress(
@@ -210,6 +230,7 @@ export class ExitController {
   }
 
   @Patch(":resignationId/withdraw")
+  @ResponseSchema(successSchema)
   @BodylessAction()
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
@@ -221,6 +242,7 @@ export class ExitController {
   }
 
   @Get(":resignationId")
+  @ResponseSchema(resignationSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async getDetail(

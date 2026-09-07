@@ -7,6 +7,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BillingService } from "./billing.service";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
 
 const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
 
@@ -16,6 +17,7 @@ export class RazorpayWebhookController {
   constructor(private readonly billing: BillingService) {}
 
   @Post()
+  @ApiOkResponse({ description: "Webhook received", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false } } } })
   @BodylessAction()
   @UseGuards(RateLimitGuard)
   @UseRateLimit("billing:webhook")

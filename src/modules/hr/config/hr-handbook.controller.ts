@@ -26,6 +26,8 @@ import {
 } from "./dto/handbook.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { handbookRowSchema, successSchema } from "./dto/config-response.schemas";
 import { z } from "zod";
 
 const handbookIdParams = z.object({ handbookId: z.coerce.number().int().positive() }).strict();
@@ -37,12 +39,14 @@ export class HrHandbookController {
   constructor(private readonly handbook: HrHandbookService) {}
 
   @Get()
+  @ResponseSchema(z.array(handbookRowSchema))
   @RequirePermission("hr:employees:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.handbook.list(u.orgId);
   }
 
   @Post()
+  @ResponseSchema(handbookRowSchema)
   @RequirePermission("hr:handbook:manage")
   @HttpCode(201)
   @Validate({ body: createHandbookSchema })
@@ -54,6 +58,7 @@ export class HrHandbookController {
   }
 
   @Patch(":handbookId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:handbook:manage")
   @Validate({ params: handbookIdParams, body: updateHandbookSchema })
   async update(
@@ -67,6 +72,7 @@ export class HrHandbookController {
   }
 
   @Delete(":handbookId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:handbook:manage")
   @Validate({ params: handbookIdParams })

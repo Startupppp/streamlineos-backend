@@ -31,6 +31,11 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  territorySchema,
+  territoryPreviewSchema as territoryPreviewResponseSchema,
+} from "./dto/crm-core-response.schemas";
 
 const territoryIdParams = z.object({ territoryId: z.coerce.number().int().positive() }).strict();
 
@@ -42,6 +47,7 @@ export class CrmTerritoriesController {
 
   @Get()
   @RequirePermission("crm:territories:manage")
+  @ResponseSchema(z.array(territorySchema))
   @Validate({ query: territoryListSchema })
   list(
     @Query() query: TerritoryListInput,
@@ -52,6 +58,7 @@ export class CrmTerritoriesController {
 
   @Post("preview")
   @RequirePermission("crm:territories:manage")
+  @ResponseSchema(territoryPreviewResponseSchema)
   @Validate({ body: territoryPreviewSchema })
   preview(
     @Body() body: TerritoryPreviewInput,
@@ -63,6 +70,7 @@ export class CrmTerritoriesController {
   @Post()
   @RequirePermission("crm:territories:manage")
   @HttpCode(201)
+  @ResponseSchema(territorySchema)
   @Validate({ body: territoryCreateSchema })
   create(
     @Body() body: TerritoryCreateInput,
@@ -73,6 +81,7 @@ export class CrmTerritoriesController {
 
   @Patch(":territoryId")
   @RequirePermission("crm:territories:manage")
+  @ResponseSchema(territorySchema)
   @Validate({ params: territoryIdParams, body: territoryUpdateSchema })
   async update(
     @Param("territoryId", ParseIntPipe) territoryId: number,
@@ -87,6 +96,7 @@ export class CrmTerritoriesController {
   @Delete(":territoryId")
   @HttpCode(204)
   @RequirePermission("crm:territories:manage")
+  @NoContentResponse()
   @Validate({ params: territoryIdParams })
   async remove(
     @Param("territoryId", ParseIntPipe) territoryId: number,

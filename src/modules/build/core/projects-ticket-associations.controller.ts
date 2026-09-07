@@ -36,6 +36,16 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  ticketRowSchema,
+  watcherSchema,
+  ticketRelationSchema,
+  gitLinkSchema,
+  relatedLinkSchema,
+  attachmentCreateResultSchema,
+} from "./dto/build-tickets-response.schemas";
 
 const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdParams_ = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
@@ -50,6 +60,7 @@ export class ProjectsTicketAssociationsController {
 
   @Get(":projectId/tickets/:ticketId/subtasks")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(z.array(ticketRowSchema))
   @Validate({ params: projectIdticketIdParams })
   getSubtasks(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -60,6 +71,7 @@ export class ProjectsTicketAssociationsController {
 
   @Get(":projectId/tickets/:ticketId/relations")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(z.array(ticketRelationSchema))
   @Validate({ params: projectIdticketIdParams_ })
   listRelations(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -72,6 +84,7 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/relations")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(ticketRelationSchema)
   @Validate({ params: projectIdticketIdParams_, body: addRelationSchema })
   addRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -85,6 +98,7 @@ export class ProjectsTicketAssociationsController {
   @Delete(":projectId/tickets/:ticketId/relations")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdticketIdParams_, query: removeRelationQuerySchema })
   removeRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -97,6 +111,7 @@ export class ProjectsTicketAssociationsController {
 
   @Get(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(z.array(watcherSchema))
   @Validate({ params: projectIdticketIdParams })
   getWatchers(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -108,6 +123,7 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(watcherSchema)
   @Validate({ params: projectIdticketIdParams, body: addWatcherSchema })
   addWatcher(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -120,6 +136,7 @@ export class ProjectsTicketAssociationsController {
   @Delete(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdticketIdParams })
   removeWatcher(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -131,6 +148,7 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/labels")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(successSchema)
   @Validate({ params: projectIdticketIdParams, body: addLabelSchema })
   addLabel(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -143,6 +161,7 @@ export class ProjectsTicketAssociationsController {
   @Delete(":projectId/tickets/:ticketId/labels/:labelId")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdticketIdlabelIdParams })
   removeLabel(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -155,6 +174,7 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/attachments")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(attachmentCreateResultSchema)
   @Validate({ params: projectIdticketIdParams, body: attachmentSchema })
   addAttachment(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -166,6 +186,7 @@ export class ProjectsTicketAssociationsController {
 
   @Get(":projectId/tickets/:ticketId/git-links")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(z.array(gitLinkSchema))
   @Validate({ params: projectIdticketIdParams_ })
   getGitLinks(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -177,6 +198,7 @@ export class ProjectsTicketAssociationsController {
 
   @Get(":projectId/tickets/:ticketId/related-links")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(z.array(relatedLinkSchema))
   @Validate({ params: projectIdticketIdParams_ })
   listRelatedLinks(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -189,6 +211,7 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/related-links")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(relatedLinkSchema)
   @Validate({ params: projectIdticketIdParams_, body: addRelatedLinkSchema })
   addRelatedLink(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -201,6 +224,7 @@ export class ProjectsTicketAssociationsController {
 
   @Patch(":projectId/tickets/:ticketId/related-links/:linkId")
   @RequirePermission("build:tickets:update")
+  @ResponseSchema(relatedLinkSchema)
   @Validate({ params: projectIdticketIdlinkIdParams, body: updateRelatedLinkSchema })
   updateRelatedLink(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -215,6 +239,7 @@ export class ProjectsTicketAssociationsController {
   @Delete(":projectId/tickets/:ticketId/related-links/:linkId")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdticketIdlinkIdParams })
   deleteRelatedLink(
     @Param("projectId", ParseIntPipe) projectId: number,

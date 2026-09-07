@@ -8,7 +8,14 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CoaService } from "./coa.service";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  coaTreeResponseSchema,
+  coaTemplatesResponseSchema,
+  coaApplyTemplateResponseSchema,
+  coaAccountStatusResponseSchema,
+  coaDeleteAccountResponseSchema,
+} from "./dto/settings-response.schemas";
 
 const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
 
@@ -22,18 +29,21 @@ export class CoaController {
   constructor(private readonly coa: CoaService) {}
 
   @Get("tree")
+  @ResponseSchema(coaTreeResponseSchema)
   @RequirePermission("accounting:accounts:read")
   getTree(@CurrentUser() u: CurrentUserContext) {
     return this.coa.getTree(u.orgId);
   }
 
   @Get("templates")
+  @ResponseSchema(coaTemplatesResponseSchema)
   @RequirePermission("accounting:accounts:read")
   getTemplates() {
     return this.coa.getTemplates();
   }
 
   @Post("templates/apply")
+  @ResponseSchema(coaApplyTemplateResponseSchema)
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
   @Validate({ body: applyTemplateSchema })
@@ -45,6 +55,7 @@ export class CoaController {
   }
 
   @Post(":accountId/deactivate")
+  @ResponseSchema(coaAccountStatusResponseSchema)
   @BodylessAction()
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
@@ -57,6 +68,7 @@ export class CoaController {
   }
 
   @Post(":accountId/activate")
+  @ResponseSchema(coaAccountStatusResponseSchema)
   @BodylessAction()
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
@@ -69,6 +81,7 @@ export class CoaController {
   }
 
   @Delete(":accountId")
+  @ResponseSchema(coaDeleteAccountResponseSchema)
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
   @Validate({ params: accountIdParams })

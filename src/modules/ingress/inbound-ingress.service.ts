@@ -10,6 +10,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { inboundEvents, organizations } from "../../db/schema";
 import { startRun } from "../../common/workflow/workflow-store";
+import { z } from "zod";
 import {
   deduplicationKey,
   validateInboundEvent,
@@ -65,7 +66,7 @@ export class InboundIngressService {
         provider: event.provider,
         providerMessageId: event.providerMessageId,
         providerThreadId: event.providerThreadId ?? null,
-        payload: event as unknown as Record<string, unknown>,
+        payload: z.record(z.string(), z.unknown()).parse(event),
         occurredAt: new Date(event.occurredAt),
       })
       .onConflictDoNothing()

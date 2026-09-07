@@ -19,8 +19,13 @@ import { PeriodsService } from "./periods.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  periodsListResponseSchema,
+  timesheetPeriodSchema,
+  periodDetailResponseSchema,
+} from "./dto/timesheets-response.schemas";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
@@ -33,6 +38,7 @@ export class TimesheetPeriodsController {
   @Get()
   @RequirePermission("timesheets:entries:view")
   @Validate({ query: periodsQuerySchema })
+  @ResponseSchema(periodsListResponseSchema)
   list(
     @Query() query: PeriodsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -42,6 +48,7 @@ export class TimesheetPeriodsController {
 
   @Get("current")
   @RequirePermission("timesheets:entries:view")
+  @ResponseSchema(periodDetailResponseSchema)
   getCurrent(@CurrentUser() u: CurrentUserContext) {
     return this.periods.getCurrent(u);
   }
@@ -49,6 +56,7 @@ export class TimesheetPeriodsController {
   @Get(":periodId")
   @RequirePermission("timesheets:entries:view")
   @Validate({ params: periodIdParams })
+  @ResponseSchema(periodDetailResponseSchema)
   getPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +70,7 @@ export class TimesheetPeriodsController {
   @RequirePermission("timesheets:entries:create")
   @Idempotent("timesheets.period.submit")
   @Validate({ params: periodIdParams })
+  @ResponseSchema(timesheetPeriodSchema)
   submit(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +83,7 @@ export class TimesheetPeriodsController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: periodIdParams })
+  @ResponseSchema(timesheetPeriodSchema)
   recall(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -86,6 +96,7 @@ export class TimesheetPeriodsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Validate({ params: periodIdParams })
+  @ResponseSchema(timesheetPeriodSchema)
   reopen(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +109,7 @@ export class TimesheetPeriodsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Validate({ params: periodIdParams })
+  @ResponseSchema(timesheetPeriodSchema)
   lock(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -110,6 +122,7 @@ export class TimesheetPeriodsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Validate({ params: periodIdParams })
+  @ResponseSchema(timesheetPeriodSchema)
   unlock(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,

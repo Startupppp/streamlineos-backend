@@ -32,6 +32,14 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  automationRuleListSchema,
+  automationRuleRowSchema,
+  automationRunListSchema,
+  testRuleResultSchema,
+  successSchema as supportAutomationSuccessSchema,
+} from "./dto/support-automations-response.schemas";
 import { z } from "zod";
 
 const automationIdParams = z.object({ automationId: z.coerce.number().int().positive() }).strict();
@@ -50,6 +58,7 @@ export class SupportAutomationsController {
   @Get("automations")
   @RequirePermission("support:settings:manage")
   @Validate({ query: listSupportAutomationsQuerySchema })
+  @ResponseSchema(automationRuleListSchema)
   listAutomations(
     @Query() query: ListSupportAutomationsQueryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -61,6 +70,7 @@ export class SupportAutomationsController {
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
   @Validate({ body: createAutomationRuleSchema })
+  @ResponseSchema(automationRuleRowSchema)
   async createAutomation(
     @Body() body: CreateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
@@ -76,6 +86,7 @@ export class SupportAutomationsController {
   @Patch("automations/:automationId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: automationIdParams, body: updateAutomationRuleSchema })
+  @ResponseSchema(automationRuleRowSchema)
   async updateAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @Body() body: UpdateAutomationRuleInput,
@@ -89,6 +100,7 @@ export class SupportAutomationsController {
   @Delete("automations/:automationId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: automationIdParams })
+  @ResponseSchema(supportAutomationSuccessSchema)
   async deleteAutomation(@Param("automationId", ParseIntPipe) automationId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.automations.deleteRule(u.orgId, automationId);
     await this.audit.record(u.orgId, u.userId, "automation", automationId, "deleted");
@@ -99,6 +111,7 @@ export class SupportAutomationsController {
   @RequirePermission("support:settings:manage")
   @HttpCode(200)
   @Validate({ params: automationIdParams, body: testAutomationSchema })
+  @ResponseSchema(testRuleResultSchema)
   testAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
     @Body() body: TestAutomationInput,
@@ -109,6 +122,7 @@ export class SupportAutomationsController {
 
   @Get("automation-runs")
   @RequirePermission("support:settings:manage")
+  @ResponseSchema(automationRunListSchema)
   listAutomationRuns(@Query("automationId") automationId: string | undefined, @CurrentUser() u: CurrentUserContext) {
     return this.automations.listRuns(u.orgId, automationId ? Number(automationId) : undefined);
   }

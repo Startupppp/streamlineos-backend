@@ -21,7 +21,9 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { kbPageAiBufferedSchema } from "./dto/kb-wiki-response.schemas";
 import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../../ai/core/streaming";
 import { KbPageAiService } from "./kb-page-ai.service";
 import { kbAiAskBodySchema, type KbDocAiAction } from "../retrieval/dto/kb-ai.schemas";
@@ -94,6 +96,7 @@ export class KbPageAiController {
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
+  @ResponseSchema(kbPageAiBufferedSchema)
   async summarize(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -106,6 +109,7 @@ export class KbPageAiController {
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
+  @ApiOkResponse({ schema: { type: "string" } })
   async summarizeStream(
     @Req() req: Request,
     @Param("pageId", ParseIntPipe) pageId: number,
@@ -120,6 +124,7 @@ export class KbPageAiController {
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams, body: kbAiAskBodySchema })
+  @ResponseSchema(kbPageAiBufferedSchema)
   async ask(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body() body: z.infer<typeof kbAiAskBodySchema>,
@@ -132,6 +137,7 @@ export class KbPageAiController {
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams, body: kbAiAskBodySchema })
+  @ApiOkResponse({ schema: { type: "string" } })
   async askStream(
     @Req() req: Request,
     @Param("pageId", ParseIntPipe) pageId: number,
@@ -148,6 +154,7 @@ export class KbPageAiController {
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
+  @ResponseSchema(kbPageAiBufferedSchema)
   async improve(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -160,6 +167,7 @@ export class KbPageAiController {
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
+  @ApiOkResponse({ schema: { type: "string" } })
   async improveStream(
     @Req() req: Request,
     @Param("pageId", ParseIntPipe) pageId: number,
@@ -175,6 +183,7 @@ export class KbPageAiController {
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
+  @ResponseSchema(kbPageAiBufferedSchema)
   async suggestRelated(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -187,6 +196,7 @@ export class KbPageAiController {
   @NoTenantTransaction()
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
+  @ApiOkResponse({ schema: { type: "string" } })
   async suggestRelatedStream(
     @Req() req: Request,
     @Param("pageId", ParseIntPipe) pageId: number,

@@ -16,7 +16,14 @@ import {
 } from "./dto/finance-planning.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  scenarioListResponseSchema,
+  scenarioSchema,
+  budgetSeedDefaultsResponseSchema,
+  forecastResponseSchema,
+  scenarioCompareResponseSchema,
+} from "./dto/planning-response.schemas";
 
 const scenarioIdParams = z.object({ scenarioId: z.coerce.number().int().positive() }).strict();
 
@@ -30,12 +37,14 @@ export class ScenariosController {
   ) {}
 
   @Get("scenarios")
+  @ResponseSchema(scenarioListResponseSchema)
   @RequirePermission("accounting:forecast:read")
   listScenarios(@CurrentUser() u: CurrentUserContext) {
     return this.scenarios.listScenarios(u.orgId);
   }
 
   @Post("scenarios")
+  @ResponseSchema(scenarioSchema)
   @RequirePermission("accounting:forecast:manage")
   @HttpCode(201)
   @Validate({ body: createScenarioSchema })
@@ -47,6 +56,7 @@ export class ScenariosController {
   }
 
   @Patch("scenarios/:scenarioId")
+  @ResponseSchema(scenarioSchema)
   @RequirePermission("accounting:forecast:manage")
   @Validate({ params: scenarioIdParams, body: updateScenarioSchema })
   updateScenario(
@@ -58,6 +68,7 @@ export class ScenariosController {
   }
 
   @Delete("scenarios/:scenarioId")
+  @NoContentResponse()
   @RequirePermission("accounting:forecast:manage")
   @HttpCode(204)
   @Validate({ params: scenarioIdParams })
@@ -70,6 +81,7 @@ export class ScenariosController {
 
   @Post("scenarios/seed-defaults")
   @BodylessAction()
+  @ResponseSchema(budgetSeedDefaultsResponseSchema)
   @RequirePermission("accounting:forecast:manage")
   @HttpCode(200)
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
@@ -77,6 +89,7 @@ export class ScenariosController {
   }
 
   @Get("forecast")
+  @ResponseSchema(forecastResponseSchema)
   @RequirePermission("accounting:forecast:read")
   @Validate({ query: forecastQuerySchema })
   getForecast(
@@ -87,6 +100,7 @@ export class ScenariosController {
   }
 
   @Get("forecast/compare")
+  @ResponseSchema(scenarioCompareResponseSchema)
   @RequirePermission("accounting:forecast:read")
   @Validate({ query: compareScenariosQuerySchema })
   compareForecast(

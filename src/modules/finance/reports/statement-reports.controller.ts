@@ -9,6 +9,15 @@ import { StatementReportsService } from "./statement-reports.service";
 import { dateRangeSchema, type DateRangeQuery } from "./dto/finance-reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  vendorStatementResponseSchema,
+  customerStatementResponseSchema,
+  salesByCustomerResponseSchema,
+  salesByItemResponseSchema,
+  expenseByCategoryResponseSchema,
+  taxSummaryResponseSchema,
+} from "./dto/finance-reports-response.schemas";
 
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
 const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();
@@ -20,6 +29,7 @@ export class StatementReportsController {
   constructor(private readonly statementsService: StatementReportsService) {}
 
   @Get("vendor-statement/:vendorId")
+  @ResponseSchema(vendorStatementResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ params: vendorIdParams, query: dateRangeSchema })
@@ -32,6 +42,7 @@ export class StatementReportsController {
   }
 
   @Get("customer-statement/:clientId")
+  @ResponseSchema(customerStatementResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ params: clientIdParams, query: dateRangeSchema })
@@ -44,6 +55,7 @@ export class StatementReportsController {
   }
 
   @Get("sales-by-customer")
+  @ResponseSchema(salesByCustomerResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: dateRangeSchema })
@@ -55,6 +67,7 @@ export class StatementReportsController {
   }
 
   @Get("sales-by-item")
+  @ResponseSchema(salesByItemResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: dateRangeSchema })
@@ -66,6 +79,7 @@ export class StatementReportsController {
   }
 
   @Get("expense-by-category")
+  @ResponseSchema(expenseByCategoryResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: dateRangeSchema })
@@ -77,6 +91,7 @@ export class StatementReportsController {
   }
 
   @Get("tax-summary")
+  @ResponseSchema(taxSummaryResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: dateRangeSchema })

@@ -8,6 +8,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { InsightsService } from "./insights.service";
 import { insightsQuerySchema, type InsightsQuery } from "./dto/insights.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { anomaliesResponseSchema, digestResponseSchema } from "./dto/finance-reports-insights-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/insights")
@@ -16,6 +18,7 @@ export class InsightsController {
   constructor(private readonly insights: InsightsService) {}
 
   @Get("anomalies")
+  @ResponseSchema(anomaliesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: insightsQuerySchema })
@@ -27,6 +30,7 @@ export class InsightsController {
   }
 
   @Get("digest")
+  @ResponseSchema(digestResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getDigest(@CurrentUser() u: CurrentUserContext) {

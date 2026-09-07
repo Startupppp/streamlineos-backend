@@ -25,6 +25,12 @@ import {
 } from "./dto/finance-expenses.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  expensePolicyListResponseSchema,
+  expensePolicySchema,
+  successSchema,
+} from "./dto/expenses-response.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
@@ -35,12 +41,14 @@ export class ExpensePoliciesController {
   constructor(private readonly policies: ExpensePoliciesService) {}
 
   @Get()
+  @ResponseSchema(expensePolicyListResponseSchema)
   @RequirePermission("accounting:reimbursements:read")
   async list(@CurrentUser() u: CurrentUserContext) {
     return this.policies.list(u.orgId);
   }
 
   @Post()
+  @ResponseSchema(expensePolicySchema)
   @HttpCode(201)
   @RequirePermission("accounting:reimbursements:manage")
   @Validate({ body: createPolicySchema })
@@ -52,6 +60,7 @@ export class ExpensePoliciesController {
   }
 
   @Patch(":policyId")
+  @ResponseSchema(successSchema)
   @RequirePermission("accounting:reimbursements:manage")
   @Validate({ params: policyIdParams, body: updatePolicySchema })
   async update(
@@ -63,6 +72,7 @@ export class ExpensePoliciesController {
   }
 
   @Delete(":policyId")
+  @ResponseSchema(successSchema)
   @RequirePermission("accounting:reimbursements:manage")
   @Validate({ params: policyIdParams })
   async remove(

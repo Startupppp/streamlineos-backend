@@ -34,6 +34,14 @@ import {
 } from "./dto/party.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import {
+  mirrorDivergenceSchema,
+  partyListSchema,
+  partyDetailSchema,
+  partyContactListSchema,
+  partyContactDetailSchema,
+} from "./dto/party-response.schemas";
 
 const partyIdParams = z.object({ partyId: z.string().min(1) }).strict();
 const partyContactIdParams = z.object({ partyContactId: z.string().min(1) }).strict();
@@ -56,6 +64,7 @@ export class PartyController {
    */
   @Get("mirror/divergence")
   @RequirePermission("party:divergence:view")
+  @ResponseSchema(mirrorDivergenceSchema)
   @Validate({ query: mirrorDivergenceQuerySchema })
   mirrorDivergence(
     @Query() query: MirrorDivergenceQuery,
@@ -70,6 +79,7 @@ export class PartyController {
 
   @Get("parties")
   @RequirePermission("party:parties:view")
+  @ResponseSchema(partyListSchema)
   @Validate({ query: listPartiesQuerySchema })
   listParties(
     @Query() query: ListPartiesQuery,
@@ -82,6 +92,7 @@ export class PartyController {
   @Idempotent("party.create")
   @HttpCode(201)
   @RequirePermission("party:parties:create")
+  @ResponseSchema(partyDetailSchema)
   @Validate({ body: createPartySchema })
   createParty(
     @Body() body: CreatePartyInput,
@@ -92,6 +103,7 @@ export class PartyController {
 
   @Get("parties/:partyId")
   @RequirePermission("party:parties:view")
+  @ResponseSchema(partyDetailSchema)
   @Validate({ params: partyIdParams })
   getParty(
     @Param("partyId") partyId: string,
@@ -103,6 +115,7 @@ export class PartyController {
   @Patch("parties/:partyId")
   @Idempotent("party.update")
   @RequirePermission("party:parties:update")
+  @ResponseSchema(partyDetailSchema)
   @Validate({ params: partyIdParams, body: updatePartySchema })
   updateParty(
     @Param("partyId") partyId: string,
@@ -116,6 +129,7 @@ export class PartyController {
   @Idempotent("party.delete")
   @HttpCode(204)
   @RequirePermission("party:parties:delete")
+  @NoContentResponse()
   @Validate({ params: partyIdParams })
   deleteParty(
     @Param("partyId") partyId: string,
@@ -126,6 +140,7 @@ export class PartyController {
 
   @Get("parties/:partyId/contacts")
   @RequirePermission("party:contacts:view")
+  @ResponseSchema(partyContactListSchema)
   @Validate({ params: partyIdParams })
   listContacts(
     @Param("partyId") partyId: string,
@@ -138,6 +153,7 @@ export class PartyController {
   @Idempotent("party.contact.create")
   @HttpCode(201)
   @RequirePermission("party:contacts:manage")
+  @ResponseSchema(partyContactDetailSchema)
   @Validate({ params: partyIdParams, body: createContactSchema })
   createContact(
     @Param("partyId") partyId: string,
@@ -150,6 +166,7 @@ export class PartyController {
   @Patch("contacts/:partyContactId")
   @Idempotent("party.contact.update")
   @RequirePermission("party:contacts:manage")
+  @ResponseSchema(partyContactDetailSchema)
   @Validate({ params: partyContactIdParams, body: updateContactSchema })
   updateContact(
     @Param("partyContactId") partyContactId: string,
@@ -163,6 +180,7 @@ export class PartyController {
   @Idempotent("party.contact.delete")
   @HttpCode(204)
   @RequirePermission("party:contacts:manage")
+  @NoContentResponse()
   @Validate({ params: partyContactIdParams })
   deleteContact(
     @Param("partyContactId") partyContactId: string,

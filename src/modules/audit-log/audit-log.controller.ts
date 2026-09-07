@@ -9,6 +9,13 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { AuditLogService } from "./audit-log.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  auditLogListSchema,
+  auditLogActionsSchema,
+  auditLogTargetTypesSchema,
+} from "./dto/audit-log-response.schemas";
 import {
   exportSchema,
   listSchema,
@@ -23,6 +30,7 @@ export class AuditLogController {
 
   @Get()
   @RequirePermission("audit-log:read")
+  @ResponseSchema(auditLogListSchema)
   @Validate({ query: listSchema })
   list(
     @Query() filters: ListInput,
@@ -42,6 +50,7 @@ export class AuditLogController {
   @NoTenantTransaction()
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="audit-log-export.csv"')
+  @ApiOkResponse({ description: "CSV export of audit log entries", content: { "text/csv": { schema: { type: "string" } } } })
   @Validate({ query: exportSchema })
   async exportCsv(
     @Query() filters: ExportInput,
@@ -57,12 +66,14 @@ export class AuditLogController {
 
   @Get("actions")
   @RequirePermission("audit-log:read")
+  @ResponseSchema(auditLogActionsSchema)
   listActions(@CurrentUser() u: CurrentUserContext) {
     return this.auditLog.listActions(u.orgId);
   }
 
   @Get("target-types")
   @RequirePermission("audit-log:read")
+  @ResponseSchema(auditLogTargetTypesSchema)
   listTargetTypes(@CurrentUser() u: CurrentUserContext) {
     return this.auditLog.listTargetTypes(u.orgId);
   }

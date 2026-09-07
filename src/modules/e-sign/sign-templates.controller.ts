@@ -10,7 +10,13 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignTemplatesService } from "./sign-templates.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  templateMutationResponseSchema,
+  listTemplatesResponseSchema,
+  instantiateTemplateResponseSchema,
+  publishPublicFormResponseSchema,
+} from "./dto/e-sign-response.schemas";
 import {
   createTemplateSchema,
   updateTemplateSchema,
@@ -36,6 +42,7 @@ export class SignTemplatesController {
   @Post("templates")
   @HttpCode(201)
   @RequirePermission("sign:template:manage")
+  @ResponseSchema(templateMutationResponseSchema)
   @Validate({ body: createTemplateSchema })
   create(@Body() body: CreateTemplateInput, @CurrentUser() u: CurrentUserContext) {
     return this.templates.create(u.orgId, actingMembershipId(u.principal), body);
@@ -44,6 +51,7 @@ export class SignTemplatesController {
   @Post("envelopes/:envelopeId/save-as-template")
   @HttpCode(201)
   @RequirePermission("sign:template:manage")
+  @ResponseSchema(templateMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: saveAsTemplateSchema })
   createFromEnvelope(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -55,12 +63,14 @@ export class SignTemplatesController {
 
   @Get("templates")
   @RequirePermission("sign:template:manage")
+  @ResponseSchema(listTemplatesResponseSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.templates.list(u.orgId);
   }
 
   @Get("templates/:templateId")
   @RequirePermission("sign:template:manage")
+  @ResponseSchema(templateMutationResponseSchema)
   @Validate({ params: templateIdParams })
   get(@Param("templateId", ParseIntPipe) templateId: number, @CurrentUser() u: CurrentUserContext) {
     return this.templates.get(u.orgId, templateId);
@@ -68,6 +78,7 @@ export class SignTemplatesController {
 
   @Patch("templates/:templateId")
   @RequirePermission("sign:template:manage")
+  @ResponseSchema(templateMutationResponseSchema)
   @Validate({ params: templateIdParams, body: updateTemplateSchema })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -80,6 +91,7 @@ export class SignTemplatesController {
   @Post("templates/:templateId/duplicate")
   @BodylessAction()
   @RequirePermission("sign:template:manage")
+  @ResponseSchema(templateMutationResponseSchema)
   @Validate({ params: templateIdParams })
   duplicate(@Param("templateId", ParseIntPipe) templateId: number, @CurrentUser() u: CurrentUserContext) {
     return this.templates.duplicate(u.orgId, templateId, { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal) });
@@ -88,6 +100,7 @@ export class SignTemplatesController {
   @Post("templates/:templateId/create-envelope")
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(instantiateTemplateResponseSchema)
   @Validate({ params: templateIdParams, body: createEnvelopeFromTemplateSchema })
   createEnvelope(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -99,6 +112,7 @@ export class SignTemplatesController {
 
   @Post("templates/:templateId/publish-public-form")
   @RequirePermission("sign:template:manage")
+  @ResponseSchema(publishPublicFormResponseSchema)
   @Validate({ params: templateIdParams, body: publishPublicFormSchema })
   publishPublicForm(
     @Param("templateId", ParseIntPipe) templateId: number,

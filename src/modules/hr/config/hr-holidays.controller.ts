@@ -32,6 +32,8 @@ import {
 } from "./dto/holidays.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { holidayRowSchema, successSchema } from "./dto/config-response.schemas";
 import { z } from "zod";
 
 const holidayIdParams = z.object({ holidayId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +45,7 @@ export class HrHolidaysController {
   constructor(private readonly holidays: HrHolidaysService) {}
 
   @Get()
+  @ResponseSchema(z.array(holidayRowSchema))
   @RequirePermission("hr:attendance:view")
   @Validate({ query: holidayListQuerySchema })
   list(
@@ -54,6 +57,7 @@ export class HrHolidaysController {
   }
 
   @Get("calendar")
+  @ResponseSchema(z.array(holidayRowSchema))
   @RequirePermission("hr:attendance:view")
   @Validate({ query: holidayCalendarQuerySchema })
   calendar(
@@ -66,6 +70,7 @@ export class HrHolidaysController {
   }
 
   @Post()
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:attendance:manage")
   @HttpCode(201)
   @Validate({ body: createHolidaySchema })
@@ -81,6 +86,7 @@ export class HrHolidaysController {
   }
 
   @Patch(":holidayId")
+  @ResponseSchema(holidayRowSchema)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: holidayIdParams, body: updateHolidaySchema })
   async update(
@@ -94,6 +100,7 @@ export class HrHolidaysController {
   }
 
   @Delete(":holidayId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: holidayIdParams })

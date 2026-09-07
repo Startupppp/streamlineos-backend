@@ -22,6 +22,14 @@ import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  workflowInstanceListAllSchema,
+  workflowInboxSchema,
+  workflowInstancePagedSchema,
+  workflowInstanceRowSchema,
+  workflowInstanceDetailSchema,
+} from "./dto/workflow-response.schemas";
 
 const instanceIdParams = z.object({ instanceId: z.coerce.number().int().positive() }).strict();
 
@@ -40,6 +48,7 @@ export class HrWorkflowInstancesController {
   ) {}
 
   @Get()
+  @ResponseSchema(workflowInstanceListAllSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @Validate({ query: WorkflowInstanceQuerySchema })
@@ -51,6 +60,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Get("inbox")
+  @ResponseSchema(workflowInboxSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @Validate({ query: PaginationSchema })
@@ -62,6 +72,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Get("acted")
+  @ResponseSchema(workflowInstancePagedSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @Validate({ query: WorkflowActedQuerySchema })
@@ -73,6 +84,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Get(":instanceId")
+  @ResponseSchema(workflowInstanceDetailSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @Validate({ params: instanceIdParams })
@@ -84,6 +96,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/approve")
+  @ResponseSchema(workflowInstanceRowSchema)
   @Idempotent("hr.workflow-instance.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
@@ -106,6 +119,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/reject")
+  @ResponseSchema(workflowInstanceRowSchema)
   @Idempotent("hr.workflow-instance.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
@@ -128,6 +142,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/cancel")
+  @ResponseSchema(workflowInstanceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
@@ -148,6 +163,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/reopen")
+  @ResponseSchema(workflowInstanceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
@@ -168,6 +184,7 @@ export class HrWorkflowInstancesController {
   }
 
   @Post(":instanceId/comment")
+  @ResponseSchema(workflowInstanceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
   @HttpCode(200)

@@ -36,7 +36,16 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  ledgerAccountListResponseSchema,
+  ledgerAccountSchema,
+  journalEntryListResponseSchema,
+  createJournalEntryResponseSchema,
+  journalEntryDetailResponseSchema,
+  postJournalEntryResponseSchema,
+  reverseJournalEntryResponseSchema,
+} from "./dto/accounting-ledger-response.schemas";
 
 const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
@@ -51,6 +60,7 @@ export class AccountingLedgerController {
   ) {}
 
   @Get("accounts")
+  @ResponseSchema(ledgerAccountListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:read")
   @Validate({ query: listAccountsQuerySchema })
@@ -62,6 +72,7 @@ export class AccountingLedgerController {
   }
 
   @Post("accounts")
+  @ResponseSchema(ledgerAccountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:create")
   @HttpCode(201)
@@ -74,6 +85,7 @@ export class AccountingLedgerController {
   }
 
   @Patch("accounts/:accountId")
+  @ResponseSchema(ledgerAccountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:update")
   @Validate({ params: accountIdParams, body: updateAccountSchema })
@@ -86,6 +98,7 @@ export class AccountingLedgerController {
   }
 
   @Get("journal")
+  @ResponseSchema(journalEntryListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
   @Validate({ query: listJournalQuerySchema })
@@ -98,6 +111,7 @@ export class AccountingLedgerController {
   }
 
   @Post("journal")
+  @ResponseSchema(createJournalEntryResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
   @HttpCode(201)
@@ -110,6 +124,7 @@ export class AccountingLedgerController {
   }
 
   @Get("journal/:entryId")
+  @ResponseSchema(journalEntryDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
   @Validate({ params: entryIdParams })
@@ -121,6 +136,7 @@ export class AccountingLedgerController {
   }
 
   @Post("journal/:entryId/post")
+  @ResponseSchema(postJournalEntryResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
@@ -134,6 +150,7 @@ export class AccountingLedgerController {
   }
 
   @Post("journal/:entryId/reverse")
+  @ResponseSchema(reverseJournalEntryResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")

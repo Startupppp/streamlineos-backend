@@ -17,7 +17,13 @@ import {
 } from "./dto/recurring-journals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  recurringJournalListResponseSchema,
+  recurringJournalTemplateSchema,
+  recurringJournalDeleteResponseSchema,
+  recurringJournalRunNowResponseSchema,
+} from "./dto/gl-response.schemas";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -28,6 +34,7 @@ export class RecurringJournalsController {
   constructor(private readonly recurring: RecurringJournalsService) {}
 
   @Get()
+  @ResponseSchema(recurringJournalListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:read")
   @Validate({ query: listRecurringJournalsQuerySchema })
@@ -39,6 +46,7 @@ export class RecurringJournalsController {
   }
 
   @Post()
+  @ResponseSchema(recurringJournalTemplateSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(201)
@@ -51,6 +59,7 @@ export class RecurringJournalsController {
   }
 
   @Patch(":templateId")
+  @ResponseSchema(recurringJournalTemplateSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @Validate({ params: templateIdParams, body: updateRecurringJournalSchema })
@@ -63,6 +72,7 @@ export class RecurringJournalsController {
   }
 
   @Delete(":templateId")
+  @ResponseSchema(recurringJournalDeleteResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(200)
@@ -75,6 +85,7 @@ export class RecurringJournalsController {
   }
 
   @Post(":templateId/run-now")
+  @ResponseSchema(recurringJournalRunNowResponseSchema)
   @BodylessAction()
   @Idempotent("accounting.recurring-journal.run-now")
   @UseGuards(PermissionGuard)

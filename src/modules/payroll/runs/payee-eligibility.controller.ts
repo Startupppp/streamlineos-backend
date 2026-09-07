@@ -8,6 +8,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayeeEligibilityService } from "./payee-eligibility.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { payeeEligibilityResponseSchema } from "./dto/payee-eligibility-response.schemas";
 import { z } from "zod";
 
 const organizationPersonIdParams = z.object({ organizationPersonId: z.string().min(1) }).strict();
@@ -20,6 +22,7 @@ export class PayeeEligibilityController {
 
   @Get(":organizationPersonId/eligibility")
   @RequirePermission("payroll:salaries:view")
+  @ResponseSchema(payeeEligibilityResponseSchema)
   @Validate({ params: organizationPersonIdParams })
   async getEligibility(
     @Param("organizationPersonId") organizationPersonId: string,

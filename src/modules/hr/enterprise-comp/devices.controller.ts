@@ -24,6 +24,8 @@ import {
 } from "./dto/enterprise-comp.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts"
+import { listDevicesResponseSchema, createDeviceResponseSchema, updateDeviceResponseSchema, listSyncLogsResponseSchema, ingestSyncLogResponseSchema, listFailedSyncsResponseSchema, detectDuplicatePunchesResponseSchema, listDeviceMappingsResponseSchema, createDeviceMappingResponseSchema } from "./dto/enterprise-comp-response.schemas"
 
 const deviceIdParams = z.object({ deviceId: z.coerce.number().int().positive() }).strict();
 
@@ -33,6 +35,7 @@ const deviceIdParams = z.object({ deviceId: z.coerce.number().int().positive() }
 export class DevicesController {
   constructor(private readonly service: DevicesService) {}
 
+  @ResponseSchema(listDevicesResponseSchema)
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
@@ -44,6 +47,7 @@ export class DevicesController {
     return this.service.listDevices(u.orgId, query);
   }
 
+  @ResponseSchema(createDeviceResponseSchema)
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
@@ -56,6 +60,7 @@ export class DevicesController {
     return this.service.createDevice(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(updateDeviceResponseSchema)
   @Patch(":deviceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
@@ -68,6 +73,7 @@ export class DevicesController {
     return this.service.updateDevice(u.orgId, deviceId, u.userId, body);
   }
 
+  @NoContentResponse()
   @Delete(":deviceId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
@@ -80,6 +86,7 @@ export class DevicesController {
     return this.service.deleteDevice(u.orgId, deviceId, u.userId);
   }
 
+  @ResponseSchema(listSyncLogsResponseSchema)
   @Get("sync-logs")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
@@ -91,6 +98,7 @@ export class DevicesController {
     return this.service.listSyncLogs(u.orgId, query);
   }
 
+  @ResponseSchema(ingestSyncLogResponseSchema)
   @Post("sync-logs")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
@@ -103,6 +111,7 @@ export class DevicesController {
     return this.service.ingestSyncLog(u.orgId, body);
   }
 
+  @ResponseSchema(listFailedSyncsResponseSchema)
   @Get("failed-syncs")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
@@ -110,6 +119,7 @@ export class DevicesController {
     return this.service.listFailedSyncs(u.orgId);
   }
 
+  @ResponseSchema(detectDuplicatePunchesResponseSchema)
   @Get(":deviceId/duplicate-punches")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
@@ -121,6 +131,7 @@ export class DevicesController {
     return this.service.detectDuplicatePunches(u.orgId, deviceId);
   }
 
+  @ResponseSchema(listDeviceMappingsResponseSchema)
   @Get("mappings")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")
@@ -132,6 +143,7 @@ export class DevicesController {
     return this.service.listMappings(u.orgId, query);
   }
 
+  @ResponseSchema(createDeviceMappingResponseSchema)
   @Post("mappings")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:biometric:manage")

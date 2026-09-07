@@ -30,6 +30,7 @@ import {
   chatUnreadResponseSchema,
   chatUsersResponseSchema,
 } from "./dto/chat-presence-response-schema";
+import { chatPresenceSearchResponseSchema } from "./dto/chat-misc-response.schemas";
 
 @ApiTags("Chat Presence")
 @ApiBearerAuth()
@@ -84,6 +85,7 @@ export class ChatPresenceController {
   @ApiOperation({ summary: "Full-text search across chat messages" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("search")
+  @ResponseSchema(chatPresenceSearchResponseSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ query: searchQuerySchema })
   search(

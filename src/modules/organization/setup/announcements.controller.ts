@@ -24,6 +24,7 @@ import {
 } from "./dto/announcements.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
 import {
   announcementListResponseSchema,
@@ -92,24 +93,28 @@ export class AnnouncementsController {
   }
 
   @Delete(":announcementId")
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:announcements:manage")
   @Validate({ params: announcementIdParams })
-  remove(
+  async remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,
   ) {
-    return this.service.remove(u.orgId, id);
+    await this.service.remove(u.orgId, id);
+    return { success: true as const };
   }
 
   @Post(":announcementId/read")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @Universal()
   @Validate({ params: announcementIdParams })
-  markRead(
+  async markRead(
     @CurrentUser() u: CurrentUserContext,
     @Param("announcementId", ParseIntPipe) id: number,
   ) {
-    return this.service.markRead(u.orgId, id, u.userId);
+    await this.service.markRead(u.orgId, id, u.userId);
+    return { success: true as const };
   }
 }

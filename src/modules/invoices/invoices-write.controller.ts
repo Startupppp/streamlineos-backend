@@ -26,7 +26,13 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  invoiceCreateResponseSchema,
+  invoiceRunRecurringResponseSchema,
+  invoiceSuccessResponseSchema,
+  invoiceRecordPaymentResponseSchema,
+} from "./dto/invoice-response.schemas";
 
 const invoiceIdParams = z.object({ invoiceId: z.coerce.number().int().positive() }).strict();
 
@@ -41,6 +47,7 @@ export class InvoicesWriteController {
   constructor(private readonly invoicesWrite: InvoicesWriteService) {}
 
   @Post()
+  @ResponseSchema(invoiceCreateResponseSchema)
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:create")
@@ -55,6 +62,7 @@ export class InvoicesWriteController {
   }
 
   @Post("recurring/run")
+  @ResponseSchema(invoiceRunRecurringResponseSchema)
   @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
@@ -64,6 +72,7 @@ export class InvoicesWriteController {
   }
 
   @Patch(":invoiceId")
+  @ResponseSchema(invoiceSuccessResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:update")
   @Idempotent("accounting.invoice.update")
@@ -78,6 +87,7 @@ export class InvoicesWriteController {
   }
 
   @Post(":invoiceId/payments")
+  @ResponseSchema(invoiceRecordPaymentResponseSchema)
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:create")
@@ -92,6 +102,7 @@ export class InvoicesWriteController {
   }
 
   @Post(":invoiceId/void")
+  @ResponseSchema(invoiceSuccessResponseSchema)
   @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)

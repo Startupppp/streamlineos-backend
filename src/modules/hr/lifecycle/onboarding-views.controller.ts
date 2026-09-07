@@ -28,6 +28,12 @@ import {
 } from "./dto/hr-lifecycle.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  onboardingDocumentListSchema,
+  onboardingDocumentRowSchema,
+  signedDocFileSchema,
+} from "./dto/lifecycle-response.schemas";
 
 const docIdParams = z.object({ docId: z.coerce.number().int().positive() }).strict();
 
@@ -41,6 +47,7 @@ export class OnboardingViewsController {
   ) {}
 
   @Get("me")
+  @ResponseSchema(onboardingDocumentListSchema)
   @RequirePermission("self:onboarding-docs")
   @Validate({ query: listOnboardingDocsQuerySchema })
   listMine(
@@ -51,6 +58,7 @@ export class OnboardingViewsController {
   }
 
   @Post("me")
+  @ResponseSchema(onboardingDocumentRowSchema)
   @HttpCode(201)
   @RequirePermission("self:onboarding-docs")
   @Validate({ body: createOwnOnboardingDocSchema })
@@ -63,6 +71,7 @@ export class OnboardingViewsController {
   }
 
   @Get("me/:docId/file")
+  @ResponseSchema(signedDocFileSchema)
   @RequirePermission("self:onboarding-docs")
   @Validate({ params: docIdParams })
   getMyFile(

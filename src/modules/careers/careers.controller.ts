@@ -13,6 +13,8 @@ import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { CareersService, isApplyJobNotFound } from "./careers.service";
 import { applySchema, type ApplyInput } from "./dto/careers.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { careersJobListSchema, careersApplyResponseSchema } from "./dto/careers-response.schemas";
 
 @Controller("careers")
 export class CareersController {
@@ -20,6 +22,7 @@ export class CareersController {
 
   @Public()
   @Get()
+  @ResponseSchema(careersJobListSchema)
   list() {
     return this.careers.listOpenJobs();
   }
@@ -30,6 +33,7 @@ export class CareersController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:job-apply")
   @Validate({ body: applySchema })
+  @ResponseSchema(careersApplyResponseSchema)
   async apply(@Body() body: ApplyInput) {
     const result = await this.careers.apply(body);
     if (isApplyJobNotFound(result)) {

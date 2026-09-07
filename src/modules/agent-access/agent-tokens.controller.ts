@@ -6,6 +6,8 @@ import { actingMembershipId } from "../../common/auth/principal";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AgentTokensService } from "./agent-tokens.service";
+import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import { agentTokenCreateSchema, agentTokenListSchema } from "./dto/agent-response.schemas";
 import { createAgentTokenSchema, type CreateAgentTokenInput } from "./dto/agent-tokens.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -20,6 +22,7 @@ export class AgentTokensController {
   @RequirePermission("settings:api-tokens:write")
   @Post()
   @HttpCode(201)
+  @ResponseSchema(agentTokenCreateSchema)
   @Validate({ body: createAgentTokenSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -30,6 +33,7 @@ export class AgentTokensController {
 
   @RequirePermission("settings:api-tokens:read")
   @Get()
+  @ResponseSchema(agentTokenListSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.svc.list(u.userId, u.orgId, actingMembershipId(u.principal));
   }
@@ -37,6 +41,7 @@ export class AgentTokensController {
   @RequirePermission("settings:api-tokens:write")
   @Delete(":tokenId")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: tokenIdParams })
   revoke(
     @CurrentUser() u: CurrentUserContext,

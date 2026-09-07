@@ -28,6 +28,8 @@ import {
 } from "./dto/change-requests.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { changeRequestRowSchema } from "./dto/change-requests-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectAndChangeRequestIdParams = z.object({ projectId: z.coerce.number().int().positive(), changeRequestId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +42,7 @@ export class ChangeRequestsController {
 
   @Get()
   @RequirePermission("build:changerequests:view")
+  @ResponseSchema(z.array(changeRequestRowSchema))
   @Validate({ params: projectIdParams, query: listCrQuerySchema })
   listChangeRequests(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -51,6 +54,7 @@ export class ChangeRequestsController {
 
   @Get(":changeRequestId")
   @RequirePermission("build:changerequests:view")
+  @ResponseSchema(changeRequestRowSchema)
   @Validate({ params: projectAndChangeRequestIdParams })
   getChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -63,6 +67,7 @@ export class ChangeRequestsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:changerequests:create")
+  @ResponseSchema(changeRequestRowSchema)
   @Validate({ params: projectIdParams, body: createChangeRequestSchema })
   createChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -74,6 +79,7 @@ export class ChangeRequestsController {
 
   @Patch(":changeRequestId")
   @RequirePermission("build:changerequests:manage")
+  @ResponseSchema(changeRequestRowSchema)
   @Validate({ params: projectAndChangeRequestIdParams, body: updateChangeRequestSchema })
   updateChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -87,6 +93,7 @@ export class ChangeRequestsController {
   @Delete(":changeRequestId")
   @RequirePermission("build:changerequests:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectAndChangeRequestIdParams })
   deleteChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,

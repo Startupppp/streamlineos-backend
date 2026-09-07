@@ -42,6 +42,14 @@ import { Deprecated } from "../../common/deprecation/deprecated.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  contactListSchema,
+  contactDetailSchema,
+  bulkImportSchema,
+  contactSearchSchema,
+} from "./dto/contacts-response.schemas";
 
 const contactIdParams = z.object({ contactId: z.coerce.number().int().positive() }).strict();
 
@@ -56,6 +64,7 @@ export class ContactsController {
 
   @Get()
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(contactListSchema)
   @Validate({ query: listSchema })
   async list(
     @Query() filters: ListInput,
@@ -69,6 +78,7 @@ export class ContactsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
+  @ResponseSchema(contactDetailSchema)
   @Validate({ body: createSchema })
   create(
     @Body() body: CreateInput,
@@ -80,6 +90,7 @@ export class ContactsController {
   @Post("bulk-import")
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
+  @ResponseSchema(bulkImportSchema)
   @Validate({ body: bulkImportContactsSchema })
   bulkImport(
     @Body() body: BulkImportContactsInput,
@@ -88,15 +99,10 @@ export class ContactsController {
     return this.contacts.bulkImport(u.orgId, body);
   }
 
-  /**
-   * `@NoTenantTransaction()` because the generator below is drained across the
-   * client's socket: one request transaction would be pinned to a slow client
-   * for the whole download. `exportCsvChunks` opens one tenant transaction per
-   * keyset page instead, and `AccessService.scopeFor` opens its own.
-   */
   @Get("export")
   @RequirePermission("crm:contacts:view")
   @NoTenantTransaction()
+  @ApiOkResponse({ description: "CSV file stream", content: { "text/csv": { schema: { type: "string" } } } })
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="contacts-export.csv"')
   async exportCsv(
@@ -113,6 +119,7 @@ export class ContactsController {
 
   @Get("search")
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(contactSearchSchema)
   @Validate({ query: searchSchema })
   async search(
     @Query() query: SearchInput,
@@ -124,6 +131,7 @@ export class ContactsController {
 
   @Get(":contactId")
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(contactDetailSchema)
   @Validate({ params: contactIdParams })
   async get(
     @Param("contactId", ParseIntPipe) contactId: number,
@@ -137,6 +145,7 @@ export class ContactsController {
   @Deprecated({ sunset: "2026-10-25", link: "/party/contacts/:partyContactId" })
   @Patch(":contactId")
   @RequirePermission("crm:contacts:manage")
+  @ResponseSchema(contactDetailSchema)
   @Validate({ params: contactIdParams, body: updateSchema })
   async update(
     @Param("contactId", ParseIntPipe) contactId: number,
@@ -152,6 +161,7 @@ export class ContactsController {
   @Delete(":contactId")
   @HttpCode(204)
   @RequirePermission("crm:contacts:manage")
+  @NoContentResponse()
   @Validate({ params: contactIdParams })
   async remove(
     @Param("contactId", ParseIntPipe) contactId: number,
@@ -162,6 +172,7 @@ export class ContactsController {
 
   @Get(":contactId/vcard")
   @RequirePermission("crm:contacts:view")
+  @ApiOkResponse({ description: "vCard file", content: { "text/vcard": { schema: { type: "string" } } } })
   @Validate({ params: contactIdParams })
   async vcard(
     @Param("contactId", ParseIntPipe) contactId: number,

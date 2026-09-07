@@ -35,6 +35,15 @@ import { HR_AUTOMATION_EVENTS, HR_EVENT_FIELD_DOCS, HR_EVENT_SAMPLE_PAYLOADS } f
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  automationEventsListSchema,
+  automationRuleListSchema,
+  automationRuleDetailSchema,
+  automationRunListSchema,
+  automationTestResultSchema,
+  successSchema,
+} from "./dto/automation-response.schemas";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
@@ -45,6 +54,7 @@ export class HrAutomationsController {
   constructor(private readonly engine: HrAutomationEngineService) {}
 
   @Get("events")
+  @ResponseSchema(automationEventsListSchema)
   @RequirePermission("hr:automations:view")
   getEvents() {
     return {
@@ -57,6 +67,7 @@ export class HrAutomationsController {
   }
 
   @Get()
+  @ResponseSchema(automationRuleListSchema)
   @RequirePermission("hr:automations:view")
   @Validate({ query: listHrAutomationRulesSchema })
   list(
@@ -73,6 +84,7 @@ export class HrAutomationsController {
   }
 
   @Get("runs")
+  @ResponseSchema(automationRunListSchema)
   @RequirePermission("hr:automations:view")
   @Validate({ query: listRunsSchema })
   listAllRuns(
@@ -83,6 +95,7 @@ export class HrAutomationsController {
   }
 
   @Get(":ruleId")
+  @ResponseSchema(automationRuleDetailSchema)
   @RequirePermission("hr:automations:view")
   @Validate({ params: ruleIdParams })
   getOne(
@@ -93,6 +106,7 @@ export class HrAutomationsController {
   }
 
   @Post()
+  @ResponseSchema(automationRuleDetailSchema)
   @HttpCode(201)
   @RequirePermission("hr:automations:manage")
   @Validate({ body: createHrAutomationRuleSchema })
@@ -104,6 +118,7 @@ export class HrAutomationsController {
   }
 
   @Patch(":ruleId")
+  @ResponseSchema(automationRuleDetailSchema)
   @RequirePermission("hr:automations:manage")
   @Validate({ params: ruleIdParams, body: updateHrAutomationRuleSchema })
   update(
@@ -115,6 +130,7 @@ export class HrAutomationsController {
   }
 
   @Post(":ruleId/toggle")
+  @ResponseSchema(automationRuleDetailSchema)
   @HttpCode(200)
   @RequirePermission("hr:automations:manage")
   @Validate({ params: ruleIdParams, body: toggleHrAutomationRuleSchema })
@@ -127,6 +143,7 @@ export class HrAutomationsController {
   }
 
   @Delete(":ruleId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:automations:manage")
   @Validate({ params: ruleIdParams })
@@ -138,6 +155,7 @@ export class HrAutomationsController {
   }
 
   @Post(":ruleId/test")
+  @ResponseSchema(automationTestResultSchema)
   @HttpCode(200)
   @RequirePermission("hr:automations:manage")
   @Validate({ params: ruleIdParams, body: testHrAutomationSchema })
@@ -150,6 +168,7 @@ export class HrAutomationsController {
   }
 
   @Get(":ruleId/runs")
+  @ResponseSchema(automationRunListSchema)
   @RequirePermission("hr:automations:view")
   @Validate({ params: ruleIdParams, query: listRunsSchema })
   listRuns(

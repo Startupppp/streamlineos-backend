@@ -31,6 +31,14 @@ import {
   type PatchProfileInput,
 } from "./dto/runs.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  profileListResponseSchema,
+  profileDetailResponseSchema,
+  profileCreateResponseSchema,
+  profileHistoryResponseSchema,
+} from "./dto/profiles-response.schemas";
 import { z } from "zod";
 
 const employeeUserIdParams = z.object({ employeeUserId: z.string().min(1) }).strict();
@@ -48,6 +56,7 @@ export class ProfilesController {
   @Get()
   @RequirePermission("payroll:salaries:view")
   @Validate({ query: listProfilesQuerySchema })
+  @ResponseSchema(profileListResponseSchema)
   async list(
     @Query() query: ListProfilesQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -59,6 +68,7 @@ export class ProfilesController {
   @Get(":employeeUserId")
   @RequirePermission("payroll:salaries:view")
   @Validate({ params: employeeUserIdParams })
+  @ResponseSchema(profileDetailResponseSchema)
   async getOne(
     @Param("employeeUserId") employeeUserId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -72,6 +82,7 @@ export class ProfilesController {
   @HttpCode(201)
   @RequirePermission("payroll:salaries:update")
   @Validate({ params: employeeUserIdParams, body: createProfileSchema })
+  @ResponseSchema(profileCreateResponseSchema)
   async createProfile(
     @Param("employeeUserId") employeeUserId: string,
     @Body() body: CreateProfileInput,
@@ -83,6 +94,7 @@ export class ProfilesController {
   @Patch(":employeeUserId/profiles/:profileId")
   @RequirePermission("payroll:salaries:update")
   @Validate({ params: employeeUserIdprofileIdParams, body: patchProfileSchema })
+  @ResponseSchema(successSchema)
   async patchProfile(
     @Param("employeeUserId") employeeUserId: string,
     @Param("profileId", ParseIntPipe) profileId: number,
@@ -98,6 +110,7 @@ export class ProfilesController {
   @Get(":employeeUserId/history")
   @RequirePermission("payroll:salaries:view")
   @Validate({ params: employeeUserIdParams })
+  @ResponseSchema(profileHistoryResponseSchema)
   async getHistory(
     @Param("employeeUserId") employeeUserId: string,
     @CurrentUser() u: CurrentUserContext,

@@ -30,7 +30,15 @@ import {
 } from "./dto/payroll-inputs.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  payrollPeriodListSchema,
+  payrollPeriodRowSchema,
+  payrollPeriodLockedSchema,
+  payrollSnapshotListSchema,
+  payrollAdjustmentListSchema,
+  payrollAdjustmentRowSchema,
+} from "./dto/payroll-inputs-response.schemas";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 const adjustmentIdParams = z.object({ adjustmentId: z.coerce.number().int().positive() }).strict();
@@ -42,6 +50,7 @@ export class PayrollInputsController {
   constructor(private readonly service: PayrollInputsService) {}
 
   @Get("periods")
+  @ResponseSchema(payrollPeriodListSchema)
   @RequirePermission("hr:payroll:view")
   @Validate({ query: listPeriodsSchema })
   listPeriods(@Query() query: ListPeriodsInput, @CurrentUser() u: CurrentUserContext) {
@@ -49,6 +58,7 @@ export class PayrollInputsController {
   }
 
   @Post("periods")
+  @ResponseSchema(payrollPeriodRowSchema)
   @RequirePermission("hr:payroll:generate")
   @Validate({ body: createPeriodSchema })
   createPeriod(@Body() body: CreatePeriodInput, @CurrentUser() u: CurrentUserContext) {
@@ -56,6 +66,7 @@ export class PayrollInputsController {
   }
 
   @Get("periods/:periodId")
+  @ResponseSchema(payrollPeriodRowSchema)
   @RequirePermission("hr:payroll:view")
   @Validate({ params: periodIdParams })
   getPeriod(
@@ -66,6 +77,7 @@ export class PayrollInputsController {
   }
 
   @Post("periods/:periodId/build")
+  @ResponseSchema(payrollPeriodRowSchema)
   @BodylessAction()
   @RequirePermission("hr:payroll:generate")
   @Validate({ params: periodIdParams })
@@ -77,6 +89,7 @@ export class PayrollInputsController {
   }
 
   @Post("periods/:periodId/lock")
+  @ResponseSchema(payrollPeriodLockedSchema)
   @BodylessAction()
   @RequirePermission("hr:payroll:lock")
   @Validate({ params: periodIdParams })
@@ -88,6 +101,7 @@ export class PayrollInputsController {
   }
 
   @Post("periods/:periodId/unlock")
+  @ResponseSchema(payrollPeriodRowSchema)
   @BodylessAction()
   @RequirePermission("hr:payroll:reopen")
   @Validate({ params: periodIdParams })
@@ -99,6 +113,7 @@ export class PayrollInputsController {
   }
 
   @Get("periods/:periodId/attendance")
+  @ResponseSchema(payrollSnapshotListSchema)
   @RequirePermission("hr:payroll:view")
   @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getAttendance(
@@ -110,6 +125,7 @@ export class PayrollInputsController {
   }
 
   @Get("periods/:periodId/leaves")
+  @ResponseSchema(payrollSnapshotListSchema)
   @RequirePermission("hr:payroll:view")
   @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getLeaves(
@@ -121,6 +137,7 @@ export class PayrollInputsController {
   }
 
   @Get("periods/:periodId/overtime")
+  @ResponseSchema(payrollSnapshotListSchema)
   @RequirePermission("hr:payroll:view")
   @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getOvertime(
@@ -132,6 +149,7 @@ export class PayrollInputsController {
   }
 
   @Get("periods/:periodId/reimbursements")
+  @ResponseSchema(payrollSnapshotListSchema)
   @RequirePermission("hr:payroll:view")
   @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getReimbursements(
@@ -143,6 +161,7 @@ export class PayrollInputsController {
   }
 
   @Get("periods/:periodId/adjustments")
+  @ResponseSchema(payrollAdjustmentListSchema)
   @RequirePermission("hr:payroll:view")
   @Validate({ query: sectionQuerySchema, params: periodIdParams })
   getAdjustments(
@@ -154,6 +173,7 @@ export class PayrollInputsController {
   }
 
   @Post("adjustments")
+  @ResponseSchema(payrollAdjustmentRowSchema)
   @Idempotent("payroll.adjustment.create")
   @RequirePermission("hr:payroll:generate")
   @Validate({ body: createAdjustmentSchema })
@@ -162,6 +182,7 @@ export class PayrollInputsController {
   }
 
   @Patch("adjustments/:adjustmentId/approve")
+  @ResponseSchema(payrollAdjustmentRowSchema)
   @BodylessAction()
   @Idempotent("payroll.adjustment.approve")
   @RequirePermission("hr:payroll:approve")
@@ -174,6 +195,7 @@ export class PayrollInputsController {
   }
 
   @Patch("adjustments/:adjustmentId/reject")
+  @ResponseSchema(payrollAdjustmentRowSchema)
   @Idempotent("payroll.adjustment.reject")
   @RequirePermission("hr:payroll:approve")
   @Validate({ body: rejectAdjustmentSchema, params: adjustmentIdParams })

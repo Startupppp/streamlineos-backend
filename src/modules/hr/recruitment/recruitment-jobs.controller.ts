@@ -35,7 +35,19 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  jobPostingListResponseSchema,
+  jobPostingSchema,
+  jobPostingWithApplicationsSchema,
+  successSchema,
+  jobPublishResponseSchema,
+  jobRecruiterSchema,
+  assignRecruiterResponseSchema,
+  jobShareResponseSchema,
+  internalJobSchema,
+  jobApplicationSchema,
+} from "./dto/recruitment-response.schemas";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
@@ -46,6 +58,7 @@ export class RecruitmentJobsController {
   constructor(private readonly jobs: RecruitmentJobsService) {}
 
   @Get("jobs")
+  @ResponseSchema(jobPostingListResponseSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ query: jobListSchema })
   list(
@@ -57,6 +70,7 @@ export class RecruitmentJobsController {
 
   @Post("jobs")
   @HttpCode(201)
+  @ResponseSchema(jobPostingSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ body: createJobSchema })
   create(
@@ -67,6 +81,7 @@ export class RecruitmentJobsController {
   }
 
   @Get("jobs/:jobId")
+  @ResponseSchema(jobPostingWithApplicationsSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: jobIdParams })
   getOne(
@@ -77,6 +92,7 @@ export class RecruitmentJobsController {
   }
 
   @Patch("jobs/:jobId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobIdParams, body: updateJobSchema })
   update(
@@ -89,6 +105,7 @@ export class RecruitmentJobsController {
 
   @Delete("jobs/:jobId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobIdParams })
   async remove(
@@ -99,6 +116,7 @@ export class RecruitmentJobsController {
   }
 
   @Post("jobs/:jobId/publish")
+  @ResponseSchema(jobPublishResponseSchema)
   @Idempotent("hr.job.publish")
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobIdParams, body: publishJobSchema })
@@ -113,6 +131,7 @@ export class RecruitmentJobsController {
   @Post("jobs/:jobId/duplicate")
   @BodylessAction()
   @HttpCode(201)
+  @ResponseSchema(jobPostingSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobIdParams })
   duplicate(
@@ -123,6 +142,7 @@ export class RecruitmentJobsController {
   }
 
   @Get("jobs/:jobId/recruiters")
+  @ResponseSchema(z.array(jobRecruiterSchema))
   @RequirePermission("hr:employees:view")
   @Validate({ params: jobIdParams })
   listRecruiters(
@@ -134,6 +154,7 @@ export class RecruitmentJobsController {
 
   @Post("jobs/:jobId/recruiters")
   @HttpCode(201)
+  @ResponseSchema(assignRecruiterResponseSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobIdParams, body: assignRecruiterSchema })
   assignRecruiter(
@@ -146,6 +167,7 @@ export class RecruitmentJobsController {
 
   @Delete("jobs/:jobId/recruiters")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobIdParams, body: assignRecruiterSchema })
   async removeRecruiter(
@@ -157,6 +179,7 @@ export class RecruitmentJobsController {
   }
 
   @Get("jobs/:jobId/share")
+  @ResponseSchema(jobShareResponseSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: jobIdParams })
   share(
@@ -167,6 +190,7 @@ export class RecruitmentJobsController {
   }
 
   @Get("internal-jobs")
+  @ResponseSchema(z.array(internalJobSchema))
   @RequirePermission("hr:employees:view")
   listInternalJobs(@CurrentUser() u: CurrentUserContext) {
     return this.jobs.listInternalJobs(u.orgId);
@@ -174,6 +198,7 @@ export class RecruitmentJobsController {
 
   @Post("internal-jobs/:jobId/apply")
   @HttpCode(201)
+  @ResponseSchema(jobApplicationSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: jobIdParams, body: internalApplySchema })
   internalApply(

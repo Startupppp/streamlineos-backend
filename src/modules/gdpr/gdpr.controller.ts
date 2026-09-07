@@ -39,6 +39,14 @@ import {
 import { GdprRectificationService } from "./gdpr-rectification.service";
 import { gdprErasureBodySchema, type GdprErasureBody } from "./dto/gdpr-erasure.schemas";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  exportResultSchema,
+  rectifyProfileSchema,
+  exportJobSchema,
+  erasureResultSchema,
+} from "./dto/gdpr-response.schemas";
 
 
 /**
@@ -65,6 +73,7 @@ export class GdprController {
     "JWT sub is the subject — caller exports only their own data; identity derived from the token, never accepted from the client",
   )
   @Post("export/me")
+  @ResponseSchema(exportResultSchema)
   @Validate({ body: exportRequestBodySchema })
   async exportOwnData(
     @CurrentUser() user: CurrentUserContext,
@@ -86,6 +95,7 @@ export class GdprController {
   )
   @Post("rectification/me")
   @Idempotent("gdpr.rectification.profile-name")
+  @ResponseSchema(rectifyProfileSchema)
   @Validate({ body: gdprRectificationBodySchema })
   async rectifyOwnProfile(
     @CurrentUser() user: CurrentUserContext,
@@ -99,6 +109,7 @@ export class GdprController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:retention:manage")
   @Post("export/:personId")
+  @ResponseSchema(exportResultSchema)
   @Validate({ params: personIdParams, body: exportRequestBodySchema })
   async exportPersonData(
     @Param("personId") personId: string,
@@ -117,6 +128,7 @@ export class GdprController {
     "JWT sub is the subject — async export for caller's own data; idempotency-key required",
   )
   @Post("export-async/me")
+  @ResponseSchema(exportJobSchema)
   @Validate({ body: gdprAsyncExportBodySchema })
   async createOwnExportJob(
     @CurrentUser() user: CurrentUserContext,
@@ -129,6 +141,7 @@ export class GdprController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:retention:manage")
   @Post("export-async/:personId")
+  @ResponseSchema(exportJobSchema)
   @Validate({ params: personIdParams, body: gdprAsyncExportBodySchema })
   async createPersonExportJob(
     @Param("personId") personId: string,
@@ -149,6 +162,7 @@ export class GdprController {
   )
   @UseGuards(JwtAuthGuard)
   @Get("export-async/:jobId/status")
+  @ResponseSchema(exportJobSchema)
   @Validate({ params: gdprExportJobIdParams })
   async getExportJobStatus(
     @Param("jobId") jobId: string,
@@ -167,6 +181,7 @@ export class GdprController {
   @Get("export-async/:jobId/download")
   @Validate({ params: gdprExportJobIdParams })
   @Header("Content-Disposition", "attachment")
+  @ApiOkResponse({ description: "GDPR export archive download", content: { "application/json": { schema: { type: "string", format: "binary" } } } })
   async downloadExportJob(
     @Param("jobId") jobId: string,
     @CurrentUser() user: CurrentUserContext,
@@ -190,6 +205,7 @@ export class GdprController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:retention:manage")
   @Post("erasure/:subjectId")
+  @ResponseSchema(erasureResultSchema)
   @Validate({ params: subjectIdParams, body: gdprErasureBodySchema })
   async eraseSubjectData(
     @Param("subjectId") subjectId: string,

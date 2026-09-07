@@ -17,6 +17,8 @@ import { updateBudgetSchema, type UpdateBudgetInput } from "./dto/projects.schem
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { projectBudgetSchema, projectBudgetUpdateSchema } from "./dto/build-reports-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
@@ -28,6 +30,7 @@ export class ProjectsBudgetController {
 
   @Get(":projectId/budget")
   @RequirePermission("build:manage")
+  @ResponseSchema(projectBudgetSchema)
   @Validate({ params: projectIdParams })
   getBudget(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -38,6 +41,7 @@ export class ProjectsBudgetController {
 
   @Patch(":projectId/budget")
   @RequirePermission("build:manage")
+  @ResponseSchema(projectBudgetUpdateSchema)
   @Validate({ params: projectIdParams, body: updateBudgetSchema })
   updateBudget(
     @Param("projectId", ParseIntPipe) projectId: number,

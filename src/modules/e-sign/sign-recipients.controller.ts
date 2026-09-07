@@ -19,6 +19,12 @@ import {
   type UpdateRecipientInput,
 } from "./dto/e-sign.schemas";
 import { resolveClientIp } from "../../common/http/client-ip";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  recipientMutationResponseSchema,
+  listRecipientsResponseSchema,
+} from "./dto/e-sign-response.schemas";
+import { successSchema } from "../../common/openapi/response-envelopes";
 
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
@@ -36,6 +42,7 @@ export class SignRecipientsController {
   @Post("envelopes/:envelopeId/recipients")
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(recipientMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: createRecipientSchema })
   add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -48,6 +55,7 @@ export class SignRecipientsController {
 
   @Get("envelopes/:envelopeId/recipients")
   @RequirePermission("sign:envelope:view")
+  @ResponseSchema(listRecipientsResponseSchema)
   @Validate({ params: envelopeIdParams })
   async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
@@ -56,6 +64,7 @@ export class SignRecipientsController {
 
   @Patch("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(recipientMutationResponseSchema)
   @Validate({ params: recipientIdParams, body: updateRecipientSchema })
   update(
     @Param("recipientId", ParseIntPipe) recipientId: number,
@@ -68,6 +77,7 @@ export class SignRecipientsController {
 
   @Delete("recipients/:recipientId")
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(successSchema)
   @Validate({ params: recipientIdParams })
   async remove(@Param("recipientId", ParseIntPipe) recipientId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     await this.recipients.remove(u.orgId, recipientId, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });

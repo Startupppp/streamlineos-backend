@@ -21,6 +21,15 @@ import {
 } from "./dto/finance-planning.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  budgetListResponseSchema,
+  budgetWorkflowResponseSchema,
+  budgetDetailResponseSchema,
+  budgetRevisionListResponseSchema,
+  bvaResponseSchema,
+} from "./dto/planning-response.schemas";
 
 const budgetIdParams = z.object({ budgetId: z.coerce.number().int().positive() }).strict();
 
@@ -34,6 +43,7 @@ export class FinanceBudgetsController {
   ) {}
 
   @Get("budgets")
+  @ResponseSchema(budgetListResponseSchema)
   @RequirePermission("accounting:budgets:read")
   @Validate({ query: listBudgetsQuerySchema })
   listBudgets(
@@ -44,6 +54,7 @@ export class FinanceBudgetsController {
   }
 
   @Post("budgets")
+  @ResponseSchema(budgetWorkflowResponseSchema)
   @RequirePermission("accounting:budgets:create")
   @HttpCode(201)
   @Validate({ body: createBudgetSchema })
@@ -55,6 +66,7 @@ export class FinanceBudgetsController {
   }
 
   @Get("budgets/:budgetId")
+  @ResponseSchema(budgetDetailResponseSchema)
   @RequirePermission("accounting:budgets:read")
   @Validate({ params: budgetIdParams })
   getBudget(
@@ -65,6 +77,7 @@ export class FinanceBudgetsController {
   }
 
   @Patch("budgets/:budgetId")
+  @ResponseSchema(budgetWorkflowResponseSchema)
   @RequirePermission("accounting:budgets:update")
   @Validate({ params: budgetIdParams, body: updateBudgetSchema })
   updateBudget(
@@ -79,6 +92,7 @@ export class FinanceBudgetsController {
   @RequirePermission("accounting:budgets:update")
   @HttpCode(200)
   @Validate({ params: budgetIdParams, body: replaceBudgetLinesSchema })
+  @ResponseSchema(successSchema)
   replaceBudgetLines(
     @Param("budgetId", ParseIntPipe) budgetId: number,
     @Body() body: ReplaceBudgetLinesInput,
@@ -88,6 +102,7 @@ export class FinanceBudgetsController {
   }
 
   @Post("budgets/:budgetId/submit")
+  @ResponseSchema(budgetWorkflowResponseSchema)
   @Idempotent("finance.budget.submit")
   @RequirePermission("accounting:budgets:update")
   @HttpCode(200)
@@ -101,6 +116,7 @@ export class FinanceBudgetsController {
   }
 
   @Post("budgets/:budgetId/approve")
+  @ResponseSchema(budgetWorkflowResponseSchema)
   @Idempotent("finance.budget.approve")
   @RequirePermission("accounting:budgets:approve")
   @HttpCode(200)
@@ -114,6 +130,7 @@ export class FinanceBudgetsController {
   }
 
   @Get("budgets/:budgetId/revisions")
+  @ResponseSchema(budgetRevisionListResponseSchema)
   @RequirePermission("accounting:budgets:read")
   @Validate({ params: budgetIdParams })
   listRevisions(
@@ -124,6 +141,7 @@ export class FinanceBudgetsController {
   }
 
   @Post("budgets/:budgetId/duplicate")
+  @ResponseSchema(budgetWorkflowResponseSchema)
   @RequirePermission("accounting:budgets:create")
   @HttpCode(201)
   @Validate({ params: budgetIdParams, body: duplicateBudgetSchema })
@@ -136,6 +154,7 @@ export class FinanceBudgetsController {
   }
 
   @Get("budgets/:budgetId/vs-actual")
+  @ResponseSchema(bvaResponseSchema)
   @RequirePermission("accounting:budgets:read")
   @Validate({ params: budgetIdParams, query: bvaQuerySchema })
   getBva(

@@ -19,7 +19,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollAiExplainService } from "./payroll-ai-explain.service";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { payslipExplanationSchema, payrollAiCapabilitiesSchema } from "./dto/ai-explain-response.schemas";
 import { z } from "zod";
 import type { Request, Response } from "express";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
@@ -38,6 +39,7 @@ export class PayrollAiExplainController {
   /** Honesty contract: explain/draft only — no autonomous payroll actions. */
   @Get("ai/capabilities")
   @RequirePermission("self:payslips")
+  @ResponseSchema(payrollAiCapabilitiesSchema)
   aiCapabilities() {
     return this.explainService.capabilities();
   }
@@ -49,6 +51,7 @@ export class PayrollAiExplainController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("self:payslips")
   @Validate({ params: publicationIdParams })
+  @ResponseSchema(payslipExplanationSchema)
   explainPayslip(
     @Param("publicationId", ParseIntPipe) publicationId: number,
     @CurrentUser() u: CurrentUserContext,

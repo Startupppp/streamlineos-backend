@@ -17,6 +17,8 @@ import { submitHrFormSchema, type SubmitHrFormInput } from "./dto/hr-forms.schem
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { resolveClientIpOr } from "../../../common/http/client-ip";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { hrPublicFormSchema, hrFormSubmissionRowSchema } from "./dto/forms-response.schemas";
 
 const orgIdslugParams = z.object({ orgId: z.string().min(1), slug: z.string().min(1) }).strict();
 
@@ -42,6 +44,7 @@ export class HrFormsPublicController {
   }
 
   @Public()
+  @ResponseSchema(hrPublicFormSchema)
   @Get(":orgId/:slug")
   @Validate({ params: orgIdslugParams })
   async getPublicForm(
@@ -63,6 +66,7 @@ export class HrFormsPublicController {
   }
 
   @Public()
+  @ResponseSchema(hrFormSubmissionRowSchema)
   @Post(":orgId/:slug/submit")
   @HttpCode(201)
   @Validate({ params: orgIdslugParams, body: submitHrFormSchema })

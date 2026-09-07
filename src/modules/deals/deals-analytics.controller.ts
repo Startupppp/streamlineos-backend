@@ -20,6 +20,17 @@ import {
 } from "./dto/deals.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  dealStatsSchema,
+  dealAgingSchema,
+  dealForecastSchema,
+  dealForecastSnapshotsSchema,
+  dealForecastSnapshotSchema,
+  dealForecastCompareSchema,
+  dealWinLossSchema,
+  dealHealthSchema,
+} from "./dto/deals-response.schemas";
 
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
 const snapshotIdParams = z.object({ snapshotId: z.string().min(1) }).strict();
@@ -35,12 +46,14 @@ export class DealsAnalyticsController {
 
   @Get("stats")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(dealStatsSchema)
   getStats(@CurrentUser() u: CurrentUserContext) {
     return this.analytics.getStats(u.orgId);
   }
 
   @Get("aging")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(dealAgingSchema)
   async getAging(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolveDealsReadScope(this.access, u);
     return this.analytics.getAging(u.orgId, u.userId, scope);
@@ -48,12 +61,14 @@ export class DealsAnalyticsController {
 
   @Get("forecast")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(dealForecastSchema)
   getForecast(@CurrentUser() u: CurrentUserContext) {
     return this.analytics.getForecast(u.orgId);
   }
 
   @Get("forecast/snapshots")
   @RequirePermission("crm:deals:forecast")
+  @ResponseSchema(dealForecastSnapshotsSchema)
   @Validate({ query: forecastSnapshotsQuerySchema })
   getForecastSnapshots(
     @Query() query: ForecastSnapshotsQueryInput,
@@ -65,6 +80,7 @@ export class DealsAnalyticsController {
   @Post("forecast/snapshot")
   @HttpCode(201)
   @RequirePermission("crm:deals:forecast")
+  @ResponseSchema(dealForecastSnapshotSchema)
   @Validate({ body: createForecastSnapshotSchema })
   captureForecastSnapshot(
     @Body() body: CreateForecastSnapshotInput,
@@ -75,6 +91,7 @@ export class DealsAnalyticsController {
 
   @Get("forecast/compare")
   @RequirePermission("crm:deals:forecast")
+  @ResponseSchema(dealForecastCompareSchema)
   @Validate({ query: compareForecastSnapshotsSchema })
   compareForecastSnapshots(
     @Query() query: CompareForecastSnapshotsInput,
@@ -85,12 +102,14 @@ export class DealsAnalyticsController {
 
   @Get("win-loss")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(dealWinLossSchema)
   getWinLoss(@CurrentUser() u: CurrentUserContext) {
     return this.analytics.getWinLoss(u.orgId);
   }
 
   @Get(":dealId/health")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(dealHealthSchema)
   @Validate({ params: dealIdParams })
   getDealHealth(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -101,6 +120,7 @@ export class DealsAnalyticsController {
 
   @Patch("forecast/:snapshotId/override")
   @RequirePermission("crm:deals:manage")
+  @ResponseSchema(dealForecastSnapshotSchema)
   @Validate({ params: snapshotIdParams, body: overrideForecastSnapshotSchema })
   overrideForecast(
     @Param("snapshotId") snapshotId: string,

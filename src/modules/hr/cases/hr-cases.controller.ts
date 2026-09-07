@@ -39,7 +39,15 @@ import {
 import { AccessService } from "../../access/access.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrCaseListSchema,
+  hrCaseSchema,
+  hrCaseNoteSchema,
+  hrCaseDocumentSchema,
+  anonymousCaseResponseSchema,
+  hrCaseStatsItemSchema,
+} from "./dto/cases-response.schemas";
 
 const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).strict();
 
@@ -53,6 +61,7 @@ export class HrCasesController {
   ) {}
 
   @Get()
+  @ResponseSchema(hrCaseListSchema)
   @RequirePermission("hr:cases:view")
   @Validate({ query: listCasesSchema })
   async list(
@@ -64,12 +73,14 @@ export class HrCasesController {
   }
 
   @Get("stats")
+  @ResponseSchema(z.array(hrCaseStatsItemSchema))
   @RequirePermission("hr:cases:view")
   async stats(@CurrentUser() user: CurrentUserContext) {
     return this.cases.countByStatus(user.orgId);
   }
 
   @Get(":caseId")
+  @ResponseSchema(hrCaseSchema)
   @RequirePermission("hr:cases:view")
   @Validate({ params: caseIdParams })
   async getById(
@@ -81,6 +92,7 @@ export class HrCasesController {
   }
 
   @Post()
+  @ResponseSchema(hrCaseSchema)
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   @Validate({ body: createCaseSchema })
@@ -93,6 +105,7 @@ export class HrCasesController {
   }
 
   @Post("anonymous")
+  @ResponseSchema(anonymousCaseResponseSchema)
   @HttpCode(201)
   @RequirePermission("hr:cases:view")
   @Validate({ body: anonymousReportSchema })
@@ -104,6 +117,7 @@ export class HrCasesController {
   }
 
   @Patch(":caseId")
+  @ResponseSchema(hrCaseSchema)
   @RequirePermission("hr:cases:manage")
   @Validate({ params: caseIdParams, body: updateCaseSchema })
   async update(
@@ -117,6 +131,7 @@ export class HrCasesController {
   }
 
   @Delete(":caseId")
+  @NoContentResponse()
   @RequirePermission("hr:cases:manage")
   @HttpCode(204)
   @Validate({ params: caseIdParams })
@@ -129,6 +144,7 @@ export class HrCasesController {
   }
 
   @Post(":caseId/investigate")
+  @ResponseSchema(hrCaseSchema)
   @BodylessAction()
   @RequirePermission("hr:cases:manage")
   @Validate({ params: caseIdParams })
@@ -142,6 +158,7 @@ export class HrCasesController {
   }
 
   @Get(":caseId/notes")
+  @ResponseSchema(z.array(hrCaseNoteSchema))
   @RequirePermission("hr:cases:view")
   @Validate({ params: caseIdParams })
   async listNotes(
@@ -153,6 +170,7 @@ export class HrCasesController {
   }
 
   @Post(":caseId/notes")
+  @ResponseSchema(hrCaseNoteSchema)
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   @Validate({ params: caseIdParams, body: createNoteSchema })
@@ -167,6 +185,7 @@ export class HrCasesController {
   }
 
   @Get(":caseId/documents")
+  @ResponseSchema(z.array(hrCaseDocumentSchema))
   @RequirePermission("hr:cases:view")
   @Validate({ params: caseIdParams })
   async listDocuments(
@@ -178,6 +197,7 @@ export class HrCasesController {
   }
 
   @Post(":caseId/documents")
+  @ResponseSchema(hrCaseDocumentSchema)
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   @Validate({ params: caseIdParams, body: addDocumentSchema })

@@ -20,7 +20,10 @@ export function runGate(args: readonly string[], env: NodeJS.ProcessEnv): GateRu
     });
     return { status: 0, stdout, stderr: "" };
   } catch (err) {
-    const e = err as { status?: number; stdout?: string; stderr?: string };
-    return { status: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+    const obj = typeof err === "object" && err !== null ? err : null;
+    const status = obj !== null && "status" in obj && typeof obj.status === "number" ? obj.status : -1;
+    const stdout = obj !== null && "stdout" in obj && typeof obj.stdout === "string" ? obj.stdout : "";
+    const stderr = obj !== null && "stderr" in obj && typeof obj.stderr === "string" ? obj.stderr : "";
+    return { status, stdout, stderr };
   }
 }

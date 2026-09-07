@@ -50,7 +50,22 @@ import {
 } from "../flow/dto/onboarding-flow.schemas";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  onboardingFlowSessionSchema,
+  moduleChecklistListSchema,
+  moduleChecklistSchema,
+  moduleChecklistRowSchema,
+  checklistProgressSchema,
+  guidedTourListSchema,
+  tourProgressRowSchema,
+  personalDetailsResponseSchema,
+  bankDetailsResponseSchema,
+  onboardingStatusSchema,
+  countryRequirementsSchema,
+  onboardingTaskListSchema,
+  successSchema,
+} from "./dto/onboarding-response.schemas";
 
 const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
 const moduleKeyitemKeyParams = z
@@ -99,6 +114,7 @@ export class OnboardingController {
   }
 
   @Get("session")
+  @ResponseSchema(onboardingFlowSessionSchema)
   @Universal()
   getOnboardingSession(@CurrentUser() u: CurrentUserContext) {
     return this.sessions.getOrCreateSession(
@@ -110,6 +126,7 @@ export class OnboardingController {
   }
 
   @Patch("session")
+  @ResponseSchema(onboardingFlowSessionSchema)
   @Universal()
   @Validate({ body: sessionPatchSchema })
   patchOnboardingSession(
@@ -126,6 +143,7 @@ export class OnboardingController {
   }
 
   @Get("module-checklists")
+  @ResponseSchema(moduleChecklistListSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:view")
   async listModuleChecklists(@CurrentUser() u: CurrentUserContext) {
@@ -134,6 +152,7 @@ export class OnboardingController {
   }
 
   @Get("module-checklists/:moduleKey")
+  @ResponseSchema(moduleChecklistSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:view")
   @Validate({ params: moduleKeyParams })
@@ -147,6 +166,7 @@ export class OnboardingController {
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/complete")
+  @ResponseSchema(checklistProgressSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
@@ -162,6 +182,7 @@ export class OnboardingController {
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/skip")
+  @ResponseSchema(checklistProgressSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
   @Validate({ params: moduleKeyitemKeyParams, body: checklistItemSkipSchema })
@@ -183,6 +204,7 @@ export class OnboardingController {
   }
 
   @Post("module-checklists/:moduleKey/dismiss")
+  @ResponseSchema(moduleChecklistRowSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
@@ -197,6 +219,7 @@ export class OnboardingController {
   }
 
   @Post("module-checklists/:moduleKey/restart")
+  @ResponseSchema(checklistProgressSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
@@ -220,6 +243,7 @@ export class OnboardingController {
   }
 
   @Get("tours")
+  @ResponseSchema(guidedTourListSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
   async listTours(@CurrentUser() u: CurrentUserContext) {
@@ -236,6 +260,7 @@ export class OnboardingController {
   }
 
   @Post("tours/:tourKey/progress")
+  @ResponseSchema(tourProgressRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
   @Validate({ params: tourKeyParams, body: tourProgressSchema })
@@ -255,6 +280,7 @@ export class OnboardingController {
   }
 
   @Post("tours/:tourKey/complete")
+  @ResponseSchema(tourProgressRowSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
@@ -273,6 +299,7 @@ export class OnboardingController {
   }
 
   @Post("tours/:tourKey/dismiss")
+  @ResponseSchema(tourProgressRowSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
@@ -291,6 +318,7 @@ export class OnboardingController {
   }
 
   @Patch("personal-details")
+  @ResponseSchema(successSchema)
   @Universal()
   @Validate({ body: personalDetailsSchema })
   savePersonalDetails(
@@ -301,12 +329,14 @@ export class OnboardingController {
   }
 
   @Get("personal-details")
+  @ResponseSchema(personalDetailsResponseSchema)
   @Universal()
   getPersonalDetails(@CurrentUser() u: CurrentUserContext) {
     return this.details.getPersonalDetails(u.orgId, u.userId);
   }
 
   @Patch("bank-details")
+  @ResponseSchema(successSchema)
   @Universal()
   @Validate({ body: bankDetailsSchema })
   saveBankDetails(
@@ -317,12 +347,14 @@ export class OnboardingController {
   }
 
   @Get("bank-details")
+  @ResponseSchema(bankDetailsResponseSchema)
   @Universal()
   getBankDetails(@CurrentUser() u: CurrentUserContext) {
     return this.details.getBankDetails(u.orgId, u.userId);
   }
 
   @Post("submit")
+  @ResponseSchema(successSchema)
   @BodylessAction()
   @Idempotent("hr.onboarding.submit")
   @Universal()
@@ -331,6 +363,7 @@ export class OnboardingController {
   }
 
   @Patch("tasks/:taskId")
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("self:onboarding-tasks")
   @Validate({ params: taskIdParams, body: updateTaskSchema })
@@ -343,12 +376,14 @@ export class OnboardingController {
   }
 
   @Get("status")
+  @ResponseSchema(onboardingStatusSchema)
   @Universal()
   getStatus(@CurrentUser() u: CurrentUserContext) {
     return this.details.getStatus(u.userId, u.orgId);
   }
 
   @Get("requirements")
+  @ResponseSchema(countryRequirementsSchema)
   @Universal()
   @Validate({ query: requirementsQuerySchema })
   getRequirements(
@@ -359,6 +394,7 @@ export class OnboardingController {
   }
 
   @Get("me")
+  @ResponseSchema(onboardingTaskListSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("self:onboarding-tasks")
   getMyTasks(@CurrentUser() u: CurrentUserContext) {

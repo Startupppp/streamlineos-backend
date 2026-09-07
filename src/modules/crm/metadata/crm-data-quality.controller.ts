@@ -6,6 +6,8 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CrmDataQualityService } from "./crm-data-quality.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { dataQualityReportSchema } from "./dto/crm-metadata-response.schemas";
 
 @RequireModule("crm")
 @Controller("crm")
@@ -15,6 +17,7 @@ export class CrmDataQualityController {
 
   @Get("data-quality")
   @RequirePermission("crm:data-quality:view")
+  @ResponseSchema(dataQualityReportSchema)
   getReport(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getReport(u.orgId);
   }

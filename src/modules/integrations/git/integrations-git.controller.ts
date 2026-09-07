@@ -10,9 +10,10 @@ import {
 import type { Request } from "express";
 import { Public } from "../../../common/auth/public.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { gitWebhookAckResponseSchema } from "./dto/git-connections-response.schemas";
 import { logger } from "../../../common/logger/logger.service";
 import { IntegrationsGitService } from "./integrations-git.service";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { webhookQuerySchema } from "./dto/integrations-git.schemas";
 
 @Public()
@@ -23,6 +24,7 @@ export class IntegrationsGitController {
   @Post("webhook")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(gitWebhookAckResponseSchema)
   @Validate({ query: webhookQuerySchema })
   async webhook(
     @Req() req: RawBodyRequest<Request>,

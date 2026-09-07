@@ -32,6 +32,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { actingMembershipId } from "../../../common/auth/principal";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { assignedInterviewsPageSchema, interviewScorecardSchema } from "./dto/interviews-response.schemas";
 
 const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
@@ -45,6 +47,7 @@ export class EmployeeRecruitmentController {
   ) {}
 
   @Get()
+  @ResponseSchema(assignedInterviewsPageSchema)
   @Validate({ query: selfInterviewListSchema })
   list(
     @Query() query: SelfInterviewListInput,
@@ -55,6 +58,7 @@ export class EmployeeRecruitmentController {
 
   @Post(":interviewId/scorecard")
   @HttpCode(201)
+  @ResponseSchema(interviewScorecardSchema)
   @Validate({ params: interviewIdParams, body: submitScorecardSchema })
   async submitScorecard(
     @Param("interviewId", ParseIntPipe) interviewId: number,

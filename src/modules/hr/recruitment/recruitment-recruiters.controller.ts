@@ -27,7 +27,14 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  recruiterPortalSchema,
+  syncPortalResponseSchema,
+  recruiterDirectoryItemSchema,
+  recruiterActivityItemSchema,
+  recruiterActivityLogRowSchema,
+} from "./dto/recruitment-response.schemas";
 
 const platformParams = z.object({ platform: z.string().min(1) }).strict();
 
@@ -38,12 +45,14 @@ export class RecruitmentRecruitersController {
   constructor(private readonly recruiters: RecruitmentRecruitersService) {}
 
   @Get("portals")
+  @ResponseSchema(z.array(recruiterPortalSchema))
   @RequirePermission("hr:employees:manage")
   listPortals(@CurrentUser() u: CurrentUserContext) {
     return this.recruiters.listPortals(u.orgId);
   }
 
   @Post("portals")
+  @ResponseSchema(recruiterPortalSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ body: upsertPortalSchema })
   async upsertPortal(
@@ -58,6 +67,7 @@ export class RecruitmentRecruitersController {
 
   @Post("portals/:platform/sync")
   @BodylessAction()
+  @ResponseSchema(syncPortalResponseSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: platformParams })
   syncPortal(
@@ -68,12 +78,14 @@ export class RecruitmentRecruitersController {
   }
 
   @Get("recruiters")
+  @ResponseSchema(z.array(recruiterDirectoryItemSchema))
   @RequirePermission("hr:employees:view")
   recruiterDirectory(@CurrentUser() u: CurrentUserContext) {
     return this.recruiters.recruiterDirectory(u.orgId);
   }
 
   @Get("recruiters/activity")
+  @ResponseSchema(z.array(recruiterActivityItemSchema))
   @RequirePermission("hr:employees:view")
   @Validate({ query: recruiterActivityQuerySchema })
   listActivity(
@@ -85,6 +97,7 @@ export class RecruitmentRecruitersController {
 
   @Post("recruiters/activity")
   @HttpCode(201)
+  @ResponseSchema(recruiterActivityLogRowSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ body: recruiterActivitySchema })
   logActivity(

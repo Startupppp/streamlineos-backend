@@ -30,6 +30,8 @@ import {
 } from "./labor.dto";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../../common/openapi/zod-operation-contracts"
+import { listUnionMembershipsResponseSchema, createUnionMembershipResponseSchema, updateUnionMembershipResponseSchema, listExpiringAgreementsResponseSchema, listAgreementsResponseSchema, createAgreementResponseSchema, updateAgreementResponseSchema, listLaborCasesResponseSchema, createLaborCaseResponseSchema, updateLaborCaseResponseSchema } from "../dto/governance-response.schemas"
 
 const membershipIdParams = z.object({ membershipId: z.coerce.number().int().positive() }).strict();
 const agreementIdParams = z.object({ agreementId: z.coerce.number().int().positive() }).strict();
@@ -41,6 +43,7 @@ const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).st
 export class LaborController {
   constructor(private readonly service: LaborService) {}
 
+  @ResponseSchema(listUnionMembershipsResponseSchema)
   @Get("memberships")
   @RequirePermission("hr:labor:view")
   @Validate({ query: listUnionMembershipsSchema })
@@ -51,6 +54,7 @@ export class LaborController {
     return this.service.listMemberships(user.orgId, query);
   }
 
+  @ResponseSchema(createUnionMembershipResponseSchema)
   @Post("memberships")
   @RequirePermission("hr:labor:manage")
   @Validate({ body: createUnionMembershipSchema })
@@ -62,6 +66,7 @@ export class LaborController {
     return this.service.createMembership(user.orgId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(updateUnionMembershipResponseSchema)
   @Patch("memberships/:membershipId")
   @RequirePermission("hr:labor:manage")
   @Validate({ params: membershipIdParams, body: updateUnionMembershipSchema })
@@ -74,6 +79,7 @@ export class LaborController {
     return this.service.updateMembership(user.orgId, membershipId, user.userId, body, req.ip);
   }
 
+  @NoContentResponse()
   @Delete("memberships/:membershipId")
   @RequirePermission("hr:labor:manage")
   @HttpCode(204)
@@ -86,6 +92,7 @@ export class LaborController {
     await this.service.deleteMembership(user.orgId, membershipId, user.userId, req.ip);
   }
 
+  @ResponseSchema(listExpiringAgreementsResponseSchema)
   @Get("agreements/expiring")
   @RequirePermission("hr:labor:view")
   @Validate({ query: expiringAgreementsSchema })
@@ -96,6 +103,7 @@ export class LaborController {
     return this.service.listExpiringAgreements(user.orgId, query);
   }
 
+  @ResponseSchema(listAgreementsResponseSchema)
   @Get("agreements")
   @RequirePermission("hr:labor:view")
   @Validate({ query: listAgreementsSchema })
@@ -106,6 +114,7 @@ export class LaborController {
     return this.service.listAgreements(user.orgId, query);
   }
 
+  @ResponseSchema(createAgreementResponseSchema)
   @Post("agreements")
   @RequirePermission("hr:labor:manage")
   @Validate({ body: createCollectiveAgreementSchema })
@@ -117,6 +126,7 @@ export class LaborController {
     return this.service.createAgreement(user.orgId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(updateAgreementResponseSchema)
   @Patch("agreements/:agreementId")
   @RequirePermission("hr:labor:manage")
   @Validate({ params: agreementIdParams, body: updateCollectiveAgreementSchema })
@@ -129,6 +139,7 @@ export class LaborController {
     return this.service.updateAgreement(user.orgId, agreementId, user.userId, body, req.ip);
   }
 
+  @NoContentResponse()
   @Delete("agreements/:agreementId")
   @RequirePermission("hr:labor:manage")
   @HttpCode(204)
@@ -141,6 +152,7 @@ export class LaborController {
     await this.service.deleteAgreement(user.orgId, agreementId, user.userId, req.ip);
   }
 
+  @ResponseSchema(listLaborCasesResponseSchema)
   @Get("cases")
   @RequirePermission("hr:labor:view")
   @Validate({ query: listLaborCasesSchema })
@@ -151,6 +163,7 @@ export class LaborController {
     return this.service.listLaborCases(user.orgId, query);
   }
 
+  @ResponseSchema(createLaborCaseResponseSchema)
   @Post("cases")
   @RequirePermission("hr:labor:manage")
   @Validate({ body: createLaborCaseSchema })
@@ -162,6 +175,7 @@ export class LaborController {
     return this.service.createLaborCase(user.orgId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(updateLaborCaseResponseSchema)
   @Patch("cases/:caseId")
   @RequirePermission("hr:labor:manage")
   @Validate({ params: caseIdParams, body: updateLaborCaseSchema })
@@ -174,6 +188,7 @@ export class LaborController {
     return this.service.updateLaborCase(user.orgId, caseId, user.userId, body, req.ip);
   }
 
+  @NoContentResponse()
   @Delete("cases/:caseId")
   @RequirePermission("hr:labor:manage")
   @HttpCode(204)

@@ -38,6 +38,14 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  assignmentRuleSchema,
+  scoringRuleSchema,
+  emailTemplateSchema,
+  assignmentPreviewSchema as assignmentPreviewResponseSchema,
+  successSchema,
+} from "./dto/crm-core-response.schemas";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
@@ -50,12 +58,14 @@ export class CrmRulesController {
 
   @Get("assignment-rules")
   @RequirePermission("crm:assignment-rules:manage")
+  @ResponseSchema(z.array(assignmentRuleSchema))
   listAssignmentRules(@CurrentUser() u: CurrentUserContext) {
     return this.rules.listAssignmentRules(u.orgId);
   }
 
   @Post("assignment-rules/preview")
   @RequirePermission("crm:assignment-rules:manage")
+  @ResponseSchema(assignmentPreviewResponseSchema)
   @Validate({ body: assignmentPreviewSchema })
   previewAssignment(
     @Body() body: AssignmentPreviewInput,
@@ -67,6 +77,7 @@ export class CrmRulesController {
   @Post("assignment-rules")
   @RequirePermission("crm:assignment-rules:manage")
   @HttpCode(201)
+  @ResponseSchema(assignmentRuleSchema)
   @Validate({ body: assignmentRuleCreateSchema })
   createAssignmentRule(
     @Body() body: AssignmentRuleCreateInput,
@@ -77,6 +88,7 @@ export class CrmRulesController {
 
   @Patch("assignment-rules/reorder")
   @RequirePermission("crm:assignment-rules:manage")
+  @ResponseSchema(successSchema)
   @Validate({ body: assignmentReorderSchema })
   reorderAssignmentRules(
     @Body() body: AssignmentReorderInput,
@@ -87,6 +99,7 @@ export class CrmRulesController {
 
   @Patch("assignment-rules/:ruleId")
   @RequirePermission("crm:assignment-rules:manage")
+  @ResponseSchema(assignmentRuleSchema)
   @Validate({ params: ruleIdParams, body: assignmentRuleUpdateSchema })
   async updateAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -101,6 +114,7 @@ export class CrmRulesController {
   @Delete("assignment-rules/:ruleId")
   @HttpCode(204)
   @RequirePermission("crm:assignment-rules:manage")
+  @NoContentResponse()
   @Validate({ params: ruleIdParams })
   async deleteAssignmentRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -111,6 +125,7 @@ export class CrmRulesController {
 
   @Get("scoring-rules")
   @RequirePermission("crm:scoring-rules:manage")
+  @ResponseSchema(z.array(scoringRuleSchema))
   listScoringRules(@CurrentUser() u: CurrentUserContext) {
     return this.rules.listScoringRules(u.orgId);
   }
@@ -118,6 +133,7 @@ export class CrmRulesController {
   @Post("scoring-rules")
   @RequirePermission("crm:scoring-rules:manage")
   @HttpCode(201)
+  @ResponseSchema(scoringRuleSchema)
   @Validate({ body: scoringRuleCreateSchema })
   createScoringRule(
     @Body() body: ScoringRuleCreateInput,
@@ -128,6 +144,7 @@ export class CrmRulesController {
 
   @Patch("scoring-rules/:ruleId")
   @RequirePermission("crm:scoring-rules:manage")
+  @ResponseSchema(scoringRuleSchema)
   @Validate({ params: ruleIdParams, body: scoringRuleUpdateSchema })
   async updateScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -142,6 +159,7 @@ export class CrmRulesController {
   @Delete("scoring-rules/:ruleId")
   @HttpCode(204)
   @RequirePermission("crm:scoring-rules:manage")
+  @NoContentResponse()
   @Validate({ params: ruleIdParams })
   async deleteScoringRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
@@ -152,6 +170,7 @@ export class CrmRulesController {
 
   @Get("email-templates")
   @RequirePermission("crm:email-templates:manage")
+  @ResponseSchema(z.array(emailTemplateSchema))
   listEmailTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.rules.listEmailTemplates(u.orgId);
   }
@@ -159,6 +178,7 @@ export class CrmRulesController {
   @Post("email-templates")
   @RequirePermission("crm:email-templates:manage")
   @HttpCode(201)
+  @ResponseSchema(emailTemplateSchema)
   @Validate({ body: emailTemplateCreateSchema })
   createEmailTemplate(
     @Body() body: EmailTemplateCreateInput,
@@ -169,6 +189,7 @@ export class CrmRulesController {
 
   @Patch("email-templates/:templateId")
   @RequirePermission("crm:email-templates:manage")
+  @ResponseSchema(emailTemplateSchema)
   @Validate({ params: templateIdParams, body: emailTemplateUpdateSchema })
   async updateEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -183,6 +204,7 @@ export class CrmRulesController {
   @Delete("email-templates/:templateId")
   @HttpCode(204)
   @RequirePermission("crm:email-templates:manage")
+  @NoContentResponse()
   @Validate({ params: templateIdParams })
   async deleteEmailTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,

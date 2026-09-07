@@ -32,7 +32,15 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  attendanceRowSchema,
+  attendanceStatusResponseSchema,
+  attendanceHeatmapResponseSchema,
+  orgHolidayRowSchema,
+  teamStatusResponseSchema,
+} from "./dto/time-attendance-response.schemas";
 
 const holidayIdParams = z.object({ holidayId: z.string().min(1) }).strict();
 
@@ -44,6 +52,7 @@ export class AttendanceController {
 
   @Post("check-in")
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:attendance:view")
   @Idempotent("hr.attendance.check-in")
   @Validate({ body: checkInSchema })
@@ -62,6 +71,7 @@ export class AttendanceController {
 
   @Post("check-out")
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:attendance:view")
   @Idempotent("hr.attendance.check-out")
   @Validate({ body: checkOutSchema })
@@ -80,6 +90,7 @@ export class AttendanceController {
   @Post("break")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:attendance:view")
   @Idempotent("hr.attendance.toggle-break")
   toggleBreak(
@@ -94,12 +105,14 @@ export class AttendanceController {
   }
 
   @Get("status")
+  @ResponseSchema(attendanceStatusResponseSchema)
   @RequirePermission("hr:attendance:view")
   status(@CurrentUser() u: CurrentUserContext) {
     return this.attendance.status(u.orgId, u.userId);
   }
 
   @Get("logs")
+  @ResponseSchema(z.array(attendanceRowSchema))
   @RequirePermission("hr:attendance:view")
   @Validate({ query: attendanceLogsQuerySchema })
   async logs(
@@ -110,6 +123,7 @@ export class AttendanceController {
   }
 
   @Get("monthly")
+  @ResponseSchema(z.array(attendanceRowSchema))
   @RequirePermission("hr:attendance:view")
   @Validate({ query: monthlyQuerySchema })
   monthly(
@@ -120,6 +134,7 @@ export class AttendanceController {
   }
 
   @Get("heatmap")
+  @ResponseSchema(attendanceHeatmapResponseSchema)
   @RequirePermission("hr:attendance:view")
   @Validate({ query: heatmapQuerySchema })
   heatmap(
@@ -130,6 +145,7 @@ export class AttendanceController {
   }
 
   @Get("team-status")
+  @ResponseSchema(teamStatusResponseSchema)
   @RequirePermission("hr:attendance:view")
   @Validate({ query: teamStatusQuerySchema })
   teamStatus(
@@ -140,6 +156,7 @@ export class AttendanceController {
   }
 
   @Post("email-report")
+  @ResponseSchema(z.object({ queued: z.number().int() }))
   @RequirePermission("hr:attendance:manage")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:attendance-report")
@@ -152,6 +169,7 @@ export class AttendanceController {
   }
 
   @Get("holidays")
+  @ResponseSchema(z.array(orgHolidayRowSchema))
   @RequirePermission("hr:attendance:view")
   listHolidays(@CurrentUser() u: CurrentUserContext) {
     return this.attendance.listHolidays(u.orgId);
@@ -159,6 +177,7 @@ export class AttendanceController {
 
   @Post("holidays")
   @HttpCode(201)
+  @ResponseSchema(orgHolidayRowSchema)
   @RequirePermission("hr:attendance:manage")
   @Validate({ body: createOrgHolidaySchema })
   createHoliday(
@@ -169,6 +188,7 @@ export class AttendanceController {
   }
 
   @Patch("holidays/:holidayId")
+  @ResponseSchema(orgHolidayRowSchema)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: holidayIdParams, body: updateOrgHolidaySchema })
   updateHoliday(
@@ -181,6 +201,7 @@ export class AttendanceController {
 
   @Delete("holidays/:holidayId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: holidayIdParams })
   deleteHoliday(@CurrentUser() u: CurrentUserContext, @Param("holidayId") holidayId: string) {

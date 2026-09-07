@@ -27,6 +27,8 @@ import {
 } from "./dto/leave-blackout.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { leaveBlackoutRowSchema } from "./dto/config-response.schemas";
 import { z } from "zod";
 
 const blackoutIdParams = z.object({ blackoutId: z.coerce.number().int().positive() }).strict();
@@ -39,6 +41,7 @@ export class HrLeaveBlackoutController {
   constructor(private readonly blackout: HrLeaveBlackoutService) {}
 
   @Get()
+  @ResponseSchema(z.array(leaveBlackoutRowSchema))
   @Validate({ query: blackoutListQuerySchema })
   list(
     @Query() query: BlackoutListQuery,
@@ -48,6 +51,7 @@ export class HrLeaveBlackoutController {
   }
 
   @Post()
+  @ResponseSchema(leaveBlackoutRowSchema)
   @HttpCode(201)
   @Validate({ body: createBlackoutSchema })
   create(
@@ -61,6 +65,7 @@ export class HrLeaveBlackoutController {
   }
 
   @Delete(":blackoutId")
+  @NoContentResponse()
   @HttpCode(204)
   @Validate({ params: blackoutIdParams })
   async remove(

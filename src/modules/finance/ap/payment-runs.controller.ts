@@ -29,7 +29,15 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  paymentRunListResponseSchema,
+  paymentRunDetailResponseSchema,
+  paymentRunRowSchema,
+  paymentRunCancelResponseSchema,
+  paymentRunExecuteResponseSchema,
+  paymentRunItemUpdateResponseSchema,
+} from "./dto/ap-response.schemas";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 const runIditemIdParams = z.object({ runId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
@@ -44,6 +52,7 @@ export class PaymentRunsController {
   ) {}
 
   @Get()
+  @ResponseSchema(paymentRunListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:read")
   @Validate({ query: listPaymentRunsQuerySchema })
@@ -55,6 +64,7 @@ export class PaymentRunsController {
   }
 
   @Get(":runId")
+  @ResponseSchema(paymentRunDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:read")
   @Validate({ params: runIdParams })
@@ -66,6 +76,7 @@ export class PaymentRunsController {
   }
 
   @Post()
+  @ResponseSchema(paymentRunRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
   @HttpCode(201)
@@ -79,6 +90,7 @@ export class PaymentRunsController {
   }
 
   @Post(":runId/approve")
+  @ResponseSchema(paymentRunRowSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:approve")
@@ -93,6 +105,7 @@ export class PaymentRunsController {
   }
 
   @Post(":runId/execute")
+  @ResponseSchema(paymentRunExecuteResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
@@ -107,6 +120,7 @@ export class PaymentRunsController {
   }
 
   @Post(":runId/cancel")
+  @ResponseSchema(paymentRunCancelResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
@@ -120,6 +134,7 @@ export class PaymentRunsController {
   }
 
   @Patch(":runId/items/:itemId")
+  @ResponseSchema(paymentRunItemUpdateResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
   @Validate({ params: runIditemIdParams, body: updatePaymentRunItemSchema })

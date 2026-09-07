@@ -23,7 +23,11 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  billSubmitApprovalResponseSchema,
+  billStatusResponseSchema,
+} from "./dto/ap-response.schemas";
 
 const billIdParams = z.object({ billId: z.coerce.number().int().positive() }).strict();
 
@@ -34,6 +38,7 @@ export class BillsWorkflowController {
   constructor(private readonly service: BillsWorkflowService) {}
 
   @Post(":billId/submit-approval")
+  @ResponseSchema(billSubmitApprovalResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   @HttpCode(200)
@@ -48,6 +53,7 @@ export class BillsWorkflowController {
   }
 
   @Post(":billId/approve")
+  @ResponseSchema(billStatusResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:approve")
@@ -62,6 +68,7 @@ export class BillsWorkflowController {
   }
 
   @Post(":billId/cancel")
+  @ResponseSchema(billStatusResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   @HttpCode(200)

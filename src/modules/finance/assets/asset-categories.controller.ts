@@ -16,6 +16,11 @@ import {
 } from "./dto/assets.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  assetCategoryListResponseSchema,
+  assetCategorySchema,
+} from "./dto/assets-response.schemas";
 
 const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive() }).strict();
 
@@ -26,6 +31,7 @@ export class AssetCategoriesController {
   constructor(private readonly categories: AssetCategoriesService) {}
 
   @Get()
+  @ResponseSchema(assetCategoryListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:read")
   @Validate({ query: listCategoriesQuerySchema })
@@ -37,6 +43,7 @@ export class AssetCategoriesController {
   }
 
   @Post()
+  @ResponseSchema(assetCategorySchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(201)
@@ -49,6 +56,7 @@ export class AssetCategoriesController {
   }
 
   @Patch(":categoryId")
+  @ResponseSchema(assetCategorySchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @Validate({ params: categoryIdParams, body: updateCategorySchema })

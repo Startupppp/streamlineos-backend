@@ -51,6 +51,7 @@ import {
   upsertOccurrenceExceptionSchema,
   type UpsertOccurrenceExceptionInput,
 } from "./dto/occurrence-exception.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {
@@ -311,6 +312,7 @@ export class CalendarController {
   }
 
   @Get("export")
+  @ApiOkResponse({ description: "CSV file download of calendar events", content: { "text/csv": { schema: { type: "string" } } } })
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:events:export")
   @Validate({ query: exportSchema })

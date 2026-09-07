@@ -30,6 +30,13 @@ import {
 } from "./dto/hr-interviews.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  offerDocumentTemplateSchema,
+  generatePdfResponseSchema,
+  offerLetterResponseSchema,
+  successSchema,
+} from "./dto/interviews-response.schemas";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -40,6 +47,7 @@ export class HrOffersController {
   constructor(private readonly offers: HrOffersService) {}
 
   @Get("offer-templates")
+  @ResponseSchema(z.array(offerDocumentTemplateSchema))
   @RequirePermission("hr:offers:view")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.offers.listTemplates(u.orgId);
@@ -47,6 +55,7 @@ export class HrOffersController {
 
   @Post("offer-templates")
   @HttpCode(201)
+  @ResponseSchema(offerDocumentTemplateSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ body: createOfferTemplateSchema })
   createTemplate(
@@ -57,6 +66,7 @@ export class HrOffersController {
   }
 
   @Patch("offer-templates/:templateId")
+  @ResponseSchema(offerDocumentTemplateSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ params: templateIdParams, body: updateOfferTemplateSchema })
   updateTemplate(
@@ -68,6 +78,7 @@ export class HrOffersController {
   }
 
   @Delete("offer-templates/:templateId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ params: templateIdParams })
   deleteTemplate(
@@ -79,6 +90,7 @@ export class HrOffersController {
 
   @Post("offer-templates/:templateId/generate-pdf")
   @HttpCode(200)
+  @ResponseSchema(generatePdfResponseSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ params: templateIdParams, body: generateOfferPdfSchema })
   generatePdf(
@@ -91,6 +103,7 @@ export class HrOffersController {
 
   @Post("offer-letter")
   @HttpCode(201)
+  @ResponseSchema(offerLetterResponseSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ body: offerLetterSchema })
   generateOfferLetter(

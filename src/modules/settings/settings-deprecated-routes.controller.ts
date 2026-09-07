@@ -21,6 +21,18 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
 import { SETTINGS_ALIAS_SUNSET } from "./settings-route-deprecation";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  aiUsageResponseSchema,
+  gitConnectionListResponseSchema,
+  gitConnectionCreateResponseSchema,
+  gitConnectionUpdateResponseSchema,
+  gitConnectionDeleteResponseSchema,
+  updateUserRoleResponseSchema,
+  customFieldListResponseSchema,
+  customFieldResponseSchema,
+  customFieldDeleteResponseSchema,
+} from "./dto/settings-response.schemas";
 import { SettingsService } from "./settings.service";
 import { AiUsageService } from "../ai/usage/ai-usage.service";
 import { GitConnectionsService } from "../integrations/git/git-connections.service";
@@ -78,6 +90,7 @@ export class SettingsDeprecatedRoutesController {
   ) {}
 
   @RequirePermission("ai:usage:view")
+  @ResponseSchema(aiUsageResponseSchema)
   @Get("ai-usage")
   @Deprecated({ sunset: SETTINGS_ALIAS_SUNSET, link: "/ai/usage" })
   getAiUsage(@CurrentUser() u: CurrentUserContext) {
@@ -85,6 +98,7 @@ export class SettingsDeprecatedRoutesController {
   }
 
   @Get("integrations/git")
+  @ResponseSchema(gitConnectionListResponseSchema)
   @RequirePermission("integrations:git:view")
   @Deprecated({ sunset: SETTINGS_ALIAS_SUNSET, link: "/integrations/git/connections" })
   async listGitConnections(@CurrentUser() u: CurrentUserContext) {
@@ -95,6 +109,7 @@ export class SettingsDeprecatedRoutesController {
   }
 
   @Post("integrations/git")
+  @ResponseSchema(gitConnectionCreateResponseSchema)
   @HttpCode(201)
   @Idempotent("settings.gitConnection.create")
   @RequirePermission("integrations:git:manage")
@@ -108,6 +123,7 @@ export class SettingsDeprecatedRoutesController {
   }
 
   @Patch("integrations/git/:connectionId")
+  @ResponseSchema(gitConnectionUpdateResponseSchema)
   @RequirePermission("integrations:git:manage")
   @Deprecated({
     sunset: SETTINGS_ALIAS_SUNSET,
@@ -123,6 +139,7 @@ export class SettingsDeprecatedRoutesController {
   }
 
   @Delete("integrations/git/:connectionId")
+  @ResponseSchema(gitConnectionDeleteResponseSchema)
   @RequirePermission("integrations:git:manage")
   @Deprecated({
     sunset: SETTINGS_ALIAS_SUNSET,
@@ -137,6 +154,7 @@ export class SettingsDeprecatedRoutesController {
   }
 
   @RequirePermission("settings:rbac:manage")
+  @ResponseSchema(updateUserRoleResponseSchema)
   @Post("users/:userId/role")
   @Deprecated({ sunset: SETTINGS_ALIAS_SUNSET, link: "/organization/members/:memberId" })
   @Idempotent("settings.userRole.update")
@@ -159,6 +177,7 @@ export class SettingsDeprecatedRoutesController {
    * anyone losing it.
    */
   @Get("custom-fields")
+  @ResponseSchema(customFieldListResponseSchema)
   @RequirePermission("settings:custom-fields:view")
   @Deprecated({ sunset: SETTINGS_ALIAS_SUNSET, link: "/crm/settings/custom-fields" })
   @Validate({ query: customFieldsListSchema })
@@ -170,6 +189,7 @@ export class SettingsDeprecatedRoutesController {
   }
 
   @Post("custom-fields")
+  @ResponseSchema(customFieldResponseSchema)
   @HttpCode(201)
   @Idempotent("settings.customField.create")
   @RequirePermission("settings:custom-fields:manage")
@@ -183,6 +203,7 @@ export class SettingsDeprecatedRoutesController {
   }
 
   @Patch("custom-fields/:fieldId")
+  @ResponseSchema(customFieldResponseSchema)
   @RequirePermission("settings:custom-fields:manage")
   @Deprecated({
     sunset: SETTINGS_ALIAS_SUNSET,
@@ -198,6 +219,7 @@ export class SettingsDeprecatedRoutesController {
   }
 
   @Delete("custom-fields/:fieldId")
+  @ResponseSchema(customFieldDeleteResponseSchema)
   @RequirePermission("settings:custom-fields:manage")
   @Deprecated({
     sunset: SETTINGS_ALIAS_SUNSET,

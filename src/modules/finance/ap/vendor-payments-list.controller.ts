@@ -8,6 +8,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { VendorPaymentsListService } from "./vendor-payments-list.service";
 import { listVendorPaymentsQuerySchema, type ListVendorPaymentsQuery } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { vendorPaymentListResponseSchema } from "./dto/ap-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/vendor-payments")
@@ -16,6 +18,7 @@ export class VendorPaymentsListController {
   constructor(private readonly service: VendorPaymentsListService) {}
 
   @Get()
+  @ResponseSchema(vendorPaymentListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:read")
   @Validate({ query: listVendorPaymentsQuerySchema })

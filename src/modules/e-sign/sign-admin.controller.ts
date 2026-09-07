@@ -11,7 +11,15 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignWatermarkService } from "./sign-watermark.service";
 import { SignEnvelopesService } from "./sign-envelopes.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  signSettingsResponseSchema,
+  listWatermarkPoliciesResponseSchema,
+  watermarkPolicyMutationResponseSchema,
+  reminderSweepResponseSchema,
+  expirationSweepResponseSchema,
+} from "./dto/e-sign-response.schemas";
+import { successSchema } from "../../common/openapi/response-envelopes";
 import {
   updateSignSettingsSchema,
   watermarkPolicyInputSchema,
@@ -34,12 +42,14 @@ export class SignAdminController {
 
   @Get("settings")
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(signSettingsResponseSchema)
   getSettings(@CurrentUser() u: CurrentUserContext) {
     return this.settings.getOrCreate(u.orgId);
   }
 
   @Patch("settings")
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(signSettingsResponseSchema)
   @Validate({ body: updateSignSettingsSchema })
   updateSettings(@Body() body: UpdateSignSettingsInput, @CurrentUser() u: CurrentUserContext) {
     return this.settings.update(u.orgId, body, u.userId);
@@ -47,12 +57,14 @@ export class SignAdminController {
 
   @Get("watermark-policies")
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(listWatermarkPoliciesResponseSchema)
   listWatermarkPolicies(@CurrentUser() u: CurrentUserContext) {
     return this.watermark.list(u.orgId);
   }
 
   @Get("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(watermarkPolicyMutationResponseSchema)
   @Validate({ params: policyIdParams })
   getWatermarkPolicy(@Param("policyId", ParseIntPipe) policyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.watermark.get(u.orgId, policyId);
@@ -61,6 +73,7 @@ export class SignAdminController {
   @Post("watermark-policies")
   @HttpCode(201)
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(watermarkPolicyMutationResponseSchema)
   @Validate({ body: watermarkPolicyInputSchema })
   createWatermarkPolicy(@Body() body: WatermarkPolicyInput, @CurrentUser() u: CurrentUserContext) {
     return this.watermark.create(u.orgId, u.userId, body);
@@ -68,6 +81,7 @@ export class SignAdminController {
 
   @Patch("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(watermarkPolicyMutationResponseSchema)
   @Validate({ params: policyIdParams, body: updateWatermarkPolicyBodySchema })
   updateWatermarkPolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -79,6 +93,7 @@ export class SignAdminController {
 
   @Delete("watermark-policies/:policyId")
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: policyIdParams })
   async removeWatermarkPolicy(@Param("policyId", ParseIntPipe) policyId: number, @CurrentUser() u: CurrentUserContext) {
     await this.watermark.remove(u.orgId, policyId, u.userId);
@@ -88,6 +103,7 @@ export class SignAdminController {
   @Post("run-reminder-sweep")
   @BodylessAction()
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(reminderSweepResponseSchema)
   async runReminderSweep(@CurrentUser() u: CurrentUserContext) {
     const remindedCount = await this.envelopes.runReminderSweep(u.orgId);
     return { remindedCount };
@@ -96,6 +112,7 @@ export class SignAdminController {
   @Post("run-expiration-sweep")
   @BodylessAction()
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(expirationSweepResponseSchema)
   async runExpirationSweep(@CurrentUser() u: CurrentUserContext) {
     const expiredCount = await this.envelopes.runExpirationSweep(u.orgId);
     return { expiredCount };

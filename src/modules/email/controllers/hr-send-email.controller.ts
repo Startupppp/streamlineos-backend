@@ -18,6 +18,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { hrSendEmailResponseSchema } from "../dto/email-response.schemas";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { candidates, emailTemplates } from "../../../db/schema";
@@ -55,6 +57,7 @@ export class HrSendEmailController {
 
   @Post()
   @HttpCode(200)
+  @ResponseSchema(hrSendEmailResponseSchema)
   @RequirePermission("hr:communications:send")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:communications-send")

@@ -38,8 +38,25 @@ import {
   type SecretListQueryDto,
 } from "./dto/workflow.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import {
+  listWorkflowsResponseSchema,
+  workflowRowSchema,
+  getWorkflowResponseSchema,
+  publishWorkflowResponseSchema,
+  workflowExecutionRowSchema,
+  listExecutionsResponseSchema,
+  getExecutionResponseSchema,
+  getPendingApprovalsResponseSchema,
+  workflowApprovalRowSchema,
+  listSchedulesResponseSchema,
+  workflowScheduleRowSchema,
+  listSecretsResponseSchema,
+  workflowSecretRowSchema,
+  listGlobalVariablesResponseSchema,
+  workflowAnalyticsResponseSchema,
+} from "./dto/workflow-response.schemas";
 import { z } from "zod";
 
 const approvalIdParams = z.object({ approvalId: z.string().min(1) }).strict();
@@ -65,6 +82,7 @@ export class WorkflowsController {
 
   @Get()
   @RequirePermission("workflows:workflows:view")
+  @ResponseSchema(listWorkflowsResponseSchema)
   @Validate({ query: WorkflowListQuerySchema })
   listWorkflows(
     @Query() query: WorkflowListQueryDto,
@@ -76,6 +94,7 @@ export class WorkflowsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("workflows:workflows:create")
+  @ResponseSchema(workflowRowSchema)
   @Validate({ body: CreateWorkflowSchema })
   createWorkflow(
     @Body() body: CreateWorkflowDto,
@@ -86,18 +105,21 @@ export class WorkflowsController {
 
   @Get("analytics")
   @RequirePermission("workflows:analytics:view")
+  @ResponseSchema(workflowAnalyticsResponseSchema)
   getAnalytics(@CurrentUser() u: CurrentUserContext) {
     return this.analytics.getAnalytics(u.orgId);
   }
 
   @Get("templates")
   @RequirePermission("workflows:templates:view")
+  @ResponseSchema(listWorkflowsResponseSchema)
   listTemplates() {
     return [];
   }
 
   @Get("approvals/pending")
   @RequirePermission("workflows:approvals:view")
+  @ResponseSchema(getPendingApprovalsResponseSchema)
   getPendingApprovals(@CurrentUser() u: CurrentUserContext) {
     return this.execution.getApprovals(u.orgId, u.userId);
   }
@@ -105,6 +127,7 @@ export class WorkflowsController {
   @Post("approvals/:approvalId/action")
   @RequirePermission("workflows:approvals:manage")
   @HttpCode(200)
+  @ResponseSchema(workflowApprovalRowSchema)
   @Validate({ params: approvalIdParams, body: ApprovalActionSchema })
   handleApproval(
     @Param("approvalId") approvalId: string,
@@ -116,6 +139,7 @@ export class WorkflowsController {
 
   @Get("executions")
   @RequirePermission("workflows:executions:view")
+  @ResponseSchema(listExecutionsResponseSchema)
   @Validate({ query: WorkflowExecutionQuerySchema })
   listAllExecutions(
     @Query() query: WorkflowExecutionQueryDto,
@@ -126,6 +150,7 @@ export class WorkflowsController {
 
   @Get("schedules")
   @RequirePermission("workflows:schedules:manage")
+  @ResponseSchema(listSchedulesResponseSchema)
   @Validate({ query: ScheduleListQuerySchema })
   listAllSchedules(@Query() query: ScheduleListQueryDto, @CurrentUser() u: CurrentUserContext) {
     return this.schedules.listAllSchedules(u.orgId, query);
@@ -133,6 +158,7 @@ export class WorkflowsController {
 
   @Get("secrets")
   @RequirePermission("workflows:secrets:manage")
+  @ResponseSchema(listSecretsResponseSchema)
   @Validate({ query: SecretListQuerySchema })
   listGlobalSecrets(@Query() query: SecretListQueryDto, @CurrentUser() u: CurrentUserContext) {
     return this.secrets.listGlobalSecrets(u.orgId, query);
@@ -141,6 +167,7 @@ export class WorkflowsController {
   @Post("secrets")
   @HttpCode(201)
   @RequirePermission("workflows:secrets:manage")
+  @ResponseSchema(workflowSecretRowSchema)
   @Validate({ body: CreateSecretSchema })
   createGlobalSecret(
     @Body() body: CreateSecretDto,
@@ -152,6 +179,7 @@ export class WorkflowsController {
   @Delete("secrets/:secretId")
   @RequirePermission("workflows:secrets:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: secretIdParams })
   deleteGlobalSecret(
     @Param("secretId") secretId: string,
@@ -162,6 +190,7 @@ export class WorkflowsController {
 
   @Get("variables")
   @RequirePermission("workflows:variables:manage")
+  @ResponseSchema(listGlobalVariablesResponseSchema)
   listGlobalVariables(@CurrentUser() u: CurrentUserContext) {
     return this.variables.listGlobalVariables(u.orgId);
   }
@@ -169,6 +198,7 @@ export class WorkflowsController {
   @Delete("variables/:variableId")
   @RequirePermission("workflows:variables:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: variableIdParams })
   deleteGlobalVariable(
     @Param("variableId") variableId: string,
@@ -179,6 +209,7 @@ export class WorkflowsController {
 
   @Get(":workflowId")
   @RequirePermission("workflows:workflows:view")
+  @ResponseSchema(getWorkflowResponseSchema)
   @Validate({ params: workflowIdParams })
   getWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
     return this.crud.getWorkflow(u.orgId, workflowId);
@@ -186,6 +217,7 @@ export class WorkflowsController {
 
   @Patch(":workflowId")
   @RequirePermission("workflows:workflows:update")
+  @ResponseSchema(workflowRowSchema)
   @Validate({ params: workflowIdParams, body: UpdateWorkflowSchema })
   updateWorkflow(
     @Param("workflowId") workflowId: string,
@@ -198,6 +230,7 @@ export class WorkflowsController {
   @Delete(":workflowId")
   @RequirePermission("workflows:workflows:delete")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: workflowIdParams })
   deleteWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
     return this.crud.deleteWorkflow(u.orgId, u.userId, workflowId);
@@ -206,6 +239,7 @@ export class WorkflowsController {
   @Post(":workflowId/publish")
   @Idempotent("workflows.workflow.publish")
   @RequirePermission("workflows:workflows:publish")
+  @ResponseSchema(publishWorkflowResponseSchema)
   @Validate({ params: workflowIdParams, body: PublishWorkflowSchema })
   publishWorkflow(
     @Param("workflowId") workflowId: string,
@@ -218,6 +252,7 @@ export class WorkflowsController {
   @Post(":workflowId/duplicate")
   @BodylessAction()
   @RequirePermission("workflows:workflows:create")
+  @ResponseSchema(workflowRowSchema)
   @Validate({ params: workflowIdParams })
   duplicateWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
     return this.crud.duplicateWorkflow(u.orgId, u.userId, workflowId);
@@ -227,6 +262,7 @@ export class WorkflowsController {
   @BodylessAction()
   @RequirePermission("workflows:workflows:update")
   @HttpCode(200)
+  @ResponseSchema(workflowRowSchema)
   @Validate({ params: workflowIdParams })
   disableWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
     return this.crud.disableWorkflow(u.orgId, u.userId, workflowId);
@@ -236,6 +272,7 @@ export class WorkflowsController {
   @BodylessAction()
   @RequirePermission("workflows:workflows:update")
   @HttpCode(200)
+  @ResponseSchema(workflowRowSchema)
   @Validate({ params: workflowIdParams })
   archiveWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
     return this.crud.archiveWorkflow(u.orgId, u.userId, workflowId);
@@ -243,6 +280,7 @@ export class WorkflowsController {
 
   @Post(":workflowId/trigger")
   @RequirePermission("workflows:executions:manage")
+  @ResponseSchema(workflowExecutionRowSchema)
   @Validate({ params: workflowIdParams, body: TriggerWorkflowSchema })
   triggerWorkflow(
     @Param("workflowId") workflowId: string,
@@ -254,6 +292,7 @@ export class WorkflowsController {
 
   @Get(":workflowId/executions")
   @RequirePermission("workflows:executions:view")
+  @ResponseSchema(listExecutionsResponseSchema)
   @Validate({ params: workflowIdParams, query: WorkflowExecutionQuerySchema })
   listExecutions(
     @Param("workflowId") workflowId: string,
@@ -265,6 +304,7 @@ export class WorkflowsController {
 
   @Get(":workflowId/executions/:executionId")
   @RequirePermission("workflows:executions:view")
+  @ResponseSchema(getExecutionResponseSchema)
   @Validate({ params: workflowIdexecutionIdParams })
   getExecution(
     @Param("workflowId") workflowId: string,
@@ -278,6 +318,7 @@ export class WorkflowsController {
   @BodylessAction()
   @RequirePermission("workflows:executions:manage")
   @HttpCode(200)
+  @ResponseSchema(workflowExecutionRowSchema)
   @Validate({ params: workflowIdexecutionIdParams })
   cancelExecution(
     @Param("workflowId") workflowId: string,
@@ -289,6 +330,7 @@ export class WorkflowsController {
 
   @Get(":workflowId/schedules")
   @RequirePermission("workflows:schedules:manage")
+  @ResponseSchema(listSchedulesResponseSchema)
   @Validate({ params: workflowIdParams, query: ScheduleListQuerySchema })
   listSchedules(
     @Param("workflowId") workflowId: string,
@@ -301,6 +343,7 @@ export class WorkflowsController {
   @Post(":workflowId/schedules")
   @HttpCode(201)
   @RequirePermission("workflows:schedules:manage")
+  @ResponseSchema(workflowScheduleRowSchema)
   @Validate({ params: workflowIdParams, body: CreateScheduleSchema })
   createSchedule(
     @Param("workflowId") workflowId: string,
@@ -312,6 +355,7 @@ export class WorkflowsController {
 
   @Patch(":workflowId/schedules/:scheduleId")
   @RequirePermission("workflows:schedules:manage")
+  @ResponseSchema(workflowScheduleRowSchema)
   @Validate({ params: workflowIdscheduleIdParams, body: UpdateScheduleSchema })
   updateSchedule(
     @Param("workflowId") workflowId: string,
@@ -325,6 +369,7 @@ export class WorkflowsController {
   @Delete(":workflowId/schedules/:scheduleId")
   @RequirePermission("workflows:schedules:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: workflowIdscheduleIdParams })
   deleteSchedule(
     @Param("workflowId") workflowId: string,
@@ -336,6 +381,7 @@ export class WorkflowsController {
 
   @Get(":workflowId/secrets")
   @RequirePermission("workflows:secrets:manage")
+  @ResponseSchema(listSecretsResponseSchema)
   @Validate({ params: workflowIdParams, query: SecretListQuerySchema })
   listSecrets(
     @Param("workflowId") workflowId: string,
@@ -348,6 +394,7 @@ export class WorkflowsController {
   @Post(":workflowId/secrets")
   @HttpCode(201)
   @RequirePermission("workflows:secrets:manage")
+  @ResponseSchema(workflowSecretRowSchema)
   @Validate({ params: workflowIdParams, body: CreateSecretSchema })
   createSecret(
     @Param("workflowId") workflowId: string,
@@ -360,6 +407,7 @@ export class WorkflowsController {
   @Delete(":workflowId/secrets/:secretId")
   @RequirePermission("workflows:secrets:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: workflowIdsecretIdParams })
   deleteSecret(
     @Param("workflowId") workflowId: string,

@@ -24,6 +24,12 @@ import {
 } from "./dto/finance-controls.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  approvalListResponseSchema,
+  approvalCountsResponseSchema,
+  approvalDecisionResponseSchema,
+} from "./dto/controls-response.schemas";
 
 const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
 
@@ -34,6 +40,7 @@ export class FinanceApprovalsController {
   constructor(private readonly svc: ApprovalsService) {}
 
   @Get()
+  @ResponseSchema(approvalListResponseSchema)
   @RequirePermission("accounting:approvals:read")
   @Validate({ query: listApprovalsSchema })
   list(
@@ -44,12 +51,14 @@ export class FinanceApprovalsController {
   }
 
   @Get("counts")
+  @ResponseSchema(approvalCountsResponseSchema)
   @RequirePermission("accounting:approvals:read")
   counts(@CurrentUser() u: CurrentUserContext) {
     return this.svc.counts(u.orgId);
   }
 
   @Post(":requestId/approve")
+  @ResponseSchema(approvalDecisionResponseSchema)
   @HttpCode(200)
   @RequirePermission("accounting:approvals:decide")
   @Validate({ params: requestIdParams, body: approvalDecisionSchema })
@@ -62,6 +71,7 @@ export class FinanceApprovalsController {
   }
 
   @Post(":requestId/reject")
+  @ResponseSchema(approvalDecisionResponseSchema)
   @HttpCode(200)
   @RequirePermission("accounting:approvals:decide")
   @Validate({ params: requestIdParams, body: approvalDecisionSchema })

@@ -17,7 +17,17 @@ import { CronSupportService } from "./cron-support.service";
 import { SupportKbGapDetectionService } from "../support/kb-gap/support-kb-gap-detection.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { SessionsService } from "../sessions/sessions.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import {
+  supportSlaEscalationsResponseSchema,
+  supportUnsnoozeResponseSchema,
+  kbTrashPurgeResponseSchema,
+  kbChunkRetentionSweepResponseSchema,
+  supportKbGapDetectResponseSchema,
+  kbTelemetryRetentionSweepResponseSchema,
+  kbChatHistoryPurgeResponseSchema,
+  sessionRevocationPruneResponseSchema,
+} from "./dto/cron-support-response.schemas";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -34,6 +44,7 @@ export class CronSupportController {
   ) {}
 
   @Get("support-sla-escalations")
+  @ResponseSchema(supportSlaEscalationsResponseSchema)
   getSupportSlaEscalations(@Headers("authorization") authorization?: string) {
     return this.runSupportSlaEscalations(authorization);
   }
@@ -41,11 +52,13 @@ export class CronSupportController {
   @Post("support-sla-escalations")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(supportSlaEscalationsResponseSchema)
   postSupportSlaEscalations(@Headers("authorization") authorization?: string) {
     return this.runSupportSlaEscalations(authorization);
   }
 
   @Get("support-unsnooze")
+  @ResponseSchema(supportUnsnoozeResponseSchema)
   getSupportUnsnooze(@Headers("authorization") authorization?: string) {
     return this.runSupportUnsnooze(authorization);
   }
@@ -53,11 +66,13 @@ export class CronSupportController {
   @Post("support-unsnooze")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(supportUnsnoozeResponseSchema)
   postSupportUnsnooze(@Headers("authorization") authorization?: string) {
     return this.runSupportUnsnooze(authorization);
   }
 
   @Get("kb-trash-purge")
+  @ResponseSchema(kbTrashPurgeResponseSchema)
   getKbTrashPurge(@Headers("authorization") authorization?: string) {
     return this.runKbTrashPurge(authorization);
   }
@@ -65,11 +80,13 @@ export class CronSupportController {
   @Post("kb-trash-purge")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(kbTrashPurgeResponseSchema)
   postKbTrashPurge(@Headers("authorization") authorization?: string) {
     return this.runKbTrashPurge(authorization);
   }
 
   @Get("kb-chunk-retention-sweep")
+  @ResponseSchema(kbChunkRetentionSweepResponseSchema)
   getKbChunkRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runKbChunkRetentionSweep(authorization);
   }
@@ -77,11 +94,13 @@ export class CronSupportController {
   @Post("kb-chunk-retention-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(kbChunkRetentionSweepResponseSchema)
   postKbChunkRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runKbChunkRetentionSweep(authorization);
   }
 
   @Get("support-kb-gap-detect")
+  @ResponseSchema(supportKbGapDetectResponseSchema)
   getSupportKbGapDetect(@Headers("authorization") authorization?: string) {
     return this.runSupportKbGapDetect(authorization);
   }
@@ -89,11 +108,13 @@ export class CronSupportController {
   @Post("support-kb-gap-detect")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(supportKbGapDetectResponseSchema)
   postSupportKbGapDetect(@Headers("authorization") authorization?: string) {
     return this.runSupportKbGapDetect(authorization);
   }
 
   @Get("kb-telemetry-retention-sweep")
+  @ResponseSchema(kbTelemetryRetentionSweepResponseSchema)
   getKbTelemetryRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runKbTelemetryRetentionSweep(authorization);
   }
@@ -101,11 +122,13 @@ export class CronSupportController {
   @Post("kb-telemetry-retention-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(kbTelemetryRetentionSweepResponseSchema)
   postKbTelemetryRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runKbTelemetryRetentionSweep(authorization);
   }
 
   @Get("kb-chat-history-purge")
+  @ResponseSchema(kbChatHistoryPurgeResponseSchema)
   getKbChatHistoryPurge(@Headers("authorization") authorization?: string) {
     return this.runKbChatHistoryPurge(authorization);
   }
@@ -113,11 +136,13 @@ export class CronSupportController {
   @Post("kb-chat-history-purge")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(kbChatHistoryPurgeResponseSchema)
   postKbChatHistoryPurge(@Headers("authorization") authorization?: string) {
     return this.runKbChatHistoryPurge(authorization);
   }
 
   @Get("session-revocation-prune")
+  @ResponseSchema(sessionRevocationPruneResponseSchema)
   getSessionRevocationPrune(@Headers("authorization") authorization?: string) {
     return this.runSessionRevocationPrune(authorization);
   }
@@ -125,6 +150,7 @@ export class CronSupportController {
   @Post("session-revocation-prune")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(sessionRevocationPruneResponseSchema)
   postSessionRevocationPrune(@Headers("authorization") authorization?: string) {
     return this.runSessionRevocationPrune(authorization);
   }

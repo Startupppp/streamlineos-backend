@@ -13,7 +13,13 @@ import { AccessService } from "../access/access.service";
 import { SignAuditService } from "./sign-audit.service";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  listAuditEventsResponseSchema,
+  getCertificateUrlResponseSchema,
+  getFinalPdfUrlResponseSchema,
+  regenerateCertificateResponseSchema,
+} from "./dto/e-sign-response.schemas";
 import { resolveClientIp } from "../../common/http/client-ip";
 
 
@@ -31,6 +37,7 @@ export class SignCertificatesController {
 
   @Get(":envelopeId/audit")
   @RequirePermission("sign:audit:view")
+  @ResponseSchema(listAuditEventsResponseSchema)
   @Validate({ params: envelopeIdParams })
   async getAudit(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
@@ -39,6 +46,7 @@ export class SignCertificatesController {
 
   @Get(":envelopeId/certificate")
   @RequirePermission("sign:certificate:download")
+  @ResponseSchema(getCertificateUrlResponseSchema)
   @Validate({ params: envelopeIdParams })
   async getCertificate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
@@ -47,6 +55,7 @@ export class SignCertificatesController {
 
   @Get(":envelopeId/final-pdf")
   @RequirePermission("sign:certificate:download")
+  @ResponseSchema(getFinalPdfUrlResponseSchema)
   @Validate({ params: envelopeIdParams })
   async getFinalPdf(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
@@ -56,6 +65,7 @@ export class SignCertificatesController {
   @Post(":envelopeId/regenerate-certificate")
   @BodylessAction()
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(regenerateCertificateResponseSchema)
   @Validate({ params: envelopeIdParams })
   regenerateCertificate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.finalization.regenerateCertificate(u.orgId, envelopeId, { userId: u.userId, ipAddress: resolveClientIp(req) });

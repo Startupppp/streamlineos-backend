@@ -19,7 +19,12 @@ import {
 } from "./dto/requisitions.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  requisitionSchema,
+  createJobFromRequisitionResponseSchema,
+  successSchema,
+} from "./dto/recruitment-response.schemas";
 
 const requisitionIdParams = z.object({ requisitionId: z.coerce.number().int().positive() }).strict();
 
@@ -30,6 +35,7 @@ export class RecruitmentRequisitionsController {
   constructor(private readonly service: RecruitmentRequisitionsService) {}
 
   @Get()
+  @ResponseSchema(z.array(requisitionSchema))
   @RequirePermission("hr:requisitions:view")
   @Validate({ query: requisitionListSchema })
   list(
@@ -41,6 +47,7 @@ export class RecruitmentRequisitionsController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(requisitionSchema)
   @RequirePermission("hr:requisitions:manage")
   @Validate({ body: createRequisitionSchema })
   create(
@@ -53,6 +60,7 @@ export class RecruitmentRequisitionsController {
   @Patch(":requisitionId/submit")
   @BodylessAction()
   @Idempotent("hr.requisition.submit")
+  @ResponseSchema(requisitionSchema)
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requisitionIdParams })
   submit(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
@@ -62,6 +70,7 @@ export class RecruitmentRequisitionsController {
   @Patch(":requisitionId/approve")
   @BodylessAction()
   @Idempotent("hr.requisition.approve")
+  @ResponseSchema(requisitionSchema)
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requisitionIdParams })
   approve(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
@@ -70,6 +79,7 @@ export class RecruitmentRequisitionsController {
 
   @Patch(":requisitionId/reject")
   @Idempotent("hr.requisition.reject")
+  @ResponseSchema(requisitionSchema)
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requisitionIdParams, body: rejectRequisitionSchema })
   reject(
@@ -83,6 +93,7 @@ export class RecruitmentRequisitionsController {
   @Post(":requisitionId/create-job")
   @BodylessAction()
   @HttpCode(201)
+  @ResponseSchema(createJobFromRequisitionResponseSchema)
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requisitionIdParams })
   createJob(@CurrentUser() u: CurrentUserContext, @Param("requisitionId", ParseIntPipe) requisitionId: number) {
@@ -90,6 +101,7 @@ export class RecruitmentRequisitionsController {
   }
 
   @Patch(":requisitionId")
+  @ResponseSchema(requisitionSchema)
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requisitionIdParams, body: updateRequisitionSchema })
   update(

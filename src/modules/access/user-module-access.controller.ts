@@ -11,6 +11,8 @@ import {
   type UserModuleAccessParams,
 } from "./dto/user-module-access.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { userModuleAccessResponseSchema } from "./dto/user-module-access-response.schemas";
 import { z } from "zod";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
@@ -21,6 +23,7 @@ export class UserModuleAccessController {
   constructor(private readonly userModuleAccess: UserModuleAccessService) {}
 
   @Get(":userId")
+  @ResponseSchema(userModuleAccessResponseSchema)
   @RequirePermission("settings:view")
   @Validate({ params: userIdParams })
   getModuleAccess(
@@ -31,6 +34,7 @@ export class UserModuleAccessController {
   }
 
   @Patch(":userId")
+  @ResponseSchema(userModuleAccessResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: userIdParams, body: setUserModuleAccessSchema })
   setModuleAccess(

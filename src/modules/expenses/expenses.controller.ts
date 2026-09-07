@@ -56,7 +56,19 @@ import { ExpenseExportService } from "./expense-export.service";
 import { pipeline } from "node:stream/promises";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  expenseApproveResponseSchema,
+  expenseExportJobViewSchema,
+  expenseImportResultSchema,
+  expenseListResponseSchema,
+  expensePageDataResponseSchema,
+  expenseReportResponseSchema,
+  expenseRowSchema,
+  expenseSubmitResponseSchema,
+} from "./dto/expenses-response.schemas";
+import { successSchema } from "../../common/openapi/response-envelopes";
 
 const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
 const jobIdParams = z.object({ jobId: z.string().uuid() }).strict();
@@ -85,6 +97,7 @@ export class ExpensesController {
   @Get()
   @RequirePermission("hr:expenses:view")
   @Validate({ query: listSchema })
+  @ResponseSchema(expenseListResponseSchema)
   async list(
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
@@ -96,6 +109,7 @@ export class ExpensesController {
   @HttpCode(201)
   @RequirePermission("hr:expenses:create")
   @Validate({ body: createExpenseSchema })
+  @ResponseSchema(expenseRowSchema)
   async create(
     @Body() body: CreateExpenseInput,
     @CurrentUser() u: CurrentUserContext,
@@ -106,6 +120,7 @@ export class ExpensesController {
   @Patch(":expenseId")
   @RequirePermission("hr:expenses:approve")
   @Validate({ params: expenseIdParams, body: updateExpensePatchSchema })
+  @ResponseSchema(successSchema)
   async update(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body() body: UpdateExpensePatchInput,
@@ -119,6 +134,7 @@ export class ExpensesController {
   @Idempotent("expenses.email-report.create")
   @RequirePermission("hr:expenses:approve")
   @Validate({ body: exportSchema })
+  @ResponseSchema(expenseExportJobViewSchema)
   async emailReport(
     @Body() filters: ExportInput,
     @Headers("idempotency-key") idempotencyKey: string,
@@ -132,6 +148,7 @@ export class ExpensesController {
   @Get("page-data")
   @RequirePermission("hr:expenses:view")
   @Validate({ query: pageDataSchema })
+  @ResponseSchema(expensePageDataResponseSchema)
   async pageData(
     @Query() filters: PageDataInput,
     @CurrentUser() u: CurrentUserContext,
@@ -142,6 +159,7 @@ export class ExpensesController {
   @Get("report")
   @RequirePermission("hr:expenses:read")
   @Validate({ query: reportSchema })
+  @ResponseSchema(expenseReportResponseSchema)
   async report(
     @Query() filters: ReportInput,
     @CurrentUser() u: CurrentUserContext,
@@ -154,6 +172,7 @@ export class ExpensesController {
   @Idempotent("expenses.export.create")
   @RequirePermission("hr:expenses:read")
   @Validate({ body: exportSchema })
+  @ResponseSchema(expenseExportJobViewSchema)
   async createExportJob(
     @Body() filters: ExportInput,
     @Headers("idempotency-key") idempotencyKey: string,
@@ -167,6 +186,7 @@ export class ExpensesController {
   @Get("export/jobs/:jobId")
   @RequirePermission("hr:expenses:read")
   @Validate({ params: jobIdParams })
+  @ResponseSchema(expenseExportJobViewSchema)
   getExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext) {
     return this.exportJobs.get(u, jobId);
   }
@@ -174,6 +194,7 @@ export class ExpensesController {
   @Get("export/jobs/:jobId/download")
   @RequirePermission("hr:expenses:read")
   @Validate({ params: jobIdParams })
+  @ApiOkResponse({ description: "CSV download", content: { "text/csv": { schema: { type: "string", format: "binary" } } } })
   async downloadExportJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext, @Res() res: Response) {
     const { job, file } = await this.exportJobs.download(u, jobId);
     res.setHeader("Content-Type", file.contentType);
@@ -189,6 +210,7 @@ export class ExpensesController {
   @RequirePermission("hr:expenses:create")
   @Validate({ params: expenseIdParams })
   @BodylessAction()
+  @ResponseSchema(expenseSubmitResponseSchema)
   async submit(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -202,6 +224,7 @@ export class ExpensesController {
   @RequirePermission("hr:expenses:approve")
   @Validate({ params: expenseIdParams })
   @BodylessAction()
+  @ResponseSchema(expenseApproveResponseSchema)
   async approve(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -214,6 +237,7 @@ export class ExpensesController {
   @HttpCode(200)
   @RequirePermission("hr:expenses:approve")
   @Validate({ params: expenseIdParams, body: rejectExpenseSchema })
+  @ResponseSchema(successSchema)
   async reject(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @Body() body: RejectExpenseInput,
@@ -226,6 +250,7 @@ export class ExpensesController {
   @Delete(":expenseId")
   @RequirePermission("hr:expenses:create")
   @Validate({ params: expenseIdParams })
+  @ResponseSchema(successSchema)
   async remove(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,

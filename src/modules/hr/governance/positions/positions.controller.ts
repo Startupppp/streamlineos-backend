@@ -38,6 +38,8 @@ import {
 } from "./positions.dto";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../../common/openapi/zod-operation-contracts"
+import { listPositionsResponseSchema, listVacantPositionsResponseSchema, createPositionResponseSchema, updatePositionResponseSchema, assignPositionResponseSchema, listScenariosResponseSchema, createScenarioResponseSchema, updateScenarioResponseSchema, simulateScenarioResponseSchema } from "../dto/governance-response.schemas"
 
 const positionIdParams = z.object({ positionId: z.coerce.number().int().positive() }).strict();
 const scenarioIdParams = z.object({ scenarioId: z.coerce.number().int().positive() }).strict();
@@ -48,6 +50,7 @@ const scenarioIdParams = z.object({ scenarioId: z.coerce.number().int().positive
 export class PositionsController {
   constructor(private readonly service: PositionsService) {}
 
+  @ResponseSchema(listPositionsResponseSchema)
   @Get("positions")
   @RequirePermission("hr:positions:view")
   @Validate({ query: listPositionsSchema })
@@ -58,6 +61,7 @@ export class PositionsController {
     return this.service.list(user.orgId, query);
   }
 
+  @ResponseSchema(listVacantPositionsResponseSchema)
   @Get("positions/vacant")
   @RequirePermission("hr:positions:view")
   @Validate({ query: listPositionsSchema })
@@ -68,6 +72,7 @@ export class PositionsController {
     return this.service.listVacant(user.orgId, query);
   }
 
+  @ResponseSchema(createPositionResponseSchema)
   @Post("positions")
   @RequirePermission("hr:positions:manage")
   @Validate({ body: createPositionSchema })
@@ -79,6 +84,7 @@ export class PositionsController {
     return this.service.create(user.orgId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(updatePositionResponseSchema)
   @Patch("positions/:positionId")
   @RequirePermission("hr:positions:manage")
   @Validate({ params: positionIdParams, body: updatePositionSchema })
@@ -91,6 +97,7 @@ export class PositionsController {
     return this.service.update(user.orgId, positionId, user.userId, user.isOrgOwner, body, req.ip);
   }
 
+  @NoContentResponse()
   @Delete("positions/:positionId")
   @RequirePermission("hr:positions:manage")
   @HttpCode(204)
@@ -103,6 +110,7 @@ export class PositionsController {
     await this.service.softDelete(user.orgId, positionId, user.userId, req.ip);
   }
 
+  @ResponseSchema(assignPositionResponseSchema)
   @Post("positions/:positionId/assign")
   @RequirePermission("hr:positions:manage")
   @Validate({ params: positionIdParams, body: assignPositionSchema })
@@ -115,6 +123,7 @@ export class PositionsController {
     return this.service.assignEmployee(user.orgId, positionId, user.userId, user.isOrgOwner, body, req.ip);
   }
 
+  @ResponseSchema(listScenariosResponseSchema)
   @Get("scenarios")
   @RequirePermission("hr:positions:view")
   @Validate({ query: listScenariosSchema })
@@ -125,6 +134,7 @@ export class PositionsController {
     return this.service.listScenarios(user.orgId, query);
   }
 
+  @ResponseSchema(createScenarioResponseSchema)
   @Post("scenarios")
   @RequirePermission("hr:positions:manage")
   @Validate({ body: createReorgScenarioSchema })
@@ -136,6 +146,7 @@ export class PositionsController {
     return this.service.createScenario(user.orgId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(updateScenarioResponseSchema)
   @Patch("scenarios/:scenarioId")
   @RequirePermission("hr:positions:manage")
   @Validate({ params: scenarioIdParams, body: updateReorgScenarioSchema })
@@ -148,6 +159,7 @@ export class PositionsController {
     return this.service.updateScenario(user.orgId, scenarioId, user.userId, body, req.ip);
   }
 
+  @NoContentResponse()
   @Delete("scenarios/:scenarioId")
   @RequirePermission("hr:positions:manage")
   @HttpCode(204)
@@ -160,6 +172,7 @@ export class PositionsController {
     await this.service.deleteScenario(user.orgId, scenarioId, user.userId, req.ip);
   }
 
+  @ResponseSchema(simulateScenarioResponseSchema)
   @Get("scenarios/:scenarioId/simulate")
   @RequirePermission("hr:positions:view")
   @Validate({ params: scenarioIdParams })

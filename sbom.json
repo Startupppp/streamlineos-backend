@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.4",
-  "serialNumber": "urn:uuid:d148fd3b-0f20-4227-b906-8515022ec622",
+  "serialNumber": "urn:uuid:cd5432f9-1326-4987-95e7-c455f3297e16",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-09-03T02:09:52.197Z",
+    "timestamp": "2026-09-07T08:50:47.315Z",
     "component": {
       "type": "application",
       "name": "streamlineos-api",
@@ -589,19 +589,6 @@
       "name": "@humanwhocodes/retry",
       "version": "0.4.3",
       "purl": "pkg:npm/@humanwhocodes/retry@0.4.3",
-      "licenses": [
-        {
-          "license": {
-            "id": "Apache-2.0"
-          }
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "@img/sharp-darwin-arm64",
-      "version": "0.35.3",
-      "purl": "pkg:npm/@img/sharp-darwin-arm64@0.35.3",
       "licenses": [
         {
           "license": {
@@ -1730,9 +1717,9 @@
     },
     {
       "type": "library",
-      "name": "@esbuild/darwin-arm64",
+      "name": "@esbuild/win32-x64",
       "version": "0.25.12",
-      "purl": "pkg:npm/@esbuild/darwin-arm64@0.25.12",
+      "purl": "pkg:npm/@esbuild/win32-x64@0.25.12",
       "licenses": [
         {
           "license": {
@@ -2523,9 +2510,9 @@
     },
     {
       "type": "library",
-      "name": "@napi-rs/nice-darwin-arm64",
+      "name": "@napi-rs/nice-win32-x64-msvc",
       "version": "1.1.1",
-      "purl": "pkg:npm/@napi-rs/nice-darwin-arm64@1.1.1",
+      "purl": "pkg:npm/@napi-rs/nice-win32-x64-msvc@1.1.1",
       "licenses": [
         {
           "license": {
@@ -2770,9 +2757,9 @@
     },
     {
       "type": "library",
-      "name": "@oxc-parser/binding-darwin-arm64",
+      "name": "@oxc-parser/binding-win32-x64-msvc",
       "version": "0.142.0",
-      "purl": "pkg:npm/@oxc-parser/binding-darwin-arm64@0.142.0",
+      "purl": "pkg:npm/@oxc-parser/binding-win32-x64-msvc@0.142.0",
       "licenses": [
         {
           "license": {
@@ -2796,9 +2783,9 @@
     },
     {
       "type": "library",
-      "name": "@oxc-resolver/binding-darwin-arm64",
+      "name": "@oxc-resolver/binding-win32-x64-msvc",
       "version": "11.24.2",
-      "purl": "pkg:npm/@oxc-resolver/binding-darwin-arm64@11.24.2",
+      "purl": "pkg:npm/@oxc-resolver/binding-win32-x64-msvc@11.24.2",
       "licenses": [
         {
           "license": {
@@ -6231,19 +6218,6 @@
       "name": "fs-extra",
       "version": "10.1.0",
       "purl": "pkg:npm/fs-extra@10.1.0",
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "fsevents",
-      "version": "2.3.3",
-      "purl": "pkg:npm/fsevents@2.3.3",
       "licenses": [
         {
           "license": {
@@ -11012,19 +10986,6 @@
     },
     {
       "type": "library",
-      "name": "@ffmpeg-installer/darwin-arm64",
-      "version": "4.1.5",
-      "purl": "pkg:npm/@ffmpeg-installer/darwin-arm64@4.1.5",
-      "licenses": [
-        {
-          "license": {
-            "id": "https://git.ffmpeg.org/gitweb/ffmpeg.git/blob_plain/HEAD:/LICENSE.md"
-          }
-        }
-      ]
-    },
-    {
-      "type": "library",
       "name": "@ffmpeg-installer/ffmpeg",
       "version": "1.1.0",
       "purl": "pkg:npm/@ffmpeg-installer/ffmpeg@1.1.0",
@@ -11038,13 +10999,26 @@
     },
     {
       "type": "library",
-      "name": "@img/sharp-libvips-darwin-arm64",
-      "version": "1.3.2",
-      "purl": "pkg:npm/@img/sharp-libvips-darwin-arm64@1.3.2",
+      "name": "@ffmpeg-installer/win32-x64",
+      "version": "4.1.0",
+      "purl": "pkg:npm/@ffmpeg-installer/win32-x64@4.1.0",
       "licenses": [
         {
           "license": {
-            "id": "LGPL-3.0-or-later"
+            "id": "GPLv3"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "@img/sharp-win32-x64",
+      "version": "0.35.3",
+      "purl": "pkg:npm/@img/sharp-win32-x64@0.35.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0 AND LGPL-3.0-or-later"
           }
         }
       ]
@@ -11169,8 +11143,8 @@
     {
       "type": "library",
       "name": "fast-uri",
-      "version": "4.1.2",
-      "purl": "pkg:npm/fast-uri@4.1.2",
+      "version": "4.1.4",
+      "purl": "pkg:npm/fast-uri@4.1.4",
       "licenses": [
         {
           "license": {
@@ -11350,9 +11324,9 @@
     },
     {
       "type": "library",
-      "name": "@swc/core-darwin-arm64",
+      "name": "@swc/core-win32-x64-msvc",
       "version": "1.15.43",
-      "purl": "pkg:npm/@swc/core-darwin-arm64@1.15.43",
+      "purl": "pkg:npm/@swc/core-win32-x64-msvc@1.15.43",
       "licenses": [
         {
           "license": {

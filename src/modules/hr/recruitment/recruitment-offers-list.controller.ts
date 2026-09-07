@@ -8,6 +8,8 @@ import { RecruitmentOffersService } from "./recruitment-offers.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { offerListSchema, type OfferListInput } from "./dto/candidate-records.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { offerListResponseSchema } from "./dto/recruitment-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/recruitment/offers")
@@ -16,6 +18,7 @@ export class RecruitmentOffersListController {
   constructor(private readonly offers: RecruitmentOffersService) {}
 
   @Get()
+  @ResponseSchema(offerListResponseSchema)
   @RequirePermission("hr:offers:view")
   @Validate({ query: offerListSchema })
   listAll(

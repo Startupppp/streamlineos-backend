@@ -36,6 +36,15 @@ import {
 } from "./dto/hr-safety.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrSafetyIncidentListSchema,
+  hrSafetyIncidentSchema,
+  hrWellnessCheckinSchema,
+  wellnessTrendListSchema,
+  burnoutFlagListSchema,
+  wellnessPulseSchema,
+} from "./dto/cases-response.schemas";
 
 const incidentIdParams = z.object({ incidentId: z.coerce.number().int().positive() }).strict();
 
@@ -49,6 +58,7 @@ export class HrSafetyController {
   ) {}
 
   @Get("incidents")
+  @ResponseSchema(hrSafetyIncidentListSchema)
   @RequirePermission("hr:safety:view")
   @Validate({ query: listIncidentsSchema })
   listIncidents(
@@ -59,6 +69,7 @@ export class HrSafetyController {
   }
 
   @Get("incidents/:incidentId")
+  @ResponseSchema(hrSafetyIncidentSchema)
   @RequirePermission("hr:safety:view")
   @Validate({ params: incidentIdParams })
   async getIncident(
@@ -70,6 +81,7 @@ export class HrSafetyController {
   }
 
   @Post("incidents")
+  @ResponseSchema(hrSafetyIncidentSchema)
   @HttpCode(201)
   @RequirePermission("hr:safety:manage")
   @Validate({ body: createIncidentSchema })
@@ -82,6 +94,7 @@ export class HrSafetyController {
   }
 
   @Patch("incidents/:incidentId")
+  @ResponseSchema(hrSafetyIncidentSchema)
   @RequirePermission("hr:safety:manage")
   @Validate({ params: incidentIdParams, body: updateIncidentSchema })
   async updateIncident(
@@ -95,6 +108,7 @@ export class HrSafetyController {
   }
 
   @Delete("incidents/:incidentId")
+  @NoContentResponse()
   @RequirePermission("hr:safety:manage")
   @HttpCode(204)
   @Validate({ params: incidentIdParams })
@@ -106,6 +120,7 @@ export class HrSafetyController {
   }
 
   @Post("wellness/checkin")
+  @ResponseSchema(hrWellnessCheckinSchema)
   @RequirePermission("hr:safety:view")
   @Validate({ body: checkinSchema })
   checkin(
@@ -116,6 +131,7 @@ export class HrSafetyController {
   }
 
   @Get("wellness/my")
+  @ResponseSchema(z.array(hrWellnessCheckinSchema))
   @RequirePermission("hr:safety:view")
   myCheckins(
     @CurrentUser() user: CurrentUserContext,
@@ -126,6 +142,7 @@ export class HrSafetyController {
   }
 
   @Get("wellness/trend")
+  @ResponseSchema(wellnessTrendListSchema)
   @RequirePermission("hr:safety:manage")
   @Validate({ query: wellnessTrendSchema })
   orgTrend(
@@ -136,6 +153,7 @@ export class HrSafetyController {
   }
 
   @Get("wellness/burnout")
+  @ResponseSchema(burnoutFlagListSchema)
   @RequirePermission("hr:safety:manage")
   burnoutFlags(@CurrentUser() user: CurrentUserContext) {
     return this.safety.burnoutFlags(user.orgId);
@@ -143,6 +161,7 @@ export class HrSafetyController {
 
   /** K-anonymized 7-day wellness pulse for ops dashboards. */
   @Get("wellness/pulse")
+  @ResponseSchema(wellnessPulseSchema)
   @RequirePermission("hr:safety:manage")
   wellnessPulse(@CurrentUser() user: CurrentUserContext) {
     return this.safety.wellnessPulse(user.orgId);

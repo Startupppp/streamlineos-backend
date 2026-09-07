@@ -7,6 +7,11 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { NotificationPolicyService } from "./notification-policy.service";
 import { upsertPolicySchema, type UpsertPolicyInput } from "./dto/policy.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  notificationPolicyListSchema,
+  notificationPolicyRowSchema,
+} from "./dto/notification-admin-response.schemas";
 
 @Controller("notifications/admin/policy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -14,12 +19,14 @@ export class NotificationPolicyController {
   constructor(private readonly policy: NotificationPolicyService) {}
 
   @Get()
+  @ResponseSchema(notificationPolicyListSchema)
   @RequirePermission("notifications:policy:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.policy.list(u.orgId);
   }
 
   @Put()
+  @ResponseSchema(notificationPolicyRowSchema)
   @RequirePermission("notifications:policy:manage")
   @Validate({ body: upsertPolicySchema })
   upsert(

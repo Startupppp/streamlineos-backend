@@ -23,6 +23,13 @@ import {
   type RecordLinkByRecordQuery,
 } from "./dto/kb-page-record-links.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbRecordLinkListSchema,
+  kbRecordLinkSchema,
+  kbRecordLinkSuccessSchema,
+  kbRecordLinkByRecordListSchema,
+} from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -36,6 +43,7 @@ export class KbPageRecordLinksController {
   @Get("pages/:pageId/record-links")
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
+  @ResponseSchema(kbRecordLinkListSchema)
   list(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() user: CurrentUserContext,
@@ -47,6 +55,7 @@ export class KbPageRecordLinksController {
   @RequirePermission("kb:pages:update")
   @HttpCode(201)
   @Validate({ params: pageIdParams, body: createRecordLinkSchema })
+  @ResponseSchema(kbRecordLinkSchema)
   add(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body() dto: CreateRecordLinkDto,
@@ -58,6 +67,7 @@ export class KbPageRecordLinksController {
   @Delete("record-links/:linkId")
   @RequirePermission("kb:pages:update")
   @Validate({ params: linkIdParams })
+  @ResponseSchema(kbRecordLinkSuccessSchema)
   remove(
     @Param("linkId", ParseIntPipe) linkId: number,
     @CurrentUser() user: CurrentUserContext,
@@ -68,6 +78,7 @@ export class KbPageRecordLinksController {
   @Get("record-links/by-record")
   @RequirePermission("kb:pages:view")
   @Validate({ query: recordLinkByRecordQuerySchema })
+  @ResponseSchema(kbRecordLinkByRecordListSchema)
   listByRecord(
     @Query() query: RecordLinkByRecordQuery,
     @CurrentUser() user: CurrentUserContext,

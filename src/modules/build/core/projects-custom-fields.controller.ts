@@ -16,6 +16,12 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  buildCustomFieldSchema,
+  ticketFieldValueSchema,
+} from "./dto/build-core-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectIdfieldIdParams = z.object({ projectId: z.string().min(1), fieldId: z.coerce.number().int().positive() }).strict();
@@ -29,6 +35,7 @@ export class ProjectsCustomFieldsController {
 
   @Get(":projectId/custom-fields")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(buildCustomFieldSchema))
   @Validate({ params: projectIdParams })
   listFields(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -40,6 +47,7 @@ export class ProjectsCustomFieldsController {
   @Post(":projectId/custom-fields")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(buildCustomFieldSchema)
   @Validate({ params: projectIdParams, body: createCustomFieldSchema })
   createField(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -51,6 +59,7 @@ export class ProjectsCustomFieldsController {
 
   @Patch(":projectId/custom-fields/:fieldId")
   @RequirePermission("build:manage")
+  @ResponseSchema(buildCustomFieldSchema)
   @Validate({ params: projectIdfieldIdParams, body: updateCustomFieldSchema })
   updateField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
@@ -63,6 +72,7 @@ export class ProjectsCustomFieldsController {
   @Delete(":projectId/custom-fields/:fieldId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdfieldIdParams })
   deleteField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
@@ -73,6 +83,7 @@ export class ProjectsCustomFieldsController {
 
   @Get(":projectId/tickets/:ticketId/custom-field-values")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(z.array(ticketFieldValueSchema))
   @Validate({ params: projectIdticketIdParams })
   getTicketValues(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -85,6 +96,7 @@ export class ProjectsCustomFieldsController {
   @Post(":projectId/tickets/:ticketId/custom-field-values")
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @Validate({ params: projectIdticketIdParams, body: upsertCustomFieldValuesSchema })
   upsertTicketValues(
     @Param("projectId", ParseIntPipe) projectId: number,

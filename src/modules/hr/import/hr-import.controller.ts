@@ -30,7 +30,14 @@ import {
 } from "./dto/import-job.dto";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrImportJobCreateResultSchema,
+  hrImportJobListSchema,
+  hrImportJobDetailSchema,
+  hrImportJobRowSchema,
+} from "./dto/import-response.schemas";
 
 const jobIdParams = z.object({ jobId: z.string().uuid() }).strict();
 const entityParams = z.object({ entity: z.string().min(1) }).strict();
@@ -44,6 +51,7 @@ export class HrImportController {
   constructor(private readonly importService: HrImportService) {}
 
   @Post("hr/import/jobs")
+  @ResponseSchema(hrImportJobCreateResultSchema)
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
@@ -56,6 +64,7 @@ export class HrImportController {
   }
 
   @Get("hr/import/jobs")
+  @ResponseSchema(hrImportJobListSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
   @Validate({ query: listImportJobsSchema })
@@ -67,6 +76,7 @@ export class HrImportController {
   }
 
   @Get("hr/import/jobs/:jobId")
+  @ResponseSchema(hrImportJobDetailSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
   @Validate({ params: jobIdParams })
@@ -78,6 +88,7 @@ export class HrImportController {
   }
 
   @Post("hr/import/jobs/:jobId/commit")
+  @ResponseSchema(hrImportJobRowSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
@@ -90,6 +101,7 @@ export class HrImportController {
   }
 
   @Post("hr/import/jobs/:jobId/rollback")
+  @ResponseSchema(hrImportJobRowSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
@@ -102,6 +114,7 @@ export class HrImportController {
   }
 
   @Get("hr/export/:entity")
+  @ApiOkResponse({ description: "CSV file download", content: { "text/csv": { schema: { type: "string" } } } })
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:export:manage")
   @Validate({ params: entityParams, query: exportQuerySchema })

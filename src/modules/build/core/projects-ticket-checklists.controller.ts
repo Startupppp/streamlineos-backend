@@ -29,6 +29,8 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { checklistRowSchema, checklistItemSchema } from "./dto/build-tickets-response.schemas";
 
 const projectIdticketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdchecklistIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1), checklistId: z.coerce.number().int().positive() }).strict();
@@ -42,6 +44,7 @@ export class ProjectsTicketChecklistsController {
 
   @Get(":projectId/tickets/:ticketId/checklists")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(z.array(checklistRowSchema))
   @Validate({ params: projectIdticketIdParams })
   getChecklists(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -54,6 +57,7 @@ export class ProjectsTicketChecklistsController {
   @Post(":projectId/tickets/:ticketId/checklists")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(checklistRowSchema)
   @Validate({ params: projectIdticketIdParams, body: createChecklistSchema })
   createChecklist(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -66,6 +70,7 @@ export class ProjectsTicketChecklistsController {
 
   @Patch(":projectId/tickets/:ticketId/checklists/:checklistId")
   @RequirePermission("build:tickets:update")
+  @ResponseSchema(checklistRowSchema)
   @Validate({ params: projectIdticketIdchecklistIdParams, body: updateChecklistSchema })
   updateChecklist(
     @Param("checklistId", ParseIntPipe) checklistId: number,
@@ -78,6 +83,7 @@ export class ProjectsTicketChecklistsController {
   @Delete(":projectId/tickets/:ticketId/checklists/:checklistId")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdticketIdchecklistIdParams })
   deleteChecklist(
     @Param("checklistId", ParseIntPipe) checklistId: number,
@@ -89,6 +95,7 @@ export class ProjectsTicketChecklistsController {
   @Post(":projectId/tickets/:ticketId/checklists/:checklistId/items")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(checklistItemSchema)
   @Validate({ params: projectIdticketIdchecklistIdParams, body: createChecklistItemSchema })
   createChecklistItem(
     @Param("checklistId", ParseIntPipe) checklistId: number,
@@ -100,6 +107,7 @@ export class ProjectsTicketChecklistsController {
 
   @Patch(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
   @RequirePermission("build:tickets:update")
+  @ResponseSchema(checklistItemSchema)
   @Validate({ params: projectIdticketIdchecklistIditemIdParams, body: updateChecklistItemSchema })
   updateChecklistItem(
     @Param("itemId", ParseIntPipe) itemId: number,
@@ -112,6 +120,7 @@ export class ProjectsTicketChecklistsController {
   @Delete(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdticketIdchecklistIditemIdParams })
   deleteChecklistItem(
     @Param("itemId", ParseIntPipe) itemId: number,

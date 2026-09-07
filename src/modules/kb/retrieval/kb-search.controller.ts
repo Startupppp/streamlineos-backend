@@ -9,6 +9,8 @@ import { KbSearchService } from "./kb-search.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { searchSchema, type SearchInput } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbSearchResponseSchema } from "./dto/kb-retrieval-response.schemas";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -21,6 +23,7 @@ export class KbSearchController {
   @Get("search")
   @RequirePermission("kb:articles:view")
   @Validate({ query: searchSchema })
+  @ResponseSchema(kbSearchResponseSchema)
   async searchArticles(
     @Query() query: SearchInput,
     @CurrentUser() u: CurrentUserContext,

@@ -11,7 +11,12 @@ import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.se
 import { createWebhookSchema, type CreateWebhookInput } from "./dto/webhook.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  projectWebhookSchema,
+  webhookDeliverySchema,
+  webhookTestResultSchema,
+} from "./dto/build-core-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectIdwebhookIdParams = z.object({ projectId: z.string().min(1), webhookId: z.coerce.number().int().positive() }).strict();
@@ -28,6 +33,7 @@ export class ProjectsWebhooksController {
 
   @Get(":projectId/webhooks")
   @RequirePermission("build:manage")
+  @ResponseSchema(z.array(projectWebhookSchema))
   @Validate({ params: projectIdParams })
   listWebhooks(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -40,6 +46,7 @@ export class ProjectsWebhooksController {
   @RequirePermission("build:manage")
   @HttpCode(201)
   @Idempotent("build.webhook.register")
+  @ResponseSchema(projectWebhookSchema)
   @Validate({ params: projectIdParams, body: createWebhookSchema })
   createWebhook(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -52,6 +59,7 @@ export class ProjectsWebhooksController {
   @Delete(":projectId/webhooks/:webhookId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdwebhookIdParams })
   deleteWebhook(
     @Param("webhookId", ParseIntPipe) webhookId: number,
@@ -62,6 +70,7 @@ export class ProjectsWebhooksController {
 
   @Get(":projectId/webhooks/:webhookId/deliveries")
   @RequirePermission("build:manage")
+  @ResponseSchema(z.array(webhookDeliverySchema))
   @Validate({ params: projectIdwebhookIdParams_ })
   listDeliveries(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -75,6 +84,7 @@ export class ProjectsWebhooksController {
   @BodylessAction()
   @RequirePermission("build:manage")
   @HttpCode(200)
+  @ResponseSchema(webhookTestResultSchema)
   @Validate({ params: projectIdwebhookIdParams_ })
   async sendTest(
     @Param("projectId", ParseIntPipe) projectId: number,

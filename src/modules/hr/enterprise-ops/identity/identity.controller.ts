@@ -34,6 +34,8 @@ import {
 } from "../dto/identity.schemas";
 import { z } from "zod";
 import { Validate } from "../../../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../../../common/openapi/zod-operation-contracts"
+import { listProvisioningResponseSchema, createProvisioningResponseSchema, generateProvisioningResponseSchema, updateProvisioningResponseSchema, listTemplatesResponseSchema, createTemplateResponseSchema, updateTemplateResponseSchema, getExitVerificationResponseSchema } from "../dto/enterprise-ops-response.schemas"
 
 const provisioningIdParams = z.object({ provisioningId: z.string().uuid() }).strict();
 const templateIdParams = z.object({ templateId: z.string().uuid() }).strict();
@@ -44,6 +46,7 @@ const templateIdParams = z.object({ templateId: z.string().uuid() }).strict();
 export class IdentityController {
   constructor(private readonly svc: IdentityService) {}
 
+  @ResponseSchema(listProvisioningResponseSchema)
   @Get("provisioning")
   @RequirePermission("hr:identity:view")
   @Validate({ query: listProvisioningSchema })
@@ -54,6 +57,7 @@ export class IdentityController {
     return this.svc.listProvisioning(user.orgId, query);
   }
 
+  @ResponseSchema(createProvisioningResponseSchema)
   @Post("provisioning")
   @HttpCode(201)
   @RequirePermission("hr:identity:manage")
@@ -65,6 +69,7 @@ export class IdentityController {
     return this.svc.createProvisioning(user.orgId, body);
   }
 
+  @ResponseSchema(generateProvisioningResponseSchema)
   @Post("provisioning/generate")
   @HttpCode(201)
   @RequirePermission("hr:identity:manage")
@@ -76,6 +81,7 @@ export class IdentityController {
     return this.svc.generateProvisioning(user.orgId, body);
   }
 
+  @ResponseSchema(updateProvisioningResponseSchema)
   @Patch("provisioning/:provisioningId")
   @RequirePermission("hr:identity:manage")
   @Validate({ params: provisioningIdParams, body: updateProvisioningSchema })
@@ -87,12 +93,14 @@ export class IdentityController {
     return this.svc.updateProvisioning(user.orgId, provisioningId, body);
   }
 
+  @ResponseSchema(listTemplatesResponseSchema)
   @Get("templates")
   @RequirePermission("hr:identity:view")
   listTemplates(@CurrentUser() user: CurrentUserContext) {
     return this.svc.listTemplates(user.orgId);
   }
 
+  @ResponseSchema(createTemplateResponseSchema)
   @Post("templates")
   @HttpCode(201)
   @RequirePermission("hr:identity:manage")
@@ -104,6 +112,7 @@ export class IdentityController {
     return this.svc.createTemplate(user.orgId, body);
   }
 
+  @ResponseSchema(updateTemplateResponseSchema)
   @Patch("templates/:templateId")
   @RequirePermission("hr:identity:manage")
   @Validate({ params: templateIdParams, body: updateTemplateSchema })
@@ -115,6 +124,7 @@ export class IdentityController {
     return this.svc.updateTemplate(user.orgId, templateId, body);
   }
 
+  @NoContentResponse()
   @Delete("templates/:templateId")
   @HttpCode(204)
   @RequirePermission("hr:identity:manage")
@@ -126,6 +136,7 @@ export class IdentityController {
     await this.svc.deleteTemplate(user.orgId, templateId);
   }
 
+  @ResponseSchema(getExitVerificationResponseSchema)
   @Get("exit-verification")
   @RequirePermission("hr:identity:view")
   @Validate({ query: exitVerificationSchema })

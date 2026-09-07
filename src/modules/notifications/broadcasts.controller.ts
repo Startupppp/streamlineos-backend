@@ -31,8 +31,15 @@ import {
   type ListBroadcastInboxInput,
 } from "./dto/broadcast.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  broadcastInboxListSchema,
+  broadcastListResponseSchema,
+  broadcastRowSchema,
+  broadcastSuccessSchema,
+  broadcastViewerCountSchema,
+} from "./dto/broadcasts-response.schemas";
 
 const broadcastIdParams = z.object({ broadcastId: z.coerce.number().int().positive() }).strict();
 
@@ -48,6 +55,7 @@ export class BroadcastsController {
   constructor(private readonly broadcastsService: BroadcastsService) {}
 
   @Get()
+  @ResponseSchema(broadcastListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:view")
   @Validate({ query: listBroadcastsSchema })
@@ -64,6 +72,7 @@ export class BroadcastsController {
    * active member reads their own inbox.
    */
   @Get("inbox")
+  @ResponseSchema(broadcastInboxListSchema)
   @Universal()
   @Validate({ query: listBroadcastInboxSchema })
   listInbox(
@@ -74,6 +83,7 @@ export class BroadcastsController {
   }
 
   @Post()
+  @ResponseSchema(broadcastRowSchema)
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
@@ -86,6 +96,7 @@ export class BroadcastsController {
   }
 
   @Patch(":broadcastId")
+  @ResponseSchema(broadcastRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
   @Validate({ params: broadcastIdParams, body: updateBroadcastSchema })
@@ -98,6 +109,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/publish")
+  @ResponseSchema(broadcastRowSchema)
   @BodylessAction()
   @Idempotent("notifications.broadcast.publish")
   @HttpCode(200)
@@ -117,6 +129,7 @@ export class BroadcastsController {
    * No permission gate — every authenticated member dismisses their own inbox.
    */
   @Post(":broadcastId/dismiss")
+  @ResponseSchema(broadcastSuccessSchema)
   @BodylessAction()
   @Universal()
   @HttpCode(200)
@@ -129,6 +142,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/cancel")
+  @ResponseSchema(broadcastRowSchema)
   @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
@@ -146,6 +160,7 @@ export class BroadcastsController {
    * Admin-only: requires the same view permission as the broadcast list.
    */
   @Get(":broadcastId/receipts/count")
+  @ResponseSchema(broadcastViewerCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:view")
   @Validate({ params: broadcastIdParams })
@@ -157,6 +172,7 @@ export class BroadcastsController {
   }
 
   @Delete(":broadcastId")
+  @ResponseSchema(broadcastSuccessSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
   @Validate({ params: broadcastIdParams })

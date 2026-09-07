@@ -8,6 +8,12 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  surveyAutomationRuleListSchema,
+  surveyAutomationRuleSchema,
+  successSchema as surveyAutoSuccessSchema,
+} from "./dto/survey-automation-response.schemas";
 import { SurveyAutomationService } from "./survey-automation.service";
 import {
   createAutomationSchema,
@@ -28,6 +34,7 @@ export class SurveyAutomationController {
   @Get()
   @RequirePermission("surveys:automations:manage")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyAutomationRuleListSchema)
   list(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.automations.list(u.orgId, surveyId);
   }
@@ -36,6 +43,7 @@ export class SurveyAutomationController {
   @HttpCode(201)
   @RequirePermission("surveys:automations:manage")
   @Validate({ params: surveyIdParams, body: createAutomationSchema })
+  @ResponseSchema(surveyAutomationRuleSchema)
   create(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: CreateAutomationInput,
@@ -47,6 +55,7 @@ export class SurveyAutomationController {
   @Patch(":automationId")
   @RequirePermission("surveys:automations:manage")
   @Validate({ params: surveyAndAutomationIdParams, body: patchAutomationSchema })
+  @ResponseSchema(surveyAutomationRuleSchema)
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("automationId") automationId: string,
@@ -59,6 +68,7 @@ export class SurveyAutomationController {
   @Delete(":automationId")
   @RequirePermission("surveys:automations:manage")
   @Validate({ params: surveyAndAutomationIdParams })
+  @ResponseSchema(surveyAutoSuccessSchema)
   remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("automationId") automationId: string,

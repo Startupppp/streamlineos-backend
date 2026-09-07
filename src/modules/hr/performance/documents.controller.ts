@@ -57,7 +57,8 @@ import { parseStorageKey } from "../../storage/storage-key";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { listDocumentsResponseSchema, createDocumentResponseSchema, getDocumentFileResponseSchema, documentStatsResponseSchema, updateDocumentResponseSchema, documentExpiryResponseSchema, listComplianceResponseSchema, sendComplianceResponseSchema, acknowledgeComplianceResponseSchema, statutoryResponseSchema, listRichDocumentsResponseSchema, createRichDocumentResponseSchema, getRichDocumentResponseSchema, publishRichDocumentResponseSchema, updateRichDocumentResponseSchema, listLettersResponseSchema, renderLetterResponseSchema, saveLetterResponseSchema, complianceCalendarResponseSchema } from "./dto/documents-response.schemas"
 
 const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
 
@@ -75,6 +76,7 @@ export class DocumentsController {
     private readonly audit: AuditService,
   ) {}
 
+  @ResponseSchema(listDocumentsResponseSchema)
   @Get("documents")
   @RequirePermission("hr:documents:view")
   @Validate({ query: listDocumentsSchema })
@@ -86,6 +88,7 @@ export class DocumentsController {
     return this.documents.listDocuments(currentUser.orgId, currentUser.userId, scope, filters, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(createDocumentResponseSchema)
   @Post("documents")
   @HttpCode(201)
   @RequirePermission("hr:documents:manage")
@@ -98,6 +101,7 @@ export class DocumentsController {
     return this.documents.createDocument(currentUser.orgId, currentUser.userId, scope, body, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(getDocumentFileResponseSchema)
   @Get("documents/:documentId/file")
   @RequirePermission("hr:documents:view")
   @Validate({ params: documentIdParams })
@@ -137,6 +141,7 @@ export class DocumentsController {
     return { url, fileName: document.fileName, expiresIn };
   }
 
+  @ResponseSchema(documentStatsResponseSchema)
   @Get("documents/stats")
   @RequirePermission("hr:documents:view")
   async documentStats(@CurrentUser() currentUser: CurrentUserContext) {
@@ -144,6 +149,7 @@ export class DocumentsController {
     return this.documents.stats(currentUser.orgId, currentUser.userId, scope, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(updateDocumentResponseSchema)
   @Patch("documents/:documentId")
   @RequirePermission("hr:documents:manage")
   @Validate({ params: documentIdParams, body: updateDocumentSchema })
@@ -163,6 +169,7 @@ export class DocumentsController {
     );
   }
 
+  @NoContentResponse()
   @Delete("documents/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
@@ -175,6 +182,7 @@ export class DocumentsController {
     await this.documents.deleteDocument(currentUser.orgId, currentUser.userId, scope, documentId, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(documentExpiryResponseSchema)
   @Get("document-expiry")
   @RequirePermission("hr:documents:view")
   async documentExpiry(
@@ -186,6 +194,7 @@ export class DocumentsController {
     return this.documents.expiry(currentUser.orgId, currentUser.userId, scope, daysAhead, actingMembershipId(currentUser.principal));
   }
 
+  @ResponseSchema(listComplianceResponseSchema)
   @Get("compliance")
   @RequirePermission("hr:documents:view")
   async listCompliance(@CurrentUser() currentUser: CurrentUserContext) {
@@ -193,6 +202,7 @@ export class DocumentsController {
     return this.compliance.listAcknowledgments(currentUser.orgId, currentUser.userId, scope);
   }
 
+  @ResponseSchema(sendComplianceResponseSchema)
   @Post("compliance")
   @HttpCode(201)
   @RequirePermission("hr:compliance:manage")
@@ -204,6 +214,7 @@ export class DocumentsController {
     return this.compliance.sendAcknowledgments(currentUser.orgId, body);
   }
 
+  @ResponseSchema(acknowledgeComplianceResponseSchema)
   @Patch("compliance")
   @RequirePermission("hr:documents:view")
   @Validate({ body: ackSchema })
@@ -214,12 +225,14 @@ export class DocumentsController {
     return this.compliance.acknowledge(currentUser.orgId, currentUser.userId, body);
   }
 
+  @ResponseSchema(statutoryResponseSchema)
   @Get("compliance/statutory")
   @RequirePermission("hr:compliance:manage")
   statutory(@CurrentUser() currentUser: CurrentUserContext) {
     return this.compliance.statutory(currentUser.orgId);
   }
 
+  @ResponseSchema(listRichDocumentsResponseSchema)
   @Get("rich-documents")
   @RequirePermission("hr:documents:view")
   @Validate({ query: listRichDocumentsSchema })
@@ -230,6 +243,7 @@ export class DocumentsController {
     return this.richDocuments.list(currentUser.orgId, query);
   }
 
+  @ResponseSchema(createRichDocumentResponseSchema)
   @Post("rich-documents")
   @HttpCode(201)
   @RequirePermission("hr:documents:manage")
@@ -241,6 +255,7 @@ export class DocumentsController {
     return this.richDocuments.create(currentUser.orgId, currentUser.userId, body);
   }
 
+  @ResponseSchema(getRichDocumentResponseSchema)
   @Get("rich-documents/:documentId")
   @RequirePermission("hr:documents:view")
   @Validate({ params: documentIdParams })
@@ -251,6 +266,7 @@ export class DocumentsController {
     return this.richDocuments.get(currentUser.orgId, documentId);
   }
 
+  @ResponseSchema(publishRichDocumentResponseSchema)
   @Patch("rich-documents/:documentId/publish")
   @BodylessAction()
   @Idempotent("hr.performance-document.publish")
@@ -263,6 +279,7 @@ export class DocumentsController {
     return this.richDocuments.togglePublish(currentUser.orgId, documentId);
   }
 
+  @ResponseSchema(updateRichDocumentResponseSchema)
   @Patch("rich-documents/:documentId")
   @RequirePermission("hr:documents:manage")
   @Validate({ params: documentIdParams, body: updateRichDocumentSchema })
@@ -274,6 +291,7 @@ export class DocumentsController {
     return this.richDocuments.update(currentUser.orgId, currentUser.userId, documentId, body);
   }
 
+  @NoContentResponse()
   @Delete("rich-documents/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
@@ -285,6 +303,7 @@ export class DocumentsController {
     await this.richDocuments.remove(currentUser.orgId, documentId);
   }
 
+  @ResponseSchema(listLettersResponseSchema)
   @Get("documents/letters")
   @RequirePermission("hr:documents:view")
   listLetters(
@@ -294,6 +313,7 @@ export class DocumentsController {
     return this.letters.listLetters(currentUser.orgId, employmentId);
   }
 
+  @ResponseSchema(renderLetterResponseSchema)
   @Post("documents/letters/render")
   @RequirePermission("hr:documents:manage")
   @HttpCode(200)
@@ -305,6 +325,7 @@ export class DocumentsController {
     return this.letters.renderLetter(currentUser.orgId, body);
   }
 
+  @ResponseSchema(saveLetterResponseSchema)
   @Post("documents/letters")
   @RequirePermission("hr:documents:manage")
   @HttpCode(201)
@@ -316,6 +337,7 @@ export class DocumentsController {
     return this.letters.saveLetter(currentUser.orgId, currentUser.userId, body);
   }
 
+  @ResponseSchema(complianceCalendarResponseSchema)
   @Get("compliance/calendar")
   @RequirePermission("hr:compliance:manage")
   complianceCalendar(

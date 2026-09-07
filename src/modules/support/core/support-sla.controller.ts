@@ -33,7 +33,17 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  supportBusinessHoursRowSchema,
+  supportBusinessHoursListSchema,
+  supportSlaPolicyRowSchema,
+  supportSlaPolicyListSchema,
+  runEscalationsResultSchema,
+  supportSettingsAuditLogListSchema,
+  ticketRiskSchema,
+  successSchema as slaSuccessSchema,
+} from "./dto/support-settings-response.schemas";
 import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const businessHoursIdParams = z.object({ businessHoursId: z.coerce.number().int().positive() }).strict();
@@ -70,6 +80,7 @@ export class SupportSlaController {
 
   @Get("business-hours")
   @RequirePermission("support:settings:manage")
+  @ResponseSchema(supportBusinessHoursListSchema)
   listBusinessHours(@CurrentUser() u: CurrentUserContext) {
     return this.sla.listBusinessHours(u.orgId);
   }
@@ -78,6 +89,7 @@ export class SupportSlaController {
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
   @Validate({ body: createBusinessHoursSchema })
+  @ResponseSchema(supportBusinessHoursRowSchema)
   async createBusinessHours(
     @Body() body: CreateBusinessHoursInput,
     @CurrentUser() u: CurrentUserContext,
@@ -90,6 +102,7 @@ export class SupportSlaController {
   @Patch("business-hours/:businessHoursId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: businessHoursIdParams, body: updateBusinessHoursSchema })
+  @ResponseSchema(supportBusinessHoursRowSchema)
   async updateBusinessHours(
     @Param("businessHoursId", ParseIntPipe) businessHoursId: number,
     @Body() body: UpdateBusinessHoursInput,
@@ -103,6 +116,7 @@ export class SupportSlaController {
   @Delete("business-hours/:businessHoursId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: businessHoursIdParams })
+  @ResponseSchema(slaSuccessSchema)
   async deleteBusinessHours(@Param("businessHoursId", ParseIntPipe) businessHoursId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.sla.deleteBusinessHours(u.orgId, businessHoursId);
     await this.audit.record(u.orgId, u.userId, "business_hours", businessHoursId, "deleted");
@@ -111,6 +125,7 @@ export class SupportSlaController {
 
   @Get("sla-policies")
   @RequirePermission("support:settings:manage")
+  @ResponseSchema(supportSlaPolicyListSchema)
   listSlaPolicies(@CurrentUser() u: CurrentUserContext) {
     return this.sla.listSlaPolicies(u.orgId);
   }
@@ -119,6 +134,7 @@ export class SupportSlaController {
   @RequirePermission("support:settings:manage")
   @HttpCode(201)
   @Validate({ body: createSlaPolicySchema })
+  @ResponseSchema(supportSlaPolicyRowSchema)
   async createSlaPolicy(
     @Body() body: CreateSlaPolicyInput,
     @CurrentUser() u: CurrentUserContext,
@@ -131,6 +147,7 @@ export class SupportSlaController {
   @Patch("sla-policies/:slaPolicyId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: slaPolicyIdParams, body: updateSlaPolicySchema })
+  @ResponseSchema(supportSlaPolicyRowSchema)
   async updateSlaPolicy(
     @Param("slaPolicyId", ParseIntPipe) slaPolicyId: number,
     @Body() body: UpdateSlaPolicyInput,
@@ -144,6 +161,7 @@ export class SupportSlaController {
   @Delete("sla-policies/:slaPolicyId")
   @RequirePermission("support:settings:manage")
   @Validate({ params: slaPolicyIdParams })
+  @ResponseSchema(slaSuccessSchema)
   async deleteSlaPolicy(@Param("slaPolicyId", ParseIntPipe) slaPolicyId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.sla.deleteSlaPolicy(u.orgId, slaPolicyId);
     await this.audit.record(u.orgId, u.userId, "sla_policy", slaPolicyId, "deleted");
@@ -154,6 +172,7 @@ export class SupportSlaController {
   @BodylessAction()
   @RequirePermission("support:settings:manage")
   @HttpCode(200)
+  @ResponseSchema(runEscalationsResultSchema)
   runEscalations(@CurrentUser() u: CurrentUserContext) {
     return this.sla.runEscalations(u.orgId);
   }
@@ -161,6 +180,7 @@ export class SupportSlaController {
   @Get("settings/audit-log")
   @RequirePermission("support:settings:manage")
   @Validate({ query: settingsAuditLogQuery })
+  @ResponseSchema(supportSettingsAuditLogListSchema)
   listSettingsAuditLog(
     @Query() query: SettingsAuditLogQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -171,6 +191,7 @@ export class SupportSlaController {
   @Get(":supportTicketId/risk")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
+  @ResponseSchema(ticketRiskSchema)
   getTicketRisk(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,

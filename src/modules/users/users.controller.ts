@@ -33,7 +33,35 @@ import {
 } from "./dto/users.schemas";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  userListResponseSchema,
+  userIdentityListResponseSchema,
+  userStatsResponseSchema,
+  invitationListResponseSchema,
+  orgAuditLogResponseSchema,
+  createUserResponseSchema,
+  inviteUserResponseSchema,
+  bulkInviteResponseSchema,
+  bulkStatusResponseSchema,
+  bulkUpdateResponseSchema,
+  importUsersResponseSchema,
+  invitationMutationResponseSchema,
+  userIdentityResponseSchema,
+  userDetailResponseSchema,
+  userMutationResponseSchema,
+  userSessionsResponseSchema,
+  revokeSessionResponseSchema,
+  exportUserDataResponseSchema,
+  userAuditLogResponseSchema,
+  userPreferencesResponseSchema,
+  updatePreferencesResponseSchema,
+  loginHistoryResponseSchema,
+  userMembershipResponseSchema,
+  updateMembershipResponseSchema,
+  sendSigninLinkResponseSchema,
+} from "./dto/users-response.schemas";
 
 const invitationIdParams = z.object({ invitationId: z.string().min(1) }).strict();
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
@@ -55,6 +83,7 @@ export class UsersController {
   // ── Static GET routes (must be before any :userId parameterized routes) ──
 
   @RequirePermission("settings:view")
+  @ResponseSchema(userListResponseSchema)
   @Get()
   @Validate({ query: listUsersSchema })
   listUsers(
@@ -65,6 +94,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:view")
+  @ResponseSchema(userIdentityListResponseSchema)
   @Version(API_VERSION_NEXT)
   @Get()
   @Validate({ query: listUsersSchema })
@@ -76,12 +106,14 @@ export class UsersController {
   }
 
   @RequirePermission("settings:view")
+  @ResponseSchema(userStatsResponseSchema)
   @Get("stats")
   getStats(@CurrentUser() u: CurrentUserContext) {
     return this.userOps.getStats(u.orgId);
   }
 
   @RequirePermission("settings:organization:manage")
+  @ApiOkResponse({ schema: { type: "string" }, description: "CSV file" })
   @Get("export")
   async exportUsers(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
     const result = await this.userOps.exportUsers(u.orgId);
@@ -93,6 +125,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(invitationListResponseSchema)
   @Get("invitations")
   @Validate({ query: listInvitationsSchema })
   listInvitations(
@@ -109,6 +142,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(orgAuditLogResponseSchema)
   @Get("audit")
   @Validate({ query: listAuditSchema })
   getOrgAuditLog(
@@ -121,6 +155,7 @@ export class UsersController {
   // ── Static POST routes ──
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(createUserResponseSchema)
   @Post()
   @Validate({ body: createUserSchema })
   createUser(
@@ -131,6 +166,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(inviteUserResponseSchema)
   @Post("invite")
   @Idempotent("users.invitation.create")
   @Validate({ body: inviteUserSchema })
@@ -147,6 +183,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(bulkInviteResponseSchema)
   @Post("bulk-invite")
   @Idempotent("users.invitation.bulk-create")
   @Validate({ body: bulkInviteSchema })
@@ -158,6 +195,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(bulkStatusResponseSchema)
   @Post("bulk-suspend")
   @HttpCode(200)
   @Validate({ body: bulkActionSchema })
@@ -169,6 +207,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(bulkStatusResponseSchema)
   @Post("bulk-archive")
   @HttpCode(200)
   @Validate({ body: bulkActionSchema })
@@ -180,6 +219,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(bulkStatusResponseSchema)
   @Post("bulk-restore")
   @HttpCode(200)
   @Validate({ body: bulkActionSchema })
@@ -191,6 +231,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(bulkUpdateResponseSchema)
   @Post("bulk-update")
   @HttpCode(200)
   @Validate({ body: bulkUpdateUsersSchema })
@@ -202,6 +243,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(importUsersResponseSchema)
   @Post("import")
   @Validate({ body: importUsersBodySchema })
   importUsers(
@@ -214,6 +256,7 @@ export class UsersController {
   // ── Invitation sub-routes (static prefix "invitations/") ──
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(invitationMutationResponseSchema)
   @Post("invitations/:invitationId/resend")
   @Idempotent("users.invitation.resend")
   @HttpCode(200)
@@ -227,6 +270,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(invitationMutationResponseSchema)
   @Patch("invitations/:invitationId/role")
   @HttpCode(200)
   @Validate({ params: invitationIdParams, body: changeInviteRoleSchema })
@@ -244,6 +288,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(invitationMutationResponseSchema)
   @Delete("invitations/:invitationId")
   @Validate({ params: invitationIdParams })
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
@@ -256,6 +301,7 @@ export class UsersController {
   // ── Parameterized :userId routes (must come after all static routes) ──
 
   @RequirePermission("settings:view")
+  @ResponseSchema(userIdentityResponseSchema)
   @Version(API_VERSION_NEXT)
   @Get(":userId")
   @Validate({ params: userIdParams })
@@ -267,6 +313,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:view")
+  @ResponseSchema(userDetailResponseSchema)
   @Get(":userId")
   @Validate({ params: userIdParams })
   getUser(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
@@ -274,6 +321,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(userMutationResponseSchema)
   @Patch(":userId")
   @Validate({ params: userIdParams, body: updateUserSchema })
   updateUser(
@@ -285,6 +333,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(userMutationResponseSchema)
   @Patch(":userId/status")
   @Validate({ params: userIdParams, body: updateUserStatusSchema })
   updateStatus(
@@ -296,6 +345,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(userMutationResponseSchema)
   @Delete(":userId")
   @Validate({ params: userIdParams })
   deleteUser(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
@@ -303,6 +353,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(userSessionsResponseSchema)
   @Get(":userId/sessions")
   @Validate({ params: userIdParams })
   getSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
@@ -310,6 +361,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(revokeSessionResponseSchema)
   @Delete(":userId/sessions/:sessionId")
   @Validate({ params: userIdsessionIdParams })
   revokeSession(
@@ -321,6 +373,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(revokeSessionResponseSchema)
   @Delete(":userId/sessions")
   @Validate({ params: userIdParams })
   revokeAllSessions(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
@@ -328,6 +381,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(exportUserDataResponseSchema)
   @Get(":userId/data-export")
   @Validate({ params: userIdParams })
   exportUserData(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
@@ -335,6 +389,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(userAuditLogResponseSchema)
   @Get(":userId/activity")
   @Validate({ params: userIdParams })
   getActivity(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
@@ -342,6 +397,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:view")
+  @ResponseSchema(userPreferencesResponseSchema)
   @Get(":userId/preferences")
   @Validate({ params: userIdParams })
   getPreferences(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
@@ -349,6 +405,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(updatePreferencesResponseSchema)
   @Patch(":userId/preferences")
   @Validate({ params: userIdParams, body: updatePreferencesSchema })
   updatePreferences(
@@ -360,6 +417,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(loginHistoryResponseSchema)
   @Get(":userId/login-history")
   @Validate({ params: userIdParams, query: listLoginHistorySchema })
   getLoginHistory(
@@ -371,6 +429,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:view")
+  @ResponseSchema(userMembershipResponseSchema)
   @Get(":userId/membership")
   @Validate({ params: userIdParams })
   getMembership(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
@@ -378,6 +437,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(updateMembershipResponseSchema)
   @Patch(":userId/membership")
   @Validate({ params: userIdParams, body: updateMembershipSchema })
   updateMembership(
@@ -389,6 +449,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(sendSigninLinkResponseSchema)
   @Post(":userId/send-signin-link")
   @Idempotent("users.signin-link.send")
   @HttpCode(200)
@@ -399,6 +460,7 @@ export class UsersController {
   }
 
   @RequirePermission("settings:organization:manage")
+  @ResponseSchema(userAuditLogResponseSchema)
   @Get(":userId/audit")
   @Validate({ params: userIdParams, query: listAuditSchema })
   getUserAuditLog(

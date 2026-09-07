@@ -34,8 +34,14 @@ import {
 } from "./dto/workspace.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { resolveClientIpOr } from "../../../common/http/client-ip";
+import {
+  whiteboardSharingUpdateSchema,
+  whiteboardSharesSchema,
+  publicWhiteboardSchema,
+  publicWhiteboardUpdateSchema as publicWhiteboardUpdateResultSchema,
+} from "./dto/workspace-response.schemas";
 
 const projectAndWhiteboardIdParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive() }).strict();
 const projectWhiteboardAndTargetUserParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive(), targetUserId: z.string().min(1) }).strict();
@@ -50,6 +56,7 @@ export class WhiteboardSharingController {
 
   @Patch("sharing")
   @RequirePermission("build:whiteboards:manage")
+  @ResponseSchema(whiteboardSharingUpdateSchema)
   @Validate({ params: projectAndWhiteboardIdParams, body: updateWhiteboardSharingSchema })
   updateSharing(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -64,6 +71,7 @@ export class WhiteboardSharingController {
   @BodylessAction()
   @RequirePermission("build:whiteboards:manage")
   @HttpCode(200)
+  @ResponseSchema(whiteboardSharingUpdateSchema)
   @Validate({ params: projectAndWhiteboardIdParams })
   rotateShareToken(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -75,6 +83,7 @@ export class WhiteboardSharingController {
 
   @Put("shares")
   @RequirePermission("build:whiteboards:manage")
+  @ResponseSchema(whiteboardSharesSchema)
   @Validate({ params: projectAndWhiteboardIdParams, body: setWhiteboardSharesSchema })
   setShares(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -88,6 +97,7 @@ export class WhiteboardSharingController {
   @Delete("shares/:targetUserId")
   @RequirePermission("build:whiteboards:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectWhiteboardAndTargetUserParams })
   removeShare(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -108,6 +118,7 @@ export class PublicWhiteboardLinksController {
   ) {}
 
   @Get(":token")
+  @ResponseSchema(publicWhiteboardSchema)
   @Validate({ params: tokenParams })
   async getByToken(@Param("token") token: string, @Req() req: Request) {
     const rl = await this.rateLimit.check("whiteboard:public-view", resolveClientIpOr(req, "unknown"));
@@ -121,6 +132,7 @@ export class PublicWhiteboardLinksController {
   }
 
   @Patch(":token")
+  @ResponseSchema(publicWhiteboardUpdateResultSchema)
   @Validate({ params: tokenParams, body: publicWhiteboardUpdateSchema })
   async updateByToken(
     @Param("token") token: string,

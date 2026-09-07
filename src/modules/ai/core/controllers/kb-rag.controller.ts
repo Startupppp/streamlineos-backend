@@ -25,6 +25,9 @@ import {
   rethrowStreamRouteError,
 } from "../streaming";
 import { AiRequestAbortInterceptor } from "../streaming";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { kbAskResponseSchema } from "../dto/ai-response.schemas";
 
 export const KB_STREAM_DEADLINE_MS = 60_000;
 const KB_SOURCES_HEADER = "x-kb-sources";
@@ -40,6 +43,7 @@ export class KbRagController {
   @HttpCode(200)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:public-kb-ask")
+  @ResponseSchema(kbAskResponseSchema)
   @Validate({ body: kbAskSchema })
   ask(@Body() body: KbAskInput) {
     if (!this.kbRag.isEmbeddingConfigured()) {
@@ -55,6 +59,7 @@ export class KbRagController {
   @HttpCode(200)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:public-kb-ask")
+  @ApiOkResponse({ description: "AI text stream with KB sources", content: { "text/plain": { schema: { type: "string" } } } })
   @Validate({ body: kbAskSchema })
   async streamAsk(
     @Req() req: Request,

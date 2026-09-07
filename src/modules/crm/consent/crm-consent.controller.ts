@@ -30,6 +30,12 @@ import {
 } from "./dto/consent.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  consentListSchema,
+  consentCountMissingSchema,
+  successSchema,
+} from "./dto/crm-consent-response.schemas";
 
 const contactIdParams = z.object({ contactId: z.string().min(1) }).strict();
 
@@ -40,6 +46,7 @@ export class CrmConsentController {
 
   @Get("contacts/:contactId")
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(consentListSchema)
   @Validate({ params: contactIdParams })
   listForContact(
     @Param() params: ContactParam,
@@ -51,6 +58,7 @@ export class CrmConsentController {
   @Post("contacts/:contactId")
   @HttpCode(200)
   @RequirePermission("crm:contacts:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: contactIdParams, body: recordConsentSchema })
   async record(
     @Param() params: ContactParam,
@@ -73,6 +81,7 @@ export class CrmConsentController {
 
   @Get("missing")
   @RequirePermission("crm:contacts:view")
+  @ResponseSchema(consentCountMissingSchema)
   @Validate({ query: missingConsentQuerySchema })
   async countMissing(
     @Query() query: MissingConsentQuery,
@@ -94,6 +103,7 @@ export class CrmPublicConsentController {
   @Post("unsubscribe")
   @Public()
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("crm:public-unsubscribe")
   @Validate({ body: unsubscribeSchema })

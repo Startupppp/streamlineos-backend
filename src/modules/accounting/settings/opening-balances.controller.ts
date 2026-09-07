@@ -8,6 +8,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { OpeningBalancesService } from "./opening-balances.service";
 import { postOpeningBalancesSchema, type PostOpeningBalancesInput } from "./dto/settings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { openingBalanceResponseSchema, postOpeningBalancesResponseSchema } from "./dto/settings-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/opening-balances")
@@ -16,12 +18,14 @@ export class OpeningBalancesController {
   constructor(private readonly svc: OpeningBalancesService) {}
 
   @Get()
+  @ResponseSchema(openingBalanceResponseSchema)
   @RequirePermission("accounting:journal:read")
   getOpeningBalance(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getOpeningBalance(u.orgId);
   }
 
   @Post()
+  @ResponseSchema(postOpeningBalancesResponseSchema)
   @RequirePermission("accounting:journal:create")
   @HttpCode(200)
   @Validate({ body: postOpeningBalancesSchema })

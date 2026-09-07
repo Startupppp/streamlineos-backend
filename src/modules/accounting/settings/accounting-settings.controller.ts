@@ -26,6 +26,13 @@ import {
 import { BadRequestException } from "@nestjs/common";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  accountingSettingsSchema,
+  setupStatusResponseSchema,
+  sequenceListResponseSchema,
+  sequenceSchema,
+} from "./dto/settings-response.schemas";
 
 const entityTypeParams = z.object({ entityType: z.string().min(1) }).strict();
 
@@ -36,12 +43,14 @@ export class AccountingSettingsController {
   constructor(private readonly svc: AccountingSettingsService) {}
 
   @Get()
+  @ResponseSchema(accountingSettingsSchema)
   @RequirePermission("accounting:settings:read")
   getSettings(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getSettings(u.orgId);
   }
 
   @Patch()
+  @ResponseSchema(accountingSettingsSchema)
   @RequirePermission("accounting:settings:manage")
   @Validate({ body: updateSettingsSchema })
   updateSettings(
@@ -52,18 +61,21 @@ export class AccountingSettingsController {
   }
 
   @Get("setup-status")
+  @ResponseSchema(setupStatusResponseSchema)
   @RequirePermission("accounting:settings:read")
   getSetupStatus(@CurrentUser() u: CurrentUserContext) {
     return this.svc.getSetupStatus(u.orgId);
   }
 
   @Get("sequences")
+  @ResponseSchema(sequenceListResponseSchema)
   @RequirePermission("accounting:settings:read")
   listSequences(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listSequences(u.orgId);
   }
 
   @Patch("payment-terms")
+  @ResponseSchema(accountingSettingsSchema)
   @RequirePermission("accounting:settings:manage")
   @Validate({ body: upsertPaymentTermsSchema })
   updatePaymentTerms(
@@ -74,6 +86,7 @@ export class AccountingSettingsController {
   }
 
   @Patch("sequences/:entityType")
+  @ResponseSchema(sequenceSchema)
   @RequirePermission("accounting:settings:manage")
   @Validate({ params: entityTypeParams, body: updateSequenceSchema })
   updateSequence(

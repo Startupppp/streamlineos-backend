@@ -32,6 +32,8 @@ import {
 } from "./dto/approvals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { approvalInboxItemSchema, approvalRowSchema } from "./dto/approvals-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectAndApprovalIdParams = z.object({ projectId: z.coerce.number().int().positive(), approvalId: z.coerce.number().int().positive() }).strict();
@@ -44,6 +46,7 @@ export class ApprovalsInboxController {
 
   @Get("inbox")
   @RequirePermission("build:approvals:view")
+  @ResponseSchema(z.array(approvalInboxItemSchema))
   getInbox(@CurrentUser() u: CurrentUserContext) {
     const mid = actingMembershipId(u.principal);
     if (mid === null) return Promise.resolve([]);
@@ -59,6 +62,7 @@ export class BuildApprovalsController {
 
   @Get()
   @RequirePermission("build:approvals:view")
+  @ResponseSchema(z.array(approvalRowSchema))
   @Validate({ params: projectIdParams, query: listApprovalsQuerySchema })
   listApprovals(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -70,6 +74,7 @@ export class BuildApprovalsController {
 
   @Get(":approvalId")
   @RequirePermission("build:approvals:view")
+  @ResponseSchema(approvalRowSchema)
   @Validate({ params: projectAndApprovalIdParams })
   getApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -82,6 +87,7 @@ export class BuildApprovalsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:approvals:request")
+  @ResponseSchema(approvalRowSchema)
   @Idempotent("build.approval.create")
   @Validate({ params: projectIdParams, body: createApprovalSchema })
   createApproval(
@@ -94,6 +100,7 @@ export class BuildApprovalsController {
 
   @Patch(":approvalId/decide")
   @RequirePermission("build:approvals:decide")
+  @ResponseSchema(approvalRowSchema)
   @Idempotent("build.approval.decide")
   @Validate({ params: projectAndApprovalIdParams, body: decideApprovalSchema })
   decideApproval(
@@ -107,6 +114,7 @@ export class BuildApprovalsController {
 
   @Patch(":approvalId")
   @RequirePermission("build:approvals:manage")
+  @ResponseSchema(approvalRowSchema)
   @Validate({ params: projectAndApprovalIdParams, body: updateApprovalSchema })
   updateApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -120,6 +128,7 @@ export class BuildApprovalsController {
   @Delete(":approvalId")
   @RequirePermission("build:approvals:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectAndApprovalIdParams })
   softDeleteApproval(
     @Param("projectId", ParseIntPipe) projectId: number,

@@ -112,3 +112,32 @@ export const fnfStatementSchema = z.object({
 });
 
 export const fnfInsightsListSchema = itemsPagedSchema(fnfGetOneSchema);
+
+export const fnfRowSchema = z.object({
+  id: z.number().int(),
+  orgId: z.string(),
+  userId: z.string(),
+  resignationId: z.number().int().nullable(),
+  basicDues: z.string(),
+  leaveEncashment: z.string(),
+  bonusDue: z.string(),
+  deductions: z.string(),
+  loanRecovery: z.string(),
+  netPayable: z.string(),
+  status: z.string(),
+  userMembershipId: z.number().int().nullable(),
+  approvedBy: z.string().nullable(),
+  notes: z.string().nullable(),
+  reimbursementsDue: z.string(),
+  assetRecovery: z.string(),
+  noticeRecovery: z.string(),
+  otherDeductions: z.string(),
+  statementPublishedAt: nullableWireDate(),
+  createdAt: wireDate(),
+  updatedAt: wireDate(),
+});
+
+export const updateFnfResultSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(false) }),
+  z.object({ ok: z.literal(true), record: fnfRowSchema }),
+]);

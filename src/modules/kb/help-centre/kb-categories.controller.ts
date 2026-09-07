@@ -23,6 +23,12 @@ import {
   type UpdateCategoryInput,
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbCategoryListSchema,
+  kbCategorySchema,
+  kbCategorySuccessSchema,
+} from "./dto/kb-helpcenter-response.schemas";
 import { z } from "zod";
 
 const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();
@@ -36,6 +42,7 @@ export class KbCategoriesController {
   @Get("spaces/:spaceId/categories")
   @RequirePermission("kb:spaces:view")
   @Validate({ params: spaceIdParams })
+  @ResponseSchema(kbCategoryListSchema)
   async list(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -47,6 +54,7 @@ export class KbCategoriesController {
   @RequirePermission("kb:categories:manage")
   @HttpCode(201)
   @Validate({ params: spaceIdParams, body: createCategorySchema })
+  @ResponseSchema(kbCategorySchema)
   async create(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body() body: CreateCategoryInput,
@@ -58,6 +66,7 @@ export class KbCategoriesController {
   @Patch("categories/:categoryId")
   @RequirePermission("kb:categories:manage")
   @Validate({ params: categoryIdParams, body: updateCategorySchema })
+  @ResponseSchema(kbCategorySchema)
   async update(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @Body() body: UpdateCategoryInput,
@@ -69,6 +78,7 @@ export class KbCategoriesController {
   @Delete("categories/:categoryId")
   @RequirePermission("kb:categories:manage")
   @Validate({ params: categoryIdParams })
+  @ResponseSchema(kbCategorySuccessSchema)
   async remove(
     @Param("categoryId", ParseIntPipe) categoryId: number,
     @CurrentUser() u: CurrentUserContext,

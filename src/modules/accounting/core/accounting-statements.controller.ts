@@ -15,6 +15,13 @@ import {
 } from "./dto/accounting.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  trialBalanceResponseSchema,
+  profitLossResponseSchema,
+  balanceSheetResponseSchema,
+  cashFlowResponseSchema,
+} from "./dto/accounting-statements-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/reports")
@@ -23,6 +30,7 @@ export class AccountingStatementsController {
   constructor(private readonly statements: AccountingStatementsService) {}
 
   @Get("trial-balance")
+  @ResponseSchema(trialBalanceResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: trialBalanceQuerySchema })
@@ -34,6 +42,7 @@ export class AccountingStatementsController {
   }
 
   @Get("profit-loss")
+  @ResponseSchema(profitLossResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: profitLossQuerySchema })
@@ -45,6 +54,7 @@ export class AccountingStatementsController {
   }
 
   @Get("balance-sheet")
+  @ResponseSchema(balanceSheetResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: balanceSheetQuerySchema })
@@ -56,6 +66,7 @@ export class AccountingStatementsController {
   }
 
   @Get("cash-flow")
+  @ResponseSchema(cashFlowResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: profitLossQuerySchema })

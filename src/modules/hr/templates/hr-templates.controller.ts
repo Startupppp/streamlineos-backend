@@ -35,7 +35,15 @@ import {
 } from "./dto/hr-templates.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrTemplateRowSchema,
+  hrTemplateListSchema,
+  hrTemplateSeedResultSchema,
+  hrTemplateRenderResultSchema,
+  hrTemplateRendersListSchema,
+  templateVariablesListSchema,
+} from "./dto/templates-response.schemas";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -49,12 +57,14 @@ export class HrTemplatesController {
   ) {}
 
   @Get("variables")
+  @ResponseSchema(templateVariablesListSchema)
   @RequirePermission("hr:templates:view")
   listVariables() {
     return this.service.listVariables();
   }
 
   @Get()
+  @ResponseSchema(hrTemplateListSchema)
   @RequirePermission("hr:templates:view")
   @Validate({ query: templateListQuerySchema })
   list(
@@ -65,6 +75,7 @@ export class HrTemplatesController {
   }
 
   @Post()
+  @ResponseSchema(hrTemplateRowSchema)
   @RequirePermission("hr:templates:manage")
   @HttpCode(201)
   @Validate({ body: createTemplateSchema })
@@ -76,6 +87,7 @@ export class HrTemplatesController {
   }
 
   @Post("seed-defaults")
+  @ResponseSchema(hrTemplateSeedResultSchema)
   @BodylessAction()
   @RequirePermission("hr:templates:manage")
   @HttpCode(200)
@@ -84,6 +96,7 @@ export class HrTemplatesController {
   }
 
   @Get(":templateId")
+  @ResponseSchema(hrTemplateRowSchema)
   @RequirePermission("hr:templates:view")
   @Validate({ params: templateIdParams })
   getOne(
@@ -94,6 +107,7 @@ export class HrTemplatesController {
   }
 
   @Patch(":templateId")
+  @ResponseSchema(hrTemplateRowSchema)
   @RequirePermission("hr:templates:manage")
   @Validate({ params: templateIdParams, body: updateTemplateSchema })
   update(
@@ -105,6 +119,7 @@ export class HrTemplatesController {
   }
 
   @Post(":templateId/transition")
+  @ResponseSchema(hrTemplateRowSchema)
   @RequirePermission("hr:templates:manage")
   @HttpCode(200)
   @Validate({ params: templateIdParams, body: transitionTemplateSchema })
@@ -117,6 +132,7 @@ export class HrTemplatesController {
   }
 
   @Post(":templateId/versions")
+  @ResponseSchema(hrTemplateRowSchema)
   @BodylessAction()
   @RequirePermission("hr:templates:manage")
   @HttpCode(201)
@@ -129,6 +145,7 @@ export class HrTemplatesController {
   }
 
   @Post(":templateId/render")
+  @ResponseSchema(hrTemplateRenderResultSchema)
   @RequirePermission("hr:templates:view")
   @HttpCode(200)
   @Validate({ params: templateIdParams, body: renderTemplateSchema })
@@ -147,6 +164,7 @@ export class HrTemplatesController {
   }
 
   @Get(":templateId/renders")
+  @ResponseSchema(hrTemplateRendersListSchema)
   @RequirePermission("hr:templates:view")
   @Validate({ params: templateIdParams, query: templateRendersQuerySchema })
   listRenders(

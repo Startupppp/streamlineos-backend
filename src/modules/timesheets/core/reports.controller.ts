@@ -15,6 +15,15 @@ import {
   type ReportRangeQuery,
 } from "./dto/reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  reportsOverviewResponseSchema,
+  reportsUtilizationResponseSchema,
+  clientProfitabilityResponseSchema,
+  complianceResponseSchema,
+  approvalSlaResponseSchema,
+  billingLeakageResponseSchema,
+} from "./dto/timesheets-response.schemas";
 
 @RequireModule("timesheets")
 @Controller("timesheets/reports")
@@ -28,6 +37,7 @@ export class TimesheetReportsController {
   @Get("overview")
   @RequirePermission("timesheets:reports:view")
   @Validate({ query: overviewQuerySchema })
+  @ResponseSchema(reportsOverviewResponseSchema)
   overview(
     @Query() query: OverviewQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -38,6 +48,7 @@ export class TimesheetReportsController {
   @Get("utilization")
   @RequirePermission("timesheets:reports:view")
   @Validate({ query: reportRangeQuerySchema })
+  @ResponseSchema(reportsUtilizationResponseSchema)
   utilization(
     @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -48,6 +59,7 @@ export class TimesheetReportsController {
   @Get("client-profitability")
   @RequirePermission("timesheets:reports:view")
   @Validate({ query: reportRangeQuerySchema })
+  @ResponseSchema(clientProfitabilityResponseSchema)
   clientProfitability(
     @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -58,6 +70,7 @@ export class TimesheetReportsController {
   @Get("compliance")
   @RequirePermission("timesheets:reports:view")
   @Validate({ query: reportRangeQuerySchema })
+  @ResponseSchema(complianceResponseSchema)
   compliance(
     @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -68,6 +81,7 @@ export class TimesheetReportsController {
   @Get("approval-sla")
   @RequirePermission("timesheets:reports:view")
   @Validate({ query: reportRangeQuerySchema })
+  @ResponseSchema(approvalSlaResponseSchema)
   approvalSla(
     @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -78,6 +92,7 @@ export class TimesheetReportsController {
   @Get("billing-leakage")
   @RequirePermission("timesheets:reports:view")
   @Validate({ query: reportRangeQuerySchema })
+  @ResponseSchema(billingLeakageResponseSchema)
   billingLeakage(
     @Query() query: ReportRangeQuery,
     @CurrentUser() u: CurrentUserContext,

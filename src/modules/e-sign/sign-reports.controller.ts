@@ -10,6 +10,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { readRequestScope } from "../organization/core/read-request-scope";
 import { SignReportsService } from "./sign-reports.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { signDashboardResponseSchema, signSummaryResponseSchema } from "./dto/e-sign-response.schemas";
 
 @RequireModule("sign")
 @Controller("sign/reports")
@@ -19,6 +21,7 @@ export class SignReportsController {
 
   @Get("dashboard")
   @RequirePermission("sign:envelope:view")
+  @ResponseSchema(signDashboardResponseSchema)
   getDashboard(@CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.reports.getDashboard(u.orgId, actingMembershipId(u.principal), {
       viewAll: readRequestScope(req) === "all",
@@ -27,6 +30,7 @@ export class SignReportsController {
 
   @Get("summary")
   @RequirePermission("sign:audit:view")
+  @ResponseSchema(signSummaryResponseSchema)
   getSummary(@CurrentUser() u: CurrentUserContext) {
     return this.reports.getSummary(u.orgId);
   }

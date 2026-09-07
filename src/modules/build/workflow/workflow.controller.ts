@@ -27,6 +27,11 @@ import {
 } from "./dto/workflow.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  workflowTransitionSchema,
+  projectStatusSchema,
+} from "./dto/workflow-response.schemas";
 
 const transitionIdParams = z.object({ transitionId: z.coerce.number().int().positive() }).strict();
 const fromStatusIdParams = z.object({ fromStatusId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +45,7 @@ export class WorkflowController {
 
   @Get("transitions")
   @RequirePermission("build:workflow:view")
+  @ResponseSchema(z.array(workflowTransitionSchema))
   listTransitions(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -50,6 +56,7 @@ export class WorkflowController {
   @Post("transitions")
   @HttpCode(201)
   @RequirePermission("build:workflow:manage")
+  @ResponseSchema(workflowTransitionSchema)
   @Validate({ body: createTransitionSchema })
   createTransition(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -61,6 +68,7 @@ export class WorkflowController {
 
   @Patch("transitions/:transitionId")
   @RequirePermission("build:workflow:manage")
+  @ResponseSchema(workflowTransitionSchema)
   @Validate({ params: transitionIdParams, body: updateTransitionSchema })
   updateTransition(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -74,6 +82,7 @@ export class WorkflowController {
   @Delete("transitions/:transitionId")
   @RequirePermission("build:workflow:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: transitionIdParams })
   deleteTransition(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -85,6 +94,7 @@ export class WorkflowController {
 
   @Get("allowed/:fromStatusId")
   @RequirePermission("build:workflow:view")
+  @ResponseSchema(z.array(workflowTransitionSchema))
   @Validate({ params: fromStatusIdParams })
   getAllowedTransitions(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -96,6 +106,7 @@ export class WorkflowController {
 
   @Patch("statuses/:statusId/wip")
   @RequirePermission("build:workflow:manage")
+  @ResponseSchema(projectStatusSchema)
   @Validate({ params: statusIdParams, body: wipLimitSchema })
   updateWipLimit(
     @Param("projectId", ParseIntPipe) projectId: number,

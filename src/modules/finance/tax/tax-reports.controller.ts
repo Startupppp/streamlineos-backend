@@ -16,6 +16,8 @@ import {
   type TaxDateRangeQuery,
 } from "./dto/tax-reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { taxOutputReportResponseSchema, taxInputReportResponseSchema, taxLiabilitySummaryResponseSchema } from "./dto/tax-response.schemas";
 
 function toCsvRow(line: OutputTaxLine | InputTaxLine): string {
   return [
@@ -43,6 +45,7 @@ export class TaxReportsController {
   constructor(private readonly reports: TaxReportsService) {}
 
   @Get("output")
+  @ResponseSchema(taxOutputReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
   @Validate({ query: taxDateRangeQuerySchema })
@@ -65,6 +68,7 @@ export class TaxReportsController {
   }
 
   @Get("input")
+  @ResponseSchema(taxInputReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
   @Validate({ query: taxDateRangeQuerySchema })
@@ -87,6 +91,7 @@ export class TaxReportsController {
   }
 
   @Get("liability-summary")
+  @ResponseSchema(taxLiabilitySummaryResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
   @Validate({ query: taxDateRangeQuerySchema })

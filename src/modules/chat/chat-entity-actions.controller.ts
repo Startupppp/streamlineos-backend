@@ -26,6 +26,12 @@ import type {
   EntityReference,
 } from "../entity-reference/entity-reference.types";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  chatActionOptionsSchema,
+  chatAvailableActionsSchema,
+  chatSubmitActionSchema,
+} from "./dto/chat-misc-response.schemas";
 
 @Controller("chat/entity-actions")
 @UseGuards(JwtAuthGuard)
@@ -39,6 +45,7 @@ export class ChatEntityActionsController {
   ) {}
 
   @Post("available")
+  @ResponseSchema(chatAvailableActionsSchema)
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: entityActionsAvailableSchema })
   async availableActions(
@@ -61,6 +68,7 @@ export class ChatEntityActionsController {
   }
 
   @Post("options")
+  @ResponseSchema(chatActionOptionsSchema)
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: entityActionOptionsSchema })
   async actionOptions(
@@ -74,6 +82,7 @@ export class ChatEntityActionsController {
   }
 
   @Post("submit")
+  @ResponseSchema(chatSubmitActionSchema)
   @Idempotent("chat.action.submit")
   @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: submitEntityActionSchema })

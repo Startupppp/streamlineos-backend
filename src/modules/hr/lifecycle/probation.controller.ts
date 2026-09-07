@@ -28,6 +28,12 @@ import {
 } from "./dto/probation.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  probationListSchema,
+  probationStartReviewSchema,
+  hrProbationReviewSchema,
+} from "./dto/lifecycle-response.schemas";
 
 const employmentIdParams = z.object({ employmentId: z.coerce.number().int().positive() }).strict();
 const reviewIdParams = z.object({ reviewId: z.coerce.number().int().positive() }).strict();
@@ -39,6 +45,7 @@ export class ProbationController {
   constructor(private readonly probation: ProbationService) {}
 
   @Get()
+  @ResponseSchema(probationListSchema)
   @RequirePermission("hr:probation:view")
   @Validate({ query: listProbationReviewsSchema })
   listDueForReview(
@@ -49,6 +56,7 @@ export class ProbationController {
   }
 
   @Post(":employmentId/start-review")
+  @ResponseSchema(probationStartReviewSchema)
   @HttpCode(200)
   @RequirePermission("hr:probation:manage")
   @Validate({ params: employmentIdParams, body: startReviewSchema })
@@ -61,6 +69,7 @@ export class ProbationController {
   }
 
   @Post(":reviewId/extend")
+  @ResponseSchema(hrProbationReviewSchema)
   @HttpCode(200)
   @RequirePermission("hr:probation:manage")
   @Validate({ params: reviewIdParams, body: extendProbationSchema })
@@ -73,6 +82,7 @@ export class ProbationController {
   }
 
   @Post(":reviewId/confirm")
+  @ResponseSchema(hrProbationReviewSchema)
   @HttpCode(200)
   @RequirePermission("hr:probation:manage")
   @Validate({ params: reviewIdParams, body: confirmProbationSchema })

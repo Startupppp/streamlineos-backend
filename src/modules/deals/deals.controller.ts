@@ -46,7 +46,19 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  dealSchema,
+  dealListSchema,
+  dealActivitySchema,
+  dealTransitionsListSchema,
+  dealCustomDataSchema,
+  dealUpdateResultSchema,
+  dealBulkResultSchema,
+  dealBulkDeleteResultSchema,
+  dealBulkImportResultSchema,
+} from "./dto/deals-response.schemas";
 
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
 
@@ -62,6 +74,7 @@ export class DealsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(dealListSchema)
   @Validate({ query: listDealsSchema })
   async listDeals(
     @Query() query: ListDealsInput,
@@ -76,6 +89,7 @@ export class DealsController {
   @RequirePermission("crm:deals:create")
   @HttpCode(201)
   @Idempotent("crm.deal.create")
+  @ResponseSchema(dealSchema)
   @Validate({ body: createDealSchema })
   createDeal(
     @Body() body: CreateDealInput,
@@ -87,6 +101,7 @@ export class DealsController {
   @Patch("bulk")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @ResponseSchema(dealBulkResultSchema)
   @Validate({ body: dealBulkUpdateSchema })
   bulkUpdate(
     @Body() body: DealBulkUpdateInput,
@@ -98,6 +113,7 @@ export class DealsController {
   @Delete("bulk")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:delete")
+  @ResponseSchema(dealBulkDeleteResultSchema)
   @Validate({ body: dealBulkDeleteSchema })
   bulkDelete(
     @Body() body: DealBulkDeleteInput,
@@ -111,6 +127,7 @@ export class DealsController {
   @RequirePermission("crm:deals:create")
   @HttpCode(201)
   @Idempotent("crm.deals.bulkImport")
+  @ResponseSchema(dealBulkImportResultSchema)
   @Validate({ body: bulkImportDealsSchema })
   bulkImport(
     @Body() body: BulkImportDealsInput,
@@ -122,6 +139,7 @@ export class DealsController {
   @Get("export")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @ApiOkResponse({ description: "CSV file download", content: { "text/csv": { schema: { type: "string" } } } })
   async exportCsv(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
     const scope = await resolveDealsReadScope(this.access, u);
     const result = await this.deals.exportCsv(u.orgId, u.userId, scope);
@@ -137,6 +155,7 @@ export class DealsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:create")
   @HttpCode(200)
+  @ResponseSchema(dealSchema)
   @Validate({ params: dealIdParams })
   cloneDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -148,6 +167,7 @@ export class DealsController {
   @Get(":dealId/activities")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(z.array(dealActivitySchema))
   @Validate({ params: dealIdParams })
   listActivities(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -159,6 +179,7 @@ export class DealsController {
   @Get(":dealId/transitions")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(dealTransitionsListSchema)
   @Validate({ params: dealIdParams })
   async listStageTransitions(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -171,6 +192,7 @@ export class DealsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
   @HttpCode(201)
+  @ResponseSchema(dealActivitySchema)
   @Validate({ params: dealIdParams, body: logActivitySchema })
   addActivity(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -183,6 +205,7 @@ export class DealsController {
   @Patch(":dealId/custom-data")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @ResponseSchema(dealCustomDataSchema)
   @Validate({ params: dealIdParams, body: patchCustomDataSchema })
   updateCustomData(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -195,6 +218,7 @@ export class DealsController {
   @Patch(":dealId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @ResponseSchema(dealUpdateResultSchema)
   @Validate({ params: dealIdParams, body: updateDealSchema })
   async updateDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -217,6 +241,7 @@ export class DealsController {
   @Get(":dealId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(dealSchema)
   @Validate({ params: dealIdParams })
   async getDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -231,6 +256,7 @@ export class DealsController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:delete")
+  @NoContentResponse()
   @Validate({ params: dealIdParams })
   async deleteDeal(
     @Param("dealId", ParseIntPipe) dealId: number,

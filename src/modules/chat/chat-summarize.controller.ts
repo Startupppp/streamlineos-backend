@@ -17,7 +17,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { ChatSummarizeService } from "./chat-summarize.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { chatSummarizeResponseSchema } from "./dto/chat-misc-response.schemas";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
@@ -38,6 +39,7 @@ export class ChatSummarizeController {
    * its terms.
    */
   @Post()
+  @ResponseSchema(chatSummarizeResponseSchema)
   @Idempotent("chat.summarize")
   @BodylessAction()
   @HttpCode(HttpStatus.OK)

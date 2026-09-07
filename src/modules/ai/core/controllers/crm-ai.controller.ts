@@ -67,6 +67,24 @@ import {
   type SummarizeInput,
 } from "../dto/request.schemas";
 import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  scoreLeadResponseSchema,
+  predictDealResponseSchema,
+  churnRiskResponseSchema,
+  nextActionResponseSchema,
+  accountSummaryResponseSchema,
+  nlSearchResponseSchema,
+  enrichLeadResponseSchema,
+  generateEmailResponseSchema,
+  objectionHandlerResponseSchema,
+  sentimentAnalysisResponseSchema,
+  summarizeResponseSchema,
+  reportNarratorResponseSchema,
+  prioritizeTasksResponseSchema,
+  suggestionsResponseSchema,
+} from "../dto/ai-response.schemas";
 
 const scoreLeadBodySchema = z.union([scoreLeadBatchSchema, scoreLeadSingleSchema]);
 
@@ -117,6 +135,7 @@ export class CrmAiController {
   }
 
   @Post("score-lead")
+  @ResponseSchema(scoreLeadResponseSchema)
   @Validate({ body: scoreLeadBodySchema })
   async scoreLead(@Body() body: z.infer<typeof scoreLeadBodySchema>, @CurrentUser() u: CurrentUserContext) {
     await this.requireAiFlag(u.orgId, "aiLeadScoring");
@@ -137,6 +156,7 @@ export class CrmAiController {
   }
 
   @Post("predict-deal")
+  @ResponseSchema(predictDealResponseSchema)
   @Validate({ body: predictDealSchema })
   async predictDeal(
     @Body() body: PredictDealInput,
@@ -152,6 +172,7 @@ export class CrmAiController {
   }
 
   @Post("churn-risk")
+  @ResponseSchema(churnRiskResponseSchema)
   @Validate({ body: churnRiskSchema })
   async churnRisk(
     @Body() body: ChurnRiskInput,
@@ -170,6 +191,7 @@ export class CrmAiController {
   }
 
   @Post("next-action")
+  @ResponseSchema(nextActionResponseSchema)
   @Validate({ body: nextActionSchema })
   async nextAction(
     @Body() body: NextActionInput,
@@ -184,6 +206,7 @@ export class CrmAiController {
   }
 
   @Post("account-summary")
+  @ResponseSchema(accountSummaryResponseSchema)
   @Validate({ body: accountSummarySchema })
   async accountSummary(
     @Body() body: AccountSummaryInput,
@@ -196,6 +219,7 @@ export class CrmAiController {
   }
 
   @Post("account-summary/stream")
+  @ApiOkResponse({ description: "AI text stream", content: { "text/plain": { schema: { type: "string" } } } })
   @Validate({ body: accountSummarySchema })
   async accountSummaryStream(
     @Req() req: Request,
@@ -219,6 +243,7 @@ export class CrmAiController {
   }
 
   @Post("nl-search")
+  @ResponseSchema(nlSearchResponseSchema)
   @Validate({ body: nlSearchSchema })
   async nlSearch(
     @Body() body: NlSearchInput,
@@ -231,6 +256,7 @@ export class CrmAiController {
   }
 
   @Post("enrich-lead")
+  @ResponseSchema(enrichLeadResponseSchema)
   @Validate({ body: enrichLeadSchema })
   async enrichLead(
     @Body() body: EnrichLeadInput,
@@ -242,6 +268,7 @@ export class CrmAiController {
   }
 
   @Post("generate-email")
+  @ResponseSchema(generateEmailResponseSchema)
   @Validate({ body: generateEmailSchema })
   async generateEmail(
     @Body() body: GenerateEmailInput,
@@ -254,6 +281,7 @@ export class CrmAiController {
   }
 
   @Post("objection-handler")
+  @ResponseSchema(objectionHandlerResponseSchema)
   @Validate({ body: objectionHandlerSchema })
   async objectionHandler(
     @Body() body: ObjectionHandlerInput,
@@ -265,6 +293,7 @@ export class CrmAiController {
   }
 
   @Post("sentiment-analysis")
+  @ResponseSchema(sentimentAnalysisResponseSchema)
   @Validate({ body: sentimentAnalysisSchema })
   async sentimentAnalysis(
     @Body() body: SentimentAnalysisInput,
@@ -276,6 +305,7 @@ export class CrmAiController {
   }
 
   @Post("summarize")
+  @ResponseSchema(summarizeResponseSchema)
   @Validate({ body: summarizeSchema })
   async summarize(
     @Body() body: SummarizeInput,
@@ -287,6 +317,7 @@ export class CrmAiController {
   }
 
   @Post("report-narrator")
+  @ResponseSchema(reportNarratorResponseSchema)
   @Validate({ body: reportNarratorSchema })
   async reportNarrator(
     @Body() body: ReportNarratorInput,
@@ -298,6 +329,7 @@ export class CrmAiController {
   }
 
   @Post("report-narrator/stream")
+  @ApiOkResponse({ description: "AI text stream", content: { "text/plain": { schema: { type: "string" } } } })
   @Validate({ body: reportNarratorSchema })
   async reportNarratorStream(
     @Req() req: Request,
@@ -321,6 +353,7 @@ export class CrmAiController {
   }
 
   @Get("prioritize-tasks")
+  @ResponseSchema(prioritizeTasksResponseSchema)
   async prioritizeTasks(@CurrentUser() u: CurrentUserContext) {
     await this.requireAiFlag(u.orgId, "aiChat");
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
@@ -328,6 +361,7 @@ export class CrmAiController {
   }
 
   @Get("suggestions")
+  @ResponseSchema(suggestionsResponseSchema)
   @Validate({ query: suggestionsQuerySchema })
   async suggestions(
     @Query() query: SuggestionsQueryInput,

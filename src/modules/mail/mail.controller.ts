@@ -46,6 +46,19 @@ import {
 } from "./dto/mail-ai-schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  mailAccountListSchema,
+  mailAiDraftSchema,
+  mailAiInboxSummarySchema,
+  mailAiThreadSummarySchema,
+  mailDownloadSchema,
+  mailListResponseSchema,
+  mailMessageSchema,
+  mailOkSchema,
+  mailSentSchema,
+  mailThreadSchema,
+} from "./dto/mail-response.schemas";
 
 const messageIdParams = z.object({ messageId: z.string().min(1) }).strict();
 const threadIdParams = z.object({ threadId: z.string().min(1) }).strict();
@@ -61,12 +74,14 @@ export class MailController {
   ) {}
 
   @Get("accounts")
+  @ResponseSchema(mailAccountListSchema)
   @RequirePermission("mail:inbox:view")
   listAccounts(@CurrentUser() u: CurrentUserContext) {
     return this.mail.listAccounts(u.orgId, u.userId);
   }
 
   @Get("messages")
+  @ResponseSchema(mailListResponseSchema)
   @RequirePermission("mail:inbox:view")
   @Validate({ query: listMessagesQuerySchema })
   listMessages(
@@ -86,6 +101,7 @@ export class MailController {
   }
 
   @Get("messages/:messageId")
+  @ResponseSchema(mailMessageSchema)
   @RequirePermission("mail:inbox:view")
   @Validate({ params: messageIdParams, query: getMessageQuerySchema })
   getMessage(
@@ -97,6 +113,7 @@ export class MailController {
   }
 
   @Get("threads/:threadId")
+  @ResponseSchema(mailThreadSchema)
   @RequirePermission("mail:inbox:view")
   @Validate({ params: threadIdParams, query: getThreadQuerySchema })
   getThread(
@@ -108,6 +125,7 @@ export class MailController {
   }
 
   @Post("send")
+  @ResponseSchema(mailSentSchema)
   @HttpCode(200)
   @Idempotent("mail.send")
   @RequirePermission("mail:messages:send")
@@ -124,6 +142,7 @@ export class MailController {
   }
 
   @Post("reply")
+  @ResponseSchema(mailSentSchema)
   @HttpCode(200)
   @Idempotent("mail.reply")
   @RequirePermission("mail:messages:send")
@@ -140,18 +159,21 @@ export class MailController {
   }
 
   @Post("messages/:messageId/actions")
+  @ResponseSchema(mailOkSchema)
   @HttpCode(200)
   @RequirePermission("mail:messages:manage")
   @Validate({ params: messageIdParams, body: mailActionSchema })
-  performAction(
+  async performAction(
     @Param("messageId") messageId: string,
     @Body() body: MailActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.mail.performAction(u.orgId, u.userId, actingMembershipId(u.principal), messageId, body.accountId, body.action, body.threadId);
+    await this.mail.performAction(u.orgId, u.userId, actingMembershipId(u.principal), messageId, body.accountId, body.action, body.threadId);
+    return { ok: true as const };
   }
 
   @Get("messages/:messageId/attachments/:attachmentId")
+  @ResponseSchema(mailDownloadSchema)
   @RequirePermission("mail:inbox:view")
   @Validate({ params: messageIdattachmentIdParams, query: getAttachmentQuerySchema })
   getAttachment(
@@ -164,6 +186,7 @@ export class MailController {
   }
 
   @Post("ai/inbox-summary")
+  @ResponseSchema(mailAiInboxSummarySchema)
   @HttpCode(200)
   @RequirePermission("mail:ai:use")
   @Validate({ body: inboxSummaryBodySchema })
@@ -175,6 +198,7 @@ export class MailController {
   }
 
   @Post("ai/thread-summary")
+  @ResponseSchema(mailAiThreadSummarySchema)
   @HttpCode(200)
   @RequirePermission("mail:ai:use")
   @Validate({ body: threadSummaryBodySchema })
@@ -186,6 +210,7 @@ export class MailController {
   }
 
   @Post("ai/draft")
+  @ResponseSchema(mailAiDraftSchema)
   @HttpCode(200)
   @RequirePermission("mail:ai:use")
   @Validate({ body: draftBodySchema })

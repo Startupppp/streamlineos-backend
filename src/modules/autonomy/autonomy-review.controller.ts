@@ -29,7 +29,19 @@ import {
 } from "./dto/autonomy-review.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  listDecisionsResponseSchema,
+  getDecisionResponseSchema,
+  reverseDecisionResponseSchema,
+  listSwitchesResponseSchema,
+  scoreboardResponseSchema,
+  reviewQueueResponseSchema,
+  markReviewedResponseSchema,
+  liveHoldsResponseSchema,
+  cancelHoldResponseSchema,
+  autonomySettingsResponseSchema,
+} from "./dto/autonomy-response.schemas";
 
 const decisionIdParams = z.object({ decisionId: z.string().min(1) }).strict();
 const shadowScoreIdParams = z.object({ shadowScoreId: z.string().min(1) }).strict();
@@ -49,6 +61,7 @@ export class AutonomyReviewController {
 
   @Get("decisions")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(listDecisionsResponseSchema)
   @Validate({ query: listDecisionsQuerySchema })
   async listDecisions(
     @Query() query: ListDecisionsQuery,
@@ -59,6 +72,7 @@ export class AutonomyReviewController {
 
   @Get("decisions/:decisionId")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(getDecisionResponseSchema)
   @Validate({ params: decisionIdParams })
   getDecision(
     @Param("decisionId") decisionId: string,
@@ -75,6 +89,7 @@ export class AutonomyReviewController {
   @Post("decisions/:decisionId/reverse")
   @Idempotent("crm.autonomy.reverse")
   @RequirePermission("crm:autonomy:reverse")
+  @ResponseSchema(reverseDecisionResponseSchema)
   @Validate({ params: decisionIdParams, body: reverseDecisionSchema })
   reverseDecision(
     @Param("decisionId") decisionId: string,
@@ -86,6 +101,7 @@ export class AutonomyReviewController {
 
   @Get("switches")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(listSwitchesResponseSchema)
   listSwitches(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listSwitches(u.orgId);
   }
@@ -93,6 +109,7 @@ export class AutonomyReviewController {
   @Patch("switches")
   @Idempotent("crm.autonomy.switch")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(listSwitchesResponseSchema)
   @Validate({ body: setSwitchSchema })
   setSwitch(
     @Body() body: SetSwitchInput,
@@ -110,6 +127,7 @@ export class AutonomyReviewController {
    */
   @Get("scoreboard")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(scoreboardResponseSchema)
   @Validate({ query: scoreboardQuerySchema })
   scoreboard(
     @Query() query: ScoreboardQuery,
@@ -121,6 +139,7 @@ export class AutonomyReviewController {
   /** What a second pass disagreed with and nobody has looked at yet. */
   @Get("review-queue")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(reviewQueueResponseSchema)
   @Validate({ query: reviewQueueQuerySchema })
   reviewQueue(
     @Query() query: ReviewQueueQuery,
@@ -133,6 +152,7 @@ export class AutonomyReviewController {
   @BodylessAction()
   @Idempotent("crm.autonomy.reviewed")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(markReviewedResponseSchema)
   @Validate({ params: shadowScoreIdParams })
   markReviewed(
     @Param("shadowScoreId") shadowScoreId: string,
@@ -151,6 +171,7 @@ export class AutonomyReviewController {
    */
   @Get("holds")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(liveHoldsResponseSchema)
   liveHolds(@CurrentUser() u: CurrentUserContext) {
     return this.holds.liveHolds(u.orgId);
   }
@@ -159,6 +180,7 @@ export class AutonomyReviewController {
   @Post("holds/:holdId/cancel")
   @Idempotent("crm.autonomy.cancel-hold")
   @RequirePermission("crm:autonomy:reverse")
+  @ResponseSchema(cancelHoldResponseSchema)
   @Validate({ params: holdIdParams, body: cancelHoldSchema })
   cancelHold(
     @Param("holdId") holdId: string,
@@ -170,6 +192,7 @@ export class AutonomyReviewController {
 
   @Get("settings")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(autonomySettingsResponseSchema)
   settings(@CurrentUser() u: CurrentUserContext) {
     return this.scoring.settingsFor(u.orgId);
   }
@@ -178,6 +201,7 @@ export class AutonomyReviewController {
   @Patch("settings")
   @Idempotent("crm.autonomy.settings")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(autonomySettingsResponseSchema)
   @Validate({ body: updateAutonomySettingsSchema })
   updateSettings(
     @Body() body: UpdateAutonomySettingsInput,

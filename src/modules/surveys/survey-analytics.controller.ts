@@ -9,6 +9,14 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  surveyOverviewSchema,
+  surveyQuestionAnalyticsSchema,
+  surveyResponseListSchema,
+  surveyResponseDetailSchema,
+} from "./dto/survey-analytics-response.schemas";
 import { SurveyAnalyticsService } from "./survey-analytics.service";
 import { SurveyResponseService } from "./survey-response.service";
 import { SurveyExportService } from "./survey-export.service";
@@ -39,6 +47,7 @@ export class SurveyAnalyticsController {
   @Get("analytics/overview")
   @RequirePermission("surveys:analytics:view")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyOverviewSchema)
   async overview(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     await this.forms.get(u.orgId, surveyId);
     return this.analytics.overview(u.orgId, surveyId);
@@ -47,6 +56,7 @@ export class SurveyAnalyticsController {
   @Get("analytics/questions")
   @RequirePermission("surveys:analytics:view")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyQuestionAnalyticsSchema)
   async questions(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     const survey = await this.forms.get(u.orgId, surveyId);
     const versionId = survey.activeVersionId ?? (await this.versions.getDraftVersion(u.orgId, surveyId)).id;
@@ -56,6 +66,7 @@ export class SurveyAnalyticsController {
   @Get("responses")
   @RequirePermission("surveys:responses:view")
   @Validate({ params: surveyIdParams, query: listResponsesSchema })
+  @ResponseSchema(surveyResponseListSchema)
   async listResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Query() query: ListResponsesInput,
@@ -68,6 +79,7 @@ export class SurveyAnalyticsController {
   @Get("responses/:sessionId")
   @RequirePermission("surveys:responses:view")
   @Validate({ params: surveyAndSessionIdParams })
+  @ResponseSchema(surveyResponseDetailSchema)
   getResponse(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("sessionId", ParseIntPipe) sessionId: number,
@@ -79,6 +91,7 @@ export class SurveyAnalyticsController {
   @Post("export")
   @RequirePermission("surveys:responses:export")
   @Validate({ params: surveyIdParams, body: exportResponsesSchema })
+  @ApiOkResponse({ content: { "text/csv": { schema: { type: "string" } } }, description: "CSV export of survey responses" })
   async exportResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: ExportResponsesInput,

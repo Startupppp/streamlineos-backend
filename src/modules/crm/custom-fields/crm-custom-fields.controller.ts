@@ -20,6 +20,12 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  customFieldsListSchema as customFieldsListResponseSchema,
+  customFieldMutatedSchema,
+  successSchema,
+} from "./dto/crm-custom-fields-response.schemas";
 import { CrmCustomFieldsService } from "./crm-custom-fields.service";
 import {
   createCustomFieldSchema,
@@ -56,6 +62,7 @@ export class CrmCustomFieldsController {
 
   @Get()
   @RequirePermission("crm:custom-fields:view")
+  @ResponseSchema(customFieldsListResponseSchema)
   @Validate({ query: customFieldsListSchema })
   listCustomFields(
     @Query() query: CustomFieldsListInput,
@@ -68,6 +75,7 @@ export class CrmCustomFieldsController {
   @HttpCode(201)
   @Idempotent("crm.customField.create")
   @RequirePermission("crm:custom-fields:manage")
+  @ResponseSchema(customFieldMutatedSchema)
   @Validate({ body: createCustomFieldSchema })
   createCustomField(
     @Body() body: CreateCustomFieldInput,
@@ -78,6 +86,7 @@ export class CrmCustomFieldsController {
 
   @Patch(":fieldId")
   @RequirePermission("crm:custom-fields:manage")
+  @ResponseSchema(customFieldMutatedSchema)
   @Validate({ params: fieldIdParams, body: updateCustomFieldSchema })
   updateCustomField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
@@ -89,6 +98,7 @@ export class CrmCustomFieldsController {
 
   @Delete(":fieldId")
   @RequirePermission("crm:custom-fields:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: fieldIdParams })
   deleteCustomField(
     @Param("fieldId", ParseIntPipe) fieldId: number,

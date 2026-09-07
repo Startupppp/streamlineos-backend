@@ -17,6 +17,9 @@ import { AuditSurfaceService } from "./audit-surface.service";
 import { listAuditSchema, type ListAuditQuery } from "./dto/finance-controls.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { auditListResponseSchema, auditTimelineResponseSchema } from "./dto/controls-response.schemas";
 
 const resourceTyperesourceIdParams = z.object({ resourceType: z.string().min(1), resourceId: z.string().min(1) }).strict();
 
@@ -27,6 +30,7 @@ export class FinanceAuditController {
   constructor(private readonly svc: AuditSurfaceService) {}
 
   @Get()
+  @ResponseSchema(auditListResponseSchema)
   @RequirePermission("accounting:audit:read")
   @Validate({ query: listAuditSchema })
   list(
@@ -37,6 +41,7 @@ export class FinanceAuditController {
   }
 
   @Get("record/:resourceType/:resourceId")
+  @ResponseSchema(auditTimelineResponseSchema)
   @RequirePermission("accounting:audit:read")
   @Validate({ params: resourceTyperesourceIdParams })
   timeline(
@@ -48,6 +53,7 @@ export class FinanceAuditController {
   }
 
   @Get("export")
+  @ApiOkResponse({ description: "CSV file download", content: { "text/csv": { schema: { type: "string" } } } })
   @RequirePermission("accounting:audit:export")
   @Validate({ query: listAuditSchema })
   async export(

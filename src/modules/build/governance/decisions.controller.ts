@@ -28,6 +28,8 @@ import {
 } from "./dto/governance.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { decisionRowSchema } from "./dto/governance-response.schemas";
 
 const decisionIdParams = z.object({ decisionId: z.coerce.number().int().positive() }).strict();
 
@@ -39,6 +41,7 @@ export class DecisionsController {
 
   @Get()
   @RequirePermission("build:decisions:view")
+  @ResponseSchema(z.array(decisionRowSchema))
   @Validate({ query: listDecisionsQuerySchema })
   listDecisions(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -50,6 +53,7 @@ export class DecisionsController {
 
   @Get(":decisionId")
   @RequirePermission("build:decisions:view")
+  @ResponseSchema(decisionRowSchema)
   @Validate({ params: decisionIdParams })
   getDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -62,6 +66,7 @@ export class DecisionsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:decisions:manage")
+  @ResponseSchema(decisionRowSchema)
   @Validate({ body: createDecisionSchema })
   createDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -73,6 +78,7 @@ export class DecisionsController {
 
   @Patch(":decisionId")
   @RequirePermission("build:decisions:manage")
+  @ResponseSchema(decisionRowSchema)
   @Validate({ params: decisionIdParams, body: updateDecisionSchema })
   updateDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -86,6 +92,7 @@ export class DecisionsController {
   @Delete(":decisionId")
   @RequirePermission("build:decisions:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: decisionIdParams })
   softDeleteDecision(
     @Param("projectId", ParseIntPipe) projectId: number,

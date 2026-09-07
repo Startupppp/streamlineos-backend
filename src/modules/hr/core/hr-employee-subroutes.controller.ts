@@ -19,6 +19,12 @@ import { resolveEmployeesScope } from "../directory/employees-scope";
 import { historyTypeSchema, listTimelineSchema, type HistoryTypeInput, type ListTimelineInput } from "./dto/hr-core.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  employmentByUserIdSchema,
+  timelinePageSchema,
+  effectiveChangeCursorPageSchema,
+} from "./dto/core-response.schemas";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 const employeeIdParams = z.object({ employeeId: z.coerce.number().int().positive() }).strict();
@@ -33,6 +39,7 @@ export class HrEmployeeSubroutesController {
   ) {}
 
   @Get(":userId/employment")
+  @ResponseSchema(employmentByUserIdSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ params: userIdParams })
@@ -45,6 +52,7 @@ export class HrEmployeeSubroutesController {
   }
 
   @Get(":employeeId/timeline")
+  @ResponseSchema(timelinePageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ params: employeeIdParams, query: listTimelineSchema })
@@ -61,6 +69,7 @@ export class HrEmployeeSubroutesController {
   }
 
   @Get(":employeeId/history")
+  @ResponseSchema(effectiveChangeCursorPageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ params: employeeIdParams, query: historyTypeSchema })

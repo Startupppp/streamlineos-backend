@@ -20,7 +20,18 @@ import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { CronHelpdeskRetentionService } from "./cron-helpdesk-retention.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import {
+  autoCheckoutResponseSchema,
+  monthlyLeaveResetResponseSchema,
+  interviewNoShowsResponseSchema,
+  onboardingSweepResponseSchema,
+  hrEnginesSweepResponseSchema,
+  hrEnginesSweepByNameResponseSchema,
+  retentionDeleteSweepResponseSchema,
+  hrPolicyRetentionSweepResponseSchema,
+  helpdeskRetentionSweepResponseSchema,
+} from "./dto/cron-hr-response.schemas";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
 const sweepNameParams = z.object({ sweepName: z.string().min(1) }).strict();
 
@@ -39,6 +50,7 @@ export class CronHrController {
   ) {}
 
   @Get("auto-checkout")
+  @ResponseSchema(autoCheckoutResponseSchema)
   getAutoCheckout(@Headers("authorization") authorization?: string) {
     return this.runAutoCheckout(authorization);
   }
@@ -46,11 +58,13 @@ export class CronHrController {
   @Post("auto-checkout")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(autoCheckoutResponseSchema)
   postAutoCheckout(@Headers("authorization") authorization?: string) {
     return this.runAutoCheckout(authorization);
   }
 
   @Get("monthly-leave-reset")
+  @ResponseSchema(monthlyLeaveResetResponseSchema)
   getMonthlyLeaveReset(@Headers("authorization") authorization?: string) {
     return this.runMonthlyLeaveReset(authorization);
   }
@@ -58,11 +72,13 @@ export class CronHrController {
   @Post("monthly-leave-reset")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(monthlyLeaveResetResponseSchema)
   postMonthlyLeaveReset(@Headers("authorization") authorization?: string) {
     return this.runMonthlyLeaveReset(authorization);
   }
 
   @Get("interview-no-shows")
+  @ResponseSchema(interviewNoShowsResponseSchema)
   getInterviewNoShows(@Headers("authorization") authorization?: string) {
     return this.runInterviewNoShows(authorization);
   }
@@ -70,11 +86,13 @@ export class CronHrController {
   @Post("interview-no-shows")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(interviewNoShowsResponseSchema)
   postInterviewNoShows(@Headers("authorization") authorization?: string) {
     return this.runInterviewNoShows(authorization);
   }
 
   @Get("onboarding-sweep")
+  @ResponseSchema(onboardingSweepResponseSchema)
   getOnboardingSweep(@Headers("authorization") authorization?: string) {
     return this.runOnboardingSweep(authorization);
   }
@@ -82,6 +100,7 @@ export class CronHrController {
   @Post("onboarding-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(onboardingSweepResponseSchema)
   postOnboardingSweep(@Headers("authorization") authorization?: string) {
     return this.runOnboardingSweep(authorization);
   }
@@ -89,11 +108,13 @@ export class CronHrController {
   @Post("hr-engines-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(hrEnginesSweepResponseSchema)
   postHrEnginesSweep(@Headers("authorization") authorization?: string) {
     return this.runHrEnginesSweep(authorization);
   }
 
   @Get("hr-engines-sweep")
+  @ResponseSchema(hrEnginesSweepResponseSchema)
   getHrEnginesSweep(@Headers("authorization") authorization?: string) {
     return this.runHrEnginesSweep(authorization);
   }
@@ -101,6 +122,7 @@ export class CronHrController {
   @Post("hr-engines-sweep/:sweepName")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(hrEnginesSweepByNameResponseSchema)
   @Validate({ params: sweepNameParams })
   postHrEnginesSweepByName(
     @Headers("authorization") authorization?: string,
@@ -110,6 +132,7 @@ export class CronHrController {
   }
 
   @Get("hr-engines-sweep/:sweepName")
+  @ResponseSchema(hrEnginesSweepByNameResponseSchema)
   @Validate({ params: sweepNameParams })
   getHrEnginesSweepByName(
     @Headers("authorization") authorization?: string,
@@ -211,11 +234,13 @@ export class CronHrController {
   @Post("retention-delete-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(retentionDeleteSweepResponseSchema)
   postRetentionDeleteSweep(@Headers("authorization") authorization?: string) {
     return this.runRetentionDeleteSweep(authorization);
   }
 
   @Get("retention-delete-sweep")
+  @ResponseSchema(retentionDeleteSweepResponseSchema)
   getRetentionDeleteSweep(@Headers("authorization") authorization?: string) {
     return this.runRetentionDeleteSweep(authorization);
   }
@@ -235,6 +260,7 @@ export class CronHrController {
   }
 
   @Get("hr-policy-retention-sweep")
+  @ResponseSchema(hrPolicyRetentionSweepResponseSchema)
   getHrPolicyRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runHrPolicyRetentionSweep(authorization);
   }
@@ -242,6 +268,7 @@ export class CronHrController {
   @Post("hr-policy-retention-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(hrPolicyRetentionSweepResponseSchema)
   postHrPolicyRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runHrPolicyRetentionSweep(authorization);
   }
@@ -269,6 +296,7 @@ export class CronHrController {
   }
 
   @Get("helpdesk-retention-sweep")
+  @ResponseSchema(helpdeskRetentionSweepResponseSchema)
   getHelpdeskRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runHelpdeskRetentionSweep(authorization);
   }
@@ -276,6 +304,7 @@ export class CronHrController {
   @Post("helpdesk-retention-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(helpdeskRetentionSweepResponseSchema)
   postHelpdeskRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runHelpdeskRetentionSweep(authorization);
   }

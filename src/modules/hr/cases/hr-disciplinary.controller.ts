@@ -29,6 +29,13 @@ import {
 } from "./dto/hr-cases.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrDisciplinaryListSchema,
+  hrDisciplinaryActionSchema,
+  hrDisciplinaryCreateResponseSchema,
+  unacknowledgedCountSchema,
+} from "./dto/cases-response.schemas";
 
 const actionIdParams = z.object({ actionId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +45,7 @@ export class HrDisciplinaryController {
   constructor(private readonly disciplinary: HrDisciplinaryService) {}
 
   @Get()
+  @ResponseSchema(hrDisciplinaryListSchema)
   @RequirePermission("hr:cases:view")
   @Validate({ query: listDisciplinarySchema })
   list(
@@ -49,18 +57,21 @@ export class HrDisciplinaryController {
 
   /** Employee: disciplinary actions issued to me. */
   @Get("mine")
+  @ResponseSchema(hrDisciplinaryListSchema)
   @RequirePermission("self:cases")
   listMine(@CurrentUser() user: CurrentUserContext) {
     return this.disciplinary.listMine(user);
   }
 
   @Get("mine/unacknowledged-count")
+  @ResponseSchema(unacknowledgedCountSchema)
   @RequirePermission("self:cases")
   unacknowledgedCount(@CurrentUser() user: CurrentUserContext) {
     return this.disciplinary.listUnacknowledgedCount(user);
   }
 
   @Get(":actionId")
+  @ResponseSchema(hrDisciplinaryActionSchema)
   @RequirePermission("hr:cases:view")
   @Validate({ params: actionIdParams })
   getById(
@@ -71,6 +82,7 @@ export class HrDisciplinaryController {
   }
 
   @Post()
+  @ResponseSchema(hrDisciplinaryCreateResponseSchema)
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
   @Validate({ body: createDisciplinaryActionSchema })
@@ -84,6 +96,7 @@ export class HrDisciplinaryController {
 
   /** Employee acknowledges receipt (not agreement). */
   @Post(":actionId/acknowledge")
+  @ResponseSchema(hrDisciplinaryActionSchema)
   @HttpCode(200)
   @RequirePermission("self:cases")
   @Validate({ params: actionIdParams, body: acknowledgeDisciplinarySchema })
@@ -96,6 +109,7 @@ export class HrDisciplinaryController {
   }
 
   @Delete(":actionId")
+  @NoContentResponse()
   @RequirePermission("hr:cases:manage")
   @HttpCode(204)
   @Validate({ params: actionIdParams })

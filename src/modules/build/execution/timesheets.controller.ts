@@ -35,7 +35,13 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  timesheetEntrySchema,
+  timesheetPageSchema,
+  billingSummaryItemSchema,
+} from "./dto/timesheets-response.schemas";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 const projectAndTicketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
@@ -48,6 +54,7 @@ export class TimeEntriesController {
 
   @Get()
   @RequirePermission("build:timesheets:view")
+  @ResponseSchema(timesheetPageSchema)
   @Validate({ query: timeEntriesListQuerySchema })
   listTimeEntries(
     @Query() query: TimeEntriesListQuery,
@@ -58,6 +65,7 @@ export class TimeEntriesController {
 
   @Get("team")
   @RequirePermission("build:timesheets:manage")
+  @ResponseSchema(timesheetPageSchema)
   @Validate({ query: teamTimesheetsQuerySchema })
   teamTimesheets(
     @Query() query: TeamTimesheetsQuery,
@@ -70,6 +78,7 @@ export class TimeEntriesController {
   @BodylessAction()
   @Idempotent("build.timesheet.approve-entry")
   @RequirePermission("build:timesheets:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: entryIdParams })
   approveEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
@@ -81,6 +90,7 @@ export class TimeEntriesController {
   @Patch(":entryId/reject")
   @Idempotent("build.timesheet.reject-entry")
   @RequirePermission("build:timesheets:manage")
+  @ResponseSchema(timesheetEntrySchema)
   @Validate({ params: entryIdParams, body: rejectEntrySchema })
   rejectEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
@@ -92,6 +102,7 @@ export class TimeEntriesController {
 
   @Patch(":entryId")
   @RequirePermission("build:timesheets:create")
+  @ResponseSchema(timesheetEntrySchema)
   @Validate({ params: entryIdParams, body: updateEntrySchema })
   updateEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
@@ -104,6 +115,7 @@ export class TimeEntriesController {
   @Delete(":entryId")
   @RequirePermission("build:timesheets:create")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: entryIdParams })
   deleteEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
@@ -121,6 +133,7 @@ export class BillingSummaryController {
 
   @Get()
   @RequirePermission("build:timesheets:view")
+  @ResponseSchema(z.array(billingSummaryItemSchema))
   @Validate({ query: billingSummaryQuerySchema })
   billingSummary(
     @Query() query: BillingSummaryQuery,
@@ -138,6 +151,7 @@ export class TicketTimeEntriesController {
 
   @Get()
   @RequirePermission("build:timesheets:view")
+  @ResponseSchema(z.array(timesheetEntrySchema))
   @Validate({ params: projectAndTicketIdParams })
   listTicketTimeEntries(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -149,6 +163,7 @@ export class TicketTimeEntriesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:timesheets:create")
+  @ResponseSchema(timesheetEntrySchema)
   @Validate({ params: projectAndTicketIdParams, body: logTimeSchema })
   logTicketTime(
     @Param("ticketId", ParseIntPipe) ticketId: number,

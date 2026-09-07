@@ -17,7 +17,12 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listPackagesResponseSchema,
+  getPackageResponseSchema,
+  invPackageSchema,
+} from "./dto/shipments-response.schemas";
 
 const packageIdParams = z.object({ packageId: z.coerce.number().int().positive() }).strict();
 
@@ -28,6 +33,7 @@ export class PackagesController {
   constructor(private readonly svc: PackagesService) {}
 
   @Get()
+  @ResponseSchema(listPackagesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @Validate({ query: listPackagesQuerySchema })
@@ -39,6 +45,7 @@ export class PackagesController {
   }
 
   @Get(":packageId")
+  @ResponseSchema(getPackageResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @Validate({ params: packageIdParams })
@@ -50,6 +57,7 @@ export class PackagesController {
   }
 
   @Post()
+  @ResponseSchema(invPackageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @Validate({ body: createPackageSchema })
@@ -61,6 +69,7 @@ export class PackagesController {
   }
 
   @Patch(":packageId/lines")
+  @ResponseSchema(getPackageResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @Validate({ params: packageIdParams, body: updatePackageLinesSchema })
@@ -74,6 +83,7 @@ export class PackagesController {
 
   @Post(":packageId/close")
   @BodylessAction()
+  @ResponseSchema(getPackageResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @HttpCode(HttpStatus.OK)
@@ -87,6 +97,7 @@ export class PackagesController {
 
   @Post(":packageId/reopen")
   @BodylessAction()
+  @ResponseSchema(getPackageResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @HttpCode(HttpStatus.OK)

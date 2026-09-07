@@ -8,6 +8,11 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { AuditService } from "../../../common/audit/audit.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  emailTemplatePreviewResponseSchema,
+  emailTemplateTestResponseSchema,
+} from "../dto/email-response.schemas";
 import { EmailRoutesService } from "../email-routes.service";
 import { emailTemplateTestSchema, type EmailTemplateTestInput } from "../dto/email.schemas";
 
@@ -21,6 +26,7 @@ export class EmailTemplatesController {
 
   @Get("preview")
   @HttpCode(200)
+  @ResponseSchema(emailTemplatePreviewResponseSchema)
   @RequirePermission("settings:email-templates:manage")
   preview() {
     return this.routes.getTemplatePreviews();
@@ -28,6 +34,7 @@ export class EmailTemplatesController {
 
   @Post("test")
   @HttpCode(200)
+  @ResponseSchema(emailTemplateTestResponseSchema)
   @RequirePermission("settings:email-templates:manage")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("settings:email-template-test")

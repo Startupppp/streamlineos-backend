@@ -34,8 +34,18 @@ import { Idempotent } from "../../../../common/idempotency/idempotent.decorator"
 import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import { Validate } from "../../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  onboardingProgressListSchema,
+  onboardingInitiateResponseSchema,
+  onboardingTemplateListSchema,
+  onboardingTemplateDepartmentListSchema,
+  createTemplateResponseSchema,
+  onboardingReminderResponseSchema,
+  ensureDocumentTypesResponseSchema,
+  onboardingTaskListSchema,
+} from "./dto/onboarding-response.schemas";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
@@ -52,12 +62,14 @@ export class HrOnboardingAdminController {
   ) {}
 
   @Get()
+  @ResponseSchema(onboardingProgressListSchema)
   @RequirePermission("hr:onboarding:manage")
   getProgress(@CurrentUser() u: CurrentUserContext) {
     return this.admin.getProgressSummary(u.orgId);
   }
 
   @Post()
+  @ResponseSchema(onboardingInitiateResponseSchema)
   @RequirePermission("hr:onboarding:manage")
   @Validate({ body: initiateSchema })
   async initiate(
@@ -77,18 +89,21 @@ export class HrOnboardingAdminController {
   }
 
   @Get("templates")
+  @ResponseSchema(onboardingTemplateListSchema)
   @RequirePermission("hr:onboarding:manage")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.templates.listTemplates(u.orgId);
   }
 
   @Get("templates/departments")
+  @ResponseSchema(onboardingTemplateDepartmentListSchema)
   @RequirePermission("hr:onboarding:manage")
   listTemplateDepartments(@CurrentUser() u: CurrentUserContext) {
     return this.templates.listTemplateDepartments(u.orgId);
   }
 
   @Post("templates")
+  @ResponseSchema(createTemplateResponseSchema)
   @RequirePermission("hr:onboarding:manage")
   @HttpCode(201)
   @Validate({ body: createTemplateSchema })
@@ -100,6 +115,7 @@ export class HrOnboardingAdminController {
   }
 
   @Post("reminders")
+  @ResponseSchema(onboardingReminderResponseSchema)
   @BodylessAction()
   @RequirePermission("hr:onboarding:manage")
   @Idempotent("hr.onboarding.send-reminders")
@@ -111,6 +127,7 @@ export class HrOnboardingAdminController {
   }
 
   @Post("requirements/documents")
+  @ResponseSchema(ensureDocumentTypesResponseSchema)
   @RequirePermission("hr:onboarding:manage")
   @HttpCode(200)
   @Validate({ body: ensureDocumentsSchema })
@@ -122,6 +139,7 @@ export class HrOnboardingAdminController {
   }
 
   @Get(":userId")
+  @ResponseSchema(onboardingTaskListSchema)
   @RequirePermission("hr:onboarding:tasks:view")
   @Validate({ params: userIdParams })
   getUserTasks(

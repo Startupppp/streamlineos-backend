@@ -29,7 +29,14 @@ import {
   type UpdateActivityInput,
 } from "./dto/activity.schemas";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  activityDeletedSchema,
+  activityParticipantsResponseSchema,
+  activityRowSchema,
+  myTasksPageSchema,
+  timelinePageSchema,
+} from "./dto/activities-response.schemas";
 
 const activityIdParams = z.object({ activityId: z.string().min(1) }).strict();
 
@@ -49,6 +56,7 @@ export class ActivitiesController {
   ) {}
 
   @Get("timeline")
+  @ResponseSchema(timelinePageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:view")
   @Validate({ query: timelineQuerySchema })
@@ -58,6 +66,7 @@ export class ActivitiesController {
 
   /** The same rows the timeline shows, read by assignee instead of by anchor. */
   @Get("my-tasks")
+  @ResponseSchema(myTasksPageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:view")
   @Validate({ query: myTasksQuerySchema })
@@ -66,6 +75,7 @@ export class ActivitiesController {
   }
 
   @Post()
+  @ResponseSchema(activityRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:manage")
   @Idempotent("crm.activity.create")
@@ -75,6 +85,7 @@ export class ActivitiesController {
   }
 
   @Get(":activityId/participants")
+  @ResponseSchema(activityParticipantsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:view")
   @Validate({ params: activityIdParams })
@@ -86,6 +97,7 @@ export class ActivitiesController {
   }
 
   @Patch(":activityId")
+  @ResponseSchema(activityRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:manage")
   @Idempotent("crm.activity.update")
@@ -104,6 +116,7 @@ export class ActivitiesController {
   }
 
   @Post(":activityId/complete")
+  @ResponseSchema(activityRowSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:manage")
@@ -117,6 +130,7 @@ export class ActivitiesController {
   }
 
   @Delete(":activityId")
+  @ResponseSchema(activityDeletedSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:activities:manage")
   @Idempotent("crm.activity.delete")

@@ -21,7 +21,14 @@ import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transac
 import { LlmService } from "../providers/llm.service";
 import { BlogAiService } from "../services/blog-ai.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  blogImproveWritingResponseSchema,
+  blogSuggestTitleResponseSchema,
+  blogSummarizeResponseSchema,
+} from "../dto/ai-response.schemas";
 import type { Request, Response } from "express";
 
 const postIdParams = z.object({ postId: z.string().min(1) }).strict();
@@ -53,6 +60,7 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/improve-writing")
   @RequirePermission("blog:ai:use")
+  @ResponseSchema(blogImproveWritingResponseSchema)
   @Validate({ params: postIdParams, body: improveWritingSchema })
   async improveWriting(
     @Param("postId") postId: string,
@@ -65,6 +73,7 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/suggest-title")
   @RequirePermission("blog:ai:use")
+  @ResponseSchema(blogSuggestTitleResponseSchema)
   @Validate({ params: postIdParams, body: suggestTitleSchema })
   async suggestTitle(
     @Param("postId") postId: string,
@@ -77,6 +86,7 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/summarize")
   @RequirePermission("blog:ai:use")
+  @ResponseSchema(blogSummarizeResponseSchema)
   @Validate({ params: postIdParams, body: summarizeSchema })
   async summarize(
     @Param("postId") postId: string,
@@ -89,6 +99,7 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/improve-writing/stream")
   @RequirePermission("blog:ai:use")
+  @ApiOkResponse({ description: "AI text stream", content: { "text/plain": { schema: { type: "string" } } } })
   @Validate({ params: postIdParams, body: improveWritingSchema })
   async improveWritingStream(
     @Req() req: Request,
@@ -112,6 +123,7 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/suggest-title/stream")
   @RequirePermission("blog:ai:use")
+  @ApiOkResponse({ description: "AI text stream", content: { "text/plain": { schema: { type: "string" } } } })
   @Validate({ params: postIdParams, body: suggestTitleSchema })
   async suggestTitleStream(
     @Req() req: Request,
@@ -135,6 +147,7 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/summarize/stream")
   @RequirePermission("blog:ai:use")
+  @ApiOkResponse({ description: "AI text stream", content: { "text/plain": { schema: { type: "string" } } } })
   @Validate({ params: postIdParams, body: summarizeSchema })
   async summarizeStream(
     @Req() req: Request,

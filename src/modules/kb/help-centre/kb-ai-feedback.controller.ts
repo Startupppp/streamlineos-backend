@@ -9,6 +9,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAiFeedbackService } from "./kb-ai-feedback.service";
 import { kbAiFeedbackSchema, type KbAiFeedbackInput } from "../retrieval/dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbAiFeedbackSchema as kbAiFeedbackResponseSchema } from "./dto/kb-helpcenter-response.schemas";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -21,6 +23,7 @@ export class KbAiFeedbackController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("kb:ask")
   @Validate({ body: kbAiFeedbackSchema })
+  @ResponseSchema(kbAiFeedbackResponseSchema)
   async submitFeedback(
     @Body() body: KbAiFeedbackInput,
     @CurrentUser() u: CurrentUserContext,

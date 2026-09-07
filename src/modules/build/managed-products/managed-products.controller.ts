@@ -28,6 +28,8 @@ import {
 } from "./dto/managed-products.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { managedProductRowSchema, managedProductPageSchema } from "./dto/managed-products-response.schemas";
 
 const managedProductIdParams = z.object({ managedProductId: z.coerce.number().int().positive() }).strict();
 
@@ -39,6 +41,7 @@ export class ManagedProductsController {
 
   @Get()
   @RequirePermission("build:managed-products:view")
+  @ResponseSchema(managedProductPageSchema)
   @Validate({ query: listManagedProductsQuerySchema })
   listManagedProducts(
     @Query() query: ListManagedProductsQuery,
@@ -49,6 +52,7 @@ export class ManagedProductsController {
 
   @Get(":managedProductId")
   @RequirePermission("build:managed-products:view")
+  @ResponseSchema(managedProductRowSchema)
   @Validate({ params: managedProductIdParams })
   getManagedProduct(
     @Param("managedProductId", ParseIntPipe) managedProductId: number,
@@ -60,6 +64,7 @@ export class ManagedProductsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:managed-products:create")
+  @ResponseSchema(managedProductRowSchema)
   @Validate({ body: createManagedProductSchema })
   createManagedProduct(
     @Body() body: CreateManagedProductInput,
@@ -70,6 +75,7 @@ export class ManagedProductsController {
 
   @Patch(":managedProductId")
   @RequirePermission("build:managed-products:update")
+  @ResponseSchema(managedProductRowSchema)
   @Validate({ params: managedProductIdParams, body: updateManagedProductSchema })
   updateManagedProduct(
     @Param("managedProductId", ParseIntPipe) managedProductId: number,
@@ -81,6 +87,7 @@ export class ManagedProductsController {
 
   @Delete(":managedProductId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("build:managed-products:delete")
   @Validate({ params: managedProductIdParams })
   deleteManagedProduct(

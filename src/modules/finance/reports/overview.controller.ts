@@ -8,6 +8,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { OverviewService } from "./overview.service";
 import { overviewQuerySchema, type OverviewQuery } from "./dto/finance-reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { overviewResponseSchema } from "./dto/finance-reports-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting")
@@ -16,6 +18,7 @@ export class OverviewController {
   constructor(private readonly overviewService: OverviewService) {}
 
   @Get("overview")
+  @ResponseSchema(overviewResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: overviewQuerySchema })

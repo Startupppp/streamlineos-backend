@@ -25,6 +25,8 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { templateListSchema, templateRowSchema, applyTemplateResultSchema } from "./dto/build-roadmap-response.schemas";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -36,6 +38,7 @@ export class ProjectsTemplatesController {
 
   @Get("templates")
   @RequirePermission("build:view")
+  @ResponseSchema(templateListSchema)
   listTemplates(@CurrentUser() u: CurrentUserContext) {
     return this.templates.listTemplates(u.orgId);
   }
@@ -43,6 +46,7 @@ export class ProjectsTemplatesController {
   @Post("templates")
   @HttpCode(201)
   @RequirePermission("build:manage")
+  @ResponseSchema(templateRowSchema)
   @Validate({ body: createTemplateSchema })
   createTemplate(
     @Body() body: CreateTemplateInput,
@@ -54,6 +58,7 @@ export class ProjectsTemplatesController {
   @Delete("templates/:templateId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: templateIdParams })
   deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
@@ -65,6 +70,7 @@ export class ProjectsTemplatesController {
   @Post("templates/:templateId/apply")
   @HttpCode(201)
   @RequirePermission("build:manage")
+  @ResponseSchema(applyTemplateResultSchema)
   @Idempotent("build.template.apply")
   @Validate({ params: templateIdParams, body: applyTemplateSchema })
   applyTemplate(

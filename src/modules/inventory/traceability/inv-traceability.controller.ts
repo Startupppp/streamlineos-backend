@@ -21,6 +21,16 @@ import {
   type TraceabilityQueryInput,
 } from "./dto/traceability.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listLotsResponseSchema,
+  getLotDetailResponseSchema,
+  updateLotStatusResponseSchema,
+  listSerialsResponseSchema,
+  getSerialDetailResponseSchema,
+  expiryReportResponseSchema,
+  traceabilityChainResponseSchema,
+} from "./dto/traceability-response.schemas";
 import { z } from "zod";
 
 const lotIdParams = z.object({ lotId: z.coerce.number().int().positive() }).strict();
@@ -36,6 +46,7 @@ export class InvTraceabilityController {
   ) {}
 
   @Get("lots")
+  @ResponseSchema(listLotsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listLotsSchema })
@@ -47,6 +58,7 @@ export class InvTraceabilityController {
   }
 
   @Get("lots/:lotId")
+  @ResponseSchema(getLotDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ params: lotIdParams })
@@ -58,6 +70,7 @@ export class InvTraceabilityController {
   }
 
   @Patch("lots/:lotId/status")
+  @ResponseSchema(updateLotStatusResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   @Validate({ params: lotIdParams, body: updateLotStatusSchema })
@@ -70,6 +83,7 @@ export class InvTraceabilityController {
   }
 
   @Get("serials")
+  @ResponseSchema(listSerialsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listSerialsSchema })
@@ -81,6 +95,7 @@ export class InvTraceabilityController {
   }
 
   @Get("serials/:serialId")
+  @ResponseSchema(getSerialDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ params: serialIdParams })
@@ -92,6 +107,7 @@ export class InvTraceabilityController {
   }
 
   @Get("expiry")
+  @ResponseSchema(expiryReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: expiryQuerySchema })
@@ -103,6 +119,7 @@ export class InvTraceabilityController {
   }
 
   @Get("traceability")
+  @ResponseSchema(traceabilityChainResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: traceabilityQuerySchema })

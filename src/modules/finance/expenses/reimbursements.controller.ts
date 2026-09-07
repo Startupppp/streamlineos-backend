@@ -27,7 +27,14 @@ import {
 } from "./dto/finance-expenses.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  reimbursementBatchListResponseSchema,
+  reimbursementBatchSchema,
+  reimbursementBatchDetailResponseSchema,
+  reimbursementPayResponseSchema,
+  successSchema,
+} from "./dto/expenses-response.schemas";
 
 const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +45,7 @@ export class FinanceReimbursementsController {
   constructor(private readonly reimbursements: ReimbursementsService) {}
 
   @Get()
+  @ResponseSchema(reimbursementBatchListResponseSchema)
   @RequirePermission("accounting:reimbursements:read")
   @Validate({ query: batchListSchema })
   async list(
@@ -48,6 +56,7 @@ export class FinanceReimbursementsController {
   }
 
   @Post()
+  @ResponseSchema(reimbursementBatchSchema)
   @HttpCode(201)
   @RequirePermission("accounting:reimbursements:manage")
   @Idempotent("accounting.reimbursement-batch.create")
@@ -60,6 +69,7 @@ export class FinanceReimbursementsController {
   }
 
   @Get(":batchId")
+  @ResponseSchema(reimbursementBatchDetailResponseSchema)
   @RequirePermission("accounting:reimbursements:read")
   @Validate({ params: batchIdParams })
   async getOne(
@@ -71,6 +81,7 @@ export class FinanceReimbursementsController {
 
   @Post(":batchId/approve")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @Idempotent("finance.reimbursement.approve")
   @HttpCode(200)
   @RequirePermission("accounting:reimbursements:approve")
@@ -83,6 +94,7 @@ export class FinanceReimbursementsController {
   }
 
   @Post(":batchId/pay")
+  @ResponseSchema(reimbursementPayResponseSchema)
   @HttpCode(200)
   @RequirePermission("accounting:reimbursements:manage")
   @Idempotent("accounting.reimbursement-batch.pay")

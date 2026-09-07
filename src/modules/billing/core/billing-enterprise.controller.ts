@@ -25,7 +25,19 @@ import { analyticsQuerySchema } from "./dto/analytics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  affiliateRowSchema,
+  affiliateDashboardResponseSchema,
+  affiliatePayoutResponseSchema,
+  referralRowSchema,
+  referralListResponseSchema,
+  analyticsResponseSchema,
+  enterpriseQuoteListResponseSchema,
+  enterpriseQuoteCreateResponseSchema,
+  enterpriseQuoteDetailResponseSchema,
+  successSchema,
+} from "./dto/billing-enterprise-response.schemas";
 
 const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).strict();
 
@@ -46,6 +58,7 @@ export class BillingEnterpriseController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
+  @ResponseSchema(affiliateRowSchema)
   registerAffiliate(@CurrentUser() u: CurrentUserContext) {
     return this.affiliate.register(u.userId, u.orgId, actingMembershipId(u.principal) ?? 0);
   }
@@ -53,6 +66,7 @@ export class BillingEnterpriseController {
   @Get("affiliate")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
+  @ResponseSchema(affiliateDashboardResponseSchema)
   getAffiliateDashboard(@CurrentUser() u: CurrentUserContext) {
     return this.affiliate.getDashboard(u.userId, u.orgId, actingMembershipId(u.principal) ?? 0);
   }
@@ -63,6 +77,7 @@ export class BillingEnterpriseController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
+  @ResponseSchema(affiliatePayoutResponseSchema)
   requestAffiliatePayoutRequest(@CurrentUser() u: CurrentUserContext) {
     return this.billing.requestAffiliatePayoutRequest(u.orgId);
   }
@@ -72,6 +87,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:referrals:manage")
   @Validate({ body: createReferralSchema })
+  @ResponseSchema(referralRowSchema)
   async createReferral(
     @Body() body: ReturnType<typeof createReferralSchema.parse>,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +98,7 @@ export class BillingEnterpriseController {
   @Get("referrals")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:referrals:view")
+  @ResponseSchema(referralListResponseSchema)
   listReferrals(@CurrentUser() u: CurrentUserContext) {
     return this.referral.listReferrals(u.orgId);
   }
@@ -90,6 +107,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:analytics:view")
   @Validate({ query: analyticsQuerySchema })
+  @ResponseSchema(analyticsResponseSchema)
   async getAnalytics(
     @Query() query: ReturnType<typeof analyticsQuerySchema.parse>,
     @CurrentUser() u: CurrentUserContext,
@@ -105,6 +123,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")
   @Validate({ query: listEnterpriseQuotesSchema })
+  @ResponseSchema(enterpriseQuoteListResponseSchema)
   listEnterpriseQuotes(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListEnterpriseQuotesQuery,
@@ -117,6 +136,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:create")
   @Validate({ body: createEnterpriseQuoteSchema })
+  @ResponseSchema(enterpriseQuoteCreateResponseSchema)
   createEnterpriseQuote(
     @Body() body: CreateEnterpriseQuoteInput,
     @CurrentUser() u: CurrentUserContext,
@@ -128,6 +148,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")
   @Validate({ params: quoteIdParams })
+  @ResponseSchema(enterpriseQuoteDetailResponseSchema)
   getEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -142,6 +163,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:create")
   @Validate({ params: quoteIdParams })
+  @ResponseSchema(successSchema)
   submitEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -155,6 +177,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
   @Validate({ params: quoteIdParams, body: approveEnterpriseQuoteSchema })
+  @ResponseSchema(successSchema)
   approveEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @Body() body: ApproveEnterpriseQuoteInput,
@@ -169,6 +192,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
   @Validate({ params: quoteIdParams, body: rejectEnterpriseQuoteSchema })
+  @ResponseSchema(successSchema)
   rejectEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @Body() body: RejectEnterpriseQuoteInput,
@@ -184,6 +208,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
   @Validate({ params: quoteIdParams })
+  @ResponseSchema(successSchema)
   sendEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -198,6 +223,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")
   @Validate({ params: quoteIdParams })
+  @ResponseSchema(successSchema)
   acceptEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,

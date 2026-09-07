@@ -17,6 +17,15 @@ import {
   type ListReminderLogQuery,
 } from "./dto/finance-ar.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  reminderPolicyListResponseSchema,
+  reminderPolicyCreatedResponseSchema,
+  reminderPolicyUpdatedResponseSchema,
+  reminderPolicyDeleteResponseSchema,
+  reminderLogListResponseSchema,
+  reminderEffectivenessResponseSchema,
+} from "./dto/ar-response.schemas";
 import { z } from "zod";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
@@ -28,6 +37,7 @@ export class RemindersController {
   constructor(private readonly svc: RemindersService) {}
 
   @Get("policies")
+  @ResponseSchema(reminderPolicyListResponseSchema)
   @RequirePermission("accounting:reminders:read")
   @Validate({ query: listReminderPoliciesSchema })
   listPolicies(
@@ -38,6 +48,7 @@ export class RemindersController {
   }
 
   @Post("policies")
+  @ResponseSchema(reminderPolicyCreatedResponseSchema)
   @HttpCode(201)
   @RequirePermission("accounting:reminders:manage")
   @Validate({ body: createReminderPolicySchema })
@@ -49,6 +60,7 @@ export class RemindersController {
   }
 
   @Patch("policies/:policyId")
+  @ResponseSchema(reminderPolicyUpdatedResponseSchema)
   @RequirePermission("accounting:reminders:manage")
   @Validate({ params: policyIdParams, body: updateReminderPolicySchema })
   updatePolicy(
@@ -60,6 +72,7 @@ export class RemindersController {
   }
 
   @Delete("policies/:policyId")
+  @ResponseSchema(reminderPolicyDeleteResponseSchema)
   @RequirePermission("accounting:reminders:manage")
   @Validate({ params: policyIdParams })
   deletePolicy(
@@ -70,6 +83,7 @@ export class RemindersController {
   }
 
   @Get("log")
+  @ResponseSchema(reminderLogListResponseSchema)
   @RequirePermission("accounting:reminders:read")
   @Validate({ query: listReminderLogSchema })
   listLog(
@@ -80,6 +94,7 @@ export class RemindersController {
   }
 
   @Get("effectiveness")
+  @ResponseSchema(reminderEffectivenessResponseSchema)
   @RequirePermission("accounting:reminders:read")
   effectiveness(@CurrentUser() u: CurrentUserContext) {
     return this.svc.effectiveness(u.orgId);

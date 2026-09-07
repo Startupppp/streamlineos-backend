@@ -341,6 +341,7 @@ const MATRIX_SIBLING_FILES = [
   "cache-invalidation-finance.ts",
   "cache-invalidation-inventory.ts",
   "cache-invalidation-crm.ts",
+  "cache-invalidation-hr.ts",
 ];
 
 function parseMatrixNamespacePrefixes(matrixPath) {

@@ -7,6 +7,12 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { SessionsService } from "./sessions.service";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  sessionListResponseSchema,
+  sessionRevokeOneResponseSchema,
+  sessionRevokeAllResponseSchema,
+} from "./dto/sessions-response.schemas";
 import { z } from "zod";
 import { resolveClientIp } from "../../common/http/client-ip";
 
@@ -23,6 +29,7 @@ export class SessionsController {
   constructor(private readonly sessions: SessionsService) {}
 
   @Get()
+  @ResponseSchema(sessionListResponseSchema)
   @Universal()
   list(@Req() req: Request, @CurrentUser() u: CurrentUserContext) {
     const rawUa =
@@ -39,6 +46,7 @@ export class SessionsController {
   }
 
   @Delete(":sessionId")
+  @ResponseSchema(sessionRevokeOneResponseSchema)
   @Universal()
   @Validate({ params: sessionIdParams })
   revokeOne(
@@ -49,6 +57,7 @@ export class SessionsController {
   }
 
   @Delete()
+  @ResponseSchema(sessionRevokeAllResponseSchema)
   @Universal()
   revokeAllOthers(@CurrentUser() u: CurrentUserContext) {
     return this.sessions.revokeAllOthers(u.userId, u.sessionId);

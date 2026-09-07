@@ -37,7 +37,13 @@ import {
   type PeriodReconQuery,
 } from "./dto/insights.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  journalBatchListSchema,
+  journalBatchDetailSchema,
+  periodReconciliationReportSchema,
+} from "./dto/journal-response.schemas";
 import { z } from "zod";
 
 const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
@@ -57,6 +63,7 @@ export class JournalOutboxController {
   @Get()
   @RequirePermission("payroll:accounting:view")
   @Validate({ query: journalBatchListQuerySchema })
+  @ResponseSchema(journalBatchListSchema)
   async list(
     @Query() query: JournalBatchListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -71,6 +78,7 @@ export class JournalOutboxController {
   @Get("period-reconciliation")
   @RequirePermission("payroll:accounting:view")
   @Validate({ query: periodReconQuerySchema })
+  @ResponseSchema(periodReconciliationReportSchema)
   async periodReconciliation(
     @Query() query: PeriodReconQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -81,6 +89,7 @@ export class JournalOutboxController {
   @Get(":batchId")
   @RequirePermission("payroll:accounting:view")
   @Validate({ params: batchIdParams })
+  @ResponseSchema(journalBatchDetailSchema)
   async get(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -91,6 +100,7 @@ export class JournalOutboxController {
   @Get(":batchId/export")
   @RequirePermission("payroll:accounting:view")
   @Validate({ params: batchIdParams })
+  @ApiOkResponse({ content: { "text/csv": { schema: { type: "string", format: "binary" } } } })
   async exportCsv(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -126,6 +136,7 @@ export class JournalOutboxController {
   @HttpCode(201)
   @RequirePermission("payroll:accounting:manage")
   @Validate({ body: journalBatchCreateSchema })
+  @ResponseSchema(journalBatchDetailSchema)
   async create(
     @Body() body: JournalBatchCreate,
     @CurrentUser() u: CurrentUserContext,
@@ -137,6 +148,7 @@ export class JournalOutboxController {
   @BodylessAction()
   @RequirePermission("payroll:accounting:manage")
   @Validate({ params: batchIdParams })
+  @ResponseSchema(journalBatchDetailSchema)
   async post(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -147,6 +159,7 @@ export class JournalOutboxController {
   @Post(":batchId/reverse")
   @RequirePermission("payroll:accounting:manage")
   @Validate({ params: batchIdParams, body: journalBatchReverseSchema })
+  @ResponseSchema(journalBatchDetailSchema)
   async reverse(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body() body: JournalBatchReverse,
@@ -158,6 +171,7 @@ export class JournalOutboxController {
   @Post(":batchId/reconcile")
   @RequirePermission("payroll:accounting:manage")
   @Validate({ params: batchIdParams, body: journalBatchReconcileSchema })
+  @ResponseSchema(journalBatchDetailSchema)
   async reconcile(
     @Param("batchId", ParseIntPipe) batchId: number,
     @Body() body: JournalBatchReconcile,

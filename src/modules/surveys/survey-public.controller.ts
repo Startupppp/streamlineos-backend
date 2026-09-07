@@ -19,6 +19,15 @@ import {
   type SubmitLiveAnswerInput,
 } from "./dto/survey-live-session.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  surveyPublicSurveySchema,
+  surveyResponseSessionRowSchema as surveyResponseSessionSchema,
+  surveyPublicLiveSessionSchema,
+  joinLiveSessionResultSchema,
+  submitLiveAnswerSchema as submitLiveAnswerResultSchema,
+  successSchema as publicSuccessSchema,
+} from "./dto/survey-public-response.schemas";
 import { z } from "zod";
 import { resolveClientIpOr } from "../../common/http/client-ip";
 
@@ -52,6 +61,7 @@ export class SurveyPublicController {
   @Public()
   @Get(":collectorToken")
   @Validate({ params: collectorTokenParams })
+  @ResponseSchema(surveyPublicSurveySchema)
   async getSurvey(
     @Param("collectorToken") collectorToken: string,
     @Request() req: { ip?: string; headers: Record<string, string> },
@@ -64,6 +74,7 @@ export class SurveyPublicController {
   @Post(":collectorToken/start")
   @HttpCode(201)
   @Validate({ params: collectorTokenParams, body: startSessionSchema })
+  @ResponseSchema(surveyResponseSessionSchema)
   async start(
     @Param("collectorToken") collectorToken: string,
     @Body() body: StartSessionInput,
@@ -76,6 +87,7 @@ export class SurveyPublicController {
   @Public()
   @Patch(":collectorToken/session/:sessionId")
   @Validate({ params: collectorTokensessionIdParams, body: patchSessionSchema })
+  @ResponseSchema(publicSuccessSchema)
   async saveAnswers(
     @Param("sessionId") sessionId: number,
     @Body() body: PatchSessionInput,
@@ -88,6 +100,7 @@ export class SurveyPublicController {
   @Public()
   @Post(":collectorToken/session/:sessionId/submit")
   @Validate({ params: collectorTokensessionIdParams, body: submitSessionSchema })
+  @ResponseSchema(publicSuccessSchema)
   async submit(
     @Param("sessionId") sessionId: number,
     @Body() body: SubmitSessionInput,
@@ -100,6 +113,7 @@ export class SurveyPublicController {
   @Public()
   @Get("live/:sessionCode")
   @Validate({ params: sessionCodeParams })
+  @ResponseSchema(surveyPublicLiveSessionSchema)
   async getLiveSession(@Param("sessionCode") sessionCode: string) {
     return this.liveSessions.withLiveSession(sessionCode, async (session) => {
       if (session.status === "ended") throw new NotFoundException("This live session has ended");
@@ -116,6 +130,7 @@ export class SurveyPublicController {
   @Post("live/:sessionCode/join")
   @HttpCode(201)
   @Validate({ params: sessionCodeParams, body: joinLiveSessionSchema })
+  @ResponseSchema(joinLiveSessionResultSchema)
   async joinLiveSession(
     @Param("sessionCode") sessionCode: string,
     @Body() body: JoinLiveSessionInput,
@@ -128,6 +143,7 @@ export class SurveyPublicController {
   @Public()
   @Post("live/:sessionCode/answer")
   @Validate({ params: sessionCodeParams, body: submitLiveAnswerSchema })
+  @ResponseSchema(submitLiveAnswerResultSchema)
   async submitLiveAnswer(
     @Param("sessionCode") sessionCode: string,
     @Body() body: SubmitLiveAnswerInput,

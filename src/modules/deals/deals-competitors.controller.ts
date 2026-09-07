@@ -25,6 +25,8 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import { dealCompetitorSchema } from "./dto/deals-response.schemas";
 
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
 const dealIdcompetitorIdParams = z.object({ dealId: z.coerce.number().int().positive(), competitorId: z.string().min(1) }).strict();
@@ -37,6 +39,7 @@ export class DealsCompetitorsController {
 
   @Get(":dealId/competitors")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(z.array(dealCompetitorSchema))
   @Validate({ params: dealIdParams })
   list(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -48,6 +51,7 @@ export class DealsCompetitorsController {
   @Post(":dealId/competitors")
   @HttpCode(201)
   @RequirePermission("crm:deals:update")
+  @ResponseSchema(dealCompetitorSchema)
   @Validate({ params: dealIdParams, body: createCompetitorSchema })
   create(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -59,6 +63,7 @@ export class DealsCompetitorsController {
 
   @Patch(":dealId/competitors/:competitorId")
   @RequirePermission("crm:deals:update")
+  @ResponseSchema(dealCompetitorSchema)
   @Validate({ params: dealIdcompetitorIdParams, body: updateCompetitorSchema })
   update(
     @Param("dealId", ParseIntPipe) dealId: number,
@@ -72,6 +77,7 @@ export class DealsCompetitorsController {
   @Delete(":dealId/competitors/:competitorId")
   @HttpCode(204)
   @RequirePermission("crm:deals:update")
+  @NoContentResponse()
   @Validate({ params: dealIdcompetitorIdParams })
   async remove(
     @Param("dealId", ParseIntPipe) dealId: number,

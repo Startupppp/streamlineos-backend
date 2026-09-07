@@ -26,7 +26,14 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  vendorCreditListResponseSchema,
+  vendorCreditCreatedResponseSchema,
+  vendorCreditDetailResponseSchema,
+  vendorCreditPostResponseSchema,
+  vendorCreditApplyResponseSchema,
+} from "./dto/ap-response.schemas";
 
 const vendorCreditIdParams = z.object({ vendorCreditId: z.coerce.number().int().positive() }).strict();
 
@@ -37,6 +44,7 @@ export class VendorCreditsController {
   constructor(private readonly service: VendorCreditsService) {}
 
   @Get()
+  @ResponseSchema(vendorCreditListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:read")
   @Validate({ query: listVendorCreditsQuerySchema })
@@ -48,6 +56,7 @@ export class VendorCreditsController {
   }
 
   @Post()
+  @ResponseSchema(vendorCreditCreatedResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:create")
   @HttpCode(201)
@@ -60,6 +69,7 @@ export class VendorCreditsController {
   }
 
   @Get(":vendorCreditId")
+  @ResponseSchema(vendorCreditDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:read")
   @Validate({ params: vendorCreditIdParams })
@@ -71,6 +81,7 @@ export class VendorCreditsController {
   }
 
   @Post(":vendorCreditId/post")
+  @ResponseSchema(vendorCreditPostResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:manage")
@@ -84,6 +95,7 @@ export class VendorCreditsController {
   }
 
   @Post(":vendorCreditId/apply")
+  @ResponseSchema(vendorCreditApplyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:manage")
   @HttpCode(200)

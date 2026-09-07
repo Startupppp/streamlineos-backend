@@ -28,6 +28,8 @@ import {
 } from "./dto/qa.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { testCaseRowSchema } from "./dto/qa-response.schemas";
 
 const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).strict();
 
@@ -39,6 +41,7 @@ export class TestCasesController {
 
   @Get()
   @RequirePermission("build:qa:view")
+  @ResponseSchema(z.array(testCaseRowSchema))
   @Validate({ query: testCaseListQuerySchema })
   listCases(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -50,6 +53,7 @@ export class TestCasesController {
 
   @Get(":caseId")
   @RequirePermission("build:qa:view")
+  @ResponseSchema(testCaseRowSchema)
   @Validate({ params: caseIdParams })
   getCase(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -62,6 +66,7 @@ export class TestCasesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:qa:manage")
+  @ResponseSchema(testCaseRowSchema)
   @Validate({ body: createTestCaseSchema })
   createCase(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -73,6 +78,7 @@ export class TestCasesController {
 
   @Patch(":caseId")
   @RequirePermission("build:qa:manage")
+  @ResponseSchema(testCaseRowSchema)
   @Validate({ params: caseIdParams, body: updateTestCaseSchema })
   updateCase(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -86,6 +92,7 @@ export class TestCasesController {
   @Delete(":caseId")
   @RequirePermission("build:qa:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: caseIdParams })
   deleteCase(
     @Param("projectId", ParseIntPipe) projectId: number,

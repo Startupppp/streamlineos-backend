@@ -10,9 +10,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { FinanceReportExportService } from "./finance-report-export.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { createFinanceReportExportJobSchema, finReportExportJobIdParams } from "./dto/finance-report-export.schemas";
 import type { CreateFinanceReportExportJobInput } from "./dto/finance-report-export.schemas";
+import { exportJobSchema } from "./dto/finance-reports-export-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/reports/export")
@@ -21,6 +23,7 @@ export class FinanceReportExportController {
   constructor(private readonly exportJobs: FinanceReportExportService) {}
 
   @Post("jobs")
+  @ResponseSchema(exportJobSchema)
   @HttpCode(202)
   @Idempotent("accounting.reports.export.create")
   @RequirePermission("accounting:reports:export")
@@ -34,6 +37,7 @@ export class FinanceReportExportController {
   }
 
   @Get("jobs/:jobId")
+  @ResponseSchema(exportJobSchema)
   @RequirePermission("accounting:reports:export")
   @Validate({ params: finReportExportJobIdParams })
   getJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext) {
@@ -41,6 +45,7 @@ export class FinanceReportExportController {
   }
 
   @Post("jobs/:jobId/cancel")
+  @ResponseSchema(exportJobSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("accounting:reports:export")
@@ -50,6 +55,7 @@ export class FinanceReportExportController {
   }
 
   @Get("jobs/:jobId/download")
+  @ApiOkResponse({ content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } })
   @RequirePermission("accounting:reports:export")
   @Validate({ params: finReportExportJobIdParams })
   async downloadJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext, @Res() res: Response) {

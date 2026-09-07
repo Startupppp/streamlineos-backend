@@ -62,7 +62,7 @@
       "nonNull": 0
     },
     "src/common/openapi/build-openapi-document.ts": {
-      "as": 3,
+      "as": 1,
       "nonNull": 0
     },
     "src/common/openapi/zod-operation-contracts.ts": {

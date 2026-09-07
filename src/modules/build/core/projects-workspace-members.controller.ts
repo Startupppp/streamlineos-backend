@@ -24,6 +24,11 @@ import {
 } from "./dto/projects-workspace-members.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  workspaceMemberPageSchema,
+  workspaceMemberRowSchema,
+} from "./dto/build-core-response.schemas";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
@@ -35,6 +40,7 @@ export class ProjectsWorkspaceMembersController {
 
   @Get()
   @RequirePermission("build:members:view")
+  @ResponseSchema(workspaceMemberPageSchema)
   @Validate({ query: listWorkspaceMembersSchema })
   list(
     @Query() query: ListWorkspaceMembersInput,
@@ -46,6 +52,7 @@ export class ProjectsWorkspaceMembersController {
   @Post()
   @RequirePermission("build:members:manage")
   @HttpCode(201)
+  @ResponseSchema(workspaceMemberRowSchema)
   @Validate({ body: addWorkspaceMemberSchema })
   add(
     @Body() body: AddWorkspaceMemberInput,
@@ -57,6 +64,7 @@ export class ProjectsWorkspaceMembersController {
   @Delete(":userId")
   @RequirePermission("build:members:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: userIdParams })
   remove(
     @Param("userId") userId: string,

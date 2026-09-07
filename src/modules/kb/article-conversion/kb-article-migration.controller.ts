@@ -11,6 +11,8 @@ import {
   type RunArticleMigrationInput,
 } from "./dto/kb-article-migration.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbMigrationPreviewSchema, kbMigrationRunSchema } from "./dto/kb-migration-response.schemas";
 
 @Controller("kb/article-migration")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -19,6 +21,7 @@ export class KbArticleMigrationController {
 
   @Get("preview")
   @RequirePermission("kb:settings:manage")
+  @ResponseSchema(kbMigrationPreviewSchema)
   async preview(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.service.preview(u.orgId);
   }
@@ -27,6 +30,7 @@ export class KbArticleMigrationController {
   @Idempotent("kb:article_migration.run")
   @RequirePermission("kb:settings:manage")
   @Validate({ body: runArticleMigrationSchema })
+  @ResponseSchema(kbMigrationRunSchema)
   async run(
     @Body() body: RunArticleMigrationInput,
     @CurrentUser() u: CurrentUserContext,

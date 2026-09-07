@@ -15,7 +15,15 @@ import { CronHrService } from "./cron-hr.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronLeaseService } from "./cron-lease.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import {
+  dailyNotificationsResponseSchema,
+  holidayNotificationsResponseSchema,
+  offerDeadlineRemindersResponseSchema,
+  certificationExpiryResponseSchema,
+  weeklyExecRecapResponseSchema,
+  documentExpiryResponseSchema,
+} from "./dto/cron-hr-notifications-response.schemas";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -30,6 +38,7 @@ export class CronHrNotificationsController {
   ) {}
 
   @Get("daily-notifications")
+  @ResponseSchema(dailyNotificationsResponseSchema)
   getDailyNotifications(@Headers("authorization") authorization?: string) {
     return this.runDailyNotifications(authorization);
   }
@@ -37,11 +46,13 @@ export class CronHrNotificationsController {
   @Post("daily-notifications")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(dailyNotificationsResponseSchema)
   postDailyNotifications(@Headers("authorization") authorization?: string) {
     return this.runDailyNotifications(authorization);
   }
 
   @Get("holiday-notifications")
+  @ResponseSchema(holidayNotificationsResponseSchema)
   getHolidayNotifications(@Headers("authorization") authorization?: string) {
     return this.runHolidayNotifications(authorization);
   }
@@ -49,11 +60,13 @@ export class CronHrNotificationsController {
   @Post("holiday-notifications")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(holidayNotificationsResponseSchema)
   postHolidayNotifications(@Headers("authorization") authorization?: string) {
     return this.runHolidayNotifications(authorization);
   }
 
   @Get("offer-deadline-reminders")
+  @ResponseSchema(offerDeadlineRemindersResponseSchema)
   getOfferDeadlineReminders(@Headers("authorization") authorization?: string) {
     return this.runOfferDeadlineReminders(authorization);
   }
@@ -61,11 +74,13 @@ export class CronHrNotificationsController {
   @Post("offer-deadline-reminders")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(offerDeadlineRemindersResponseSchema)
   postOfferDeadlineReminders(@Headers("authorization") authorization?: string) {
     return this.runOfferDeadlineReminders(authorization);
   }
 
   @Get("certification-expiry")
+  @ResponseSchema(certificationExpiryResponseSchema)
   getCertificationExpiry(@Headers("authorization") authorization?: string) {
     return this.runCertificationExpiry(authorization);
   }
@@ -73,11 +88,13 @@ export class CronHrNotificationsController {
   @Post("certification-expiry")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(certificationExpiryResponseSchema)
   postCertificationExpiry(@Headers("authorization") authorization?: string) {
     return this.runCertificationExpiry(authorization);
   }
 
   @Get("weekly-exec-recap")
+  @ResponseSchema(weeklyExecRecapResponseSchema)
   getWeeklyExecRecap(@Headers("authorization") authorization?: string) {
     return this.runWeeklyExecRecap(authorization);
   }
@@ -85,11 +102,13 @@ export class CronHrNotificationsController {
   @Post("weekly-exec-recap")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(weeklyExecRecapResponseSchema)
   postWeeklyExecRecap(@Headers("authorization") authorization?: string) {
     return this.runWeeklyExecRecap(authorization);
   }
 
   @Get("document-expiry")
+  @ResponseSchema(documentExpiryResponseSchema)
   getDocumentExpiry(@Headers("authorization") authorization?: string) {
     return this.runDocumentExpiry(authorization);
   }
@@ -97,6 +116,7 @@ export class CronHrNotificationsController {
   @Post("document-expiry")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(documentExpiryResponseSchema)
   postDocumentExpiry(@Headers("authorization") authorization?: string) {
     return this.runDocumentExpiry(authorization);
   }

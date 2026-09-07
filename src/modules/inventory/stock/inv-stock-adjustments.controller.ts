@@ -16,7 +16,12 @@ import {
 } from "./dto/inv-stock.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  listAdjustmentsResponseSchema,
+  getAdjustmentResponseSchema,
+} from "./dto/stock-response.schemas";
 
 const adjustmentIdParams = z.object({ adjustmentId: z.coerce.number().int().positive() }).strict();
 
@@ -30,6 +35,7 @@ export class InvStockAdjustmentsController {
   ) {}
 
   @Get()
+  @ResponseSchema(listAdjustmentsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listAdjustmentsSchema })
@@ -42,6 +48,7 @@ export class InvStockAdjustmentsController {
   }
 
   @Post()
+  @ResponseSchema(getAdjustmentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   @Validate({ body: createAdjustmentSchema })
@@ -55,6 +62,7 @@ export class InvStockAdjustmentsController {
   }
 
   @Get(":adjustmentId")
+  @ResponseSchema(getAdjustmentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ params: adjustmentIdParams })
@@ -67,6 +75,7 @@ export class InvStockAdjustmentsController {
 
   @Post(":adjustmentId/approve")
   @BodylessAction()
+  @ResponseSchema(getAdjustmentResponseSchema)
   @Idempotent("inventory.stock-adjustment.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:approve")
@@ -80,6 +89,7 @@ export class InvStockAdjustmentsController {
 
   @Post(":adjustmentId/post")
   @BodylessAction()
+  @ResponseSchema(getAdjustmentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:post")
   @Validate({ params: adjustmentIdParams })
@@ -94,13 +104,15 @@ export class InvStockAdjustmentsController {
 
   @Post(":adjustmentId/cancel")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   @Validate({ params: adjustmentIdParams })
-  cancelAdjustment(
+  async cancelAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.adjustments.cancelAdjustment(u.orgId, adjustmentId);
+    await this.adjustments.cancelAdjustment(u.orgId, adjustmentId);
+    return { success: true as const };
   }
 }

@@ -27,8 +27,24 @@ import { LlmService } from "../providers/llm.service";
 import { CrmCopilotService } from "../services/crm-copilot.service";
 import { CrmBriefService } from "../services/crm-brief.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
 import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  leadSummaryResponseSchema,
+  dealSummaryResponseSchema,
+  nextBestActionsResponseSchema,
+  emailDraftResponseSchema,
+  summarizeNotesResponseSchema,
+  objectionHandlerResponseSchema,
+  duplicateSuggestionsResponseSchema,
+  meetingFollowUpResponseSchema,
+  stalePipelineResponseSchema,
+  dataQualityResponseSchema,
+  leadSummaryWithCitationsResponseSchema,
+  dealSummaryWithCitationsResponseSchema,
+  accountSummaryWithCitationsResponseSchema,
+} from "../dto/ai-response.schemas";
 
 const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
@@ -97,6 +113,7 @@ export class CrmCopilotController {
   @Post("leads/:leadId/summary")
   @Validate({ params: leadIdParams })
   @BodylessAction()
+  @ResponseSchema(leadSummaryResponseSchema)
   async leadSummary(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -110,6 +127,7 @@ export class CrmCopilotController {
   @Post("deals/:dealId/summary")
   @Validate({ params: dealIdParams })
   @BodylessAction()
+  @ResponseSchema(dealSummaryResponseSchema)
   async dealSummary(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -119,6 +137,7 @@ export class CrmCopilotController {
   }
 
   @Post("next-best-actions")
+  @ResponseSchema(nextBestActionsResponseSchema)
   @Validate({ body: nextBestActionsSchema })
   nextBestActions(
     @Body() body: z.infer<typeof nextBestActionsSchema>,
@@ -129,6 +148,7 @@ export class CrmCopilotController {
   }
 
   @Post("email-draft")
+  @ResponseSchema(emailDraftResponseSchema)
   @Validate({ body: emailDraftSchema })
   emailDraft(
     @Body() body: z.infer<typeof emailDraftSchema>,
@@ -139,6 +159,7 @@ export class CrmCopilotController {
   }
 
   @Post("summarize-notes")
+  @ResponseSchema(summarizeNotesResponseSchema)
   @Validate({ body: summarizeNotesSchema })
   summarizeNotes(
     @Body() body: z.infer<typeof summarizeNotesSchema>,
@@ -149,6 +170,7 @@ export class CrmCopilotController {
   }
 
   @Post("objection-help")
+  @ResponseSchema(objectionHandlerResponseSchema)
   @Validate({ body: objectionHelpSchema })
   objectionHelp(
     @Body() body: z.infer<typeof objectionHelpSchema>,
@@ -161,6 +183,7 @@ export class CrmCopilotController {
   @Post("duplicate-suggestions/:leadId")
   @Validate({ params: leadIdParams })
   @BodylessAction()
+  @ResponseSchema(duplicateSuggestionsResponseSchema)
   duplicateSuggestions(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -170,6 +193,7 @@ export class CrmCopilotController {
   }
 
   @Post("meeting-follow-up")
+  @ResponseSchema(meetingFollowUpResponseSchema)
   @Validate({ body: meetingFollowUpSchema })
   async meetingFollowUp(
     @Body() body: MeetingFollowUpBodyInput,
@@ -180,6 +204,7 @@ export class CrmCopilotController {
   }
 
   @Post("meeting-follow-up/stream")
+  @ApiOkResponse({ description: "AI text stream", content: { "text/plain": { schema: { type: "string" } } } })
   @Validate({ body: meetingFollowUpSchema })
   async meetingFollowUpStream(
     @Req() req: Request,
@@ -201,6 +226,7 @@ export class CrmCopilotController {
   }
 
   @Get("stale-pipeline")
+  @ResponseSchema(stalePipelineResponseSchema)
   @Validate({ query: stalePipelineQuerySchema })
   async stalePipeline(
     @Query() query: StalePipelineQuery,
@@ -211,6 +237,7 @@ export class CrmCopilotController {
   }
 
   @Get("data-quality")
+  @ResponseSchema(dataQualityResponseSchema)
   async dataQuality(@CurrentUser() u: CurrentUserContext) {
     this.ensureLlm();
     return this.copilot.dataQualityCopilot(u.orgId, u.userId);
@@ -219,6 +246,7 @@ export class CrmCopilotController {
   @Post("leads/:leadId/summary-with-citations")
   @Validate({ params: leadIdParams })
   @BodylessAction()
+  @ResponseSchema(leadSummaryWithCitationsResponseSchema)
   async leadSummaryWithCitations(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -232,6 +260,7 @@ export class CrmCopilotController {
   @Post("deals/:dealId/summary-with-citations")
   @Validate({ params: dealIdParams })
   @BodylessAction()
+  @ResponseSchema(dealSummaryWithCitationsResponseSchema)
   async dealSummaryWithCitations(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -241,6 +270,7 @@ export class CrmCopilotController {
   }
 
   @Post("account-summary-with-citations")
+  @ResponseSchema(accountSummaryWithCitationsResponseSchema)
   @Validate({ body: accountSummaryWithCitationsSchema })
   async accountSummaryWithCitations(
     @Body() body: AccountSummaryWithCitationsInput,

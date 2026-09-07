@@ -24,6 +24,8 @@ import {
   type PatchAccessRequestInput,
 } from "./dto/hr-directory.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { accessRequestRowSchema } from "./dto/directory-response.schemas";
 import { z } from "zod";
 
 const requestIdParams = z.object({ requestId: z.string().min(1) }).strict();
@@ -35,6 +37,7 @@ export class AccessRequestsController {
   constructor(private readonly service: AccessRequestsService) {}
 
   @Get()
+  @ResponseSchema(z.array(accessRequestRowSchema))
   @RequirePermission("hr:assets:view")
   list(
     @Query("employeeId") employeeId: string | undefined,
@@ -44,6 +47,7 @@ export class AccessRequestsController {
   }
 
   @Post()
+  @ResponseSchema(accessRequestRowSchema)
   @RequirePermission("hr:assets:manage")
   @HttpCode(201)
   @Validate({ body: createAccessRequestSchema })
@@ -55,6 +59,7 @@ export class AccessRequestsController {
   }
 
   @Patch(":requestId")
+  @ResponseSchema(accessRequestRowSchema)
   @RequirePermission("hr:assets:manage")
   @Validate({ params: requestIdParams, body: patchAccessRequestSchema })
   update(

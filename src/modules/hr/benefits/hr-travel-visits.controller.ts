@@ -19,6 +19,8 @@ import { HrTravelVisitsService } from "./hr-travel-visits.service";
 import { createVisitLogSchema, type CreateVisitLogInput } from "./dto/benefits.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
+import { listTravelVisitsResponseSchema, addTravelVisitResponseSchema } from "./dto/benefits-response.schemas"
 
 const travelRequestIdParams = z.object({ travelRequestId: z.coerce.number().int().positive() }).strict();
 
@@ -28,6 +30,7 @@ const travelRequestIdParams = z.object({ travelRequestId: z.coerce.number().int(
 export class HrTravelVisitsController {
   constructor(private readonly service: HrTravelVisitsService) {}
 
+  @ResponseSchema(listTravelVisitsResponseSchema)
   @Get(":travelRequestId")
   @RequirePermission("hr:benefits:view")
   @Validate({ params: travelRequestIdParams })
@@ -38,6 +41,7 @@ export class HrTravelVisitsController {
     return this.service.listVisits(u.orgId, travelRequestId);
   }
 
+  @ResponseSchema(addTravelVisitResponseSchema)
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:benefits:view")

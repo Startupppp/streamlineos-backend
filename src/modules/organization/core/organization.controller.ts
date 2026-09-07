@@ -76,7 +76,35 @@ import {
   type UpdateOrgSettingsInput,
   type ValidateInvitationTokenQuery,
 } from "./dto/organization.schemas";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  invitationValidateResponseSchema,
+  orgListResponseSchema,
+  archivedOrgListResponseSchema,
+  createOrgResponseSchema,
+  switchOrgResponseSchema,
+  orgMembersListResponseSchema,
+  updateMemberRoleResponseSchema,
+  memberStatusMutationResponseSchema,
+  orgSettingsResponseSchema,
+  updateOrgSettingsResponseSchema,
+  acceptInvitationResponseSchema,
+  declineInvitationResponseSchema,
+  customDomainListResponseSchema,
+  addCustomDomainResponseSchema,
+  verifyCustomDomainResponseSchema,
+  holidayListResponseSchema,
+  createHolidayResponseSchema,
+  archiveOrgResponseSchema,
+  restoreOrgResponseSchema,
+  leaveOrgResponseSchema,
+  deleteOrgResponseSchema,
+  schedulePurgeResponseSchema,
+  cancelPurgeResponseSchema,
+  placeLegalHoldResponseSchema,
+  legalHoldListResponseSchema,
+  releaseLegalHoldResponseSchema,
+} from "./dto/organization-core-response.schemas";
 import { z } from "zod";
 import { resolveClientIpOr } from "../../../common/http/client-ip";
 
@@ -125,6 +153,7 @@ export class OrganizationController {
 
   @Public()
   @Get("invitations/validate")
+  @ResponseSchema(invitationValidateResponseSchema)
   @Validate({ query: validateInvitationTokenQuerySchema })
   async validateInvitationToken(
     @Query() query: ValidateInvitationTokenQuery,
@@ -135,6 +164,7 @@ export class OrganizationController {
   }
 
   @Get()
+  @ResponseSchema(orgListResponseSchema)
   @Universal()
   @AllowNoOrg()
   @NoTenantTransaction()
@@ -143,6 +173,7 @@ export class OrganizationController {
   }
 
   @Get("archived")
+  @ResponseSchema(archivedOrgListResponseSchema)
   @Universal()
   @AllowNoOrg()
   @NoTenantTransaction()
@@ -151,6 +182,7 @@ export class OrganizationController {
   }
 
   @Post()
+  @ResponseSchema(createOrgResponseSchema)
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @AuthorizedInService("any authenticated user may create a new organisation; plan limits enforced in OrgProfileService.createOrganization")
@@ -165,6 +197,7 @@ export class OrganizationController {
   }
 
   @Post("switch")
+  @ResponseSchema(switchOrgResponseSchema)
   @Universal()
   @HttpCode(200)
   @AllowNoOrg()
@@ -180,6 +213,7 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("members")
+  @ResponseSchema(orgMembersListResponseSchema)
   @Validate({ query: listMembersSchema })
   listMembers(
     @Query() query: ListMembersInput,
@@ -191,6 +225,7 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
   @Patch("members/:memberId")
+  @ResponseSchema(updateMemberRoleResponseSchema)
   @Validate({ params: memberIdParams, body: updateMemberRoleSchema })
   updateMemberRole(
     @Param("memberId") memberId: string,
@@ -206,6 +241,7 @@ export class OrganizationController {
   }
 
   @Delete("members/:memberId")
+  @NoContentResponse()
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
@@ -219,6 +255,7 @@ export class OrganizationController {
 
   @Patch("members/:memberId/suspend")
   @BodylessAction()
+  @ResponseSchema(memberStatusMutationResponseSchema)
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
@@ -232,6 +269,7 @@ export class OrganizationController {
 
   @Patch("members/:memberId/reactivate")
   @BodylessAction()
+  @ResponseSchema(memberStatusMutationResponseSchema)
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
@@ -243,6 +281,7 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("settings")
+  @ResponseSchema(orgSettingsResponseSchema)
   async getSettings(@CurrentUser() u: CurrentUserContext) {
     const result = await this.settings.getSettings(u.orgId);
     if (!result) throw new NotFoundException("Organization not found");
@@ -250,6 +289,7 @@ export class OrganizationController {
   }
 
   @Patch("settings")
+  @ResponseSchema(updateOrgSettingsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   @Validate({ body: updateOrgSettingsSchema })
@@ -261,6 +301,7 @@ export class OrganizationController {
   }
 
   @Patch("security")
+  @ResponseSchema(updateOrgSettingsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   @Validate({ body: securitySettingsSchema })
@@ -273,6 +314,7 @@ export class OrganizationController {
 
   @Public()
   @Post("invitations/accept")
+  @ResponseSchema(acceptInvitationResponseSchema)
   @HttpCode(200)
   @Validate({ body: acceptInvitationSchema })
   async acceptInvitation(
@@ -285,6 +327,7 @@ export class OrganizationController {
 
   @Public()
   @Post("invitations/decline")
+  @ResponseSchema(declineInvitationResponseSchema)
   @HttpCode(200)
   @Validate({ body: declineInvitationSchema })
   async declineInvitation(
@@ -298,11 +341,13 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("custom-domains")
+  @ResponseSchema(customDomainListResponseSchema)
   listCustomDomains(@CurrentUser() u: CurrentUserContext) {
     return this.customDomains.listCustomDomains(u.orgId);
   }
 
   @Post("custom-domains")
+  @ResponseSchema(addCustomDomainResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   @Validate({ body: addCustomDomainSchema })
@@ -315,6 +360,7 @@ export class OrganizationController {
 
   @Post("custom-domains/:domainId/verify")
   @BodylessAction()
+  @ResponseSchema(verifyCustomDomainResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   @Validate({ params: domainIdParams })
@@ -326,6 +372,7 @@ export class OrganizationController {
   }
 
   @Delete("custom-domains/:domainId")
+  @NoContentResponse()
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
@@ -340,11 +387,13 @@ export class OrganizationController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:view")
   @Get("holidays")
+  @ResponseSchema(holidayListResponseSchema)
   listHolidays(@CurrentUser() u: CurrentUserContext) {
     return this.holidays.listHolidays(u.orgId);
   }
 
   @Post("holidays")
+  @ResponseSchema(createHolidayResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   @Validate({ body: createHolidaySchema })
@@ -356,6 +405,7 @@ export class OrganizationController {
   }
 
   @Delete("holidays/:holidayId")
+  @NoContentResponse()
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
@@ -366,6 +416,7 @@ export class OrganizationController {
 
   @Post("archive")
   @BodylessAction()
+  @ResponseSchema(archiveOrgResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   archiveOrg(@CurrentUser() u: CurrentUserContext) {
@@ -374,6 +425,7 @@ export class OrganizationController {
   }
 
   @Post("restore")
+  @ResponseSchema(restoreOrgResponseSchema)
   @HttpCode(200)
   @AuthorizedInService("OrgLifecycleService.restoreOrg — an ACTIVE isOwner membership of the target org, 404 on a miss")
   @AllowNoOrg()
@@ -388,6 +440,7 @@ export class OrganizationController {
 
   @Post("leave")
   @BodylessAction()
+  @ResponseSchema(leaveOrgResponseSchema)
   @Universal()
   @HttpCode(200)
   leaveOrg(@CurrentUser() u: CurrentUserContext) {
@@ -395,6 +448,7 @@ export class OrganizationController {
   }
 
   @Delete()
+  @ResponseSchema(deleteOrgResponseSchema)
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
@@ -408,6 +462,7 @@ export class OrganizationController {
   }
 
   @Post(":orgId/purge/schedule")
+  @ResponseSchema(schedulePurgeResponseSchema)
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
@@ -429,6 +484,7 @@ export class OrganizationController {
   }
 
   @Delete(":orgId/purge")
+  @ResponseSchema(cancelPurgeResponseSchema)
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
@@ -444,6 +500,7 @@ export class OrganizationController {
   }
 
   @Post("legal-holds")
+  @ResponseSchema(placeLegalHoldResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: placeLegalHoldSchema })
@@ -456,6 +513,7 @@ export class OrganizationController {
   }
 
   @Get("legal-holds")
+  @ResponseSchema(legalHoldListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
   listLegalHolds(@CurrentUser() u: CurrentUserContext) {
@@ -463,6 +521,7 @@ export class OrganizationController {
   }
 
   @Delete("legal-holds/:holdId")
+  @ResponseSchema(releaseLegalHoldResponseSchema)
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")

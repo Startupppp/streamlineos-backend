@@ -8,6 +8,12 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  surveyAttemptListSchema,
+  surveyAttemptRowSchema,
+  surveyCertificateListSchema,
+} from "./dto/survey-assessment-response.schemas";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { SurveyAssessmentService } from "./survey-assessment.service";
 import {
@@ -28,6 +34,7 @@ export class SurveyAssessmentController {
   @Get("assessment/attempts")
   @RequirePermission("surveys:assessments:manage")
   @Validate({ params: surveyIdParams, query: listAttemptsSchema })
+  @ResponseSchema(surveyAttemptListSchema)
   listAttempts(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Query() query: ListAttemptsInput,
@@ -41,6 +48,7 @@ export class SurveyAssessmentController {
   @Idempotent("surveys:assessment.attempt")
   @RequirePermission("surveys:assessments:manage")
   @Validate({ params: surveyIdParams, body: createAttemptSchema })
+  @ResponseSchema(surveyAttemptRowSchema)
   createAttempt(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: CreateAttemptInput,
@@ -52,6 +60,7 @@ export class SurveyAssessmentController {
   @Get("certificates")
   @RequirePermission("surveys:assessments:manage")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyCertificateListSchema)
   listCertificates(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.assessments.listCertificates(u.orgId, surveyId);
   }

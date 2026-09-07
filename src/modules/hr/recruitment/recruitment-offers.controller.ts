@@ -30,7 +30,13 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  candidateOfferSchema,
+  offerVersionSchema,
+  offerNegotiationSchema,
+  successSchema,
+} from "./dto/recruitment-response.schemas";
 
 const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
 const candidateAndOfferIdParams = z.object({ candidateId: z.coerce.number().int().positive(), offerId: z.coerce.number().int().positive() }).strict();
@@ -42,6 +48,7 @@ export class RecruitmentOffersController {
   constructor(private readonly offers: RecruitmentOffersService) {}
 
   @Get()
+  @ResponseSchema(z.array(candidateOfferSchema))
   @RequirePermission("hr:offers:view")
   @Validate({ params: candidateIdParams })
   list(@Param("candidateId", ParseIntPipe) candidateId: number, @CurrentUser() u: CurrentUserContext) {
@@ -50,6 +57,7 @@ export class RecruitmentOffersController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(candidateOfferSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ params: candidateIdParams, body: createOfferSchema })
   create(
@@ -63,6 +71,7 @@ export class RecruitmentOffersController {
   @Post(":offerId/submit-for-approval")
   @BodylessAction()
   @Idempotent("hr.offer.submit-approval")
+  @ResponseSchema(candidateOfferSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ params: candidateAndOfferIdParams })
   submitForApproval(@Param("offerId", ParseIntPipe) offerId: number, @CurrentUser() u: CurrentUserContext) {
@@ -71,6 +80,7 @@ export class RecruitmentOffersController {
 
   @Post(":offerId/approve")
   @Idempotent("hr.offer.approve")
+  @ResponseSchema(candidateOfferSchema)
   @RequirePermission("hr:offers:approve")
   @Validate({ params: candidateAndOfferIdParams, body: approvalRemarksSchema })
   approve(
@@ -82,6 +92,7 @@ export class RecruitmentOffersController {
   }
 
   @Post(":offerId/reject-approval")
+  @ResponseSchema(candidateOfferSchema)
   @RequirePermission("hr:offers:approve")
   @Validate({ params: candidateAndOfferIdParams, body: approvalRemarksSchema })
   rejectApproval(
@@ -93,6 +104,7 @@ export class RecruitmentOffersController {
   }
 
   @Get(":offerId/versions")
+  @ResponseSchema(z.array(offerVersionSchema))
   @RequirePermission("hr:offers:view")
   @Validate({ params: candidateAndOfferIdParams })
   listVersions(@Param("offerId", ParseIntPipe) offerId: number, @CurrentUser() u: CurrentUserContext) {
@@ -100,6 +112,7 @@ export class RecruitmentOffersController {
   }
 
   @Get(":offerId/negotiations")
+  @ResponseSchema(z.array(offerNegotiationSchema))
   @RequirePermission("hr:offers:view")
   @Validate({ params: candidateAndOfferIdParams })
   listNegotiations(@Param("offerId", ParseIntPipe) offerId: number, @CurrentUser() u: CurrentUserContext) {
@@ -108,6 +121,7 @@ export class RecruitmentOffersController {
 
   @Post(":offerId/negotiations")
   @HttpCode(201)
+  @ResponseSchema(offerNegotiationSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ params: candidateAndOfferIdParams, body: createOfferNegotiationSchema })
   respondToNegotiation(
@@ -119,6 +133,7 @@ export class RecruitmentOffersController {
   }
 
   @Patch(":offerId")
+  @ResponseSchema(candidateOfferSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ params: candidateAndOfferIdParams, body: updateOfferSchema })
   update(
@@ -131,6 +146,7 @@ export class RecruitmentOffersController {
   }
 
   @Delete(":offerId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:offers:manage")
   @Validate({ params: candidateAndOfferIdParams })
   remove(

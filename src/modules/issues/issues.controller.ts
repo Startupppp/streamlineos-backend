@@ -25,6 +25,14 @@ import {
   type UpdateIssueInput,
 } from "./dto/issues.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  issueDetailSchema,
+  issueListResponseSchema,
+  issueRecordTypesSchema,
+  issueTransitionResultSchema,
+  issueTransitionsListSchema,
+} from "./dto/issues-response.schemas";
 import { z } from "zod";
 
 const issueRecordIdParams = z.object({ issueRecordId: z.string().min(1) }).strict();
@@ -43,12 +51,14 @@ export class IssuesController {
   ) {}
 
   @Get("record-types")
+  @ResponseSchema(issueRecordTypesSchema)
   @RequirePermission(ISSUES_VIEW_PERMISSION)
   recordTypes() {
     return this.issues.layouts();
   }
 
   @Get()
+  @ResponseSchema(issueListResponseSchema)
   @RequirePermission(ISSUES_VIEW_PERMISSION)
   @Validate({ query: listIssuesQuerySchema })
   async list(
@@ -60,6 +70,7 @@ export class IssuesController {
   }
 
   @Get(":issueRecordId")
+  @ResponseSchema(issueDetailSchema)
   @RequirePermission(ISSUES_VIEW_PERMISSION)
   @Validate({ params: issueRecordIdParams })
   async get(
@@ -71,6 +82,7 @@ export class IssuesController {
   }
 
   @Get(":issueRecordId/transitions")
+  @ResponseSchema(issueTransitionsListSchema)
   @RequirePermission(ISSUES_VIEW_PERMISSION)
   @Validate({ params: issueRecordIdParams, query: listTransitionsQuerySchema })
   async listTransitions(
@@ -84,6 +96,7 @@ export class IssuesController {
   }
 
   @Post()
+  @ResponseSchema(issueDetailSchema)
   @Idempotent("crm.issues.create")
   @RequirePermission(MANAGE)
   @Validate({ body: createIssueSchema })
@@ -95,6 +108,7 @@ export class IssuesController {
   }
 
   @Patch(":issueRecordId")
+  @ResponseSchema(issueDetailSchema)
   @RequirePermission(MANAGE)
   @Validate({ params: issueRecordIdParams, body: updateIssueSchema })
   update(
@@ -106,6 +120,7 @@ export class IssuesController {
   }
 
   @Post(":issueRecordId/stage")
+  @ResponseSchema(issueTransitionResultSchema)
   @Idempotent("crm.issues.stage")
   @RequirePermission(MANAGE)
   @Validate({ params: issueRecordIdParams, body: transitionIssueSchema })
@@ -124,6 +139,7 @@ export class IssuesController {
   }
 
   @Post(":issueRecordId/escalate")
+  @ResponseSchema(issueTransitionResultSchema)
   @Idempotent("crm.issues.escalate")
   @RequirePermission(ESCALATE)
   @Validate({ params: issueRecordIdParams, body: escalateIssueSchema })

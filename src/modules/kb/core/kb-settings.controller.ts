@@ -7,6 +7,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbSettingsService } from "./kb-settings.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbSettingsSchema } from "./dto/kb-core-response.schemas";
 
 const updateKbSettingsSchema = z.object({
   trashRetentionDays: z.number().int().min(1).max(365),
@@ -21,6 +23,7 @@ export class KbSettingsController {
 
   @Get()
   @RequirePermission("kb:settings:manage")
+  @ResponseSchema(kbSettingsSchema)
   async get(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.settings.getOrgSettings(u.orgId);
   }
@@ -28,6 +31,7 @@ export class KbSettingsController {
   @Patch()
   @RequirePermission("kb:settings:manage")
   @Validate({ body: updateKbSettingsSchema })
+  @ResponseSchema(kbSettingsSchema)
   async update(
     @Body() body: UpdateKbSettingsInput,
     @CurrentUser() u: CurrentUserContext,

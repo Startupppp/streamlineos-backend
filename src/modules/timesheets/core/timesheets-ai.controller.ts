@@ -25,7 +25,8 @@ import {
 import { overviewQuerySchema, type OverviewQuery } from "./dto/reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { aiTextResponseSchema, aiSummarizePeriodResponseSchema } from "./dto/timesheets-response.schemas";
 import { z } from "zod";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
@@ -64,6 +65,7 @@ export class TimesheetsAiController {
   @RequirePermission("timesheets:entries:view")
   @UseRateLimit("ai:invoke")
   @Validate({ params: periodIdParams })
+  @ResponseSchema(aiSummarizePeriodResponseSchema)
   summarize(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +79,7 @@ export class TimesheetsAiController {
   @RequirePermission("timesheets:approvals:manage")
   @UseRateLimit("ai:invoke")
   @Validate({ params: periodIdParams, body: rejectionDraftSchema })
+  @ResponseSchema(aiTextResponseSchema)
   draftRejectionReason(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Body() body: RejectionDraftInput,
@@ -91,6 +94,7 @@ export class TimesheetsAiController {
   @RequirePermission("timesheets:entries:create")
   @UseRateLimit("ai:invoke")
   @Validate({ body: describeEntrySchema })
+  @ResponseSchema(aiTextResponseSchema)
   describeEntry(
     @Body() body: DescribeEntryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -104,6 +108,7 @@ export class TimesheetsAiController {
   @RequirePermission("timesheets:billing:view")
   @UseRateLimit("ai:invoke")
   @Validate({ body: billingNarrativeSchema })
+  @ResponseSchema(aiTextResponseSchema)
   billingNarrative(
     @Body() body: BillingNarrativeInput,
     @CurrentUser() u: CurrentUserContext,
@@ -117,6 +122,7 @@ export class TimesheetsAiController {
   @RequirePermission("timesheets:reports:view")
   @UseRateLimit("ai:invoke")
   @Validate({ body: overviewQuerySchema })
+  @ResponseSchema(aiTextResponseSchema)
   reportsNarrative(
     @Body() body: OverviewQuery,
     @CurrentUser() u: CurrentUserContext,

@@ -23,7 +23,7 @@ import { patchFnfSchema, listPageQuerySchema, type PatchFnfInput, type ListPageQ
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { ApiOkResponse } from "@nestjs/swagger";
-import { fnfInsightsListSchema, fnfGetOneSchema, fnfStatementSchema } from "./dto/insights-response.schemas";
+import { fnfInsightsListSchema, fnfGetOneSchema, fnfStatementSchema, updateFnfResultSchema } from "./dto/insights-response.schemas";
 import { z } from "zod";
 
 const settlementIdParams = z.object({ settlementId: z.coerce.number().int().positive() }).strict();
@@ -61,6 +61,7 @@ export class PayrollInsightsFnfController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:fnf:manage")
   @Validate({ params: settlementIdParams, body: patchFnfSchema })
+  @ResponseSchema(updateFnfResultSchema)
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("settlementId", ParseIntPipe) settlementId: number,

@@ -31,7 +31,17 @@ import {
 } from "./dto/hr-policy.schemas";
 import type { PolicyType } from "./hr-policy-types";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrPolicyRowSchema,
+  hrPolicyListSchema,
+  hrPolicySeedResultSchema,
+  hrPolicyConflictsSchema,
+  hrPolicyOrgConflictsSchema,
+  hrPolicySimulateSchema,
+  hrPolicyPreviewSchema,
+  successSchema,
+} from "./dto/policies-response.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
@@ -57,6 +67,7 @@ export class HrPoliciesController {
   constructor(private readonly service: HrPoliciesService) {}
 
   @Get()
+  @ResponseSchema(hrPolicyListSchema)
   @RequirePermission("hr:policies:view")
   @Validate({ query: policiesListQuerySchema })
   list(
@@ -67,6 +78,7 @@ export class HrPoliciesController {
   }
 
   @Post()
+  @ResponseSchema(hrPolicyRowSchema)
   @HttpCode(201)
   @RequirePermission("hr:policies:manage")
   @Validate({ body: createPolicySchema })
@@ -78,12 +90,14 @@ export class HrPoliciesController {
   }
 
   @Get("seed-defaults")
+  @ResponseSchema(hrPolicyListSchema)
   @RequirePermission("hr:policies:manage")
   getSeedStatus(@CurrentUser() u: CurrentUserContext) {
     return this.service.list(u.orgId, { page: 1, limit: 1 });
   }
 
   @Post("seed-defaults")
+  @ResponseSchema(hrPolicySeedResultSchema)
   @BodylessAction()
   @HttpCode(201)
   @RequirePermission("hr:policies:manage")
@@ -92,6 +106,7 @@ export class HrPoliciesController {
   }
 
   @Get("conflicts")
+  @ResponseSchema(hrPolicyOrgConflictsSchema)
   @RequirePermission("hr:policies:view")
   @Validate({ query: orgConflictsQuerySchema })
   orgConflicts(
@@ -102,6 +117,7 @@ export class HrPoliciesController {
   }
 
   @Post("simulate")
+  @ResponseSchema(hrPolicySimulateSchema)
   @HttpCode(200)
   @RequirePermission("hr:policies:view")
   @Validate({ body: simulatePolicySchema })
@@ -118,6 +134,7 @@ export class HrPoliciesController {
   }
 
   @Get(":policyId")
+  @ResponseSchema(hrPolicyRowSchema)
   @RequirePermission("hr:policies:view")
   @Validate({ params: policyIdParams })
   getById(
@@ -128,6 +145,7 @@ export class HrPoliciesController {
   }
 
   @Patch(":policyId")
+  @ResponseSchema(hrPolicyRowSchema)
   @RequirePermission("hr:policies:manage")
   @Validate({ params: policyIdParams, body: updatePolicySchema })
   update(
@@ -139,6 +157,7 @@ export class HrPoliciesController {
   }
 
   @Post(":policyId/versions")
+  @ResponseSchema(hrPolicyRowSchema)
   @BodylessAction()
   @HttpCode(201)
   @RequirePermission("hr:policies:manage")
@@ -151,6 +170,7 @@ export class HrPoliciesController {
   }
 
   @Post(":policyId/activate")
+  @ResponseSchema(hrPolicyRowSchema)
   @HttpCode(200)
   @RequirePermission("hr:policies:manage")
   @Validate({ params: policyIdParams, body: activatePolicySchema })
@@ -163,6 +183,7 @@ export class HrPoliciesController {
   }
 
   @Get(":policyId/conflicts")
+  @ResponseSchema(hrPolicyConflictsSchema)
   @RequirePermission("hr:policies:view")
   @Validate({ params: policyIdParams })
   conflicts(
@@ -173,6 +194,7 @@ export class HrPoliciesController {
   }
 
   @Post(":policyId/archive")
+  @ResponseSchema(successSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:policies:manage")
@@ -185,6 +207,7 @@ export class HrPoliciesController {
   }
 
   @Get(":policyId/preview")
+  @ResponseSchema(hrPolicyPreviewSchema)
   @RequirePermission("hr:policies:view")
   @Validate({ params: policyIdParams, query: previewQuerySchema })
   async preview(

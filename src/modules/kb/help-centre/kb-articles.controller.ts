@@ -35,7 +35,15 @@ import {
   type VoteArticleInput,
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbArticleListResultSchema,
+  kbArticleWithTagsSchema,
+  kbArticleFullSchema,
+  kbArticleSchema,
+  kbArticleVersionListSchema,
+  kbArticleSuccessSchema,
+} from "./dto/kb-helpcenter-response.schemas";
 import { z } from "zod";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
@@ -53,6 +61,7 @@ export class KbArticlesController {
   @Get("articles")
   @RequirePermission("kb:articles:view")
   @Validate({ query: listArticlesSchema })
+  @ResponseSchema(kbArticleListResultSchema)
   async list(
     @Query() query: ListArticlesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -65,6 +74,7 @@ export class KbArticlesController {
   @HttpCode(HttpStatus.CREATED)
   @RequirePermission("kb:articles:create")
   @Validate({ body: createArticleSchema })
+  @ResponseSchema(kbArticleWithTagsSchema)
   async create(
     @Body() body: CreateArticleInput,
     @CurrentUser() u: CurrentUserContext,
@@ -75,6 +85,7 @@ export class KbArticlesController {
   @Get("articles/:articleId")
   @RequirePermission("kb:articles:view")
   @Validate({ params: articleIdParams })
+  @ResponseSchema(kbArticleFullSchema)
   async get(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -85,6 +96,7 @@ export class KbArticlesController {
   @Patch("articles/:articleId")
   @RequirePermission("kb:articles:update")
   @Validate({ params: articleIdParams, body: updateArticleSchema })
+  @ResponseSchema(kbArticleSchema)
   async update(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: UpdateArticleInput,
@@ -96,6 +108,7 @@ export class KbArticlesController {
   @Delete("articles/:articleId")
   @RequirePermission("kb:articles:delete")
   @Validate({ params: articleIdParams })
+  @ResponseSchema(kbArticleSchema)
   async remove(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -109,6 +122,7 @@ export class KbArticlesController {
   @RequirePermission("kb:articles:manage")
   @HttpCode(200)
   @Validate({ params: articleIdParams })
+  @ResponseSchema(kbArticleSchema)
   async publish(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -121,6 +135,7 @@ export class KbArticlesController {
   @RequirePermission("kb:articles:manage")
   @HttpCode(200)
   @Validate({ params: articleIdParams })
+  @ResponseSchema(kbArticleSchema)
   async unpublish(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -132,6 +147,7 @@ export class KbArticlesController {
   @RequirePermission("kb:articles:manage")
   @HttpCode(200)
   @Validate({ params: articleIdParams, body: verifyArticleSchema })
+  @ResponseSchema(kbArticleSchema)
   async verify(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: VerifyArticleInput,
@@ -144,6 +160,7 @@ export class KbArticlesController {
   @RequirePermission("kb:articles:view")
   @HttpCode(200)
   @Validate({ params: articleIdParams, body: voteArticleSchema })
+  @ResponseSchema(kbArticleSuccessSchema)
   async vote(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: VoteArticleInput,
@@ -157,6 +174,7 @@ export class KbArticlesController {
   @HttpCode(200)
   @RequirePermission("kb:articles:view")
   @Validate({ params: articleIdParams })
+  @ResponseSchema(kbArticleSuccessSchema)
   async recordView(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -167,6 +185,7 @@ export class KbArticlesController {
   @Get("articles/:articleId/versions")
   @RequirePermission("kb:articles:view")
   @Validate({ params: articleIdParams })
+  @ResponseSchema(kbArticleVersionListSchema)
   async versions(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -179,6 +198,7 @@ export class KbArticlesController {
   @RequirePermission("kb:articles:update")
   @HttpCode(200)
   @Validate({ params: articleIdversionNumberParams })
+  @ResponseSchema(kbArticleWithTagsSchema)
   async restore(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,

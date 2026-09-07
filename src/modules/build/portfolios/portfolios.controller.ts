@@ -30,6 +30,13 @@ import {
 } from "./dto/portfolios.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  portfolioRowSchema,
+  portfolioPageSchema,
+  portfolioDetailSchema,
+  successSchema,
+} from "./dto/portfolios-response.schemas";
 
 const portfolioIdParams = z.object({ portfolioId: z.coerce.number().int().positive() }).strict();
 const portfolioIdprojectIdParams = z.object({ portfolioId: z.coerce.number().int().positive(), projectId: z.coerce.number().int().positive() }).strict();
@@ -42,6 +49,7 @@ export class PortfoliosController {
 
   @Get("portfolios")
   @RequirePermission("build:portfolios:view")
+  @ResponseSchema(portfolioPageSchema)
   @Validate({ query: listPortfoliosQuerySchema })
   listPortfolios(
     @Query() query: ListPortfoliosQuery,
@@ -52,6 +60,7 @@ export class PortfoliosController {
 
   @Get("portfolios/:portfolioId")
   @RequirePermission("build:portfolios:view")
+  @ResponseSchema(portfolioDetailSchema)
   @Validate({ params: portfolioIdParams })
   getPortfolio(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
@@ -63,6 +72,7 @@ export class PortfoliosController {
   @Post("portfolios")
   @HttpCode(201)
   @RequirePermission("build:portfolios:manage")
+  @ResponseSchema(portfolioRowSchema)
   @Validate({ body: createPortfolioSchema })
   createPortfolio(
     @Body() body: CreatePortfolioInput,
@@ -73,6 +83,7 @@ export class PortfoliosController {
 
   @Patch("portfolios/:portfolioId")
   @RequirePermission("build:portfolios:manage")
+  @ResponseSchema(portfolioRowSchema)
   @Validate({ params: portfolioIdParams, body: updatePortfolioSchema })
   updatePortfolio(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
@@ -84,6 +95,7 @@ export class PortfoliosController {
 
   @Delete("portfolios/:portfolioId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("build:portfolios:manage")
   @Validate({ params: portfolioIdParams })
   deletePortfolio(
@@ -96,6 +108,7 @@ export class PortfoliosController {
   @Post("portfolios/:portfolioId/projects")
   @HttpCode(200)
   @RequirePermission("build:portfolios:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: portfolioIdParams, body: linkProjectSchema })
   linkProject(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
@@ -107,6 +120,7 @@ export class PortfoliosController {
 
   @Delete("portfolios/:portfolioId/projects/:projectId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("build:portfolios:manage")
   @Validate({ params: portfolioIdprojectIdParams })
   unlinkProject(

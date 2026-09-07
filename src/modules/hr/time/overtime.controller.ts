@@ -12,7 +12,12 @@ import { OvertimeService } from "./overtime.service";
 import { createOvertimeSchema, type CreateOvertimeInput } from "./dto/overtime.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  overtimeRequestRowSchema,
+  compOffBalanceRowSchema,
+  overtimeListResponseSchema,
+} from "./dto/time-wfh-shifts-response.schemas";
 
 const overtimeRequestIdParams = z.object({ overtimeRequestId: z.coerce.number().int().positive() }).strict();
 
@@ -28,6 +33,7 @@ export class OvertimeController {
   constructor(private readonly service: OvertimeService) {}
 
   @Get()
+  @ResponseSchema(overtimeListResponseSchema)
   @RequirePermission("hr:attendance:view")
   @Validate({ query: listQuerySchema })
   list(
@@ -39,6 +45,7 @@ export class OvertimeController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(overtimeRequestRowSchema)
   @RequirePermission("hr:attendance:view")
   @Validate({ body: createOvertimeSchema })
   create(
@@ -50,6 +57,7 @@ export class OvertimeController {
 
   @Patch(":overtimeRequestId/approve")
   @BodylessAction()
+  @ResponseSchema(overtimeRequestRowSchema)
   @Idempotent("hr.overtime.approve")
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: overtimeRequestIdParams })
@@ -62,6 +70,7 @@ export class OvertimeController {
 
   @Patch(":overtimeRequestId/reject")
   @BodylessAction()
+  @ResponseSchema(overtimeRequestRowSchema)
   @Idempotent("hr.overtime.reject")
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: overtimeRequestIdParams })
@@ -73,6 +82,7 @@ export class OvertimeController {
   }
 
   @Get("comp-off")
+  @ResponseSchema(z.array(compOffBalanceRowSchema))
   @RequirePermission("hr:attendance:view")
   getCompOff(@CurrentUser() u: CurrentUserContext) {
     return this.service.getCompOffBalance(u.orgId, u.userId);

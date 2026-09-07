@@ -14,6 +14,8 @@ import {
   type GlAccountsQuery,
 } from "./dto/general-ledger.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { generalLedgerResponseSchema, glAccountsWithActivityResponseSchema } from "./dto/gl-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/general-ledger")
@@ -22,6 +24,7 @@ export class GeneralLedgerController {
   constructor(private readonly gl: GeneralLedgerService) {}
 
   @Get()
+  @ResponseSchema(generalLedgerResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:general-ledger:read")
   @Validate({ query: glQuerySchema })
@@ -41,6 +44,7 @@ export class GeneralLedgerController {
   }
 
   @Get("accounts")
+  @ResponseSchema(glAccountsWithActivityResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:general-ledger:read")
   @Validate({ query: glAccountsQuerySchema })

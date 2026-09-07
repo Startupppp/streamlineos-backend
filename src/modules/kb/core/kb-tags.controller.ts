@@ -23,6 +23,12 @@ import {
   type SetArticleTagsInput,
 } from "./dto/kb-tags.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbTagListSchema,
+  kbTagSchema,
+  kbTagSuccessSchema,
+} from "./dto/kb-core-response.schemas";
 import { z } from "zod";
 
 const tagIdParams = z.object({ tagId: z.coerce.number().int().positive() }).strict();
@@ -35,6 +41,7 @@ export class KbTagsController {
 
   @Get("tags")
   @RequirePermission("kb:spaces:view")
+  @ResponseSchema(kbTagListSchema)
   async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return await this.tags.list(u.orgId);
   }
@@ -43,6 +50,7 @@ export class KbTagsController {
   @RequirePermission("kb:articles:manage")
   @HttpCode(201)
   @Validate({ body: createTagSchema })
+  @ResponseSchema(kbTagSchema)
   async create(
     @Body() body: CreateTagInput,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +61,7 @@ export class KbTagsController {
   @Delete("tags/:tagId")
   @RequirePermission("kb:articles:manage")
   @Validate({ params: tagIdParams })
+  @ResponseSchema(kbTagSuccessSchema)
   async remove(
     @Param("tagId", ParseIntPipe) tagId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +72,7 @@ export class KbTagsController {
   @Get("articles/:articleId/tags")
   @RequirePermission("kb:articles:view")
   @Validate({ params: articleIdParams })
+  @ResponseSchema(kbTagListSchema)
   async getArticleTags(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +83,7 @@ export class KbTagsController {
   @Put("articles/:articleId/tags")
   @RequirePermission("kb:articles:update")
   @Validate({ params: articleIdParams, body: setArticleTagsSchema })
+  @ResponseSchema(kbTagListSchema)
   async setArticleTags(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: SetArticleTagsInput,

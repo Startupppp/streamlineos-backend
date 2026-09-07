@@ -16,6 +16,13 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { z } from "zod";
 import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  orgMemberListResponseSchema,
+  orgSetupSessionResponseSchema,
+  orgSetupCompleteResponseSchema,
+  orgSetupSkipResponseSchema,
+} from "./dto/org-setup-response.schemas";
 
 /**
  * `Number.parseInt("-5", 10)` is -5 and `Number.isFinite(-5)` is true, so the old
@@ -45,6 +52,7 @@ export class OrgController {
   ) {}
 
   @Get("members")
+  @ResponseSchema(orgMemberListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:people:view")
   @Validate({ query: listMembersQuery })
@@ -59,6 +67,7 @@ export class OrgController {
   }
 
   @Get("setup/session")
+  @ResponseSchema(orgSetupSessionResponseSchema)
   @Universal()
   @AllowNoOrg()
   getSetupSession(@CurrentUser() u: CurrentUserContext) {
@@ -66,6 +75,7 @@ export class OrgController {
   }
 
   @Post("setup/complete")
+  @ResponseSchema(orgSetupCompleteResponseSchema)
   @Universal()
   @AllowNoOrg()
   @Validate({ body: setupSchema })
@@ -77,6 +87,7 @@ export class OrgController {
   }
 
   @Post("setup/skip")
+  @ResponseSchema(orgSetupSkipResponseSchema)
   @Universal()
   @AllowNoOrg()
   @Validate({ body: orgSetupSkipSchema })

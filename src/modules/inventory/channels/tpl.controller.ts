@@ -26,7 +26,12 @@ import type {
 } from "./dto/channels.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listTplConnectionsResponseSchema,
+  tplConnectionResponseSchema,
+  syncTplConnectionResponseSchema,
+} from "./dto/channels-response.schemas";
 
 const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
 
@@ -37,6 +42,7 @@ export class TplController {
   constructor(private readonly svc: TplService) {}
 
   @Get("connections")
+  @ResponseSchema(listTplConnectionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
   listConnections(@CurrentUser() u: CurrentUserContext) {
@@ -44,6 +50,7 @@ export class TplController {
   }
 
   @Post("connections")
+  @ResponseSchema(tplConnectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
   @Validate({ body: create3plConnectionSchema })
@@ -55,6 +62,7 @@ export class TplController {
   }
 
   @Patch("connections/:connectionId")
+  @ResponseSchema(tplConnectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
   @Validate({ params: connectionIdParams, body: update3plConnectionSchema })
@@ -68,6 +76,7 @@ export class TplController {
 
   @Post("connections/:connectionId/sync")
   @BodylessAction()
+  @ResponseSchema(syncTplConnectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
   @Validate({ params: connectionIdParams })

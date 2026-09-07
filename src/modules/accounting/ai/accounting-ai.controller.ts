@@ -18,6 +18,8 @@ import {
   type VarianceExplainInput,
 } from "./dto/accounting-ai.dto";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { explainVarianceResponseSchema, explainReconciliationResponseSchema, extractDocumentResponseSchema } from "./dto/accounting-ai-response.schemas";
 
 @RequireModule("accounting")
 @Controller("finance/ai")
@@ -26,6 +28,7 @@ export class AccountingAiController {
   constructor(private readonly accountingAiService: AccountingAiService) {}
 
   @Post("variance-explain")
+  @ResponseSchema(explainVarianceResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("accounting:ai:use")
   @UseRateLimit("ai:invoke")
@@ -38,6 +41,7 @@ export class AccountingAiController {
   }
 
   @Post("reconciliation-explain")
+  @ResponseSchema(explainReconciliationResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("accounting:ai:use")
   @UseRateLimit("ai:invoke")
@@ -50,6 +54,7 @@ export class AccountingAiController {
   }
 
   @Post("extract-document")
+  @ResponseSchema(extractDocumentResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("accounting:ai:use")
   @UseRateLimit("ai:invoke")

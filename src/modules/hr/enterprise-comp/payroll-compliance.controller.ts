@@ -26,7 +26,8 @@ import {
 } from "./dto/enterprise-comp.schemas";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { listVarianceApprovalsResponseSchema, createVarianceApprovalResponseSchema, resolveVarianceApprovalResponseSchema, listArrearsResponseSchema, createArrearResponseSchema, applyArrearResponseSchema, listComplianceTasksResponseSchema, createComplianceTaskResponseSchema, completeComplianceTaskResponseSchema, seedCountryPresetsResponseSchema } from "./dto/enterprise-comp-response.schemas"
 
 const seedPresetsSchema = z.object({ countryCode: z.string().length(2), periodKey: z.string().min(7) }).strict();
 const varianceIdParams = z.object({ varianceId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +41,7 @@ const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).st
 export class PayrollComplianceController {
   constructor(private readonly service: PayrollComplianceService) {}
 
+  @ResponseSchema(listVarianceApprovalsResponseSchema)
   @Get("variance")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
@@ -51,6 +53,7 @@ export class PayrollComplianceController {
     return this.service.listVarianceApprovals(u.orgId, query);
   }
 
+  @ResponseSchema(createVarianceApprovalResponseSchema)
   @Post("variance")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
@@ -63,6 +66,7 @@ export class PayrollComplianceController {
     return this.service.createVarianceApproval(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(resolveVarianceApprovalResponseSchema)
   @Patch("variance/:varianceId/resolve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
@@ -75,6 +79,7 @@ export class PayrollComplianceController {
     return this.service.resolveVarianceApproval(u.orgId, varianceId, u.userId, body);
   }
 
+  @ResponseSchema(listArrearsResponseSchema)
   @Get("arrears")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
@@ -86,6 +91,7 @@ export class PayrollComplianceController {
     return this.service.listArrears(u.orgId, query);
   }
 
+  @ResponseSchema(createArrearResponseSchema)
   @Post("arrears")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
@@ -98,6 +104,7 @@ export class PayrollComplianceController {
     return this.service.createArrears(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(applyArrearResponseSchema)
   @Patch("arrears/:arrearId/apply")
   @BodylessAction()
   @UseGuards(PermissionGuard)
@@ -110,6 +117,7 @@ export class PayrollComplianceController {
     return this.service.applyArrears(u.orgId, arrearId, u.userId);
   }
 
+  @ResponseSchema(listComplianceTasksResponseSchema)
   @Get("tasks")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
@@ -121,6 +129,7 @@ export class PayrollComplianceController {
     return this.service.listComplianceTasks(u.orgId, query);
   }
 
+  @ResponseSchema(createComplianceTaskResponseSchema)
   @Post("tasks")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
@@ -133,6 +142,7 @@ export class PayrollComplianceController {
     return this.service.createComplianceTask(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(completeComplianceTaskResponseSchema)
   @Patch("tasks/:taskId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
@@ -145,6 +155,7 @@ export class PayrollComplianceController {
     return this.service.updateComplianceTask(u.orgId, taskId, u.userId, body);
   }
 
+  @ResponseSchema(seedCountryPresetsResponseSchema)
   @Post("tasks/seed-presets")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")

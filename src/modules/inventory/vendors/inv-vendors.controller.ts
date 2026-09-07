@@ -13,6 +13,12 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listVendorsResponseSchema,
+  invVendorSchema,
+  vendorPerformanceResponseSchema,
+} from "./dto/vendors-response.schemas";
 
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
 
@@ -23,6 +29,7 @@ export class InvVendorsController {
   constructor(private readonly vendors: InvVendorsService) {}
 
   @Get()
+  @ResponseSchema(listVendorsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:read")
   @Validate({ query: listVendorsSchema })
@@ -34,6 +41,7 @@ export class InvVendorsController {
   }
 
   @Get(":vendorId")
+  @ResponseSchema(invVendorSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:read")
   @Validate({ params: vendorIdParams })
@@ -45,6 +53,7 @@ export class InvVendorsController {
   }
 
   @Get(":vendorId/performance")
+  @ResponseSchema(vendorPerformanceResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:read")
   @Validate({ params: vendorIdParams })
@@ -56,6 +65,7 @@ export class InvVendorsController {
   }
 
   @Post()
+  @ResponseSchema(invVendorSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:manage")
   @Validate({ body: createVendorSchema })
@@ -67,6 +77,7 @@ export class InvVendorsController {
   }
 
   @Patch(":vendorId")
+  @ResponseSchema(invVendorSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:manage")
   @Validate({ params: vendorIdParams, body: updateVendorSchema })

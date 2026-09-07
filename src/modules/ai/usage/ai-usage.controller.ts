@@ -5,6 +5,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AiUsageService } from "./ai-usage.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { aiUsageResponseSchema } from "../core/dto/ai-response.schemas";
 
 @Controller("ai/usage")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -13,6 +15,7 @@ export class AiUsageController {
 
   @Get()
   @RequirePermission("ai:usage:view")
+  @ResponseSchema(aiUsageResponseSchema)
   getUsage(@CurrentUser() u: CurrentUserContext) {
     return this.usage.getOrgUsage(u);
   }

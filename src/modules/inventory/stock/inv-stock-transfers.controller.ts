@@ -16,7 +16,13 @@ import {
 } from "./dto/inv-stock.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  listTransfersResponseSchema,
+  getTransferResponseSchema,
+  createTransferResponseSchema,
+} from "./dto/stock-response.schemas";
 
 const transferIdParams = z.object({ transferId: z.coerce.number().int().positive() }).strict();
 
@@ -30,6 +36,7 @@ export class InvStockTransfersController {
   ) {}
 
   @Get()
+  @ResponseSchema(listTransfersResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listTransfersSchema })
@@ -42,6 +49,7 @@ export class InvStockTransfersController {
   }
 
   @Get(":transferId")
+  @ResponseSchema(getTransferResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ params: transferIdParams })
@@ -53,6 +61,7 @@ export class InvStockTransfersController {
   }
 
   @Post()
+  @ResponseSchema(createTransferResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Idempotent("inventory.stock.transfer.create")
@@ -66,6 +75,7 @@ export class InvStockTransfersController {
 
   @Post(":transferId/reserve")
   @BodylessAction()
+  @ResponseSchema(getTransferResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
@@ -80,42 +90,48 @@ export class InvStockTransfersController {
 
   @Post(":transferId/dispatch")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
-  dispatchTransfer(
+  async dispatchTransfer(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.transfers.dispatchTransfer(u.orgId, u.userId, transferId, idempotencyKey);
+    await this.transfers.dispatchTransfer(u.orgId, u.userId, transferId, idempotencyKey);
+    return { success: true as const };
   }
 
   @Post(":transferId/complete")
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams, body: completeTransferSchema })
-  completeTransfer(
+  async completeTransfer(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @Body() body: CompleteTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.transfers.completeTransfer(u.orgId, u.userId, transferId, body, idempotencyKey);
+    await this.transfers.completeTransfer(u.orgId, u.userId, transferId, body, idempotencyKey);
+    return { success: true as const };
   }
 
   @Post(":transferId/cancel")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @Idempotent("inventory.stock-transfer.cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
-  cancelTransfer(
+  async cancelTransfer(
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.transfers.cancelTransfer(u.orgId, u.userId, transferId);
+    await this.transfers.cancelTransfer(u.orgId, u.userId, transferId);
+    return { success: true as const };
   }
 }

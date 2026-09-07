@@ -24,6 +24,11 @@ import {
 } from "./dto/forms.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  submissionRowSchema,
+  submissionCreateResultSchema,
+} from "./dto/forms-response.schemas";
 
 const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
 
@@ -35,6 +40,7 @@ export class SubmissionsController {
 
   @Get()
   @RequirePermission("build:forms:manage")
+  @ResponseSchema(z.array(submissionRowSchema))
   listSubmissions(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,
@@ -46,6 +52,7 @@ export class SubmissionsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:forms:view")
+  @ResponseSchema(submissionCreateResultSchema)
   @Validate({ body: createSubmissionSchema })
   createSubmission(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -58,6 +65,7 @@ export class SubmissionsController {
 
   @Patch(":submissionId")
   @RequirePermission("build:forms:manage")
+  @ResponseSchema(submissionRowSchema)
   @Validate({ params: submissionIdParams, body: updateSubmissionSchema })
   updateSubmission(
     @Param("projectId", ParseIntPipe) projectId: number,

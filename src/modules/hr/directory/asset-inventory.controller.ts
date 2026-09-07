@@ -29,6 +29,12 @@ import {
 } from "./dto/hr-directory.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  assetListPageSchema,
+  assetRowSchema,
+} from "./dto/directory-response.schemas";
 import { z } from "zod";
 
 const assetIdParams = z.object({ assetId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +46,7 @@ export class AssetInventoryController {
   constructor(private readonly assets: AssetInventoryService) {}
 
   @Get("assets")
+  @ResponseSchema(assetListPageSchema)
   @RequirePermission("hr:assets:view")
   @Validate({ query: listAssetsQuerySchema })
   list(
@@ -50,6 +57,7 @@ export class AssetInventoryController {
   }
 
   @Post("assets")
+  @ResponseSchema(assetRowSchema)
   @HttpCode(201)
   @RequirePermission("hr:assets:manage")
   @Validate({ body: createAssetSchema })
@@ -61,6 +69,7 @@ export class AssetInventoryController {
   }
 
   @Patch("assets/:assetId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:assets:manage")
   @Validate({ params: assetIdParams, body: patchAssetSchema })
   update(
@@ -72,6 +81,7 @@ export class AssetInventoryController {
   }
 
   @Patch("assets")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:assets:manage")
   @Validate({ body: assignAssetSchema })
   assign(

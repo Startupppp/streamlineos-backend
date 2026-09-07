@@ -41,6 +41,23 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { actingMembershipId } from "../../../common/auth/principal";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  purchaseBillListResponseSchema,
+  purchaseBillCreatedResponseSchema,
+  purchaseBillDetailResponseSchema,
+  billStatusUpdateResponseSchema,
+  billPaymentListResponseSchema,
+  billPaymentCreatedResponseSchema,
+  vendorListResponseSchema,
+  vendorLedgerResponseSchema,
+  agedPayablesResponseSchema,
+} from "./dto/accounting-payables-response.schemas";
+import {
+  customerListResponseSchema,
+  customerLedgerResponseSchema,
+  agedReceivablesResponseSchema,
+} from "./dto/accounting-receivables-response.schemas";
 
 const billIdParams = z.object({ billId: z.coerce.number().int().positive() }).strict();
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
@@ -57,6 +74,7 @@ export class AccountingPayablesReceivablesController {
   ) {}
 
   @Get("purchase-bills")
+  @ResponseSchema(purchaseBillListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
   @Validate({ query: listPurchaseBillsQuerySchema })
@@ -69,6 +87,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Post("purchase-bills")
+  @ResponseSchema(purchaseBillCreatedResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
   @HttpCode(201)
@@ -81,6 +100,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("purchase-bills/:billId")
+  @ResponseSchema(purchaseBillDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
   @Validate({ params: billIdParams })
@@ -92,6 +112,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Patch("purchase-bills/:billId")
+  @ResponseSchema(billStatusUpdateResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
   @Validate({ params: billIdParams, body: updatePurchaseBillStatusSchema })
@@ -104,6 +125,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("purchase-bills/:billId/payments")
+  @ResponseSchema(billPaymentListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
   @Validate({ params: billIdParams })
@@ -115,6 +137,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Post("purchase-bills/:billId/payments")
+  @ResponseSchema(billPaymentCreatedResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
   @HttpCode(201)
@@ -128,6 +151,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("vendors")
+  @ResponseSchema(vendorListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: listVendorsQuerySchema })
@@ -139,6 +163,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("vendors/:vendorId/ledger")
+  @ResponseSchema(vendorLedgerResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ params: vendorIdParams })
@@ -150,6 +175,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("customers")
+  @ResponseSchema(customerListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: listCustomersOutstandingQuerySchema })
@@ -161,6 +187,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("customers/:clientId/ledger")
+  @ResponseSchema(customerLedgerResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ params: clientIdParams, query: listCustomerLedgerQuerySchema })
@@ -173,6 +200,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("reports/aged-receivables")
+  @ResponseSchema(agedReceivablesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: agedReceivablesQuerySchema })
@@ -184,6 +212,7 @@ export class AccountingPayablesReceivablesController {
   }
 
   @Get("reports/aged-payables")
+  @ResponseSchema(agedPayablesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: agedReceivablesQuerySchema })

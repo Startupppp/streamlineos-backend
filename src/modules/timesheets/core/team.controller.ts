@@ -9,6 +9,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { TeamService } from "./team.service";
 import { teamWeekSummaryQuerySchema, type TeamWeekSummaryQuery } from "./dto/team.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { teamSummaryResponseSchema } from "./dto/timesheets-response.schemas";
 
 @RequireModule("timesheets")
 @Controller("timesheets/team")
@@ -19,6 +21,7 @@ export class TeamController {
   @Get("week-summary")
   @RequirePermission("timesheets:team:view")
   @Validate({ query: teamWeekSummaryQuerySchema })
+  @ResponseSchema(teamSummaryResponseSchema)
   getWeekSummary(
     @Query() query: TeamWeekSummaryQuery,
     @CurrentUser() u: CurrentUserContext,

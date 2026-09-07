@@ -43,7 +43,7 @@
         "value": 1,
         "direction": "ratchet",
         "owner": "CRM/inventory release owner",
-        "reason": "inv-engine-misc-isolation-ai.spec.ts:133 \u2014 inventory, accepted residual R-9, review 2026-12-01."
+        "reason": "inv-engine-misc-isolation-ai.spec.ts:133 — inventory, accepted residual R-9, review 2026-12-01."
       },
       "ratchets.TAUTOLOGY": {
         "value": 2,
@@ -66,8 +66,8 @@
       "ratchets.EARLY_RETURN": {
         "value": 5,
         "direction": "ratchet",
-        "owner": "platform DB \u00b7 platform \u00b7 surveys \u00b7 timesheets",
-        "reason": "A NEW CLASS, not a raise of an existing number, and this gate correctly refused it until that was said out loud: adding it read as a net raise of 5 for vacuous-assertions.json. Measured 7 sites, 2 FIXED before baselining (soft-delete-predicates and recruitment-candidate-vault), 5 registered \u2014 2 ENVIRONMENT guards (a live db handle, NODE_ENV) and 3 DOMAIN guards (it.each cases over wholly-@Public() controllers). Sized after the fixable ones were fixed, not to the breach."
+        "owner": "platform DB · platform · surveys · timesheets",
+        "reason": "A NEW CLASS, not a raise of an existing number, and this gate correctly refused it until that was said out loud: adding it read as a net raise of 5 for vacuous-assertions.json. Measured 7 sites, 2 FIXED before baselining (soft-delete-predicates and recruitment-candidate-vault), 5 registered — 2 ENVIRONMENT guards (a live db handle, NODE_ENV) and 3 DOMAIN guards (it.each cases over wholly-@Public() controllers). Sized after the fixable ones were fixed, not to the breach."
       }
     },
     "check-ai-charge-declared.mjs": {
@@ -203,7 +203,7 @@
         "value": 8,
         "direction": "ratchet",
         "owner": "api/platform owner",
-        "reason": "New constant, not a rename \u2014 registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe \u2014 it only turns resolved handlers back into honestly-unresolved ones."
+        "reason": "New constant, not a rename — registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe — it only turns resolved handlers back into honestly-unresolved ones."
       }
     },
     "check-drop-column-safety.mjs": {
@@ -235,7 +235,7 @@
         "value": 500,
         "direction": "ratchet",
         "owner": "release owner",
-        "reason": "CLAUDE.md \u00a77's hard review limit. Policy, not debt; raising it would retire the rule by arithmetic."
+        "reason": "CLAUDE.md §7's hard review limit. Policy, not debt; raising it would retire the rule by arithmetic."
       },
       "MIN_FILES": {
         "value": 2000,
@@ -425,7 +425,7 @@
         "value": 102,
         "direction": "ratchet",
         "owner": "perf/db owner",
-        "reason": "Growing-collection loop sites. Never raised; lowered 106 -> 102 while this registry was being written, which is how the shared working tree moves under a measurement \u2014 the value here is HEAD's, not the tree's."
+        "reason": "Growing-collection loop sites. Never raised; lowered 106 -> 102 while this registry was being written, which is how the shared working tree moves under a measurement — the value here is HEAD's, not the tree's."
       },
       "MIN_LOOP_NODES": {
         "value": 4800,
@@ -486,10 +486,10 @@
         "direction": "floor"
       },
       "RESPONSE_SCHEMA_UNCOVERED_CEILING": {
-        "value": 3611,
+        "value": 0,
         "direction": "ratchet",
         "owner": "every module lane that owns a controller; coordinated by the API contract owner (ticket 04)",
-        "reason": "Operations declaring NO response body schema. Registered 2026-09-03 by v2 ticket 30 at the TRUE measured figure, 3,617 of 3,642 uncovered (25 covered, 0.69%). The gate previously required 100% and reported 3642/3642 (100%) -- because its predicate accepted a bare 2xx response KEY, which NestJS auto-generates with no content for every handler, so the condition was true for every operation the moment the document was generated. Actual coverage of the property it claimed was 1 in 3,642 (0.027%). This is NOT a baseline raised to turn a regression green: it is the first honest measurement of a number that was never measured, and the 100%% requirement was NOT restored only because demanding it would red the pipeline on ~3,617 handlers across every module lane. Lower it as coverage lands; raising it retires the rule by arithmetic. LOWERED 3617 -> 3613 on 2026-09-04 by v2 ticket 04: the ratchet had been BREACHED at 3,621 because six newly added operations carried no response schema, and it was not raised to absorb them -- ten handlers were given a real @ResponseSchema(...) instead (POST/PUT /calendar/events, PATCH/DELETE /calendar/events/{eventId}/occurrences/{occurrenceStart}, and all six /platform/operator-access operations), each compared against the real handler return by ResponseContractInterceptor under NODE_ENV=test. 3,613 was MEASURED by rebuilding the document in memory from the working tree via generateOpenApiJson() and running this gate's own predicate over it (3,651 operations, 38 covered). It is provisional in one respect and the next reader must know it: the COMMITTED openapi.json still predates both those schemas and three routes other lanes added, so it measures 3,621 and this gate stays RED until the single end-of-wave regenerate -- at which point the figure must be RE-MEASURED and lowered again if it lands below 3,613, never raised if it lands above."
+        "reason": "Operations declaring NO response body schema. Registered 2026-09-03 by v2 ticket 30 at the TRUE measured figure, 3,617 of 3,642 uncovered (25 covered, 0.69%). The gate previously required 100% and reported 3642/3642 (100%) -- because its predicate accepted a bare 2xx response KEY, which NestJS auto-generates with no content for every handler, so the condition was true for every operation the moment the document was generated. Actual coverage of the property it claimed was 1 in 3,642 (0.027%). This is NOT a baseline raised to turn a regression green: it is the first honest measurement of a number that was never measured, and the 100%% requirement was NOT restored only because demanding it would red the pipeline on ~3,617 handlers across every module lane. Lower it as coverage lands; raising it retires the rule by arithmetic. LOWERED 3617 -> 3613 on 2026-09-04 by v2 ticket 04: the ratchet had been BREACHED at 3,621 because six newly added operations carried no response schema, and it was not raised to absorb them -- ten handlers were given a real @ResponseSchema(...) instead (POST/PUT /calendar/events, PATCH/DELETE /calendar/events/{eventId}/occurrences/{occurrenceStart}, and all six /platform/operator-access operations), each compared against the real handler return by ResponseContractInterceptor under NODE_ENV=test. 3,613 was MEASURED by rebuilding the document in memory from the working tree via generateOpenApiJson() and running this gate's own predicate over it (3,651 operations, 38 covered). It is provisional in one respect and the next reader must know it: the COMMITTED openapi.json still predates both those schemas and three routes other lanes added, so it measures 3,621 and this gate stays RED until the single end-of-wave regenerate -- at which point the figure must be RE-MEASURED and lowered again if it lands below 3,613, never raised if it lands above. CLOSED 2026-09-07: LOWERED 3611 -> 0. Every one of the 3,666 operations now declares a response body schema, measured by regenerating openapi.json from the working tree and running this gate over it. Two mechanisms were added to make the count honest rather than merely large: @NoContentResponse() stamps a 204 as deliberate and fails CLOSED (a handler that claims no content while carrying a @ResponseSchema, or without @HttpCode(204), ends up with NO contract rather than a false one), and isVacuousSchema() rejects a root that says nothing -- {}, a bare {type:\"object\"}, an open additionalProperties record, an array of those, or an allOf/anyOf/oneOf whose every member is vacuous -- so a handler cannot be counted as covered by declaring z.record(z.string(), z.unknown()). Three schemas that had been parked as loose records were written out against their real handler returns in the same change (CRM import preview, leads import batch, org-hierarchy tree). The ceiling is now a hard 100% requirement: any new handler without a response contract reds this gate."
       }
     },
     "check-openapi-path-params.mjs": {
@@ -521,7 +521,7 @@
         "value": 300,
         "direction": "ratchet",
         "owner": "release owner",
-        "reason": "CLAUDE.md \u00a77's 300-line target. Policy, not debt."
+        "reason": "CLAUDE.md §7's 300-line target. Policy, not debt."
       },
       "BASELINE": {
         "value": 392,
@@ -689,7 +689,7 @@
         "value": 20,
         "direction": "ratchet",
         "owner": "backend platform owner",
-        "reason": "Runtime-selected describes. LOWERED 29 -> 20 on 2026-09-07, and the count itself went 76 -> 20, because the class was RETIRED rather than repriced. The 56 *.db.spec.ts files each opened with `const describeDb = ENABLED && DB_URL ? describe : describe.skip`; that ternary existed only because the default jest run walked those files on machines with no database. They are now selected by suite instead, exactly as *.e2e-spec.ts already was \u2014 jest-db.json selects the 56, `pnpm test:db-specs` runs them, and the default jest config ignores \\.db\\.spec\\.ts$ \u2014 so the gate became redundant and was deleted. Each spec now THROWS naming the variable it needs when its database is absent, so a missing prerequisite is a red suite and can no longer skip. 19 of the 56 also carried a hermetic half that ran in the default suite; that half was split into a sibling *.spec.ts rather than allowed to fall out of the run silently (16 files, 71 tests, all passing with no database, counted before and after). The 20 survivors are genuinely infrastructure-gated: 9 *.eval.spec.ts needing an AI provider key, 6 src/degradation/** needing a real S3/Ably/read-replica, and the seeded-E2E and perf specs that need specific tenant fixtures to mean anything. This also dissolves the recorded tension with PRD-C018: a new *.db.spec.ts now joins jest-db.json and adds nothing to this class. A ratchet is lowered to the measured value, never raised to fit one."
+        "reason": "Runtime-selected describes. LOWERED 29 -> 20 on 2026-09-07, and the count itself went 76 -> 20, because the class was RETIRED rather than repriced. The 56 *.db.spec.ts files each opened with `const describeDb = ENABLED && DB_URL ? describe : describe.skip`; that ternary existed only because the default jest run walked those files on machines with no database. They are now selected by suite instead, exactly as *.e2e-spec.ts already was — jest-db.json selects the 56, `pnpm test:db-specs` runs them, and the default jest config ignores \\.db\\.spec\\.ts$ — so the gate became redundant and was deleted. Each spec now THROWS naming the variable it needs when its database is absent, so a missing prerequisite is a red suite and can no longer skip. 19 of the 56 also carried a hermetic half that ran in the default suite; that half was split into a sibling *.spec.ts rather than allowed to fall out of the run silently (16 files, 71 tests, all passing with no database, counted before and after). The 20 survivors are genuinely infrastructure-gated: 9 *.eval.spec.ts needing an AI provider key, 6 src/degradation/** needing a real S3/Ably/read-replica, and the seeded-E2E and perf specs that need specific tenant fixtures to mean anything. This also dissolves the recorded tension with PRD-C018: a new *.db.spec.ts now joins jest-db.json and adds nothing to this class. A ratchet is lowered to the measured value, never raised to fit one."
       }
     },
     "check-transaction-callbacks.mjs": {
@@ -756,7 +756,7 @@
         "value": 646,
         "direction": "ratchet",
         "owner": "backend platform owner",
-        "reason": "Unbounded reads hidden behind a FALSE-POSITIVE verdict, counted as instances. A verdict is keyed per FILE and carries one sentence, so a read added to an already-blessed file inherits a justification never written about it \u2014 /clients/clients.service.ts' unbounded CSV export of every client in the org sat under 'client reads bounded by clientId+orgId (single-record lookups)' and no other check in the gate moved. Measured at 651 with no headroom; lower it when you bound a read, and raising it means naming the newly hidden read here. Banked 651 -> 646 on 2026-09-06 after the gate reported the improvement."
+        "reason": "Unbounded reads hidden behind a FALSE-POSITIVE verdict, counted as instances. A verdict is keyed per FILE and carries one sentence, so a read added to an already-blessed file inherits a justification never written about it — /clients/clients.service.ts' unbounded CSV export of every client in the org sat under 'client reads bounded by clientId+orgId (single-record lookups)' and no other check in the gate moved. Measured at 651 with no headroom; lower it when you bound a read, and raising it means naming the newly hidden read here. Banked 651 -> 646 on 2026-09-06 after the gate reported the improvement."
       },
       "ORDER_BY_LOOKBACK": {
         "value": 25,

@@ -53,6 +53,25 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  onboardResponseSchema,
+  bulkOnboardResultSchema,
+  employeeListPageSchema,
+  employeeStatsSchema,
+  anniversaryFeedSchema,
+  availabilityListSchema,
+  checkEmailSchema,
+  findExpertResponseSchema,
+  skillsMatrixSchema,
+  employeeProjectsSchema,
+  employeeTicketsSchema,
+  reportsToMeListSchema,
+  managerScorecardSchema,
+  employeeDetailSchema,
+  successSchema,
+} from "./dto/directory-response.schemas";
 import { z } from "zod";
 
 const employeeIdParams = z.object({ employeeId: z.string().min(1) }).strict();
@@ -73,6 +92,7 @@ export class EmployeesController {
   ) {}
 
   @Post("onboard")
+  @ResponseSchema(onboardResponseSchema)
   @RequirePermission("hr:onboarding:manage")
   @HttpCode(201)
   @Validate({ body: onboardEmployeeSchema })
@@ -84,6 +104,7 @@ export class EmployeesController {
   }
 
   @Post("onboard/bulk")
+  @ResponseSchema(bulkOnboardResultSchema)
   @RequirePermission("hr:onboarding:manage")
   @Idempotent("hr.employees.onboard-bulk")
   @UseGuards(RateLimitGuard)
@@ -98,6 +119,7 @@ export class EmployeesController {
   }
 
   @Get()
+  @ResponseSchema(employeeListPageSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ query: listEmployeesSchema })
   async listEmployees(
@@ -132,6 +154,7 @@ export class EmployeesController {
   }
 
   @Get("stats")
+  @ResponseSchema(employeeStatsSchema)
   @RequirePermission("hr:employees:view")
   async stats(
     @Query("userId") userId: string | undefined,
@@ -142,6 +165,7 @@ export class EmployeesController {
   }
 
   @Get("anniversary-feed")
+  @ResponseSchema(anniversaryFeedSchema)
   @RequirePermission("hr:employees:view")
   async anniversaryFeed(@CurrentUser() currentUser: CurrentUserContext) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -149,6 +173,7 @@ export class EmployeesController {
   }
 
   @Get("availability")
+  @ResponseSchema(availabilityListSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ query: availabilitySchema })
   async availability(
@@ -165,6 +190,7 @@ export class EmployeesController {
   }
 
   @Get("check-email")
+  @ResponseSchema(checkEmailSchema)
   @RequirePermission("hr:onboarding:manage")
   checkEmail(
     @Query("email") email: string | undefined,
@@ -175,6 +201,7 @@ export class EmployeesController {
   }
 
   @Get("find-expert")
+  @ResponseSchema(findExpertResponseSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ query: findExpertSchema })
   async findExpert(
@@ -186,6 +213,7 @@ export class EmployeesController {
   }
 
   @Get("skills-matrix")
+  @ResponseSchema(skillsMatrixSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ query: skillsMatrixQuerySchema })
   async skillsMatrix(
@@ -197,6 +225,7 @@ export class EmployeesController {
   }
 
   @Get("projects")
+  @ResponseSchema(employeeProjectsSchema)
   @RequirePermission("hr:employees:view")
   async projects(
     @Query("userId") userId: string | undefined,
@@ -206,6 +235,7 @@ export class EmployeesController {
   }
 
   @Get("tickets")
+  @ResponseSchema(employeeTicketsSchema)
   @RequirePermission("hr:employees:view")
   async tickets(
     @Query("userId") userId: string | undefined,
@@ -215,6 +245,7 @@ export class EmployeesController {
   }
 
   @Get(":employeeId/reports-to-me")
+  @ResponseSchema(reportsToMeListSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: employeeIdParams })
   async reportsToMe(
@@ -228,6 +259,7 @@ export class EmployeesController {
   }
 
   @Get(":employeeId/manager-scorecard")
+  @ResponseSchema(managerScorecardSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: employeeIdParams })
   async managerScorecard(
@@ -241,6 +273,7 @@ export class EmployeesController {
   }
 
   @Get(":employeeId/profile-pdf")
+  @ApiOkResponse({ description: "Employee profile PDF binary", content: { "application/pdf": { schema: { type: "string", format: "binary" } } } })
   @RequirePermission("hr:employees:manage")
   @Validate({ params: employeeIdParams })
   async profilePdf(
@@ -268,6 +301,7 @@ export class EmployeesController {
   }
 
   @Get(":employeeId")
+  @ResponseSchema(employeeDetailSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: employeeIdParams })
   async getEmployeeDetail(
@@ -286,6 +320,7 @@ export class EmployeesController {
   }
 
   @Patch(":employeeId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:employees:update")
   @Validate({ params: employeeIdParams, body: updateEmployeeSchema })
   updateEmployee(

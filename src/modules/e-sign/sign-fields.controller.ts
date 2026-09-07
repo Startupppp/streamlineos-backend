@@ -14,6 +14,9 @@ import { SignFieldsService } from "./sign-fields.service";
 import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import { createFieldSchema, updateFieldSchema, type CreateFieldInput, type UpdateFieldInput } from "./dto/e-sign.schemas";
 import { resolveClientIp } from "../../common/http/client-ip";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { fieldMutationResponseSchema, listFieldsResponseSchema } from "./dto/e-sign-response.schemas";
+import { successSchema } from "../../common/openapi/response-envelopes";
 
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
@@ -31,6 +34,7 @@ export class SignFieldsController {
   @Post("envelopes/:envelopeId/fields")
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(fieldMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: createFieldSchema })
   add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
@@ -43,6 +47,7 @@ export class SignFieldsController {
 
   @Get("envelopes/:envelopeId/fields")
   @RequirePermission("sign:envelope:view")
+  @ResponseSchema(listFieldsResponseSchema)
   @Validate({ params: envelopeIdParams })
   async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
@@ -51,6 +56,7 @@ export class SignFieldsController {
 
   @Patch("fields/:fieldId")
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(fieldMutationResponseSchema)
   @Validate({ params: fieldIdParams, body: updateFieldSchema })
   update(
     @Param("fieldId", ParseIntPipe) fieldId: number,
@@ -63,6 +69,7 @@ export class SignFieldsController {
 
   @Delete("fields/:fieldId")
   @RequirePermission("sign:envelope:create")
+  @ResponseSchema(successSchema)
   @Validate({ params: fieldIdParams })
   async remove(@Param("fieldId", ParseIntPipe) fieldId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     await this.fields.remove(u.orgId, fieldId, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });

@@ -36,7 +36,19 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  pipelineAutomationSchema,
+  pipelineAutomationWithCreatorSchema,
+  candidateMessageSchema,
+  candidateMessageRawSchema,
+  messageThreadItemSchema,
+  emailSequenceWithStepsSchema,
+  emailSequenceListItemSchema,
+  emailSequenceDetailSchema,
+  enrollSequenceResponseSchema,
+  successSchema,
+} from "./dto/recruitment-response.schemas";
 
 const automationIdParams = z.object({ automationId: z.coerce.number().int().positive() }).strict();
 const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
@@ -49,6 +61,7 @@ export class RecruitmentAutomationController {
   constructor(private readonly automation: RecruitmentAutomationService) {}
 
   @Get("automations")
+  @ResponseSchema(z.array(pipelineAutomationWithCreatorSchema))
   @RequirePermission("hr:employees:view")
   listAutomations(@CurrentUser() u: CurrentUserContext) {
     return this.automation.listAutomations(u.orgId);
@@ -56,6 +69,7 @@ export class RecruitmentAutomationController {
 
   @Post("automations")
   @HttpCode(201)
+  @ResponseSchema(pipelineAutomationSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ body: createAutomationSchema })
   createAutomation(
@@ -66,6 +80,7 @@ export class RecruitmentAutomationController {
   }
 
   @Patch("automations/:automationId")
+  @ResponseSchema(pipelineAutomationSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: automationIdParams, body: updateAutomationSchema })
   updateAutomation(
@@ -77,6 +92,7 @@ export class RecruitmentAutomationController {
   }
 
   @Delete("automations/:automationId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: automationIdParams })
   deleteAutomation(
@@ -87,6 +103,7 @@ export class RecruitmentAutomationController {
   }
 
   @Get("messages")
+  @ResponseSchema(z.array(candidateMessageSchema))
   @RequirePermission("hr:employees:view")
   @Validate({ query: messageListSchema })
   listMessages(
@@ -98,6 +115,7 @@ export class RecruitmentAutomationController {
 
   @Post("messages")
   @HttpCode(201)
+  @ResponseSchema(candidateMessageRawSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ body: sendMessageSchema })
   sendMessage(
@@ -108,6 +126,7 @@ export class RecruitmentAutomationController {
   }
 
   @Get("messages/threads")
+  @ResponseSchema(z.array(messageThreadItemSchema))
   @RequirePermission("hr:employees:view")
   listMessageThreads(@CurrentUser() u: CurrentUserContext) {
     return this.automation.listMessageThreads(u.orgId);
@@ -115,6 +134,7 @@ export class RecruitmentAutomationController {
 
   @Patch("messages/:messageId")
   @BodylessAction()
+  @ResponseSchema(candidateMessageRawSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: messageIdParams })
   markMessageRead(
@@ -125,6 +145,7 @@ export class RecruitmentAutomationController {
   }
 
   @Get("email-sequences")
+  @ResponseSchema(z.array(emailSequenceListItemSchema))
   @RequirePermission("hr:employees:view")
   listSequences(@CurrentUser() u: CurrentUserContext) {
     return this.automation.listSequences(u.orgId);
@@ -132,6 +153,7 @@ export class RecruitmentAutomationController {
 
   @Post("email-sequences")
   @HttpCode(201)
+  @ResponseSchema(emailSequenceWithStepsSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ body: createSequenceSchema })
   createSequence(
@@ -142,6 +164,7 @@ export class RecruitmentAutomationController {
   }
 
   @Get("email-sequences/:sequenceId")
+  @ResponseSchema(emailSequenceDetailSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: sequenceIdParams })
   getSequence(
@@ -152,6 +175,7 @@ export class RecruitmentAutomationController {
   }
 
   @Patch("email-sequences/:sequenceId")
+  @ResponseSchema(emailSequenceWithStepsSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: sequenceIdParams, body: updateSequenceSchema })
   updateSequence(
@@ -163,6 +187,7 @@ export class RecruitmentAutomationController {
   }
 
   @Delete("email-sequences/:sequenceId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: sequenceIdParams })
   deleteSequence(
@@ -173,6 +198,7 @@ export class RecruitmentAutomationController {
   }
 
   @Post("email-sequences/:sequenceId/enroll")
+  @ResponseSchema(enrollSequenceResponseSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: sequenceIdParams, body: enrollSequenceSchema })
   enrollSequence(

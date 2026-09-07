@@ -29,7 +29,13 @@ import { AccessService } from "../access/access.service";
 import { SignDocumentsService } from "./sign-documents.service";
 import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import { uploadDocumentMetaSchema, type UploadDocumentMetaInput } from "./dto/e-sign.schemas";
-import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  uploadDocumentResponseSchema,
+  listDocumentsResponseSchema,
+  previewDocumentResponseSchema,
+} from "./dto/e-sign-response.schemas";
+import { successSchema } from "../../common/openapi/response-envelopes";
 import { resolveClientIp } from "../../common/http/client-ip";
 
 
@@ -49,6 +55,7 @@ export class SignDocumentsController {
   @MultipartAction({ file: "file" })
   @HttpCode(201)
   @RequirePermission("sign:documents:upload")
+  @ResponseSchema(uploadDocumentResponseSchema)
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
   @Validate({ query: uploadDocumentMetaSchema })
   async upload(
@@ -69,6 +76,7 @@ export class SignDocumentsController {
 
   @Get("envelopes/:envelopeId/documents")
   @RequirePermission("sign:documents:view")
+  @ResponseSchema(listDocumentsResponseSchema)
   @Validate({ params: envelopeIdParams })
   async list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
@@ -77,6 +85,7 @@ export class SignDocumentsController {
 
   @Get("documents/:documentId/preview")
   @RequirePermission("sign:documents:view")
+  @ResponseSchema(previewDocumentResponseSchema)
   @Validate({ params: documentIdParams })
   async preview(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
     const scope = await resolveEnvelopeViewScope(this.access, u);
@@ -85,6 +94,7 @@ export class SignDocumentsController {
 
   @Delete("documents/:documentId")
   @RequirePermission("sign:documents:upload")
+  @ResponseSchema(successSchema)
   @Validate({ params: documentIdParams })
   async remove(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
     await this.documents.delete(u.orgId, documentId);

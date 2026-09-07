@@ -29,6 +29,9 @@ import {
   type VoidEntryInput,
 } from "./dto/entries.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import { entriesListResponseSchema, entrySchema } from "./dto/timesheets-response.schemas";
 import { z } from "zod";
 
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
@@ -42,6 +45,7 @@ export class EntriesController {
   @Get()
   @RequirePermission("timesheets:entries:view")
   @Validate({ query: entriesQuerySchema })
+  @ResponseSchema(entriesListResponseSchema)
   list(
     @Query() query: EntriesQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +57,7 @@ export class EntriesController {
   @HttpCode(201)
   @RequirePermission("timesheets:entries:create")
   @Validate({ body: createEntrySchema })
+  @ResponseSchema(entrySchema)
   create(
     @Body() body: CreateEntryInput,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +68,7 @@ export class EntriesController {
   @Patch(":entryId")
   @RequirePermission("timesheets:entries:update")
   @Validate({ params: entryIdParams, body: updateEntrySchema })
+  @ResponseSchema(entrySchema)
   update(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body() body: UpdateEntryInput,
@@ -75,6 +81,7 @@ export class EntriesController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:void")
   @Validate({ params: entryIdParams, body: voidEntrySchema })
+  @ResponseSchema(successSchema)
   void(
     @Param("entryId", ParseIntPipe) entryId: number,
     @Body() body: VoidEntryInput,

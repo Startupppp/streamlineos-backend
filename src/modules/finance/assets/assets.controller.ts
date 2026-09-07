@@ -15,7 +15,13 @@ import {
 } from "./dto/assets.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  assetListResponseSchema,
+  assetDetailResponseSchema,
+  assetDisposeResponseSchema,
+  assetSchema,
+} from "./dto/assets-response.schemas";
 
 const assetIdParams = z.object({ assetId: z.coerce.number().int().positive() }).strict();
 
@@ -26,6 +32,7 @@ export class FinanceAssetsController {
   constructor(private readonly assets: AssetsService) {}
 
   @Get()
+  @ResponseSchema(assetListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:read")
   @Validate({ query: listAssetsQuerySchema })
@@ -37,6 +44,7 @@ export class FinanceAssetsController {
   }
 
   @Post()
+  @ResponseSchema(assetSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:create")
   @HttpCode(201)
@@ -49,6 +57,7 @@ export class FinanceAssetsController {
   }
 
   @Get(":assetId")
+  @ResponseSchema(assetDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:read")
   @Validate({ params: assetIdParams })
@@ -60,6 +69,7 @@ export class FinanceAssetsController {
   }
 
   @Patch(":assetId")
+  @ResponseSchema(assetSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:update")
   @Validate({ params: assetIdParams, body: updateAssetSchema })
@@ -73,6 +83,7 @@ export class FinanceAssetsController {
 
   @Post(":assetId/activate")
   @BodylessAction()
+  @ResponseSchema(assetDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:update")
   @HttpCode(200)
@@ -85,6 +96,7 @@ export class FinanceAssetsController {
   }
 
   @Post(":assetId/dispose")
+  @ResponseSchema(assetDisposeResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(200)

@@ -26,6 +26,12 @@ import {
   type UpdateSpaceInput,
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbSpaceListSchema,
+  kbSpaceFullSchema,
+  kbSpaceSuccessSchema,
+} from "./dto/kb-wiki-response.schemas";
 import { accountableMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
@@ -41,6 +47,7 @@ export class KbSpacesController {
 
   @Get()
   @RequirePermission("kb:spaces:view")
+  @ResponseSchema(kbSpaceListSchema)
   async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     const scope = await resolveKbSpacesViewScope(this.access, u);
     return await this.spaces.list(u, scope);
@@ -50,6 +57,7 @@ export class KbSpacesController {
   @RequirePermission("kb:spaces:manage")
   @HttpCode(201)
   @Validate({ body: createSpaceSchema })
+  @ResponseSchema(kbSpaceFullSchema)
   async create(
     @Body() body: CreateSpaceInput,
     @CurrentUser() u: CurrentUserContext,
@@ -64,6 +72,7 @@ export class KbSpacesController {
   @Get(":spaceId")
   @RequirePermission("kb:spaces:view")
   @Validate({ params: spaceIdParams })
+  @ResponseSchema(kbSpaceFullSchema)
   async get(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +83,7 @@ export class KbSpacesController {
   @Patch(":spaceId")
   @RequirePermission("kb:spaces:manage")
   @Validate({ params: spaceIdParams, body: updateSpaceSchema })
+  @ResponseSchema(kbSpaceFullSchema)
   async update(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body() body: UpdateSpaceInput,
@@ -85,6 +95,7 @@ export class KbSpacesController {
   @Delete(":spaceId")
   @RequirePermission("kb:spaces:manage")
   @Validate({ params: spaceIdParams })
+  @ResponseSchema(kbSpaceSuccessSchema)
   async remove(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,

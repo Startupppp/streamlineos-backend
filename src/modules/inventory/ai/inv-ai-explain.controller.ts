@@ -21,7 +21,14 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { InvAiExplainService } from "./inv-ai-explain.service";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  explainInsightResponseSchema,
+  digestResponseSchema,
+  reorderProposalResponseSchema,
+  confirmReorderProposalResponseSchema,
+  supplierDelayBriefingResponseSchema,
+} from "./dto/ai-response.schemas";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
@@ -40,6 +47,7 @@ export class InvAiExplainController {
 
   @Post("insights/:insightId/explain")
   @BodylessAction()
+  @ResponseSchema(explainInsightResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
@@ -52,6 +60,7 @@ export class InvAiExplainController {
   }
 
   @Get("digest")
+  @ResponseSchema(digestResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
@@ -64,6 +73,7 @@ export class InvAiExplainController {
   }
 
   @Post("reorder-proposal")
+  @ResponseSchema(reorderProposalResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
@@ -76,6 +86,7 @@ export class InvAiExplainController {
   }
 
   @Post("reorder-proposal/confirm")
+  @ResponseSchema(confirmReorderProposalResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
@@ -88,6 +99,7 @@ export class InvAiExplainController {
   }
 
   @Get("supplier-delay")
+  @ResponseSchema(supplierDelayBriefingResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")

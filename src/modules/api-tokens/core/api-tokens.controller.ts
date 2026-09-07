@@ -27,7 +27,9 @@ import {
   type ListApiTokensQuery,
 } from "./dto/api-tokens.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { apiTokensPageSchema, apiTokenRowSchema } from "./dto/api-tokens-response.schemas";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 import { z } from "zod";
 
 const tokenIdParams = z.object({ tokenId: z.string().min(1) }).strict();
@@ -41,6 +43,7 @@ export class ApiTokensController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(apiTokensPageSchema)
   @Validate({ query: listApiTokensSchema })
   listTokens(
     @CurrentUser() u: CurrentUserContext,
@@ -52,9 +55,7 @@ export class ApiTokensController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:settings:manage")
-  // PRD-C089 (BREACH) — this body is the plaintext API key, returned exactly once, `app.enableCors({ credentials: true })`
-  // is live, and a compressed length is a cross-origin size oracle. `shouldCompress` checks
-  // this opt-out first, so no content type can overrule it.
+  @ResponseSchema(apiTokenRowSchema)
   @Header(NO_COMPRESSION_HEADER, "1")
   @Validate({ body: createApiTokenSchema })
   createToken(
@@ -69,6 +70,7 @@ export class ApiTokensController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:settings:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: tokenIdParams })
   revokeToken(
     @CurrentUser() u: CurrentUserContext,

@@ -36,6 +36,19 @@ import {
 } from "./dto/settings.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  settingsProvenanceResponseSchema,
+  apiKeyListResponseSchema,
+  apiKeyCreateResponseSchema,
+  apiKeyRevokeResponseSchema,
+  automationListResponseSchema,
+  automationResponseSchema,
+  automationDeleteResponseSchema,
+  automationRunsListResponseSchema,
+  featureFlagsResponseSchema,
+  updateFeatureFlagResponseSchema,
+} from "./dto/settings-response.schemas";
 import { z } from "zod";
 
 const keyIdParams = z.object({ keyId: z.string().min(1) }).strict();
@@ -50,6 +63,7 @@ export class SettingsController {
   ) {}
 
   @RequirePermission("settings:view")
+  @ResponseSchema(settingsProvenanceResponseSchema)
   @Get("provenance")
   @Validate({ query: settingsProvenanceQuerySchema })
   getProvenance(
@@ -60,12 +74,14 @@ export class SettingsController {
   }
 
   @RequirePermission("settings:manage")
+  @ResponseSchema(apiKeyListResponseSchema)
   @Get("api-keys")
   listApiKeys(@CurrentUser() u: CurrentUserContext) {
     return this.settings.listApiKeys(u);
   }
 
   @RequirePermission("settings:manage")
+  @ResponseSchema(apiKeyCreateResponseSchema)
   @Post("api-keys")
   @HttpCode(201)
   @Idempotent("settings.apiKey.create")
@@ -81,6 +97,7 @@ export class SettingsController {
   }
 
   @RequirePermission("settings:manage")
+  @ResponseSchema(apiKeyRevokeResponseSchema)
   @Delete("api-keys/:keyId")
   @Validate({ params: keyIdParams })
   revokeApiKey(
@@ -91,6 +108,7 @@ export class SettingsController {
   }
 
   @Get("automations")
+  @ResponseSchema(automationListResponseSchema)
   @RequirePermission("settings:automations:view")
   @Validate({ query: listAutomationsQuerySchema })
   listAutomations(
@@ -101,6 +119,7 @@ export class SettingsController {
   }
 
   @Post("automations")
+  @ResponseSchema(automationResponseSchema)
   @HttpCode(201)
   @Idempotent("settings.automation.create")
   @RequirePermission("settings:automations:manage")
@@ -113,6 +132,7 @@ export class SettingsController {
   }
 
   @Get("automations/:ruleId")
+  @ResponseSchema(automationResponseSchema)
   @RequirePermission("settings:automations:view")
   @Validate({ params: ruleIdParams })
   getAutomation(
@@ -123,6 +143,7 @@ export class SettingsController {
   }
 
   @Patch("automations/:ruleId")
+  @ResponseSchema(automationResponseSchema)
   @RequirePermission("settings:automations:manage")
   @Validate({ params: ruleIdParams, body: updateAutomationSchema })
   updateAutomation(
@@ -134,6 +155,7 @@ export class SettingsController {
   }
 
   @Delete("automations/:ruleId")
+  @ResponseSchema(automationDeleteResponseSchema)
   @RequirePermission("settings:automations:manage")
   @Validate({ params: ruleIdParams })
   deleteAutomation(
@@ -144,6 +166,7 @@ export class SettingsController {
   }
 
   @Get("automations/:ruleId/runs")
+  @ResponseSchema(automationRunsListResponseSchema)
   @RequirePermission("settings:automations:view")
   @Validate({ params: ruleIdParams })
   listAutomationRuns(
@@ -154,12 +177,14 @@ export class SettingsController {
   }
 
   @RequirePermission("settings:view")
+  @ResponseSchema(featureFlagsResponseSchema)
   @Get("feature-flags")
   getFeatureFlags(@CurrentUser() u: CurrentUserContext) {
     return this.settings.getFeatureFlags(u.orgId);
   }
 
   @RequirePermission("settings:manage")
+  @ResponseSchema(updateFeatureFlagResponseSchema)
   @Patch("feature-flags")
   @Validate({ body: featureFlagSchema })
   updateFeatureFlag(

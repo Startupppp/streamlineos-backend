@@ -8,6 +8,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { TaxAdjustmentsService } from "./tax-adjustments.service";
 import { createTaxAdjustmentSchema, type CreateTaxAdjustmentInput } from "./dto/tax-adjustments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { taxAdjustmentCreatedResponseSchema } from "./dto/tax-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/taxes/adjustments")
@@ -16,6 +18,7 @@ export class TaxAdjustmentsController {
   constructor(private readonly adjustments: TaxAdjustmentsService) {}
 
   @Post()
+  @ResponseSchema(taxAdjustmentCreatedResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
   @HttpCode(201)

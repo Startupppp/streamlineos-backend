@@ -24,6 +24,14 @@ import {
   type InitiateConnectionInput,
 } from "./dto/integrations.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  integrationsListResponseSchema,
+  integrationsInitiateResponseSchema,
+  integrationsFinalizeResponseSchema,
+  integrationsDisconnectResponseSchema,
+  integrationsSetPrimaryResponseSchema,
+} from "./dto/integrations-response.schemas";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
@@ -35,6 +43,7 @@ export class IntegrationsController {
   constructor(private readonly integrations: IntegrationsService) {}
 
   @Get("connections")
+  @ResponseSchema(integrationsListResponseSchema)
   @RequirePermission("integrations:connections:view")
   listConnections(@CurrentUser() u: CurrentUserContext) {
     return this.integrations.listConnections(u.orgId, u.userId, actingMembershipId(u.principal));
@@ -42,6 +51,7 @@ export class IntegrationsController {
 
   @Post("connections/initiate")
   @HttpCode(200)
+  @ResponseSchema(integrationsInitiateResponseSchema)
   @RequirePermission("integrations:connections:manage")
   @Validate({ body: initiateConnectionSchema })
   initiate(
@@ -53,6 +63,7 @@ export class IntegrationsController {
 
   @Post("connections/finalize")
   @HttpCode(200)
+  @ResponseSchema(integrationsFinalizeResponseSchema)
   @RequirePermission("integrations:connections:manage")
   @Validate({ body: finalizeConnectionSchema })
   finalize(
@@ -63,6 +74,7 @@ export class IntegrationsController {
   }
 
   @Delete("connections/:connectionId")
+  @ResponseSchema(integrationsDisconnectResponseSchema)
   @RequirePermission("integrations:connections:manage")
   @Validate({ params: connectionIdParams })
   disconnect(
@@ -74,6 +86,7 @@ export class IntegrationsController {
 
   @Patch("connections/:connectionId/primary")
   @BodylessAction()
+  @ResponseSchema(integrationsSetPrimaryResponseSchema)
   @RequirePermission("integrations:connections:manage")
   @Validate({ params: connectionIdParams })
   setPrimary(

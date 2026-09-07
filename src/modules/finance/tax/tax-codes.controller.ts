@@ -16,7 +16,8 @@ import {
 } from "./dto/tax-codes.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { taxCodeListResponseSchema, taxCodeSchema, taxCodeSeedResponseSchema } from "./dto/tax-response.schemas";
 
 const taxCodeIdParams = z.object({ taxCodeId: z.coerce.number().int().positive() }).strict();
 
@@ -27,6 +28,7 @@ export class TaxCodesController {
   constructor(private readonly taxCodes: TaxCodesService) {}
 
   @Get()
+  @ResponseSchema(taxCodeListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
   @Validate({ query: listTaxCodesQuerySchema })
@@ -38,6 +40,7 @@ export class TaxCodesController {
   }
 
   @Post()
+  @ResponseSchema(taxCodeSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
   @HttpCode(201)
@@ -50,6 +53,7 @@ export class TaxCodesController {
   }
 
   @Post("seed-defaults")
+  @ResponseSchema(taxCodeSeedResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
@@ -59,6 +63,7 @@ export class TaxCodesController {
   }
 
   @Patch(":taxCodeId")
+  @ResponseSchema(taxCodeSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
   @Validate({ params: taxCodeIdParams, body: updateTaxCodeSchema })

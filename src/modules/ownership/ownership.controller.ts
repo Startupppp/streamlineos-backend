@@ -37,7 +37,15 @@ import {
   type SetModuleOwnerInput,
 } from "./dto/ownership.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  moduleOwnershipListSchema,
+  moduleOwnershipSchema,
+  transferInitiatedSchema,
+  incomingTransfersSchema,
+  transfersPageSchema,
+  successSchema,
+} from "./dto/ownership-response.schemas";
 import { z } from "zod";
 
 const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
@@ -55,6 +63,7 @@ export class OwnershipController {
   @Get("modules")
   @UseGuards(PermissionGuard)
   @RequirePermission("ownership:modules:view")
+  @ResponseSchema(moduleOwnershipListSchema)
   listModuleOwnerships(@CurrentUser() u: CurrentUserContext) {
     return this.ownership.listModuleOwnerships(u.orgId);
   }
@@ -62,6 +71,7 @@ export class OwnershipController {
   @Get("modules/:moduleKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("ownership:modules:view")
+  @ResponseSchema(moduleOwnershipSchema)
   @Validate({ params: moduleKeyParams })
   getModuleOwnership(
     @Param("moduleKey") moduleKey: string,
@@ -74,6 +84,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
   @UseRateLimit("ownership:force-set")
+  @ResponseSchema(successSchema)
   @Validate({ params: moduleKeyParams, body: setModuleOwnerSchema })
   forceSetModuleOwner(
     @Param("moduleKey") moduleKey: string,
@@ -90,6 +101,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:org:transfer")
   @UseRateLimit("ownership:transfer")
+  @ResponseSchema(transferInitiatedSchema)
   @Validate({ body: initiateOrgTransferSchema })
   initiateOrgTransfer(
     @Body() body: InitiateOrgTransferInput,
@@ -105,6 +117,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
   @UseRateLimit("ownership:transfer")
+  @ResponseSchema(transferInitiatedSchema)
   @Validate({ params: moduleKeyParams, body: initiateModuleTransferSchema })
   initiateModuleTransfer(
     @Param("moduleKey") moduleKey: string,
@@ -123,6 +136,7 @@ export class OwnershipController {
   @Get("transfers/incoming")
   @UseGuards(PermissionGuard)
   @RequirePermission("ownership:transfer:respond")
+  @ResponseSchema(incomingTransfersSchema)
   listIncomingTransfers(@CurrentUser() u: CurrentUserContext) {
     return this.transfers.listIncomingTransfers(u.orgId, u.userId);
   }
@@ -130,6 +144,7 @@ export class OwnershipController {
   @Get("transfers")
   @UseGuards(PermissionGuard)
   @RequirePermission("ownership:modules:view")
+  @ResponseSchema(transfersPageSchema)
   @Validate({ query: listTransfersSchema })
   listTransfers(
     @Query() query: ListTransfersInput,
@@ -145,6 +160,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
   @UseRateLimit("ownership:transfer")
+  @ResponseSchema(successSchema)
   @Validate({ params: transferIdParams })
   acceptTransfer(
     @Param("transferId") transferId: string,
@@ -159,6 +175,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
   @UseRateLimit("ownership:transfer")
+  @ResponseSchema(successSchema)
   @Validate({ params: transferIdParams, body: declineTransferSchema })
   declineTransfer(
     @Param("transferId") transferId: string,
@@ -174,6 +191,7 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
   @UseRateLimit("ownership:transfer")
+  @ResponseSchema(successSchema)
   @Validate({ params: transferIdParams })
   cancelTransfer(
     @Param("transferId") transferId: string,

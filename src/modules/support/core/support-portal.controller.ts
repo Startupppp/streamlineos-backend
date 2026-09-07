@@ -29,6 +29,14 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  portalTicketListSchema,
+  portalCustomFieldListSchema,
+  portalCreateTicketSchema,
+  portalTicketDetailSchema,
+  portalMessageSchema,
+} from "./dto/support-portal-response.schemas";
 import { z } from "zod";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
@@ -45,12 +53,14 @@ export class SupportPortalController {
 
   @Get("tickets")
   @RequirePermission("support:portal:tickets:view")
+  @ResponseSchema(portalTicketListSchema)
   listMyTickets(@CurrentUser() u: CurrentUserContext) {
     return this.portal.listMyTickets(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Get("custom-fields")
   @RequirePermission("support:portal:tickets:create")
+  @ResponseSchema(portalCustomFieldListSchema)
   listActiveCustomFields(@CurrentUser() u: CurrentUserContext) {
     return this.customFields.listFields(u.orgId, true);
   }
@@ -60,6 +70,7 @@ export class SupportPortalController {
   @RequirePermission("support:portal:tickets:create")
   @HttpCode(201)
   @Validate({ body: createPortalTicketSchema })
+  @ResponseSchema(portalCreateTicketSchema)
   async createTicket(
     @Body() body: CreatePortalTicketInput,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +88,7 @@ export class SupportPortalController {
   @Get("tickets/:ticketId")
   @RequirePermission("support:portal:tickets:view")
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(portalTicketDetailSchema)
   getMyTicket(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.portal.getMyTicket(u.orgId, u.userId, actingMembershipId(u.principal), ticketId);
   }
@@ -86,6 +98,7 @@ export class SupportPortalController {
   @RequirePermission("support:portal:tickets:reply")
   @HttpCode(201)
   @Validate({ params: ticketIdParams, body: createPortalMessageSchema })
+  @ResponseSchema(portalMessageSchema)
   addMessage(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: CreatePortalMessageInput,

@@ -30,8 +30,14 @@ import {
   type RejectPeriodInput,
 } from "./dto/approvals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  approvalsListResponseSchema,
+  bulkApproveResponseSchema,
+  bulkRejectResponseSchema,
+  timesheetApprovalItemSchema,
+} from "./dto/timesheets-response.schemas";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
@@ -47,6 +53,7 @@ export class TimesheetApprovalsController {
   @Get()
   @RequirePermission("timesheets:approvals:view")
   @Validate({ query: approvalsQuerySchema })
+  @ResponseSchema(approvalsListResponseSchema)
   list(
     @Query() query: ApprovalsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -59,6 +66,7 @@ export class TimesheetApprovalsController {
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.bulk_approve")
   @Validate({ body: bulkApproveSchema })
+  @ResponseSchema(bulkApproveResponseSchema)
   bulkApprove(
     @Body() body: BulkApproveInput,
     @CurrentUser() u: CurrentUserContext,
@@ -71,6 +79,7 @@ export class TimesheetApprovalsController {
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.bulk_reject")
   @Validate({ body: bulkRejectSchema })
+  @ResponseSchema(bulkRejectResponseSchema)
   bulkReject(
     @Body() body: BulkRejectInput,
     @CurrentUser() u: CurrentUserContext,
@@ -84,6 +93,7 @@ export class TimesheetApprovalsController {
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.approve")
   @Validate({ params: periodIdParams })
+  @ResponseSchema(timesheetApprovalItemSchema)
   approve(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -96,6 +106,7 @@ export class TimesheetApprovalsController {
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.reject")
   @Validate({ params: periodIdParams, body: rejectPeriodSchema })
+  @ResponseSchema(timesheetApprovalItemSchema)
   reject(
     @Param("periodId", ParseIntPipe) periodId: number,
     @Body() body: RejectPeriodInput,

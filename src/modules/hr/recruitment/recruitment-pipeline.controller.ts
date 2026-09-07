@@ -8,6 +8,13 @@ import { RecruitmentPipelineService } from "./recruitment-pipeline.service";
 import { diversityReportQuerySchema, type DiversityReportQueryInput } from "./dto/candidates.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  pipelineResponseSchema,
+  diversityReportSchema,
+  bgvComplianceItemSchema,
+} from "./dto/recruitment-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -16,12 +23,14 @@ export class RecruitmentPipelineController {
   constructor(private readonly pipeline: RecruitmentPipelineService) {}
 
   @Get("pipeline")
+  @ResponseSchema(pipelineResponseSchema)
   @RequirePermission("hr:employees:view")
   getPipeline(@CurrentUser() u: CurrentUserContext) {
     return this.pipeline.pipeline(u.orgId);
   }
 
   @Get("diversity-report")
+  @ResponseSchema(diversityReportSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ query: diversityReportQuerySchema })
   diversityReport(
@@ -32,6 +41,7 @@ export class RecruitmentPipelineController {
   }
 
   @Get("bgv-compliance")
+  @ResponseSchema(z.array(bgvComplianceItemSchema))
   @RequirePermission("hr:sensitive:view")
   bgvCompliance(@CurrentUser() u: CurrentUserContext) {
     return this.pipeline.bgvCompliance(u.orgId);

@@ -35,6 +35,9 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
+import { listFeedbackResponseSchema, createFeedbackResponseSchema, submitFeedbackResponseSchema, listAssessmentsResponseSchema, createOrSubmitAssessmentResponseSchema, listRecognitionsResponseSchema, createRecognitionResponseSchema, listEnpsResponseSchema, createEnpsResponseSchema, listSurveysResponseSchema, createOrRespondSurveyResponseSchema, updateSurveyResponseSchema } from "./dto/engagement-response.schemas"
+import { myGoalsResponseSchema } from "./dto/performance-response.schemas"
 
 const feedbackIdParams = z.object({ feedbackId: z.coerce.number().int().positive() }).strict();
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
@@ -48,18 +51,21 @@ export class EngagementController {
     private readonly engagement: EngagementService,
   ) {}
 
+  @ResponseSchema(myGoalsResponseSchema)
   @Get("my-goals")
   @RequirePermission("hr:performance:view")
   myGoals(@CurrentUser() u: CurrentUserContext) {
     return this.goalsService.myGoals(u.orgId, u.userId);
   }
 
+  @ResponseSchema(listFeedbackResponseSchema)
   @Get("feedback")
   @RequirePermission("hr:feedback:view")
   listFeedback(@CurrentUser() u: CurrentUserContext) {
     return this.engagement.listFeedback(u.orgId, u.userId);
   }
 
+  @ResponseSchema(createFeedbackResponseSchema)
   @Post("feedback")
   @RequirePermission("hr:feedback:manage")
   @HttpCode(201)
@@ -71,6 +77,7 @@ export class EngagementController {
     return this.engagement.createFeedback(u.orgId, body);
   }
 
+  @ResponseSchema(submitFeedbackResponseSchema)
   @Patch("feedback/:feedbackId")
   @RequirePermission("hr:feedback:view")
   @Validate({ params: feedbackIdParams, body: submitFeedbackSchema })
@@ -82,12 +89,14 @@ export class EngagementController {
     return this.engagement.submitFeedback(u.orgId, u.userId, feedbackId, body);
   }
 
+  @ResponseSchema(listAssessmentsResponseSchema)
   @Get("assessments")
   @RequirePermission("hr:engagement:view")
   listAssessments(@CurrentUser() u: CurrentUserContext) {
     return this.engagement.listAssessments(u.orgId);
   }
 
+  @ResponseSchema(createOrSubmitAssessmentResponseSchema)
   @Post("assessments")
   @HttpCode(201)
   @RequirePermission("hr:engagement:view")
@@ -107,12 +116,14 @@ export class EngagementController {
     );
   }
 
+  @ResponseSchema(listRecognitionsResponseSchema)
   @Get("recognition")
   @RequirePermission("hr:engagement:view")
   listRecognitions(@CurrentUser() u: CurrentUserContext) {
     return this.engagement.listRecognitions(u.orgId);
   }
 
+  @ResponseSchema(createRecognitionResponseSchema)
   @Post("recognition")
   @HttpCode(201)
   @RequirePermission("hr:engagement:view")
@@ -124,12 +135,14 @@ export class EngagementController {
     return this.engagement.createRecognition(u, body);
   }
 
+  @ResponseSchema(listEnpsResponseSchema)
   @Get("enps")
   @RequirePermission("hr:engagement:manage")
   listEnps(@CurrentUser() u: CurrentUserContext) {
     return this.engagement.listEnps(u.orgId);
   }
 
+  @ResponseSchema(createEnpsResponseSchema)
   @Post("enps")
   @HttpCode(201)
   @RequirePermission("hr:engagement:view")
@@ -141,12 +154,14 @@ export class EngagementController {
     return this.engagement.createEnps(u.orgId, u.userId, body);
   }
 
+  @ResponseSchema(listSurveysResponseSchema)
   @Get("surveys")
   @RequirePermission("hr:engagement:view")
   listSurveys(@CurrentUser() u: CurrentUserContext) {
     return this.engagement.listSurveys(u.orgId);
   }
 
+  @ResponseSchema(createOrRespondSurveyResponseSchema)
   @Post("surveys")
   @HttpCode(201)
   @RequirePermission("hr:engagement:view")
@@ -166,6 +181,7 @@ export class EngagementController {
     );
   }
 
+  @ResponseSchema(updateSurveyResponseSchema)
   @Patch("surveys/:surveyId")
   @RequirePermission("hr:engagement:manage")
   @Validate({ params: surveyIdParams, body: updateSurveySchema })

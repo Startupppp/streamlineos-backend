@@ -16,6 +16,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { AiSummariesService } from "./ai-summaries.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { snapshotWithDiffNullableResponseSchema, aiSummariesSaveSnapshotResponseSchema } from "../core/dto/ai-response.schemas";
 import { saveSnapshotSchema, isAllowedEntityType } from "./save-snapshot.dto";
 import type { SnapshotWithDiff } from "./ai-summaries.types";
 import type { AiSummarySnapshot } from "../../../db/schema/ai/ai-summaries";
@@ -34,6 +36,7 @@ export class AiSummariesController {
 
   @Get(":entityType/:entityId")
   @RequirePermission("ai:summaries:view")
+  @ResponseSchema(snapshotWithDiffNullableResponseSchema)
   @Validate({ params: entityTypeentityIdParams })
   async getLatest(
     @Param("entityType") entityType: string,
@@ -49,6 +52,7 @@ export class AiSummariesController {
   @Post(":entityType/:entityId/snapshot")
   @HttpCode(201)
   @RequirePermission("ai:summaries:create")
+  @ResponseSchema(aiSummariesSaveSnapshotResponseSchema)
   @Validate({ params: entityTypeentityIdParams, body: saveSnapshotSchema })
   async saveSnapshot(
     @Param("entityType") entityType: string,

@@ -9,6 +9,11 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { CarriersService } from "./carriers.service";
 import { createCarrierSchema, updateCarrierSchema, type CreateCarrierInput, type UpdateCarrierInput } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listCarriersResponseSchema,
+  invCarrierSchema,
+} from "./dto/shipments-response.schemas";
 import { z } from "zod";
 
 const carrierIdParams = z.object({ carrierId: z.coerce.number().int().positive() }).strict();
@@ -20,6 +25,7 @@ export class CarriersController {
   constructor(private readonly svc: CarriersService) {}
 
   @Get()
+  @ResponseSchema(listCarriersResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   list(@CurrentUser() u: CurrentUserContext) {
@@ -27,6 +33,7 @@ export class CarriersController {
   }
 
   @Post()
+  @ResponseSchema(invCarrierSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @Validate({ body: createCarrierSchema })
@@ -38,6 +45,7 @@ export class CarriersController {
   }
 
   @Patch(":carrierId")
+  @ResponseSchema(invCarrierSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @Validate({ params: carrierIdParams, body: updateCarrierSchema })

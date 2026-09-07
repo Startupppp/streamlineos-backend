@@ -36,7 +36,13 @@ import {
 } from "./dto/hr-forms.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hrFormListSchema,
+  hrFormRowSchema,
+  hrFormSubmissionListSchema,
+  hrFormSubmissionRowSchema,
+} from "./dto/forms-response.schemas";
 
 const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
 const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
@@ -51,6 +57,7 @@ export class HrFormsController {
   ) {}
 
   @Get()
+  @ResponseSchema(hrFormListSchema)
   @RequirePermission("hr:forms:view")
   @Validate({ query: listHrFormsQuerySchema })
   list(
@@ -61,12 +68,14 @@ export class HrFormsController {
   }
 
   @Get("submissions/my")
+  @ResponseSchema(z.array(hrFormSubmissionRowSchema))
   @RequirePermission("hr:forms:view")
   mySubmissions(@CurrentUser() u: CurrentUserContext) {
     return this.submissions.getMySubmissions(u.orgId, u.userId);
   }
 
   @Get(":formId")
+  @ResponseSchema(hrFormRowSchema)
   @RequirePermission("hr:forms:view")
   @Validate({ params: formIdParams })
   get(
@@ -77,6 +86,7 @@ export class HrFormsController {
   }
 
   @Post()
+  @ResponseSchema(hrFormRowSchema)
   @HttpCode(201)
   @RequirePermission("hr:forms:manage")
   @Validate({ body: createHrFormSchema })
@@ -88,6 +98,7 @@ export class HrFormsController {
   }
 
   @Patch(":formId")
+  @ResponseSchema(hrFormRowSchema)
   @RequirePermission("hr:forms:manage")
   @Validate({ params: formIdParams, body: updateHrFormSchema })
   update(
@@ -99,6 +110,7 @@ export class HrFormsController {
   }
 
   @Post(":formId/activate")
+  @ResponseSchema(hrFormRowSchema)
   @BodylessAction()
   @RequirePermission("hr:forms:manage")
   @Validate({ params: formIdParams })
@@ -110,6 +122,7 @@ export class HrFormsController {
   }
 
   @Post(":formId/archive")
+  @ResponseSchema(hrFormRowSchema)
   @BodylessAction()
   @RequirePermission("hr:forms:manage")
   @Validate({ params: formIdParams })
@@ -121,6 +134,7 @@ export class HrFormsController {
   }
 
   @Delete(":formId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:forms:manage")
   @Validate({ params: formIdParams })
@@ -132,6 +146,7 @@ export class HrFormsController {
   }
 
   @Post(":formId/submissions")
+  @ResponseSchema(hrFormSubmissionRowSchema)
   @HttpCode(201)
   @RequirePermission("hr:forms:view")
   @Validate({ params: formIdParams, body: submitHrFormSchema })
@@ -144,6 +159,7 @@ export class HrFormsController {
   }
 
   @Get(":formId/submissions")
+  @ResponseSchema(hrFormSubmissionListSchema)
   @RequirePermission("hr:forms:view")
   @Validate({ params: formIdParams, query: listSubmissionsQuerySchema })
   listSubmissions(
@@ -155,6 +171,7 @@ export class HrFormsController {
   }
 
   @Get(":formId/submissions/sensitive")
+  @ResponseSchema(hrFormSubmissionListSchema)
   @RequirePermission("hr:sensitive:view")
   @Validate({ params: formIdParams, query: listSubmissionsQuerySchema })
   listSubmissionsSensitive(
@@ -166,6 +183,7 @@ export class HrFormsController {
   }
 
   @Patch("submissions/:submissionId/status")
+  @ResponseSchema(hrFormSubmissionRowSchema)
   @RequirePermission("hr:forms:manage")
   @Validate({ params: submissionIdParams, body: updateSubmissionStatusSchema })
   updateStatus(

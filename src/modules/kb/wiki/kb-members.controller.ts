@@ -7,6 +7,12 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbMembersService } from "./kb-members.service";
 import { addMemberSchema, type AddMemberInput } from "./dto/kb-members.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbSpaceMemberListSchema,
+  kbSpaceMemberSchema,
+  kbSpaceMemberSuccessSchema,
+} from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
 
 const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();
@@ -20,6 +26,7 @@ export class KbMembersController {
   @Get("spaces/:spaceId/members")
   @RequirePermission("kb:spaces:manage")
   @Validate({ params: spaceIdParams })
+  @ResponseSchema(kbSpaceMemberListSchema)
   async list(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -31,6 +38,7 @@ export class KbMembersController {
   @RequirePermission("kb:spaces:manage")
   @HttpCode(201)
   @Validate({ params: spaceIdParams, body: addMemberSchema })
+  @ResponseSchema(kbSpaceMemberSchema)
   async add(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Body() body: AddMemberInput,
@@ -42,6 +50,7 @@ export class KbMembersController {
   @Delete("spaces/:spaceId/members/:memberId")
   @RequirePermission("kb:spaces:manage")
   @Validate({ params: spaceIdmemberIdParams })
+  @ResponseSchema(kbSpaceMemberSuccessSchema)
   async remove(
     @Param("spaceId", ParseIntPipe) spaceId: number,
     @Param("memberId", ParseIntPipe) memberId: number,

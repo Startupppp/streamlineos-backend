@@ -11,6 +11,8 @@ import {
   type ListEmploymentFactsQuery,
 } from "./dto/employment-facts.schemas";
 import type { EmploymentFacts } from "./employment-facts.types";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { employmentFactsListSchema } from "./dto/directory-response.schemas";
 
 @Controller("directory/employment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -19,6 +21,7 @@ export class EmploymentFactsController {
 
   @Get()
   @RequirePermission("settings:view")
+  @ResponseSchema(employmentFactsListSchema)
   @Validate({ query: listEmploymentFactsQuerySchema })
   async list(
     @Query() query: ListEmploymentFactsQuery,

@@ -19,7 +19,12 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listLoadsResponseSchema,
+  getLoadResponseSchema,
+  invLoadSchema,
+} from "./dto/shipments-response.schemas";
 
 const loadIdParams = z.object({ loadId: z.coerce.number().int().positive() }).strict();
 
@@ -30,6 +35,7 @@ export class LoadsController {
   constructor(private readonly svc: LoadsService) {}
 
   @Get()
+  @ResponseSchema(listLoadsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @Validate({ query: listLoadsQuerySchema })
@@ -41,6 +47,7 @@ export class LoadsController {
   }
 
   @Get(":loadId")
+  @ResponseSchema(getLoadResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @Validate({ params: loadIdParams })
@@ -52,6 +59,7 @@ export class LoadsController {
   }
 
   @Post()
+  @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @Validate({ body: createLoadSchema })
@@ -63,6 +71,7 @@ export class LoadsController {
   }
 
   @Post(":loadId/dispatch")
+  @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
@@ -76,6 +85,7 @@ export class LoadsController {
   }
 
   @Post(":loadId/close")
+  @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
@@ -90,6 +100,7 @@ export class LoadsController {
 
   @Post(":loadId/cancel")
   @BodylessAction()
+  @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)

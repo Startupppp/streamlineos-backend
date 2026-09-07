@@ -22,7 +22,19 @@ import {
 } from "./dto/inv-sales-orders.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  listSosResponseSchema,
+  getSoResponseSchema,
+  invSoSchema,
+  invoiceSoResponseSchema,
+  reserveSoResponseSchema,
+  pickSoResponseSchema,
+  packSoResponseSchema,
+  shipSoResponseSchema,
+  atpResponseSchema,
+} from "./dto/sales-orders-response.schemas";
 
 const soIdParams = z.object({ soId: z.coerce.number().int().positive() }).strict();
 
@@ -37,6 +49,7 @@ export class InvSalesOrdersController {
   ) {}
 
   @Get()
+  @ResponseSchema(listSosResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:read")
   @Validate({ query: listSoSchema })
@@ -49,6 +62,7 @@ export class InvSalesOrdersController {
   }
 
   @Get(":soId")
+  @ResponseSchema(getSoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:read")
   @Validate({ params: soIdParams })
@@ -60,6 +74,7 @@ export class InvSalesOrdersController {
   }
 
   @Post()
+  @ResponseSchema(invSoSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:create")
   @Validate({ body: createSoSchema })
@@ -71,6 +86,7 @@ export class InvSalesOrdersController {
   }
 
   @Patch(":soId")
+  @ResponseSchema(getSoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:update")
   @Validate({ params: soIdParams, body: updateSoSchema })
@@ -84,18 +100,21 @@ export class InvSalesOrdersController {
 
   @Post(":soId/confirm")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:confirm")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: soIdParams })
-  confirm(
+  async confirm(
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.soCore.confirmSo(u.orgId, soId, u.userId);
+    await this.soCore.confirmSo(u.orgId, soId, u.userId);
+    return { success: true as const };
   }
 
   @Post(":soId/reserve")
+  @ResponseSchema(reserveSoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
   @HttpCode(HttpStatus.OK)
@@ -111,6 +130,7 @@ export class InvSalesOrdersController {
   }
 
   @Post(":soId/pick")
+  @ResponseSchema(pickSoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @HttpCode(HttpStatus.OK)
@@ -124,6 +144,7 @@ export class InvSalesOrdersController {
   }
 
   @Post(":soId/pack")
+  @ResponseSchema(packSoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @HttpCode(HttpStatus.OK)
@@ -137,6 +158,7 @@ export class InvSalesOrdersController {
   }
 
   @Post(":soId/ship")
+  @ResponseSchema(shipSoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @HttpCode(HttpStatus.OK)
@@ -153,6 +175,7 @@ export class InvSalesOrdersController {
 
   @Post(":soId/invoice")
   @BodylessAction()
+  @ResponseSchema(invoiceSoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:invoice")
   @HttpCode(HttpStatus.OK)
@@ -165,19 +188,22 @@ export class InvSalesOrdersController {
   }
 
   @Post(":soId/cancel")
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:update")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: soIdParams, body: cancelSoSchema })
-  cancel(
+  async cancel(
     @Param("soId", ParseIntPipe) soId: number,
     @Body() body: CancelSoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.soCore.cancelSo(u.orgId, soId, u.userId);
+    await this.soCore.cancelSo(u.orgId, soId, u.userId);
+    return { success: true as const };
   }
 
   @Get(":soId/atp")
+  @ResponseSchema(atpResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:read")
   @Validate({ params: soIdParams })

@@ -23,6 +23,8 @@ import {
 } from "./dto/finance-expenses.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { receiptInboxListResponseSchema, successSchema } from "./dto/expenses-response.schemas";
 
 const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
 
@@ -33,6 +35,7 @@ export class ReceiptsController {
   constructor(private readonly receipts: ReceiptsService) {}
 
   @Get()
+  @ResponseSchema(receiptInboxListResponseSchema)
   @RequirePermission("accounting:reimbursements:read")
   @Validate({ query: receiptListSchema })
   async list(
@@ -43,6 +46,7 @@ export class ReceiptsController {
   }
 
   @Patch(":expenseId")
+  @ResponseSchema(successSchema)
   @RequirePermission("accounting:reimbursements:manage")
   @Validate({ params: expenseIdParams, body: patchReceiptSchema })
   async patchMetadata(

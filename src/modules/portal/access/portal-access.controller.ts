@@ -32,7 +32,13 @@ import {
   type UpdateGrantInput,
 } from "./dto/portal-access.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  membershipListSchema,
+  membershipRowSchema_,
+  grantListSchema,
+  grantRowSchema,
+} from "./dto/portal-access-response.schemas";
 import { z } from "zod";
 
 const portalMembershipIdParams = z.object({ portalMembershipId: z.string().min(1) }).strict();
@@ -46,6 +52,7 @@ export class PortalAccessController {
 
   @Get("memberships")
   @RequirePermission("build:portal:view")
+  @ResponseSchema(membershipListSchema)
   @Validate({ query: listMembershipsQuerySchema })
   listMemberships(
     @Query() query: ListMembershipsQuery,
@@ -57,6 +64,7 @@ export class PortalAccessController {
   @Post("memberships")
   @HttpCode(201)
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(membershipRowSchema_)
   @Idempotent("portal.createMembership")
   @Validate({ body: createMembershipSchema })
   createMembership(
@@ -68,6 +76,7 @@ export class PortalAccessController {
 
   @Patch("memberships/:portalMembershipId/status")
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(membershipRowSchema_)
   @Validate({ params: portalMembershipIdParams, body: updateMembershipStatusSchema })
   setMembershipStatus(
     @Param("portalMembershipId") portalMembershipId: string,
@@ -84,6 +93,7 @@ export class PortalAccessController {
 
   @Get("grants")
   @RequirePermission("build:portal:view")
+  @ResponseSchema(grantListSchema)
   @Validate({ query: listGrantsQuerySchema })
   listGrants(
     @Query() query: ListGrantsQuery,
@@ -95,6 +105,7 @@ export class PortalAccessController {
   @Post("grants")
   @HttpCode(201)
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(grantRowSchema)
   @Idempotent("portal.createGrant")
   @Validate({ body: createGrantSchema })
   createGrant(
@@ -106,6 +117,7 @@ export class PortalAccessController {
 
   @Patch("grants/:projectClientGrantId")
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(grantRowSchema)
   @Validate({ params: projectClientGrantIdParams, body: updateGrantSchema })
   updateGrant(
     @Param("projectClientGrantId") projectClientGrantId: string,
@@ -119,6 +131,7 @@ export class PortalAccessController {
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("build:clientvisibility:manage")
+  @ResponseSchema(grantRowSchema)
   @Validate({ params: projectClientGrantIdParams })
   revokeGrant(
     @Param("projectClientGrantId") projectClientGrantId: string,

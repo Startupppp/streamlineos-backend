@@ -29,7 +29,13 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  recurringBillListResponseSchema,
+  recurringBillTemplateSchema,
+  recurringBillDeleteResponseSchema,
+  recurringBillRunNowResponseSchema,
+} from "./dto/ap-response.schemas";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -40,6 +46,7 @@ export class RecurringBillsController {
   constructor(private readonly service: RecurringBillsService) {}
 
   @Get()
+  @ResponseSchema(recurringBillListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:read")
   @Validate({ query: listRecurringBillsQuerySchema })
@@ -51,6 +58,7 @@ export class RecurringBillsController {
   }
 
   @Get(":templateId")
+  @ResponseSchema(recurringBillTemplateSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:read")
   @Validate({ params: templateIdParams })
@@ -62,6 +70,7 @@ export class RecurringBillsController {
   }
 
   @Post()
+  @ResponseSchema(recurringBillTemplateSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(201)
@@ -74,6 +83,7 @@ export class RecurringBillsController {
   }
 
   @Patch(":templateId")
+  @ResponseSchema(recurringBillTemplateSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @Validate({ params: templateIdParams, body: updateRecurringBillSchema })
@@ -86,6 +96,7 @@ export class RecurringBillsController {
   }
 
   @Delete(":templateId")
+  @ResponseSchema(recurringBillDeleteResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(200)
@@ -98,6 +109,7 @@ export class RecurringBillsController {
   }
 
   @Post(":templateId/run-now")
+  @ResponseSchema(recurringBillRunNowResponseSchema)
   @BodylessAction()
   @Idempotent("finance.recurring-bill.run-now")
   @UseGuards(PermissionGuard)

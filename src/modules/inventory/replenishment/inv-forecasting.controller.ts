@@ -9,6 +9,8 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvReplenishmentService } from "./inv-replenishment.service";
 import { forecastingSchema, type ForecastingInput } from "./dto/replenishment.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { listForecastingResponseSchema } from "./dto/replenishment-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/forecasting")
@@ -17,6 +19,7 @@ export class InvForecastingController {
   constructor(private readonly replenishment: InvReplenishmentService) {}
 
   @Get()
+  @ResponseSchema(listForecastingResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: forecastingSchema })

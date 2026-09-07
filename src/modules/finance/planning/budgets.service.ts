@@ -272,6 +272,7 @@ export class BudgetsService {
       resourceType: "fin_budget",
       resourceId: String(budgetId),
     });
+    return { success: true as const };
   }
 
   async submitBudget(

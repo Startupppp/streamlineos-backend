@@ -20,6 +20,8 @@ import {
   type ExportEventsInput,
 } from "../dto/event-stream.schemas";
 import { Validate } from "../../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts"
+import { listHrEventsResponseSchema, getDataDictionaryResponseSchema, getEventStreamMetricDefinitionsResponseSchema, exportHrEventsResponseSchema } from "../dto/enterprise-ops-response.schemas"
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/event-stream")
@@ -27,6 +29,7 @@ import { Validate } from "../../../../common/validation/validate.decorator";
 export class EventStreamController {
   constructor(private readonly svc: EventStreamService) {}
 
+  @ResponseSchema(listHrEventsResponseSchema)
   @Get("events")
   @RequirePermission("hr:eventstream:view")
   @Validate({ query: listEventsSchema })
@@ -37,18 +40,21 @@ export class EventStreamController {
     return this.svc.listEvents(user.orgId, query);
   }
 
+  @ResponseSchema(getDataDictionaryResponseSchema)
   @Get("data-dictionary")
   @RequirePermission("hr:eventstream:view")
   dataDictionary() {
     return this.svc.getDataDictionary();
   }
 
+  @ResponseSchema(getEventStreamMetricDefinitionsResponseSchema)
   @Get("metric-definitions")
   @RequirePermission("hr:eventstream:view")
   metricDefinitions() {
     return this.svc.getMetricDefinitions();
   }
 
+  @ResponseSchema(exportHrEventsResponseSchema)
   @Post("export")
   @RequirePermission("hr:analytics:read")
   @Validate({ body: exportEventsSchema })

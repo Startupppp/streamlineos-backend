@@ -28,7 +28,12 @@ import {
 } from "./dto/kb-sources.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { MultipartAction } from "../../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbSourcePageSchema,
+  kbSourceSchema,
+  kbSourceSuccessSchema,
+} from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
 
 const sourceIdParams = z.object({ sourceId: z.coerce.number().int().positive() }).strict();
@@ -41,6 +46,7 @@ export class KbSourcesController {
   @Get("sources")
   @RequirePermission("kb:pages:view")
   @Validate({ query: kbSourcesListQuerySchema })
+  @ResponseSchema(kbSourcePageSchema)
   async list(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: KbSourcesListQuery,
@@ -69,6 +75,7 @@ export class KbSourcesController {
   @RequirePermission("kb:pages:create")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }))
   @HttpCode(201)
+  @ResponseSchema(kbSourceSchema)
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @CurrentUser() u: CurrentUserContext,
@@ -88,6 +95,7 @@ export class KbSourcesController {
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
   @Validate({ body: createKbSourceNoteSchema })
+  @ResponseSchema(kbSourceSchema)
   async createNote(
     @Body() body: CreateKbSourceNoteInput,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +106,7 @@ export class KbSourcesController {
   @Delete("sources/:sourceId")
   @RequirePermission("kb:pages:delete")
   @Validate({ params: sourceIdParams })
+  @ResponseSchema(kbSourceSuccessSchema)
   async remove(
     @Param("sourceId", ParseIntPipe) sourceId: number,
     @CurrentUser() u: CurrentUserContext,

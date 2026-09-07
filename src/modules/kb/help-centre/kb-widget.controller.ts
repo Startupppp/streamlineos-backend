@@ -1,9 +1,12 @@
 import { Controller, Get, Inject, Param, Res } from "@nestjs/common";
 import type { Response } from "express";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { Public } from "../../../common/auth/public.decorator";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbWidgetConfigSchema } from "./dto/kb-helpcenter-response.schemas";
 import { z } from "zod";
 
 const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
@@ -21,6 +24,7 @@ export class KbWidgetController {
 
   @Get(":orgId")
   @Validate({ params: orgIdParams })
+  @ResponseSchema(kbWidgetConfigSchema)
   config(@Param("orgId") orgId: string): {
     orgId: string;
     helpCenterUrl: string;
@@ -39,6 +43,7 @@ export class KbWidgetController {
 
   @Get(":orgId/script")
   @Validate({ params: orgIdParams })
+  @ApiOkResponse({ schema: { type: "string" } })
   script(@Param("orgId") orgId: string, @Res() res: Response): void {
     const helpUrl = `${this.appUrl}/help/${encodeURIComponent(orgId)}`;
     const snippet = `(function () {

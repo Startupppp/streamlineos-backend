@@ -80,42 +80,33 @@ const MIN_ERROR_SHAPE_PCT = 95;
 /**
  * Operations with NO declared response body schema. A ratchet: it may only go DOWN.
  *
- * MEASURED 2026-09-03 (v2 ticket 30) after the rule below was corrected to require a real
- * content schema instead of a bare 2xx key: 25 of 3,642 operations covered, 3,617 not.
- * The gate previously demanded 100% and reported 3642/3642 — it read 100% because the
- * predicate was satisfied by a key NestJS generates for every handler.
+ * CLOSED at 0 on 2026-09-07. Every one of the 3,666 operations declares a response body
+ * schema, so this is now a hard 100% requirement and a new handler without a contract reds
+ * the gate.
  *
- * This number is NOT ratcheted to green and the 100% requirement is NOT restored. Demanding
- * 100% here would red the pipeline on ~3,617 handlers owned by every module lane in the
- * repository, and a gate wired so that it always fails gets muted within a week. Recording the
- * true figure and forbidding it to grow is the honest middle: a gate that reports 0.69%
- * truthfully is worth more than one that reports 100% over 0.027%.
+ * The history matters, because the number this gate reported was wrong twice before it was
+ * right. It first demanded 100% and reported 3642/3642 — satisfied by the bare 2xx response
+ * KEY that NestJS generates for every handler, so the condition was true the moment the
+ * document existed. True coverage was 25 of 3,642. Correcting the predicate produced an
+ * honest 3,617-operation debt, recorded as a ceiling rather than restored to 100% because a
+ * gate that always fails gets muted within a week.
  *
- * Lower it as coverage lands. `check:baseline-integrity` reports any improvement as bankable.
+ * Closing it needed two further mechanisms, both of which fail closed:
  *
- * 3617 -> 3613, MEASURED 2026-09-04 (v2 ticket 04). The ratchet was BREACHED at 3621: six
- * operations were added — `/v2/users`, `/v2/users/{userId}` and four more — and none carried a
- * response schema, so the count grew past a ceiling that may only shrink. It was NOT raised to
- * absorb them; ten handlers were given a real `@ResponseSchema(...)` instead:
- *   POST/PUT   /calendar/events                                    (the projected mutate row)
- *   PATCH/DEL  /calendar/events/{eventId}/occurrences/{...}
- *   POST       /platform/operator-access/grants                     ({ grantId })
- *   POST       /platform/operator-access/grants/{grantId}/approve   ({ ok: true })
- *   POST       /platform/operator-access/grants/{grantId}/reject    ({ ok: true })
- *   DELETE     /platform/operator-access/grants/{grantId}           ({ ok: true })
- *   GET        /platform/operator-access/grants                     (the nine-column projection)
- *   GET        /platform/operator-access/logs                       (the six-column projection)
- * Each is compared against the real handler return by `ResponseContractInterceptor` under
- * NODE_ENV=test, so none of them is decoration.
+ *   `@NoContentResponse()` marks a 204 as deliberate. A handler that stamps it while also
+ *   carrying a `@ResponseSchema`, or without `@HttpCode(204)`, ends up with NO contract
+ *   rather than a false one — a wrong schema is worse than none, since
+ *   `ResponseContractInterceptor` throws on mismatch under NODE_ENV=test.
  *
- * 3613 is a measurement, not arithmetic: the document was rebuilt in memory from this working
- * tree via `generateOpenApiJson()` and the predicate below run over it (3651 operations, 38
- * covered, 3613 uncovered). It is NOT what the COMMITTED openapi.json measures — that document
- * predates both these ten schemas and three routes other lanes added, and still reports 3621.
- * This gate therefore stays RED until openapi.json is regenerated, which this release does once,
- * at the end of the wave, by one agent.
+ *   `isVacuousSchema` rejects a root that says nothing: `{}`, a bare `{ type: "object" }`,
+ *   an open `additionalProperties` record, an array of those, or an allOf/anyOf/oneOf whose
+ *   every member is vacuous. Without it a handler counts as covered by declaring
+ *   `z.record(z.string(), z.unknown())`, which is how three of them had been parked.
+ *
+ * Every schema is compared against the real handler return by `ResponseContractInterceptor`,
+ * so none of this coverage is decoration.
  */
-const RESPONSE_SCHEMA_UNCOVERED_CEILING = 3611;
+const RESPONSE_SCHEMA_UNCOVERED_CEILING = 0;
 
 /**
  * Format a coverage percentage. Never prints "100%" unless covered === total.
@@ -250,6 +241,51 @@ export function schemaResolves(schema, document) {
   return typeof node === "object" && node !== null;
 }
 
+/**
+ * A schema that says nothing is not a contract. `{}` (Zod `unknown`/`any`), a bare
+ * `{ type: "object" }` with no properties, an object whose only shape is an open
+ * `additionalProperties`, or an array of such items would all "resolve" and would
+ * let a route count as covered while describing nothing a client could rely on.
+ * The published body is the envelope, so the check reads `data` inside it.
+ */
+export function isVacuousSchema(schema, document) {
+  if (typeof schema !== "object" || schema === null) return true;
+  if (typeof schema["$ref"] === "string") {
+    let node = document;
+    for (const segment of schema["$ref"].slice(2).split("/")) {
+      if (typeof node !== "object" || node === null) return true;
+      node = node[segment.replaceAll("~1", "/").replaceAll("~0", "~")];
+    }
+    return isVacuousSchema(node, document);
+  }
+  const properties = schema["properties"];
+  if (typeof properties === "object" && properties !== null) {
+    const keys = Object.keys(properties);
+    if (keys.length === 2 && keys.includes("success") && keys.includes("data"))
+      return isVacuousSchema(properties["data"], document);
+    return keys.length === 0 && isOpenAdditional(schema["additionalProperties"]);
+  }
+  if (schema["type"] === "array") return isVacuousSchema(schema["items"], document);
+  if (Array.isArray(schema["anyOf"])) return schema["anyOf"].every((s) => isVacuousSchema(s, document));
+  if (Array.isArray(schema["oneOf"])) return schema["oneOf"].every((s) => isVacuousSchema(s, document));
+  if (Array.isArray(schema["allOf"])) return schema["allOf"].every((s) => isVacuousSchema(s, document));
+  if (schema["type"] === "object" || schema["type"] === undefined)
+    return isOpenAdditional(schema["additionalProperties"]) && schema["enum"] === undefined && schema["const"] === undefined;
+  return false;
+}
+
+function isOpenAdditional(additional) {
+  if (additional === undefined || additional === true) return true;
+  return typeof additional === "object" && additional !== null && Object.keys(additional).length === 0;
+}
+
+/** A 204 stamped by `@NoContentResponse` — declared, not auto-generated, and body-less by HTTP. */
+export function responseIsDeclaredNoContent(code, response) {
+  if (code !== "204") return false;
+  if (typeof response !== "object" || response === null) return false;
+  return response["x-no-content"] === true && !("content" in response);
+}
+
 /** Does this one response object declare a body schema that resolves? */
 export function responseHasResolvableSchema(response, document) {
   if (typeof response !== "object" || response === null) return false;
@@ -259,7 +295,8 @@ export function responseHasResolvableSchema(response, document) {
     (mediaType) =>
       typeof mediaType === "object" &&
       mediaType !== null &&
-      schemaResolves(mediaType["schema"], document),
+      schemaResolves(mediaType["schema"], document) &&
+      !isVacuousSchema(mediaType["schema"], document),
   );
 }
 export function findMissingResponseSchemas(document) {
@@ -281,7 +318,9 @@ export function findMissingResponseSchemas(document) {
         return num >= 200 && num < 300;
       });
       if (twoXxCodes.length > 0) {
-        const covered = twoXxCodes.some((code) => responseHasResolvableSchema(responses[code], document));
+        const covered = twoXxCodes.some(
+          (code) => responseIsDeclaredNoContent(code, responses[code]) || responseHasResolvableSchema(responses[code], document),
+        );
         if (!covered) {
           violations.push({
             method: method.toUpperCase(),
@@ -540,7 +579,7 @@ if (SELF_TEST) {
     { path: "/a", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/Thing" } } } } } },
   ]);
   liveRefDoc.components = liveRefDoc.components ?? {};
-  liveRefDoc.components.schemas = { ...(liveRefDoc.components.schemas ?? {}), Thing: { type: "object" } };
+  liveRefDoc.components.schemas = { ...(liveRefDoc.components.schemas ?? {}), Thing: { type: "object", properties: { id: { type: "string" } } } };
   if (findMissingResponseSchemas(liveRefDoc).length !== 0)
     fail("live-ref-is-coverage", "a $ref whose target exists must count as covered");
   else pass("live-ref-is-coverage — a resolvable $ref passes");
@@ -562,8 +601,41 @@ if (SELF_TEST) {
     fail("bad-missing-response-schemas", `expected 2 violations, got ${JSON.stringify(rsBadResult)}`);
   else pass("bad-missing-response-schemas — ops without 2xx entry or declared content are flagged");
 
+  const responseVacuous = makeFullDoc([
+    { path: "/a", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: {} } } } } },
+    { path: "/b", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "object" } } } } } },
+    { path: "/c", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "object", additionalProperties: {} } } } } } },
+    { path: "/d", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, data: {} }, required: ["success", "data"] } } } } } },
+    { path: "/e", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "array", items: {} } } } } } },
+    { path: "/f", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: { allOf: [{ type: "object" }, {}] } } } } } },
+  ]);
+  const rsVacuousResult = findMissingResponseSchemas(responseVacuous);
+  if (rsVacuousResult.length !== 6)
+    fail("vacuous-root-schemas", `expected 6 violations, got ${JSON.stringify(rsVacuousResult)}`);
+  else pass("vacuous-root-schemas — {}, a bare object, an open record, an enveloped {}, an array of {} and an allOf of vacuous members do not count");
+
+  const responseVacuousNegatives = makeFullDoc([
+    { path: "/a", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, data: { type: "array", items: { type: "object", properties: { id: { type: "string" } } } } } } } } } } },
+    { path: "/b", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "object", additionalProperties: { type: "number" } } } } } } },
+    { path: "/c", method: "get", responses: { "200": { description: "OK", content: { "text/plain": { schema: { type: "string" } } } } } },
+    { path: "/d", method: "delete", responses: { "204": { description: "No Content", "x-no-content": true } } },
+    { path: "/e", method: "get", responses: { "200": { description: "OK", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" }, data: { allOf: [{ type: "object", properties: { id: { type: "string" } } }, { type: "object", properties: { name: { type: "string" } } }] } }, required: ["success", "data"] } } } } } },
+  ]);
+  const rsVacuousNeg = findMissingResponseSchemas(responseVacuousNegatives);
+  if (rsVacuousNeg.length !== 0)
+    fail("non-vacuous-schemas-pass", `expected 0 violations, got ${JSON.stringify(rsVacuousNeg)}`);
+  else pass("non-vacuous-schemas-pass — an enveloped typed array, a typed record, a text body, a declared 204 and an allOf intersection of typed objects count");
+
+  const bare204 = makeFullDoc([
+    { path: "/d", method: "delete", responses: { "204": { description: "" } } },
+  ]);
+  const bare204Result = findMissingResponseSchemas(bare204);
+  if (bare204Result.length !== 1)
+    fail("bare-204-is-not-declared", `expected 1 violation, got ${JSON.stringify(bare204Result)}`);
+  else pass("bare-204-is-not-declared — an auto-generated 204 without the x-no-content stamp is flagged");
+
   const responseSchemaWithNon2xx = makeFullDoc([
-    { path: "/b", method: "get", responses: { "405": { description: "Method Not Allowed", content: { "application/json": { schema: { type: "object" } } } } } },
+    { path: "/b", method: "get", responses: { "405": { description: "Method Not Allowed", content: { "application/json": { schema: { type: "object", properties: { allowed: { type: "array", items: { type: "string" } } } } } } } } },
   ]);
   const rsNon2xxResult = findMissingResponseSchemas(responseSchemaWithNon2xx);
   if (rsNon2xxResult.length !== 0)

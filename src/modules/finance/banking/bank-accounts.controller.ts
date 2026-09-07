@@ -29,6 +29,12 @@ import {
 } from "./dto/bank-accounts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  bankAccountListResponseSchema,
+  bankAccountSchema,
+  bankTransactionListResponseSchema,
+} from "./dto/banking-response.schemas";
 
 const bankAccountIdParams = z.object({ bankAccountId: z.coerce.number().int().positive() }).strict();
 
@@ -39,6 +45,7 @@ export class BankAccountsController {
   constructor(private readonly service: BankAccountsService) {}
 
   @Get()
+  @ResponseSchema(bankAccountListResponseSchema)
   @RequirePermission("accounting:banking:read")
   @Validate({ query: bankAccountsQuerySchema })
   list(
@@ -49,6 +56,7 @@ export class BankAccountsController {
   }
 
   @Post()
+  @ResponseSchema(bankAccountSchema)
   @HttpCode(201)
   @RequirePermission("accounting:banking:manage")
   @Validate({ body: createBankAccountSchema })
@@ -60,6 +68,7 @@ export class BankAccountsController {
   }
 
   @Patch(":bankAccountId")
+  @ResponseSchema(bankAccountSchema)
   @RequirePermission("accounting:banking:manage")
   @Validate({ params: bankAccountIdParams, body: updateBankAccountSchema })
   update(
@@ -71,6 +80,7 @@ export class BankAccountsController {
   }
 
   @Get(":bankAccountId")
+  @ResponseSchema(bankAccountSchema)
   @RequirePermission("accounting:banking:read")
   @Validate({ params: bankAccountIdParams })
   findOne(
@@ -81,6 +91,7 @@ export class BankAccountsController {
   }
 
   @Get(":bankAccountId/transactions")
+  @ResponseSchema(bankTransactionListResponseSchema)
   @RequirePermission("accounting:banking:read")
   @Validate({ params: bankAccountIdParams, query: bankTransactionsQuerySchema })
   listTransactions(

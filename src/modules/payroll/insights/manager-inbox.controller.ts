@@ -20,8 +20,14 @@ import { ManagerInboxService } from "./manager-inbox.service";
 import { TeamRewardsService } from "./team-rewards.service";
 import { managerRejectSchema, type ManagerReject } from "./dto/insights.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  managerInboxResultSchema,
+  teamRewardsResultSchema,
+} from "./dto/manager-team-response.schemas";
+import { totalRewardsStatementSchema } from "./dto/ess-response.schemas";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 const reimbursementIdParams = z.object({ reimbursementId: z.coerce.number().int().positive() }).strict();
@@ -41,6 +47,7 @@ export class ManagerInboxController {
    */
   @Get("inbox")
   @RequirePermission("self:payroll")
+  @ResponseSchema(managerInboxResultSchema)
   getInbox(@CurrentUser() u: CurrentUserContext) {
     return this.inbox.getInbox(u.orgId, u.userId);
   }
@@ -48,6 +55,7 @@ export class ManagerInboxController {
   /** Illustrative team total-rewards + CTC pay compression for direct reports. */
   @Get("team-rewards")
   @RequirePermission("self:payroll")
+  @ResponseSchema(teamRewardsResultSchema)
   getTeamRewards(@CurrentUser() u: CurrentUserContext) {
     return this.teamRewards.getTeamRewards(u.orgId, u.userId);
   }
@@ -56,6 +64,7 @@ export class ManagerInboxController {
   @Get("team-rewards/:userId")
   @RequirePermission("self:payroll")
   @Validate({ params: userIdParams })
+  @ResponseSchema(totalRewardsStatementSchema)
   getReportRewards(
     @CurrentUser() u: CurrentUserContext,
     @Param("userId") userId: string,
@@ -69,6 +78,7 @@ export class ManagerInboxController {
   @HttpCode(200)
   @RequirePermission("self:payroll")
   @Validate({ params: reimbursementIdParams })
+  @ResponseSchema(successSchema)
   approveReimbursement(
     @CurrentUser() u: CurrentUserContext,
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
@@ -81,6 +91,7 @@ export class ManagerInboxController {
   @HttpCode(200)
   @RequirePermission("self:payroll")
   @Validate({ params: reimbursementIdParams, body: managerRejectSchema })
+  @ResponseSchema(successSchema)
   rejectReimbursement(
     @CurrentUser() u: CurrentUserContext,
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
@@ -100,6 +111,7 @@ export class ManagerInboxController {
   @HttpCode(200)
   @RequirePermission("self:payroll")
   @Validate({ params: loanIdParams })
+  @ResponseSchema(successSchema)
   approveLoan(
     @CurrentUser() u: CurrentUserContext,
     @Param("loanId", ParseIntPipe) loanId: number,
@@ -113,6 +125,7 @@ export class ManagerInboxController {
   @HttpCode(200)
   @RequirePermission("self:payroll")
   @Validate({ params: loanIdParams })
+  @ResponseSchema(successSchema)
   rejectLoan(
     @CurrentUser() u: CurrentUserContext,
     @Param("loanId", ParseIntPipe) loanId: number,

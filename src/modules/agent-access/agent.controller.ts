@@ -25,6 +25,18 @@ import {
 } from "../build/core/dto/projects.schemas";
 import { agentCommentSchema, agentUpdateTicketSchema, type AgentCommentInput, type AgentUpdateTicketInput } from "./dto/agent-tokens.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  agentMeSchema,
+  agentTicketDetailSchema,
+  allWorkSchema,
+  projectRowSchema,
+  ticketCommentRowSchema,
+  ticketListPageSchema,
+  ticketRowSchema,
+  updateTicketSchema,
+} from "./dto/agent-response.schemas";
+import { projectListPageSchema } from "../build/core/dto/build-core-response.schemas";
 import { z } from "zod";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
@@ -45,12 +57,14 @@ export class AgentController {
 
   @Get("me")
   @RequirePermission("build:view")
+  @ResponseSchema(agentMeSchema)
   getMe(@CurrentUser() u: CurrentUserContext) {
     return { userId: u.userId, orgId: u.orgId };
   }
 
   @Get("projects")
   @RequirePermission("build:view")
+  @ResponseSchema(projectListPageSchema)
   @Validate({ query: listProjectsSchema })
   listProjects(
     @Query() query: ListProjectsInput,
@@ -62,6 +76,7 @@ export class AgentController {
   @Post("projects")
   @RequirePermission("build:create")
   @HttpCode(201)
+  @ResponseSchema(projectRowSchema)
   @Validate({ body: createProjectSchema })
   createProject(
     @Body() body: CreateProjectInput,
@@ -73,6 +88,7 @@ export class AgentController {
   @Post("projects/:projectId/tickets")
   @RequirePermission("build:tickets:create")
   @HttpCode(201)
+  @ResponseSchema(ticketRowSchema)
   @Validate({ params: projectIdParams, body: createTicketSchema })
   createTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -84,6 +100,7 @@ export class AgentController {
 
   @Get("work")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(allWorkSchema)
   @Validate({ query: allWorkQuerySchema })
   getAllWork(
     @Query() query: AllWorkQuery,
@@ -94,6 +111,7 @@ export class AgentController {
 
   @Get("projects/:projectId/tickets")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(ticketListPageSchema)
   @Validate({ params: projectIdParams, query: ticketsListQuerySchema })
   listTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -105,6 +123,7 @@ export class AgentController {
 
   @Get("tickets/:ticketId")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(agentTicketDetailSchema)
   @Validate({ params: ticketIdParams })
   async getTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -116,6 +135,7 @@ export class AgentController {
 
   @Patch("tickets/:ticketId")
   @RequirePermission("build:tickets:update")
+  @ResponseSchema(updateTicketSchema)
   @Validate({ params: ticketIdParams, body: agentUpdateTicketSchema })
   async updateTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -128,6 +148,7 @@ export class AgentController {
   @Post("tickets/:ticketId/comments")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
+  @ResponseSchema(ticketCommentRowSchema)
   @Validate({ params: ticketIdParams, body: agentCommentSchema })
   async addComment(
     @Param("ticketId", ParseIntPipe) ticketId: number,

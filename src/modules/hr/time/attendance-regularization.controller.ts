@@ -15,7 +15,13 @@ import {
 } from "./dto/attendance.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  regularizationRowSchema,
+  regularizationListResponseSchema,
+  regularizationApplyResponseSchema,
+} from "./dto/time-attendance-response.schemas";
 
 const regularizationIdParams = z.object({ regularizationId: z.coerce.number().int().positive() }).strict();
 
@@ -40,6 +46,7 @@ export class AttendanceRegularizationController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(regularizationRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:regularize")
   @Validate({ body: createAttendanceRegularizationSchema })
@@ -51,6 +58,7 @@ export class AttendanceRegularizationController {
   }
 
   @Get()
+  @ResponseSchema(regularizationListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   @Validate({ query: listRegularizationsSchema })
@@ -64,6 +72,7 @@ export class AttendanceRegularizationController {
   @Post(":regularizationId/apply")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(regularizationApplyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: regularizationIdParams })
@@ -77,6 +86,7 @@ export class AttendanceRegularizationController {
   @Post(":regularizationId/reject")
   @Idempotent("hr.attendance-regularization.reject")
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: regularizationIdParams, body: rejectRegularizationSchema })

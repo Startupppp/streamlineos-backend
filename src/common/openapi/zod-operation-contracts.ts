@@ -1,4 +1,4 @@
-import { PATH_METADATA, ROUTE_ARGS_METADATA } from "@nestjs/common/constants";
+import { HTTP_CODE_METADATA, PATH_METADATA, ROUTE_ARGS_METADATA } from "@nestjs/common/constants";
 import { RouteParamtypes } from "@nestjs/common/enums/route-paramtypes.enum";
 import { SetMetadata, type INestApplication } from "@nestjs/common";
 import { DiscoveryService, MetadataScanner } from "@nestjs/core";
@@ -14,12 +14,16 @@ import { DEPRECATION_KEY } from "../deprecation/deprecated.decorator";
 export const RESPONSE_SCHEMA = "openapi:response-schema";
 export const BODYLESS_ACTION = "openapi:bodyless";
 export const MULTIPART_ACTION = "openapi:multipart";
+export const NO_CONTENT_RESPONSE = "openapi:no-content";
 
 export const ResponseSchema = (schema: ZodType): MethodDecorator =>
   SetMetadata(RESPONSE_SCHEMA, schema);
 
 export const BodylessAction = (): MethodDecorator =>
   SetMetadata(BODYLESS_ACTION, true);
+
+export const NoContentResponse = (): MethodDecorator =>
+  SetMetadata(NO_CONTENT_RESPONSE, true);
 
 export interface MultipartSpec {
   file: string;
@@ -61,6 +65,8 @@ export interface OperationContract {
   params?: JsonSchema;
   idempotencyCommand?: string;
   response?: JsonSchema;
+  status?: number;
+  noContent?: true;
   bodyless?: true;
   multipart?: JsonSchema;
   deprecated?: true;
@@ -195,8 +201,17 @@ export function scanOperationContracts(
       if (typeof command === "string" && command !== "")
         contract.idempotencyCommand = command;
 
+      const statusRaw: unknown = Reflect.getMetadata(HTTP_CODE_METADATA, handler);
+      if (typeof statusRaw === "number") contract.status = statusRaw;
+
       const responseRaw: unknown = Reflect.getMetadata(RESPONSE_SCHEMA, handler);
-      if (responseRaw instanceof ZodType) {
+      const noContent: unknown = Reflect.getMetadata(NO_CONTENT_RESPONSE, handler);
+      if (noContent === true && responseRaw instanceof ZodType)
+        unconvertible.push(`${operationId}.response: @NoContentResponse and @ResponseSchema contradict each other`);
+      else if (noContent === true && statusRaw !== 204)
+        unconvertible.push(`${operationId}.response: @NoContentResponse requires @HttpCode(204), found ${typeof statusRaw === "number" ? String(statusRaw) : "the default status"}`);
+      else if (noContent === true) contract.noContent = true;
+      else if (responseRaw instanceof ZodType) {
         const result = toJsonSchema(responseRaw);
         if (result.ok) {
           contract.response = result.schema;

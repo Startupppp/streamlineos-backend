@@ -27,6 +27,9 @@ import {
   type ExceptionFilterInput,
 } from "./dto/runs.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema, cursorPageSchema } from "../../../common/openapi/response-envelopes";
+import { exceptionItemSchema } from "./dto/runs-response.schemas";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -41,6 +44,7 @@ export class ExceptionsController {
   @Get()
   @RequirePermission("payroll:runs:view")
   @Validate({ params: runIdParams, query: exceptionFilterSchema })
+  @ResponseSchema(cursorPageSchema(exceptionItemSchema))
   async list(
     @Param("runId", ParseIntPipe) runId: number,
     @Query() query: ExceptionFilterInput,
@@ -61,6 +65,7 @@ export class ExceptionsController {
   @Patch(":exceptionId/resolve")
   @RequirePermission("payroll:runs:update")
   @Validate({ params: runAndExceptionIdParams, body: resolveExceptionSchema })
+  @ResponseSchema(successSchema)
   async resolve(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
@@ -80,6 +85,7 @@ export class ExceptionsController {
   @Patch(":exceptionId/override")
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runAndExceptionIdParams, body: overrideExceptionSchema })
+  @ResponseSchema(successSchema)
   async override(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("exceptionId", ParseIntPipe) exceptionId: number,

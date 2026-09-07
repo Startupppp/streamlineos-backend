@@ -38,7 +38,15 @@ import {
 } from "./dto/directory.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import {
+  listPeopleSchema,
+  personSchema,
+  listWorkersSchema,
+  workerDetailSchema,
+  engagementRowSchema,
+  engagementListSchema,
+} from "./dto/directory-response.schemas";
 
 const organizationPersonIdParams = z.object({ organizationPersonId: z.string().min(1) }).strict();
 const workerIdParams = z.object({ workerId: z.string().min(1) }).strict();
@@ -51,6 +59,7 @@ export class DirectoryController {
 
   @Get("people")
   @Universal()
+  @ResponseSchema(listPeopleSchema)
   @Validate({ query: listPeopleQuerySchema })
   listPeople(
     @Query() query: ListPeopleQuery,
@@ -61,6 +70,7 @@ export class DirectoryController {
 
   @Get("people/:organizationPersonId")
   @Universal()
+  @ResponseSchema(personSchema)
   @Validate({ params: organizationPersonIdParams })
   getPerson(
     @Param("organizationPersonId") organizationPersonId: string,
@@ -73,6 +83,7 @@ export class DirectoryController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:people:create")
+  @ResponseSchema(personSchema)
   @Validate({ body: createPersonSchema })
   createPerson(
     @Body() body: CreatePersonInput,
@@ -84,6 +95,7 @@ export class DirectoryController {
   @Patch("people/:organizationPersonId")
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:people:update")
+  @ResponseSchema(personSchema)
   @Validate({ params: organizationPersonIdParams, body: updatePersonSchema })
   updatePerson(
     @Param("organizationPersonId") organizationPersonId: string,
@@ -97,6 +109,7 @@ export class DirectoryController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:people:delete")
+  @NoContentResponse()
   @Validate({ params: organizationPersonIdParams })
   deletePerson(
     @Param("organizationPersonId") organizationPersonId: string,
@@ -108,6 +121,7 @@ export class DirectoryController {
   @Get("workers")
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:view")
+  @ResponseSchema(listWorkersSchema)
   @Validate({ query: listWorkersQuerySchema })
   listWorkers(
     @Query() query: ListWorkersQuery,
@@ -119,6 +133,7 @@ export class DirectoryController {
   @Get("workers/:workerId")
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:view")
+  @ResponseSchema(workerDetailSchema)
   @Validate({ params: workerIdParams })
   getWorker(
     @Param("workerId") workerId: string,
@@ -131,6 +146,7 @@ export class DirectoryController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:manage")
+  @ResponseSchema(workerDetailSchema)
   @Validate({ body: createWorkerSchema })
   createWorker(
     @Body() body: CreateWorkerInput,
@@ -142,6 +158,7 @@ export class DirectoryController {
   @Get("workers/:workerId/engagements")
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:view")
+  @ResponseSchema(engagementListSchema)
   @Validate({ params: workerIdParams })
   listEngagements(
     @Param("workerId") workerId: string,
@@ -154,6 +171,7 @@ export class DirectoryController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:manage")
+  @ResponseSchema(engagementRowSchema)
   @Validate({ params: workerIdParams, body: createEngagementSchema })
   createEngagement(
     @Param("workerId") workerId: string,
@@ -166,6 +184,7 @@ export class DirectoryController {
   @Patch("engagements/:workerEngagementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:manage")
+  @ResponseSchema(engagementRowSchema)
   @Validate({ params: workerEngagementIdParams, body: updateEngagementSchema })
   updateEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
@@ -185,6 +204,7 @@ export class DirectoryController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:manage")
+  @ResponseSchema(engagementRowSchema)
   @Validate({ params: workerEngagementIdParams })
   cancelEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
@@ -197,6 +217,7 @@ export class DirectoryController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:terminate")
+  @ResponseSchema(engagementRowSchema)
   @Validate({ params: workerEngagementIdParams, body: terminateEngagementSchema })
   terminateEngagement(
     @Param("workerEngagementId") workerEngagementId: string,

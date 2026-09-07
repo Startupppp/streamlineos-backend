@@ -29,6 +29,8 @@ import {
 } from "./dto/interview-questions.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { interviewQuestionRowSchema, successSchema } from "./dto/config-response.schemas";
 import { z } from "zod";
 
 const questionIdParams = z.object({ questionId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +42,7 @@ export class HrInterviewQuestionsController {
   constructor(private readonly interviewQuestions: HrInterviewQuestionsService) {}
 
   @Get()
+  @ResponseSchema(z.array(interviewQuestionRowSchema))
   @RequirePermission("hr:employees:view")
   @Validate({ query: interviewQuestionListQuerySchema })
   list(
@@ -50,6 +53,7 @@ export class HrInterviewQuestionsController {
   }
 
   @Post()
+  @ResponseSchema(interviewQuestionRowSchema)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
   @Validate({ body: createInterviewQuestionSchema })
@@ -61,6 +65,7 @@ export class HrInterviewQuestionsController {
   }
 
   @Patch(":questionId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: questionIdParams, body: updateInterviewQuestionSchema })
   async update(
@@ -74,6 +79,7 @@ export class HrInterviewQuestionsController {
   }
 
   @Delete(":questionId")
+  @NoContentResponse()
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: questionIdParams })

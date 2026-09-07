@@ -29,7 +29,20 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbFeedbackListSchema,
+  kbCommentListSchema,
+  kbCommentRowSchema,
+  kbAttachmentListSchema,
+  kbAttachmentRowSchema,
+  kbAttachmentDownloadSchema,
+  kbAskResultSchema,
+  kbIndexStatusSchema,
+  kbReindexArticleSchema,
+  kbReindexAllSchema,
+  successSchema as kbEngSuccessSchema,
+} from "./dto/support-kb-response.schemas";
 import { z } from "zod";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
@@ -57,6 +70,7 @@ export class SupportKbEngagementController {
   @Get("articles/:articleId/feedback")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @ResponseSchema(kbFeedbackListSchema)
   listFeedback(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +81,7 @@ export class SupportKbEngagementController {
   @Get("articles/:articleId/comments")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @ResponseSchema(kbCommentListSchema)
   listComments(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +94,7 @@ export class SupportKbEngagementController {
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
   @Validate({ body: createKbCommentSchema })
+  @ResponseSchema(kbCommentRowSchema)
   createComment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: CreateKbCommentInput,
@@ -90,6 +106,7 @@ export class SupportKbEngagementController {
   @Delete("articles/:articleId/comments/:commentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
+  @ResponseSchema(kbEngSuccessSchema)
   deleteComment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
@@ -101,6 +118,7 @@ export class SupportKbEngagementController {
   @Get("articles/:articleId/attachments")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
+  @ResponseSchema(kbAttachmentListSchema)
   listAttachments(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -113,6 +131,7 @@ export class SupportKbEngagementController {
   @RequirePermission("support:kb:manage")
   @HttpCode(201)
   @Validate({ params: articleIdParams, body: createKbAttachmentSchema })
+  @ResponseSchema(kbAttachmentRowSchema)
   createAttachment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: CreateKbAttachmentInput,
@@ -125,6 +144,7 @@ export class SupportKbEngagementController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @Validate({ params: articleAndAttachmentIdParams })
+  @ResponseSchema(kbEngSuccessSchema)
   deleteAttachment(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("attachmentId", ParseIntPipe) attachmentId: number,
@@ -137,6 +157,7 @@ export class SupportKbEngagementController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
   @Validate({ params: articleAndAttachmentIdParams })
+  @ResponseSchema(kbAttachmentDownloadSchema)
   getAttachmentDownloadUrl(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("attachmentId", ParseIntPipe) attachmentId: number,
@@ -150,6 +171,7 @@ export class SupportKbEngagementController {
   @RequirePermission("support:kb:view")
   @HttpCode(200)
   @Validate({ body: kbAskSchema })
+  @ResponseSchema(kbAskResultSchema)
   askQuestion(
     @Body() body: KbAskInput,
     @CurrentUser() u: CurrentUserContext,
@@ -161,6 +183,7 @@ export class SupportKbEngagementController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:view")
   @Validate({ params: articleIdParams })
+  @ResponseSchema(kbIndexStatusSchema)
   getArticleIndexStatus(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -174,6 +197,7 @@ export class SupportKbEngagementController {
   @RequirePermission("support:kb:manage")
   @HttpCode(200)
   @Validate({ params: articleIdParams })
+  @ResponseSchema(kbReindexArticleSchema)
   reindexArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -187,6 +211,7 @@ export class SupportKbEngagementController {
   @RequirePermission("support:kb:manage")
   @HttpCode(200)
   @Validate({ query: reindexAllQuery })
+  @ResponseSchema(kbReindexAllSchema)
   reindexAll(@Query() query: ReindexAllQuery, @CurrentUser() u: CurrentUserContext) {
     return this.reindex.reindexAll(u.orgId, query.afterArticleId);
   }

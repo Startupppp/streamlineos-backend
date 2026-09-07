@@ -28,6 +28,8 @@ import {
 } from "./dto/forms.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { formRowSchema } from "./dto/forms-response.schemas";
 
 const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
 
@@ -39,6 +41,7 @@ export class FormsController {
 
   @Get()
   @RequirePermission("build:forms:view")
+  @ResponseSchema(z.array(formRowSchema))
   @Validate({ query: listFormsQuerySchema })
   listForms(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -50,6 +53,7 @@ export class FormsController {
 
   @Get(":formId")
   @RequirePermission("build:forms:view")
+  @ResponseSchema(formRowSchema)
   @Validate({ params: formIdParams })
   getForm(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -62,6 +66,7 @@ export class FormsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:forms:manage")
+  @ResponseSchema(formRowSchema)
   @Validate({ body: createFormSchema })
   createForm(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -73,6 +78,7 @@ export class FormsController {
 
   @Patch(":formId")
   @RequirePermission("build:forms:manage")
+  @ResponseSchema(formRowSchema)
   @Validate({ params: formIdParams, body: updateFormSchema })
   updateForm(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -86,6 +92,7 @@ export class FormsController {
   @Delete(":formId")
   @RequirePermission("build:forms:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: formIdParams })
   deleteForm(
     @Param("projectId", ParseIntPipe) projectId: number,

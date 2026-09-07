@@ -20,7 +20,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbIndexingService } from "./kb-indexing.service";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbReindexPageSchema, kbReindexAllSchema } from "./dto/kb-retrieval-response.schemas";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -78,6 +79,7 @@ export class KbPageIndexingController {
   @RequirePermission("kb:pages:manage")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: pageIdParams })
+  @ResponseSchema(kbReindexPageSchema)
   async reindexPage(
     @CurrentUser() user: CurrentUserContext,
     @Param("pageId", ParseIntPipe) pageId: number,
@@ -97,6 +99,7 @@ export class KbPageIndexingController {
   @NoTenantTransaction()
   @RequirePermission("kb:settings:manage")
   @HttpCode(HttpStatus.OK)
+  @ResponseSchema(kbReindexAllSchema)
   async reindexAllPages(
     @CurrentUser() user: CurrentUserContext,
     @Query("afterPageId") afterPageId?: string,

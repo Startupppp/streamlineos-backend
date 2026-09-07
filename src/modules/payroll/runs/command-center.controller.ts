@@ -12,8 +12,10 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { CommandCenterService } from "./command-center.service";
 import { commandCenterQuerySchema, type CommandCenterQuery } from "./dto/runs.schemas";
+import { commandCenterResponseSchema } from "./dto/command-center-response.schemas";
 
 @RequireModule("payroll")
 @Controller("payroll/command-center")
@@ -23,6 +25,7 @@ export class CommandCenterController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
+  @ResponseSchema(commandCenterResponseSchema)
   @Validate({ query: commandCenterQuerySchema })
   async get(
     @Query() query: CommandCenterQuery,

@@ -7,6 +7,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SearchService } from "./search.service";
 import { searchQuerySchema, type SearchQueryInput } from "./dto/search.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { globalSearchResponseSchema } from "./dto/search-response.schemas";
 
 @Controller("search")
 export class SearchController {
@@ -17,6 +19,7 @@ export class SearchController {
   @Validate({ query: searchQuerySchema })
   @UseGuards(RateLimitGuard)
   @UseRateLimit("search:global")
+  @ResponseSchema(globalSearchResponseSchema)
   globalSearch(
     @Query() query: SearchQueryInput,
     @CurrentUser() u: CurrentUserContext,

@@ -56,6 +56,14 @@ import { ApiAiResultStream } from "../../ai/core/streaming/ai-result-stream-cont
 import { COMMAND_FENCE_STORE, type CommandFenceStore } from "../../../common/idempotency/command-fence-store";
 import { claimAiStreamCommand, completeAiStreamCommand } from "../../ai/core/streaming/ai-stream-command";
 import { kbAskResultSchema } from "./dto/kb-ask-result.schema";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbAskAnswerSchema,
+  kbChatHistoryPageSchema,
+  kbChatSuccessSchema,
+  kbConversationListPageSchema,
+  kbConversationResponseSchema,
+} from "./dto/kb-retrieval-response.schemas";
 import { z } from "zod";
 
 const conversationIdParams = z.object({ conversationId: z.coerce.number().int().positive() }).strict();
@@ -103,6 +111,7 @@ export class KbAskController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("kb:ask")
   @Validate({ body: askSchema })
+  @ResponseSchema(kbAskAnswerSchema)
   async askQuestion(@Body() body: AskInput, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
     const membershipId = actingMembershipId(u.principal) ?? 0;
     /**
@@ -221,6 +230,7 @@ export class KbAskController {
 
   @Get("ask/history")
   @RequirePermission("kb:pages:view")
+  @ResponseSchema(kbChatHistoryPageSchema)
   async getHistory(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = chatHistoryQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
@@ -232,6 +242,7 @@ export class KbAskController {
 
   @Delete("ask/history")
   @RequirePermission("kb:pages:view")
+  @ResponseSchema(kbChatSuccessSchema)
   async clearHistory(@CurrentUser() u: CurrentUserContext): Promise<{ success: boolean }> {
     await this.history.clear(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0);
     return { success: true };
@@ -239,6 +250,7 @@ export class KbAskController {
 
   @Get("ask/conversations")
   @RequirePermission("kb:pages:view")
+  @ResponseSchema(kbConversationListPageSchema)
   async listConversations(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = kbConversationsListQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
@@ -252,6 +264,7 @@ export class KbAskController {
   @RequirePermission("kb:pages:view")
   @HttpCode(201)
   @Validate({ body: kbConversationCreateSchema })
+  @ResponseSchema(kbConversationResponseSchema)
   async createConversation(@Body() body: z.infer<typeof kbConversationCreateSchema>, @CurrentUser() u: CurrentUserContext) {
     return this.history.createConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, body.title);
   }
@@ -259,6 +272,7 @@ export class KbAskController {
   @Patch("ask/conversations/:conversationId")
   @RequirePermission("kb:pages:view")
   @Validate({ params: conversationIdParams, body: kbConversationRenameSchema })
+  @ResponseSchema(kbConversationResponseSchema)
   async renameConversation(
     @Param("conversationId", ParseIntPipe) conversationId: number,
     @Body() body: z.infer<typeof kbConversationRenameSchema>,
@@ -270,6 +284,7 @@ export class KbAskController {
   @Delete("ask/conversations/:conversationId")
   @RequirePermission("kb:pages:view")
   @Validate({ params: conversationIdParams })
+  @ResponseSchema(kbChatSuccessSchema)
   async deleteConversation(
     @Param("conversationId", ParseIntPipe) conversationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -281,6 +296,7 @@ export class KbAskController {
   @Get("ask/conversations/:conversationId/messages")
   @RequirePermission("kb:pages:view")
   @Validate({ params: conversationIdParams })
+  @ResponseSchema(kbChatHistoryPageSchema)
   async getConversationMessages(
     @Param("conversationId", ParseIntPipe) conversationId: number,
     @Query() query: unknown,

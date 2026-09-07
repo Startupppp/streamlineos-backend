@@ -19,7 +19,12 @@ import { createTeamEventSchema, type CreateTeamEventInput } from "./dto/hr-direc
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  teamEventsListSchema,
+  teamEventCreateSchema,
+  teamEventJoinSchema,
+} from "./dto/directory-response.schemas";
 
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
 
@@ -30,12 +35,14 @@ export class TeamEventsController {
   constructor(private readonly teamEvents: TeamEventsService) {}
 
   @Get()
+  @ResponseSchema(teamEventsListSchema)
   @RequirePermission("hr:employees:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.teamEvents.list(u.orgId);
   }
 
   @Post()
+  @ResponseSchema(teamEventCreateSchema)
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
   @Validate({ body: createTeamEventSchema })
@@ -48,6 +55,7 @@ export class TeamEventsController {
 
   @Post(":eventId")
   @BodylessAction()
+  @ResponseSchema(teamEventJoinSchema)
   @HttpCode(201)
   @RequirePermission("hr:employees:view")
   @Validate({ params: eventIdParams })

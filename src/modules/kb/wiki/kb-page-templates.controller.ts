@@ -20,6 +20,8 @@ import {
   type CreatePageTemplateInput,
 } from "./dto/kb-page-templates.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { kbPageTemplateListSchema, kbPageTemplateSchema } from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
@@ -31,6 +33,7 @@ export class KbPageTemplatesController {
 
   @Get("page-templates")
   @RequirePermission("kb:pages:view")
+  @ResponseSchema(kbPageTemplateListSchema)
   async list(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
     return this.templates.list(u.orgId);
   }
@@ -38,6 +41,7 @@ export class KbPageTemplatesController {
   @Post("page-templates")
   @RequirePermission("kb:templates:manage")
   @Validate({ body: createPageTemplateSchema })
+  @ResponseSchema(kbPageTemplateSchema)
   async create(
     @Body() body: CreatePageTemplateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -47,6 +51,7 @@ export class KbPageTemplatesController {
 
   @Delete("page-templates/:templateId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("kb:templates:manage")
   @Validate({ params: templateIdParams })
   async remove(

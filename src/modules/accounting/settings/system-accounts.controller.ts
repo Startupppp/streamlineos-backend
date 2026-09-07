@@ -14,6 +14,8 @@ import {
 } from "./dto/settings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { systemAccountListResponseSchema, upsertSystemAccountResponseSchema } from "./dto/settings-response.schemas";
 
 const purposeParams = z.object({ purpose: systemAccountPurposeSchema }).strict();
 
@@ -24,12 +26,14 @@ export class SystemAccountsController {
   constructor(private readonly svc: SystemAccountsService) {}
 
   @Get()
+  @ResponseSchema(systemAccountListResponseSchema)
   @RequirePermission("accounting:settings:read")
   listSystemAccounts(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listSystemAccounts(u.orgId);
   }
 
   @Put(":purpose")
+  @ResponseSchema(upsertSystemAccountResponseSchema)
   @RequirePermission("accounting:settings:manage")
   @Validate({ params: purposeParams, body: upsertSystemAccountSchema })
   upsertSystemAccount(

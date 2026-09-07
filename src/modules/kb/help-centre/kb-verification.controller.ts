@@ -8,6 +8,8 @@ import { KbVerificationService } from "./kb-verification.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbVerificationQueueSchema } from "./dto/kb-helpcenter-response.schemas";
 
 const verificationQueueSchema = z.object({
   page: pageNumberField,
@@ -24,6 +26,7 @@ export class KbVerificationController {
   @Get("verification/queue")
   @RequirePermission("kb:articles:manage")
   @Validate({ query: verificationQueueSchema })
+  @ResponseSchema(kbVerificationQueueSchema)
   async listDue(
     @Query() query: VerificationQueueInput,
     @CurrentUser() u: CurrentUserContext,

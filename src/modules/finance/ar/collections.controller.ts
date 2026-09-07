@@ -15,6 +15,13 @@ import {
   type UpdateInvoiceCollectionInput,
 } from "./dto/finance-ar.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  collectionSummaryResponseSchema,
+  collectionActivityListResponseSchema,
+  collectionActivityCreatedResponseSchema,
+  collectionUpdateResponseSchema,
+} from "./dto/ar-response.schemas";
 import { z } from "zod";
 
 const invoiceIdParams = z.object({ invoiceId: z.coerce.number().int().positive() }).strict();
@@ -26,12 +33,14 @@ export class CollectionsController {
   constructor(private readonly svc: CollectionsService) {}
 
   @Get("summary")
+  @ResponseSchema(collectionSummaryResponseSchema)
   @RequirePermission("accounting:collections:read")
   summary(@CurrentUser() u: CurrentUserContext) {
     return this.svc.summary(u.orgId);
   }
 
   @Get("activities")
+  @ResponseSchema(collectionActivityListResponseSchema)
   @RequirePermission("accounting:collections:read")
   @Validate({ query: listCollectionActivitiesSchema })
   listActivities(
@@ -42,6 +51,7 @@ export class CollectionsController {
   }
 
   @Post("activities")
+  @ResponseSchema(collectionActivityCreatedResponseSchema)
   @HttpCode(201)
   @RequirePermission("accounting:collections:manage")
   @Validate({ body: createCollectionActivitySchema })
@@ -53,6 +63,7 @@ export class CollectionsController {
   }
 
   @Patch("invoices/:invoiceId")
+  @ResponseSchema(collectionUpdateResponseSchema)
   @RequirePermission("accounting:collections:manage")
   @Validate({ params: invoiceIdParams, body: updateInvoiceCollectionSchema })
   updateInvoiceCollection(

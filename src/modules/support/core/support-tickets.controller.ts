@@ -52,6 +52,25 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  supportTicketListSchema,
+  createTicketResultSchema,
+  ticketStatsSchema,
+  supportTicketDetailSchema,
+  updateTicketResultSchema,
+  supportTicketMessageListSchema,
+  supportTicketMessageRowSchema,
+  supportTicketActivityListSchema,
+  supportTicketLinkListSchema,
+  addTicketLinkResultSchema,
+  mergeTicketResultSchema,
+  snoozeTicketResultSchema,
+  supportTicketDraftSchema,
+  supportTicketExternalLinkListSchema,
+  addExternalLinkResultSchema,
+  successSchema,
+} from "./dto/support-ticket-response.schemas";
 
 const supportTicketIdParams = z.object({ supportTicketId: z.coerce.number().int().positive() }).strict();
 const supportTicketIdlinkIdParams = z.object({ supportTicketId: z.coerce.number().int().positive(), linkId: z.coerce.number().int().positive() }).strict();
@@ -70,6 +89,7 @@ export class SupportTicketsController {
   @Get()
   @RequirePermission("support:tickets:view")
   @Validate({ query: listTicketsSchema })
+  @ResponseSchema(supportTicketListSchema)
   async listTickets(
     @Query() query: ListTicketsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +103,7 @@ export class SupportTicketsController {
   @RequirePermission("support:tickets:create")
   @HttpCode(201)
   @Validate({ body: createTicketSchema })
+  @ResponseSchema(createTicketResultSchema)
   createTicket(
     @Body() body: CreateTicketInput,
     @CurrentUser() u: CurrentUserContext,
@@ -92,6 +113,7 @@ export class SupportTicketsController {
 
   @Get("stats")
   @RequirePermission("support:tickets:view")
+  @ResponseSchema(ticketStatsSchema)
   stats(@CurrentUser() u: CurrentUserContext) {
     return this.tickets.stats(u.orgId);
   }
@@ -99,6 +121,7 @@ export class SupportTicketsController {
   @Get(":supportTicketId")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
+  @ResponseSchema(supportTicketDetailSchema)
   async getTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -110,6 +133,7 @@ export class SupportTicketsController {
   @Patch(":supportTicketId")
   @RequirePermission("support:tickets:manage")
   @Validate({ params: supportTicketIdParams, body: updateTicketSchema })
+  @ResponseSchema(updateTicketResultSchema)
   updateTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: UpdateTicketInput,
@@ -121,6 +145,7 @@ export class SupportTicketsController {
   @Get(":supportTicketId/messages")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
+  @ResponseSchema(supportTicketMessageListSchema)
   listMessages(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -133,6 +158,7 @@ export class SupportTicketsController {
   @RequirePermission("support:tickets:reply")
   @HttpCode(201)
   @Validate({ params: supportTicketIdParams, body: replyMessageSchema })
+  @ResponseSchema(supportTicketMessageRowSchema)
   async addMessage(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: ReplyMessageInput,
@@ -148,6 +174,7 @@ export class SupportTicketsController {
   @Get(":supportTicketId/activity")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
+  @ResponseSchema(supportTicketActivityListSchema)
   listActivity(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -158,6 +185,7 @@ export class SupportTicketsController {
   @Get(":supportTicketId/links")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
+  @ResponseSchema(supportTicketLinkListSchema)
   listTicketLinks(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -169,6 +197,7 @@ export class SupportTicketsController {
   @RequirePermission("support:tickets:manage")
   @HttpCode(201)
   @Validate({ params: supportTicketIdParams, body: createTicketLinkSchema })
+  @ResponseSchema(addTicketLinkResultSchema)
   addTicketLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: CreateTicketLinkInput,
@@ -182,6 +211,7 @@ export class SupportTicketsController {
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
   @Validate({ params: supportTicketIdParams, body: mergeTicketSchema })
+  @ResponseSchema(mergeTicketResultSchema)
   mergeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: MergeTicketInput,
@@ -194,6 +224,7 @@ export class SupportTicketsController {
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
   @Validate({ params: supportTicketIdParams, body: snoozeTicketSchema })
+  @ResponseSchema(snoozeTicketResultSchema)
   snoozeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: SnoozeTicketInput,
@@ -205,6 +236,7 @@ export class SupportTicketsController {
   @Delete(":supportTicketId/snooze")
   @RequirePermission("support:tickets:manage")
   @Validate({ params: supportTicketIdParams })
+  @ResponseSchema(successSchema)
   unsnoozeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -216,6 +248,7 @@ export class SupportTicketsController {
   @RequirePermission("support:tickets:manage")
   @HttpCode(201)
   @Validate({ params: supportTicketIdParams, body: splitTicketSchema })
+  @ResponseSchema(createTicketResultSchema)
   splitTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: SplitTicketInput,
@@ -233,6 +266,7 @@ export class SupportTicketsController {
   @Get(":supportTicketId/draft")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
+  @ResponseSchema(supportTicketDraftSchema.nullable())
   getDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -243,6 +277,7 @@ export class SupportTicketsController {
   @Put(":supportTicketId/draft")
   @RequirePermission("support:tickets:reply")
   @Validate({ params: supportTicketIdParams, body: upsertDraftSchema })
+  @ResponseSchema(supportTicketDraftSchema)
   upsertDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: UpsertDraftInput,
@@ -254,6 +289,7 @@ export class SupportTicketsController {
   @Delete(":supportTicketId/draft")
   @RequirePermission("support:tickets:reply")
   @Validate({ params: supportTicketIdParams })
+  @ResponseSchema(successSchema)
   deleteDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -264,6 +300,7 @@ export class SupportTicketsController {
   @Get(":supportTicketId/external-links")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
+  @ResponseSchema(supportTicketExternalLinkListSchema)
   listExternalLinks(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -275,6 +312,7 @@ export class SupportTicketsController {
   @RequirePermission("support:tickets:manage")
   @HttpCode(201)
   @Validate({ params: supportTicketIdParams, body: createExternalLinkSchema })
+  @ResponseSchema(addExternalLinkResultSchema)
   addExternalLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: CreateExternalLinkInput,
@@ -286,6 +324,7 @@ export class SupportTicketsController {
   @Delete(":supportTicketId/external-links/:linkId")
   @RequirePermission("support:tickets:manage")
   @Validate({ params: supportTicketIdlinkIdParams })
+  @ResponseSchema(successSchema)
   removeExternalLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("linkId", ParseIntPipe) linkId: number,

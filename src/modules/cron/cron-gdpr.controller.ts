@@ -8,10 +8,11 @@ import {
 } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { assertCronSecret } from "./cron-secret";
 import { CronLeaseService } from "./cron-lease.service";
 import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
+import { gdprExportArtifactRetentionResponseSchema } from "./dto/cron-gdpr-response.schemas";
 
 /**
  * The manual trigger for the artifact sweep. `CronRetentionSchedulerService` takes the same
@@ -27,6 +28,7 @@ export class CronGdprController {
   ) {}
 
   @Get("gdpr-export-artifact-retention")
+  @ResponseSchema(gdprExportArtifactRetentionResponseSchema)
   getGdprExportArtifactRetention(@Headers("authorization") authorization?: string) {
     return this.runGdprExportArtifactRetention(authorization);
   }
@@ -34,6 +36,7 @@ export class CronGdprController {
   @Post("gdpr-export-artifact-retention")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(gdprExportArtifactRetentionResponseSchema)
   postGdprExportArtifactRetention(@Headers("authorization") authorization?: string) {
     return this.runGdprExportArtifactRetention(authorization);
   }

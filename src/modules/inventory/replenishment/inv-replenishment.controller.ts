@@ -20,6 +20,13 @@ import {
   type SuggestionsQueryInput,
 } from "./dto/replenishment.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listRulesResponseSchema,
+  ruleResponseSchema,
+  listSuggestionsResponseSchema,
+  generatePoResponseSchema,
+} from "./dto/replenishment-response.schemas";
 import { z } from "zod";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
@@ -31,6 +38,7 @@ export class InvReplenishmentController {
   constructor(private readonly replenishment: InvReplenishmentService) {}
 
   @Get("rules")
+  @ResponseSchema(listRulesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ query: listRulesSchema })
@@ -42,6 +50,7 @@ export class InvReplenishmentController {
   }
 
   @Post("rules")
+  @ResponseSchema(ruleResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ body: createRuleSchema })
@@ -53,6 +62,7 @@ export class InvReplenishmentController {
   }
 
   @Patch("rules/:ruleId")
+  @ResponseSchema(ruleResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ params: ruleIdParams, body: updateRuleSchema })
@@ -65,6 +75,7 @@ export class InvReplenishmentController {
   }
 
   @Delete("rules/:ruleId")
+  @ResponseSchema(ruleResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @HttpCode(HttpStatus.OK)
@@ -77,6 +88,7 @@ export class InvReplenishmentController {
   }
 
   @Get("suggestions")
+  @ResponseSchema(listSuggestionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: suggestionsQuerySchema })
@@ -88,6 +100,7 @@ export class InvReplenishmentController {
   }
 
   @Post("suggestions/generate-po")
+  @ResponseSchema(generatePoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:create")
   @Validate({ body: generatePoSchema })

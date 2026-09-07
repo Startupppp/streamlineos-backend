@@ -20,7 +20,13 @@ import {
 } from "./dto/inv-purchase-orders.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listPosResponseSchema,
+  getPoResponseSchema,
+  invPoSchema,
+  getGrnResponseSchema,
+} from "./dto/purchase-orders-response.schemas";
 
 const poIdParams = z.object({ poId: z.coerce.number().int().positive() }).strict();
 
@@ -40,6 +46,7 @@ export class InvPurchaseOrdersController {
   ) {}
 
   @Get()
+  @ResponseSchema(listPosResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
   @Validate({ query: listPoSchema })
@@ -52,6 +59,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Get(":poId")
+  @ResponseSchema(getPoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
   @Validate({ params: poIdParams })
@@ -63,6 +71,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Post()
+  @ResponseSchema(getPoResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:create")
   @Idempotent("inventory.purchase-order.create")
@@ -75,6 +84,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Patch(":poId")
+  @ResponseSchema(invPoSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:update")
   @Validate({ params: poIdParams, body: updatePoSchema })
@@ -88,6 +98,7 @@ export class InvPurchaseOrdersController {
 
   @Post(":poId/approve")
   @BodylessAction()
+  @ResponseSchema(invPoSchema)
   @Idempotent("inventory.purchase-order.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
@@ -102,6 +113,7 @@ export class InvPurchaseOrdersController {
 
   @Post(":poId/send")
   @BodylessAction()
+  @ResponseSchema(invPoSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
@@ -116,6 +128,7 @@ export class InvPurchaseOrdersController {
 
   @Post(":poId/close")
   @BodylessAction()
+  @ResponseSchema(invPoSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
@@ -129,6 +142,7 @@ export class InvPurchaseOrdersController {
 
   @Post(":poId/cancel")
   @BodylessAction()
+  @ResponseSchema(invPoSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
@@ -141,6 +155,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Post(":poId/receive")
+  @ResponseSchema(getGrnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)

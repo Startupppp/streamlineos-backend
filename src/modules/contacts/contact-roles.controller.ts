@@ -28,6 +28,13 @@ import {
   type DuplicatesQueryInput,
 } from "./dto/contact-roles.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  contactRoleListResponseSchema,
+  contactRoleRowSchema,
+  duplicateContactsResponseSchema,
+  mergeContactsResponseSchema,
+} from "./dto/contacts-response.schemas";
 import { z } from "zod";
 
 const contactIdParams = z.object({ contactId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +47,7 @@ export class ContactRolesController {
   constructor(private readonly svc: ContactRolesService) {}
 
   @Get("duplicates")
+  @ResponseSchema(duplicateContactsResponseSchema)
   @RequirePermission("crm:contacts:view")
   @Validate({ query: duplicatesQuerySchema })
   getDuplicates(
@@ -51,6 +59,7 @@ export class ContactRolesController {
 
   @Post("merge")
   @HttpCode(200)
+  @ResponseSchema(mergeContactsResponseSchema)
   @RequirePermission("crm:contacts:merge")
   @Validate({ body: mergeContactsSchema })
   mergeContacts(
@@ -61,6 +70,7 @@ export class ContactRolesController {
   }
 
   @Get(":contactId/roles")
+  @ResponseSchema(contactRoleListResponseSchema)
   @RequirePermission("crm:contacts:view")
   @Validate({ params: contactIdParams, query: contactRoleListSchema })
   listRoles(
@@ -73,6 +83,7 @@ export class ContactRolesController {
 
   @Post(":contactId/roles")
   @HttpCode(201)
+  @ResponseSchema(contactRoleRowSchema)
   @RequirePermission("crm:contacts:manage")
   @Validate({ params: contactIdParams, body: contactRoleCreateSchema })
   addRole(
@@ -85,6 +96,7 @@ export class ContactRolesController {
 
   @Delete(":contactId/roles/:roleId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("crm:contacts:manage")
   @Validate({ params: contactIdroleIdParams })
   async removeRole(

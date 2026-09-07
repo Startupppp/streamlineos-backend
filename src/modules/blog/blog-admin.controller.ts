@@ -16,6 +16,14 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BlogService } from "./blog.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  blogPostWithRelationsSchema,
+  blogPostSchema,
+  blogDeleteSchema,
+  blogAdminCategoryListSchema,
+  blogCategorySchema,
+} from "./dto/blog-response.schemas";
 import {
   postCreateSchema,
   postUpdateSchema,
@@ -37,6 +45,7 @@ export class BlogAdminController {
 
   @Get("posts")
   @RequirePermission("blog:posts:manage")
+  @ResponseSchema(blogPostWithRelationsSchema.array())
   listPosts() {
     return this.blog.listAdminPosts();
   }
@@ -44,6 +53,7 @@ export class BlogAdminController {
   @Get("posts/:postId")
   @RequirePermission("blog:posts:manage")
   @Validate({ params: postIdParams })
+  @ResponseSchema(blogPostWithRelationsSchema)
   async getPost(@Param("postId") postId: string) {
     const post = await this.blog.getAdminPostById(postId);
     if (!post) throw new NotFoundException("Post not found");
@@ -53,6 +63,7 @@ export class BlogAdminController {
   @Post("posts")
   @RequirePermission("blog:posts:manage")
   @Validate({ body: postCreateSchema })
+  @ResponseSchema(blogPostSchema)
   createPost(@Body() body: PostCreateInput) {
     return this.blog.createPost(body);
   }
@@ -60,6 +71,7 @@ export class BlogAdminController {
   @Patch("posts/:postId")
   @RequirePermission("blog:posts:manage")
   @Validate({ params: postIdParams, body: postUpdateSchema })
+  @ResponseSchema(blogPostSchema)
   async updatePost(@Param("postId") postId: string, @Body() body: PostUpdateInput) {
     const updated = await this.blog.updatePost(postId, body);
     if (!updated) throw new NotFoundException("Post not found");
@@ -69,6 +81,7 @@ export class BlogAdminController {
   @Delete("posts/:postId")
   @RequirePermission("blog:posts:manage")
   @Validate({ params: postIdParams })
+  @ResponseSchema(blogDeleteSchema)
   async deletePost(@Param("postId") postId: string) {
     const result = await this.blog.deletePost(postId);
     if (!result) throw new NotFoundException("Post not found");
@@ -77,6 +90,7 @@ export class BlogAdminController {
 
   @Get("categories")
   @RequirePermission("blog:categories:manage")
+  @ResponseSchema(blogAdminCategoryListSchema)
   listCategories() {
     return this.blog.getAdminCategories();
   }
@@ -84,6 +98,7 @@ export class BlogAdminController {
   @Post("categories")
   @RequirePermission("blog:categories:manage")
   @Validate({ body: categoryCreateSchema })
+  @ResponseSchema(blogCategorySchema)
   async createCategory(@Body() body: CategoryCreateInput) {
     const result = await this.blog.createCategory(body);
     if ("error" in result && result.error === "duplicate")
@@ -94,6 +109,7 @@ export class BlogAdminController {
   @Patch("categories/:categoryId")
   @RequirePermission("blog:categories:manage")
   @Validate({ params: categoryIdParams, body: categoryUpdateSchema })
+  @ResponseSchema(blogCategorySchema)
   async updateCategory(
     @Param("categoryId") categoryId: string,
     @Body() body: CategoryUpdateInput,
@@ -106,6 +122,7 @@ export class BlogAdminController {
   @Delete("categories/:categoryId")
   @RequirePermission("blog:categories:manage")
   @Validate({ params: categoryIdParams })
+  @ResponseSchema(blogDeleteSchema)
   async deleteCategory(@Param("categoryId") categoryId: string) {
     const result = await this.blog.deleteCategory(categoryId);
     if (!result) throw new NotFoundException("Category not found");

@@ -5,6 +5,8 @@ import { KbPagesService } from "./kb-pages.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { resolveClientIpOr } from "../../../common/http/client-ip";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbPublicPageSchema } from "./dto/kb-wiki-response.schemas";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
@@ -20,6 +22,7 @@ export class KbPublicPagesController {
 
   @Get(":token")
   @Validate({ params: tokenParams })
+  @ResponseSchema(kbPublicPageSchema)
   async getPublicPage(
     @Param("token") token: string,
     @Request() req: { ip?: string; headers: Record<string, string> },

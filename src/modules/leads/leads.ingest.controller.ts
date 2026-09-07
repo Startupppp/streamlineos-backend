@@ -5,6 +5,8 @@ import { ingestSchema, type IngestInput } from "./dto/lead.schemas";
 import { LeadsService } from "./leads.service";
 import { Public } from "../../common/auth/public.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { leadMutatedSchema } from "./dto/leads-response.schemas";
 
 @Public()
 @Controller("leads/ingest")
@@ -14,6 +16,7 @@ export class LeadsIngestController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(leadMutatedSchema)
   @Validate({ body: ingestSchema })
   async ingest(@Body() body: IngestInput, @ApiKey() key: ApiKeyContext) {
     return this.leads.ingestCreate(key.orgId, body);

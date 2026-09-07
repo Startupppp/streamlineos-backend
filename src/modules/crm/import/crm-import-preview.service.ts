@@ -108,7 +108,7 @@ export class CrmImportPreviewService {
         sourceFilename: input.filename ?? null,
         targetEntity: entity,
         targetSubjectTypeId: subjectTypeId,
-        columns: columns as unknown as StoredColumnMapping[],
+        columns,
         summary: plan.summary,
         createdByUserId: input.userId,
       })

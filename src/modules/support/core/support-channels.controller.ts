@@ -45,6 +45,17 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { resolveClientIpOr } from "../../../common/http/client-ip";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  supportChannelListSchema,
+  supportChannelWithSecretSchema,
+  supportChannelRowSchema,
+  inboundIngestResultSchema,
+  startChatSessionResultSchema,
+  getChatSessionSchema,
+  sendChatMessageResultSchema,
+  successSchema,
+} from "./dto/support-channel-response.schemas";
 
 /**
  * The pre-authentication limit is keyed on the caller's own address, never on the
@@ -72,6 +83,7 @@ export class SupportChannelsController {
   @Get("channels")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
+  @ResponseSchema(supportChannelListSchema)
   listChannels(@CurrentUser() u: CurrentUserContext) {
     return this.channels.listChannels(u.orgId);
   }
@@ -81,6 +93,7 @@ export class SupportChannelsController {
   @RequirePermission("support:channels:manage")
   @HttpCode(201)
   @Validate({ body: createSupportChannelSchema })
+  @ResponseSchema(supportChannelWithSecretSchema)
   async createChannel(
     @Body() body: CreateSupportChannelInput,
     @CurrentUser() u: CurrentUserContext,
@@ -94,6 +107,7 @@ export class SupportChannelsController {
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
   @Validate({ params: channelIdParams, body: updateSupportChannelSchema })
+  @ResponseSchema(supportChannelRowSchema)
   async updateChannel(
     @Param("channelId", ParseIntPipe) channelId: number,
     @Body() body: UpdateSupportChannelInput,
@@ -108,6 +122,7 @@ export class SupportChannelsController {
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
   @Validate({ params: channelIdParams })
+  @ResponseSchema(successSchema)
   async deleteChannel(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.channels.deleteChannel(u.orgId, channelId);
     await this.audit.record(u.orgId, u.userId, "channel", channelId, "deleted");
@@ -127,6 +142,7 @@ export class SupportChannelsController {
   @Post("inbound/email/:orgId")
   @HttpCode(200)
   @Validate({ params: orgIdParams, body: inboundEmailSchema })
+  @ResponseSchema(inboundIngestResultSchema)
   async inboundEmail(
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
@@ -151,6 +167,7 @@ export class SupportChannelsController {
   @Post("inbound/whatsapp/:orgId")
   @HttpCode(200)
   @Validate({ params: orgIdParams, body: inboundWhatsAppSchema })
+  @ResponseSchema(inboundIngestResultSchema)
   async inboundWhatsApp(
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
@@ -175,6 +192,7 @@ export class SupportChannelsController {
   @Post("inbound/sms/:orgId")
   @HttpCode(200)
   @Validate({ params: orgIdParams, body: inboundSmsSchema })
+  @ResponseSchema(inboundIngestResultSchema)
   async inboundSms(
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
@@ -203,6 +221,7 @@ export class SupportChannelsController {
   @Post("chat/:orgId/start")
   @HttpCode(201)
   @Validate({ params: orgIdParams, body: startChatSessionSchema })
+  @ResponseSchema(startChatSessionResultSchema)
   async startChatSession(
     @Param("orgId") orgId: string,
     @Body() body: StartChatSessionInput,
@@ -218,6 +237,7 @@ export class SupportChannelsController {
   @Public()
   @Get("chat/:orgId/:sessionToken/messages")
   @Validate({ params: orgIdsessionTokenParams })
+  @ResponseSchema(getChatSessionSchema)
   async getChatSession(@Param("orgId") orgId: string, @Param("sessionToken") sessionToken: string) {
     return this.channels.getChatSession(orgId, sessionToken);
   }
@@ -226,6 +246,7 @@ export class SupportChannelsController {
   @Post("chat/:orgId/:sessionToken/messages")
   @HttpCode(201)
   @Validate({ params: orgIdsessionTokenParams, body: sendChatMessageSchema })
+  @ResponseSchema(sendChatMessageResultSchema)
   async sendChatMessage(
     @Param("orgId") orgId: string,
     @Param("sessionToken") sessionToken: string,

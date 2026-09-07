@@ -10,7 +10,8 @@ import { JournalApprovalsService } from "./journal-approvals.service";
 import { approvalDecisionSchema, type ApprovalDecisionInput } from "./dto/journal-approvals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { journalApprovalSubmitResponseSchema, journalApprovalDecisionResponseSchema } from "./dto/gl-response.schemas";
 
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
@@ -21,6 +22,7 @@ export class JournalApprovalsController {
   constructor(private readonly approvals: JournalApprovalsService) {}
 
   @Post(":entryId/submit-approval")
+  @ResponseSchema(journalApprovalSubmitResponseSchema)
   @BodylessAction()
   @Idempotent("accounting.journal.submit-approval")
   @UseGuards(PermissionGuard)
@@ -35,6 +37,7 @@ export class JournalApprovalsController {
   }
 
   @Post(":entryId/approve")
+  @ResponseSchema(journalApprovalDecisionResponseSchema)
   @Idempotent("accounting.journal.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")
@@ -49,6 +52,7 @@ export class JournalApprovalsController {
   }
 
   @Post(":entryId/reject")
+  @ResponseSchema(journalApprovalDecisionResponseSchema)
   @Idempotent("accounting.journal.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")

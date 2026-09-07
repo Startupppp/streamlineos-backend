@@ -20,7 +20,8 @@ import { CrmInboxService } from "./crm-inbox.service";
 import { snoozeTaskSchema, type SnoozeTaskInput } from "./crm-inbox.dto";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { inboxResponseSchema, inboxCountsSchema, successSchema } from "./dto/crm-inbox-response.schemas";
 
 const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
 
@@ -32,18 +33,21 @@ export class CrmInboxController {
 
   @Get()
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(inboxResponseSchema)
   async getInbox(@Req() req: Request, @CurrentUser() user: CurrentUserContext) {
     return this.svc.getInbox(user.orgId, user.userId, readRequestScope(req));
   }
 
   @Get("counts")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(inboxCountsSchema)
   async getCounts(@Req() req: Request, @CurrentUser() user: CurrentUserContext) {
     return this.svc.getCounts(user.orgId, user.userId, readRequestScope(req));
   }
 
   @Post("tasks/:taskId/snooze")
   @RequirePermission("crm:tasks:update")
+  @ResponseSchema(successSchema)
   @Validate({ params: taskIdParams, body: snoozeTaskSchema })
   async snoozeTask(
     @Param("taskId", ParseIntPipe) taskId: number,
@@ -58,6 +62,7 @@ export class CrmInboxController {
   @Post("tasks/:taskId/complete")
   @BodylessAction()
   @RequirePermission("crm:tasks:update")
+  @ResponseSchema(successSchema)
   @Validate({ params: taskIdParams })
   async completeTask(
     @Param("taskId", ParseIntPipe) taskId: number,

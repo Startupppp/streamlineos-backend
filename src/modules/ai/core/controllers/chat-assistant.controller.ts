@@ -60,6 +60,16 @@ import {
   rethrowStreamRouteError,
 } from "../streaming";
 import { AiRequestAbortInterceptor } from "../streaming";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  chatHistoryResponseSchema,
+  chatClearHistoryResponseSchema,
+  listConversationsResponseSchema,
+  aiConversationSchema,
+  deleteConversationResponseSchema,
+  confirmActionResponseSchema,
+} from "../dto/ai-response.schemas";
 
 export const CHAT_STREAM_DEADLINE_MS = 120_000;
 
@@ -156,6 +166,7 @@ export class ChatAssistantController {
 
   @Get("history")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(chatHistoryResponseSchema)
   async getHistory(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = chatHistoryQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
@@ -167,6 +178,7 @@ export class ChatAssistantController {
 
   @Delete("history")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(chatClearHistoryResponseSchema)
   async clearHistory(@CurrentUser() u: CurrentUserContext): Promise<{ success: boolean }> {
     await this.history.clear(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0);
     return { success: true };
@@ -174,6 +186,7 @@ export class ChatAssistantController {
 
   @Get("conversations")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(listConversationsResponseSchema)
   async listConversations(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = conversationsListQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
@@ -186,6 +199,7 @@ export class ChatAssistantController {
   @Post("conversations")
   @HttpCode(201)
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(aiConversationSchema)
   @Validate({ body: conversationCreateSchema })
   async createConversation(@Body() body: z.infer<typeof conversationCreateSchema>, @CurrentUser() u: CurrentUserContext) {
     const parsed = conversationCreateSchema.safeParse(body);
@@ -195,6 +209,7 @@ export class ChatAssistantController {
 
   @Patch("conversations/:conversationId")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(aiConversationSchema)
   @Validate({ params: conversationIdParams, body: conversationRenameSchema })
   async renameConversation(
     @Param("conversationId") conversationIdParam: string,
@@ -210,6 +225,7 @@ export class ChatAssistantController {
 
   @Delete("conversations/:conversationId")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(deleteConversationResponseSchema)
   @Validate({ params: conversationIdParams })
   async deleteConversation(
     @Param("conversationId") conversationIdParam: string,
@@ -223,6 +239,7 @@ export class ChatAssistantController {
 
   @Get("conversations/:conversationId/messages")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(chatHistoryResponseSchema)
   @Validate({ params: conversationIdParams })
   async getConversationMessages(
     @Param("conversationId") conversationIdParam: string,
@@ -244,6 +261,7 @@ export class ChatAssistantController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:chat")
   @NoTenantTransaction()
+  @ApiOkResponse({ description: "AI UI message stream", content: { "text/event-stream": { schema: { type: "string" } } } })
   @Validate({ body: chatRequestSchema })
   async chatAssistant(
     @Req() req: Request,
@@ -279,6 +297,7 @@ export class ChatAssistantController {
 
   @Post("confirm")
   @RequirePermission("ai:chat:use")
+  @ResponseSchema(confirmActionResponseSchema)
   @Validate({ body: confirmActionBodySchema })
   async confirmAction(@Body() body: z.infer<typeof confirmActionBodySchema>, @CurrentUser() u: CurrentUserContext) {
     const parsed = confirmActionBodySchema.safeParse(body);

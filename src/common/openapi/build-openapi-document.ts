@@ -67,6 +67,7 @@ interface MutableOperation {
   operationId?: string;
   parameters?: unknown[];
   requestBody?: unknown;
+  responses?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -211,17 +212,35 @@ export function envelopeResponseSchema(schema: JsonSchema): JsonSchema {
   };
 }
 
+function isBareSuccessKey(code: string, value: unknown): boolean {
+  const num = Number(code);
+  if (!(num >= 200 && num < 300)) return false;
+  const record = asRecord(value);
+  return record === undefined || !("content" in record);
+}
+
 function applyResponseSchema(
   method: string,
   operation: MutableOperation,
   schema: JsonSchema,
+  status: number | undefined,
 ): void {
-  const responses = (operation.responses ?? {}) as Record<string, unknown>;
-  const statusCode = method === "post" ? "201" : "200";
+  const responses: Record<string, unknown> = operation.responses ?? {};
+  const statusCode = String(status ?? (method === "post" ? 201 : 200));
+  for (const code of Object.keys(responses))
+    if (code !== statusCode && isBareSuccessKey(code, responses[code])) delete responses[code];
   responses[statusCode] = {
     description: statusCode === "201" ? "Created" : "OK",
     content: { "application/json": { schema: envelopeResponseSchema(schema) } },
   };
+  operation.responses = responses;
+}
+
+function applyNoContent(operation: MutableOperation): void {
+  const responses: Record<string, unknown> = operation.responses ?? {};
+  for (const code of Object.keys(responses))
+    if (isBareSuccessKey(code, responses[code])) delete responses[code];
+  responses["204"] = { description: "No Content", "x-no-content": true };
   operation.responses = responses;
 }
 
@@ -230,7 +249,7 @@ export function applyErrorResponses(
   pathTemplate: string,
   operation: MutableOperation,
 ): void {
-  const responses = (operation.responses ?? {}) as Record<string, unknown>;
+  const responses: Record<string, unknown> = operation.responses ?? {};
   const exposure = String(operation["x-exposure"] ?? "");
   const hasPathParam = pathTemplate.includes("{");
   const isMutating = BODY_METHODS.has(method);
@@ -294,7 +313,8 @@ export function applyOperationContract(
   if (contract.params) applyPathParams(operation, contract.params);
   if (contract.idempotencyCommand)
     applyIdempotency(operation, contract.idempotencyCommand);
-  if (contract.response) applyResponseSchema(method, operation, contract.response);
+  if (contract.response) applyResponseSchema(method, operation, contract.response, contract.status);
+  if (contract.noContent) applyNoContent(operation);
   if (contract.bodyless) operation["x-bodyless"] = true;
   if (contract.deprecated) operation["deprecated"] = true;
 }

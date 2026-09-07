@@ -54,6 +54,12 @@ import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { resolveClientIp } from "../../common/http/client-ip";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  feedbucketPublicConfigSchema,
+  feedbucketPublicSubmitSchema,
+  feedbucketPublicAiAssistSchema,
+} from "./dto/feedbucket-response.schemas";
 
 const publicKeyParams = z.object({ publicKey: z.string().min(1) }).strict();
 
@@ -133,6 +139,7 @@ export class FeedbucketPublicController {
 
   @Get(":publicKey/config")
   @Validate({ params: publicKeyParams })
+  @ResponseSchema(feedbucketPublicConfigSchema)
   async config(@Param("publicKey") publicKey: string, @Req() req: Request) {
     const widget = await this.publicService.resolveWidget(publicKey);
     if (!widget) throw new NotFoundException("Widget not found");
@@ -159,6 +166,7 @@ export class FeedbucketPublicController {
 
   @Post(":publicKey")
   @HttpCode(200)
+  @ResponseSchema(feedbucketPublicSubmitSchema)
   @MultipartAction({
     file: "screenshot",
     fileRequired: false,
@@ -321,6 +329,7 @@ export class FeedbucketPublicController {
 
   @Post(":publicKey/ai-assist")
   @HttpCode(200)
+  @ResponseSchema(feedbucketPublicAiAssistSchema)
   @MultipartAction({
     file: "screenshot",
     fileRequired: false,

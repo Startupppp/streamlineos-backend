@@ -30,6 +30,20 @@ import {
 } from "./dto/lead-reports.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ApiOkResponse } from "@nestjs/swagger";
+import {
+  leadsAnalyticsSchema,
+  leadsDashboardMetricsSchema,
+  leadsSourceReportSchema,
+  leadsSalesLeaderboardSchema,
+  leadsSalesTeamCapacitySchema,
+  leadsSlaAlertsSchema,
+  leadsFollowUpsSchema,
+  leadsUnverifiedSchema,
+  leadsDuplicateGroupsSchema,
+  leadsCheckDuplicatesSchema,
+} from "./dto/leads-response.schemas";
 
 @RequireModule("crm")
 @Controller("leads")
@@ -43,6 +57,7 @@ export class LeadsReportsController {
 
   @Get("analytics")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsAnalyticsSchema)
   @Validate({ query: analyticsQuerySchema })
   async getAnalytics(
     @Query() query: AnalyticsQuery,
@@ -54,30 +69,35 @@ export class LeadsReportsController {
 
   @Get("dashboard-metrics")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsDashboardMetricsSchema)
   getDashboardMetrics(@CurrentUser() u: CurrentUserContext) {
     return this.reports.getDashboardMetrics(u.orgId);
   }
 
   @Get("source-report")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsSourceReportSchema)
   getSourceReport(@CurrentUser() u: CurrentUserContext) {
     return this.reports.getSourceReport(u.orgId);
   }
 
   @Get("sales-leaderboard")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsSalesLeaderboardSchema)
   getSalesLeaderboard(@CurrentUser() u: CurrentUserContext) {
     return this.reports.getSalesLeaderboard(u.orgId);
   }
 
   @Get("sales-team-capacity")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsSalesTeamCapacitySchema)
   getSalesTeamCapacity(@CurrentUser() u: CurrentUserContext) {
     return this.reports.getSalesTeamCapacity(u.orgId);
   }
 
   @Get("sla-alerts")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsSlaAlertsSchema)
   async getSlaAlerts(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolveLeadsViewScope(this.access, u);
     return this.reports.getLeadSlaAlerts(u.orgId, {
@@ -88,6 +108,7 @@ export class LeadsReportsController {
 
   @Get("follow-ups")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsFollowUpsSchema)
   @Validate({ query: followUpsQuerySchema })
   getFollowUps(
     @Query() query: FollowUpsQuery,
@@ -98,12 +119,14 @@ export class LeadsReportsController {
 
   @Get("unverified")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsUnverifiedSchema)
   getUnverified(@CurrentUser() u: CurrentUserContext) {
     return this.reports.getUnverifiedLeads(u.orgId);
   }
 
   @Get("duplicates")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsDuplicateGroupsSchema)
   async getDuplicates(@CurrentUser() u: CurrentUserContext) {
     try {
       return await this.exports.getDuplicates(u.orgId);
@@ -115,6 +138,7 @@ export class LeadsReportsController {
 
   @Get("check-duplicates")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadsCheckDuplicatesSchema)
   @Validate({ query: checkDuplicatesQuerySchema })
   checkDuplicates(
     @Query() query: CheckDuplicatesQuery,
@@ -125,6 +149,7 @@ export class LeadsReportsController {
 
   @Get("export")
   @RequirePermission("crm:leads:view")
+  @ApiOkResponse({ description: "CSV file download", content: { "text/csv": { schema: { type: "string" } } } })
   @Validate({ query: exportQuerySchema })
   async exportCsv(
     @Query() query: ExportQuery,

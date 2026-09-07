@@ -19,6 +19,12 @@ import { createPortalCrSchema, type CreatePortalCrInput } from "./dto/client-por
 import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  portalProjectItemSchema,
+  portalProjectOverviewSchema,
+  portalChangeRequestItemSchema,
+} from "./dto/client-portal-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
@@ -30,12 +36,14 @@ export class ClientPortalController {
 
   @Get("projects")
   @RequirePermission("build:portal:view")
+  @ResponseSchema(z.array(portalProjectItemSchema))
   listPortalProjects(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listPortalProjects(u.orgId, actingMembershipId(u.principal), u.userId);
   }
 
   @Get("projects/:projectId/overview")
   @RequirePermission("build:portal:view")
+  @ResponseSchema(portalProjectOverviewSchema)
   @Validate({ params: projectIdParams })
   getProjectOverview(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -46,6 +54,7 @@ export class ClientPortalController {
 
   @Get("projects/:projectId/change-requests")
   @RequirePermission("build:changerequests:view")
+  @ResponseSchema(z.array(portalChangeRequestItemSchema))
   @Validate({ params: projectIdParams })
   listPortalChangeRequests(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -57,6 +66,7 @@ export class ClientPortalController {
   @Post("projects/:projectId/change-requests")
   @HttpCode(201)
   @RequirePermission("build:changerequests:create")
+  @ResponseSchema(portalChangeRequestItemSchema)
   @Validate({ params: projectIdParams, body: createPortalCrSchema })
   createPortalChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,

@@ -3,6 +3,8 @@ import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { reportCatalogResponseSchema } from "./dto/finance-reports-response.schemas";
 
 const REPORT_CATALOG = [
   {
@@ -201,6 +203,7 @@ const REPORT_CATALOG = [
 @UseGuards(JwtAuthGuard)
 export class CatalogController {
   @Get("catalog")
+  @ResponseSchema(reportCatalogResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getCatalog() {

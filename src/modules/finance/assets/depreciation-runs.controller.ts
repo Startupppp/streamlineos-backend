@@ -16,7 +16,12 @@ import {
 } from "./dto/assets.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  depreciationRunListResponseSchema,
+  depreciationRunCreateResponseSchema,
+  depreciationRunReverseResponseSchema,
+} from "./dto/assets-response.schemas";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 
@@ -27,6 +32,7 @@ export class DepreciationRunsController {
   constructor(private readonly runs: DepreciationRunsService) {}
 
   @Get()
+  @ResponseSchema(depreciationRunListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:read")
   @Validate({ query: listRunsQuerySchema })
@@ -38,6 +44,7 @@ export class DepreciationRunsController {
   }
 
   @Post()
+  @ResponseSchema(depreciationRunCreateResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(201)
@@ -52,6 +59,7 @@ export class DepreciationRunsController {
 
   @Post(":runId/reverse")
   @BodylessAction()
+  @ResponseSchema(depreciationRunReverseResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(200)

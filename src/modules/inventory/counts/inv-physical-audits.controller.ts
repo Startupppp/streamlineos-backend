@@ -13,7 +13,12 @@ import {
 } from "./dto/inv-counts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  listAuditsResponseSchema,
+  physicalAuditSchema,
+} from "./dto/counts-response.schemas";
 
 const auditIdParams = z.object({ auditId: z.coerce.number().int().positive() }).strict();
 
@@ -24,6 +29,7 @@ export class InvPhysicalAuditsController {
   constructor(private readonly audits: InvPhysicalAuditsService) {}
 
   @Get()
+  @ResponseSchema(listAuditsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listCountsSchema })
@@ -35,6 +41,7 @@ export class InvPhysicalAuditsController {
   }
 
   @Get(":auditId")
+  @ResponseSchema(physicalAuditSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ params: auditIdParams })
@@ -46,6 +53,7 @@ export class InvPhysicalAuditsController {
   }
 
   @Post()
+  @ResponseSchema(physicalAuditSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ body: createAuditSchema })
@@ -58,6 +66,7 @@ export class InvPhysicalAuditsController {
 
   @Post(":auditId/start")
   @BodylessAction()
+  @ResponseSchema(physicalAuditSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams })
@@ -69,6 +78,7 @@ export class InvPhysicalAuditsController {
   }
 
   @Patch(":auditId/lines")
+  @ResponseSchema(physicalAuditSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams, body: updateCountLinesSchema })
@@ -82,6 +92,7 @@ export class InvPhysicalAuditsController {
 
   @Post(":auditId/review")
   @BodylessAction()
+  @ResponseSchema(physicalAuditSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams })
@@ -94,6 +105,7 @@ export class InvPhysicalAuditsController {
 
   @Post(":auditId/post")
   @BodylessAction()
+  @ResponseSchema(physicalAuditSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams })
@@ -108,13 +120,15 @@ export class InvPhysicalAuditsController {
 
   @Post(":auditId/cancel")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams })
-  cancel(
+  async cancel(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.cancelAudit(u.orgId, auditId);
+    await this.audits.cancelAudit(u.orgId, auditId);
+    return { success: true as const };
   }
 }

@@ -24,7 +24,11 @@ import {
   type UpdateCommentInput,
 } from "./dto/kb-comments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbArticleCommentListSchema,
+  kbArticleCommentWithAuthorSchema,
+} from "./dto/kb-helpcenter-response.schemas";
 import { z } from "zod";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
@@ -42,6 +46,7 @@ export class KbCommentsController {
   @Get("articles/:articleId/comments")
   @RequirePermission("kb:articles:view")
   @Validate({ params: articleIdParams, query: cursorQuery })
+  @ResponseSchema(kbArticleCommentListSchema)
   async list(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Query("afterCreatedAt") afterCreatedAt: string | undefined,
@@ -58,6 +63,7 @@ export class KbCommentsController {
   @RequirePermission("kb:articles:create")
   @HttpCode(201)
   @Validate({ params: articleIdParams, body: createCommentSchema })
+  @ResponseSchema(kbArticleCommentWithAuthorSchema)
   async create(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: CreateCommentInput,
@@ -69,6 +75,7 @@ export class KbCommentsController {
   @Patch("comments/:commentId")
   @RequirePermission("kb:articles:update")
   @Validate({ params: commentIdParams, body: updateCommentSchema })
+  @ResponseSchema(kbArticleCommentWithAuthorSchema)
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body() body: UpdateCommentInput,
@@ -79,6 +86,7 @@ export class KbCommentsController {
 
   @Delete("comments/:commentId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("kb:articles:update")
   @Validate({ params: commentIdParams })
   async remove(
@@ -93,6 +101,7 @@ export class KbCommentsController {
   @RequirePermission("kb:articles:update")
   @HttpCode(200)
   @Validate({ params: commentIdParams })
+  @ResponseSchema(kbArticleCommentWithAuthorSchema)
   async resolve(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -57,6 +57,20 @@ import {
   encodeStreamSources,
   sourcesTruncatedHeaderName,
 } from "../streaming";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  attritionRiskResponseSchema,
+  generateReviewResponseSchema,
+  generateJdResponseSchema,
+  scoreCandidateResponseSchema,
+  helpdeskReplyResponseSchema,
+  policyQaResponseSchema,
+  policyQaCapabilitiesResponseSchema,
+  interviewKitResponseSchema,
+  letterDraftResponseSchema,
+  interviewNotesSummaryResponseSchema,
+  acceptCandidateScoreResponseSchema,
+} from "../dto/ai-response.schemas";
 
 const ADVISORY_DISCLAIMER = "AI estimate only. Human decision required.";
 const HR_POLICY_CITATIONS_HEADER = "x-hr-policy-citations";
@@ -82,6 +96,7 @@ export class HrAiController {
 
   @Post("attrition-risk")
   @RequirePermission("hr:employees:manage")
+  @ResponseSchema(attritionRiskResponseSchema)
   @Validate({ body: attritionRiskSchema })
   async attritionRisk(
     @Body() body: AttritionRiskInput,
@@ -95,6 +110,7 @@ export class HrAiController {
 
   @Post("generate-review")
   @RequirePermission("hr:performance:manage")
+  @ResponseSchema(generateReviewResponseSchema)
   @Validate({ body: generateReviewSchema })
   async generateReview(
     @Body() body: GenerateReviewInput,
@@ -108,6 +124,7 @@ export class HrAiController {
 
   @Post("generate-jd")
   @RequirePermission("hr:interviews:manage")
+  @ResponseSchema(generateJdResponseSchema)
   @Validate({ body: generateJdSchema })
   generateJd(
     @Body() body: GenerateJdInput,
@@ -119,6 +136,7 @@ export class HrAiController {
 
   @Post("generate-jd/stream")
   @RequirePermission("hr:interviews:manage")
+  @ApiAiTextStream("Plain-text job description draft streamed incrementally.")
   @Validate({ body: generateJdSchema })
   async generateJdStream(
     @Req() req: Request,
@@ -142,6 +160,7 @@ export class HrAiController {
 
   @Post("score-candidate")
   @RequirePermission("hr:interviews:manage")
+  @ResponseSchema(scoreCandidateResponseSchema)
   @Validate({ body: scoreCandidateSchema })
   async scoreCandidate(
     @Body() body: ScoreCandidateInput,
@@ -160,6 +179,7 @@ export class HrAiController {
 
   @Post("helpdesk-reply")
   @RequirePermission("hr:helpdesk:manage")
+  @ResponseSchema(helpdeskReplyResponseSchema)
   @Validate({ body: helpdeskReplySchema })
   async helpdeskReply(
     @Body() body: HelpdeskReplyInput,
@@ -180,12 +200,14 @@ export class HrAiController {
 
   @Get("hr/policy-qa/capabilities")
   @RequirePermission("hr:policies:view")
+  @ResponseSchema(policyQaCapabilitiesResponseSchema)
   policyQaCapabilities() {
     return this.hrPolicy.policyQaCapabilities();
   }
 
   @Post("hr/policy-qa")
   @RequirePermission("hr:policies:view")
+  @ResponseSchema(policyQaResponseSchema)
   @Validate({ body: policyQaSchema })
   async policyQa(
     @Body() body: PolicyQaInput,
@@ -230,6 +252,7 @@ export class HrAiController {
 
   @Post("hr/interview-kit")
   @RequirePermission("hr:interviews:manage")
+  @ResponseSchema(interviewKitResponseSchema)
   @Validate({ body: interviewKitSchema })
   async interviewKit(
     @Body() body: InterviewKitInput,
@@ -244,6 +267,7 @@ export class HrAiController {
 
   @Post("hr/letter-draft")
   @RequirePermission("hr:employees:manage")
+  @ResponseSchema(letterDraftResponseSchema)
   @Validate({ body: letterDraftSchema })
   async letterDraft(
     @Body() body: LetterDraftInput,
@@ -297,6 +321,7 @@ export class HrAiController {
 
   @Post("hr/interview-notes-summary")
   @RequirePermission("hr:interviews:manage")
+  @ResponseSchema(interviewNotesSummaryResponseSchema)
   @Validate({ body: interviewNotesSummarySchema })
   async interviewNotesSummary(
     @Body() body: InterviewNotesSummaryInput,
@@ -314,6 +339,7 @@ export class HrAiController {
 
   @Post("hr/accept-candidate-score")
   @RequirePermission("hr:interviews:manage")
+  @ResponseSchema(acceptCandidateScoreResponseSchema)
   @Validate({ body: acceptCandidateScoreSchema })
   async acceptCandidateScore(
     @Body() body: AcceptCandidateScoreInput,

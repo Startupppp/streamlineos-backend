@@ -9,7 +9,11 @@ import { verifyUnsubscribeToken, type UnsubscribePayload } from "./unsubscribe-t
 import { writeUnsubscribeRule } from "./unsubscribe-suppression";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import {
+  unsubscribeGetResponseSchema,
+  unsubscribePostResponseSchema,
+} from "./dto/email-response.schemas";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
@@ -42,6 +46,7 @@ export class UnsubscribeController {
   ) {}
 
   @Get(":token")
+  @ResponseSchema(unsubscribeGetResponseSchema)
   @Validate({ params: tokenParams })
   get(@Param("token") token: string, @Req() req: Request) {
     return this.handle(token, req, false);
@@ -49,6 +54,7 @@ export class UnsubscribeController {
 
   @Post(":token")
   @BodylessAction()
+  @ResponseSchema(unsubscribePostResponseSchema)
   @Validate({ params: tokenParams })
   post(@Param("token") token: string, @Req() req: Request) {
     return this.handle(token, req, true);

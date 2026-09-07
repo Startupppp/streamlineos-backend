@@ -10,7 +10,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RostersService } from "./rosters.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { rosterRowSchema, rosterEntryRowSchema } from "./dto/time-wfh-shifts-response.schemas";
 
 const rosterIdParams = z.object({ rosterId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +39,7 @@ export class RostersController {
   constructor(private readonly service: RostersService) {}
 
   @Get()
+  @ResponseSchema(z.array(rosterRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   list(@CurrentUser() u: CurrentUserContext) {
@@ -46,6 +48,7 @@ export class RostersController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(rosterRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ body: createRosterSchema })
@@ -57,6 +60,7 @@ export class RostersController {
   }
 
   @Get(":rosterId/entries")
+  @ResponseSchema(z.array(rosterEntryRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   @Validate({ params: rosterIdParams })
@@ -66,6 +70,7 @@ export class RostersController {
 
   @Post(":rosterId/entries")
   @HttpCode(201)
+  @ResponseSchema(rosterEntryRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: rosterIdParams, body: upsertRosterEntrySchema })
@@ -79,6 +84,7 @@ export class RostersController {
 
   @Patch(":rosterId/publish")
   @BodylessAction()
+  @ResponseSchema(rosterRowSchema)
   @Idempotent("hr.roster.publish")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")

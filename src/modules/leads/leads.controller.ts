@@ -33,6 +33,14 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import {
+  leadListSchema,
+  leadDetailSchema,
+  leadMutatedSchema,
+  leadBoardSchema,
+  leadStatsSchema,
+} from "./dto/leads-response.schemas";
 
 const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 
@@ -47,6 +55,7 @@ export class LeadsController {
 
   @Get()
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadListSchema)
   @Validate({ query: listSchema })
   async list(
     @Query() filters: ListInput,
@@ -64,6 +73,7 @@ export class LeadsController {
   @HttpCode(201)
   @RequirePermission("crm:leads:create")
   @Idempotent("crm.lead.create")
+  @ResponseSchema(leadMutatedSchema)
   @Validate({ body: createSchema })
   async create(
     @Body() body: CreateInput,
@@ -78,6 +88,7 @@ export class LeadsController {
 
   @Get("board")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadBoardSchema)
   async getBoard(@CurrentUser() u: CurrentUserContext) {
     const scope = await resolveLeadsViewScope(this.access, u);
     return this.leads.getBoard(u.orgId, {
@@ -88,6 +99,7 @@ export class LeadsController {
 
   @Get("stats")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadStatsSchema)
   async getStats(
     @Query("dateFrom") dateFrom: string | undefined,
     @Query("dateTo") dateTo: string | undefined,
@@ -104,6 +116,7 @@ export class LeadsController {
 
   @Get(":leadId")
   @RequirePermission("crm:leads:view")
+  @ResponseSchema(leadDetailSchema)
   @Validate({ params: leadIdParams })
   async get(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
     const lead = await this.leads.getLead(u.orgId, leadId);
@@ -113,6 +126,7 @@ export class LeadsController {
 
   @Patch(":leadId")
   @RequirePermission("crm:leads:update")
+  @ResponseSchema(leadMutatedSchema)
   @Validate({ params: leadIdParams, body: updateSchema })
   async update(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -127,6 +141,7 @@ export class LeadsController {
   @Delete(":leadId")
   @HttpCode(204)
   @RequirePermission("crm:leads:delete")
+  @NoContentResponse()
   @Validate({ params: leadIdParams })
   async remove(@Param("leadId", ParseIntPipe) leadId: number, @CurrentUser() u: CurrentUserContext) {
     await this.leads.remove(u.orgId, u.userId, leadId);

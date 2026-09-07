@@ -25,6 +25,12 @@ import {
   type ListUserApiTokensInput,
 } from "./dto/user-api-tokens.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  userApiTokensPageSchema,
+  userApiTokenRowSchema,
+  grantablePermissionsSchema,
+} from "./dto/user-api-tokens-response.schemas";
 import { z } from "zod";
 
 const tokenIdParams = z.object({ tokenId: z.string().min(1) }).strict();
@@ -36,6 +42,7 @@ export class UserApiTokensController {
 
   @Get()
   @RequirePermission("settings:api-tokens:read")
+  @ResponseSchema(userApiTokensPageSchema)
   @Validate({ query: listUserApiTokensSchema })
   list(
     @CurrentUser() u: CurrentUserContext,
@@ -46,15 +53,15 @@ export class UserApiTokensController {
 
   @Get("permissions")
   @RequirePermission("settings:api-tokens:read")
+  @ResponseSchema(grantablePermissionsSchema)
   listGrantablePermissions(@CurrentUser() u: CurrentUserContext) {
     return this.userApiTokensService.listGrantablePermissions(u);
   }
 
   @Post()
   @RequirePermission("settings:api-tokens:write")
+  @ResponseSchema(userApiTokenRowSchema)
   @Validate({ body: createUserApiTokenSchema })
-  // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
-  // true })` is live, so a compressed length is a cross-origin size oracle.
   @Header(NO_COMPRESSION_HEADER, "1")
   create(
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +73,7 @@ export class UserApiTokensController {
   @Delete(":tokenId")
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermission("settings:api-tokens:write")
+  @NoContentResponse()
   @Validate({ params: tokenIdParams })
   revoke(@CurrentUser() u: CurrentUserContext, @Param("tokenId") tokenId: string) {
     return this.userApiTokensService.revoke(u.userId, tokenId);

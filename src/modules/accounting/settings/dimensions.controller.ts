@@ -27,6 +27,13 @@ import {
 } from "./dto/dimensions.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  dimensionListResponseSchema,
+  dimensionCreatedResponseSchema,
+  dimensionValueListResponseSchema,
+  dimensionValueCreatedResponseSchema,
+} from "./dto/settings-response.schemas";
 
 const dimensionIdParams = z.object({ dimensionId: z.coerce.number().int().positive() }).strict();
 const dimensionIdvalueIdParams = z.object({ dimensionId: z.coerce.number().int().positive(), valueId: z.coerce.number().int().positive() }).strict();
@@ -38,12 +45,14 @@ export class DimensionsController {
   constructor(private readonly svc: DimensionsService) {}
 
   @Get()
+  @ResponseSchema(dimensionListResponseSchema)
   @RequirePermission("accounting:dimensions:read")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listDimensions(u.orgId);
   }
 
   @Post()
+  @ResponseSchema(dimensionCreatedResponseSchema)
   @RequirePermission("accounting:dimensions:manage")
   @Validate({ body: createDimensionSchema })
   create(
@@ -54,6 +63,7 @@ export class DimensionsController {
   }
 
   @Patch(":dimensionId")
+  @ResponseSchema(dimensionCreatedResponseSchema)
   @RequirePermission("accounting:dimensions:manage")
   @Validate({ params: dimensionIdParams, body: updateDimensionSchema })
   update(
@@ -65,6 +75,7 @@ export class DimensionsController {
   }
 
   @Get(":dimensionId/values")
+  @ResponseSchema(dimensionValueListResponseSchema)
   @RequirePermission("accounting:dimensions:read")
   @Validate({ params: dimensionIdParams })
   listValues(
@@ -75,6 +86,7 @@ export class DimensionsController {
   }
 
   @Post(":dimensionId/values")
+  @ResponseSchema(dimensionValueCreatedResponseSchema)
   @RequirePermission("accounting:dimensions:manage")
   @Validate({ params: dimensionIdParams, body: createDimensionValueSchema })
   createValue(
@@ -86,6 +98,7 @@ export class DimensionsController {
   }
 
   @Patch(":dimensionId/values/:valueId")
+  @ResponseSchema(dimensionValueCreatedResponseSchema)
   @RequirePermission("accounting:dimensions:manage")
   @Validate({ params: dimensionIdvalueIdParams, body: updateDimensionValueSchema })
   updateValue(

@@ -30,6 +30,13 @@ import {
 } from "./dto/portfolios.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  programRowSchema,
+  programPageSchema,
+  programDetailSchema,
+  successSchema,
+} from "./dto/portfolios-response.schemas";
 
 const programIdParams = z.object({ programId: z.coerce.number().int().positive() }).strict();
 const programIdprojectIdParams = z.object({ programId: z.coerce.number().int().positive(), projectId: z.coerce.number().int().positive() }).strict();
@@ -42,6 +49,7 @@ export class ProgramsController {
 
   @Get("programs")
   @RequirePermission("build:programs:view")
+  @ResponseSchema(programPageSchema)
   @Validate({ query: listProgramsQuerySchema })
   listPrograms(
     @Query() query: ListProgramsQuery,
@@ -52,6 +60,7 @@ export class ProgramsController {
 
   @Get("programs/:programId")
   @RequirePermission("build:programs:view")
+  @ResponseSchema(programDetailSchema)
   @Validate({ params: programIdParams })
   getProgram(
     @Param("programId", ParseIntPipe) programId: number,
@@ -63,6 +72,7 @@ export class ProgramsController {
   @Post("programs")
   @HttpCode(201)
   @RequirePermission("build:programs:manage")
+  @ResponseSchema(programRowSchema)
   @Validate({ body: createProgramSchema })
   createProgram(
     @Body() body: CreateProgramInput,
@@ -73,6 +83,7 @@ export class ProgramsController {
 
   @Patch("programs/:programId")
   @RequirePermission("build:programs:manage")
+  @ResponseSchema(programRowSchema)
   @Validate({ params: programIdParams, body: updateProgramSchema })
   updateProgram(
     @Param("programId", ParseIntPipe) programId: number,
@@ -84,6 +95,7 @@ export class ProgramsController {
 
   @Delete("programs/:programId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("build:programs:manage")
   @Validate({ params: programIdParams })
   deleteProgram(
@@ -96,6 +108,7 @@ export class ProgramsController {
   @Post("programs/:programId/projects")
   @HttpCode(200)
   @RequirePermission("build:programs:manage")
+  @ResponseSchema(successSchema)
   @Validate({ params: programIdParams, body: linkProjectSchema })
   linkProject(
     @Param("programId", ParseIntPipe) programId: number,
@@ -107,6 +120,7 @@ export class ProgramsController {
 
   @Delete("programs/:programId/projects/:projectId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("build:programs:manage")
   @Validate({ params: programIdprojectIdParams })
   unlinkProject(

@@ -19,11 +19,26 @@ import { CronWorkflowService } from "./cron-workflow.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CronLeaseService } from "./cron-lease.service";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { CronOperatorAccessService } from "./cron-operator-access.service";
 import { CronAiUsageRetentionService } from "./cron-ai-usage-retention.service";
 import { CronMailRetentionService } from "./cron-mail-retention.service";
 import { CronAnnouncementsRetentionService } from "./cron-announcements-retention.service";
+import {
+  workflowTickResponseSchema,
+  buildDueSweepResponseSchema,
+  emailOutboxFlushResponseSchema,
+  invitationExpiryResponseSchema,
+  ownershipTransferExpiryResponseSchema,
+  accountOrgIndexRebuildResponseSchema,
+  orgPurgeWorkerResponseSchema,
+  idempotencyFenceSweepResponseSchema,
+  timesheetsExceptionDetectionResponseSchema,
+  operatorGrantExpiryResponseSchema,
+  aiUsageRetentionSweepResponseSchema,
+  mailMetadataRetentionSweepResponseSchema,
+  announcementsRetentionSweepResponseSchema,
+} from "./dto/cron-platform-response.schemas";
 
 @Public()
 @Controller("cron")
@@ -46,6 +61,7 @@ export class CronPlatformController {
   ) {}
 
   @Get("workflow-tick")
+  @ResponseSchema(workflowTickResponseSchema)
   async workflowTickGet(@Headers("authorization") authorization?: string) {
     return this.runWorkflowTick(authorization);
   }
@@ -53,11 +69,13 @@ export class CronPlatformController {
   @Post("workflow-tick")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(workflowTickResponseSchema)
   async workflowTickPost(@Headers("authorization") authorization?: string) {
     return this.runWorkflowTick(authorization);
   }
 
   @Get("build-due-sweep")
+  @ResponseSchema(buildDueSweepResponseSchema)
   getBuildDueSweep(@Headers("authorization") authorization?: string) {
     return this.runBuildDueSweep(authorization);
   }
@@ -65,11 +83,13 @@ export class CronPlatformController {
   @Post("build-due-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(buildDueSweepResponseSchema)
   postBuildDueSweep(@Headers("authorization") authorization?: string) {
     return this.runBuildDueSweep(authorization);
   }
 
   @Get("email-outbox-flush")
+  @ResponseSchema(emailOutboxFlushResponseSchema)
   getEmailOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runEmailOutboxFlush(authorization);
   }
@@ -77,11 +97,13 @@ export class CronPlatformController {
   @Post("email-outbox-flush")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(emailOutboxFlushResponseSchema)
   postEmailOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runEmailOutboxFlush(authorization);
   }
 
   @Get("invitation-expiry")
+  @ResponseSchema(invitationExpiryResponseSchema)
   getInvitationExpiry(@Headers("authorization") authorization?: string) {
     return this.runInvitationExpiry(authorization);
   }
@@ -89,11 +111,13 @@ export class CronPlatformController {
   @Post("invitation-expiry")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(invitationExpiryResponseSchema)
   postInvitationExpiry(@Headers("authorization") authorization?: string) {
     return this.runInvitationExpiry(authorization);
   }
 
   @Get("ownership-transfer-expiry")
+  @ResponseSchema(ownershipTransferExpiryResponseSchema)
   getOwnershipTransferExpiry(@Headers("authorization") authorization?: string) {
     return this.runOwnershipTransferExpiry(authorization);
   }
@@ -101,11 +125,13 @@ export class CronPlatformController {
   @Post("ownership-transfer-expiry")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(ownershipTransferExpiryResponseSchema)
   postOwnershipTransferExpiry(@Headers("authorization") authorization?: string) {
     return this.runOwnershipTransferExpiry(authorization);
   }
 
   @Get("account-org-index-rebuild")
+  @ResponseSchema(accountOrgIndexRebuildResponseSchema)
   getAccountOrgIndexRebuild(@Headers("authorization") authorization?: string) {
     return this.runAccountOrgIndexRebuild(authorization);
   }
@@ -113,11 +139,13 @@ export class CronPlatformController {
   @Post("account-org-index-rebuild")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(accountOrgIndexRebuildResponseSchema)
   postAccountOrgIndexRebuild(@Headers("authorization") authorization?: string) {
     return this.runAccountOrgIndexRebuild(authorization);
   }
 
   @Get("org-purge-worker")
+  @ResponseSchema(orgPurgeWorkerResponseSchema)
   getOrgPurgeWorker(@Headers("authorization") authorization?: string) {
     return this.runOrgPurgeWorker(authorization);
   }
@@ -125,11 +153,13 @@ export class CronPlatformController {
   @Post("org-purge-worker")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(orgPurgeWorkerResponseSchema)
   postOrgPurgeWorker(@Headers("authorization") authorization?: string) {
     return this.runOrgPurgeWorker(authorization);
   }
 
   @Get("idempotency-fence-sweep")
+  @ResponseSchema(idempotencyFenceSweepResponseSchema)
   getIdempotencyFenceSweep(@Headers("authorization") authorization?: string) {
     return this.runIdempotencyFenceSweep(authorization);
   }
@@ -137,11 +167,13 @@ export class CronPlatformController {
   @Post("idempotency-fence-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(idempotencyFenceSweepResponseSchema)
   postIdempotencyFenceSweep(@Headers("authorization") authorization?: string) {
     return this.runIdempotencyFenceSweep(authorization);
   }
 
   @Get("timesheets-exception-detection")
+  @ResponseSchema(timesheetsExceptionDetectionResponseSchema)
   getTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsExceptionDetection(authorization);
   }
@@ -149,11 +181,13 @@ export class CronPlatformController {
   @Post("timesheets-exception-detection")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(timesheetsExceptionDetectionResponseSchema)
   postTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsExceptionDetection(authorization);
   }
 
   @Get("operator-grant-expiry")
+  @ResponseSchema(operatorGrantExpiryResponseSchema)
   getOperatorGrantExpiry(@Headers("authorization") authorization?: string) {
     return this.runOperatorGrantExpiry(authorization);
   }
@@ -161,11 +195,13 @@ export class CronPlatformController {
   @Post("operator-grant-expiry")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(operatorGrantExpiryResponseSchema)
   postOperatorGrantExpiry(@Headers("authorization") authorization?: string) {
     return this.runOperatorGrantExpiry(authorization);
   }
 
   @Get("ai-usage-retention-sweep")
+  @ResponseSchema(aiUsageRetentionSweepResponseSchema)
   getAiUsageRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runAiUsageRetentionSweep(authorization);
   }
@@ -173,6 +209,7 @@ export class CronPlatformController {
   @Post("ai-usage-retention-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(aiUsageRetentionSweepResponseSchema)
   postAiUsageRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runAiUsageRetentionSweep(authorization);
   }
@@ -387,6 +424,7 @@ export class CronPlatformController {
   }
 
   @Get("mail-metadata-retention-sweep")
+  @ResponseSchema(mailMetadataRetentionSweepResponseSchema)
   getMailMetadataRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runMailMetadataRetentionSweep(authorization);
   }
@@ -394,11 +432,13 @@ export class CronPlatformController {
   @Post("mail-metadata-retention-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(mailMetadataRetentionSweepResponseSchema)
   postMailMetadataRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runMailMetadataRetentionSweep(authorization);
   }
 
   @Get("announcements-retention-sweep")
+  @ResponseSchema(announcementsRetentionSweepResponseSchema)
   getAnnouncementsRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runAnnouncementsRetentionSweep(authorization);
   }
@@ -406,6 +446,7 @@ export class CronPlatformController {
   @Post("announcements-retention-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(announcementsRetentionSweepResponseSchema)
   postAnnouncementsRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runAnnouncementsRetentionSweep(authorization);
   }

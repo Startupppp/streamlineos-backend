@@ -13,6 +13,8 @@ import {
 } from "./dto/accounting.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { gstr1ResponseSchema, gstr3bResponseSchema } from "./dto/accounting-gst-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/reports")
@@ -21,6 +23,7 @@ export class AccountingGstController {
   constructor(private readonly gst: AccountingGstService) {}
 
   @Get("gstr-1")
+  @ResponseSchema(gstr1ResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: gstr1QuerySchema })
@@ -32,6 +35,7 @@ export class AccountingGstController {
   }
 
   @Get("gstr-3b")
+  @ResponseSchema(gstr3bResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: gstr3BQuerySchema })

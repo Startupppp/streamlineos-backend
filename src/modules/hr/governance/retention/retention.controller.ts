@@ -37,7 +37,8 @@ import {
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../../common/openapi/zod-operation-contracts";
+import { listRetentionPoliciesResponseSchema, createRetentionPolicyResponseSchema, updateRetentionPolicyResponseSchema, listDataRequestsResponseSchema, createDataRequestResponseSchema, updateDataRequestResponseSchema, approveDataRequestResponseSchema, processDataRequestResponseSchema } from "../dto/governance-response.schemas"
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
@@ -48,6 +49,7 @@ const requestIdParams = z.object({ requestId: z.coerce.number().int().positive()
 export class RetentionController {
   constructor(private readonly service: RetentionService) {}
 
+  @ResponseSchema(listRetentionPoliciesResponseSchema)
   @Get("policies")
   @RequirePermission("hr:retention:manage")
   @Validate({ query: listRetentionPoliciesSchema })
@@ -58,6 +60,7 @@ export class RetentionController {
     return this.service.listPolicies(user.orgId, query);
   }
 
+  @ResponseSchema(createRetentionPolicyResponseSchema)
   @Post("policies")
   @RequirePermission("hr:retention:manage")
   @Validate({ body: createRetentionPolicySchema })
@@ -69,6 +72,7 @@ export class RetentionController {
     return this.service.createPolicy(user.orgId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(updateRetentionPolicyResponseSchema)
   @Patch("policies/:policyId")
   @RequirePermission("hr:retention:manage")
   @Validate({ params: policyIdParams, body: updateRetentionPolicySchema })
@@ -81,6 +85,7 @@ export class RetentionController {
     return this.service.updatePolicy(user.orgId, policyId, user.userId, body, req.ip);
   }
 
+  @NoContentResponse()
   @Delete("policies/:policyId")
   @RequirePermission("hr:retention:manage")
   @HttpCode(204)
@@ -93,6 +98,7 @@ export class RetentionController {
     await this.service.deletePolicy(user.orgId, policyId, user.userId, req.ip);
   }
 
+  @ResponseSchema(listDataRequestsResponseSchema)
   @Get("requests")
   @RequirePermission("hr:retention:manage")
   @Validate({ query: listDataRequestsSchema })
@@ -103,6 +109,7 @@ export class RetentionController {
     return this.service.listRequests(user.orgId, query);
   }
 
+  @ResponseSchema(createDataRequestResponseSchema)
   @Post("requests")
   @RequirePermission("hr:retention:manage")
   @Validate({ body: createDataRequestSchema })
@@ -114,6 +121,7 @@ export class RetentionController {
     return this.service.createRequest(user.orgId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(updateDataRequestResponseSchema)
   @Patch("requests/:requestId")
   @RequirePermission("hr:retention:manage")
   @Validate({ params: requestIdParams, body: updateDataRequestSchema })
@@ -126,6 +134,7 @@ export class RetentionController {
     return this.service.updateRequest(user.orgId, requestId, user.userId, body, req.ip);
   }
 
+  @ResponseSchema(approveDataRequestResponseSchema)
   @Post("requests/:requestId/approve")
   @BodylessAction()
   @Idempotent("hr.retention.approve")
@@ -139,6 +148,7 @@ export class RetentionController {
     return this.service.approveRequest(user.orgId, requestId, user.userId, req.ip);
   }
 
+  @ResponseSchema(processDataRequestResponseSchema)
   @Post("requests/:requestId/process")
   @BodylessAction()
   @RequirePermission("hr:retention:manage")

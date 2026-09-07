@@ -43,6 +43,17 @@ import {
   type UpdateInput,
 } from "./dto/task.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  taskAnalyticsSchema,
+  taskRowSchema,
+  taskSequenceApplySchema,
+  taskSequenceRowSchema,
+  taskSequencesListSchema,
+  taskSequenceSuccessSchema,
+  tasksListResponseSchema,
+  taskSuccessSchema,
+} from "./dto/tasks-response.schemas";
 import { z } from "zod";
 
 const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
@@ -59,6 +70,7 @@ export class TasksController {
   ) {}
 
   @Get()
+  @ResponseSchema(tasksListResponseSchema)
   @RequirePermission("tasks:read")
   @Validate({ query: listSchema })
   list(
@@ -69,6 +81,7 @@ export class TasksController {
   }
 
   @Post()
+  @ResponseSchema(taskRowSchema)
   @HttpCode(201)
   @RequirePermission("tasks:write")
   @Validate({ body: createSchema })
@@ -82,6 +95,7 @@ export class TasksController {
   }
 
   @Get("analytics")
+  @ResponseSchema(taskAnalyticsSchema)
   @RequirePermission("tasks:read")
   @Validate({ query: analyticsSchema })
   async getAnalytics(
@@ -93,6 +107,7 @@ export class TasksController {
   }
 
   @Get("sequences")
+  @ResponseSchema(taskSequencesListSchema)
   @RequirePermission("tasks:read")
   @Validate({ query: sequenceListSchema })
   listSequences(
@@ -103,6 +118,7 @@ export class TasksController {
   }
 
   @Post("sequences")
+  @ResponseSchema(taskSequenceRowSchema)
   @HttpCode(201)
   @RequirePermission("tasks:write")
   @Validate({ body: sequenceCreateSchema })
@@ -114,6 +130,7 @@ export class TasksController {
   }
 
   @Delete("sequences/:sequenceId")
+  @ResponseSchema(taskSequenceSuccessSchema)
   @RequirePermission("tasks:write")
   @Validate({ params: sequenceIdParams })
   async removeSequence(
@@ -126,6 +143,7 @@ export class TasksController {
   }
 
   @Post("sequences/:sequenceId/apply")
+  @ResponseSchema(taskSequenceApplySchema)
   @HttpCode(201)
   @RequirePermission("tasks:write")
   @Validate({ params: sequenceIdParams, body: sequenceApplySchema })
@@ -141,6 +159,7 @@ export class TasksController {
   }
 
   @Patch(":taskId")
+  @ResponseSchema(taskRowSchema)
   @RequirePermission("tasks:write")
   @Validate({ params: taskIdParams, body: updateSchema })
   async update(
@@ -154,6 +173,7 @@ export class TasksController {
   }
 
   @Delete(":taskId")
+  @ResponseSchema(taskSuccessSchema)
   @RequirePermission("tasks:write")
   @Validate({ params: taskIdParams })
   async remove(
@@ -166,6 +186,7 @@ export class TasksController {
   }
 
   @Post(":taskId/complete")
+  @ResponseSchema(taskRowSchema)
   @RequirePermission("tasks:write")
   @Validate({ params: taskIdParams, body: completeSchema })
   async complete(

@@ -33,7 +33,17 @@ import { AttendanceService } from "./attendance.service";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { z } from "zod";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  attendanceRowSchema,
+  attendanceStatusResponseSchema,
+  attendanceHeatmapResponseSchema,
+  attendanceHistoryResponseSchema,
+  orgHolidayRowSchema,
+  regularizationRowSchema,
+} from "./dto/time-attendance-response.schemas";
 
 @Controller("me/attendance")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -45,12 +55,14 @@ export class EmployeeAttendanceController {
   ) {}
 
   @Get("status")
+  @ResponseSchema(attendanceStatusResponseSchema)
   status(@CurrentUser() user: CurrentUserContext) {
     return this.attendance.status(user.orgId, user.userId);
   }
 
   @Post("check-in")
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @Idempotent("hr.attendance.check-in")
   @Validate({ body: checkInSchema })
   checkIn(
@@ -68,6 +80,7 @@ export class EmployeeAttendanceController {
 
   @Post("check-out")
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @Idempotent("hr.attendance.check-out")
   @Validate({ body: checkOutSchema })
   checkOut(
@@ -85,6 +98,7 @@ export class EmployeeAttendanceController {
   @Post("break")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @Idempotent("hr.attendance.toggle-break")
   toggleBreak(
     @CurrentUser() currentUser: CurrentUserContext,
@@ -98,6 +112,7 @@ export class EmployeeAttendanceController {
   }
 
   @Get("logs")
+  @ResponseSchema(z.array(attendanceRowSchema))
   @Validate({ query: selfAttendanceLogsQuerySchema })
   logs(
     @Query() query: SelfAttendanceLogsQuery,
@@ -107,6 +122,7 @@ export class EmployeeAttendanceController {
   }
 
   @Get("history")
+  @ResponseSchema(attendanceHistoryResponseSchema)
   @Validate({ query: selfAttendanceHistoryQuerySchema })
   history(
     @Query() query: SelfAttendanceHistoryQuery,
@@ -121,6 +137,7 @@ export class EmployeeAttendanceController {
   }
 
   @Get("monthly")
+  @ResponseSchema(z.array(attendanceRowSchema))
   @Validate({ query: selfMonthlyQuerySchema })
   monthly(
     @Query() query: SelfMonthlyQuery,
@@ -135,6 +152,7 @@ export class EmployeeAttendanceController {
   }
 
   @Get("heatmap")
+  @ResponseSchema(attendanceHeatmapResponseSchema)
   @Validate({ query: selfHeatmapQuerySchema })
   heatmap(
     @Query() query: SelfHeatmapQuery,
@@ -148,12 +166,14 @@ export class EmployeeAttendanceController {
   }
 
   @Get("holidays")
+  @ResponseSchema(z.array(orgHolidayRowSchema))
   holidays(@CurrentUser() user: CurrentUserContext) {
     return this.attendance.listHolidays(user.orgId);
   }
 
   @Post("regularizations")
   @HttpCode(201)
+  @ResponseSchema(regularizationRowSchema)
   @Validate({ body: createAttendanceRegularizationSchema })
   createRegularization(
     @Body() body: CreateAttendanceRegularizationInput,

@@ -25,6 +25,8 @@ import {
   type UpdateRateInput,
 } from "./dto/rates.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ratesListResponseSchema, rateSchema } from "./dto/timesheets-response.schemas";
 import { z } from "zod";
 
 const rateIdParams = z.object({ rateId: z.coerce.number().int().positive() }).strict();
@@ -37,6 +39,7 @@ export class RatesController {
 
   @Get()
   @RequirePermission("timesheets:rates:view")
+  @ResponseSchema(ratesListResponseSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.rates.listRates(u);
   }
@@ -45,6 +48,7 @@ export class RatesController {
   @HttpCode(201)
   @RequirePermission("timesheets:rates:manage")
   @Validate({ body: createRateSchema })
+  @ResponseSchema(rateSchema)
   create(
     @Body() body: CreateRateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -55,6 +59,7 @@ export class RatesController {
   @Patch(":rateId")
   @RequirePermission("timesheets:rates:manage")
   @Validate({ params: rateIdParams, body: updateRateSchema })
+  @ResponseSchema(rateSchema)
   update(
     @Param("rateId", ParseIntPipe) rateId: number,
     @Body() body: UpdateRateInput,
@@ -67,6 +72,7 @@ export class RatesController {
   @HttpCode(204)
   @RequirePermission("timesheets:rates:manage")
   @Validate({ params: rateIdParams })
+  @NoContentResponse()
   delete(
     @Param("rateId", ParseIntPipe) rateId: number,
     @CurrentUser() u: CurrentUserContext,

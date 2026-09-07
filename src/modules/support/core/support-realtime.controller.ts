@@ -7,6 +7,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { SupportRealtimeService } from "./support-realtime.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ablyTokenRequestSchema } from "./dto/support-channel-response.schemas";
 
 @RequireModule("support")
 @Controller("support")
@@ -16,6 +18,7 @@ export class SupportRealtimeController {
 
   @Get("ably-token")
   @RequirePermission("support:tickets:view")
+  @ResponseSchema(ablyTokenRequestSchema)
   getAblyToken(@CurrentUser() u: CurrentUserContext) {
     return this.realtime.createTokenRequest(u);
   }

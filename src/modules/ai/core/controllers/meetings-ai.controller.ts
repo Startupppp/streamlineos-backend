@@ -33,6 +33,14 @@ import {
   type ProposeSendBodyInput,
 } from "../dto/meetings.schemas";
 import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  meetingsPrepResponseSchema,
+  meetingsFollowUpResponseSchema,
+  proposeSendFollowUpResponseSchema,
+  confirmSendFollowUpResponseSchema,
+} from "../dto/ai-response.schemas";
 
 const MEETING_SOURCES_HEADER = "x-ai-sources";
 
@@ -59,6 +67,7 @@ export class MeetingsAiController {
   }
 
   @Post("prep")
+  @ResponseSchema(meetingsPrepResponseSchema)
   @Validate({ body: meetingPrepBodySchema })
   async prep(
     @Body() body: MeetingPrepBodyInput,
@@ -81,6 +90,7 @@ export class MeetingsAiController {
    * headers so a stopped stream keeps its citations.
    */
   @Post("prep/stream")
+  @ApiOkResponse({ description: "AI text stream with meeting sources", content: { "text/plain": { schema: { type: "string" } } } })
   @Validate({ body: meetingPrepBodySchema })
   async prepStream(
     @Req() req: Request,
@@ -114,6 +124,7 @@ export class MeetingsAiController {
   }
 
   @Post("follow-up")
+  @ResponseSchema(meetingsFollowUpResponseSchema)
   @Validate({ body: meetingFollowUpBodySchema })
   async followUp(
     @Body() body: MeetingFollowUpBodyInput,
@@ -138,6 +149,7 @@ export class MeetingsAiController {
    * one is; the real sources ride the headers so a stopped stream keeps them.
    */
   @Post("follow-up/stream")
+  @ApiOkResponse({ description: "AI text stream with meeting sources", content: { "text/plain": { schema: { type: "string" } } } })
   @Validate({ body: meetingFollowUpBodySchema })
   async followUpStream(
     @Req() req: Request,
@@ -169,6 +181,7 @@ export class MeetingsAiController {
   }
 
   @Post("follow-up/propose-send")
+  @ResponseSchema(proposeSendFollowUpResponseSchema)
   @Validate({ body: proposeSendBodySchema })
   async proposeSend(
     @Body() body: ProposeSendBodyInput,
@@ -185,6 +198,7 @@ export class MeetingsAiController {
   }
 
   @Post("follow-up/confirm-send")
+  @ResponseSchema(confirmSendFollowUpResponseSchema)
   @Validate({ body: meetingSendConfirmBodySchema })
   async confirmSend(
     @Body() body: MeetingSendConfirmBodyInput,

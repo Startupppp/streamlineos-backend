@@ -8,6 +8,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { chatAttachmentParamsSchema } from "./dto/chat-attachment.schemas";
 import { ChatAttachmentsService } from "./chat-attachments.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { chatSignedUrlSchema } from "./dto/chat-misc-response.schemas";
 
 @ApiTags("Chat Attachments")
 @ApiBearerAuth()
@@ -21,6 +23,7 @@ export class ChatAttachmentsController {
   @ApiResponse({ status: 403, description: "Not a member of a public channel" })
   @ApiResponse({ status: 404, description: "Attachment not found or channel is private and caller is not a member" })
   @Get(":channelId/attachments/:attachmentId")
+  @ResponseSchema(chatSignedUrlSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ params: chatAttachmentParamsSchema })
   getSignedUrl(

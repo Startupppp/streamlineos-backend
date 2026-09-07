@@ -37,6 +37,15 @@ import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  chatMessageOkSchema,
+  chatMessagePageSchema,
+  chatMessagePollPageSchema,
+  chatRawMessageSchema,
+  chatReactionsResponseSchema,
+  chatThreadPageSchema,
+} from "./dto/chat-messages-response.schemas";
 import { z } from "zod";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
@@ -58,6 +67,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "List messages in a channel (cursor-paginated)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
+  @ResponseSchema(chatMessagePageSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ params: channelIdParams, query: listMessagesQuerySchema })
   list(
@@ -72,6 +82,7 @@ export class ChatMessagesController {
   @ApiResponse({ status: 201, description: "Message created" })
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Post()
+  @ResponseSchema(chatRawMessageSchema)
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
   @UseGuards(RateLimitGuard)
@@ -88,6 +99,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "Poll for new messages since a timestamp or cursor (fallback for realtime)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("poll")
+  @ResponseSchema(chatMessagePollPageSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ params: channelIdParams, query: chatPollQuerySchema })
   poll(
@@ -104,6 +116,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "Edit message content" })
   @ApiResponse({ status: 200, description: "OK" })
   @Patch(":messageId")
+  @ResponseSchema(chatMessageOkSchema)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams, body: editMessageSchema })
   edit(
@@ -118,6 +131,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "Soft-delete a message" })
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId")
+  @ResponseSchema(chatMessageOkSchema)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams })
   remove(
@@ -131,6 +145,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "Add an emoji reaction to a message (idempotent)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":messageId/reactions")
+  @ResponseSchema(chatReactionsResponseSchema)
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams, body: reactionSchema })
@@ -146,6 +161,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "Remove an emoji reaction from a message (idempotent)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId/reactions/:emoji")
+  @ResponseSchema(chatReactionsResponseSchema)
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelMessageAndEmojiParams })
@@ -161,6 +177,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "List thread replies for a message" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":messageId/thread")
+  @ResponseSchema(chatThreadPageSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ params: channelAndMessageIdParams, query: listMessagesQuerySchema })
   listThread(
@@ -174,6 +191,7 @@ export class ChatMessagesController {
   @ApiOperation({ summary: "Send a reply in a message thread" })
   @ApiResponse({ status: 201, description: "Created" })
   @Post(":messageId/thread")
+  @ResponseSchema(chatRawMessageSchema)
   @HttpCode(201)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelAndMessageIdParams, body: sendMessageSchema })

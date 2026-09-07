@@ -42,6 +42,20 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  ticketRowSchema,
+  ticketDetailSchema,
+  ticketListPageSchema,
+  ticketActivityPageSchema,
+  allWorkPageSchema,
+  columnCountsSchema,
+  exportTicketsResultSchema,
+  importTicketsResultSchema,
+  bulkUpdateResultSchema,
+  rankTicketResultSchema,
+  ticketUpdateResultSchema,
+} from "./dto/build-tickets-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
@@ -59,6 +73,7 @@ export class ProjectsTicketsController {
 
   @Get("all-work")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(allWorkPageSchema)
   @Validate({ query: allWorkQuerySchema })
   getAllWork(
     @Query() query: AllWorkQuery,
@@ -69,6 +84,7 @@ export class ProjectsTicketsController {
 
   @Get("search/tickets")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(z.array(ticketRowSchema))
   @Validate({ query: searchTicketsQuerySchema })
   searchTickets(
     @Query() query: SearchTicketsQuery,
@@ -79,6 +95,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/column-counts")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(columnCountsSchema)
   @Validate({ params: projectIdParams })
   getColumnCounts(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -89,6 +106,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/export")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(exportTicketsResultSchema)
   @Validate({ params: projectIdParams })
   exportTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -100,6 +118,7 @@ export class ProjectsTicketsController {
   @Post(":projectId/tickets/import")
   @RequirePermission("build:tickets:create")
   @HttpCode(200)
+  @ResponseSchema(importTicketsResultSchema)
   @Idempotent("build.ticket.import")
   @Validate({ params: projectIdParams, body: importTicketsSchema })
   importTickets(
@@ -112,6 +131,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(ticketListPageSchema)
   @Validate({ params: projectIdParams, query: ticketsListQuerySchema })
   listTickets(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -124,6 +144,7 @@ export class ProjectsTicketsController {
   @Post(":projectId/tickets")
   @RequirePermission("build:tickets:create")
   @HttpCode(201)
+  @ResponseSchema(ticketRowSchema)
   @Idempotent("build.ticket.create")
   @Validate({ params: projectIdParams, body: createTicketSchema })
   createTicket(
@@ -137,6 +158,7 @@ export class ProjectsTicketsController {
   @Post(":projectId/tickets/bulk")
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
+  @ResponseSchema(bulkUpdateResultSchema)
   @Idempotent("build.ticket.bulk-update")
   @Validate({ params: projectIdParams, body: bulkUpdateSchema })
   bulkUpdate(
@@ -149,6 +171,7 @@ export class ProjectsTicketsController {
 
   @Patch(":projectId/tickets/:ticketId/rank")
   @RequirePermission("build:tickets:update")
+  @ResponseSchema(rankTicketResultSchema)
   @Validate({ params: projectIdticketIdParams, body: rankTicketSchema })
   rankTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -161,6 +184,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/:ticketId/activity")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(ticketActivityPageSchema)
   @Validate({ params: projectIdticketIdParams, query: ticketActivityQuerySchema })
   getActivity(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -176,6 +200,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/key/:ticketNumber")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(ticketDetailSchema)
   @Validate({ params: projectIdticketNumberParams })
   getTicketByKey(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -187,6 +212,7 @@ export class ProjectsTicketsController {
 
   @Get(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:view")
+  @ResponseSchema(ticketDetailSchema)
   @Validate({ params: projectIdticketIdParams_ })
   getTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -197,6 +223,7 @@ export class ProjectsTicketsController {
 
   @Patch(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:update")
+  @ResponseSchema(ticketUpdateResultSchema)
   @Validate({ params: projectIdticketIdParams_, body: updateTicketSchema })
   updateTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -209,6 +236,7 @@ export class ProjectsTicketsController {
   @Delete(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:delete")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdticketIdParams_ })
   deleteTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,

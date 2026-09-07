@@ -23,7 +23,13 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { AiJobsService } from "../../ai/jobs/ai-jobs.service";
 import { SupportKbGapService } from "./support-kb-gap.service";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  gapListResponseSchema,
+  detectGapsJobSchema,
+  proposeDraftResponseSchema,
+  dismissGapResponseSchema,
+} from "./dto/support-kb-gap-response.schemas";
 import { listGapsQuerySchema, type ListGapsQuery } from "./dto/support-kb-gap.schemas";
 
 const gapIdParams = z.object({ gapId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +49,7 @@ export class SupportKbGapController {
   @Get()
   @RequirePermission("support:knowledge-gaps:view")
   @Validate({ query: listGapsQuerySchema })
+  @ResponseSchema(gapListResponseSchema)
   listGaps(
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListGapsQuery,
@@ -54,6 +61,7 @@ export class SupportKbGapController {
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("support:knowledge-gaps:manage")
+  @ResponseSchema(detectGapsJobSchema)
   detectGaps(@CurrentUser() u: CurrentUserContext) {
     const idempotencyKey = `gap-detect:${u.orgId}:${new Date().toISOString().slice(0, 10)}`;
     return this.aiJobs.enqueue({
@@ -72,6 +80,7 @@ export class SupportKbGapController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("support:knowledge-gaps:manage")
   @Validate({ params: gapIdParams })
+  @ResponseSchema(proposeDraftResponseSchema)
   async proposeDraft(
     @Param("gapId", ParseIntPipe) gapId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +92,7 @@ export class SupportKbGapController {
   @Patch(":gapId")
   @RequirePermission("support:knowledge-gaps:manage")
   @Validate({ params: gapIdParams, body: patchSchema })
+  @ResponseSchema(dismissGapResponseSchema)
   patchGap(
     @Param("gapId", ParseIntPipe) gapId: number,
     @CurrentUser() u: CurrentUserContext,

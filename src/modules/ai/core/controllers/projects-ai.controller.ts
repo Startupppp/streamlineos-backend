@@ -46,8 +46,28 @@ import {
 } from "../dto/ticket-ai.schemas";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
 import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import {
+  projectSummaryResponseSchema,
+  projectRisksResponseSchema,
+  projectClientUpdateResponseSchema,
+  projectPlanResponseSchema,
+  projectExtractTasksResponseSchema,
+  projectAskResponseSchema,
+  suggestDraftTitleResponseSchema,
+  improveDraftDescriptionResponseSchema,
+  suggestDraftFieldsResponseSchema,
+  summarizeTicketResponseSchema,
+  summarizeCommentsResponseSchema,
+  improveTicketDescriptionResponseSchema,
+  suggestSubtasksResponseSchema,
+  generateChecklistResponseSchema,
+  weeklyUpdateResponseSchema,
+  extractMeetingActionsResponseSchema,
+  changeImpactResponseSchema,
+  ticketHandoffResponseSchema,
+} from "../dto/ai-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.string().min(1) }).strict();
 const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1) }).strict();
@@ -87,6 +107,7 @@ export class ProjectsAiController {
   @Post("projects/:projectId/summary")
   @Validate({ params: projectIdParams })
   @BodylessAction()
+  @ResponseSchema(projectSummaryResponseSchema)
   async summary(@Param("projectId") rawId: string, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
@@ -96,6 +117,7 @@ export class ProjectsAiController {
   @Post("projects/:projectId/risks")
   @Validate({ params: projectIdParams })
   @BodylessAction()
+  @ResponseSchema(projectRisksResponseSchema)
   async risks(@Param("projectId") rawId: string, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
@@ -105,6 +127,7 @@ export class ProjectsAiController {
   @Post("projects/:projectId/client-update")
   @Validate({ params: projectIdParams })
   @BodylessAction()
+  @ResponseSchema(projectClientUpdateResponseSchema)
   async clientUpdate(@Param("projectId") rawId: string, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
@@ -112,6 +135,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/plan")
+  @ResponseSchema(projectPlanResponseSchema)
   @Validate({ params: projectIdParams, body: planBodySchema })
   async plan(
     @Param("projectId") rawId: string,
@@ -124,6 +148,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/extract-tasks")
+  @ResponseSchema(projectExtractTasksResponseSchema)
   @Validate({ params: projectIdParams, body: extractBodySchema })
   async extractTasks(
     @Param("projectId") rawId: string,
@@ -136,6 +161,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/ask")
+  @ResponseSchema(projectAskResponseSchema)
   @Validate({ params: projectIdParams, body: askBodySchema })
   async ask(
     @Param("projectId") rawId: string,
@@ -148,6 +174,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/suggest-title")
+  @ResponseSchema(suggestDraftTitleResponseSchema)
   @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async suggestDraftTitle(
     @Param("projectId") rawPid: string,
@@ -165,6 +192,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/improve-description")
+  @ResponseSchema(improveDraftDescriptionResponseSchema)
   @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async improveDraftDescription(
     @Param("projectId") rawPid: string,
@@ -214,6 +242,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/suggest-fields")
+  @ResponseSchema(suggestDraftFieldsResponseSchema)
   @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async suggestDraftFields(
     @Param("projectId") rawPid: string,
@@ -233,6 +262,7 @@ export class ProjectsAiController {
   @Post("tickets/:projectId/:ticketId/summarize")
   @Validate({ params: projectIdticketIdParams })
   @BodylessAction()
+  @ResponseSchema(summarizeTicketResponseSchema)
   async summarizeTicket(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -246,6 +276,7 @@ export class ProjectsAiController {
   @Post("tickets/:projectId/:ticketId/summarize-comments")
   @Validate({ params: projectIdticketIdParams })
   @BodylessAction()
+  @ResponseSchema(summarizeCommentsResponseSchema)
   async summarizeTicketComments(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -262,6 +293,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/improve-description")
+  @ResponseSchema(improveTicketDescriptionResponseSchema)
   @Validate({ params: projectIdticketIdParams, body: improveDescriptionBodySchema })
   async improveTicketDescription(
     @Param("projectId") rawPid: string,
@@ -311,6 +343,7 @@ export class ProjectsAiController {
   @Post("tickets/:projectId/:ticketId/suggest-subtasks")
   @Validate({ params: projectIdticketIdParams })
   @BodylessAction()
+  @ResponseSchema(suggestSubtasksResponseSchema)
   async suggestTicketSubtasks(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -324,6 +357,7 @@ export class ProjectsAiController {
   @Post("tickets/:projectId/:ticketId/generate-checklist")
   @Validate({ params: projectIdticketIdParams })
   @BodylessAction()
+  @ResponseSchema(generateChecklistResponseSchema)
   async generateTicketChecklist(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -340,6 +374,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/weekly-update")
+  @ResponseSchema(weeklyUpdateResponseSchema)
   @Validate({ params: projectIdParams, body: weeklyUpdateBodySchema })
   async weeklyUpdate(
     @Param("projectId") rawId: string,
@@ -354,6 +389,7 @@ export class ProjectsAiController {
   @Post("projects/:projectId/meetings/:meetingId/extract-actions")
   @Validate({ params: projectIdmeetingIdParams })
   @BodylessAction()
+  @ResponseSchema(extractMeetingActionsResponseSchema)
   async extractMeetingActions(
     @Param("projectId") rawPid: string,
     @Param("meetingId") rawMid: string,
@@ -367,6 +403,7 @@ export class ProjectsAiController {
   @Post("projects/:projectId/change-impact")
   @Validate({ params: projectIdParams })
   @BodylessAction()
+  @ResponseSchema(changeImpactResponseSchema)
   async changeImpact(
     @Param("projectId") rawId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -379,6 +416,7 @@ export class ProjectsAiController {
   @Post("tickets/:projectId/:ticketId/handoff")
   @Validate({ params: projectIdticketIdParams })
   @BodylessAction()
+  @ResponseSchema(ticketHandoffResponseSchema)
   async ticketHandoff(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,

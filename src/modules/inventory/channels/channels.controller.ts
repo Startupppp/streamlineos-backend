@@ -31,7 +31,14 @@ import type {
 } from "./dto/channels.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listChannelsResponseSchema,
+  invChannelSchema,
+  syncStockResponseSchema,
+  listPublicationsResponseSchema,
+  retryPublicationsResponseSchema,
+} from "./dto/channels-response.schemas";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 
@@ -42,6 +49,7 @@ export class ChannelsController {
   constructor(private readonly svc: ChannelsService) {}
 
   @Get()
+  @ResponseSchema(listChannelsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   list(@CurrentUser() u: CurrentUserContext) {
@@ -49,6 +57,7 @@ export class ChannelsController {
   }
 
   @Post()
+  @ResponseSchema(invChannelSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   @Validate({ body: createChannelSchema })
@@ -60,6 +69,7 @@ export class ChannelsController {
   }
 
   @Patch(":channelId")
+  @ResponseSchema(invChannelSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   @Validate({ params: channelIdParams, body: updateChannelSchema })
@@ -73,6 +83,7 @@ export class ChannelsController {
 
   @Post(":channelId/sync-stock")
   @BodylessAction()
+  @ResponseSchema(syncStockResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   @Validate({ params: channelIdParams })
@@ -84,6 +95,7 @@ export class ChannelsController {
   }
 
   @Get(":channelId/publications")
+  @ResponseSchema(listPublicationsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   @Validate({ params: channelIdParams, query: listPublicationsQuerySchema })
@@ -96,6 +108,7 @@ export class ChannelsController {
   }
 
   @Post(":channelId/publications/retry")
+  @ResponseSchema(retryPublicationsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   @Validate({ params: channelIdParams, body: retryPublicationsSchema })

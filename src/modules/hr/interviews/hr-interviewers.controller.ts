@@ -23,7 +23,13 @@ import {
   type InterviewerPerformanceQuery,
 } from "./dto/hr-interviews.schemas";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  availabilityResponseSchema,
+  interviewerPerformanceSchema,
+  bookingLinkWithRelationsSchema,
+  bookingCancelResponseSchema,
+} from "./dto/interviews-response.schemas";
 
 const linkIdParams = z.object({ linkId: z.coerce.number().int().positive() }).strict();
 
@@ -34,6 +40,7 @@ export class HrInterviewersController {
   constructor(private readonly interviewers: HrInterviewersService) {}
 
   @Get("interviewers/availability")
+  @ResponseSchema(availabilityResponseSchema)
   @RequirePermission("hr:interviews:view")
   @Validate({ query: interviewerAvailabilityQuerySchema })
   availability(
@@ -44,6 +51,7 @@ export class HrInterviewersController {
   }
 
   @Get("interviewer-performance")
+  @ResponseSchema(interviewerPerformanceSchema)
   @RequirePermission("hr:interviews:view")
   @Validate({ query: interviewerPerformanceQuerySchema })
   interviewerPerformance(
@@ -55,6 +63,7 @@ export class HrInterviewersController {
   }
 
   @Get("booking-links")
+  @ResponseSchema(z.array(bookingLinkWithRelationsSchema))
   @RequirePermission("hr:interviews:view")
   listBookingLinks(@CurrentUser() u: CurrentUserContext) {
     return this.interviewers.listBookingLinks(u.orgId);
@@ -62,6 +71,7 @@ export class HrInterviewersController {
 
   @Patch("booking-links/:linkId")
   @BodylessAction()
+  @ResponseSchema(bookingCancelResponseSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: linkIdParams })
   async cancelBookingLink(

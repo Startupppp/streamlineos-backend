@@ -21,6 +21,8 @@ import {
   type ListExchangeRatesQuery,
 } from "./dto/finance-controls.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { exchangeRateListResponseSchema, exchangeRateSchema } from "./dto/controls-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/exchange-rates")
@@ -29,6 +31,7 @@ export class ExchangeRatesController {
   constructor(private readonly svc: ExchangeRatesService) {}
 
   @Get()
+  @ResponseSchema(exchangeRateListResponseSchema)
   @RequirePermission("accounting:settings:read")
   @Validate({ query: listExchangeRatesSchema })
   list(
@@ -39,6 +42,7 @@ export class ExchangeRatesController {
   }
 
   @Post()
+  @ResponseSchema(exchangeRateSchema)
   @HttpCode(200)
   @RequirePermission("accounting:settings:manage")
   @Validate({ body: upsertExchangeRateSchema })

@@ -32,6 +32,13 @@ import {
 import { z } from "zod";
 import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  reconWorkspaceResponseSchema,
+  reconRuleListResponseSchema,
+  reconRuleSchema,
+  successSchema,
+} from "./dto/banking-response.schemas";
 
 const bankAccountIdParams = z.object({ bankAccountId: z.coerce.number().int().positive() }).strict();
 const bankAccountAndRuleIdParams = z.object({ bankAccountId: z.coerce.number().int().positive(), ruleId: z.coerce.number().int().positive() }).strict();
@@ -52,6 +59,7 @@ export class ReconciliationController {
   ) {}
 
   @Get()
+  @ResponseSchema(reconWorkspaceResponseSchema)
   @RequirePermission("accounting:banking:reconcile")
   @Validate({ params: bankAccountIdParams })
   getWorkspace(
@@ -62,6 +70,7 @@ export class ReconciliationController {
   }
 
   @Post("match")
+  @ResponseSchema(successSchema)
   @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
   @Validate({ params: bankAccountIdParams, body: confirmMatchSchema })
@@ -74,6 +83,7 @@ export class ReconciliationController {
   }
 
   @Post("unmatch")
+  @ResponseSchema(successSchema)
   @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
   @Validate({ params: bankAccountIdParams, body: unmatchSchema })
@@ -86,6 +96,7 @@ export class ReconciliationController {
   }
 
   @Post("ignore")
+  @ResponseSchema(successSchema)
   @HttpCode(200)
   @RequirePermission("accounting:banking:reconcile")
   @Validate({ params: bankAccountIdParams, body: ignoreTransactionSchema })
@@ -98,6 +109,7 @@ export class ReconciliationController {
   }
 
   @Get("rules")
+  @ResponseSchema(reconRuleListResponseSchema)
   @RequirePermission("accounting:banking:reconcile")
   @Validate({ params: bankAccountIdParams, query: rulesQuerySchema })
   listRules(
@@ -109,6 +121,7 @@ export class ReconciliationController {
   }
 
   @Post("rules")
+  @ResponseSchema(reconRuleSchema)
   @HttpCode(201)
   @RequirePermission("accounting:banking:reconcile")
   @Validate({ params: bankAccountIdParams, body: createReconciliationRuleSchema })
@@ -121,6 +134,7 @@ export class ReconciliationController {
   }
 
   @Delete("rules/:ruleId")
+  @ResponseSchema(successSchema)
   @RequirePermission("accounting:banking:reconcile")
   @Validate({ params: bankAccountAndRuleIdParams })
   deleteRule(

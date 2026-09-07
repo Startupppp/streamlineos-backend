@@ -39,6 +39,15 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  csatSurveyListSchema,
+  csatSurveyDetailSchema,
+  csatSurveyRowSchema,
+  csatResponseListSchema,
+  csatSubmittedSchema,
+  successSchema,
+} from "./dto/csat-response.schemas";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
@@ -50,6 +59,7 @@ export class CsatController {
 
   @Get()
   @RequirePermission("support:csat:view")
+  @ResponseSchema(csatSurveyListSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.csat.listSurveys(u.orgId);
   }
@@ -58,6 +68,7 @@ export class CsatController {
   @HttpCode(201)
   @RequirePermission("support:csat:manage")
   @Validate({ body: createSchema })
+  @ResponseSchema(csatSurveyRowSchema)
   create(
     @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
@@ -68,6 +79,7 @@ export class CsatController {
   @Get(":surveyId")
   @RequirePermission("support:csat:view")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(csatSurveyDetailSchema)
   async get(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -80,6 +92,7 @@ export class CsatController {
   @Patch(":surveyId")
   @RequirePermission("support:csat:manage")
   @Validate({ params: surveyIdParams, body: patchSchema })
+  @ResponseSchema(csatSurveyRowSchema)
   async update(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: PatchInput,
@@ -93,6 +106,7 @@ export class CsatController {
   @Delete(":surveyId")
   @RequirePermission("support:csat:manage")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(successSchema)
   async remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -105,6 +119,7 @@ export class CsatController {
   @Get(":surveyId/responses")
   @RequirePermission("support:csat:view")
   @Validate({ params: surveyIdParams, query: listResponsesSchema })
+  @ResponseSchema(csatResponseListSchema)
   async listResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Query() query: ListResponsesInput,
@@ -121,6 +136,7 @@ export class CsatController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("csat:submit")
   @Validate({ params: surveyIdParams, body: submitResponseSchema })
+  @ResponseSchema(csatSubmittedSchema)
   async submitResponse(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: SubmitResponseInput,

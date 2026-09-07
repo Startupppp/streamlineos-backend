@@ -17,6 +17,15 @@ import {
   type CashRunwayQuery,
 } from "./dto/finance-reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  projectProfitabilityResponseSchema,
+  departmentProfitabilityResponseSchema,
+  budgetVsActualResponseSchema,
+  workingCapitalResponseSchema,
+  burnRateResponseSchema,
+  cashRunwayResponseSchema,
+} from "./dto/finance-reports-response.schemas";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -29,6 +38,7 @@ export class AnalyticsReportsController {
   constructor(private readonly analyticsService: AnalyticsReportsService) {}
 
   @Get("project-profitability")
+  @ResponseSchema(projectProfitabilityResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: dateRangeSchema })
@@ -40,6 +50,7 @@ export class AnalyticsReportsController {
   }
 
   @Get("department-profitability")
+  @ResponseSchema(departmentProfitabilityResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: dateRangeSchema })
@@ -51,6 +62,7 @@ export class AnalyticsReportsController {
   }
 
   @Get("budget-vs-actual")
+  @ResponseSchema(budgetVsActualResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: budgetVsActualQuerySchema })
@@ -62,6 +74,7 @@ export class AnalyticsReportsController {
   }
 
   @Get("working-capital")
+  @ResponseSchema(workingCapitalResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: workingCapitalQuerySchema })
@@ -74,6 +87,7 @@ export class AnalyticsReportsController {
   }
 
   @Get("burn-rate")
+  @ResponseSchema(burnRateResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getBurnRate(@CurrentUser() u: CurrentUserContext) {
@@ -81,6 +95,7 @@ export class AnalyticsReportsController {
   }
 
   @Get("cash-runway")
+  @ResponseSchema(cashRunwayResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   @Validate({ query: cashRunwayQuerySchema })

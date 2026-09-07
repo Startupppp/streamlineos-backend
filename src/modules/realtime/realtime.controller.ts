@@ -1,5 +1,7 @@
 import { Controller, Get, Inject } from "@nestjs/common";
 import { Universal } from "../../common/auth/universal.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { iceServersResponseSchema } from "./dto/realtime-response.schemas";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 
@@ -17,6 +19,7 @@ export class RealtimeController {
   ) {}
 
   @Get("ice-servers")
+  @ResponseSchema(iceServersResponseSchema)
   @Universal()
   iceServers(): { iceServers: IceServer[] } {
     const servers: IceServer[] = [

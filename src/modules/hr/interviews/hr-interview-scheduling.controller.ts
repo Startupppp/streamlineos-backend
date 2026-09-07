@@ -33,6 +33,14 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  interviewSchema,
+  scheduleInterviewWithPanelSchema,
+  selfScheduleResponseSchema,
+  successSchema,
+  interviewScorecardSchema,
+} from "./dto/interviews-response.schemas";
 import { actingMembershipId } from "../../../common/auth/principal";
 
 const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
@@ -48,6 +56,7 @@ export class HrInterviewSchedulingController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(interviewSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: createInterviewSchema })
   create(@Body() body: CreateInterviewInput, @CurrentUser() u: CurrentUserContext) {
@@ -56,6 +65,7 @@ export class HrInterviewSchedulingController {
 
   @Post("schedule")
   @HttpCode(201)
+  @ResponseSchema(scheduleInterviewWithPanelSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: scheduleInterviewSchema })
   schedule(@Body() body: ScheduleInterviewInput, @CurrentUser() u: CurrentUserContext) {
@@ -64,6 +74,7 @@ export class HrInterviewSchedulingController {
 
   @Post("self-schedule")
   @HttpCode(201)
+  @ResponseSchema(selfScheduleResponseSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: selfScheduleSchema })
   selfSchedule(@Body() body: SelfScheduleInput, @CurrentUser() u: CurrentUserContext) {
@@ -71,6 +82,7 @@ export class HrInterviewSchedulingController {
   }
 
   @Patch(":interviewId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: interviewIdParams, body: updateInterviewSchema })
   update(
@@ -82,6 +94,7 @@ export class HrInterviewSchedulingController {
   }
 
   @Delete(":interviewId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: interviewIdParams })
   remove(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
@@ -89,6 +102,7 @@ export class HrInterviewSchedulingController {
   }
 
   @Get(":interviewId/scorecard")
+  @ResponseSchema(interviewScorecardSchema.nullable())
   @RequirePermission("hr:interviews:view")
   @Validate({ params: interviewIdParams })
   getScorecard(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
@@ -96,6 +110,7 @@ export class HrInterviewSchedulingController {
   }
 
   @Post(":interviewId/scorecard")
+  @ResponseSchema(interviewScorecardSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: interviewIdParams, body: submitScorecardSchema })
   submitScorecard(

@@ -20,6 +20,8 @@ import { authorize } from "../../access/authorize";
 import { JournalService } from "./journal.service";
 import { buildCsv } from "./lib/csv";
 import { journalQuerySchema, type JournalQuery } from "./dto/insights.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { journalResultSchema } from "./dto/reports-response-schemas";
 
 const CSV_HEADERS = ["account", "description", "debit", "credit", "costCenter"] as const;
 
@@ -36,6 +38,7 @@ export class JournalController {
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("payroll:reports:view")
   @Validate({ query: journalQuerySchema })
+  @ApiOkResponse({ schema: journalResultSchema })
   async getJournal(
     @Query() query: JournalQuery,
     @CurrentUser() u: CurrentUserContext,

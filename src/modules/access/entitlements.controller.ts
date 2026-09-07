@@ -7,7 +7,7 @@ import { PermissionGuard } from "./permission.guard";
 import { RequirePermission } from "./require-permission.decorator";
 import { EntitlementsService, ModuleStatus } from "./entitlements.service";
 import { Validate } from "../../common/validation/validate.decorator";
-import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
 import { orgModuleListResponseSchema } from "./dto/org-module-response-schema";
 
 const moduleKeyParamSchema = z.object({
@@ -35,6 +35,7 @@ export class EntitlementsController {
   @Patch(":moduleKey")
   @RequirePermission("settings:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: moduleKeyParamSchema, body: toggleModuleSchema })
   toggleModule(
     @Param("moduleKey") moduleKey: string,

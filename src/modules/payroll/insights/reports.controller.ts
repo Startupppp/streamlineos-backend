@@ -16,10 +16,19 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { authorize } from "../../access/authorize";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ReportsService } from "./reports.service";
 import { buildCsv } from "./lib/csv";
 import { reportsQuerySchema, type ReportsQuery } from "./dto/insights.schemas";
+import {
+  summaryReportSchema,
+  employeeRegisterReportSchema,
+  departmentCostReportSchema,
+  costCenterReportSchema,
+  bankPayoutReportSchema,
+  varianceReportSchema,
+} from "./dto/reports-response-schemas";
 
 function defaultMonth(): string {
   return new Date().toISOString().slice(0, 7);
@@ -51,6 +60,7 @@ export class PayrollInsightsReportsController {
 
   @Get("summary")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: summaryReportSchema })
   async getSummary(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +83,7 @@ export class PayrollInsightsReportsController {
 
   @Get("register")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: employeeRegisterReportSchema })
   async getRegister(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +106,7 @@ export class PayrollInsightsReportsController {
 
   @Get("department-cost")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: departmentCostReportSchema })
   async getDepartmentCost(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -114,6 +126,7 @@ export class PayrollInsightsReportsController {
 
   @Get("cost-center")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: costCenterReportSchema })
   async getCostCenter(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -133,6 +146,7 @@ export class PayrollInsightsReportsController {
 
   @Get("earnings")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: employeeRegisterReportSchema })
   async getEarnings(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -152,6 +166,7 @@ export class PayrollInsightsReportsController {
 
   @Get("deductions")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: employeeRegisterReportSchema })
   async getDeductions(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -171,6 +186,7 @@ export class PayrollInsightsReportsController {
 
   @Get("reimbursements")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: employeeRegisterReportSchema })
   async getReimbursements(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -190,6 +206,7 @@ export class PayrollInsightsReportsController {
 
   @Get("tax")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: employeeRegisterReportSchema })
   async getTax(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -209,6 +226,7 @@ export class PayrollInsightsReportsController {
 
   @Get("bank-payout")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: bankPayoutReportSchema })
   async getBankPayout(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -232,6 +250,7 @@ export class PayrollInsightsReportsController {
 
   @Get("variance")
   @Validate({ query: reportsQuerySchema })
+  @ApiOkResponse({ schema: varianceReportSchema })
   async getVariance(
     @Query() q: ReportsQuery,
     @CurrentUser() u: CurrentUserContext,

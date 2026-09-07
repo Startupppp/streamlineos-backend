@@ -31,6 +31,8 @@ import {
 } from "./delegations.dto";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../../common/openapi/zod-operation-contracts"
+import { listProxiesResponseSchema, createProxyResponseSchema, updateProxyResponseSchema } from "../dto/governance-response.schemas"
 
 const proxyIdParams = z.object({ proxyId: z.coerce.number().int().positive() }).strict();
 
@@ -40,6 +42,7 @@ const proxyIdParams = z.object({ proxyId: z.coerce.number().int().positive() }).
 export class HrGovernanceDelegationsController {
   constructor(private readonly service: DelegationsService) {}
 
+  @ResponseSchema(listProxiesResponseSchema)
   @Get("my")
   @RequirePermission("hr:workflows:view")
   @Validate({ query: listProxiesSchema })
@@ -50,6 +53,7 @@ export class HrGovernanceDelegationsController {
     return this.service.listMy(user, query);
   }
 
+  @ResponseSchema(listProxiesResponseSchema)
   @Get()
   @RequirePermission("hr:workflows:manage")
   @Validate({ query: listProxiesSchema })
@@ -60,6 +64,7 @@ export class HrGovernanceDelegationsController {
     return this.service.listOrg(user.orgId, query);
   }
 
+  @ResponseSchema(createProxyResponseSchema)
   @Post()
   @RequirePermission("hr:workflows:view")
   @Validate({ body: createProxySchema })
@@ -71,6 +76,7 @@ export class HrGovernanceDelegationsController {
     return this.service.create(user, body, req.ip);
   }
 
+  @ResponseSchema(updateProxyResponseSchema)
   @Patch(":proxyId")
   @RequirePermission("hr:workflows:view")
   @Validate({ params: proxyIdParams, body: updateProxySchema })
@@ -83,6 +89,7 @@ export class HrGovernanceDelegationsController {
     return this.service.update(user.orgId, proxyId, user.userId, actingMembershipId(user.principal), body, req.ip);
   }
 
+  @NoContentResponse()
   @Delete(":proxyId")
   @RequirePermission("hr:workflows:view")
   @HttpCode(204)

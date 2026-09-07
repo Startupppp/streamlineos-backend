@@ -14,6 +14,11 @@ import {
   type PatchCollectorInput,
 } from "./dto/survey-collectors.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  surveyCollectorListSchema,
+  surveyCollectorRowSchema,
+} from "./dto/survey-collectors-response.schemas";
 import { z } from "zod";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
@@ -28,6 +33,7 @@ export class SurveyCollectorsController {
   @Get()
   @RequirePermission("surveys:participants:view")
   @Validate({ params: surveyIdParams })
+  @ResponseSchema(surveyCollectorListSchema)
   list(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.collectors.list(u.orgId, surveyId);
   }
@@ -36,6 +42,7 @@ export class SurveyCollectorsController {
   @HttpCode(201)
   @RequirePermission("surveys:participants:manage")
   @Validate({ params: surveyIdParams, body: createCollectorSchema })
+  @ResponseSchema(surveyCollectorRowSchema)
   create(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: CreateCollectorInput,
@@ -47,6 +54,7 @@ export class SurveyCollectorsController {
   @Patch(":collectorId")
   @RequirePermission("surveys:participants:manage")
   @Validate({ params: surveyAndCollectorIdParams, body: patchCollectorSchema })
+  @ResponseSchema(surveyCollectorRowSchema)
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("collectorId", ParseIntPipe) collectorId: number,

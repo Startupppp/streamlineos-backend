@@ -19,8 +19,15 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AllowWithoutMfa } from "../../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { MfaService } from "./mfa.service";
+import {
+  mfaSetupResponseSchema,
+  mfaVerifyResponseSchema,
+  mfaDisableResponseSchema,
+  mfaStatusResponseSchema,
+  mfaResetResponseSchema,
+} from "./dto/mfa-response.schemas";
 import {
   verifyMfaSchema,
   disableMfaSchema,
@@ -55,6 +62,7 @@ export class MfaController {
 
   @Post("setup")
   @BodylessAction()
+  @ResponseSchema(mfaSetupResponseSchema)
   @Universal()
   @HttpCode(200)
   // PRD-C089 (BREACH) — this body carries a credential and `app.enableCors({ credentials:
@@ -65,6 +73,7 @@ export class MfaController {
   }
 
   @Post("verify")
+  @ResponseSchema(mfaVerifyResponseSchema)
   @Universal()
   @HttpCode(200)
   @Validate({ body: verifyMfaSchema })
@@ -77,6 +86,7 @@ export class MfaController {
   }
 
   @Post("disable")
+  @ResponseSchema(mfaDisableResponseSchema)
   @Universal()
   @HttpCode(200)
   @Validate({ body: disableMfaSchema })
@@ -89,12 +99,14 @@ export class MfaController {
   }
 
   @Get("status")
+  @ResponseSchema(mfaStatusResponseSchema)
   @Universal()
   status(@CurrentUser() u: CurrentUserContext) {
     return this.mfa.status(u.userId);
   }
 
   @Post("reset")
+  @ResponseSchema(mfaResetResponseSchema)
   @HttpCode(200)
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:mfa")

@@ -17,6 +17,12 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  projectReleaseListItemSchema,
+  projectReleaseRowSchema,
+} from "./dto/build-core-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectIdreleaseIdParams = z.object({ projectId: z.string().min(1), releaseId: z.coerce.number().int().positive() }).strict();
@@ -30,6 +36,7 @@ export class ProjectsReleasesController {
 
   @Get(":projectId/releases")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(projectReleaseListItemSchema))
   @Validate({ params: projectIdParams })
   listReleases(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -42,6 +49,7 @@ export class ProjectsReleasesController {
   @RequirePermission("build:manage")
   @HttpCode(201)
   @Idempotent("build.release.create")
+  @ResponseSchema(projectReleaseRowSchema)
   @Validate({ params: projectIdParams, body: createReleaseSchema })
   createRelease(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -53,6 +61,7 @@ export class ProjectsReleasesController {
 
   @Patch(":projectId/releases/:releaseId")
   @RequirePermission("build:manage")
+  @ResponseSchema(projectReleaseRowSchema)
   @Validate({ params: projectIdreleaseIdParams, body: updateReleaseSchema })
   updateRelease(
     @Param("releaseId", ParseIntPipe) releaseId: number,
@@ -65,6 +74,7 @@ export class ProjectsReleasesController {
   @Delete(":projectId/releases/:releaseId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdreleaseIdParams })
   deleteRelease(
     @Param("releaseId", ParseIntPipe) releaseId: number,
@@ -76,6 +86,7 @@ export class ProjectsReleasesController {
   @Post(":projectId/releases/:releaseId/tickets")
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
+  @ResponseSchema(successSchema)
   @Validate({ params: projectIdreleaseIdParams, body: addReleaseTicketSchema })
   addTicket(
     @Param("releaseId", ParseIntPipe) releaseId: number,
@@ -88,6 +99,7 @@ export class ProjectsReleasesController {
   @Delete(":projectId/releases/:releaseId/tickets/:ticketId")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdreleaseIdticketIdParams })
   removeTicket(
     @Param("releaseId", ParseIntPipe) releaseId: number,

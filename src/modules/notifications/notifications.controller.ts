@@ -28,6 +28,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { UseAdmissionTenantHint } from "../../common/admission/admission-tenant-hint";
 import { UseWorkClass } from "../../common/admission/work-class.decorator";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {
   notificationCountResponseSchema,
@@ -94,6 +95,7 @@ export class NotificationsController {
   }
 
   @Get("events")
+  @ApiOkResponse({ description: "Server-sent event stream of notification events", content: { "text/event-stream": { schema: { type: "string" } } } })
   @Sse()
   @Public()
   @NoTenantTransaction()

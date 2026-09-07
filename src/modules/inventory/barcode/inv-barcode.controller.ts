@@ -9,6 +9,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { InvBarcodeService } from "./inv-barcode.service";
 import { barcodeLookupSchema, type BarcodeLookupInput } from "./dto/inv-barcode.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { barcodeLookupResponseSchema } from "./dto/barcode-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/barcode")
@@ -17,6 +19,7 @@ export class InvBarcodeController {
   constructor(private readonly barcodeService: InvBarcodeService) {}
 
   @Get("lookup")
+  @ResponseSchema(barcodeLookupResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: barcodeLookupSchema })

@@ -30,6 +30,8 @@ import {
 } from "./dto/incidents.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { incidentRowSchema, incidentDetailSchema, incidentUpdateRowSchema } from "./dto/incidents-response.schemas";
 
 const incidentIdParams = z.object({ incidentId: z.coerce.number().int().positive() }).strict();
 
@@ -41,6 +43,7 @@ export class IncidentsController {
 
   @Get()
   @RequirePermission("build:incidents:view")
+  @ResponseSchema(z.array(incidentRowSchema))
   @Validate({ query: listIncidentsQuerySchema })
   listIncidents(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -52,6 +55,7 @@ export class IncidentsController {
 
   @Get(":incidentId")
   @RequirePermission("build:incidents:view")
+  @ResponseSchema(incidentDetailSchema)
   @Validate({ params: incidentIdParams })
   getIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -64,6 +68,7 @@ export class IncidentsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:incidents:manage")
+  @ResponseSchema(incidentRowSchema)
   @Validate({ body: createIncidentSchema })
   createIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -75,6 +80,7 @@ export class IncidentsController {
 
   @Patch(":incidentId")
   @RequirePermission("build:incidents:manage")
+  @ResponseSchema(incidentRowSchema)
   @Validate({ params: incidentIdParams, body: updateIncidentSchema })
   updateIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -88,6 +94,7 @@ export class IncidentsController {
   @Delete(":incidentId")
   @RequirePermission("build:incidents:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: incidentIdParams })
   deleteIncident(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -100,6 +107,7 @@ export class IncidentsController {
   @Post(":incidentId/updates")
   @HttpCode(201)
   @RequirePermission("build:incidents:manage")
+  @ResponseSchema(incidentUpdateRowSchema)
   @Validate({ params: incidentIdParams, body: addIncidentUpdateSchema })
   addUpdate(
     @Param("projectId", ParseIntPipe) projectId: number,

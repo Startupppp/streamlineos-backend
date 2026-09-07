@@ -28,6 +28,11 @@ import {
   type UpdateComponentInput,
 } from "./dto/setup.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  componentListResponseSchema,
+  salaryComponentSchema,
+} from "./dto/setup-response.schemas";
 import { z } from "zod";
 
 const componentIdParams = z.object({ componentId: z.coerce.number().int().positive() }).strict();
@@ -41,6 +46,7 @@ export class PayrollComponentsController {
   @Get()
   @RequirePermission("payroll:components:view")
   @Validate({ query: listComponentsSchema })
+  @ResponseSchema(componentListResponseSchema)
   async list(
     @Query() query: ListComponentsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -52,6 +58,7 @@ export class PayrollComponentsController {
   @HttpCode(201)
   @RequirePermission("payroll:components:manage")
   @Validate({ body: createComponentSchema })
+  @ResponseSchema(salaryComponentSchema)
   async create(
     @Body() body: CreateComponentInput,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +69,7 @@ export class PayrollComponentsController {
   @Patch(":componentId")
   @RequirePermission("payroll:components:manage")
   @Validate({ params: componentIdParams, body: updateComponentSchema })
+  @ResponseSchema(salaryComponentSchema)
   async update(
     @Param("componentId", ParseIntPipe) componentId: number,
     @Body() body: UpdateComponentInput,
@@ -74,6 +82,7 @@ export class PayrollComponentsController {
   @HttpCode(204)
   @RequirePermission("payroll:components:manage")
   @Validate({ params: componentIdParams })
+  @NoContentResponse()
   async remove(
     @Param("componentId", ParseIntPipe) componentId: number,
     @CurrentUser() u: CurrentUserContext,

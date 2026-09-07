@@ -30,6 +30,8 @@ import {
   type ListSimulationsInput,
 } from "../dto/simulator.schemas";
 import { Validate } from "../../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts"
+import { simulatePolicyResponseSchema, simulateLeaveBalanceResponseSchema, simulateApprovalRoutingResponseSchema, simulatePayrollImpactResponseSchema, compareSimulationResponseSchema, listSimulationsResponseSchema } from "../dto/enterprise-ops-response.schemas"
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/simulator")
@@ -46,6 +48,7 @@ export class SimulatorController {
     return perms.has("hr:payroll:view") || perms.has("hr:salary:view");
   }
 
+  @ResponseSchema(simulatePolicyResponseSchema)
   @Post("simulate/policy")
   @RequirePermission("hr:policies:manage")
   @Validate({ body: simulatePolicySchema })
@@ -56,6 +59,7 @@ export class SimulatorController {
     return this.svc.simulatePolicy(user.orgId, user.userId, body);
   }
 
+  @ResponseSchema(simulateLeaveBalanceResponseSchema)
   @Post("simulate/leave-balance")
   @RequirePermission("hr:policies:manage")
   @Validate({ body: simulateLeaveBalanceSchema })
@@ -66,6 +70,7 @@ export class SimulatorController {
     return this.svc.simulateLeaveBalance(user.orgId, user.userId, body);
   }
 
+  @ResponseSchema(simulateApprovalRoutingResponseSchema)
   @Post("simulate/approval-routing")
   @RequirePermission("hr:policies:manage")
   @Validate({ body: simulateApprovalRoutingSchema })
@@ -76,6 +81,7 @@ export class SimulatorController {
     return this.svc.simulateApprovalRouting(user.orgId, user.userId, body);
   }
 
+  @ResponseSchema(simulatePayrollImpactResponseSchema)
   @Post("simulate/payroll-impact")
   @RequirePermission("hr:policies:manage")
   @Validate({ body: simulatePayrollImpactSchema })
@@ -90,6 +96,7 @@ export class SimulatorController {
     return this.svc.simulatePayrollImpact(user.orgId, user.userId, body);
   }
 
+  @ResponseSchema(compareSimulationResponseSchema)
   @Get("compare")
   @RequirePermission("hr:policies:manage")
   @Validate({ query: compareSchema })
@@ -100,6 +107,7 @@ export class SimulatorController {
     return this.svc.compare(user.orgId, user.userId, query);
   }
 
+  @ResponseSchema(listSimulationsResponseSchema)
   @Get("history")
   @RequirePermission("hr:policies:manage")
   @Validate({ query: listSimulationsSchema })

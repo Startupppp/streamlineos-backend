@@ -176,9 +176,6 @@ const DOUBLE_CAST_LEDGER = new Map([
   ["src/db/query-telemetry.ts", { count: 3, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::awaits a wrapped result that is thenable without declaring PromiseLike", invariant: "the instrumentation proxy wraps a Drizzle query builder that is thenable at runtime but not declared `PromiseLike`. The cast names the `.then` that is provably there — the proxy only reaches this branch after checking for it." }],
   ["src/modules/platform/operator-session.guard.ts", { count: 1, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::degrades an absent Express route object to the raw url instead of throwing", invariant: "`req.route` is attached by Express at dispatch time and is absent from the Nest request type. Read optionally with a `?? req.url` fallback, so an absent route degrades to the raw URL rather than throwing." }],
 
-  // -- narrow-me: ours, knowable, and owed a Zod parse --
-  ["src/modules/ingress/inbound-ingress.service.ts", { count: 1, seam: "narrow-me", invariant: "an inbound communication event written to a jsonb payload column, whose Drizzle `$type` is `Record<string, unknown>` and to which an interface is not assignable. The READ half is no longer a cast: `inbound-ingress.workflow.ts` now parses the stored payload with `inboundEventSchema`, the same contract the HTTP boundary enforces here, so a row written by an older release raises instead of deserialising into a lie. What survives on this side is the column's type, not a trust boundary — the value written is already validated by `validateInboundEvent` and, on the HTTP path, by `inboundEventSchema` itself." }],
-  ["src/modules/crm/import/crm-import-preview.service.ts", { count: 1, seam: "narrow-me", invariant: "stored column mappings read back from a jsonb column. CRM is outside the PRD's dead-code scope but is still application code for this gate." }],
 ]);
 
 /**

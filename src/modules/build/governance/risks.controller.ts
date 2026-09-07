@@ -28,6 +28,8 @@ import {
 } from "./dto/governance.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { riskRowSchema } from "./dto/governance-response.schemas";
 
 const riskIdParams = z.object({ riskId: z.coerce.number().int().positive() }).strict();
 
@@ -39,6 +41,7 @@ export class RisksController {
 
   @Get()
   @RequirePermission("build:risks:view")
+  @ResponseSchema(z.array(riskRowSchema))
   @Validate({ query: listRisksQuerySchema })
   listRisks(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -50,6 +53,7 @@ export class RisksController {
 
   @Get(":riskId")
   @RequirePermission("build:risks:view")
+  @ResponseSchema(riskRowSchema)
   @Validate({ params: riskIdParams })
   getRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -62,6 +66,7 @@ export class RisksController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:risks:manage")
+  @ResponseSchema(riskRowSchema)
   @Validate({ body: createRiskSchema })
   createRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -73,6 +78,7 @@ export class RisksController {
 
   @Patch(":riskId")
   @RequirePermission("build:risks:manage")
+  @ResponseSchema(riskRowSchema)
   @Validate({ params: riskIdParams, body: updateRiskSchema })
   updateRisk(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -86,6 +92,7 @@ export class RisksController {
   @Delete(":riskId")
   @RequirePermission("build:risks:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: riskIdParams })
   softDeleteRisk(
     @Param("projectId", ParseIntPipe) projectId: number,

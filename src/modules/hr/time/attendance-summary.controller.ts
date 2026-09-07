@@ -9,6 +9,8 @@ import { AttendanceSummaryService } from "./attendance-summary.service";
 import { z } from "zod";
 import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { attendanceSummaryResponseSchema } from "./dto/time-attendance-response.schemas";
 
 const attendanceSummaryQuerySchema = z
   .object({
@@ -28,6 +30,7 @@ export class AttendanceSummaryController {
   constructor(private readonly summaryService: AttendanceSummaryService) {}
 
   @Get()
+  @ResponseSchema(attendanceSummaryResponseSchema)
   @Validate({ query: attendanceSummaryQuerySchema })
   getSummary(
     @Query() query: z.infer<typeof attendanceSummaryQuerySchema>,

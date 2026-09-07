@@ -30,7 +30,9 @@ import {
   type InputsQuery,
 } from "./dto/runs.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema, cursorPageSchema } from "../../../common/openapi/response-envelopes";
+import { inputItemSchema, reimportResponseSchema } from "./dto/runs-response.schemas";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -48,6 +50,7 @@ export class InputsController {
   @Get()
   @RequirePermission("payroll:runs:view")
   @Validate({ params: runIdParams, query: inputsQuerySchema })
+  @ResponseSchema(cursorPageSchema(inputItemSchema))
   async list(
     @Param("runId", ParseIntPipe) runId: number,
     @Query() query: InputsQuery,
@@ -62,6 +65,7 @@ export class InputsController {
   @Patch(":inputId")
   @RequirePermission("payroll:runs:update")
   @Validate({ params: runAndInputIdParams, body: patchInputSchema })
+  @ResponseSchema(successSchema)
   async patchInput(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("inputId", ParseIntPipe) inputId: number,
@@ -82,6 +86,7 @@ export class InputsController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:update")
   @Validate({ params: runIdParams })
+  @ResponseSchema(reimportResponseSchema)
   async reimport(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

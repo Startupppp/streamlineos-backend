@@ -16,6 +16,13 @@ import {
   type FeedInput,
   } from "./dto/blog.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  blogPostWithRelationsSchema,
+  blogAdjacentPostsSchema,
+  blogPublicCategoryListSchema,
+  blogFeedSchema,
+} from "./dto/blog-response.schemas";
 import { z } from "zod";
 
 const slugParams = z.object({ slug: z.string().min(1) }).strict();
@@ -30,6 +37,7 @@ export class BlogController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("blog:public-read")
   @Validate({ params: slugParams })
+  @ResponseSchema(blogPostWithRelationsSchema)
   async getPostBySlug(@Param("slug") slug: string) {
     const post = await this.blog.getPublishedPostBySlug(slug);
     if (!post) throw new NotFoundException("Post not found");
@@ -41,6 +49,7 @@ export class BlogController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("blog:public-read")
   @Validate({ params: slugParams })
+  @ResponseSchema(blogAdjacentPostsSchema)
   getAdjacentPosts(@Param("slug") slug: string) {
     return this.blog.getAdjacentPosts(slug);
   }
@@ -49,6 +58,7 @@ export class BlogController {
   @Get("categories")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("blog:public-read")
+  @ResponseSchema(blogPublicCategoryListSchema)
   listCategories() {
     return this.blog.getCategories();
   }
@@ -58,6 +68,7 @@ export class BlogController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("blog:public-read")
   @Validate({ query: feedSchema })
+  @ResponseSchema(blogFeedSchema)
   feed(@Query() query: FeedInput) {
     return this.blog.getPublishedPosts(query);
   }

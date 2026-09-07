@@ -25,6 +25,9 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import { wfhRequestRowSchema, wfhPendingItemSchema } from "./dto/time-wfh-shifts-response.schemas";
 
 const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
 
@@ -35,6 +38,7 @@ export class WfhController {
   constructor(private readonly wfh: WfhService) {}
 
   @Get()
+  @ResponseSchema(z.array(wfhRequestRowSchema))
   @RequirePermission("hr:attendance:view")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.wfh.list(u.orgId, u.userId);
@@ -42,6 +46,7 @@ export class WfhController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:attendance:view")
   @Validate({ body: createWfhSchema })
   create(
@@ -52,12 +57,14 @@ export class WfhController {
   }
 
   @Get("pending")
+  @ResponseSchema(z.array(wfhPendingItemSchema))
   @RequirePermission("hr:attendance:manage")
   pending(@CurrentUser() u: CurrentUserContext) {
     return this.wfh.pending(u.orgId);
   }
 
   @Patch(":requestId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: requestIdParams, body: updateWfhSchema })
   update(

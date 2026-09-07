@@ -15,6 +15,8 @@ import {
 } from "./dto/tax-payments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { taxPaymentListResponseSchema, taxPaymentCreatedResponseSchema, taxPaymentDeleteResponseSchema } from "./dto/tax-response.schemas";
 
 const paymentIdParams = z.object({ paymentId: z.coerce.number().int().positive() }).strict();
 
@@ -25,6 +27,7 @@ export class TaxPaymentsController {
   constructor(private readonly taxPayments: TaxPaymentsService) {}
 
   @Get()
+  @ResponseSchema(taxPaymentListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
   @Validate({ query: listTaxPaymentsQuerySchema })
@@ -36,6 +39,7 @@ export class TaxPaymentsController {
   }
 
   @Post()
+  @ResponseSchema(taxPaymentCreatedResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:pay")
   @HttpCode(201)
@@ -49,6 +53,7 @@ export class TaxPaymentsController {
   }
 
   @Delete(":paymentId")
+  @ResponseSchema(taxPaymentDeleteResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:pay")
   @HttpCode(200)

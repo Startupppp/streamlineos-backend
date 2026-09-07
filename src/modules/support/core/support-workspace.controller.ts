@@ -33,7 +33,17 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  supportQueueListSchema,
+  supportQueueRowSchema,
+  supportSavedViewListSchema,
+  supportSavedViewRowSchema,
+  supportTagListSchema,
+  supportTagRowSchema,
+  supportWatcherListSchema,
+  successSchema,
+} from "./dto/support-workspace-response.schemas";
 
 const queueIdParams = z.object({ queueId: z.coerce.number().int().positive() }).strict();
 const viewIdParams = z.object({ viewId: z.coerce.number().int().positive() }).strict();
@@ -48,6 +58,7 @@ export class SupportWorkspaceController {
 
   @Get("queues")
   @RequirePermission("support:tickets:view")
+  @ResponseSchema(supportQueueListSchema)
   listQueues(@CurrentUser() u: CurrentUserContext) {
     return this.workspace.listQueues(u.orgId);
   }
@@ -56,6 +67,7 @@ export class SupportWorkspaceController {
   @RequirePermission("support:queues:manage")
   @HttpCode(201)
   @Validate({ body: createQueueSchema })
+  @ResponseSchema(supportQueueRowSchema)
   createQueue(
     @Body() body: CreateQueueInput,
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +78,7 @@ export class SupportWorkspaceController {
   @Patch("queues/:queueId")
   @RequirePermission("support:queues:manage")
   @Validate({ params: queueIdParams, body: updateQueueSchema })
+  @ResponseSchema(supportQueueRowSchema)
   updateQueue(
     @Param("queueId", ParseIntPipe) queueId: number,
     @Body() body: UpdateQueueInput,
@@ -77,12 +90,14 @@ export class SupportWorkspaceController {
   @Delete("queues/:queueId")
   @RequirePermission("support:queues:manage")
   @Validate({ params: queueIdParams })
+  @ResponseSchema(successSchema)
   deleteQueue(@Param("queueId", ParseIntPipe) queueId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.deleteQueue(u.orgId, queueId);
   }
 
   @Get("views")
   @RequirePermission("support:tickets:view")
+  @ResponseSchema(supportSavedViewListSchema)
   listSavedViews(@CurrentUser() u: CurrentUserContext) {
     return this.workspace.listSavedViews(u.orgId, u.userId, actingMembershipId(u.principal));
   }
@@ -91,6 +106,7 @@ export class SupportWorkspaceController {
   @RequirePermission("support:tickets:view")
   @HttpCode(201)
   @Validate({ body: createSavedViewSchema })
+  @ResponseSchema(supportSavedViewRowSchema)
   createSavedView(
     @Body() body: CreateSavedViewInput,
     @CurrentUser() u: CurrentUserContext,
@@ -101,6 +117,7 @@ export class SupportWorkspaceController {
   @Patch("views/:viewId")
   @RequirePermission("support:tickets:view")
   @Validate({ params: viewIdParams, body: updateSavedViewSchema })
+  @ResponseSchema(supportSavedViewRowSchema)
   updateSavedView(
     @Param("viewId", ParseIntPipe) viewId: number,
     @Body() body: UpdateSavedViewInput,
@@ -112,12 +129,14 @@ export class SupportWorkspaceController {
   @Delete("views/:viewId")
   @RequirePermission("support:tickets:view")
   @Validate({ params: viewIdParams })
+  @ResponseSchema(successSchema)
   deleteSavedView(@Param("viewId", ParseIntPipe) viewId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.deleteSavedView(u.orgId, u.userId, actingMembershipId(u.principal), viewId);
   }
 
   @Get("tags")
   @RequirePermission("support:tickets:view")
+  @ResponseSchema(supportTagListSchema)
   listTags(@CurrentUser() u: CurrentUserContext) {
     return this.workspace.listTags(u.orgId);
   }
@@ -126,6 +145,7 @@ export class SupportWorkspaceController {
   @RequirePermission("support:tags:manage")
   @HttpCode(201)
   @Validate({ body: createTagSchema })
+  @ResponseSchema(supportTagRowSchema)
   createTag(
     @Body() body: CreateTagInput,
     @CurrentUser() u: CurrentUserContext,
@@ -136,6 +156,7 @@ export class SupportWorkspaceController {
   @Get(":supportTicketId/tags")
   @RequirePermission("support:tickets:view")
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportTagListSchema)
   listTicketTags(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -148,6 +169,7 @@ export class SupportWorkspaceController {
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
   @Validate({ params: ticketAndTagIdParams })
+  @ResponseSchema(successSchema)
   attachTag(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("tagId", ParseIntPipe) tagId: number,
@@ -159,6 +181,7 @@ export class SupportWorkspaceController {
   @Delete(":supportTicketId/tags/:tagId")
   @RequirePermission("support:tickets:manage")
   @Validate({ params: ticketAndTagIdParams })
+  @ResponseSchema(successSchema)
   detachTag(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("tagId", ParseIntPipe) tagId: number,
@@ -170,6 +193,7 @@ export class SupportWorkspaceController {
   @Get(":supportTicketId/watchers")
   @RequirePermission("support:tickets:view")
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(supportWatcherListSchema)
   listWatchers(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -182,6 +206,7 @@ export class SupportWorkspaceController {
   @RequirePermission("support:tickets:view")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(successSchema)
   follow(@Param("supportTicketId", ParseIntPipe) supportTicketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.follow(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal));
   }
@@ -189,6 +214,7 @@ export class SupportWorkspaceController {
   @Delete(":supportTicketId/follow")
   @RequirePermission("support:tickets:view")
   @Validate({ params: ticketIdParams })
+  @ResponseSchema(successSchema)
   unfollow(@Param("supportTicketId", ParseIntPipe) supportTicketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.unfollow(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal));
   }

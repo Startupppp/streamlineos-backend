@@ -25,6 +25,8 @@ import {
 } from "./dto/engagement-extras.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts"
+import { overviewResponseSchema, listBadgesResponseSchema, createBadgeResponseSchema, awardBadgeResponseSchema, myBadgesResponseSchema, myPointsResponseSchema, leaderboardResponseSchema, employeeOfMonthResponseSchema } from "./dto/engagement-extras-response.schemas"
 
 const badgeIdParams = z
   .object({ badgeId: z.coerce.number().int().positive() })
@@ -36,6 +38,7 @@ const badgeIdParams = z
 export class EngagementBadgesController {
   constructor(private readonly badges: EngagementBadgesService) {}
 
+  @ResponseSchema(overviewResponseSchema)
   @Get("overview")
   @RequirePermission("hr:engagement:view")
   async overview(@CurrentUser() u: CurrentUserContext) {
@@ -46,12 +49,14 @@ export class EngagementBadgesController {
     return { employeeOfMonth: eom, topLeaderboard: leaderboard };
   }
 
+  @ResponseSchema(listBadgesResponseSchema)
   @Get("badges")
   @RequirePermission("hr:engagement:view")
   listBadges(@CurrentUser() u: CurrentUserContext) {
     return this.badges.listBadges(u.orgId);
   }
 
+  @ResponseSchema(createBadgeResponseSchema)
   @Post("badges")
   @RequirePermission("hr:engagement:manage")
   @HttpCode(201)
@@ -63,6 +68,7 @@ export class EngagementBadgesController {
     return this.badges.createBadge(u.orgId, body);
   }
 
+  @NoContentResponse()
   @Delete("badges/:badgeId")
   @HttpCode(204)
   @RequirePermission("hr:engagement:manage")
@@ -74,6 +80,7 @@ export class EngagementBadgesController {
     await this.badges.deleteBadge(u.orgId, badgeId);
   }
 
+  @ResponseSchema(awardBadgeResponseSchema)
   @Post("badges/:badgeId/award")
   @RequirePermission("hr:engagement:manage")
   @HttpCode(201)
@@ -86,18 +93,21 @@ export class EngagementBadgesController {
     return this.badges.awardBadge(u.orgId, u.userId, badgeId, body);
   }
 
+  @ResponseSchema(myBadgesResponseSchema)
   @Get("badges/my")
   @RequirePermission("hr:engagement:view")
   myBadges(@CurrentUser() u: CurrentUserContext) {
     return this.badges.myBadges(u.orgId, u.userId);
   }
 
+  @ResponseSchema(myPointsResponseSchema)
   @Get("points/my")
   @RequirePermission("hr:engagement:view")
   myPoints(@CurrentUser() u: CurrentUserContext) {
     return this.badges.myPoints(u.orgId, u.userId);
   }
 
+  @ResponseSchema(leaderboardResponseSchema)
   @Get("points/leaderboard")
   @RequirePermission("hr:engagement:view")
   leaderboard(
@@ -108,6 +118,7 @@ export class EngagementBadgesController {
     return this.badges.leaderboard(u.orgId, n);
   }
 
+  @ResponseSchema(employeeOfMonthResponseSchema)
   @Get("employee-of-month")
   @RequirePermission("hr:engagement:view")
   employeeOfMonth(@CurrentUser() u: CurrentUserContext) {

@@ -22,6 +22,8 @@ import {
   type TransfersQuery,
 } from "./dto/transfers.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { bankTransferListResponseSchema, bankTransferSchema } from "./dto/banking-response.schemas";
 
 @RequireModule("accounting")
 @Controller("finance/transfers")
@@ -30,6 +32,7 @@ export class TransfersController {
   constructor(private readonly service: TransfersService) {}
 
   @Get()
+  @ResponseSchema(bankTransferListResponseSchema)
   @RequirePermission("accounting:banking:read")
   @Validate({ query: transfersQuerySchema })
   list(
@@ -40,6 +43,7 @@ export class TransfersController {
   }
 
   @Post()
+  @ResponseSchema(bankTransferSchema)
   @Idempotent("accounting.bank-transfer.create")
   @HttpCode(201)
   @RequirePermission("accounting:banking:manage")

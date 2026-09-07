@@ -32,6 +32,8 @@ import {
 } from "../dto/emergency.schemas";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../../common/openapi/zod-operation-contracts"
+import { listEmergencyEventsResponseSchema, getEmergencyEventResponseSchema, createEmergencyEventResponseSchema, updateEmergencyEventResponseSchema, broadcastResponseSchema, respondToEventResponseSchema, getEventStatusResponseSchema } from "../dto/enterprise-ops-response.schemas"
 
 const eventIdParams = z.object({ eventId: z.string().uuid() }).strict();
 
@@ -41,6 +43,7 @@ const eventIdParams = z.object({ eventId: z.string().uuid() }).strict();
 export class EmergencyController {
   constructor(private readonly svc: EmergencyService) {}
 
+  @ResponseSchema(listEmergencyEventsResponseSchema)
   @Get("events")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
@@ -52,6 +55,7 @@ export class EmergencyController {
     return this.svc.listEvents(user.orgId, query);
   }
 
+  @ResponseSchema(getEmergencyEventResponseSchema)
   @Get("events/:eventId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
@@ -63,6 +67,7 @@ export class EmergencyController {
     return this.svc.getEvent(user.orgId, eventId);
   }
 
+  @ResponseSchema(createEmergencyEventResponseSchema)
   @Post("events")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
@@ -75,6 +80,7 @@ export class EmergencyController {
     return this.svc.createEvent(user.orgId, user.userId, body);
   }
 
+  @ResponseSchema(updateEmergencyEventResponseSchema)
   @Patch("events/:eventId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
@@ -87,6 +93,7 @@ export class EmergencyController {
     return this.svc.updateEvent(user.orgId, eventId, body);
   }
 
+  @NoContentResponse()
   @Delete("events/:eventId")
   @HttpCode(204)
   @UseGuards(PermissionGuard)
@@ -99,6 +106,7 @@ export class EmergencyController {
     await this.svc.deleteEvent(user.orgId, eventId);
   }
 
+  @ResponseSchema(broadcastResponseSchema)
   @Post("events/:eventId/broadcast")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")
@@ -111,6 +119,7 @@ export class EmergencyController {
     return this.svc.broadcast(user.orgId, eventId, body);
   }
 
+  @ResponseSchema(respondToEventResponseSchema)
   @Post("events/:eventId/respond")
   @Universal()
   @Validate({ params: eventIdParams, body: respondSchema })
@@ -122,6 +131,7 @@ export class EmergencyController {
     return this.svc.respond(user.orgId, eventId, user.userId, body);
   }
 
+  @ResponseSchema(getEventStatusResponseSchema)
   @Get("events/:eventId/status")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:emergency:manage")

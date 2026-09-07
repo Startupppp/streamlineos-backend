@@ -36,7 +36,12 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  personRowSchema,
+  personListPageSchema,
+  backfillResponseSchema,
+} from "./dto/core-response.schemas";
 
 const personIdParams = z.object({ personId: z.coerce.number().int().positive() }).strict();
 
@@ -52,6 +57,7 @@ export class HrPeopleController {
   ) {}
 
   @Get()
+  @ResponseSchema(personListPageSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ query: listPeopleSchema })
@@ -70,6 +76,7 @@ export class HrPeopleController {
 
   @Post("backfill-from-members")
   @BodylessAction()
+  @ResponseSchema(backfillResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Idempotent("hr.people.backfill-from-members")
@@ -84,6 +91,7 @@ export class HrPeopleController {
   }
 
   @Get(":personId")
+  @ResponseSchema(personRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   @Validate({ params: personIdParams })
@@ -104,6 +112,7 @@ export class HrPeopleController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @ResponseSchema(personRowSchema)
   @Validate({ body: createPersonSchema })
   create(
     @Body() body: CreatePersonInput,
@@ -113,6 +122,7 @@ export class HrPeopleController {
   }
 
   @Patch(":personId")
+  @ResponseSchema(personRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: personIdParams, body: updatePersonSchema })
@@ -131,6 +141,7 @@ export class HrPeopleController {
 
   @Delete(":personId")
   @HttpCode(204)
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: personIdParams })

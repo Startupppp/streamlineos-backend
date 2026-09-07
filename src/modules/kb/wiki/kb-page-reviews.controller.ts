@@ -29,6 +29,11 @@ import {
   type RejectReviewInput,
 } from "./dto/kb-page-reviews.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbPageReviewListSchema,
+  kbPageReviewWithContextSchema,
+} from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -42,6 +47,7 @@ export class KbPageReviewsController {
   @Get("page-reviews")
   @RequirePermission("kb:reviews:view")
   @Validate({ query: listReviewsQuerySchema })
+  @ResponseSchema(kbPageReviewListSchema)
   async list(
     @Query() query: ListReviewsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -52,6 +58,7 @@ export class KbPageReviewsController {
   @Get("page-reviews/due")
   @RequirePermission("kb:reviews:view")
   @Validate({ query: listDueReviewsQuerySchema })
+  @ResponseSchema(kbPageReviewListSchema)
   async listDue(
     @Query() query: ListDueReviewsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -67,6 +74,7 @@ export class KbPageReviewsController {
   @RequirePermission("kb:reviews:manage")
   @HttpCode(201)
   @Validate({ params: pageIdParams, body: createPageReviewSchema })
+  @ResponseSchema(kbPageReviewWithContextSchema)
   async create(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body() body: CreatePageReviewInput,
@@ -80,6 +88,7 @@ export class KbPageReviewsController {
   @HttpCode(200)
   @RequirePermission("kb:reviews:manage")
   @Validate({ params: reviewIdParams, body: approveReviewSchema })
+  @ResponseSchema(kbPageReviewWithContextSchema)
   async approve(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body() body: ApproveReviewInput,
@@ -93,6 +102,7 @@ export class KbPageReviewsController {
   @HttpCode(200)
   @RequirePermission("kb:reviews:manage")
   @Validate({ params: reviewIdParams, body: rejectReviewSchema })
+  @ResponseSchema(kbPageReviewWithContextSchema)
   async reject(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @Body() body: RejectReviewInput,

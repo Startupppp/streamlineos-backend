@@ -9,7 +9,15 @@ import { PartyMergeService } from "./party-merge.service";
 import { PartyRevertService } from "./party-revert.service";
 import { PartyRolesService } from "./party-roles.service";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  partyRolesSchema,
+  detectResultSchema,
+  duplicateCandidatesSchema,
+  dismissedSchema,
+  mergeOutcomeSchema,
+  revertResultSchema,
+} from "./dto/party-response.schemas";
 import { partyMergeBodySchema, partyRoleBodySchema } from "./dto/party-merge.schemas";
 import { z } from "zod";
 
@@ -37,6 +45,7 @@ export class PartyMergeController {
   @Get("parties/:partyId/roles")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:parties:view")
+  @ResponseSchema(partyRolesSchema)
   @Validate({ params: partyIdParams })
   async listRoles(@CurrentUser() user: CurrentUserContext, @Param("partyId") partyId: string) {
     return { roles: await this.roles.listRoles(user.orgId, partyId) };
@@ -46,6 +55,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:roles:manage")
   @Idempotent("party.role.add")
+  @ResponseSchema(partyRolesSchema)
   @Validate({ params: partyIdParams, body: partyRoleBodySchema })
   async addRole(
     @CurrentUser() user: CurrentUserContext,
@@ -58,6 +68,7 @@ export class PartyMergeController {
   @Delete("parties/:partyId/roles/:role")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:roles:manage")
+  @ResponseSchema(partyRolesSchema)
   @Validate({ params: partyIdroleParams })
   async removeRole(
     @CurrentUser() user: CurrentUserContext,
@@ -72,6 +83,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
   @Idempotent("party.duplicates.detect")
+  @ResponseSchema(detectResultSchema)
   @Validate({ params: partyIdParams })
   async detect(@CurrentUser() user: CurrentUserContext, @Param("partyId") partyId: string) {
     return this.roles.detectFor(user.orgId, partyId, user.userId);
@@ -80,6 +92,7 @@ export class PartyMergeController {
   @Get("duplicates")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:duplicates:view")
+  @ResponseSchema(duplicateCandidatesSchema)
   async listCandidates(
     @CurrentUser() user: CurrentUserContext,
     @Query("status") status?: string,
@@ -90,6 +103,7 @@ export class PartyMergeController {
   @Delete("duplicates/:candidateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
+  @ResponseSchema(dismissedSchema)
   @Validate({ params: candidateIdParams })
   async dismiss(
     @CurrentUser() user: CurrentUserContext,
@@ -103,6 +117,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
   @Idempotent("party.merge")
+  @ResponseSchema(mergeOutcomeSchema)
   @Validate({ body: partyMergeBodySchema })
   async merge(
     @CurrentUser() user: CurrentUserContext,
@@ -121,6 +136,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
   @Idempotent("party.merge.revert")
+  @ResponseSchema(revertResultSchema)
   @Validate({ params: partyMergeIdParams })
   async revert(
     @CurrentUser() user: CurrentUserContext,

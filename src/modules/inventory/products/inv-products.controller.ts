@@ -20,7 +20,18 @@ import {
 } from "./dto/inv-products.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listProductsResponseSchema,
+  listCategoriesResponseSchema,
+  listUomResponseSchema,
+  listVariantsResponseSchema,
+  invProductSchema,
+  invCategorySchema,
+  invUomSchema,
+  invProductVariantSchema,
+  getProductResponseSchema,
+} from "./dto/products-response.schemas";
 
 const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive() }).strict();
 const uomIdParams = z.object({ uomId: z.coerce.number().int().positive() }).strict();
@@ -38,6 +49,7 @@ export class InvProductsController {
   ) {}
 
   @Get()
+  @ResponseSchema(listProductsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   @Validate({ query: listProductsSchema })
@@ -50,6 +62,7 @@ export class InvProductsController {
   }
 
   @Get("categories")
+  @ResponseSchema(listCategoriesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   listCategories(@CurrentUser() u: CurrentUserContext) {
@@ -57,6 +70,7 @@ export class InvProductsController {
   }
 
   @Post("categories")
+  @ResponseSchema(invCategorySchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:create")
   @Validate({ body: createCategorySchema })
@@ -68,6 +82,7 @@ export class InvProductsController {
   }
 
   @Get("uom")
+  @ResponseSchema(listUomResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   listUom(@CurrentUser() u: CurrentUserContext) {
@@ -75,6 +90,7 @@ export class InvProductsController {
   }
 
   @Post("uom")
+  @ResponseSchema(invUomSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:create")
   @Validate({ body: createUomSchema })
@@ -86,6 +102,7 @@ export class InvProductsController {
   }
 
   @Patch("categories/:categoryId")
+  @ResponseSchema(invCategorySchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   @Validate({ params: categoryIdParams, body: updateCategorySchema })
@@ -98,6 +115,7 @@ export class InvProductsController {
   }
 
   @Patch("uom/:uomId")
+  @ResponseSchema(invUomSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   @Validate({ params: uomIdParams, body: updateUomSchema })
@@ -110,6 +128,7 @@ export class InvProductsController {
   }
 
   @Get("variants")
+  @ResponseSchema(listVariantsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   @Validate({ query: listVariantsSchema })
@@ -122,6 +141,7 @@ export class InvProductsController {
 
   @Post(":productId/archive")
   @BodylessAction()
+  @ResponseSchema(invProductSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   @HttpCode(HttpStatus.OK)
@@ -135,6 +155,7 @@ export class InvProductsController {
 
   @Post(":productId/restore")
   @BodylessAction()
+  @ResponseSchema(invProductSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   @HttpCode(HttpStatus.OK)
@@ -147,6 +168,7 @@ export class InvProductsController {
   }
 
   @Get(":productId")
+  @ResponseSchema(getProductResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   @Validate({ params: productIdParams })
@@ -155,6 +177,7 @@ export class InvProductsController {
   }
 
   @Post()
+  @ResponseSchema(invProductSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:create")
   @Validate({ body: createProductSchema })
@@ -166,6 +189,7 @@ export class InvProductsController {
   }
 
   @Patch(":productId")
+  @ResponseSchema(invProductSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   @Validate({ params: productIdParams, body: updateProductSchema })
@@ -178,6 +202,7 @@ export class InvProductsController {
   }
 
   @Delete(":productId")
+  @NoContentResponse()
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:delete")
@@ -187,6 +212,7 @@ export class InvProductsController {
   }
 
   @Post(":productId/variants")
+  @ResponseSchema(invProductVariantSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   @Validate({ params: productIdParams, body: createVariantSchema })
@@ -199,6 +225,7 @@ export class InvProductsController {
   }
 
   @Patch(":productId/variants/:variantId")
+  @ResponseSchema(invProductVariantSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   @Validate({ params: productIdvariantIdParams, body: updateVariantSchema })

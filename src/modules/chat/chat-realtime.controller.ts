@@ -12,6 +12,8 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AblyService } from "../realtime/ably.service";
 import { ChatChannelsService } from "./chat-channels.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { chatAblyTokenSchema } from "./dto/chat-misc-response.schemas";
 
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -22,6 +24,7 @@ export class ChatRealtimeController {
   ) {}
 
   @RequirePermission("chat:messages:read")
+  @ResponseSchema(chatAblyTokenSchema)
   @Get("ably-token")
   async ablyToken(@CurrentUser() u: CurrentUserContext) {
     if (!this.ably.configured) {

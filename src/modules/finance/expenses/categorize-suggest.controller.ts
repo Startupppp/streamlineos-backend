@@ -8,6 +8,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CategorizeSuggestService } from "./categorize-suggest.service";
 import { categorizeSuggestSchema, type CategorizeSuggestInput } from "./dto/categorize-suggest.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { categorizeSuggestResponseSchema } from "./dto/expenses-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/expenses")
@@ -16,6 +18,7 @@ export class CategorizeSuggestController {
   constructor(private readonly suggester: CategorizeSuggestService) {}
 
   @Post("categorize-suggest")
+  @ResponseSchema(categorizeSuggestResponseSchema)
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reimbursements:read")

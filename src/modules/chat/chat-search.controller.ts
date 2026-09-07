@@ -14,6 +14,12 @@ import {
   type SearchMessagesQueryInput,
   type SearchQueryInput,
 } from "./dto/chat-search.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  chatSearchChannelsResponseSchema,
+  chatSearchMessagesResponseSchema,
+  chatSearchUsersResponseSchema,
+} from "./dto/chat-misc-response.schemas";
 
 @ApiTags("Chat Search")
 @ApiBearerAuth()
@@ -25,6 +31,7 @@ export class ChatSearchController {
   @ApiOperation({ summary: "Search messages by keyword with optional date range and sender filters" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("messages")
+  @ResponseSchema(chatSearchMessagesResponseSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ query: searchMessagesQuerySchema })
   searchMessages(
@@ -45,6 +52,7 @@ export class ChatSearchController {
   @ApiOperation({ summary: "Search channels by name" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("channels")
+  @ResponseSchema(chatSearchChannelsResponseSchema)
   @RequirePermission("chat:channels:read")
   @Validate({ query: searchQuerySchema })
   searchChannels(@Query() query: SearchQueryInput, @CurrentUser() u: CurrentUserContext) {
@@ -54,6 +62,7 @@ export class ChatSearchController {
   @ApiOperation({ summary: "Search users in the organisation by name or email" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("users")
+  @ResponseSchema(chatSearchUsersResponseSchema)
   @RequirePermission("chat:channels:read")
   @Validate({ query: searchQuerySchema })
   searchUsers(@Query() query: SearchQueryInput, @CurrentUser() u: CurrentUserContext) {

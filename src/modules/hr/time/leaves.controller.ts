@@ -52,7 +52,23 @@ import { LeaveTypesService } from "./leave-types.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  leaveTypeRowSchema,
+  leaveBalanceRowSchema,
+  leavesMyResponseSchema,
+  leavesTeamResponseSchema,
+  leavesThisWeekItemSchema,
+  leavesAnalyticsResponseSchema,
+  leavesCreateResponseSchema,
+  leaveCalendarItemSchema,
+  leaveSummaryRowSchema,
+  leavesPageDataSchema,
+  compOffGrantResponseSchema,
+  seedLeaveTypesResponseSchema,
+  teamAvailabilityItemSchema,
+} from "./dto/time-leave-response.schemas";
 
 const leaveTypeIdParams = z.object({ leaveTypeId: z.coerce.number().int().positive() }).strict();
 const leaveIdParams = z.object({ leaveId: z.coerce.number().int().positive() }).strict();
@@ -71,18 +87,21 @@ export class LeavesController {
   ) {}
 
   @Get()
+  @ResponseSchema(leavesPageDataSchema)
   @RequirePermission("hr:leaves:view")
   pageData(@CurrentUser() currentUser: CurrentUserContext) {
     return this.leavesPage.pageData(currentUser.orgId, currentUser.userId);
   }
 
   @Get("balance")
+  @ResponseSchema(z.array(leaveBalanceRowSchema))
   @RequirePermission("hr:leaves:view")
   balance(@CurrentUser() currentUser: CurrentUserContext) {
     return this.leaves.balance(currentUser.orgId, currentUser.userId);
   }
 
   @Get("my")
+  @ResponseSchema(leavesMyResponseSchema)
   @RequirePermission("hr:leaves:view")
   @Validate({ query: listLeaveRequestsSchema })
   my(
@@ -93,18 +112,21 @@ export class LeavesController {
   }
 
   @Get("team")
+  @ResponseSchema(leavesTeamResponseSchema)
   @RequirePermission("hr:leaves:view")
   async team(@CurrentUser() currentUser: CurrentUserContext) {
     return await this.leaves.team(currentUser);
   }
 
   @Get("this-week")
+  @ResponseSchema(z.array(leavesThisWeekItemSchema))
   @RequirePermission("hr:leaves:view")
   thisWeek(@CurrentUser() currentUser: CurrentUserContext) {
     return this.leaves.thisWeek(currentUser.orgId);
   }
 
   @Get("analytics")
+  @ResponseSchema(leavesAnalyticsResponseSchema)
   @RequirePermission("hr:leaves:view")
   @Validate({ query: leaveAnalyticsQuerySchema })
   analytics(
@@ -116,6 +138,7 @@ export class LeavesController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(leavesCreateResponseSchema)
   @RequirePermission("hr:leaves:create")
   @Validate({ body: createLeaveSchema })
   create(
@@ -126,6 +149,7 @@ export class LeavesController {
   }
 
   @Get("types")
+  @ResponseSchema(z.array(leaveTypeRowSchema))
   @RequirePermission("hr:leaves:view")
   listLeaveTypes(@CurrentUser() currentUser: CurrentUserContext) {
     return this.leaveTypes.list(currentUser.orgId);
@@ -133,6 +157,7 @@ export class LeavesController {
 
   @Post("types/seed-defaults")
   @BodylessAction()
+  @ResponseSchema(seedLeaveTypesResponseSchema)
   @HttpCode(200)
   @RequirePermission("hr:leaves:manage")
   seedDefaultLeaveTypes(@CurrentUser() currentUser: CurrentUserContext) {
@@ -140,6 +165,7 @@ export class LeavesController {
   }
 
   @Patch("types/:leaveTypeId")
+  @ResponseSchema(leaveTypeRowSchema)
   @RequirePermission("hr:leaves:manage")
   @Validate({ params: leaveTypeIdParams, body: updateLeaveTypeSchema })
   updateLeaveType(
@@ -151,6 +177,7 @@ export class LeavesController {
   }
 
   @Delete("types/:leaveTypeId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:leaves:manage")
   @Validate({ params: leaveTypeIdParams })
   deleteLeaveType(
@@ -162,6 +189,7 @@ export class LeavesController {
 
   @Post("types")
   @HttpCode(201)
+  @ResponseSchema(leaveTypeRowSchema)
   @RequirePermission("hr:leaves:manage")
   @Validate({ body: createLeaveTypeSchema })
   createLeaveType(
@@ -173,6 +201,7 @@ export class LeavesController {
 
   @Post("comp-off")
   @HttpCode(201)
+  @ResponseSchema(compOffGrantResponseSchema)
   @RequirePermission("hr:leaves:manage")
   @Validate({ body: compOffSchema })
   compOff(
@@ -184,6 +213,7 @@ export class LeavesController {
 
   @Patch(":leaveId/cancel")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:leaves:create")
   @Validate({ params: leaveIdParams })
   async cancel(
@@ -197,6 +227,7 @@ export class LeavesController {
 
   @Put(":leaveId/approve")
   @Idempotent("hr.leave.approve")
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:approve")
   @Validate({ params: leaveIdParams, body: approveLeaveSchema })
@@ -210,6 +241,7 @@ export class LeavesController {
 
   @Put(":leaveId/reject")
   @Idempotent("hr.leave.reject")
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:approve")
   @Validate({ params: leaveIdParams, body: rejectLeaveSchema })
@@ -222,6 +254,7 @@ export class LeavesController {
   }
 
   @Patch(":leaveId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:leaves:approve")
   @Validate({ params: leaveIdParams, body: updateLeaveSchema })
   async update(
@@ -235,6 +268,7 @@ export class LeavesController {
   }
 
   @Get("team-availability")
+  @ResponseSchema(z.array(teamAvailabilityItemSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:read")
   teamAvailability(
@@ -249,6 +283,7 @@ export class LeavesController {
   }
 
   @Get("summary")
+  @ResponseSchema(z.array(leaveSummaryRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:read")
   summary(
@@ -270,6 +305,7 @@ export class LeaveCalendarController {
   constructor(private readonly leaves: LeavesService) {}
 
   @Get()
+  @ResponseSchema(z.array(leaveCalendarItemSchema))
   @RequirePermission("hr:leaves:read")
   @Validate({ query: leaveCalendarQuerySchema })
   calendar(

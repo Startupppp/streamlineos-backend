@@ -24,7 +24,18 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  analyticsSchema,
+  burnupDataSchema,
+  cfdDataSchema,
+  criticalPathSchema,
+  cycleTimeSchema,
+  leadTimeSchema,
+  resourceAllocationItemSchema,
+  snapshotResultSchema,
+  velocitySchema,
+} from "./dto/build-reports-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
@@ -39,12 +50,14 @@ export class ProjectsReportsController {
 
   @Get("resource-allocation")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(resourceAllocationItemSchema))
   resourceAllocation(@CurrentUser() u: CurrentUserContext) {
     return this.analytics.resourceAllocation(u.orgId);
   }
 
   @Get(":projectId/analytics")
   @RequirePermission("build:view")
+  @ResponseSchema(analyticsSchema)
   @Validate({ params: projectIdParams })
   getAnalytics(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -55,6 +68,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/burnup")
   @RequirePermission("build:view")
+  @ResponseSchema(burnupDataSchema)
   @Validate({ params: projectIdParams, query: burnupQuerySchema })
   burnup(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -66,6 +80,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/cfd")
   @RequirePermission("build:view")
+  @ResponseSchema(cfdDataSchema)
   @Validate({ params: projectIdParams, query: cfdQuerySchema })
   cfd(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -77,6 +92,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/critical-path")
   @RequirePermission("build:view")
+  @ResponseSchema(criticalPathSchema)
   @Validate({ params: projectIdParams })
   criticalPath(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -87,6 +103,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/velocity")
   @RequirePermission("build:view")
+  @ResponseSchema(velocitySchema)
   @Validate({ params: projectIdParams })
   velocity(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -97,6 +114,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/cycle-time")
   @RequirePermission("build:view")
+  @ResponseSchema(cycleTimeSchema)
   @Validate({ params: projectIdParams })
   getCycleTime(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -107,6 +125,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/lead-time")
   @RequirePermission("build:view")
+  @ResponseSchema(leadTimeSchema)
   @Validate({ params: projectIdParams })
   getLeadTime(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -119,6 +138,7 @@ export class ProjectsReportsController {
   @BodylessAction()
   @RequirePermission("build:manage")
   @HttpCode(200)
+  @ResponseSchema(snapshotResultSchema)
   @Validate({ params: projectIdParams })
   snapshot(
     @Param("projectId", ParseIntPipe) projectId: number,

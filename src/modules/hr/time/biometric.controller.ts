@@ -9,6 +9,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { BiometricService } from "./biometric.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { biometricDeviceRowSchema, biometricLogRowSchema } from "./dto/time-attendance-response.schemas";
 
 const deviceIdParams = z.object({ deviceId: z.coerce.number().int().positive() }).strict();
 
@@ -32,6 +34,7 @@ export class BiometricController {
   constructor(private readonly service: BiometricService) {}
 
   @Get("devices")
+  @ResponseSchema(z.array(biometricDeviceRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   listDevices(@CurrentUser() u: CurrentUserContext) {
@@ -40,6 +43,7 @@ export class BiometricController {
 
   @Post("devices")
   @HttpCode(201)
+  @ResponseSchema(biometricDeviceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ body: createDeviceSchema })
@@ -51,6 +55,7 @@ export class BiometricController {
   }
 
   @Patch("devices/:deviceId")
+  @ResponseSchema(biometricDeviceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: deviceIdParams, body: updateDeviceSchema })
@@ -63,6 +68,7 @@ export class BiometricController {
   }
 
   @Get("logs")
+  @ResponseSchema(z.array(biometricLogRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   getLogs(@CurrentUser() u: CurrentUserContext) {

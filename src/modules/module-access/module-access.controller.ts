@@ -65,7 +65,27 @@ import {
   type UpdateMemberGroupsInput,
 } from "./dto/module-access.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  moduleStandingResponseSchema,
+  moduleGrantableResponseSchema,
+  moduleStandingMutationResponseSchema,
+  moduleCatalogResponseSchema,
+  moduleRolesResponseSchema,
+  moduleSetPermissionsResponseSchema,
+  moduleGroupListResponseSchema,
+  moduleGroupResponseSchema,
+  moduleGroupDeleteResponseSchema,
+  moduleGroupMembersResponseSchema,
+  moduleGroupMemberMutationResponseSchema,
+  moduleCallerPermissionsResponseSchema,
+  moduleRosterResponseSchema,
+  moduleRosterMutationResponseSchema,
+  moduleMemberCandidatesResponseSchema,
+  moduleOwnershipResponseSchema,
+  moduleOwnershipMutationResponseSchema,
+  moduleAuditLogResponseSchema,
+} from "./dto/module-access-response.schemas";
 
 @Controller("module-access")
 @UseGuards(JwtAuthGuard)
@@ -82,6 +102,7 @@ export class ModuleAccessController {
   ) {}
 
   @Get(":moduleKey/standing")
+  @ResponseSchema(moduleStandingResponseSchema)
   @Validate({ params: moduleKeyParamSchema })
   listStanding(
     @Param() params: ModuleKeyParam,
@@ -91,6 +112,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/standing/grantable")
+  @ResponseSchema(moduleGrantableResponseSchema)
   @Validate({ params: moduleKeyParamSchema })
   describeGrantable(
     @Param() params: ModuleKeyParam,
@@ -100,6 +122,7 @@ export class ModuleAccessController {
   }
 
   @Post(":moduleKey/standing/transfer-owner")
+  @ResponseSchema(moduleStandingMutationResponseSchema)
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:ownership-transfer")
@@ -114,6 +137,7 @@ export class ModuleAccessController {
 
   @Post(":moduleKey/standing/:membershipId")
   @BodylessAction()
+  @ResponseSchema(moduleStandingMutationResponseSchema)
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
@@ -126,6 +150,7 @@ export class ModuleAccessController {
   }
 
   @Delete(":moduleKey/standing/:membershipId")
+  @ResponseSchema(moduleStandingMutationResponseSchema)
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
@@ -138,6 +163,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/catalog")
+  @ResponseSchema(moduleCatalogResponseSchema)
   @Validate({ params: moduleKeyParamSchema })
   catalog(
     @Param() params: ModuleKeyParam,
@@ -147,6 +173,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/roles")
+  @ResponseSchema(moduleRolesResponseSchema)
   @Validate({ params: moduleKeyParamSchema })
   roles(
     @Param() params: ModuleKeyParam,
@@ -156,6 +183,7 @@ export class ModuleAccessController {
   }
 
   @Put(":moduleKey/roles/:roleId/permissions")
+  @ResponseSchema(moduleSetPermissionsResponseSchema)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: moduleRoleParamSchema, body: setModuleRolePermissionsSchema })
@@ -168,6 +196,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/groups")
+  @ResponseSchema(moduleGroupListResponseSchema)
   @Validate({ params: moduleKeyParamSchema, query: listGroupsQuerySchema })
   listGroups(
     @Param() params: ModuleKeyParam,
@@ -178,6 +207,7 @@ export class ModuleAccessController {
   }
 
   @Post(":moduleKey/groups")
+  @ResponseSchema(moduleGroupResponseSchema)
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
@@ -192,6 +222,7 @@ export class ModuleAccessController {
   }
 
   @Patch(":moduleKey/groups/:groupId")
+  @ResponseSchema(moduleGroupResponseSchema)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: moduleGroupParamSchema, body: renameModuleGroupSchema })
@@ -204,6 +235,7 @@ export class ModuleAccessController {
   }
 
   @Delete(":moduleKey/groups/:groupId")
+  @ResponseSchema(moduleGroupDeleteResponseSchema)
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
@@ -216,6 +248,7 @@ export class ModuleAccessController {
   }
 
   @Put(":moduleKey/groups/:groupId/permissions")
+  @ResponseSchema(moduleSetPermissionsResponseSchema)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: moduleGroupParamSchema, body: setModuleRolePermissionsSchema })
@@ -228,6 +261,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/groups/:groupId/members")
+  @ResponseSchema(moduleGroupMembersResponseSchema)
   @Validate({ params: moduleGroupParamSchema })
   listGroupMembers(
     @Param() params: ModuleGroupParam,
@@ -237,6 +271,7 @@ export class ModuleAccessController {
   }
 
   @Post(":moduleKey/groups/:groupId/members")
+  @ResponseSchema(moduleGroupMemberMutationResponseSchema)
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
@@ -250,6 +285,7 @@ export class ModuleAccessController {
   }
 
   @Delete(":moduleKey/groups/:groupId/members/:userId")
+  @ResponseSchema(moduleGroupMemberMutationResponseSchema)
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
@@ -262,6 +298,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/me/permissions")
+  @ResponseSchema(moduleCallerPermissionsResponseSchema)
   @Validate({ params: moduleKeyParamSchema })
   getCallerPermissions(
     @Param() params: ModuleKeyParam,
@@ -271,6 +308,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/members")
+  @ResponseSchema(moduleRosterResponseSchema)
   @Validate({ params: moduleKeyParamSchema, query: listMembersQuerySchema })
   listMembers(
     @Param() params: ModuleKeyParam,
@@ -281,6 +319,7 @@ export class ModuleAccessController {
   }
 
   @Post(":moduleKey/members")
+  @ResponseSchema(moduleRosterMutationResponseSchema)
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
@@ -294,6 +333,7 @@ export class ModuleAccessController {
   }
 
   @Patch(":moduleKey/members/:userId")
+  @ResponseSchema(moduleRosterMutationResponseSchema)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: flatMemberParamSchema, body: updateMemberGroupsSchema })
@@ -306,6 +346,7 @@ export class ModuleAccessController {
   }
 
   @Delete(":moduleKey/members/:userId")
+  @ResponseSchema(moduleRosterMutationResponseSchema)
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
@@ -318,6 +359,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/audit-log")
+  @ResponseSchema(moduleAuditLogResponseSchema)
   @Validate({ params: moduleKeyParamSchema, query: auditLogQuerySchema })
   getAuditLog(
     @Param() params: ModuleKeyParam,
@@ -328,6 +370,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/member-candidates")
+  @ResponseSchema(moduleMemberCandidatesResponseSchema)
   @Validate({ params: moduleKeyParamSchema, query: memberCandidatesQuerySchema })
   listMemberCandidates(
     @Param() params: ModuleKeyParam,
@@ -338,6 +381,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/ownership")
+  @ResponseSchema(moduleOwnershipResponseSchema)
   @Validate({ params: moduleKeyParamSchema })
   getOwnership(
     @Param() params: ModuleKeyParam,
@@ -347,6 +391,7 @@ export class ModuleAccessController {
   }
 
   @Post(":moduleKey/ownership/transfer")
+  @ResponseSchema(moduleOwnershipMutationResponseSchema)
   @Idempotent("ownership.module-access.transfer-initiate")
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
@@ -361,6 +406,7 @@ export class ModuleAccessController {
   }
 
   @Delete(":moduleKey/ownership/transfer")
+  @ResponseSchema(moduleOwnershipMutationResponseSchema)
   @Idempotent("ownership.module-access.transfer-cancel")
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)

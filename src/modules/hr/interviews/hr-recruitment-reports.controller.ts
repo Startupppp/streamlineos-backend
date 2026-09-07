@@ -24,6 +24,14 @@ import {
 } from "./dto/hr-interviews.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  generateReportResponseSchema,
+  scheduledReportSchema,
+  successSchema,
+  recruitmentAnalyticsSchema,
+  recruitmentStatsSchema,
+} from "./dto/interviews-response.schemas";
 
 const reportIdParams = z.object({ reportId: z.coerce.number().int().positive() }).strict();
 
@@ -35,6 +43,7 @@ export class HrRecruitmentReportsController {
 
   @Post("reports/generate")
   @HttpCode(200)
+  @ResponseSchema(generateReportResponseSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: generateReportSchema })
   generateReport(
@@ -45,6 +54,7 @@ export class HrRecruitmentReportsController {
   }
 
   @Get("reports/scheduled")
+  @ResponseSchema(z.array(scheduledReportSchema))
   @RequirePermission("hr:interviews:view")
   listScheduled(@CurrentUser() u: CurrentUserContext) {
     return this.reports.listScheduledReports(u.orgId);
@@ -52,6 +62,7 @@ export class HrRecruitmentReportsController {
 
   @Post("reports/scheduled")
   @HttpCode(201)
+  @ResponseSchema(scheduledReportSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: createScheduledReportSchema })
   createScheduled(
@@ -62,6 +73,7 @@ export class HrRecruitmentReportsController {
   }
 
   @Delete("reports/scheduled/:reportId")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: reportIdParams })
   deleteScheduled(
@@ -72,12 +84,14 @@ export class HrRecruitmentReportsController {
   }
 
   @Get("analytics")
+  @ResponseSchema(recruitmentAnalyticsSchema)
   @RequirePermission("hr:interviews:view")
   analytics(@CurrentUser() u: CurrentUserContext) {
     return this.reports.analytics(u.orgId);
   }
 
   @Get("stats")
+  @ResponseSchema(recruitmentStatsSchema)
   @RequirePermission("hr:interviews:view")
   stats(@CurrentUser() u: CurrentUserContext) {
     return this.reports.stats(u.orgId);

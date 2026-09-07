@@ -50,6 +50,7 @@ import {
 } from "./storage-key";
 import { FileQuarantineService } from "./file-quarantine.service";
 import { MediaTransformRunner } from "./media-transform.runner";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { storageUploadResponseSchema } from "./dto/storage-response.schemas";
 import { AccessService } from "../access/access.service";
@@ -275,6 +276,7 @@ export class StorageController {
 
   @Get("download")
   @AuthorizedInService("assertKeyReadable")
+  @ApiOkResponse({ schema: { type: "string", format: "binary" }, description: "Binary file stream (attachment=1) or JSON { url } signed-URL redirect" })
   @Validate({ query: downloadQuerySchema })
   async download(
     @Query() queryParams: DownloadQueryInput,
@@ -319,6 +321,7 @@ export class StorageController {
 
   @Get("image")
   @AuthorizedInService("assertKeyReadable")
+  @ApiOkResponse({ schema: { type: "string", format: "binary" }, description: "Binary image stream" })
   @Validate({ query: imageQuerySchema })
   async image(
     @Query() queryParams: ImageQueryInput,

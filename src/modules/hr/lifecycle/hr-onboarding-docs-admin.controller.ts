@@ -36,6 +36,13 @@ import {
 } from "./dto/hr-lifecycle.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  onboardingDocsSummarySchema,
+  onboardingDocumentListSchema,
+  onboardingDocumentRowSchema,
+  signedDocFileSchema,
+} from "./dto/lifecycle-response.schemas";
 
 const docIdParams = z.object({ docId: z.coerce.number().int().positive() }).strict();
 
@@ -57,6 +64,7 @@ export class HrOnboardingDocsAdminController {
   }
 
   @Get("summary")
+  @ResponseSchema(onboardingDocsSummarySchema)
   @RequirePermission("hr:onboarding:manage")
   @Validate({ query: onboardingDocsSummaryQuerySchema })
   async summary(
@@ -68,6 +76,7 @@ export class HrOnboardingDocsAdminController {
   }
 
   @Get()
+  @ResponseSchema(onboardingDocumentListSchema)
   @RequirePermission("hr:onboarding:manage")
   @Validate({ query: listOnboardingDocsQuerySchema })
   async list(
@@ -80,6 +89,7 @@ export class HrOnboardingDocsAdminController {
   }
 
   @Post()
+  @ResponseSchema(onboardingDocumentRowSchema)
   @HttpCode(201)
   @RequirePermission("hr:onboarding:manage")
   @Validate({ body: createOnboardingDocSchema })
@@ -93,6 +103,7 @@ export class HrOnboardingDocsAdminController {
   }
 
   @Get(":docId/file")
+  @ResponseSchema(signedDocFileSchema)
   @RequirePermission("hr:onboarding:manage")
   @Validate({ params: docIdParams })
   async getFile(
@@ -104,6 +115,7 @@ export class HrOnboardingDocsAdminController {
   }
 
   @Patch(":docId")
+  @ResponseSchema(onboardingDocumentRowSchema)
   @RequirePermission("hr:onboarding:manage")
   @Validate({ params: docIdParams, body: reviewOnboardingDocSchema })
   async review(

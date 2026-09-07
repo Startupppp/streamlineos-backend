@@ -21,7 +21,13 @@ import {
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  workflowDefinitionListSchema,
+  workflowDefinitionWithStepsSchema,
+  workflowInstancePagedSchema,
+  workflowSimulateResponseSchema,
+} from "./dto/workflow-response.schemas";
 
 const workflowIdParams = z.object({ workflowId: z.coerce.number().int().positive() }).strict();
 
@@ -35,6 +41,7 @@ export class HrWorkflowDefinitionsController {
   ) {}
 
   @Get()
+  @ResponseSchema(workflowDefinitionListSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @Validate({ query: WorkflowDefinitionQuerySchema })
@@ -46,6 +53,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Post()
+  @ResponseSchema(workflowDefinitionWithStepsSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @Validate({ body: CreateWorkflowDefinitionSchema })
@@ -57,6 +65,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Get(":workflowId")
+  @ResponseSchema(workflowDefinitionWithStepsSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @Validate({ params: workflowIdParams })
@@ -68,6 +77,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Patch(":workflowId")
+  @ResponseSchema(workflowDefinitionWithStepsSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @Validate({ params: workflowIdParams, body: UpdateWorkflowDefinitionSchema })
@@ -80,6 +90,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Delete(":workflowId")
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(204)
@@ -92,6 +103,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Post(":workflowId/activate")
+  @ResponseSchema(workflowDefinitionWithStepsSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
@@ -105,6 +117,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Post(":workflowId/archive")
+  @ResponseSchema(workflowDefinitionWithStepsSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
@@ -118,6 +131,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Post(":workflowId/duplicate")
+  @ResponseSchema(workflowDefinitionWithStepsSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
@@ -130,6 +144,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Post(":workflowId/simulate")
+  @ResponseSchema(workflowSimulateResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @HttpCode(200)
@@ -143,6 +158,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Get(":workflowId/instances")
+  @ResponseSchema(workflowInstancePagedSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   @Validate({ params: workflowIdParams, query: WorkflowInstanceQuerySchema })

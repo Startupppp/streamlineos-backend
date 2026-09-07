@@ -16,7 +16,11 @@ import {
 } from "./dto/inv-returns.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listCustomerReturnsResponseSchema,
+  getCustomerReturnResponseSchema,
+} from "./dto/returns-response.schemas";
 
 const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
 
@@ -27,6 +31,7 @@ export class CustomerReturnsController {
   constructor(private readonly service: CustomerReturnsService) {}
 
   @Get()
+  @ResponseSchema(listCustomerReturnsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @Validate({ query: listReturnsSchema })
@@ -38,6 +43,7 @@ export class CustomerReturnsController {
   }
 
   @Get(":returnId")
+  @ResponseSchema(getCustomerReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @Validate({ params: returnIdParams })
@@ -49,6 +55,7 @@ export class CustomerReturnsController {
   }
 
   @Post()
+  @ResponseSchema(getCustomerReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @Validate({ body: createCustomerReturnSchema })
@@ -60,6 +67,7 @@ export class CustomerReturnsController {
   }
 
   @Post(":returnId/post")
+  @ResponseSchema(getCustomerReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @HttpCode(HttpStatus.OK)
@@ -76,6 +84,7 @@ export class CustomerReturnsController {
 
   @Post(":returnId/cancel")
   @BodylessAction()
+  @ResponseSchema(getCustomerReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @HttpCode(HttpStatus.OK)

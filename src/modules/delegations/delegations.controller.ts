@@ -22,6 +22,8 @@ import {
 } from "./dto/delegation.schemas";
 import { DelegationsService } from "./delegations.service";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
+import { delegationsPageSchema, delegationRowSchema } from "./dto/delegation-response.schemas";
 import { z } from "zod";
 
 const delegationIdParams = z.object({ delegationId: z.string().min(1) }).strict();
@@ -33,6 +35,7 @@ export class DelegationsController {
 
   @Get()
   @RequirePermission("settings:rbac:manage")
+  @ResponseSchema(delegationsPageSchema)
   @Validate({ query: listDelegationsQuerySchema })
   list(
     @Query() query: ListDelegationsQuery,
@@ -43,6 +46,7 @@ export class DelegationsController {
 
   @Get("given")
   @RequirePermission("settings:rbac:manage")
+  @ResponseSchema(delegationsPageSchema)
   @Validate({ query: listDelegationsQuerySchema })
   listGiven(
     @Query() query: ListDelegationsQuery,
@@ -54,6 +58,7 @@ export class DelegationsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("settings:rbac:manage")
+  @ResponseSchema(delegationRowSchema)
   @Validate({ body: createDelegationSchema })
   create(
     @Body() body: CreateDelegationInput,
@@ -65,6 +70,7 @@ export class DelegationsController {
   @Delete(":delegationId")
   @HttpCode(204)
   @RequirePermission("settings:rbac:manage")
+  @NoContentResponse()
   @Validate({ params: delegationIdParams })
   revoke(
     @Param("delegationId") delegationId: string,

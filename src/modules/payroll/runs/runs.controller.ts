@@ -38,7 +38,17 @@ import {
   type AddRunAdjustmentInput,
 } from "./dto/runs.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { cursorPageSchema, successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  runCreateResponseSchema,
+  runListEmployeesResponseSchema,
+  generateResponseSchema,
+  runDetailResponseSchema,
+  runEmployeeDetailSchema,
+  runVarianceResponseSchema,
+  runListItemSchema,
+} from "./dto/runs-response.schemas";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -59,6 +69,7 @@ export class RunsController {
   @HttpCode(201)
   @RequirePermission("payroll:runs:create")
   @Validate({ body: createRunSchema })
+  @ResponseSchema(runCreateResponseSchema)
   async create(
     @Body() body: CreateRunInput,
     @CurrentUser() u: CurrentUserContext,
@@ -117,6 +128,7 @@ export class RunsController {
   @Get()
   @RequirePermission("payroll:runs:view")
   @Validate({ query: listRunsQuerySchema })
+  @ResponseSchema(cursorPageSchema(runListItemSchema))
   async list(
     @Query() query: ListRunsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -127,6 +139,7 @@ export class RunsController {
   @Get(":runId")
   @RequirePermission("payroll:runs:view")
   @Validate({ params: runIdParams })
+  @ResponseSchema(runDetailResponseSchema)
   async getOne(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -141,6 +154,7 @@ export class RunsController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runIdParams })
+  @ResponseSchema(generateResponseSchema)
   async generate(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -154,6 +168,7 @@ export class RunsController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runIdParams })
+  @ResponseSchema(generateResponseSchema)
   async recalculate(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -211,6 +226,7 @@ export class RunsController {
   @Get(":runId/employees")
   @RequirePermission("payroll:runs:view")
   @Validate({ params: runIdParams, query: listRunEmployeesQuerySchema })
+  @ResponseSchema(runListEmployeesResponseSchema)
   async listEmployees(
     @Param("runId", ParseIntPipe) runId: number,
     @Query() query: ListRunEmployeesQuery,
@@ -225,6 +241,7 @@ export class RunsController {
   @Get(":runId/employees/:runEmployeeId")
   @RequirePermission("payroll:runs:view")
   @Validate({ params: runIdrunEmployeeIdParams })
+  @ResponseSchema(runEmployeeDetailSchema)
   async getEmployee(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
@@ -239,6 +256,7 @@ export class RunsController {
   @HttpCode(201)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runIdrunEmployeeIdParams, body: addRunAdjustmentSchema })
+  @ResponseSchema(successSchema)
   async addAdjustment(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
@@ -257,6 +275,7 @@ export class RunsController {
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runIdrunEmployeeIdParams, body: setEmployeeHoldSchema })
+  @ResponseSchema(successSchema)
   async setEmployeeHold(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("runEmployeeId", ParseIntPipe) runEmployeeId: number,
@@ -278,6 +297,7 @@ export class RunsController {
   @Get(":runId/variance")
   @RequirePermission("payroll:runs:view")
   @Validate({ params: runIdParams })
+  @ResponseSchema(runVarianceResponseSchema)
   async variance(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

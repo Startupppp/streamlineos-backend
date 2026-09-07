@@ -1,5 +1,9 @@
 import { Controller, Get, Param, UseGuards } from "@nestjs/common";
-import { ApiResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  operatorCustomerResponseSchema,
+  operatorBillingResponseSchema,
+} from "./dto/platform-response.schemas";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { operatorOrgParamsSchema } from "./dto/platform.schemas";
@@ -16,7 +20,7 @@ export class PlatformOperatorCustomerController {
   constructor(private readonly customers: PlatformOperatorCustomerService) {}
 
   @Get()
-  @ApiResponse({ status: 200, description: "Organization identity and recent members" })
+  @ResponseSchema(operatorCustomerResponseSchema)
   @RequireOperatorGrant("read_customer_data")
   @Validate({ params: operatorOrgParamsSchema })
   getCustomer(@Param("orgId") orgId: string) {
@@ -24,7 +28,7 @@ export class PlatformOperatorCustomerController {
   }
 
   @Get("billing")
-  @ApiResponse({ status: 200, description: "Subscription and recent payment history" })
+  @ResponseSchema(operatorBillingResponseSchema)
   @RequireOperatorGrant("read_payments")
   @Validate({ params: operatorOrgParamsSchema })
   getBilling(@Param("orgId") orgId: string) {

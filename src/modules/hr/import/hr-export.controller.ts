@@ -34,6 +34,9 @@ import {
 } from "./hr-export-jobs.service";
 import { HrExportWorkerService } from "./hr-export-worker.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { hrExportJobViewSchema } from "./dto/import-response.schemas";
 import { z } from "zod";
 
 const exportJobIdParams = z.object({ exportJobId: z.string().uuid() }).strict();
@@ -50,6 +53,7 @@ export class HrExportController {
   ) {}
 
   @Post()
+  @ResponseSchema(hrExportJobViewSchema)
   @HttpCode(HttpStatus.ACCEPTED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:employee-export")
@@ -67,6 +71,7 @@ export class HrExportController {
   }
 
   @Get(":exportJobId")
+  @ResponseSchema(hrExportJobViewSchema)
   @Validate({ params: exportJobIdParams })
   get(
     @Param("exportJobId") exportJobId: string,
@@ -76,6 +81,7 @@ export class HrExportController {
   }
 
   @Get(":exportJobId/download")
+  @ApiOkResponse({ description: "Employee data CSV file download", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } })
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:employee-export")
   @Validate({ params: exportJobIdParams })

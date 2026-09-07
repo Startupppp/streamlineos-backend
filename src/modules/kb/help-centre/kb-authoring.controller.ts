@@ -16,6 +16,8 @@ import {
   type SummarizeInput,
 } from "./dto/kb-authoring.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbAuthoringContentSchema } from "./dto/kb-helpcenter-response.schemas";
 
 /**
  * Every handler here carries `@NoTenantTransaction()`. `KbAuthoringService.run`
@@ -47,6 +49,7 @@ export class KbAuthoringController {
   @NoTenantTransaction()
   @RequirePermission("kb:ai:generate")
   @Validate({ body: draftSchema })
+  @ResponseSchema(kbAuthoringContentSchema)
   async draft(
     @Body() body: DraftInput,
     @CurrentUser() u: CurrentUserContext,
@@ -59,6 +62,7 @@ export class KbAuthoringController {
   @NoTenantTransaction()
   @RequirePermission("kb:ai:generate")
   @Validate({ body: improveSchema })
+  @ResponseSchema(kbAuthoringContentSchema)
   async improve(
     @Body() body: ImproveInput,
     @CurrentUser() u: CurrentUserContext,
@@ -71,6 +75,7 @@ export class KbAuthoringController {
   @NoTenantTransaction()
   @RequirePermission("kb:ai:generate")
   @Validate({ body: summarizeSchema })
+  @ResponseSchema(kbAuthoringContentSchema)
   async summarize(
     @Body() body: SummarizeInput,
     @CurrentUser() u: CurrentUserContext,

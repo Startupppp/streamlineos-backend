@@ -8,6 +8,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ArPaymentsService } from "./ar-payments.service";
 import { listArPaymentsSchema, type ListArPaymentsQuery } from "./dto/finance-ar.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { arPaymentListResponseSchema } from "./dto/ar-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/ar-payments")
@@ -16,6 +18,7 @@ export class ArPaymentsController {
   constructor(private readonly svc: ArPaymentsService) {}
 
   @Get()
+  @ResponseSchema(arPaymentListResponseSchema)
   @RequirePermission("accounting:receivables:read")
   @Validate({ query: listArPaymentsSchema })
   list(

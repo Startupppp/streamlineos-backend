@@ -11,6 +11,8 @@ import {
   type UpdateNotificationPreferencesInput,
 } from "./dto/notification-preferences.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { notificationPreferencesSchema, successSchema } from "./dto/config-response.schemas";
 
 @RequireModule("hr")
 @Controller("hr/notification-preferences")
@@ -19,12 +21,14 @@ export class HrNotificationPreferencesController {
   constructor(private readonly preferences: HrNotificationPreferencesService) {}
 
   @Get()
+  @ResponseSchema(notificationPreferencesSchema)
   @RequirePermission("hr:employees:view")
   get(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.get(u.userId, u.orgId);
   }
 
   @Patch()
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ body: updateNotificationPreferencesSchema })
   update(

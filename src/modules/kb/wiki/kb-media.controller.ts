@@ -15,7 +15,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbMediaService, type KbMediaUploadResult } from "./kb-media.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { MultipartAction } from "../../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { kbMediaUploadSchema } from "./dto/kb-wiki-response.schemas";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
@@ -47,6 +48,7 @@ export class KbMediaController {
   @Idempotent("kb.media.upload")
   @RequirePermission("kb:pages:update")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_FILE_SIZE } }))
+  @ResponseSchema(kbMediaUploadSchema)
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @CurrentUser() u: CurrentUserContext,

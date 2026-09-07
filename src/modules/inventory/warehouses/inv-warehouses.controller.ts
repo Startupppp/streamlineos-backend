@@ -14,6 +14,15 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listWarehousesResponseSchema,
+  getWarehouseResponseSchema,
+  invWarehouseSchema,
+  listLocationsResponseSchema,
+  invLocationSchema,
+  getWarehouseStockResponseSchema,
+} from "./dto/warehouses-response.schemas";
 
 const warehouseIdParams = z.object({ warehouseId: z.coerce.number().int().positive() }).strict();
 const warehouseIdlocationIdParams = z.object({ warehouseId: z.coerce.number().int().positive(), locationId: z.coerce.number().int().positive() }).strict();
@@ -28,6 +37,7 @@ export class InvWarehousesController {
   ) {}
 
   @Get()
+  @ResponseSchema(listWarehousesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:read")
   @Validate({ query: listWarehousesSchema })
@@ -39,6 +49,7 @@ export class InvWarehousesController {
   }
 
   @Get(":warehouseId")
+  @ResponseSchema(getWarehouseResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:read")
   @Validate({ params: warehouseIdParams })
@@ -47,6 +58,7 @@ export class InvWarehousesController {
   }
 
   @Post()
+  @ResponseSchema(invWarehouseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   @Validate({ body: createWarehouseSchema })
@@ -58,6 +70,7 @@ export class InvWarehousesController {
   }
 
   @Patch(":warehouseId")
+  @ResponseSchema(invWarehouseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   @Validate({ params: warehouseIdParams, body: updateWarehouseSchema })
@@ -70,6 +83,7 @@ export class InvWarehousesController {
   }
 
   @Get(":warehouseId/stock")
+  @ResponseSchema(getWarehouseStockResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ params: warehouseIdParams, query: listWarehouseStockSchema })
@@ -82,6 +96,7 @@ export class InvWarehousesController {
   }
 
   @Get(":warehouseId/locations")
+  @ResponseSchema(listLocationsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:read")
   @Validate({ params: warehouseIdParams })
@@ -90,6 +105,7 @@ export class InvWarehousesController {
   }
 
   @Post(":warehouseId/locations")
+  @ResponseSchema(invLocationSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   @Validate({ params: warehouseIdParams, body: createLocationSchema })
@@ -102,6 +118,7 @@ export class InvWarehousesController {
   }
 
   @Patch(":warehouseId/locations/:locationId")
+  @ResponseSchema(invLocationSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   @Validate({ params: warehouseIdlocationIdParams, body: updateLocationSchema })

@@ -10,7 +10,14 @@ import { PeriodsService } from "./periods.service";
 import { generatePeriodsSchema, type GeneratePeriodsInput } from "./dto/periods.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  periodListResponseSchema,
+  generatePeriodsResponseSchema,
+  periodCloseChecklistResponseSchema,
+  periodMutationResponseSchema,
+  reopenPeriodResponseSchema,
+} from "./dto/gl-response.schemas";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
@@ -21,6 +28,7 @@ export class AccountingGlPeriodsController {
   constructor(private readonly periods: PeriodsService) {}
 
   @Get()
+  @ResponseSchema(periodListResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:read")
   listPeriods(@CurrentUser() u: CurrentUserContext) {
@@ -28,6 +36,7 @@ export class AccountingGlPeriodsController {
   }
 
   @Post()
+  @ResponseSchema(generatePeriodsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
   @HttpCode(201)
@@ -40,6 +49,7 @@ export class AccountingGlPeriodsController {
   }
 
   @Get(":periodId/close-checklist")
+  @ResponseSchema(periodCloseChecklistResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:read")
   @Validate({ params: periodIdParams })
@@ -51,6 +61,7 @@ export class AccountingGlPeriodsController {
   }
 
   @Post(":periodId/close")
+  @ResponseSchema(periodMutationResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
@@ -65,6 +76,7 @@ export class AccountingGlPeriodsController {
   }
 
   @Post(":periodId/lock")
+  @ResponseSchema(periodMutationResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
@@ -79,6 +91,7 @@ export class AccountingGlPeriodsController {
   }
 
   @Post(":periodId/reopen")
+  @ResponseSchema(reopenPeriodResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:reopen")

@@ -38,7 +38,12 @@ import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  chatOkSchema,
+  huddleWireNullableSchema,
+  huddleWireSchema,
+} from "./dto/chat-misc-response.schemas";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 const huddleIdParams = z.object({ huddleId: z.coerce.number().int().positive() }).strict();
@@ -57,6 +62,7 @@ export class ChatHuddlesController {
   @ApiResponse({ status: 201, description: "Huddle started" })
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Post("channels/:channelId/huddle/start")
+  @ResponseSchema(huddleWireSchema)
   @BodylessAction()
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
@@ -73,6 +79,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Get the currently active huddle for a channel" })
   @ApiResponse({ status: 200, description: "Active huddle or null" })
   @Get("channels/:channelId/huddle")
+  @ResponseSchema(huddleWireNullableSchema)
   @RequirePermission("chat:channels:read")
   @Validate({ params: channelIdParams })
   getActiveHuddle(
@@ -85,6 +92,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Join an active huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/join")
+  @ResponseSchema(chatOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -99,6 +107,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Leave a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/leave")
+  @ResponseSchema(chatOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
@@ -113,6 +122,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Set mute state for self in a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Patch("huddles/:huddleId/mute")
+  @ResponseSchema(chatOkSchema)
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: huddleIdParams, body: muteSchema })
@@ -127,6 +137,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Raise or lower hand in a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Patch("huddles/:huddleId/hand")
+  @ResponseSchema(chatOkSchema)
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: huddleIdParams, body: raiseHandSchema })
@@ -141,6 +152,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Set deafen state for self in a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Patch("huddles/:huddleId/deafen")
+  @ResponseSchema(chatOkSchema)
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: huddleIdParams, body: deafenSchema })
@@ -156,6 +168,7 @@ export class ChatHuddlesController {
   @ApiResponse({ status: 200, description: "OK" })
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Post("huddles/:huddleId/signal")
+  @ResponseSchema(chatOkSchema)
   @HttpCode(200)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("chat:huddle-signal")
@@ -173,6 +186,7 @@ export class ChatHuddlesController {
   @ApiResponse({ status: 200, description: "OK" })
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Patch("huddles/:huddleId/heartbeat")
+  @ResponseSchema(chatOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @UseGuards(RateLimitGuard)
@@ -189,6 +203,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Toggle screen share on/off in a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Patch("huddles/:huddleId/screenshare")
+  @ResponseSchema(chatOkSchema)
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: huddleIdParams, body: screenShareSchema })
@@ -203,6 +218,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Kick a participant from a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/kick")
+  @ResponseSchema(chatOkSchema)
   @HttpCode(200)
   @RequirePermission("chat:huddles:moderate")
   @Validate({ params: huddleIdParams, body: kickSchema })
@@ -217,6 +233,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Invite users to an active huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/invite")
+  @ResponseSchema(chatOkSchema)
   @Idempotent("chat.huddle.invite")
   @HttpCode(200)
   @RequirePermission("chat:channels:write")

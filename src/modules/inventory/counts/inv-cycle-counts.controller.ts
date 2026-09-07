@@ -13,7 +13,12 @@ import {
 } from "./dto/inv-counts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  listCycleCountsResponseSchema,
+  cycleCountSchema,
+} from "./dto/counts-response.schemas";
 
 const countIdParams = z.object({ countId: z.coerce.number().int().positive() }).strict();
 
@@ -24,6 +29,7 @@ export class InvCycleCountsController {
   constructor(private readonly counts: InvCycleCountsService) {}
 
   @Get()
+  @ResponseSchema(listCycleCountsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ query: listCountsSchema })
@@ -35,6 +41,7 @@ export class InvCycleCountsController {
   }
 
   @Get(":countId")
+  @ResponseSchema(cycleCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ params: countIdParams })
@@ -46,6 +53,7 @@ export class InvCycleCountsController {
   }
 
   @Post()
+  @ResponseSchema(cycleCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ body: createCycleCountSchema })
@@ -58,6 +66,7 @@ export class InvCycleCountsController {
 
   @Post(":countId/start")
   @BodylessAction()
+  @ResponseSchema(cycleCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
@@ -69,6 +78,7 @@ export class InvCycleCountsController {
   }
 
   @Patch(":countId/lines")
+  @ResponseSchema(cycleCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams, body: updateCountLinesSchema })
@@ -82,6 +92,7 @@ export class InvCycleCountsController {
 
   @Post(":countId/review")
   @BodylessAction()
+  @ResponseSchema(cycleCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
@@ -94,6 +105,7 @@ export class InvCycleCountsController {
 
   @Post(":countId/post")
   @BodylessAction()
+  @ResponseSchema(cycleCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
@@ -108,13 +120,15 @@ export class InvCycleCountsController {
 
   @Post(":countId/cancel")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
-  cancel(
+  async cancel(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.cancelCycleCount(u.orgId, countId);
+    await this.counts.cancelCycleCount(u.orgId, countId);
+    return { success: true as const };
   }
 }

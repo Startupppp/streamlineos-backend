@@ -9,6 +9,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { LeavePoliciesService } from "./leave-policies.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { leavePolicyRowSchema } from "./dto/time-leave-response.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
@@ -41,6 +43,7 @@ export class LeavePoliciesController {
   constructor(private readonly service: LeavePoliciesService) {}
 
   @Get()
+  @ResponseSchema(z.array(leavePolicyRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:view")
   list(@CurrentUser() u: CurrentUserContext) {
@@ -49,6 +52,7 @@ export class LeavePoliciesController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(leavePolicyRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
   @Validate({ body: createLeavePolicySchema })
@@ -60,6 +64,7 @@ export class LeavePoliciesController {
   }
 
   @Patch(":policyId")
+  @ResponseSchema(leavePolicyRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
   @Validate({ params: policyIdParams, body: updateLeavePolicySchema })
@@ -73,6 +78,7 @@ export class LeavePoliciesController {
 
   @Delete(":policyId")
   @HttpCode(204)
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
   @Validate({ params: policyIdParams })

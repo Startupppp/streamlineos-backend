@@ -60,6 +60,26 @@ import {
   type DependencyPreviewQueryInput,
 } from "./dto/org-hierarchy.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  hierarchyOverviewResponseSchema,
+  hierarchyTreeResponseSchema,
+  dependencyPreviewResponseSchema,
+  businessUnitListResponseSchema,
+  businessUnitResponseSchema,
+  hierarchyDeleteResponseSchema,
+  branchListResponseSchema,
+  branchResponseSchema,
+  departmentListResponseSchema,
+  departmentResponseSchema,
+  teamListResponseSchema,
+  teamResponseSchema,
+  locationListResponseSchema,
+  locationResponseSchema,
+  costCenterListResponseSchema,
+  costCenterResponseSchema,
+  hierarchyMoveResponseSchema,
+} from "./dto/org-hierarchy-response.schemas";
 import { z } from "zod";
 
 const businessUnitIdParams = z.object({ businessUnitId: z.string().min(1) }).strict();
@@ -76,6 +96,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("overview")
+  @ResponseSchema(hierarchyOverviewResponseSchema)
   getHierarchy(
     @CurrentUser() currentUser: CurrentUserContext,
     @Req() request: Request,
@@ -88,6 +109,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("tree")
+  @ResponseSchema(hierarchyTreeResponseSchema)
   getTree(
     @CurrentUser() currentUser: CurrentUserContext,
     @Req() request: Request,
@@ -100,6 +122,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("dependencies/:unitKind/:unitId")
+  @ResponseSchema(dependencyPreviewResponseSchema)
   @Validate({ params: dependencyPreviewParamsSchema, query: dependencyPreviewQuerySchema })
   getDependencyPreview(
     @Param() params: DependencyPreviewParamsInput,
@@ -118,6 +141,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("business-units")
+  @ResponseSchema(businessUnitListResponseSchema)
   @Validate({ query: listQuerySchema })
   listBusinessUnits(
     @Query() query: ListQueryInput,
@@ -127,6 +151,7 @@ export class OrgHierarchyController {
   }
 
   @Post("business-units")
+  @ResponseSchema(businessUnitResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createBusinessUnitSchema })
@@ -138,6 +163,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("business-units/:businessUnitId")
+  @ResponseSchema(businessUnitResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: businessUnitIdParams, body: updateBusinessUnitSchema })
   updateBusinessUnit(
@@ -154,6 +180,7 @@ export class OrgHierarchyController {
   }
 
   @Delete("business-units/:businessUnitId")
+  @ResponseSchema(hierarchyDeleteResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: businessUnitIdParams })
   async deleteBusinessUnit(
@@ -168,6 +195,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("branches")
+  @ResponseSchema(branchListResponseSchema)
   @Validate({ query: listQuerySchema })
   listOrgBranches(
     @Query() query: ListQueryInput,
@@ -177,6 +205,7 @@ export class OrgHierarchyController {
   }
 
   @Post("branches")
+  @ResponseSchema(branchResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createOrgBranchSchema })
@@ -188,6 +217,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("branches/:branchId")
+  @ResponseSchema(branchResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: branchIdParams, body: updateOrgBranchSchema })
   updateOrgBranch(
@@ -199,6 +229,7 @@ export class OrgHierarchyController {
   }
 
   @Delete("branches/:branchId")
+  @ResponseSchema(hierarchyDeleteResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: branchIdParams })
   async deleteOrgBranch(
@@ -213,6 +244,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("departments")
+  @ResponseSchema(departmentListResponseSchema)
   @Validate({ query: listQuerySchema })
   listDepartments(
     @Query() query: ListQueryInput,
@@ -222,6 +254,7 @@ export class OrgHierarchyController {
   }
 
   @Post("departments")
+  @ResponseSchema(departmentResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createOrgDepartmentSchema })
@@ -233,6 +266,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("departments/:departmentId")
+  @ResponseSchema(departmentResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: departmentIdParams, body: updateOrgDepartmentSchema })
   updateDepartment(
@@ -244,6 +278,7 @@ export class OrgHierarchyController {
   }
 
   @Delete("departments/:departmentId")
+  @ResponseSchema(hierarchyDeleteResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: departmentIdParams })
   async deleteDepartment(
@@ -258,6 +293,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("teams")
+  @ResponseSchema(teamListResponseSchema)
   @Validate({ query: listQuerySchema })
   listTeams(
     @Query() query: ListQueryInput,
@@ -267,6 +303,7 @@ export class OrgHierarchyController {
   }
 
   @Post("teams")
+  @ResponseSchema(teamResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createOrgTeamSchema })
@@ -278,6 +315,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("teams/:teamId")
+  @ResponseSchema(teamResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: teamIdParams, body: updateOrgTeamSchema })
   updateTeam(
@@ -289,6 +327,7 @@ export class OrgHierarchyController {
   }
 
   @Delete("teams/:teamId")
+  @ResponseSchema(hierarchyDeleteResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: teamIdParams })
   async deleteTeam(
@@ -303,6 +342,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("locations")
+  @ResponseSchema(locationListResponseSchema)
   @Validate({ query: listQuerySchema })
   listLocations(
     @Query() query: ListQueryInput,
@@ -312,6 +352,7 @@ export class OrgHierarchyController {
   }
 
   @Post("locations")
+  @ResponseSchema(locationResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createOrgLocationSchema })
@@ -323,6 +364,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("locations/:locationId")
+  @ResponseSchema(locationResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: locationIdParams, body: updateOrgLocationSchema })
   updateLocation(
@@ -334,6 +376,7 @@ export class OrgHierarchyController {
   }
 
   @Delete("locations/:locationId")
+  @ResponseSchema(hierarchyDeleteResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: locationIdParams })
   async deleteLocation(
@@ -348,6 +391,7 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("cost-centers")
+  @ResponseSchema(costCenterListResponseSchema)
   @Validate({ query: listQuerySchema })
   listCostCenters(
     @Query() query: ListQueryInput,
@@ -357,6 +401,7 @@ export class OrgHierarchyController {
   }
 
   @Post("cost-centers")
+  @ResponseSchema(costCenterResponseSchema)
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
   @Validate({ body: createCostCenterSchema })
@@ -368,6 +413,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("cost-centers/:costCenterId")
+  @ResponseSchema(costCenterResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: costCenterIdParams, body: updateCostCenterSchema })
   updateCostCenter(
@@ -379,6 +425,7 @@ export class OrgHierarchyController {
   }
 
   @Delete("cost-centers/:costCenterId")
+  @ResponseSchema(hierarchyDeleteResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: costCenterIdParams })
   async deleteCostCenter(
@@ -390,6 +437,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("business-units/:businessUnitId/move")
+  @ResponseSchema(hierarchyMoveResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: businessUnitIdParams, body: moveBusinessUnitSchema })
   moveBusinessUnit(
@@ -405,6 +453,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("branches/:branchId/move")
+  @ResponseSchema(hierarchyMoveResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: branchIdParams, body: moveOrgBranchSchema })
   moveBranch(
@@ -420,6 +469,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("departments/:departmentId/move")
+  @ResponseSchema(hierarchyMoveResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: departmentIdParams, body: moveOrgDepartmentSchema })
   moveDepartment(
@@ -435,6 +485,7 @@ export class OrgHierarchyController {
   }
 
   @Patch("teams/:teamId/move")
+  @ResponseSchema(hierarchyMoveResponseSchema)
   @RequirePermission("settings:organization:manage")
   @Validate({ params: teamIdParams, body: moveOrgTeamSchema })
   moveTeam(

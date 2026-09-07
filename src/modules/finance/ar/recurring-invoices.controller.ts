@@ -17,7 +17,13 @@ import {
 } from "./dto/finance-ar.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  recurringInvoiceListResponseSchema,
+  recurringInvoiceTemplateResponseSchema,
+  recurringInvoiceRunNowResponseSchema,
+  recurringInvoiceDeleteResponseSchema,
+} from "./dto/ar-response.schemas";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -28,6 +34,7 @@ export class RecurringInvoicesController {
   constructor(private readonly svc: RecurringInvoicesService) {}
 
   @Get()
+  @ResponseSchema(recurringInvoiceListResponseSchema)
   @RequirePermission("accounting:recurring:read")
   @Validate({ query: listRecurringTemplatesSchema })
   list(
@@ -38,6 +45,7 @@ export class RecurringInvoicesController {
   }
 
   @Post()
+  @ResponseSchema(recurringInvoiceTemplateResponseSchema)
   @HttpCode(201)
   @RequirePermission("accounting:recurring:manage")
   @Validate({ body: createRecurringTemplateSchema })
@@ -49,6 +57,7 @@ export class RecurringInvoicesController {
   }
 
   @Get(":templateId")
+  @ResponseSchema(recurringInvoiceTemplateResponseSchema)
   @RequirePermission("accounting:recurring:read")
   @Validate({ params: templateIdParams })
   get(
@@ -59,6 +68,7 @@ export class RecurringInvoicesController {
   }
 
   @Patch(":templateId")
+  @ResponseSchema(recurringInvoiceTemplateResponseSchema)
   @RequirePermission("accounting:recurring:manage")
   @Validate({ params: templateIdParams, body: updateRecurringTemplateSchema })
   update(
@@ -70,6 +80,7 @@ export class RecurringInvoicesController {
   }
 
   @Delete(":templateId")
+  @ResponseSchema(recurringInvoiceDeleteResponseSchema)
   @RequirePermission("accounting:recurring:manage")
   @Validate({ params: templateIdParams })
   remove(
@@ -80,6 +91,7 @@ export class RecurringInvoicesController {
   }
 
   @Post(":templateId/run-now")
+  @ResponseSchema(recurringInvoiceRunNowResponseSchema)
   @BodylessAction()
   @Idempotent("finance.recurring-invoice.run-now")
   @HttpCode(200)

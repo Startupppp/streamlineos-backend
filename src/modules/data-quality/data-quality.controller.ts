@@ -30,6 +30,19 @@ import {
   type ScanInput,
 } from "./dto/data-quality.schemas";
 
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  findingsPageSchema,
+  findingDetailSchema,
+  findingGroupsSchema,
+  healthSchema,
+  resolutionsPageSchema,
+  assignSchema as assignResponseSchema,
+  resolveSchema,
+  reverseSchema,
+  scanSchema as scanResponseSchema,
+} from "./dto/data-quality-response.schemas";
+
 const VIEW = "crm:data-quality:view";
 const findingIdParams = z.object({ findingId: z.string().min(1) }).strict();
 const resolutionIdParams = z.object({ resolutionId: z.string().min(1) }).strict();
@@ -46,6 +59,7 @@ export class DataQualityController {
 
   @Get("findings")
   @RequirePermission(VIEW)
+  @ResponseSchema(findingsPageSchema)
   @Validate({ query: listFindingsQuerySchema })
   listFindings(
     @Query() query: ListFindingsQuery,
@@ -56,6 +70,7 @@ export class DataQualityController {
 
   @Get("findings/:findingId")
   @RequirePermission(VIEW)
+  @ResponseSchema(findingDetailSchema)
   @Validate({ params: findingIdParams })
   getFinding(@Param("findingId") findingId: string, @CurrentUser() u: CurrentUserContext) {
     return this.queue.getFinding(u.orgId, findingId);
@@ -63,6 +78,7 @@ export class DataQualityController {
 
   @Get("groups")
   @RequirePermission(VIEW)
+  @ResponseSchema(findingGroupsSchema)
   @Validate({ query: listGroupsQuerySchema })
   listGroups(
     @Query() query: ListGroupsQuery,
@@ -73,6 +89,7 @@ export class DataQualityController {
 
   @Get("health")
   @RequirePermission(VIEW)
+  @ResponseSchema(healthSchema)
   @Validate({ query: healthQuerySchema })
   health(
     @Query() query: HealthQuery,
@@ -83,6 +100,7 @@ export class DataQualityController {
 
   @Get("resolutions")
   @RequirePermission(VIEW)
+  @ResponseSchema(resolutionsPageSchema)
   @Validate({ query: listResolutionsQuerySchema })
   listResolutions(
     @Query() query: ListResolutionsQuery,
@@ -94,6 +112,7 @@ export class DataQualityController {
   @Post("assign")
   @Idempotent("crm.data-quality.assign")
   @RequirePermission("crm:data-quality:assign")
+  @ResponseSchema(assignResponseSchema)
   @Validate({ body: assignFindingsSchema })
   assign(
     @Body() body: AssignFindingsInput,
@@ -105,6 +124,7 @@ export class DataQualityController {
   @Post("resolve")
   @Idempotent("crm.data-quality.resolve")
   @RequirePermission("crm:data-quality:resolve")
+  @ResponseSchema(resolveSchema)
   @Validate({ body: resolveFindingsSchema })
   resolve(
     @Body() body: ResolveFindingsInput,
@@ -116,6 +136,7 @@ export class DataQualityController {
   @Post("resolutions/:resolutionId/reverse")
   @Idempotent("crm.data-quality.reverse")
   @RequirePermission("crm:data-quality:resolve")
+  @ResponseSchema(reverseSchema)
   @Validate({ params: resolutionIdParams, body: reverseResolutionSchema })
   reverse(
     @Param("resolutionId") resolutionId: string,
@@ -128,6 +149,7 @@ export class DataQualityController {
   @Post("scan")
   @Idempotent("crm.data-quality.scan")
   @RequirePermission("crm:data-quality:resolve")
+  @ResponseSchema(scanResponseSchema)
   @Validate({ body: scanSchema })
   scan(
     @Body() body: ScanInput,

@@ -22,8 +22,10 @@ import { LlmService } from "../providers/llm.service";
 import { SurveyAiService } from "../services/survey-ai.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
 import { AiRequestAbortInterceptor, respondWithAiTextStream } from "../streaming";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { surveyAiSummarizeResponseSchema } from "../dto/ai-response.schemas";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
@@ -46,6 +48,7 @@ export class SurveyAiController {
   @RequirePermission("surveys:ai:use")
   @Validate({ params: surveyIdParams })
   @BodylessAction()
+  @ResponseSchema(surveyAiSummarizeResponseSchema)
   async summarizeResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -58,6 +61,7 @@ export class SurveyAiController {
   @RequirePermission("surveys:ai:use")
   @Validate({ params: surveyIdParams })
   @BodylessAction()
+  @ApiOkResponse({ description: "AI text stream", content: { "text/plain": { schema: { type: "string" } } } })
   async summarizeResponsesStream(
     @Req() req: Request,
     @Param("surveyId", ParseIntPipe) surveyId: number,

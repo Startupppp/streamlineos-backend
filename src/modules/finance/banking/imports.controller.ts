@@ -13,6 +13,8 @@ import {
   type CreateBankImportInput,
 } from "./dto/imports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { bankImportListResponseSchema, bankImportCreateResponseSchema } from "./dto/banking-response.schemas";
 
 @RequireModule("accounting")
 @Controller("finance/bank-imports")
@@ -21,6 +23,7 @@ export class ImportsController {
   constructor(private readonly service: ImportsService) {}
 
   @Get()
+  @ResponseSchema(bankImportListResponseSchema)
   @RequirePermission("accounting:banking:read")
   @Validate({ query: bankImportsQuerySchema })
   list(
@@ -31,6 +34,7 @@ export class ImportsController {
   }
 
   @Post()
+  @ResponseSchema(bankImportCreateResponseSchema)
   @HttpCode(201)
   @RequirePermission("accounting:banking:import")
   @Validate({ body: createBankImportSchema })

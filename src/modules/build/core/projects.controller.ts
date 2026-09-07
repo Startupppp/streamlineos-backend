@@ -48,6 +48,19 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  ticketLabelSchema,
+  projectMemberSchema,
+  projectRosterSchema,
+  projectMemberRowSchema,
+  memberRoleSchema,
+  projectCustomStateSchema,
+  bulkReorderStatesResultSchema,
+  projectListPageSchema,
+} from "./dto/build-core-response.schemas";
+import { projectRowSchema } from "./dto/build-project-detail-response.schemas";
 
 const labelIdParams = z.object({ labelId: z.coerce.number().int().positive() }).strict();
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
@@ -67,6 +80,7 @@ export class ProjectsController {
 
   @Get()
   @RequirePermission("build:view")
+  @ResponseSchema(projectListPageSchema)
   @Validate({ query: listProjectsSchema })
   listProjects(
     @Query() query: ListProjectsInput,
@@ -78,6 +92,7 @@ export class ProjectsController {
   @Post()
   @RequirePermission("build:create")
   @HttpCode(201)
+  @ResponseSchema(projectRowSchema)
   @Idempotent("build.project.create")
   @Validate({ body: createProjectSchema })
   createProject(
@@ -90,6 +105,7 @@ export class ProjectsController {
   @Post("from-deal")
   @RequirePermission("build:create")
   @HttpCode(201)
+  @ResponseSchema(projectRowSchema)
   @Idempotent("build.project.create_from_deal")
   @Validate({ body: fromDealSchema })
   createFromDeal(
@@ -101,6 +117,7 @@ export class ProjectsController {
 
   @Get("labels")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(ticketLabelSchema))
   listLabels(@CurrentUser() u: CurrentUserContext) {
     return this.members.listLabels(u.orgId);
   }
@@ -108,6 +125,7 @@ export class ProjectsController {
   @Post("labels")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(ticketLabelSchema)
   @Validate({ body: createLabelSchema })
   createLabel(
     @Body() body: CreateLabelInput,
@@ -118,6 +136,7 @@ export class ProjectsController {
 
   @Patch("labels/:labelId")
   @RequirePermission("build:manage")
+  @ResponseSchema(ticketLabelSchema)
   @Validate({ params: labelIdParams, body: updateLabelSchema })
   updateLabel(
     @Param("labelId", ParseIntPipe) labelId: number,
@@ -130,6 +149,7 @@ export class ProjectsController {
   @Delete("labels/:labelId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: labelIdParams })
   deleteLabel(
     @Param("labelId", ParseIntPipe) labelId: number,
@@ -140,6 +160,7 @@ export class ProjectsController {
 
   @Get(":projectId/members")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(projectMemberSchema))
   @Validate({ params: projectIdParams })
   listMembers(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -150,6 +171,7 @@ export class ProjectsController {
 
   @Get(":projectId/roster")
   @RequirePermission("build:view")
+  @ResponseSchema(projectRosterSchema)
   @Validate({ params: projectIdParams })
   getRoster(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -161,6 +183,7 @@ export class ProjectsController {
   @Post(":projectId/members")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(projectMemberRowSchema)
   @Validate({ params: projectIdParams, body: addMemberSchema })
   addMember(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -173,6 +196,7 @@ export class ProjectsController {
   @Delete(":projectId/members")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdParams, body: removeMemberSchema })
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -184,6 +208,7 @@ export class ProjectsController {
 
   @Patch(":projectId/members/:memberUserId")
   @RequirePermission("build:manage")
+  @ResponseSchema(memberRoleSchema)
   @Validate({ params: projectIdmemberUserIdParams, body: updateProjectMemberRoleSchema })
   updateMemberRole(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -196,6 +221,7 @@ export class ProjectsController {
 
   @Put(":projectId/custom-states")
   @RequirePermission("build:manage")
+  @ResponseSchema(bulkReorderStatesResultSchema)
   @Validate({ params: projectIdParams, body: bulkReorderStatesSchema })
   bulkReorderCustomStates(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -207,6 +233,7 @@ export class ProjectsController {
 
   @Get(":projectId/custom-states")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(projectCustomStateSchema))
   @Validate({ params: projectIdParams })
   listCustomStates(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -218,6 +245,7 @@ export class ProjectsController {
   @Post(":projectId/custom-states")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(projectCustomStateSchema)
   @Validate({ params: projectIdParams, body: createStateSchema })
   createCustomState(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -229,6 +257,7 @@ export class ProjectsController {
 
   @Patch(":projectId/custom-states/:stateId")
   @RequirePermission("build:manage")
+  @ResponseSchema(projectCustomStateSchema)
   @Validate({ params: projectIdstateIdParams, body: updateCustomStateSchema })
   updateCustomState(
     @Param("projectId", ParseIntPipe) _: number,
@@ -242,6 +271,7 @@ export class ProjectsController {
   @Delete(":projectId/custom-states/:stateId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @NoContentResponse()
   @Validate({ params: projectIdstateIdParams })
   deleteCustomState(
     @Param("projectId", ParseIntPipe) _: number,
@@ -260,6 +290,7 @@ export class ProjectsController {
    */
   @Get(":projectId/labels")
   @RequirePermission("build:view")
+  @ResponseSchema(z.array(ticketLabelSchema))
   @Validate({ params: projectIdParams_ })
   async listProjectLabels(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -272,6 +303,7 @@ export class ProjectsController {
   @Post(":projectId/labels")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @ResponseSchema(ticketLabelSchema)
   @Validate({ params: projectIdParams_, body: createLabelSchema })
   async createProjectLabel(
     @Param("projectId", ParseIntPipe) projectId: number,

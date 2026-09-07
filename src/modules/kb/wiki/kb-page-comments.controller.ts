@@ -24,7 +24,11 @@ import {
   type UpdatePageCommentInput,
 } from "./dto/kb-page-comments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
+import {
+  kbPageCommentListSchema,
+  kbPageCommentWithAuthorSchema,
+} from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +47,7 @@ export class KbPageCommentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams, query: cursorQuery })
+  @ResponseSchema(kbPageCommentListSchema)
   async list(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Query("afterCreatedAt") afterCreatedAt: string | undefined,
@@ -60,6 +65,7 @@ export class KbPageCommentsController {
   @RequirePermission("kb:pages:update")
   @HttpCode(201)
   @Validate({ params: pageIdParams, body: createPageCommentSchema })
+  @ResponseSchema(kbPageCommentWithAuthorSchema)
   async create(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Body() body: CreatePageCommentInput,
@@ -72,6 +78,7 @@ export class KbPageCommentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @Validate({ params: commentIdParams, body: updatePageCommentSchema })
+  @ResponseSchema(kbPageCommentWithAuthorSchema)
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body() body: UpdatePageCommentInput,
@@ -83,6 +90,7 @@ export class KbPageCommentsController {
   @Delete("page-comments/:commentId")
   @UseGuards(PermissionGuard)
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("kb:pages:update")
   @Validate({ params: commentIdParams })
   async remove(
@@ -98,6 +106,7 @@ export class KbPageCommentsController {
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
   @Validate({ params: commentIdParams })
+  @ResponseSchema(kbPageCommentWithAuthorSchema)
   async resolve(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,

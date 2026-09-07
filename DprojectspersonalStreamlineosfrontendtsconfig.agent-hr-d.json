@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "hooks/api/hr/recruitment/automations.ts",
+    "hooks/api/hr/recruitment/automations-schema.ts",
+    "hooks/api/hr/recruitment/candidate-details.ts",
+    "hooks/api/hr/recruitment/candidate-details-schema.ts",
+    "hooks/api/hr/recruitment/candidates.ts",
+    "hooks/api/hr/recruitment/candidates-schema.ts",
+    "hooks/api/hr/recruitment/email-sequences.ts",
+    "hooks/api/hr/recruitment/email-sequences-schema.ts",
+    "hooks/api/hr/recruitment/external-referrals.ts",
+    "hooks/api/hr/recruitment/external-referrals-schema.ts",
+    "hooks/api/hr/recruitment/hiring-flows.ts",
+    "hooks/api/hr/recruitment/hiring-flows-schema.ts",
+    "hooks/api/hr/recruitment/internal-jobs.ts",
+    "hooks/api/hr/recruitment/internal-jobs-schema.ts",
+    "hooks/api/hr/recruitment/interviews.ts",
+    "hooks/api/hr/recruitment/interviews-schema.ts"
+  ]
+}

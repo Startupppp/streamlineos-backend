@@ -38,6 +38,13 @@ import {
 } from "./dto/hr-custom-fields.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../../common/openapi/response-envelopes";
+import {
+  hrFieldDefSchema,
+  customFieldEntityValuesSchema,
+  customFieldFilterIdsSchema,
+} from "./dto/core-response.schemas";
 
 const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
 const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
@@ -53,6 +60,7 @@ export class HrCustomFieldsController {
   ) {}
 
   @Get("definitions")
+  @ResponseSchema(z.array(hrFieldDefSchema))
   @RequirePermission("hr:custom-fields:manage")
   listDefinitions(
     @Query("entityType") entityType: string = "employee",
@@ -63,6 +71,7 @@ export class HrCustomFieldsController {
 
   @Post("definitions")
   @HttpCode(201)
+  @ResponseSchema(hrFieldDefSchema)
   @RequirePermission("hr:custom-fields:manage")
   @Validate({ body: createCustomFieldSchema })
   createDefinition(
@@ -73,6 +82,7 @@ export class HrCustomFieldsController {
   }
 
   @Patch("definitions/:fieldId")
+  @ResponseSchema(hrFieldDefSchema)
   @RequirePermission("hr:custom-fields:manage")
   @Validate({ params: fieldIdParams, body: updateCustomFieldSchema })
   updateDefinition(
@@ -85,6 +95,7 @@ export class HrCustomFieldsController {
 
   @Delete("definitions/:fieldId")
   @HttpCode(204)
+  @NoContentResponse()
   @RequirePermission("hr:custom-fields:manage")
   @Validate({ params: fieldIdParams })
   deleteDefinition(
@@ -95,6 +106,7 @@ export class HrCustomFieldsController {
   }
 
   @Get(":entityType/:entityId/values")
+  @ResponseSchema(customFieldEntityValuesSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: entityTypeentityIdParams })
   async getValues(
@@ -114,6 +126,7 @@ export class HrCustomFieldsController {
   }
 
   @Get(":entityType/:entityId/values/sensitive")
+  @ResponseSchema(customFieldEntityValuesSchema)
   @RequirePermission("hr:sensitive:view")
   @Validate({ params: entityTypeentityIdParams })
   async getValuesSensitive(
@@ -133,6 +146,7 @@ export class HrCustomFieldsController {
   }
 
   @Put(":entityType/:entityId/values")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:employees:update")
   @Validate({ params: entityTypeentityIdParams, body: upsertCustomFieldValuesSchema })
   async upsertValues(
@@ -154,6 +168,7 @@ export class HrCustomFieldsController {
   }
 
   @Put(":entityType/:entityId/values/sensitive")
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:sensitive:manage")
   @Validate({ params: entityTypeentityIdParams, body: upsertCustomFieldValuesSchema })
   async upsertValuesSensitive(
@@ -175,6 +190,7 @@ export class HrCustomFieldsController {
   }
 
   @Get(":entityType/filter")
+  @ResponseSchema(customFieldFilterIdsSchema)
   @RequirePermission("hr:employees:view")
   @Validate({ params: entityTypeParams, query: filterByCustomFieldQuerySchema })
   async filterByField(

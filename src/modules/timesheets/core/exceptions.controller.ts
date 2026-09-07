@@ -27,8 +27,14 @@ import {
   type DismissExceptionInput,
 } from "./dto/exceptions.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  exceptionsListResponseSchema,
+  exceptionsSummaryResponseSchema,
+  exceptionResolutionResponseSchema,
+  detectorResponseSchema,
+} from "./dto/timesheets-response.schemas";
 
 const exceptionIdParams = z.object({ exceptionId: z.coerce.number().int().positive() }).strict();
 
@@ -44,6 +50,7 @@ export class TimesheetExceptionsController {
   @Get()
   @RequirePermission("timesheets:exceptions:view")
   @Validate({ query: exceptionsQuerySchema })
+  @ResponseSchema(exceptionsListResponseSchema)
   list(
     @Query() query: ExceptionsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +60,7 @@ export class TimesheetExceptionsController {
 
   @Get("summary")
   @RequirePermission("timesheets:exceptions:view")
+  @ResponseSchema(exceptionsSummaryResponseSchema)
   summary(@CurrentUser() u: CurrentUserContext) {
     return this.exceptions.summary(u);
   }
@@ -61,6 +69,7 @@ export class TimesheetExceptionsController {
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
   @Validate({ params: exceptionIdParams, body: resolveExceptionSchema })
+  @ResponseSchema(exceptionResolutionResponseSchema)
   resolve(
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
     @Body() body: ResolveExceptionInput,
@@ -73,6 +82,7 @@ export class TimesheetExceptionsController {
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
   @Validate({ params: exceptionIdParams, body: dismissExceptionSchema })
+  @ResponseSchema(exceptionResolutionResponseSchema)
   dismiss(
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
     @Body() body: DismissExceptionInput,
@@ -85,6 +95,7 @@ export class TimesheetExceptionsController {
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
+  @ResponseSchema(detectorResponseSchema)
   runDetection(@CurrentUser() u: CurrentUserContext) {
     return this.detector.detectForOrg(u.orgId);
   }

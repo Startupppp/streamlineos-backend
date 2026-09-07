@@ -21,6 +21,20 @@ import {
   type PublicFormESignSubmitInput,
 } from "./dto/e-sign.schemas";
 import { resolveClientIpOr } from "../../common/http/client-ip";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  getSessionResponseSchema,
+  previewDocumentResponseSchema,
+  requestOtpResponseSchema,
+  authenticateResponseSchema,
+  consentResponseSchema,
+  setFieldValueResponseSchema,
+  adoptSignatureResponseSchema,
+  completeSigningResponseSchema,
+  declineSigningResponseSchema,
+  getPublicFormResponseSchema,
+  submitPublicFormResponseSchema,
+} from "./dto/e-sign-response.schemas";
 
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
@@ -42,6 +56,7 @@ export class SignPublicController {
   }
 
   @Get(":token/session")
+  @ResponseSchema(getSessionResponseSchema)
   @Validate({ params: tokenParams })
   async getSession(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-session", token, req);
@@ -49,6 +64,7 @@ export class SignPublicController {
   }
 
   @Get(":token/documents/:documentId/preview")
+  @ResponseSchema(previewDocumentResponseSchema)
   @Validate({ params: tokenAndDocumentIdParams })
   async getDocumentPreview(@Param("token") token: string, @Param("documentId", ParseIntPipe) documentId: number, @Req() req: Request) {
     await this.guard("sign:public-session", token, req);
@@ -58,6 +74,7 @@ export class SignPublicController {
   @Post(":token/request-otp")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(requestOtpResponseSchema)
   @Validate({ params: tokenParams })
   async requestOtp(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-otp-request", token, req);
@@ -66,6 +83,7 @@ export class SignPublicController {
 
   @Post(":token/auth")
   @HttpCode(200)
+  @ResponseSchema(authenticateResponseSchema)
   @Validate({ params: tokenParams, body: publicAuthSchema })
   async authenticate(
     @Param("token") token: string,
@@ -78,6 +96,7 @@ export class SignPublicController {
 
   @Post(":token/consent")
   @HttpCode(200)
+  @ResponseSchema(consentResponseSchema)
   @Validate({ params: tokenParams, body: publicConsentSchema })
   async consent(
     @Param("token") token: string,
@@ -90,6 +109,7 @@ export class SignPublicController {
 
   @Post(":token/fields/:fieldId")
   @HttpCode(200)
+  @ResponseSchema(setFieldValueResponseSchema)
   @Validate({ params: tokenAndFieldIdParams, body: publicFieldValueSchema })
   async setFieldValue(
     @Param("token") token: string,
@@ -103,6 +123,7 @@ export class SignPublicController {
 
   @Post(":token/adopt-signature")
   @HttpCode(200)
+  @ResponseSchema(adoptSignatureResponseSchema)
   @Validate({ params: tokenParams, body: adoptSignatureSchema })
   async adoptSignature(
     @Param("token") token: string,
@@ -116,6 +137,7 @@ export class SignPublicController {
   @Post(":token/complete")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(completeSigningResponseSchema)
   @Validate({ params: tokenParams })
   async complete(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-complete", token, req);
@@ -124,6 +146,7 @@ export class SignPublicController {
 
   @Post(":token/decline")
   @HttpCode(200)
+  @ResponseSchema(declineSigningResponseSchema)
   @Validate({ params: tokenParams, body: declineSchema })
   async decline(
     @Param("token") token: string,
@@ -135,6 +158,7 @@ export class SignPublicController {
   }
 
   @Get("forms/:slug")
+  @ResponseSchema(getPublicFormResponseSchema)
   @Validate({ params: slugParams })
   async getPublicForm(@Param("slug") slug: string, @Req() req: Request) {
     await this.guard("sign:public-session", slug, req);
@@ -143,6 +167,7 @@ export class SignPublicController {
 
   @Post("forms/:slug/submit")
   @HttpCode(201)
+  @ResponseSchema(submitPublicFormResponseSchema)
   @Validate({ params: slugParams, body: publicFormSubmitSchema })
   async submitPublicForm(
     @Param("slug") slug: string,

@@ -19,8 +19,19 @@ import {
   type RecordConsentInputDto,
 } from "./dto/preference.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  consentRowSchema,
+  notificationConsentsListSchema,
+  notificationEventCatalogSchema,
+  notificationPreferenceRulesListSchema,
+  notificationPreferenceSchema,
+  notificationSuccessSchema,
+  notificationSuppressionsListSchema,
+  preferenceRuleOkSchema,
+  suppressionRowSchema,
+} from "./dto/notification-admin-response.schemas";
 
 const eventKeyParams = z.object({ eventKey: z.string().min(1) }).strict();
 const suppressionIdParams = z.object({ suppressionId: z.coerce.number().int().positive() }).strict();
@@ -35,12 +46,14 @@ export class NotificationPreferencesController {
   ) {}
 
   @Get()
+  @ResponseSchema(notificationPreferenceSchema)
   @Universal()
   get(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.getEffective(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Patch()
+  @ResponseSchema(notificationPreferenceSchema)
   @Universal()
   @Validate({ body: updatePreferenceSchema })
   update(
@@ -52,12 +65,14 @@ export class NotificationPreferencesController {
 
   /** SCH-003. The normalised rules behind the preference centre. */
   @Get("rules")
+  @ResponseSchema(notificationPreferenceRulesListSchema)
   @Universal()
   listRules(@CurrentUser() u: CurrentUserContext) {
     return this.rules.list(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Put("rules")
+  @ResponseSchema(preferenceRuleOkSchema)
   @Universal()
   @HttpCode(200)
   @Validate({ body: preferenceRuleSchema })
@@ -69,12 +84,14 @@ export class NotificationPreferencesController {
   }
 
   @Get("events")
+  @ResponseSchema(notificationEventCatalogSchema)
   @Universal()
   eventCatalog(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.getEventCatalog(u.orgId, u.userId);
   }
 
   @Patch("events/:eventKey")
+  @ResponseSchema(notificationPreferenceSchema)
   @Universal()
   @Validate({ params: eventKeyParams, body: eventPreferenceSchema })
   updateEvent(
@@ -86,6 +103,7 @@ export class NotificationPreferencesController {
   }
 
   @Post("reset")
+  @ResponseSchema(notificationPreferenceSchema)
   @BodylessAction()
   @Universal()
   @HttpCode(200)
@@ -94,12 +112,14 @@ export class NotificationPreferencesController {
   }
 
   @Get("suppressions")
+  @ResponseSchema(notificationSuppressionsListSchema)
   @Universal()
   listSuppressions(@CurrentUser() u: CurrentUserContext) {
     return this.preferences.listSuppressions(u.orgId, u.userId);
   }
 
   @Post("suppressions")
+  @ResponseSchema(suppressionRowSchema)
   @Universal()
   @Validate({ body: createSuppressionSchema })
   createSuppression(
@@ -110,6 +130,7 @@ export class NotificationPreferencesController {
   }
 
   @Delete("suppressions/:suppressionId")
+  @ResponseSchema(notificationSuccessSchema)
   @Universal()
   @Validate({ params: suppressionIdParams })
   removeSuppression(@Param("suppressionId", ParseIntPipe) suppressionId: number, @CurrentUser() u: CurrentUserContext) {
@@ -122,12 +143,14 @@ export class NotificationPreferencesController {
    * agreement that a setting cannot stand in for.
    */
   @Get("consents")
+  @ResponseSchema(notificationConsentsListSchema)
   @Universal()
   listConsents(@CurrentUser() u: CurrentUserContext) {
     return this.consents.list(u.orgId, actingMembershipId(u.principal));
   }
 
   @Put("consents")
+  @ResponseSchema(consentRowSchema)
   @Universal()
   @HttpCode(200)
   @Validate({ body: recordConsentSchema })

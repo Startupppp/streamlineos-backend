@@ -22,7 +22,14 @@ import {
   type UpdateBranchInput,
 } from "./dto/branches.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
+import {
+  branchListSchema,
+  branchDetailSchema,
+  orgUnitRowSchema,
+  successSchema,
+} from "./dto/branches-response.schemas";
 
 const branchIdParams = z.object({ branchId: z.string().min(1) }).strict();
 
@@ -33,12 +40,14 @@ export class BranchesController {
 
   @Get()
   @RequirePermission("branch:view")
+  @ResponseSchema(branchListSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.branches.list(u.orgId);
   }
 
   @Get(":branchId")
   @RequirePermission("branch:view")
+  @ResponseSchema(branchDetailSchema)
   @Validate({ params: branchIdParams })
   async getOne(
     @Param("branchId") branchId: string,
@@ -51,6 +60,7 @@ export class BranchesController {
 
   @Post()
   @RequirePermission("branch:create")
+  @ResponseSchema(orgUnitRowSchema)
   @Validate({ body: createBranchSchema })
   async create(
     @Body() body: CreateBranchInput,
@@ -61,6 +71,7 @@ export class BranchesController {
 
   @Patch(":branchId")
   @RequirePermission("branch:update")
+  @ResponseSchema(orgUnitRowSchema)
   @Validate({ params: branchIdParams, body: updateBranchSchema })
   async update(
     @Param("branchId") branchId: string,
@@ -74,6 +85,7 @@ export class BranchesController {
 
   @Delete(":branchId")
   @RequirePermission("branch:delete")
+  @ResponseSchema(successSchema)
   @Validate({ params: branchIdParams })
   async remove(
     @Param("branchId") branchId: string,

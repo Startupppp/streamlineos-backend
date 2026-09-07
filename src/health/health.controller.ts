@@ -19,6 +19,7 @@ import {
 } from "../db/query-telemetry";
 import type { ResolvedPoolConfig } from "../db/pool.config";
 import { Public } from "../common/auth/public.decorator";
+import { ResponseSchema } from "../common/openapi/zod-operation-contracts";
 import { CacheService, REDIS } from "../common/cache/cache.service";
 import { openProvidersAcrossBreakers } from "../common/outbound/provider-circuit-breaker";
 import { logger } from "../common/logger/logger.service";
@@ -28,6 +29,12 @@ import { ReadinessService } from "./readiness.service";
 import type { ReadinessSnapshot } from "./readiness.types";
 import { shutdownState } from "./shutdown-state";
 import { aggregateWorkflowBacklog } from "./workflow-backlog";
+import {
+  healthCheckSchema,
+  readinessSnapshotSchema,
+  workflowHealthSchema,
+  databasePoolHealthSchema,
+} from "./dto/health-response.schemas";
 
 const DRAIN_STALL_SECONDS = 300;
 const SCHEDULE_STALL_SECONDS = 300;
@@ -124,17 +131,14 @@ export class HealthController implements BeforeApplicationShutdown {
     });
   }
 
-  /**
-   * Liveness. Deliberately shallow: it touches no dependency, because a probe
-   * that fails on a database blip gets the process killed instead of drained,
-   * and restarting a replica cannot fix a shared dependency.
-   */
   @Get()
+  @ResponseSchema(healthCheckSchema)
   health(): { status: "ok" } {
     return { status: "ok" };
   }
 
   @Get("ready")
+  @ResponseSchema(readinessSnapshotSchema)
   async ready(): Promise<ReadinessSnapshot> {
     if (shutdownState.isDraining())
       throw new ServiceUnavailableException("Shutting down — no longer accepting new work");
@@ -151,6 +155,7 @@ export class HealthController implements BeforeApplicationShutdown {
   }
 
   @Get("workflows")
+  @ResponseSchema(workflowHealthSchema)
   async workflows(
     @Headers("x-internal-secret") secret: string | undefined,
   ): Promise<WorkflowHealth> {
@@ -204,6 +209,7 @@ export class HealthController implements BeforeApplicationShutdown {
   }
 
   @Get("db")
+  @ResponseSchema(databasePoolHealthSchema)
   async databasePool(
     @Headers("x-internal-secret") secret: string | undefined,
   ): Promise<PoolHealth> {

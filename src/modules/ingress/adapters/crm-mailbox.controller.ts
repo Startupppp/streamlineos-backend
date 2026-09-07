@@ -10,7 +10,14 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmMailboxService } from "./crm-mailbox.service";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import {
+  crmMailboxListResponseSchema,
+  crmMailboxEnableResponseSchema,
+  crmMailboxDisableResponseSchema,
+  crmMailboxSyncResponseSchema,
+  crmMailboxSweepAllResponseSchema,
+} from "../dto/ingress-response.schemas";
+import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 
 const crmMailboxSyncIdParams = z.object({ crmMailboxSyncId: z.string().min(1) }).strict();
 
@@ -27,6 +34,7 @@ export class CrmMailboxController {
 
   @Post("push")
   @BodylessAction()
+  @NoContentResponse()
   @Public()
   @HttpCode(204)
   async push(
@@ -38,6 +46,7 @@ export class CrmMailboxController {
   }
 
   @Get()
+  @ResponseSchema(crmMailboxListResponseSchema)
   @RequirePermission("crm:ingress:submit")
   list(@CurrentUser() u: CurrentUserContext) {
     return this.mailboxes.list(u.orgId);
@@ -45,6 +54,7 @@ export class CrmMailboxController {
 
   @Post()
   @Idempotent("crm.mailbox.enable")
+  @ResponseSchema(crmMailboxEnableResponseSchema)
   @RequirePermission("crm:ingress:submit")
   @Validate({ body: enableMailboxSchema })
   enable(
@@ -55,6 +65,7 @@ export class CrmMailboxController {
   }
 
   @Delete(":crmMailboxSyncId")
+  @ResponseSchema(crmMailboxDisableResponseSchema)
   @RequirePermission("crm:ingress:submit")
   @Validate({ params: crmMailboxSyncIdParams })
   disable(
@@ -66,6 +77,7 @@ export class CrmMailboxController {
 
   @Post(":crmMailboxSyncId/sync")
   @BodylessAction()
+  @ResponseSchema(crmMailboxSyncResponseSchema)
   @RequirePermission("crm:ingress:submit")
   @Validate({ params: crmMailboxSyncIdParams })
   sync(
@@ -77,6 +89,7 @@ export class CrmMailboxController {
 
   @Post("sync")
   @BodylessAction()
+  @ResponseSchema(crmMailboxSweepAllResponseSchema)
   @RequirePermission("crm:ingress:submit")
   sweepAll(@CurrentUser() u: CurrentUserContext) {
     return this.mailboxes.sweepAll(u.orgId);

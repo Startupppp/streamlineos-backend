@@ -9,6 +9,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { GeofencingService } from "./geofencing.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { geofenceRowSchema } from "./dto/time-attendance-response.schemas";
 
 const zoneIdParams = z.object({ zoneId: z.coerce.number().int().positive() }).strict();
 
@@ -31,6 +33,7 @@ export class GeofencingController {
   constructor(private readonly service: GeofencingService) {}
 
   @Get()
+  @ResponseSchema(z.array(geofenceRowSchema))
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:view")
   list(@CurrentUser() u: CurrentUserContext) {
@@ -39,6 +42,7 @@ export class GeofencingController {
 
   @Post()
   @HttpCode(201)
+  @ResponseSchema(geofenceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ body: createZoneSchema })
@@ -50,6 +54,7 @@ export class GeofencingController {
   }
 
   @Patch(":zoneId")
+  @ResponseSchema(geofenceRowSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: zoneIdParams, body: updateZoneSchema })
@@ -63,6 +68,7 @@ export class GeofencingController {
 
   @Delete(":zoneId")
   @HttpCode(204)
+  @NoContentResponse()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: zoneIdParams })

@@ -44,6 +44,22 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  supportMacroListSchema,
+  supportMacroRowSchema,
+  macroUsageSchema,
+  previewMacroSchema,
+  applyMacroResultSchema,
+  supportRoutingRuleListSchema,
+  supportRoutingRuleRowSchema,
+  supportAgentSkillListSchema,
+  setAgentSkillsResultSchema,
+  supportAgentAvailabilityListSchema,
+  supportAgentAvailabilityRawSchema,
+  supportVipClientListSchema,
+  successSchema,
+} from "./dto/support-settings-response.schemas";
 
 const macroIdParams = z.object({ macroId: z.coerce.number().int().positive() }).strict();
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
@@ -63,6 +79,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:view")
   @Validate({ query: listMacrosSchema })
+  @ResponseSchema(supportMacroListSchema)
   listMacros(
     @Query() query: ListMacrosInput,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +90,7 @@ export class SupportMacrosController {
   @Get("macros/usage")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:view")
+  @ResponseSchema(macroUsageSchema)
   getMacroUsage(@CurrentUser() u: CurrentUserContext) {
     return this.macros.getUsage(u.orgId);
   }
@@ -82,6 +100,7 @@ export class SupportMacrosController {
   @RequirePermission("support:macros:manage")
   @HttpCode(201)
   @Validate({ body: createMacroSchema })
+  @ResponseSchema(supportMacroRowSchema)
   createMacro(
     @Body() body: CreateMacroInput,
     @CurrentUser() u: CurrentUserContext,
@@ -93,6 +112,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @Validate({ params: macroIdParams, body: updateMacroSchema })
+  @ResponseSchema(supportMacroRowSchema)
   updateMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @Body() body: UpdateMacroInput,
@@ -105,6 +125,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @Validate({ params: macroIdParams })
+  @ResponseSchema(successSchema)
   deleteMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -117,6 +138,7 @@ export class SupportMacrosController {
   @RequirePermission("support:macros:view")
   @HttpCode(200)
   @Validate({ params: macroIdParams, body: applyMacroSchema })
+  @ResponseSchema(previewMacroSchema)
   previewMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @Body() body: ApplyMacroInput,
@@ -130,6 +152,7 @@ export class SupportMacrosController {
   @RequirePermission("support:tickets:reply")
   @HttpCode(200)
   @Validate({ params: macroIdParams, body: applyMacroSchema })
+  @ResponseSchema(applyMacroResultSchema)
   applyMacro(
     @Param("macroId", ParseIntPipe) macroId: number,
     @Body() body: ApplyMacroInput,
@@ -141,6 +164,7 @@ export class SupportMacrosController {
   @Get("routing-rules")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:view")
+  @ResponseSchema(supportRoutingRuleListSchema)
   listRoutingRules(@CurrentUser() u: CurrentUserContext) {
     return this.macros.listRoutingRules(u.orgId);
   }
@@ -150,6 +174,7 @@ export class SupportMacrosController {
   @RequirePermission("support:macros:manage")
   @HttpCode(201)
   @Validate({ body: createRoutingRuleSchema })
+  @ResponseSchema(supportRoutingRuleRowSchema)
   async createRoutingRule(
     @Body() body: CreateRoutingRuleInput,
     @CurrentUser() u: CurrentUserContext,
@@ -163,6 +188,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @Validate({ params: ruleIdParams, body: updateRoutingRuleSchema })
+  @ResponseSchema(supportRoutingRuleRowSchema)
   async updateRoutingRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Body() body: UpdateRoutingRuleInput,
@@ -177,6 +203,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @Validate({ params: ruleIdParams })
+  @ResponseSchema(successSchema)
   async deleteRoutingRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -189,6 +216,7 @@ export class SupportMacrosController {
   @Get("agent-skills")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:view")
+  @ResponseSchema(supportAgentSkillListSchema)
   listAgentSkills(@CurrentUser() u: CurrentUserContext) {
     return this.macros.listAgentSkills(u.orgId);
   }
@@ -197,6 +225,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @Validate({ params: userIdStringParams, body: setAgentSkillsSchema })
+  @ResponseSchema(setAgentSkillsResultSchema)
   async setAgentSkills(
     @Param("userId") userId: string,
     @Body() body: SetAgentSkillsInput,
@@ -210,6 +239,7 @@ export class SupportMacrosController {
   @Get("agent-availability")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:view")
+  @ResponseSchema(supportAgentAvailabilityListSchema)
   listAgentAvailability(@CurrentUser() u: CurrentUserContext) {
     return this.macros.listAgentAvailability(u.orgId);
   }
@@ -218,6 +248,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:tickets:reply")
   @Validate({ body: setAgentAvailabilitySchema })
+  @ResponseSchema(supportAgentAvailabilityRawSchema)
   setMyAvailability(
     @Body() body: SetAgentAvailabilityInput,
     @CurrentUser() u: CurrentUserContext,
@@ -228,6 +259,7 @@ export class SupportMacrosController {
   @Get("vip-clients")
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:view")
+  @ResponseSchema(supportVipClientListSchema)
   listVipClients(@CurrentUser() u: CurrentUserContext) {
     return this.macros.listVipClients(u.orgId);
   }
@@ -237,6 +269,7 @@ export class SupportMacrosController {
   @RequirePermission("support:macros:manage")
   @HttpCode(201)
   @Validate({ body: addVipClientSchema })
+  @ResponseSchema(successSchema)
   async addVipClient(
     @Body() body: AddVipClientInput,
     @CurrentUser() u: CurrentUserContext,
@@ -250,6 +283,7 @@ export class SupportMacrosController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:macros:manage")
   @Validate({ params: clientIdParams })
+  @ResponseSchema(successSchema)
   async removeVipClient(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,

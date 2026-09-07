@@ -9,7 +9,8 @@ import { ChatSavedService } from "./chat-saved.service";
 import { actorOf } from "../entity-reference/entity-actor";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { chatOkSchema, chatSavedListResponseSchema } from "./dto/chat-misc-response.schemas";
 import { pageSizeField } from "../../common/pagination/list-query.schema";
 
 const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
@@ -55,6 +56,7 @@ export class ChatSavedController {
   @ApiOperation({ summary: "List saved messages for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
+  @ResponseSchema(chatSavedListResponseSchema)
   @RequirePermission("chat:messages:read")
   @Validate({ query: savedListQuery })
   list(@Query() query: SavedListQuery, @CurrentUser() u: CurrentUserContext) {
@@ -64,6 +66,7 @@ export class ChatSavedController {
   @ApiOperation({ summary: "Save a message to the current user's saved list" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":messageId")
+  @ResponseSchema(chatOkSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
@@ -75,6 +78,7 @@ export class ChatSavedController {
   @ApiOperation({ summary: "Remove a message from the current user's saved list" })
   @ApiResponse({ status: 200, description: "OK" })
   @Delete(":messageId")
+  @ResponseSchema(chatOkSchema)
   @RequirePermission("chat:messages:write")
   @Validate({ params: messageIdParams })
   unsave(@Param("messageId", ParseIntPipe) messageId: number, @CurrentUser() u: CurrentUserContext) {

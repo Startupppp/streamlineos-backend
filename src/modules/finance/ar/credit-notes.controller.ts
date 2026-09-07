@@ -17,7 +17,14 @@ import {
 } from "./dto/finance-ar.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  creditNoteListResponseSchema,
+  creditNoteCreatedResponseSchema,
+  creditNoteDetailResponseSchema,
+  creditNotePostResponseSchema,
+  creditNoteApplyResponseSchema,
+} from "./dto/ar-response.schemas";
 
 const creditNoteIdParams = z.object({ creditNoteId: z.coerce.number().int().positive() }).strict();
 
@@ -28,6 +35,7 @@ export class CreditNotesController {
   constructor(private readonly svc: CreditNotesService) {}
 
   @Get()
+  @ResponseSchema(creditNoteListResponseSchema)
   @RequirePermission("accounting:credit-notes:read")
   @Validate({ query: listCreditNotesSchema })
   list(
@@ -38,6 +46,7 @@ export class CreditNotesController {
   }
 
   @Post()
+  @ResponseSchema(creditNoteCreatedResponseSchema)
   @HttpCode(201)
   @RequirePermission("accounting:credit-notes:create")
   @Idempotent("accounting.credit-note.create")
@@ -50,6 +59,7 @@ export class CreditNotesController {
   }
 
   @Get(":creditNoteId")
+  @ResponseSchema(creditNoteDetailResponseSchema)
   @RequirePermission("accounting:credit-notes:read")
   @Validate({ params: creditNoteIdParams })
   get(
@@ -60,6 +70,7 @@ export class CreditNotesController {
   }
 
   @Post(":creditNoteId/post")
+  @ResponseSchema(creditNotePostResponseSchema)
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("accounting:credit-notes:manage")
@@ -73,6 +84,7 @@ export class CreditNotesController {
   }
 
   @Post(":creditNoteId/apply")
+  @ResponseSchema(creditNoteApplyResponseSchema)
   @HttpCode(200)
   @RequirePermission("accounting:credit-notes:manage")
   @Idempotent("accounting.credit-note.apply")

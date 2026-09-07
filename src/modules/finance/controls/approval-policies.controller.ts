@@ -27,6 +27,12 @@ import {
 import { z } from "zod";
 import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  approvalPolicyListResponseSchema,
+  approvalPolicySchema,
+  approvalPolicyDeleteResponseSchema,
+} from "./dto/controls-response.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
@@ -42,6 +48,7 @@ export class ApprovalPoliciesController {
   constructor(private readonly svc: ApprovalPoliciesService) {}
 
   @Get()
+  @ResponseSchema(approvalPolicyListResponseSchema)
   @RequirePermission("accounting:approvals:read")
   @Validate({ query: listPoliciesSchema })
   list(
@@ -52,6 +59,7 @@ export class ApprovalPoliciesController {
   }
 
   @Post()
+  @ResponseSchema(approvalPolicySchema)
   @HttpCode(201)
   @RequirePermission("accounting:settings:manage")
   @Validate({ body: createApprovalPolicySchema })
@@ -64,6 +72,7 @@ export class ApprovalPoliciesController {
   }
 
   @Patch(":policyId")
+  @ResponseSchema(approvalPolicySchema)
   @RequirePermission("accounting:settings:manage")
   @Validate({ params: policyIdParams, body: updateApprovalPolicySchema })
   update(
@@ -75,6 +84,7 @@ export class ApprovalPoliciesController {
   }
 
   @Delete(":policyId")
+  @ResponseSchema(approvalPolicyDeleteResponseSchema)
   @RequirePermission("accounting:settings:manage")
   @Validate({ params: policyIdParams })
   remove(

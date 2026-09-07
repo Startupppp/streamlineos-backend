@@ -54,8 +54,20 @@ import {
 import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../common/openapi/response-envelopes";
 import { resolveClientIpOr } from "../../common/http/client-ip";
+import {
+  authRegisterResponseSchema,
+  authAutoLoginTokenResponseSchema,
+  authMessageResponseSchema,
+  authAuditAnalyticsResponseSchema,
+  authSessionDataResponseSchema,
+  authVerifyMagicLinkResponseSchema,
+  authGoogleOAuthResponseSchema,
+  authSessionExchangeResponseSchema,
+  authJwksResponseSchema,
+} from "./dto/auth-response.schemas";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
@@ -139,6 +151,7 @@ export class AuthController {
   }
 
   @Post("register")
+  @ResponseSchema(authRegisterResponseSchema)
   @Public()
   @HttpCode(201)
   @Validate({ body: registerSchema })
@@ -152,14 +165,17 @@ export class AuthController {
 
   @Post("logout")
   @BodylessAction()
+  @ResponseSchema(successSchema)
   @Universal()
   @HttpCode(200)
   @AllowWithoutMfa()
-  logout(@CurrentUser() u: CurrentUserContext) {
-    return this.authService.logout(u.sessionId ?? "", u.userId);
+  async logout(@CurrentUser() u: CurrentUserContext) {
+    await this.authService.logout(u.sessionId ?? "", u.userId);
+    return { success: true as const };
   }
 
   @Post("verify-email")
+  @ResponseSchema(authAutoLoginTokenResponseSchema)
   @Public()
   @HttpCode(200)
   @Validate({ body: verifyEmailSchema })
@@ -172,6 +188,7 @@ export class AuthController {
   }
 
   @Post("resend-verification")
+  @ResponseSchema(authMessageResponseSchema)
   @Public()
   @HttpCode(200)
   @Validate({ body: resendVerificationSchema })
@@ -184,6 +201,7 @@ export class AuthController {
   }
 
   @Get("audit/analytics")
+  @ResponseSchema(authAuditAnalyticsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   getAuditAnalytics() {
@@ -192,6 +210,7 @@ export class AuthController {
 
   @Public()
   @Get("session-data/:userId")
+  @ResponseSchema(authSessionDataResponseSchema)
   @HttpCode(200)
   @Validate({ params: userIdParams })
   async getSessionData(
@@ -206,6 +225,7 @@ export class AuthController {
   }
 
   @Post("magic-link")
+  @ResponseSchema(authMessageResponseSchema)
   @Public()
   @HttpCode(200)
   @Validate({ body: magicLinkRequestSchema })
@@ -219,6 +239,7 @@ export class AuthController {
   }
 
   @Post("magic-link/verify")
+  @ResponseSchema(authVerifyMagicLinkResponseSchema)
   @Public()
   @HttpCode(200)
   @Validate({ body: magicLinkVerifySchema })
@@ -231,6 +252,7 @@ export class AuthController {
   }
 
   @Post("google")
+  @ResponseSchema(authGoogleOAuthResponseSchema)
   @Public()
   @HttpCode(200)
   @Validate({ body: googleOAuthSchema })
@@ -246,6 +268,7 @@ export class AuthController {
   }
 
   @Post("email-otp")
+  @ResponseSchema(authMessageResponseSchema)
   @Public()
   @HttpCode(200)
   @Validate({ body: requestEmailOtpSchema })
@@ -259,6 +282,7 @@ export class AuthController {
   }
 
   @Post("email-otp/verify")
+  @ResponseSchema(authAutoLoginTokenResponseSchema)
   @Public()
   @HttpCode(200)
   @Validate({ body: verifyEmailOtpSchema })
@@ -271,6 +295,7 @@ export class AuthController {
   }
 
   @Post("session-exchange")
+  @ResponseSchema(authSessionExchangeResponseSchema)
   @Public()
   @HttpCode(200)
   // PRD-C089 (BREACH) — this body is a bearer token, `app.enableCors({ credentials: true })`
@@ -360,6 +385,7 @@ export class AuthController {
   }
 
   @Get(".well-known/jwks.json")
+  @ResponseSchema(authJwksResponseSchema)
   @Public()
   @HttpCode(200)
   getJwks() {

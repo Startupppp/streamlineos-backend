@@ -15,7 +15,8 @@ import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.d
 import { AccessService } from "../access/access.service";
 import { SignAiService } from "./sign-ai.service";
 import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { signAiSummarizeResponseSchema } from "./dto/e-sign-response.schemas";
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 
@@ -52,6 +53,7 @@ export class SignAiController {
   @Post("summarize")
   @BodylessAction()
   @NoTenantTransaction()
+  @ResponseSchema(signAiSummarizeResponseSchema)
   @Validate({ params: envelopeIdParams })
   async summarize(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,

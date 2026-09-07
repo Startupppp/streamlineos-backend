@@ -27,6 +27,12 @@ import {
   type DuplicateTemplateInput,
 } from "./dto/setup.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  payrollTemplateRowSchema,
+  templateListResponseSchema,
+  templatePreviewResponseSchema,
+} from "./dto/templates-response.schemas";
 import { z } from "zod";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +46,7 @@ export class PayrollTemplatesController {
   @Get()
   @RequirePermission("payroll:templates:view")
   @Validate({ query: listTemplatesSchema })
+  @ResponseSchema(templateListResponseSchema)
   async list(
     @Query() query: ListTemplatesInput,
     @CurrentUser() u: CurrentUserContext,
@@ -50,6 +57,7 @@ export class PayrollTemplatesController {
   @Get(":templateId")
   @RequirePermission("payroll:templates:view")
   @Validate({ params: templateIdParams })
+  @ResponseSchema(payrollTemplateRowSchema)
   async getById(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -61,6 +69,7 @@ export class PayrollTemplatesController {
   @HttpCode(201)
   @RequirePermission("payroll:templates:manage")
   @Validate({ params: templateIdParams, body: duplicateTemplateSchema })
+  @ResponseSchema(payrollTemplateRowSchema)
   async duplicate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body() body: DuplicateTemplateInput,
@@ -72,6 +81,7 @@ export class PayrollTemplatesController {
   @Post(":templateId/preview")
   @RequirePermission("payroll:templates:view")
   @Validate({ params: templateIdParams, body: templatePreviewSchema })
+  @ResponseSchema(templatePreviewResponseSchema)
   async preview(
     @Param("templateId", ParseIntPipe) templateId: number,
     @Body() body: TemplatePreviewInput,
@@ -84,6 +94,7 @@ export class PayrollTemplatesController {
   @HttpCode(204)
   @RequirePermission("payroll:templates:manage")
   @Validate({ params: templateIdParams })
+  @NoContentResponse()
   async deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
