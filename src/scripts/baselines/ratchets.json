@@ -714,8 +714,10 @@
         "direction": "floor"
       },
       "CEILING_FLOOR_TOTAL": {
-        "value": 1000,
-        "direction": "floor"
+        "value": 400,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Anti-vacuity tripwire, not a debt ratchet: it fails when the counter matches FEWER assertions than this, so it must follow the tree down or it accuses a working counter. Lowered 1000 -> 400 by 5d71a9dff against a bite proof, but ratchets.json was not updated in that commit, so check:baseline-integrity read the drift as an unsafe move. Reconciled 2026-09-07 after re-proving the mechanism: one planted `as number` moved the total 407 -> 408 and removing it returned it to 407, so the counter counts and the tree is genuinely at 407, down from the four figures the 1000 was set against."
       },
       "MIN_SELF_TEST_CHECKS": {
         "value": 52,
