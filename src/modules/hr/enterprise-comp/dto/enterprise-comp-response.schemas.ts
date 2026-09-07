@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { hrEquityGrantTypeEnum, hrEquityGrantStatusEnum } from "../../../../db/schema/hr/enterprise-comp";
 
 const compCycleSchema = z.object({
   id: z.number().int(),
@@ -173,11 +174,14 @@ export const listComplianceTasksResponseSchema = cursorPageSchema(complianceTask
 export const createComplianceTaskResponseSchema = complianceTaskSchema;
 export const completeComplianceTaskResponseSchema = complianceTaskSchema;
 
+const equityGrantTypeSchema = z.enum(hrEquityGrantTypeEnum.enumValues);
+const equityGrantStatusSchema = z.enum(hrEquityGrantStatusEnum.enumValues);
+
 const equityGrantSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   userId: z.string(),
-  grantType: z.string(),
+  grantType: equityGrantTypeSchema,
   units: z.number().int(),
   strikePriceCents: z.number().int().nullable(),
   grantDate: z.string(),
@@ -185,7 +189,7 @@ const equityGrantSchema = z.object({
   vestingMonths: z.number().int(),
   documentUrl: z.string().nullable(),
   notes: z.string().nullable(),
-  status: z.string(),
+  status: equityGrantStatusSchema,
   createdBy: z.string().nullable(),
   boardApprovedAt: nullableWireDate(),
   createdAt: wireDate(),
@@ -214,7 +218,7 @@ export const getExitTreatmentResponseSchema = z.object({
   exercisedUnits: z.number().int(),
   unvestedUnits: z.number().int(),
   exercisableUnits: z.number().int(),
-  grantType: z.string(),
+  grantType: equityGrantTypeSchema,
   notes: z.string().nullable(),
   exitDate: z.string(),
 });
