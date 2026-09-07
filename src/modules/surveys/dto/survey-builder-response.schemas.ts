@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { surveyQuestionTypeEnum } from "../../../db/schema/surveys/structure";
 import { wireDate } from "../../../common/openapi/wire-types";
 import { successSchema } from "../../../common/openapi/response-envelopes";
 
@@ -21,7 +22,7 @@ export const surveyQuestionSchema = z.object({
   sectionId: z.number().int(),
   questionKey: z.string(),
   variableName: z.string().nullable(),
-  type: z.string(),
+  type: z.enum(surveyQuestionTypeEnum.enumValues),
   title: z.string(),
   description: z.string().nullable(),
   required: z.boolean(),
@@ -61,7 +62,7 @@ const builderQuestionSchema = z.object({
   id: z.number().int(),
   questionKey: z.string(),
   variableName: z.string().nullable(),
-  type: z.string(),
+  type: z.enum(surveyQuestionTypeEnum.enumValues),
   title: z.string(),
   description: z.string().nullable(),
   required: z.boolean(),
