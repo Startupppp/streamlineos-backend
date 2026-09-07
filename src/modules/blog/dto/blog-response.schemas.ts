@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { blogPostStatusEnum } from "../../../db/schema/common/enums";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
 import { successSchema } from "../../../common/openapi/response-envelopes";
 
@@ -27,16 +28,15 @@ export const blogPostSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
   slug: z.string(),
-  excerpt: z.string().nullable(),
-  coverImage: z.string().nullable(),
+  excerpt: z.string(),
+  coverImage: z.string(),
   metaTitle: z.string().nullable(),
   metaDescription: z.string().nullable(),
-  content: z.string().nullable(),
-  contentText: z.string().nullable(),
+  content: z.string(),
   contentJson: z.record(z.string(), z.unknown()).nullable(),
   categoryId: z.string().uuid().nullable(),
   authorId: z.string().uuid().nullable(),
-  status: z.enum(["draft", "published"]),
+  status: z.enum(blogPostStatusEnum.enumValues),
   isFeatured: z.boolean(),
   readingTime: z.number().int().nullable(),
   publishedAt: nullableWireDate(),
