@@ -17,6 +17,13 @@ function ipOf(req: Request): string | undefined {
   return resolveClientIp(req);
 }
 
+function routePathOf(req: Request): string | undefined {
+  const route: unknown = Reflect.get(req, "route");
+  if (typeof route !== "object" || route === null) return undefined;
+  const path: unknown = Reflect.get(route, "path");
+  return typeof path === "string" ? path : undefined;
+}
+
 @Injectable()
 export class OperatorSessionGuard implements CanActivate {
   constructor(
@@ -42,7 +49,7 @@ export class OperatorSessionGuard implements CanActivate {
     if (typeof orgId !== "string" || !orgId)
       throw new BadRequestException("Route must declare :orgId route param for operator access");
 
-    const route = (req as unknown as { route?: { path?: string } }).route?.path ?? req.url;
+    const route = routePathOf(req) ?? req.url;
     const action = `operator.${req.method.toLowerCase()}.${route}`;
 
     await this.operatorAccess.authorizeRequest(

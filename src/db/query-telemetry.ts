@@ -66,6 +66,16 @@ export interface Thenable {
   then(onOk?: ((value: unknown) => unknown) | null, onErr?: ((reason: unknown) => unknown) | null): unknown;
 }
 
+type UnknownFn = (...args: unknown[]) => unknown;
+
+function isThenable(value: object): value is Thenable {
+  return typeof Reflect.get(value, "then") === "function";
+}
+
+function isUnknownFn(value: unknown): value is UnknownFn {
+  return typeof value === "function";
+}
+
 export class QueryTelemetryTracker {
   private readonly gucReservoir = new BoundedReservoir(RESERVOIR_CAP);
   private readonly queryReservoir = new BoundedReservoir(RESERVOIR_CAP);
@@ -132,9 +142,12 @@ export class QueryTelemetryTracker {
   private wrap<T extends object>(target: T, settle: Settle): T {
     const proxy: T = new Proxy(target, {
       get: (raw, prop) => {
-        if (prop === "then") {
-          return (onOk?: (value: unknown) => unknown, onErr?: (reason: unknown) => unknown) =>
-            (raw as unknown as Thenable).then(
+        if (isThenable(raw) && (prop === "then" || prop === "catch" || prop === "finally")) {
+          const settling = (
+            onOk?: (value: unknown) => unknown,
+            onErr?: (reason: unknown) => unknown,
+          ): unknown =>
+            raw.then(
               (value: unknown) => {
                 settle("ok", value);
                 return onOk ? onOk(value) : value;
@@ -145,15 +158,14 @@ export class QueryTelemetryTracker {
                 throw reason;
               },
             );
-        }
 
-        if (prop === "catch")
-          return (onErr?: (reason: unknown) => unknown) =>
-            (proxy as unknown as Thenable).then(undefined, onErr);
+          if (prop === "then") return settling;
 
-        if (prop === "finally")
+          if (prop === "catch")
+            return (onErr?: (reason: unknown) => unknown) => settling(undefined, onErr);
+
           return (onDone?: () => void) =>
-            (proxy as unknown as Thenable).then(
+            settling(
               (value: unknown) => {
                 onDone?.();
                 return value;
@@ -163,12 +175,13 @@ export class QueryTelemetryTracker {
                 throw reason;
               },
             );
+        }
 
         const value: unknown = Reflect.get(raw, prop);
-        if (typeof value !== "function") return value;
+        if (!isUnknownFn(value)) return value;
 
         return (...args: unknown[]): unknown => {
-          const result: unknown = (value as (...a: unknown[]) => unknown).apply(raw, args);
+          const result: unknown = value.apply(raw, args);
           return result === raw ? this.wrap(raw, settle) : result;
         };
       },
