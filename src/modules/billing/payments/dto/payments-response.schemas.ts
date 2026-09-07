@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paymentProviderStatusEnum } from "../../../../db/schema/common/enums";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { successSchema } from "../../../../common/openapi/response-envelopes";
 
@@ -15,7 +16,7 @@ export const paymentProviderRowSchema = z.object({
   orgId: z.string(),
   providerKey: z.string(),
   displayName: z.string(),
-  status: z.string(),
+  status: z.enum(paymentProviderStatusEnum.enumValues),
   environment: z.string(),
   isPrimary: z.boolean(),
   supportedCurrencies: z.array(z.string()),
@@ -64,6 +65,10 @@ export const paymentTestTransactionRowSchema = z.object({
   resultSummary: z.string().nullable(),
   createdBy: z.string().nullable(),
   createdAt: wireDate(),
+});
+
+export const paymentTestTransactionCreatedSchema = paymentTestTransactionRowSchema.extend({
+  keyId: z.string().nullable(),
 });
 
 export const paymentTestTransactionListSchema = z.array(paymentTestTransactionRowSchema);

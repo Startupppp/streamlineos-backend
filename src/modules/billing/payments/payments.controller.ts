@@ -62,6 +62,7 @@ import {
   credentialSaveResponseSchema,
   paymentTestTransactionListSchema,
   paymentTestTransactionRowSchema,
+  paymentTestTransactionCreatedSchema,
   webhookEndpointResponseSchema,
   webhookEventListResponseSchema,
   webhookEventRowResponseSchema,
@@ -232,7 +233,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:test:run")
   @Validate({ params: providerKeyParams, body: createTestTransactionSchema })
-  @ResponseSchema(paymentTestTransactionRowSchema)
+  @ResponseSchema(paymentTestTransactionCreatedSchema)
   createTestTransaction(
     @Param("providerKey") providerKey: string,
     @Body() body: CreateTestTransactionInput,
