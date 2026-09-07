@@ -29,7 +29,7 @@ describe("S02 HR collection read caps", () => {
     ["enterprise-ops/accommodations/accommodations.service.ts", "from(hrAccommodationTasks)"],
     ["governance/legal-holds/legal-holds.service.ts", "from(hrLegalHoldItems)"],
     ["governance/positions/positions-taxonomy.service.ts", "from(hrPositionStatuses)"],
-    ["governance/positions/positions-taxonomy.service.ts", "from(hrPositionTransitions)"],
+    ["governance/positions/positions-transitions.service.ts", "from(hrPositionTransitions)"],
     ["performance/engagement-badges.service.ts", "from(hrBadges)"],
     ["performance/engagement-mood-polls.service.ts", "groupBy(hrPollVotes.optionIndex)"],
     ["performance/engagement.service.ts", "from(feedbackRequests)"],
@@ -66,9 +66,16 @@ describe("S02 HR collection read caps", () => {
     const source = readFileSync(resolve(sourceRoot, relativePath), "utf8");
     const start = source.indexOf(anchor);
     expect(start).toBeGreaterThanOrEqual(0);
-    expect(source.slice(Math.max(0, start - 180), start + 1000)).toMatch(
-      /limit\s*:\s*(100|500|1000)|\.limit\((?:100|200|500|1000|Math\.max\(1, employeeUserIds\.(?:size|length) \* MAX_SKILLS_PER_EMPLOYEE\))\)/,
-    );
+    const window = source.slice(Math.max(0, start - 180), start + 1000);
+    const boundedLiteral =
+      /limit\s*:\s*(100|500|1000)|\.limit\((?:100|200|500|1000|Math\.max\(1, employeeUserIds\.(?:size|length) \* MAX_SKILLS_PER_EMPLOYEE\))\)/;
+    if (boundedLiteral.test(window)) return;
+
+    // A keyset drain reads every row a truncating cap would have dropped, so it is the
+    // stronger remedy — but only while BOTH bounds are present: the page size caps each
+    // query, and the page count is what stops the loop.
+    expect(window).toMatch(/\.limit\(HR_SCAN_PAGE\)/);
+    expect(source).toMatch(/HR_SCAN_MAX_PAGES/);
   });
 
   it("continues attendance history with tenant-scoped id batches", () => {

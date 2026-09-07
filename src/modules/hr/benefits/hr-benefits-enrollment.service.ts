@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -11,7 +11,7 @@ import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.serv
 import { HrBenefitsPlansService } from "./hr-benefits-plans.service";
 import type { EnrollInput, WaiveInput, CreateDependentInput, PatchDependentInput } from "./dto/benefits.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
-import { HR_SCAN_PAGE } from "../hr-read-limits";
+import { HR_SCAN_PAGE, HR_SCAN_MAX_PAGES } from "../hr-read-limits";
 
 @Injectable()
 export class HrBenefitsEnrollmentService {
@@ -125,29 +125,34 @@ export class HrBenefitsEnrollmentService {
         )
         .orderBy(desc(hrBenefitEnrollments.enrolledAt))
         .limit(50),
-      this.db
-        .select({
-          id: hrDependents.id,
-          orgId: hrDependents.orgId,
-          userId: hrDependents.userId,
-          name: hrDependents.name,
-          relationship: hrDependents.relationship,
-          dateOfBirth: hrDependents.dateOfBirth,
-          isCovered: hrDependents.isCovered,
-          createdAt: hrDependents.createdAt,
-        })
-        .from(hrDependents)
-        .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)))
-        .orderBy(hrDependents.name)
-        .limit(HR_SCAN_PAGE),
+      this.scanDependents(orgId, membershipId),
     ]);
 
     const enrollments = enrollmentRows.map((r) => ({ ...r.enrollment, plan: r.plan }));
     return { enrollments, dependents };
   }
 
-  async listDependents(orgId: string, userId: string, membershipId: number | null) {
-    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+
+  /**
+   * Every dependent of one person. Drained by the primary key, which is a total order,
+   * so the cursor needs no tie-breaker; `name` is not unique and could not be one.
+   * Ordering is applied after the walk so the result matches the ORDER BY name this
+   * replaced, without a cap that silently drops a dependent.
+   */
+  private async scanDependents(orgId: string, membershipId: number) {
+    const rows: Awaited<ReturnType<typeof this.dependentPage>> = [];
+    let afterId = 0;
+    for (let page = 0; page < HR_SCAN_MAX_PAGES; page += 1) {
+      const batch = await this.dependentPage(orgId, membershipId, afterId);
+      rows.push(...batch);
+      const last = batch[batch.length - 1];
+      if (batch.length < HR_SCAN_PAGE || last === undefined) break;
+      afterId = last.id;
+    }
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private dependentPage(orgId: string, membershipId: number, afterId: number) {
     return this.db
       .select({
         id: hrDependents.id,
@@ -160,9 +165,20 @@ export class HrBenefitsEnrollmentService {
         createdAt: hrDependents.createdAt,
       })
       .from(hrDependents)
-      .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)))
-      .orderBy(hrDependents.name)
+      .where(
+        and(
+          eq(hrDependents.orgId, orgId),
+          eq(hrDependents.userMembershipId, membershipId),
+          gt(hrDependents.id, afterId),
+        ),
+      )
+      .orderBy(asc(hrDependents.id))
       .limit(HR_SCAN_PAGE);
+  }
+
+  async listDependents(orgId: string, userId: string, membershipId: number | null) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+    return this.scanDependents(orgId, membershipId);
   }
 
   async addDependent(orgId: string, userId: string, membershipId: number | null, data: CreateDependentInput) {
