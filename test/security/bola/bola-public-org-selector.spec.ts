@@ -158,6 +158,52 @@ describe("BOLA sweep — support inbound webhooks", () => {
   });
 });
 
+describe("BOLA sweep — KB widget routes: stateless, no tenant data", () => {
+  const controller = read("src/modules/kb/help-centre/kb-widget.controller.ts");
+
+  it("the controller injects no database provider", () => {
+    expect(controller).not.toContain("DRIZZLE");
+    expect(controller).not.toContain("private readonly db");
+  });
+
+  it("the config handler returns only static fields — orgId echoed back and APP_URL-derived URLs", () => {
+    expect(controller).toContain('return {');
+    expect(controller).toContain('orgId,');
+    expect(controller).toContain('helpCenterUrl:');
+    expect(controller).toContain('buttonLabel:');
+    expect(controller).toContain('primaryColor:');
+    expect(controller).toContain('position:');
+  });
+
+  it("neither handler calls any service or executes any query", () => {
+    expect(controller).not.toContain("await ");
+    expect(controller).not.toContain(".query(");
+    expect(controller).not.toContain(".select(");
+    expect(controller).not.toContain(".from(");
+  });
+});
+
+describe("BOLA sweep — GET /public/org/:orgId returns only org name, 404 for missing", () => {
+  const service = read("src/modules/public/org.service.ts");
+
+  // Asserting a projection OMITS named columns is vacuous for any name the table lacks; count the keys instead.
+  it("the query projects exactly one column", () => {
+    const projection = /\.select\(\{([^}]*)\}\)/.exec(service)?.[1];
+    expect(projection).toBeDefined();
+    const keys = (projection ?? "").split(",").map((k) => k.trim()).filter((k) => k.length > 0);
+    expect(keys).toEqual(["name: organizations.name"]);
+  });
+
+  it("a missing org throws NotFoundException, not a silent 200 with null", () => {
+    expect(service).toContain('throw new NotFoundException("Organization not found")');
+  });
+
+  it("the service never accepts an orgId from anything other than its single parameter", () => {
+    const body = service.slice(service.indexOf("async getOrgName"));
+    expect(body.slice(0, 400)).toContain("eq(organizations.id, orgId)");
+  });
+});
+
 describe("BOLA sweep — public whiteboard share token", () => {
   const service = read("src/modules/build/execution/whiteboard-sharing.service.ts");
 
