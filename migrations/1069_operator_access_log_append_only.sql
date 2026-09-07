@@ -76,3 +76,14 @@ DROP TRIGGER IF EXISTS operator_access_log_append_only ON public.operator_access
 CREATE TRIGGER operator_access_log_append_only
 BEFORE UPDATE OR DELETE ON public.operator_access_log
 FOR EACH ROW EXECUTE FUNCTION app.prevent_operator_access_log_mutation();
+--> statement-breakpoint
+
+DROP TRIGGER IF EXISTS operator_access_log_no_truncate ON public.operator_access_log;
+--> statement-breakpoint
+
+-- A row-level trigger never fires on TRUNCATE, so the row-level guard above would
+-- have let one statement empty the whole trail. Measured, not assumed: TRUNCATE
+-- succeeded against the row-level trigger alone in a rolled-back rehearsal.
+CREATE TRIGGER operator_access_log_no_truncate
+BEFORE TRUNCATE ON public.operator_access_log
+FOR EACH STATEMENT EXECUTE FUNCTION app.prevent_operator_access_log_mutation();

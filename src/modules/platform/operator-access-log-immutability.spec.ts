@@ -72,6 +72,13 @@ describe("operator_access_log immutability — database boundary", () => {
     expect(migration).toContain("current_setting('app.operator_access_log_redaction', true) = 'true'");
   });
 
+  it("also blocks TRUNCATE, which a row-level trigger never sees", () => {
+    expect(migration).toContain("CREATE TRIGGER operator_access_log_no_truncate");
+    expect(migration).toContain("BEFORE TRUNCATE ON public.operator_access_log");
+    expect(migration).toContain("FOR EACH STATEMENT");
+    expect(migration).toContain("DROP TRIGGER IF EXISTS operator_access_log_no_truncate");
+  });
+
   it("is registered in the Drizzle journal — an unregistered migration never runs while db:migrate still prints success", () => {
     const journal = JSON.parse(readFileSync(join(REPO_ROOT, "migrations", "meta", "_journal.json"), "utf8")) as {
       entries: Array<{ idx: number; when: number; tag: string }>;
