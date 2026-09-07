@@ -79,8 +79,19 @@ export const resignationSchema = z.object({
   finalReviewer: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
 });
 
+export const resignationListItemSchema = resignationSchema.extend({
+  resignationLetterUrl: z.string().nullable(),
+  user: z.object({
+    id: z.string(),
+    name: z.string().nullable(),
+    email: z.string(),
+    image: z.string().nullable(),
+  }).nullable(),
+  hrReviewer: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
+});
+
 export const resignationListSchema = z.object({
-  data: z.array(resignationSchema),
+  data: z.array(resignationListItemSchema),
   pagination: z.object({
     page: z.number().int(),
     limit: z.number().int(),
