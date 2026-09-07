@@ -270,7 +270,7 @@ export function anchorOf(entity: ImportEntity): AnchorRule | undefined {
 }
 
 export function isFieldOf(entity: ImportEntity, value: string): value is ImportField {
-  return (VOCABULARY[entity].fields as readonly string[]).includes(value);
+  return VOCABULARY[entity].fields.some((field) => field === value);
 }
 
 /**

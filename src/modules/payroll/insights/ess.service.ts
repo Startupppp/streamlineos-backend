@@ -22,7 +22,7 @@ import {
 import { hrBenefitEnrollments, hrBenefitPlans } from "../../../db/schema/hr/benefits";
 import { hrEquityGrants } from "../../../db/schema/hr/enterprise-comp";
 import { TaxService } from "../hr-payroll/tax.service";
-import { DEFAULT_PAYROLL_TOGGLES, PayrollToggles } from "../payroll.types";
+import { DEFAULT_PAYROLL_TOGGLES, normalizePayrollToggles, PayrollToggles } from "../payroll.types";
 import { buildTotalRewardsStatement } from "./lib/total-rewards";
 
 @Injectable()
@@ -51,9 +51,7 @@ export class EssService {
       where: eq(payrollPolicyVersions.id, policy.activeVersionId),
       columns: { toggles: true },
     });
-    const stored = version?.toggles;
-    if (!stored || typeof stored !== "object") return { ...DEFAULT_PAYROLL_TOGGLES };
-    return { ...DEFAULT_PAYROLL_TOGGLES, ...(stored as Partial<PayrollToggles>) };
+    return normalizePayrollToggles(version?.toggles);
   }
 
   async getActiveWindow(orgId: string) {

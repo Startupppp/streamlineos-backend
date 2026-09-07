@@ -65,7 +65,7 @@ export class SimulatorService {
     const policy = await this.policyEval.evaluatePolicy(
       orgId,
       input.employeeId,
-      input.policyType as Parameters<typeof this.policyEval.evaluatePolicy>[2],
+      input.policyType,
       today,
     );
 
@@ -87,7 +87,7 @@ export class SimulatorService {
     );
 
     const currentBalance = rows.length > 0
-      ? Number((rows[0] as Record<string, unknown>)["balance"] ?? 0)
+      ? Number(rows[0]?.["balance"] ?? 0)
       : 0;
 
     const projectionDate = new Date(input.projectionDate);
@@ -212,7 +212,7 @@ export class SimulatorService {
     );
 
     const lastGross = rows.length > 0
-      ? Number((rows[0] as Record<string, unknown>)["annual_ctc"] ?? 0)
+      ? Number(rows[0]?.["annual_ctc"] ?? 0)
       : 0;
 
     let totalEarningsDelta = 0;
@@ -245,7 +245,7 @@ export class SimulatorService {
     const resolvedPolicy = await this.policyEval.evaluatePolicy(
       orgId,
       input.employeeId,
-      input.policyType as Parameters<typeof this.policyEval.evaluatePolicy>[2],
+      input.policyType,
       today,
     );
 

@@ -22,7 +22,6 @@ import {
 import type { BatchOutcome, ImportContext, PhaseExtent } from "./crm-import-internals";
 import { writerFor } from "./writers";
 import { uncertaintyFinding } from "./import-uncertainty";
-import type { RowMatch } from "./import-plan";
 
 @Injectable()
 export class CrmImportCommitService {
@@ -246,7 +245,7 @@ export class CrmImportCommitService {
       crmImportId,
       rowNumber: row.rowNumber,
       matchedPartyId: row.matchedRecordId,
-      match: row.match as RowMatch,
+      match: row.match,
       values: row.values ?? {},
       reason: row.reason,
       sourceFilename: filename,

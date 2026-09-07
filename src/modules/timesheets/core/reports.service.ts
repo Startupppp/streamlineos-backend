@@ -115,10 +115,10 @@ export class ReportsService {
       activeUsers: Number(agg?.activeUsers ?? 0),
       byDay: byDayRows.map((r) => ({ date: r.date, hours: round2Local(Number(r.hours)) })),
       byProject: byProjectRows
-        .filter((r) => r.projectId !== null)
+        .filter((r): r is typeof r & { projectId: number } => r.projectId !== null)
         .map((r) => ({
-          projectId: r.projectId as number,
-          projectName: projectNames.get(r.projectId as number) ?? "Unknown",
+          projectId: r.projectId,
+          projectName: projectNames.get(r.projectId) ?? "Unknown",
           hours: round2Local(Number(r.hours)),
         })),
     };

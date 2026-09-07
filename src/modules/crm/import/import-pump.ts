@@ -133,14 +133,16 @@ export class ImportPump {
       RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts
     `);
 
-    const [row] = [...claimed] as Record<string, unknown>[];
+    const [row] = claimed;
     if (!row) return null;
 
+    const input = row.input;
+    const isPlainObject = input !== null && typeof input === "object" && !Array.isArray(input);
     return {
       workflowRunId: String(row.workflow_run_id),
       organizationId: String(row.organization_id),
       workflowName: String(row.workflow_name),
-      input: (row.input ?? {}) as Record<string, unknown>,
+      input: isPlainObject ? (input as Record<string, unknown>) : {},
       attempt: Number(row.attempt ?? 0),
       maxAttempts: Number(row.max_attempts ?? 5),
     };

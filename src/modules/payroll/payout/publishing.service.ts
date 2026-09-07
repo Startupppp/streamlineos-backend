@@ -77,7 +77,11 @@ export class PublishingService {
     return { items: rows, truncated: rows.length === PUBLICATION_LIST_CAP };
   }
 
-  async retryFailed(orgId: string, runId: number, actorId: string) {
+  async retryFailed(
+    orgId: string,
+    runId: number,
+    actorId: string,
+  ): Promise<{ published: number; total: number; runStatus: string | null; retried: number }> {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
       columns: { id: true },
@@ -93,7 +97,7 @@ export class PublishingService {
       limit: PAYROLL_READ_CAP + 1,
     });
     if (failed.length === 0) {
-      return { published: 0, total: 0, runStatus: null as string | null, retried: 0 };
+      return { published: 0, total: 0, runStatus: null, retried: 0 };
     }
     const runEmployeeIds = failed.map((f) => f.runEmployeeId);
     const result = await this.publisher.publish(orgId, runId, actorId, undefined, runEmployeeIds);

@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const storedRequiredFieldsSchema = z.array(z.string()).catch([]);
+
+export function parseStoredRequiredFields(value: unknown): string[] {
+  return storedRequiredFieldsSchema.parse(value);
+}
+
 export const updateCoreSettingsSchema = z.object({
   workWeekStart: z.number().int().min(0).max(6).optional(),
   requiredFields: z.array(z.string().trim().min(1).max(100)).max(50).optional(),

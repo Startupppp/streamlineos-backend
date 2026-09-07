@@ -60,7 +60,7 @@ export class HrPolicyAiService {
         return rows.map((p) => ({
           id: Number(p.id),
           policyType: String(p.policy_type),
-          scopeType: null as string | null,
+          scopeType: null,
           name: p.name ? String(p.name) : null,
         }));
       },
@@ -126,7 +126,7 @@ export class HrPolicyAiService {
         return rows.map((p) => ({
           id: Number(p.id),
           policyType: String(p.policy_type),
-          scopeType: null as string | null,
+          scopeType: null,
           name: p.name ? String(p.name) : null,
         }));
       },

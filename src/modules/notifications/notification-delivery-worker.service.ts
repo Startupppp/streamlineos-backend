@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
+import { z } from "zod";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import { randomUUID } from "crypto";
@@ -43,6 +44,18 @@ import type {
   QueueRunResult,
 } from "./notification-delivery-types";
 import { resolveDeliveryPreflight } from "./notification-delivery-preflight";
+
+const deliveryMetadataSchema = z
+  .object({
+    title: z.string().optional(),
+    message: z.string().optional(),
+    link: z.string().nullable().optional(),
+    emailHtml: z.string().optional(),
+    attachments: z
+      .array(z.object({ filename: z.string(), contentBase64: z.string(), type: z.string() }))
+      .optional(),
+  })
+  .passthrough();
 
 @Injectable()
 export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy {
@@ -237,13 +250,8 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
 
     const { delivery, sandbox, caps, attempt, provider } = preflight;
 
-    const meta = (delivery.metadata as {
-      title?: string;
-      message?: string;
-      link?: string | null;
-      emailHtml?: string;
-      attachments?: Array<{ filename: string; contentBase64: string; type: string }>;
-    } | null) ?? {};
+    const parsedMetadata = deliveryMetadataSchema.safeParse(delivery.metadata ?? {});
+    const meta = parsedMetadata.success ? parsedMetadata.data : {};
     // COMP-002: resolved from the catalog rather than stored on the delivery row, so
     // it always reflects the event's current mandatory flag. An unknown key is treated
     // as mandatory — the conservative direction, since the cost of wrongly omitting an

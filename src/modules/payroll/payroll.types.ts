@@ -120,6 +120,29 @@ export const DEFAULT_PAYROLL_TOGGLES: PayrollToggles = {
   essAllowReimbursements: true,
 };
 
+/**
+ * `payroll_policy_versions.toggles` and `payroll_templates.default_toggles` are
+ * untyped JSONB columns (the driver returns `unknown`). Every reader merges the
+ * stored value over the product defaults so a partially-written or legacy row
+ * still yields a complete `PayrollToggles`; centralised here so the narrowing
+ * cast exists once instead of at every call site.
+ */
+export function normalizePayrollToggles(raw: unknown): PayrollToggles {
+  const stored: Partial<PayrollToggles> =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Partial<PayrollToggles>) : {};
+  return { ...DEFAULT_PAYROLL_TOGGLES, ...stored };
+}
+
+/**
+ * Same JSONB seam as `normalizePayrollToggles`, for `payroll_policy_versions.config`.
+ * Returns `null` rather than a default because the shape (statutory percentages,
+ * calendar cutoffs) is country/org-specific; callers that need a non-null value
+ * supply their own fallback (see `DEFAULT_PAYROLL_POLICY_CONFIG`).
+ */
+export function toPayrollPolicyConfig(raw: unknown): PayrollPolicyConfig | null {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as PayrollPolicyConfig) : null;
+}
+
 export interface TemplateComponentDef {
   code: string;
   name: string;

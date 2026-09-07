@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { HR_POLICY_TYPES } from "../../policies/dto/hr-policy.schemas";
 
 const paginationSchema = z.object({
   cursor: z.string().optional(),
@@ -8,7 +9,7 @@ const paginationSchema = z.object({
 
 export const simulatePolicySchema = z.object({
   employeeId: z.string().uuid(),
-  policyType: z.string().min(1),
+  policyType: z.enum(HR_POLICY_TYPES),
   hypotheticalContext: z.record(z.string(), z.unknown()),
 }).strict();
 
@@ -39,7 +40,7 @@ export const compareSchema = z.object({
   employeeId: z.string().uuid(),
   oldPolicyId: z.coerce.number().int().positive(),
   newPolicyId: z.coerce.number().int().positive(),
-  policyType: z.string().min(1),
+  policyType: z.enum(HR_POLICY_TYPES),
 }).strict();
 
 export const listSimulationsSchema = paginationSchema.extend({

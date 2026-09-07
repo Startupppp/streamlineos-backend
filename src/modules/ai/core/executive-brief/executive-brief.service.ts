@@ -189,7 +189,7 @@ export class ExecutiveBriefService {
     } else {
       this.logger.warn(
         "Projects health unavailable",
-        (projectsResult.reason as Error)?.message,
+        errorMessage(projectsResult.reason),
       );
       uncertaintyNotes.push("Projects health data unavailable.");
     }
@@ -199,7 +199,7 @@ export class ExecutiveBriefService {
     } else {
       this.logger.warn(
         "CRM dashboard unavailable",
-        (crmResult.reason as Error)?.message,
+        errorMessage(crmResult.reason),
       );
       uncertaintyNotes.push("CRM sales dashboard unavailable.");
     }
@@ -209,7 +209,7 @@ export class ExecutiveBriefService {
     } else {
       this.logger.warn(
         "Support overview unavailable",
-        (supportResult.reason as Error)?.message,
+        errorMessage(supportResult.reason),
       );
       uncertaintyNotes.push("Support overview unavailable.");
     }
@@ -386,14 +386,8 @@ function buildBriefPrompt(
     "Generate an executive business brief based on the following operational data:\n",
   ];
 
-  if (sources.projects) {
-    const p = sources.projects as {
-      total: number;
-      healthy: number;
-      atRisk: number;
-      critical: number;
-      avgScore: number;
-    };
+  if (sources.projects && isProjectHealthSummary(sources.projects)) {
+    const p = sources.projects;
     parts.push(
       `**Projects (source: /projects):** ${p.total} total projects. Healthy: ${p.healthy}, At Risk: ${p.atRisk}, Critical: ${p.critical}. Average health score: ${p.avgScore}/100.`,
     );
@@ -403,12 +397,8 @@ function buildBriefPrompt(
     parts.push(`**CRM/Sales (source: /crm):** ${JSON.stringify(sources.crm)}`);
   }
 
-  if (sources.support) {
-    const s = sources.support as {
-      openTickets: number;
-      slaBreachCount: number;
-      avgFirstResponseMinutes: number | null;
-    };
+  if (sources.support && isSupportOverview(sources.support)) {
+    const s = sources.support;
     parts.push(
       `**Support (source: /support):** Open tickets: ${s.openTickets}, SLA breaches: ${s.slaBreachCount}, Avg first response: ${s.avgFirstResponseMinutes ?? "N/A"} min.`,
     );

@@ -10,22 +10,40 @@ import { ALL_CHANNELS, type NotificationChannel } from "./notification.types";
 
 type EventPrefMap = Record<string, { channels?: Record<string, boolean>; muted?: boolean; mode?: string }>;
 
-const DEFAULT_PREFERENCES = {
+interface NotificationPreferenceDefaults {
+  emailEnabled: boolean;
+  pushEnabled: boolean;
+  smsEnabled: boolean;
+  whatsappEnabled: boolean;
+  inAppEnabled: boolean;
+  soundEnabled: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+  quietHoursWeekends: boolean;
+  allowCriticalOverride: boolean;
+  digestMode: "disabled" | "hourly" | "daily" | "weekly";
+  categories: Record<string, boolean>;
+  channelCategories: Record<string, Record<string, boolean>>;
+  eventPreferences: EventPrefMap;
+  modulePreferences: Record<string, { mode?: string; muted?: boolean }>;
+}
+
+const DEFAULT_PREFERENCES: NotificationPreferenceDefaults = {
   emailEnabled: true,
   pushEnabled: true,
   smsEnabled: false,
   whatsappEnabled: false,
   inAppEnabled: true,
   soundEnabled: true,
-  quietHoursStart: null as string | null,
-  quietHoursEnd: null as string | null,
+  quietHoursStart: null,
+  quietHoursEnd: null,
   quietHoursWeekends: true,
   allowCriticalOverride: true,
-  digestMode: "disabled" as "disabled" | "hourly" | "daily" | "weekly",
-  categories: {} as Record<string, boolean>,
-  channelCategories: {} as Record<string, Record<string, boolean>>,
-  eventPreferences: {} as EventPrefMap,
-  modulePreferences: {} as Record<string, { mode?: string; muted?: boolean }>,
+  digestMode: "disabled",
+  categories: {},
+  channelCategories: {},
+  eventPreferences: {},
+  modulePreferences: {},
 };
 
 function isNotificationChannel(value: string): value is NotificationChannel {
@@ -66,7 +84,7 @@ export class NotificationPreferencesService {
     return {
       ...prefs,
       inherited: {
-        defaultChannels: (orgPolicy?.defaultChannels as string[] | undefined) ?? [],
+        defaultChannels: orgPolicy?.defaultChannels ?? [],
         canUserOverride: orgPolicy?.canUserOverride ?? true,
       },
     };
@@ -235,7 +253,7 @@ export class NotificationPreferencesService {
 
   async getEventCatalog(orgId: string, userId: string) {
     const [events, prefs] = await Promise.all([this.registry.listForOrg(orgId), this.get(orgId, userId)]);
-    const eventPrefs = (prefs.eventPreferences as EventPrefMap) ?? {};
+    const eventPrefs = prefs.eventPreferences;
     return events
       .filter((e) => e.userConfigurable || e.mandatory)
       .map((e) => ({
@@ -256,7 +274,7 @@ export class NotificationPreferencesService {
   async updateEventPreference(orgId: string, userId: string, eventKey: string, pref: EventPreferenceInput, membershipId?: number | null) {
     this.registry.assertKnown(eventKey);
     const current = await this.get(orgId, userId, membershipId);
-    const eventPrefs: EventPrefMap = { ...((current.eventPreferences as EventPrefMap) ?? {}) };
+    const eventPrefs: EventPrefMap = { ...current.eventPreferences };
     eventPrefs[eventKey] = { ...eventPrefs[eventKey], ...pref };
     const result = await this.update(orgId, userId, { eventPreferences: eventPrefs }, membershipId);
     return result;

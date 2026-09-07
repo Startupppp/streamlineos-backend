@@ -31,14 +31,14 @@ const AUDIT_INSERT_CHUNK = 500;
  *  Postgres jsonb round-trips (jsonb does not preserve key order). */
 export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  const withToJson = value as { toJSON?: () => unknown };
-  if (typeof withToJson.toJSON === "function") {
-    return stableStringify(withToJson.toJSON());
+  const toJson: unknown = Reflect.get(value, "toJSON");
+  if (typeof toJson === "function") {
+    return stableStringify(toJson.call(value));
   }
   if (Array.isArray(value)) {
     return `[${value.map((v) => stableStringify(v === undefined ? null : v)).join(",")}]`;
   }
-  const entries = Object.entries(value as Record<string, unknown>)
+  const entries = Object.entries(value)
     .filter(([, v]) => v !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
@@ -84,8 +84,8 @@ export class TimesheetsAuditService {
       entityType: params.entityType,
       entityId: params.entityId,
       action: params.action,
-      before: (params.before ?? null) as Record<string, unknown> | null,
-      after: (params.after ?? null) as Record<string, unknown> | null,
+      before: params.before ?? null,
+      after: params.after ?? null,
       reason: params.reason ?? null,
       prevHash,
       rowHash,
@@ -119,8 +119,8 @@ export class TimesheetsAuditService {
         entityType: params.entityType,
         entityId: params.entityId,
         action: params.action,
-        before: (params.before ?? null) as Record<string, unknown> | null,
-        after: (params.after ?? null) as Record<string, unknown> | null,
+        before: params.before ?? null,
+        after: params.after ?? null,
         reason: params.reason ?? null,
         prevHash,
         rowHash,

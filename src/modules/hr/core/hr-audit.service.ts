@@ -76,8 +76,8 @@ export class HrAuditService {
       entityType: params.entityType,
       entityId: params.entityId,
       action: params.action,
-      before: (params.before ?? null) as Record<string, unknown> | null,
-      after: (params.after ?? null) as Record<string, unknown> | null,
+      before: params.before ?? null,
+      after: params.after ?? null,
       ipAddress: params.ipAddress ?? null,
       userAgent: params.userAgent ?? null,
     });
@@ -112,8 +112,8 @@ export class HrAuditService {
       entityType: entry.entityType,
       entityId: entry.entityId,
       action: entry.action,
-      before: (entry.before ?? null) as Record<string, unknown> | null,
-      after: (entry.after ?? null) as Record<string, unknown> | null,
+      before: entry.before ?? null,
+      after: entry.after ?? null,
       ipAddress: params.ipAddress ?? null,
       userAgent: params.userAgent ?? null,
     }));

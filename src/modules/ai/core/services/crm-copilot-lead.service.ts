@@ -31,7 +31,20 @@ const LeadSummarySchema = z.object({
   nextBestActions: z.array(z.string()),
 });
 
-const URGENCY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 } as const;
+function urgencyRank(urgency: string): number {
+  switch (urgency) {
+    case "critical":
+      return 0;
+    case "high":
+      return 1;
+    case "medium":
+      return 2;
+    case "low":
+      return 3;
+    default:
+      return 3;
+  }
+}
 
 function truncate(s: string | null | undefined, max: number): string {
   if (!s) return "";
@@ -166,11 +179,7 @@ ${truncate(activitiesText, 1500)}`;
       }
     }
 
-    results.sort((a, b) => {
-      const ao = URGENCY_ORDER[a.urgency as keyof typeof URGENCY_ORDER] ?? 3;
-      const bo = URGENCY_ORDER[b.urgency as keyof typeof URGENCY_ORDER] ?? 3;
-      return ao - bo;
-    });
+    results.sort((a, b) => urgencyRank(a.urgency) - urgencyRank(b.urgency));
 
     return { actions: results.slice(0, limit) };
   }
@@ -186,7 +195,8 @@ ${truncate(activitiesText, 1500)}`;
         .innerJoin(businessParties, LEAD_PARTY_JOIN)
         .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId)));
 
-      if (!lead) return { lead: null, allGroups: [] as Awaited<ReturnType<typeof findDuplicateLeads>> };
+      const emptyGroups: Awaited<ReturnType<typeof findDuplicateLeads>> = [];
+      if (!lead) return { lead: null, allGroups: emptyGroups };
 
       const allGroups = await findDuplicateLeads(this.db, orgId);
       return { lead, allGroups };
@@ -249,7 +259,8 @@ ${truncate(activitiesText, 1500)}`;
           .limit(10),
       ]);
 
-      if (!lead) return { lead: null, citations: [] as CitationItem[] };
+      const emptyCitations: CitationItem[] = [];
+      if (!lead) return { lead: null, citations: emptyCitations };
 
       const built: CitationItem[] = [
         { id: `lead-score-${leadId}`, title: "AI Lead Score", snippet: `Score: ${lead.score ?? "Not scored"}, Priority: ${lead.priority ?? "N/A"}` },

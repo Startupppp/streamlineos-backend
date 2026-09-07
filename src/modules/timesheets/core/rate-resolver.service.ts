@@ -57,14 +57,14 @@ export class RateResolverService {
       this.getDefaultCurrency(orgId),
     ]);
 
-    const cardResults = queries.map((query) => {
+    const cardResults = queries.map((query): ResolvedRate | null => {
       const best = pickBestRate(rates, query);
       return best
         ? {
             billRate: parseFloat(best.billRate),
             costRate: best.costRate ? parseFloat(best.costRate) : null,
             currency: best.currency,
-            source: "RATE_CARD" as ResolvedRate["source"],
+            source: "RATE_CARD",
           }
         : null;
     });

@@ -47,18 +47,18 @@ export class TransfersService {
 
     const conditions = [eq(finBankTransfers.orgId, orgId)];
     if (query.bankAccountId !== undefined) {
-      conditions.push(
-        or(
-          eq(finBankTransfers.fromBankAccountId, query.bankAccountId),
-          eq(finBankTransfers.toBankAccountId, query.bankAccountId),
-        ) as ReturnType<typeof eq>,
+      const bankAccountCondition = or(
+        eq(finBankTransfers.fromBankAccountId, query.bankAccountId),
+        eq(finBankTransfers.toBankAccountId, query.bankAccountId),
       );
+      if (!bankAccountCondition) throw new Error("or() of two defined SQL conditions returned undefined");
+      conditions.push(bankAccountCondition);
     }
     if (query.from) {
-      conditions.push(sql`${finBankTransfers.transferDate} >= ${query.from}` as ReturnType<typeof eq>);
+      conditions.push(sql`${finBankTransfers.transferDate} >= ${query.from}`);
     }
     if (query.to) {
-      conditions.push(sql`${finBankTransfers.transferDate} <= ${query.to}` as ReturnType<typeof eq>);
+      conditions.push(sql`${finBankTransfers.transferDate} <= ${query.to}`);
     }
     if (pos) conditions.push(keysetBeforeValue(finBankTransfers.transferDate, finBankTransfers.id, pos));
 

@@ -159,11 +159,11 @@ export function repeatByFingerprint(
     .candidates(fingerprint)
     .find(
       (candidate) =>
-        assessDuplicate(survivors[candidate]!.fingerprint, fingerprint).score >=
+        assessDuplicate(survivors[candidate].fingerprint, fingerprint).score >=
         AUTO_MERGE_THRESHOLD,
     );
 
-  return position === undefined ? null : survivors[position]!.draft;
+  return position === undefined ? null : survivors[position].draft;
 }
 
 /** The party pass: every surviving row against the candidates fetched for it. */
@@ -179,7 +179,7 @@ export function matchByFingerprint(
       null;
 
     for (const position of existingIndex.candidates(survivor.fingerprint)) {
-      const candidate = existing[position]!;
+      const candidate = existing[position];
       const { score, blockers, signals } = assessDuplicate(candidate, survivor.fingerprint);
       // A contradiction — two different tax numbers — is proof these are
       // different companies, however similar the names look.

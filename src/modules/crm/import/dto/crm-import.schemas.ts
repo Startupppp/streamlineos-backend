@@ -18,7 +18,7 @@ export const previewImportSchema = z
      * endpoint before the column existed was a party file and a caller that has
      * not been updated must keep meaning what it meant.
      */
-    entity: z.enum([...IMPORT_ENTITIES] as [string, ...string[]]).default("party"),
+    entity: z.enum(IMPORT_ENTITIES).default("party"),
     /**
      * Which subject type a subject import lands as.
      *
@@ -65,7 +65,7 @@ export type PreviewImportInput = z.infer<typeof previewImportSchema>;
 
 export const exportQuerySchema = z
   .object({
-    entity: z.enum([...EXPORT_ENTITIES] as [string, ...string[]]),
+    entity: z.enum(EXPORT_ENTITIES),
     format: z.enum(["csv", "json"]).default("csv"),
   })
   .strict();
@@ -83,8 +83,8 @@ export const connectorSyncSchema = z
   .object({
     /** The `user_integration_connections` row, which is a `serial`. */
     connectionId: z.number().int().positive(),
-    provider: z.enum([...CONNECTOR_PROVIDERS] as [string, ...string[]]),
-    stream: z.enum([...CONNECTOR_STREAMS] as [string, ...string[]]),
+    provider: z.enum(CONNECTOR_PROVIDERS),
+    stream: z.enum(CONNECTOR_STREAMS),
   })
   .strict();
 

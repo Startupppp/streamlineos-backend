@@ -89,7 +89,7 @@ export class ReminderOutboxConsumer implements OutboxEventConsumer, OnModuleInit
         .set({ status: "FAILED" })
         .where(and(eq(finReminderLog.orgId, event.organizationId), eq(finReminderLog.id, payload.reminderLogId)));
       const errMsg = typeof error === "object" && error !== null && "message" in error
-        ? String((error as { message: unknown }).message)
+        ? String(error.message)
         : String(error);
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", errMsg);
       this.logger.error(`invoice reminder ${event.eventId} failed`, errMsg);

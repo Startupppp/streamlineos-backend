@@ -230,7 +230,7 @@ export class AiGatewayService {
     if (dedupeKey && cacheOpts) {
       return throughCache(cacheOpts, async () => {
         const promise = runLimited();
-        this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+        this.inflightMap.set(dedupeKey, promise);
         promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
         return promise;
       });
@@ -238,7 +238,7 @@ export class AiGatewayService {
 
     if (dedupeKey) {
       const promise = runLimited();
-      this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+      this.inflightMap.set(dedupeKey, promise);
       promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
       return promise;
     }
@@ -362,7 +362,7 @@ export class AiGatewayService {
     if (dedupeKey && cacheOpts) {
       return throughCache(cacheOpts, async () => {
         const promise = runLimited();
-        this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+        this.inflightMap.set(dedupeKey, promise);
         promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
         return promise;
       });
@@ -370,7 +370,7 @@ export class AiGatewayService {
 
     if (dedupeKey) {
       const promise = runLimited();
-      this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+      this.inflightMap.set(dedupeKey, promise);
       promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
       return promise;
     }

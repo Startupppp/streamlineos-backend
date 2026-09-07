@@ -24,10 +24,9 @@ import { AccessService } from "../../access/access.service";
 import { logger } from "../../../common/logger/logger.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import {
-  DEFAULT_PAYROLL_TOGGLES,
+  normalizePayrollToggles,
+  toPayrollPolicyConfig,
   type PayrollApprovalStageDef,
-  type PayrollPolicyConfig,
-  type PayrollToggles,
 } from "../payroll.types";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -76,12 +75,8 @@ export class ApprovalsService {
       );
     }
 
-    const rawToggles = run.policyVersion?.toggles;
-    const toggles: PayrollToggles = rawToggles && typeof rawToggles === "object"
-      ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
-      : { ...DEFAULT_PAYROLL_TOGGLES };
-    const rawConfig = run.policyVersion?.config;
-    const policyConfig: PayrollPolicyConfig | null = rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : null;
+    const toggles = normalizePayrollToggles(run.policyVersion?.toggles);
+    const policyConfig = toPayrollPolicyConfig(run.policyVersion?.config);
     const approvalWorkflow = toggles.approvalWorkflow !== false;
 
     if (!approvalWorkflow) {

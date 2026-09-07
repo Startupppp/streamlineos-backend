@@ -55,11 +55,11 @@ export class CategorizeSuggestService {
 
     const total = rows.reduce((acc, r) => acc + Number(r.cnt ?? 0), 0);
 
-    if (total < MIN_SAMPLES || rows.length === 0) {
+    const [top] = rows;
+    if (total < MIN_SAMPLES || !top) {
       return { categoryId: null, categoryName: null, confidence: 0, basis: "none" };
     }
 
-    const top = rows[0]!;
     const topCount = Number(top.cnt ?? 0);
     const confidence = topCount / total;
 

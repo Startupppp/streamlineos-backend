@@ -1,7 +1,4 @@
 { "extends": "./tsconfig.json", "include": [], "files": [
   "src/@types/express.d.ts",
-  "src/modules/accounting/core/accounting-ledger.service.ts",
-  "src/modules/accounting/core/accounting-payables-query.service.ts",
-  "src/modules/accounting/posting/finance-posting-accounts.service.ts",
-  "src/modules/accounting/settings/accounting-settings.service.ts"
+  "src/modules/finance/banking/transfers.service.ts"
 ] }

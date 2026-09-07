@@ -66,12 +66,6 @@ interface TextOptions {
   temperature?: number;
 }
 
-interface JsonOptions {
-  model?: ModelTier;
-  system: string;
-  user: string;
-}
-
 interface ModelSpec {
   temperature: number;
   timeoutMs: number;
@@ -268,21 +262,6 @@ export class LlmService {
       this.specFor(opts.model, { temperature: opts.temperature ?? 0.3 }),
     );
     return typeof result.content === "string" ? result.content : JSON.stringify(result.content);
-  }
-
-  async invokeJson<T>(opts: JsonOptions): Promise<T> {
-    const { result } = await this.attempt(
-      opts.model,
-      (model) =>
-        model.invoke([
-          { role: "system", content: `${opts.system}\n\nRespond with valid JSON only.` },
-          { role: "user", content: opts.user },
-        ]),
-      this.specFor(opts.model),
-    );
-    const text = typeof result.content === "string" ? result.content : "";
-    const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-    return JSON.parse(cleaned) as T;
   }
 
   async invokeTextWithUsage(

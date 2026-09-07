@@ -32,7 +32,8 @@ import {
   loadRunEmployeePayees,
 } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import type { CalculationSnapshot, PayrollToggles } from "../payroll.types";
+import { normalizePayrollToggles } from "../payroll.types";
+import type { CalculationSnapshot } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
 import { PAYROLL_READ_CAP } from "../lib/query-bounds";
 
@@ -80,9 +81,7 @@ export class PayslipBulkPublisherService {
       throw new BadRequestException(`Cannot publish payslips for run in status ${run.status} — run must be PAID`);
     }
 
-    const storedToggles = run.policyVersion?.toggles;
-    const toggles: Partial<PayrollToggles> =
-      storedToggles && typeof storedToggles === "object" ? (storedToggles as Partial<PayrollToggles>) : {};
+    const toggles = normalizePayrollToggles(run.policyVersion?.toggles);
     const emailPayslips = toggles.emailPayslips === true;
 
     const [defaultTemplate, org] = await Promise.all([

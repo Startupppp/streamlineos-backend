@@ -18,12 +18,12 @@ export const unifiedInboxQuerySchema = z
       .optional()
       .transform((v) =>
         v
-          ? (v
+          ? v
               .split(",")
               .map((k) => k.trim())
               .filter((k): k is InboxKind =>
-                INBOX_KINDS.includes(k as InboxKind),
-              ) as InboxKind[])
+                INBOX_KINDS.some((kind) => kind === k),
+              )
           : undefined,
       ),
     unreadOnly: z
@@ -127,6 +127,10 @@ export function encodeInboxCursor(state: InboxCursorState): string {
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function decodeInboxCursor(
   cursor: string | undefined | null,
 ): InboxCursorState {
@@ -134,18 +138,12 @@ export function decodeInboxCursor(
   try {
     const raw = Buffer.from(cursor, "base64url").toString("utf8");
     const parsed: unknown = JSON.parse(raw);
-    if (
-      parsed === null ||
-      typeof parsed !== "object" ||
-      Array.isArray(parsed)
-    )
-      return EMPTY_CURSOR;
-    const obj = parsed as Record<string, unknown>;
+    if (!isPlainRecord(parsed)) return EMPTY_CURSOR;
     return {
-      n: typeof obj["n"] === "number" ? obj["n"] : null,
-      b: typeof obj["b"] === "number" ? obj["b"] : null,
-      m: typeof obj["m"] === "string" ? obj["m"] : null,
-      a: typeof obj["a"] === "number" ? obj["a"] : null,
+      n: typeof parsed["n"] === "number" ? parsed["n"] : null,
+      b: typeof parsed["b"] === "number" ? parsed["b"] : null,
+      m: typeof parsed["m"] === "string" ? parsed["m"] : null,
+      a: typeof parsed["a"] === "number" ? parsed["a"] : null,
     };
   } catch {
     return EMPTY_CURSOR;

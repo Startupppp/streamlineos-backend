@@ -1,13 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { CacheService } from "../../../../common/cache/cache.service";
-import type { AiInvokeResult } from "./ai-gateway.types";
+import type { AiInvokeFailure, AiInvokeResult } from "./ai-gateway.types";
 
 const AI_RESPONSE_NAMESPACE = "ai:responses:v1";
 const CACHE_TTL_SECONDS = 3_600;
 
 class UncacheableAiFailure extends Error {
-  constructor(readonly outcome: AiInvokeResult<unknown>) {
+  constructor(readonly outcome: AiInvokeFailure) {
     super("ai invoke failed");
   }
 }
@@ -67,8 +67,7 @@ export class AiResponseCacheService {
         CACHE_TTL_SECONDS,
       );
     } catch (error) {
-      if (error instanceof UncacheableAiFailure)
-        return error.outcome as AiInvokeResult<T>;
+      if (error instanceof UncacheableAiFailure) return error.outcome;
       throw error;
     }
   }

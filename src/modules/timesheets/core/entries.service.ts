@@ -19,6 +19,7 @@ import { EntriesReadService } from "./entries-read.service";
 import { EntriesPeriodService } from "./entries-period.service";
 import { roundHours } from "./lib/rounding";
 import { formatDateOnly } from "./lib/period.helpers";
+import { parseStoredRequiredFields } from "./dto/settings.schemas";
 import type {
   CreateEntryInput,
   UpdateEntryInput,
@@ -104,8 +105,7 @@ export class EntriesService {
       }
     }
 
-    const requiredFields =
-      (settings?.requiredFields as string[] | null) ?? [];
+    const requiredFields = parseStoredRequiredFields(settings?.requiredFields);
     if (
       requiredFields.includes("project") &&
       !input.projectId &&

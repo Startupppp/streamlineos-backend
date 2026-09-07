@@ -11,7 +11,7 @@ import {
   payrollPolicies,
 } from "../../../db/schema";
 import { buildRunChecklist } from "./lib/checklist";
-import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
+import { normalizePayrollToggles, toPayrollPolicyConfig } from "../payroll.types";
 import type { PayrollToggles, PayrollPolicyConfig } from "../payroll.types";
 import { getStatutoryPack } from "./lib/statutory-packs";
 import type { CommandCenterQuery } from "./dto/runs.schemas";
@@ -192,13 +192,9 @@ export class CommandCenterService {
       .limit(1);
 
     const rawToggles = version[0]?.toggles;
-    const rawConfig = version[0]?.config;
     return {
-      toggles:
-        rawToggles && typeof rawToggles === "object"
-          ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
-          : null,
-      config: rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : null,
+      toggles: rawToggles && typeof rawToggles === "object" ? normalizePayrollToggles(rawToggles) : null,
+      config: toPayrollPolicyConfig(version[0]?.config),
     };
   }
 

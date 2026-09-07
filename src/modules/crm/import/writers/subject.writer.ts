@@ -107,9 +107,9 @@ export const SUBJECT_WRITER: EntityWriter = {
         .update(subjects)
         .set({
           title: String(before.title ?? ""),
-          reference: (before.reference as string | null) ?? null,
-          status: (before.status as string | null) ?? null,
-          customFields: (before.customFields as Record<string, unknown> | null) ?? null,
+          reference: stringOrNull(before.reference),
+          status: stringOrNull(before.status),
+          customFields: recordOrNull(before.customFields),
         })
         .where(
           and(

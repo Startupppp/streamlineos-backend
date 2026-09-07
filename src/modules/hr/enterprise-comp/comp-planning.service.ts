@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
+import { Inject, Injectable, InternalServerErrorException, NotFoundException, BadRequestException } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
@@ -40,7 +40,8 @@ export class CompPlanningService {
 
   async createCycle(orgId: string, actorId: string, input: CreateCompCycleInput) {
     const [created] = await this.db.insert(hrCompCycles).values({ orgId, ...input, meritMatrix: input.meritMatrix ?? null, createdBy: actorId }).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_comp_cycles", entityId: String(created!.id), action: "created", after: created });
+    if (!created) throw new InternalServerErrorException("Failed to create compensation cycle");
+    await this.audit.log({ orgId, actorId, entityType: "hr_comp_cycles", entityId: String(created.id), action: "created", after: created });
     return created;
   }
 
@@ -75,7 +76,7 @@ export class CompPlanningService {
   async updateCycle(orgId: string, cycleId: number, actorId: string, input: UpdateCompCycleInput) {
     const [updated] = await this.db
       .update(hrCompCycles)
-      .set({ ...input, meritMatrix: (input.meritMatrix ?? undefined) as never, updatedAt: new Date() })
+      .set({ ...input, updatedAt: new Date() })
       .where(and(eq(hrCompCycles.id, cycleId), eq(hrCompCycles.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Compensation cycle not found");
@@ -101,7 +102,8 @@ export class CompPlanningService {
       managerNote: input.managerNote ?? null,
     }).returning();
 
-    await this.audit.log({ orgId, actorId, entityType: "hr_comp_recommendations", entityId: String(created!.id), action: "created", after: created });
+    if (!created) throw new InternalServerErrorException("Failed to create compensation recommendation");
+    await this.audit.log({ orgId, actorId, entityType: "hr_comp_recommendations", entityId: String(created.id), action: "created", after: created });
     return created;
   }
 
@@ -143,15 +145,15 @@ export class CompPlanningService {
   }
 
   async updateRecommendation(orgId: string, recId: number, actorId: string, input: UpdateRecommendationInput) {
-    const setData: Record<string, unknown> = { updatedAt: new Date() };
-    if (input.recommendedIncreaseCents !== undefined) setData["recommendedIncreaseCents"] = input.recommendedIncreaseCents;
-    if (input.recommendedPct !== undefined) setData["recommendedPct"] = String(input.recommendedPct);
-    if (input.rating !== undefined) setData["rating"] = input.rating;
-    if (input.managerNote !== undefined) setData["managerNote"] = input.managerNote;
-
     const [updated] = await this.db
       .update(hrCompRecommendations)
-      .set(setData as never)
+      .set({
+        updatedAt: new Date(),
+        ...(input.recommendedIncreaseCents !== undefined && { recommendedIncreaseCents: input.recommendedIncreaseCents }),
+        ...(input.recommendedPct !== undefined && { recommendedPct: String(input.recommendedPct) }),
+        ...(input.rating !== undefined && { rating: input.rating }),
+        ...(input.managerNote !== undefined && { managerNote: input.managerNote }),
+      })
       .where(and(eq(hrCompRecommendations.id, recId), eq(hrCompRecommendations.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Recommendation not found");
@@ -241,7 +243,8 @@ export class CompPlanningService {
   async createBudgetPool(orgId: string, actorId: string, input: CreateBudgetPoolInput) {
     await this.assertCycleInOrg(orgId, input.cycleId);
     const [created] = await this.db.insert(hrCompBudgetPools).values({ orgId, ...input }).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_comp_budget_pools", entityId: String(created!.id), action: "created", after: created });
+    if (!created) throw new InternalServerErrorException("Failed to create budget pool");
+    await this.audit.log({ orgId, actorId, entityType: "hr_comp_budget_pools", entityId: String(created.id), action: "created", after: created });
     return created;
   }
 }

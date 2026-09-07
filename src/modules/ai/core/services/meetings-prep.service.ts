@@ -307,7 +307,7 @@ export class MeetingsPrepService {
     const rawPayload = confirmed.payload;
     const eventId = Number(rawPayload["eventId"]);
     const followUpBody = String(rawPayload["followUpBody"] ?? "");
-    const channel = String(rawPayload["channel"] ?? "none") as "calendar" | "none";
+    const channel = String(rawPayload["channel"] ?? "none") === "calendar" ? "calendar" : "none";
 
     const event = await runInTenantTransaction(
       this.db,

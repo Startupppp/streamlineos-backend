@@ -19,6 +19,7 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { PeriodsReadService } from "./periods-read.service";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesService } from "./entries.service";
+import { parseStoredRequiredFields } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 @Injectable()
@@ -40,7 +41,7 @@ export class PeriodsSubmitService {
     }
 
     const settings = await this.reader.getSettings(u.orgId);
-    const requiredFields = (settings?.requiredFields as string[] | null) ?? [];
+    const requiredFields = parseStoredRequiredFields(settings?.requiredFields);
 
     const periodEntries = await this.db.query.timesheets.findMany({
       where: and(

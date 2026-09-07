@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, InternalServerErrorException, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { createHash, randomUUID } from "crypto";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -160,7 +160,8 @@ export class PayrollCommandReceiptsService {
           expiresAt: receiptExpiresAt,
         })
         .returning({ id: payrollCommandReceipts.id });
-      return { kind: "fresh", receiptId: row!.id, correlationId };
+      if (!row) throw new InternalServerErrorException("Failed to create payroll command receipt");
+      return { kind: "fresh", receiptId: row.id, correlationId };
     } catch (err) {
       if (!isUniqueViolation(err)) {
         logger.error("command-receipts.begin: receipt insert failed unexpectedly", {
@@ -188,7 +189,7 @@ export class PayrollCommandReceiptsService {
       .update(payrollCommandReceipts)
       .set({
         status: "SUCCEEDED",
-        response: response as object,
+        response,
         finishedAt: new Date(),
         errorMessage: null,
       })

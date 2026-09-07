@@ -3,12 +3,12 @@ import {
   optionalPageNumberField,
   optionalPageSizeField,
 } from "../../../../common/pagination/list-query.schema";
-import { payrollWorkerTypeEnum } from "../../../../db/schema";
+import { payrollCalendarEventTypeEnum, payrollWorkerTypeEnum } from "../../../../db/schema";
 
 const workerTypeFilterSchema = z.enum(payrollWorkerTypeEnum.enumValues);
 
 export const createCalendarEventSchema = z.object({
-  type: z.string(),
+  type: z.enum(payrollCalendarEventTypeEnum.enumValues),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD"),
   title: z.string().min(1).max(200),
   month: z.string().optional(),

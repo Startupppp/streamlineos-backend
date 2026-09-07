@@ -264,7 +264,7 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
       .map((r) => {
         const activeTickets = Number(r.activeTickets);
         const totalPoints = Number(r.totalPoints ?? 0);
-        const hoursThisWeek = hoursMap.get(r.assigneeId!) ?? 0;
+        const hoursThisWeek = hoursMap.get(r.assigneeId) ?? 0;
 
         let recommendation: WorkloadAnalysis["recommendation"] = "AVAILABLE";
         if (hoursThisWeek > 40 || activeTickets > 10) {
@@ -276,7 +276,7 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
         }
 
         return {
-          userId: r.assigneeId!,
+          userId: r.assigneeId,
           userName: r.userName ?? "Unknown",
           activeTickets,
           totalPoints,

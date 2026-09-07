@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [],
+  "files": [
+    "src/@types/express.d.ts",
+    "src/modules/hr/workflows/hr-workflow-engine.service.ts"
+  ]
+}

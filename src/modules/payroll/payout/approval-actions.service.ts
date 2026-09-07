@@ -22,7 +22,7 @@ import {
 import { AccessService } from "../../access/access.service";
 import { logger } from "../../../common/logger/logger.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
-import { DEFAULT_PAYROLL_TOGGLES, type PayrollToggles } from "../payroll.types";
+import { normalizePayrollToggles } from "../payroll.types";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PayrollApproverResolverService } from "./payroll-approver-resolver.service";
@@ -143,14 +143,7 @@ export class ApprovalActionsService {
     const isLastStage = allStages.every(
       (s) => s.id === approvalId || s.status === "APPROVED",
     );
-    const rawRunToggles = run.policyVersion?.toggles;
-    const runToggles: PayrollToggles =
-      rawRunToggles && typeof rawRunToggles === "object"
-        ? {
-            ...DEFAULT_PAYROLL_TOGGLES,
-            ...(rawRunToggles as Partial<PayrollToggles>),
-          }
-        : { ...DEFAULT_PAYROLL_TOGGLES };
+    const runToggles = normalizePayrollToggles(run.policyVersion?.toggles);
     const lockAfterApproval = runToggles.lockAfterApproval !== false;
 
     const nextStage = !isLastStage

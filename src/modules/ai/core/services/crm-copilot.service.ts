@@ -185,7 +185,8 @@ ${truncate(activitiesText, 1500)}`;
           .from(deals)
           .where(and(eq(deals.id, input.entityId), eq(deals.orgId, orgId), isNull(deals.deletedAt)));
         if (!deal) throw new NotFoundException("Deal not found");
-        return { entityName: deal.contactPerson ?? deal.name, company: null as string | null, contextLine: `Deal: ${deal.name}, Stage: ${deal.stage}, Value: ${deal.value}` };
+        const company: string | null = null;
+        return { entityName: deal.contactPerson ?? deal.name, company, contextLine: `Deal: ${deal.name}, Stage: ${deal.stage}, Value: ${deal.value}` };
       }
     }, { orgId });
 
@@ -262,7 +263,8 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
           .limit(10),
       ]);
 
-      if (!deal) return { deal: null, citations: [] as CitationItem[] };
+      const emptyCitations: CitationItem[] = [];
+      if (!deal) return { deal: null, citations: emptyCitations };
 
       const built: CitationItem[] = [
         { id: `deal-stage-${dealId}`, title: "Deal Stage & Value", snippet: `Stage: ${deal.stage}, Value: ₹${Number(deal.value ?? 0).toLocaleString("en-IN")}` },

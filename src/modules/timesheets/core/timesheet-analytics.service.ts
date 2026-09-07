@@ -176,8 +176,9 @@ export class TimesheetAnalyticsService {
       workedDates.set(r.userId, set);
     }
 
-    const hoursByUser = new Map(hoursRows.filter((r) => r.userId !== null).map((r) => [r.userId as string, Number(r.actualHours)]));
-    const periodsByUser = new Map(periodRows.filter((r) => r.userId !== null).map((r) => [r.userId as string, r]));
+    const hasUserId = <T extends { userId: string | null }>(r: T): r is T & { userId: string } => r.userId !== null;
+    const hoursByUser = new Map(hoursRows.filter(hasUserId).map((r) => [r.userId, Number(r.actualHours)]));
+    const periodsByUser = new Map(periodRows.filter(hasUserId).map((r) => [r.userId, r]));
     const userIds = [...new Set([...hoursByUser.keys(), ...periodsByUser.keys()])];
 
     let userInfo = new Map<string, { name: string | null; email: string }>();

@@ -303,8 +303,8 @@ function reindex(
   const position = survivors.findIndex((candidate) => candidate.draft === survivor);
   if (position < 0) return;
 
-  survivors[position]!.fingerprint = fingerprintOf(survivor.rowNumber, survivor.values);
-  withinFile.add(position, survivors[position]!.fingerprint);
+  survivors[position].fingerprint = fingerprintOf(survivor.rowNumber, survivor.values);
+  withinFile.add(position, survivors[position].fingerprint);
 }
 
 /**

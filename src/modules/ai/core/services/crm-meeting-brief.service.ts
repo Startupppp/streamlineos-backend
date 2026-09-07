@@ -53,8 +53,9 @@ export class CrmMeetingBriefService {
       }
     }, { orgId });
 
-    const actionItemsText = (input.actionItems ?? []).length > 0
-      ? input.actionItems!.map((item, i) => `${i + 1}. ${item}`).join("\n")
+    const actionItems = input.actionItems ?? [];
+    const actionItemsText = actionItems.length > 0
+      ? actionItems.map((item, i) => `${i + 1}. ${item}`).join("\n")
       : "No specific action items recorded.";
 
     const userPrompt = `Draft a professional follow-up email for this meeting.

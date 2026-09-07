@@ -155,8 +155,9 @@ export class InsightsFindersService {
 
     const findings: AnomalyFinding[] = [];
     for (let i = 0; i < rows.length - 1; i++) {
-      const a = rows[i]!;
-      const b = rows[i + 1]!;
+      const a = rows[i];
+      const b = rows[i + 1];
+      if (!a || !b) continue;
       if (a.vendorId !== null && a.vendorId === b.vendorId && Number(a.total) === Number(b.total)) {
         const daysApart =
           Math.abs(new Date(b.billDate).getTime() - new Date(a.billDate).getTime()) /

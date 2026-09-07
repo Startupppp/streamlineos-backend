@@ -119,7 +119,7 @@ export class HrCopilotTools {
               ${departmentId !== undefined ? sql`AND department_id = ${departmentId}` : sql``}
           `);
 
-          const row = rows[0] as Record<string, string> | undefined;
+          const row = rows[0];
           return {
             total: Number(row?.total ?? 0),
             active: Number(row?.active ?? 0),
@@ -151,7 +151,7 @@ export class HrCopilotTools {
               AND deleted_at IS NULL
           `);
 
-          const row = rows[0] as Record<string, string> | undefined;
+          const row = rows[0];
           const exits = Number(row?.exits_12mo ?? 0);
           const total = Number(row?.total_headcount ?? 0);
           const rate = total > 0 ? ((exits / total) * 100).toFixed(1) : "0.0";
@@ -195,7 +195,7 @@ export class HrCopilotTools {
             LIMIT 1
           `);
 
-          const emp = empRows[0] as Record<string, string> | undefined;
+          const emp = empRows[0];
           const empName = emp ? `${emp.first_name} ${emp.last_name}` : employeeId;
 
           const result = await this.gateway.invokeText({
@@ -267,7 +267,7 @@ export class HrCopilotTools {
             LIMIT 1
           `);
 
-          const emp = empRows[0] as Record<string, string> | undefined;
+          const emp = empRows[0];
           const empName = emp ? `${emp.first_name} ${emp.last_name}` : employeeId;
           const currentTitle = emp?.designation ?? "current role";
 
@@ -345,7 +345,7 @@ export class HrCopilotTools {
             ORDER BY week_start ASC
           `);
 
-          const weeks = rows as Array<Record<string, unknown>>;
+          const weeks = rows;
 
           if (weeks.length === 0) {
             return {
@@ -403,7 +403,7 @@ export class HrCopilotTools {
             WHERE org_id = ${orgId}
           `);
 
-          const row = rows[0] as Record<string, string> | undefined;
+          const row = rows[0];
           return {
             currentlyOnLeave: Number(row?.currently_on_leave ?? 0),
             pendingRequests: Number(row?.pending_requests ?? 0),

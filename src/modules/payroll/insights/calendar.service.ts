@@ -7,7 +7,8 @@ import {
   payrollPolicies,
   payrollPolicyVersions,
 } from "../../../db/schema";
-import type { PayrollPolicyConfig } from "../payroll.types";
+import { toPayrollPolicyConfig } from "../payroll.types";
+import { DEFAULT_PAYROLL_POLICY_CONFIG } from "../setup/payroll-policy-defaults.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 
 type CalendarEventStatus = "upcoming" | "due" | "overdue";
@@ -200,7 +201,7 @@ export class CalendarService {
     if (rows.length === 0) return { generated: 0, month };
 
     const { policy, version } = rows[0];
-    const config = version.config as PayrollPolicyConfig;
+    const config = toPayrollPolicyConfig(version.config) ?? DEFAULT_PAYROLL_POLICY_CONFIG;
     const policyPayDay = policy.payDay;
 
     const pad = (n: number) => String(n).padStart(2, "0");

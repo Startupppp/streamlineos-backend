@@ -1,8 +1,9 @@
 { "extends": "./tsconfig.json", "include": [], "files": [
   "src/@types/express.d.ts",
-  "src/modules/party/party-merge.service.ts",
-  "src/modules/party/party-revert.service.ts",
-  "src/modules/party/dto/party-merge-snapshot.schema.ts",
-  "src/modules/party/party-identifiers.ts",
-  "src/modules/party/party-merge-plan.ts"
+  "src/modules/crm/import/connectors/connector-source.ts",
+  "src/modules/crm/import/crm-export.service.ts",
+  "src/modules/crm/import/dto/crm-import-response.schemas.ts",
+  "src/modules/crm/import/dto/crm-import.schemas.ts",
+  "src/modules/crm/import/import-entities.ts",
+  "src/modules/crm/import/import-fields.ts"
 ] }

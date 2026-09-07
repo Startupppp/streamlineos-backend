@@ -93,7 +93,7 @@ export class LockingController {
     runId: number,
     command: "run.lock" | "run.reopen" | "run.close",
     idempotencyKey: string | undefined,
-    fn: () => Promise<unknown>,
+    fn: () => Promise<Record<string, unknown>>,
     body?: unknown,
   ) {
     const key = idempotencyKey?.trim() || `${command}:${u.orgId}:${runId}`;
@@ -111,7 +111,7 @@ export class LockingController {
     }
     try {
       const result = await fn();
-      const response = { ...(result as object), correlationId: begin.correlationId };
+      const response = { ...result, correlationId: begin.correlationId };
       await this.receipts.succeed(begin.receiptId, response);
       return response;
     } catch (err) {

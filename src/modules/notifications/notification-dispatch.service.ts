@@ -102,7 +102,7 @@ export class NotificationDispatchService {
           title: chunkInput.title ?? null,
           message: chunkInput.message ?? null,
           link: chunkInput.link ?? null,
-          variables: (chunkInput.variables ?? {}) as Record<string, unknown>,
+          variables: chunkInput.variables ?? {},
           metadata: {
             ...(chunkInput.metadata ?? {}),
             ...(chunkInput.emailHtml ? { emailHtml: chunkInput.emailHtml } : {}),

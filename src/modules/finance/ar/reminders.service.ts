@@ -161,8 +161,9 @@ export class RemindersService {
       LIMIT ${CANDIDATE_CAP}
     `);
 
-    const nextCursor = rawCandidates.length === CANDIDATE_CAP
-      ? Number(rawCandidates[rawCandidates.length - 1]!["invoice_id"])
+    const lastCandidate = rawCandidates.at(-1);
+    const nextCursor = rawCandidates.length === CANDIDATE_CAP && lastCandidate
+      ? Number(lastCandidate["invoice_id"])
       : null;
 
     if (rawCandidates.length === 0) return { sent: 0, nextCursor: null };
