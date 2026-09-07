@@ -4,14 +4,13 @@ import { wireDate } from "../../../../common/openapi/wire-types";
 const calibrationEntrySchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
-  cycleId: z.number().int().nullable(),
-  userId: z.string(),
-  userMembershipId: z.number().int().nullable(),
-  performanceScore: z.string().nullable(),
-  potentialScore: z.string().nullable(),
-  box: z.string().nullable(),
-  note: z.string().nullable(),
+  cycleId: z.number().int(),
+  employeeId: z.string(),
+  employeeMembershipId: z.number().int().nullable(),
+  preRating: z.string().nullable(),
+  postRating: z.string().nullable(),
   calibratedBy: z.string().nullable(),
+  note: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
@@ -23,9 +22,9 @@ export const upsertCalibrationEntryResponseSchema = calibrationEntrySchema;
 export const getNineBoxResponseSchema = z.array(
   z.object({
     employeeId: z.string(),
-    performance: z.string().nullable(),
-    potential: z.string().nullable(),
-    box: z.string().nullable(),
+    performance: z.number(),
+    potential: z.number(),
+    box: z.string(),
     note: z.string().nullable(),
   }),
 );
