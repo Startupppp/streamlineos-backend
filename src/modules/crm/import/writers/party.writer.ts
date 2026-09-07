@@ -3,7 +3,7 @@ import { businessParties } from "../../../../db/schema";
 import { claimIdentifiers, identifierClaimsOfColumns } from "../../../party/party-identifiers";
 import { softDeletePartyWithMirror, updatePartyWithMirror } from "../../../party/party-legacy-writer";
 import { isPartyType } from "../import-entities";
-import type { EntityWriter } from "./entity-writer";
+import { recordOrNull, rowToRecord, stringOrNull, type EntityWriter } from "./entity-writer";
 
 /**
  * Landing a row as a party.
@@ -102,7 +102,7 @@ export const PARTY_WRITER: EntityWriter = {
         )
         .limit(1);
 
-      return (party as Record<string, unknown> | undefined) ?? null;
+      return party ? rowToRecord(party) : null;
     },
 
     async fillGaps(tx, context, recordId, before, row) {
@@ -137,7 +137,7 @@ export const PARTY_WRITER: EntityWriter = {
       await updatePartyWithMirror(tx, context.organizationId, recordId, {
         ...patch,
         customFields: {
-          ...((before.customFields as Record<string, unknown> | null) ?? {}),
+          ...(recordOrNull(before.customFields) ?? {}),
           ...(row.customFields ?? {}),
         },
       });
@@ -146,15 +146,15 @@ export const PARTY_WRITER: EntityWriter = {
     async restore(tx, context, recordId, before) {
       await updatePartyWithMirror(tx, context.organizationId, recordId, {
         name: String(before.name ?? ""),
-        legalName: (before.legalName as string | null) ?? null,
-        displayName: (before.displayName as string | null) ?? null,
-        email: (before.email as string | null) ?? null,
-        phone: (before.phone as string | null) ?? null,
-        website: (before.website as string | null) ?? null,
-        taxNumber: (before.taxNumber as string | null) ?? null,
-        notes: (before.notes as string | null) ?? null,
-        customFields: (before.customFields as Record<string, unknown> | null) ?? null,
-        acquisitionSource: typeof before.acquisitionSource === "string" ? before.acquisitionSource : null,
+        legalName: stringOrNull(before.legalName),
+        displayName: stringOrNull(before.displayName),
+        email: stringOrNull(before.email),
+        phone: stringOrNull(before.phone),
+        website: stringOrNull(before.website),
+        taxNumber: stringOrNull(before.taxNumber),
+        notes: stringOrNull(before.notes),
+        customFields: recordOrNull(before.customFields),
+        acquisitionSource: stringOrNull(before.acquisitionSource),
         ...(isPartyType(before.partyType) ? { partyType: before.partyType } : {}),
         ...(typeof before.status === "string" ? { status: before.status } : {}),
       });

@@ -42,7 +42,7 @@ export interface EnrichedLineItem {
 export interface LineItemFilters {
   department?: string;
   costCenter?: string;
-  workerType?: string;
+  workerType?: (typeof payrollRunEmployees.$inferSelect)["workerType"];
 }
 
 export async function findRunForMonth(
@@ -80,12 +80,7 @@ export async function getRunEmployeeIds(
     eq(payrollRunEmployees.runId, runId),
   ];
   if (filters.workerType)
-    conditions.push(
-      eq(
-        payrollRunEmployees.workerType,
-        filters.workerType as (typeof payrollRunEmployees.$inferSelect)["workerType"],
-      ),
-    );
+    conditions.push(eq(payrollRunEmployees.workerType, filters.workerType));
   if (filters.department) conditions.push(eq(orgUnits.name, filters.department));
   if (filters.costCenter) conditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
   if (afterId !== null) conditions.push(gt(payrollRunEmployees.id, afterId));
@@ -118,12 +113,7 @@ export async function getLineItemsForRun(
     conditions.push(inArray(payrollLineItems.runEmployeeId, runEmployeeIds));
   } else if (!runEmployeeIds) {
     if (filters?.workerType)
-      conditions.push(
-        eq(
-          payrollRunEmployees.workerType,
-          filters.workerType as (typeof payrollRunEmployees.$inferSelect)["workerType"],
-        ),
-      );
+      conditions.push(eq(payrollRunEmployees.workerType, filters.workerType));
     if (filters?.department)
       conditions.push(eq(orgUnits.name, filters.department));
     if (filters?.costCenter)

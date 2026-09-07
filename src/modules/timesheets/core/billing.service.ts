@@ -12,6 +12,7 @@ import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { FxService } from "./fx.service";
 import { convertAmounts, type ConvertedTotals } from "./lib/fx-convert";
+import { billingExportSnapshotSchema } from "./dto/billing.schemas";
 import type {
   UninvoicedQuery,
   ExportBillingInput,
@@ -167,7 +168,7 @@ export class BillingService {
     const needsConversion =
       mixed ||
       (currencyTotals.length === 1 &&
-        currencyTotals[0]!.currency !== defaultCurrency);
+        currencyTotals[0].currency !== defaultCurrency);
 
     let converted: ConvertedTotals | null = null;
     if (needsConversion) {
@@ -318,8 +319,8 @@ export class BillingService {
 
     if (!row) return null;
 
-    const snapshotRows =
-      (row.snapshot as { computedAmount?: number }[] | null) ?? [];
+    const parsedSnapshot = billingExportSnapshotSchema.safeParse(row.snapshot);
+    const snapshotRows = parsedSnapshot.success ? parsedSnapshot.data : [];
     const totalAmount = round2(
       snapshotRows.reduce((sum, r) => sum + (r.computedAmount ?? 0), 0),
     );

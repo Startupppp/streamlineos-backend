@@ -16,7 +16,7 @@ import {
   moveIdentifiers,
   type IdentifierClaim,
 } from "./party-identifiers";
-import { chooseSurvivor, orderPair, planMerge } from "./party-merge-plan";
+import { chooseSurvivor, orderPair, planMerge, type FieldConflict, type MergeableField } from "./party-merge-plan";
 import { refreshEmployerColumns, repointEmployerParties } from "./party-legacy-employer";
 import {
   refreshPartyMirrors,
@@ -25,12 +25,13 @@ import {
 } from "./party-legacy-writer";
 import { legacyIdsOf, repointLegacyIds } from "./party-merge-legacy-ids";
 import type { MergeSnapshot } from "./dto/party-merge-snapshot.schema";
+import type { PartyRow } from "./party-mirror-fields";
 
 export interface MergeOutcome {
   partyMergeId: string;
   survivorPartyId: string;
   mergedPartyId: string;
-  conflicts: Record<string, { kept: unknown; discarded: unknown }>;
+  conflicts: Partial<Record<MergeableField, FieldConflict>>;
 }
 
 @Injectable()
@@ -56,18 +57,18 @@ export class PartyMergeService {
   }
 
   private static fingerprint(
-    row: Record<string, unknown>,
+    row: PartyRow,
     identifiers: readonly IdentifierClaim[],
   ): PartyFingerprint {
     return {
-      partyId: String(row.partyId),
-      name: String(row.name ?? ""),
-      legalName: (row.legalName ?? null) as string | null,
+      partyId: row.partyId,
+      name: row.name,
+      legalName: row.legalName,
       identifiers,
-      email: (row.email ?? null) as string | null,
-      phone: (row.phone ?? null) as string | null,
-      taxNumber: (row.taxNumber ?? null) as string | null,
-      website: (row.website ?? null) as string | null,
+      email: row.email,
+      phone: row.phone,
+      taxNumber: row.taxNumber,
+      website: row.website,
     };
   }
 
@@ -233,7 +234,7 @@ export class PartyMergeService {
         decidedByUserId: input.userId ?? null,
         confidence: assessment.score,
         signals: [...assessment.signals],
-        conflicts: plan.conflicts as Record<string, { kept: unknown; discarded: unknown }>,
+        conflicts: plan.conflicts,
         snapshot,
       })
       .returning({ partyMergeId: partyMerges.partyMergeId });
@@ -260,7 +261,7 @@ export class PartyMergeService {
       partyMergeId: record?.partyMergeId ?? "",
       survivorPartyId: survivorId,
       mergedPartyId: mergedId,
-      conflicts: plan.conflicts as Record<string, { kept: unknown; discarded: unknown }>,
+      conflicts: plan.conflicts,
     };
   }
 }

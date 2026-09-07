@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, getTableColumns, gt, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, gte, ilike, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines, users } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -23,6 +23,14 @@ import {
 
 function escapeLike(value: string): string {
   return value.replaceAll("%", "\\%").replaceAll("_", "\\_");
+}
+
+function afterCursor(sortGt: SQL, sortEq: SQL, idGt: SQL): SQL {
+  const tie = and(sortEq, idGt);
+  if (!tie) throw new Error("and() of two defined SQL conditions returned undefined");
+  const combined = or(sortGt, tie);
+  if (!combined) throw new Error("or() of two defined SQL conditions returned undefined");
+  return combined;
 }
 
 @Injectable()
@@ -50,10 +58,11 @@ export class AccountingLedgerService {
     if (pos) {
       const cursorId = Number(pos.id);
       conds.push(
-        or(
+        afterCursor(
           gt(ledgerAccounts.code, pos.sortValue),
-          and(eq(ledgerAccounts.code, pos.sortValue), gt(ledgerAccounts.id, cursorId))!,
-        )!,
+          eq(ledgerAccounts.code, pos.sortValue),
+          gt(ledgerAccounts.id, cursorId),
+        ),
       );
     }
 
@@ -112,10 +121,11 @@ export class AccountingLedgerService {
     if (pos) {
       const cursorId = Number(pos.id);
       conds.push(
-        or(
+        afterCursor(
           lt(journalEntries.entryDate, pos.sortValue),
-          and(eq(journalEntries.entryDate, pos.sortValue), gt(journalEntries.id, cursorId))!,
-        )!,
+          eq(journalEntries.entryDate, pos.sortValue),
+          gt(journalEntries.id, cursorId),
+        ),
       );
     }
 

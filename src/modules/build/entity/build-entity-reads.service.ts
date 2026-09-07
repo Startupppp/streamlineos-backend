@@ -37,7 +37,7 @@ const READ_KEY: Record<string, string> = {
 const TICKET_TYPES = ["ticket", "task"] as const;
 
 export function isTicketType(type: string): boolean {
-  return (TICKET_TYPES as readonly string[]).includes(type);
+  return TICKET_TYPES.some((ticketType) => ticketType === type);
 }
 
 export function numericId(reference: EntityReference): number | null {

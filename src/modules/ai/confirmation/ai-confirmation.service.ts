@@ -216,7 +216,7 @@ export class AiConfirmationService {
       return {
         proposalId: row.id,
         action: row.action,
-        payload: (row.payload ?? {}) as Record<string, unknown>,
+        payload: row.payload ?? {},
       };
     }, { orgId: input.actor.orgId });
   }
@@ -284,7 +284,7 @@ export class AiConfirmationService {
 
     const row = rows[0];
     if (!row || row.status !== "EXECUTED") return null;
-    return (row.result ?? null) as Record<string, unknown> | null;
+    return row.result ?? null;
   }
 
   async cancel(proposalId: number, actor: { orgId: string; userId: string }): Promise<void> {

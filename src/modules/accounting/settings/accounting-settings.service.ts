@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -38,7 +38,8 @@ export class AccountingSettingsService {
       .values({ orgId, baseCurrency: "INR", fiscalYearStartMonth: 4, accountingBasis: "ACCRUAL" })
       .returning();
 
-    return created!;
+    if (!created) throw new Error("Insert into accounting_settings returned no row");
+    return created;
   }
 
   async getSettings(orgId: string) {
@@ -85,7 +86,9 @@ export class AccountingSettingsService {
       after: { ...input },
     });
 
-    return updated[0]!;
+    const [row] = updated;
+    if (!row) throw new NotFoundException("Accounting settings not found");
+    return row;
   }
 
   async getSetupStatus(orgId: string) {
@@ -163,10 +166,9 @@ export class AccountingSettingsService {
       .limit(100);
 
     const byType = new Map(rows.map((r) => [r.entityType, r]));
-    const all = Object.keys(SEQUENCE_DEFAULTS).map((entityType) => {
+    const all = Object.entries(SEQUENCE_DEFAULTS).map(([entityType, defaults]) => {
       const existing = byType.get(entityType);
       if (existing) return existing;
-      const defaults = SEQUENCE_DEFAULTS[entityType]!;
       return {
         id: null,
         orgId,
@@ -201,7 +203,8 @@ export class AccountingSettingsService {
       after: { terms: input.terms },
     });
 
-    return updated!;
+    if (!updated) throw new NotFoundException("Accounting settings not found");
+    return updated;
   }
 
   async updateSequence(u: CurrentUserContext, entityType: SequenceEntityType, input: UpdateSequenceInput) {
@@ -219,7 +222,8 @@ export class AccountingSettingsService {
         .set({ ...input })
         .where(and(eq(accNumberSequences.orgId, u.orgId), eq(accNumberSequences.entityType, entityType)))
         .returning();
-      result = updated!;
+      if (!updated) throw new NotFoundException("Number sequence not found");
+      result = updated;
     } else {
       const defaults = SEQUENCE_DEFAULTS[entityType];
       const [created] = await this.db
@@ -232,7 +236,8 @@ export class AccountingSettingsService {
           nextNumber: input.nextNumber ?? 1,
         })
         .returning();
-      result = created!;
+      if (!created) throw new Error("Insert into acc_number_sequences returned no row");
+      result = created;
     }
 
     this.audit.log({

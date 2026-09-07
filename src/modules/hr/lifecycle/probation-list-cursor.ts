@@ -1,6 +1,15 @@
 import { BadRequestException } from "@nestjs/common";
+import { z } from "zod";
 
 const CURSOR_VERSION = 1;
+
+const probationListCursorSchema = z
+  .object({
+    v: z.literal(CURSOR_VERSION),
+    effectiveEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    probationReviewId: z.number().int().positive(),
+  })
+  .strict();
 
 export type ProbationListCursor = {
   effectiveEndDate: string;
@@ -21,26 +30,11 @@ export function encodeProbationListCursor(cursor: ProbationListCursor): string {
 export function decodeProbationListCursor(value: string): ProbationListCursor {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      (parsed as { v?: unknown }).v !== CURSOR_VERSION ||
-      typeof (parsed as { effectiveEndDate?: unknown }).effectiveEndDate !== "string" ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(
-        (parsed as { effectiveEndDate: string }).effectiveEndDate,
-      ) ||
-      typeof (parsed as { probationReviewId?: unknown }).probationReviewId !== "number" ||
-      !Number.isSafeInteger(
-        (parsed as { probationReviewId: number }).probationReviewId,
-      ) ||
-      (parsed as { probationReviewId: number }).probationReviewId <= 0
-    ) {
-      throw new Error("invalid cursor payload");
-    }
+    const cursor = probationListCursorSchema.parse(parsed);
 
     return {
-      effectiveEndDate: (parsed as { effectiveEndDate: string }).effectiveEndDate,
-      probationReviewId: (parsed as { probationReviewId: number }).probationReviewId,
+      effectiveEndDate: cursor.effectiveEndDate,
+      probationReviewId: cursor.probationReviewId,
     };
   } catch {
     throw new BadRequestException({

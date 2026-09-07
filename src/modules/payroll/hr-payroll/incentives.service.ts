@@ -25,7 +25,7 @@ import {
 type IncentiveStatus = (typeof incentiveStatusEnum.enumValues)[number];
 
 function isIncentiveStatus(value: string): value is IncentiveStatus {
-  return (incentiveStatusEnum.enumValues as readonly string[]).includes(value);
+  return incentiveStatusEnum.enumValues.some((v) => v === value);
 }
 
 @Injectable()

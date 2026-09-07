@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import {
@@ -176,7 +177,8 @@ export class HrSafetyService {
       ilike(hrSafetyIncidents.description, `%${search}%`),
       ilike(hrSafetyIncidents.incidentNumber, `%${search}%`),
       ilike(hrSafetyIncidents.location, `%${search}%`),
-    )!;
+    );
+    if (!fallback) throw new InternalServerErrorException("Failed to build safety incident search fallback");
     const rows = await this.db.execute(
       sql`SELECT app.search_hr_safety_incident_ids(${search}, ${SAFETY_SEARCH_CAP + 1}) AS id`,
     );
@@ -233,17 +235,19 @@ export class HrSafetyService {
       })
       .returning();
 
+    if (!incident) throw new InternalServerErrorException("Failed to create safety incident");
+
     await this.audit.log({
       orgId,
       actorId: userId,
       entityType: "hr_safety_incident",
-      entityId: String(incident!.id),
+      entityId: String(incident.id),
       action: "safety.incident_created",
       after: { incidentNumber, type: input.type, severity: input.severity },
       ipAddress,
     });
 
-    return incident!;
+    return incident;
   }
 
   async updateIncident(
@@ -283,6 +287,8 @@ export class HrSafetyService {
       )
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update safety incident");
+
     await this.audit.log({
       orgId,
       actorId: userId,
@@ -294,7 +300,7 @@ export class HrSafetyService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async deleteIncident(orgId: string, id: number, userId: string) {
@@ -355,7 +361,8 @@ export class HrSafetyService {
       })
       .returning();
 
-    return row!;
+    if (!row) throw new InternalServerErrorException("Failed to upsert wellness check-in");
+    return row;
   }
 
   async myCheckins(

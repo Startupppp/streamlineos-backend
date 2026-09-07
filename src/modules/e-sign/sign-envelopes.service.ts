@@ -46,6 +46,10 @@ import type { RequestActorContext } from "../../common/audit/actor-context";
 
 export type { EnvelopeValidationResult };
 
+function isSignEnvelopeStatus(value: string): value is SignEnvelopeStatus {
+  return signEnvelopeStatusEnum.enumValues.some((status) => status === value);
+}
+
 @Injectable()
 export class SignEnvelopesService {
   constructor(
@@ -169,18 +173,12 @@ export class SignEnvelopesService {
     if (!scope.viewAll && scope.membershipId != null)
       conditions.push(eq(signEnvelopes.senderMembershipId, scope.membershipId));
     if (query.status) {
-      if (
-        !(signEnvelopeStatusEnum.enumValues as readonly string[]).includes(
-          query.status,
-        )
-      ) {
+      if (!isSignEnvelopeStatus(query.status)) {
         throw new BadRequestException(
           `Invalid envelope status: ${query.status}`,
         );
       }
-      conditions.push(
-        eq(signEnvelopes.status, query.status as SignEnvelopeStatus),
-      );
+      conditions.push(eq(signEnvelopes.status, query.status));
     }
     if (query.sourceModule)
       conditions.push(eq(signEnvelopes.sourceModule, query.sourceModule));
@@ -262,7 +260,7 @@ export class SignEnvelopesService {
     }
 
     const updated = await this.db.transaction(async (tx) => {
-      await (tx as Db)
+      await tx
         .update(signRecipients)
         .set({ tokenRevokedAt: new Date() })
         .where(
@@ -273,7 +271,7 @@ export class SignEnvelopesService {
           ),
         );
 
-      const [row] = await (tx as Db)
+      const [row] = await tx
         .update(signEnvelopes)
         .set({
           status: "voided",

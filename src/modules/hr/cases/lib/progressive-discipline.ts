@@ -53,7 +53,7 @@ export function checkProgressiveDiscipline(
   );
 
   // Prefer having at least the immediately prior step (or higher) already on file
-  const expectedPrior = DISCIPLINE_LADDER[nextLevel - 1]!;
+  const expectedPrior = DISCIPLINE_LADDER[nextLevel - 1];
   if (maxPrior >= nextLevel - 1) {
     return { ok: true, missingPrior: null, warning: null, honestyNote };
   }

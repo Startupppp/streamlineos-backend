@@ -31,3 +31,8 @@ export const ratePreviewQuerySchema = z.object({
   ticketId: z.coerce.number().int().positive().optional(),
 }).strict();
 export type RatePreviewQuery = z.infer<typeof ratePreviewQuerySchema>;
+
+export const billingExportSnapshotSchema = z.array(
+  z.object({ computedAmount: z.number().optional() }).passthrough(),
+);
+export type BillingExportSnapshot = z.infer<typeof billingExportSnapshotSchema>;

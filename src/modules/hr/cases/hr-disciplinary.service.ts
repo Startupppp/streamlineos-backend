@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, count, desc, eq, isNull, or } from "drizzle-orm";
@@ -19,10 +20,7 @@ import type {
   CreateDisciplinaryActionInput,
   ListDisciplinaryInput,
 } from "./dto/hr-cases.schemas";
-import {
-  checkProgressiveDiscipline,
-  type DisciplinaryActionType,
-} from "./lib/progressive-discipline";
+import { checkProgressiveDiscipline } from "./lib/progressive-discipline";
 
 @Injectable()
 export class HrDisciplinaryService {
@@ -103,8 +101,8 @@ export class HrDisciplinaryService {
       );
 
     const progressive = checkProgressiveDiscipline(
-      input.actionType as DisciplinaryActionType,
-      prior.map((p) => p.actionType as DisciplinaryActionType),
+      input.actionType,
+      prior.map((p) => p.actionType),
       Boolean(input.forceEscalate),
     );
 
@@ -133,7 +131,7 @@ export class HrDisciplinaryService {
       letterRenderId = rendered.renderId ?? null;
     }
 
-    const noteParts = [input.note?.trim()].filter(Boolean) as string[];
+    const noteParts = [input.note?.trim()].filter((v): v is string => Boolean(v));
     if (progressive.warning) {
       noteParts.push(`[progressive] ${progressive.warning}`);
     }
@@ -152,11 +150,13 @@ export class HrDisciplinaryService {
       })
       .returning();
 
+    if (!action) throw new InternalServerErrorException("Failed to create disciplinary action");
+
     await this.audit.log({
       orgId,
       actorId: issuedByUserId,
       entityType: "hr_disciplinary_action",
-      entityId: String(action!.id),
+      entityId: String(action.id),
       action: "disciplinary.issued",
       after: {
         actionType: input.actionType,
@@ -169,7 +169,7 @@ export class HrDisciplinaryService {
     });
 
     return {
-      ...action!,
+      ...action,
       progressive: {
         warning: progressive.warning,
         honestyNote: progressive.honestyNote,

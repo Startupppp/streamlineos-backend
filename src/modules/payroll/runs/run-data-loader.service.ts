@@ -109,7 +109,7 @@ export class RunDataLoaderService {
     toggles: PayrollToggles,
   ): Promise<ProfileData[]> {
     const [year, mon] = month.split("-").map(Number);
-    const lastDay = new Date(year!, mon!, 0).getDate();
+    const lastDay = new Date(year, mon, 0).getDate();
     const monthEndDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
     // This set IS the payroll. A truncated read produced no exception, no

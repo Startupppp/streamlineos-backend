@@ -184,7 +184,7 @@ export class PayrollRunEmployeesService {
 
     if (query.status) conditions.push(eq(payrollRunEmployees.status, query.status));
     if (query.workerType) {
-      conditions.push(eq(payrollRunEmployees.workerType, query.workerType as "EMPLOYEE" | "CONTRACTOR" | "CONSULTANT" | "INTERN" | "EOR"));
+      conditions.push(eq(payrollRunEmployees.workerType, query.workerType));
     }
 
     const searchCondition = query.search

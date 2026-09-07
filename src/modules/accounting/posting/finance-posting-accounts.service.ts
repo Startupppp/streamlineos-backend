@@ -102,7 +102,7 @@ export class FinancePostingAccountsService {
         .where(and(eq(accSystemAccountMap.orgId, orgId), inArray(accSystemAccountMap.purpose, distinctPurposes)));
 
       for (const m of existingMappings) {
-        purposeToAccountId.set(m.purpose as SystemAccountPurpose, m.accountId);
+        purposeToAccountId.set(m.purpose, m.accountId);
       }
 
       const unmappedPurposes = distinctPurposes.filter((p) => !purposeToAccountId.has(p));

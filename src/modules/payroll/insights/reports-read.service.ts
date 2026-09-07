@@ -61,7 +61,7 @@ function reportScope(
 }
 
 function isLocked(status: string): boolean {
-  return (PAYROLL_LOCKED_STATUSES as readonly string[]).includes(status);
+  return PAYROLL_LOCKED_STATUSES.some((locked) => locked === status);
 }
 
 function prevMonth(month: string): string {
@@ -82,11 +82,11 @@ export async function getDepartmentCost(
   month: string,
   filters: LineItemFilters,
   pagination: PaginationParams = {},
-) {
+): Promise<{ provisional: boolean; rows: DeptCostRow[]; pagination: Pagination }> {
   const limit = Math.min(pagination.limit ?? 100, 100);
   const run = await findRunForMonth(db, orgId, month);
   const provisional = run === null || !isLocked(run.status);
-  if (!run) return { provisional, rows: [] as DeptCostRow[], pagination: emptyPagination(limit) };
+  if (!run) return { provisional, rows: [], pagination: emptyPagination(limit) };
 
   const cursorScope = reportScope("department-cost", orgId, month, run.id, filters);
   const position = decodePayrollNullableTextCursor(pagination.cursor, cursorScope);
@@ -101,7 +101,7 @@ export async function getDepartmentCost(
     eq(payrollRunEmployees.orgId, orgId),
     eq(payrollRunEmployees.runId, run.id),
   ];
-  if (filters.workerType) deptConditions.push(eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]));
+  if (filters.workerType) deptConditions.push(eq(payrollRunEmployees.workerType, filters.workerType));
   if (filters.department) deptConditions.push(eq(orgUnits.name, filters.department));
 
   const aggRows = await db
@@ -143,11 +143,11 @@ export async function getCostCenter(
   month: string,
   filters: LineItemFilters,
   pagination: PaginationParams = {},
-) {
+): Promise<{ provisional: boolean; rows: CostCenterRow[]; pagination: Pagination }> {
   const limit = Math.min(pagination.limit ?? 100, 100);
   const run = await findRunForMonth(db, orgId, month);
   const provisional = run === null || !isLocked(run.status);
-  if (!run) return { provisional, rows: [] as CostCenterRow[], pagination: emptyPagination(limit) };
+  if (!run) return { provisional, rows: [], pagination: emptyPagination(limit) };
 
   const cursorScope = reportScope("cost-center", orgId, month, run.id, filters);
   const position = decodePayrollNullableTextCursor(pagination.cursor, cursorScope);
@@ -162,7 +162,7 @@ export async function getCostCenter(
     eq(payrollRunEmployees.orgId, orgId),
     eq(payrollRunEmployees.runId, run.id),
   ];
-  if (filters.workerType) ccConditions.push(eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]));
+  if (filters.workerType) ccConditions.push(eq(payrollRunEmployees.workerType, filters.workerType));
   if (filters.costCenter) ccConditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
 
   const aggRows = await db
@@ -198,11 +198,11 @@ export async function getBankPayout(
   orgId: string,
   month: string,
   pagination: PaginationParams = {},
-) {
+): Promise<{ provisional: boolean; batches: BankBatchResult[]; pagination: Pagination }> {
   const limit = Math.min(pagination.limit ?? 100, 100);
   const run = await findRunForMonth(db, orgId, month);
   const provisional = run === null || !isLocked(run.status);
-  if (!run) return { provisional, batches: [] as BankBatchResult[], pagination: emptyPagination(limit) };
+  if (!run) return { provisional, batches: [], pagination: emptyPagination(limit) };
 
   const cursorScope = reportScope("bank-payout", orgId, month, run.id);
   const position = decodePayrollIdCursor(pagination.cursor, cursorScope);
@@ -230,7 +230,7 @@ export async function getBankPayout(
   const page = buildCursorPage(batches, limit, (row) =>
     payrollCursorPosition(cursorScope, [row.id], row.id),
   );
-  if (page.data.length === 0) return { provisional, batches: [] as BankBatchResult[], pagination: page.pagination };
+  if (page.data.length === 0) return { provisional, batches: [], pagination: page.pagination };
 
   const batchIds = page.data.map((batch) => batch.id);
   const items = await readPayrollKeysetBatches({
@@ -289,7 +289,14 @@ export async function getVariance(
   orgId: string,
   month: string,
   pagination: PaginationParams = {},
-) {
+): Promise<{
+  provisional: boolean;
+  current: { month: string; gross: string; net: string };
+  previous: { month: string; gross: string; net: string };
+  delta: { gross: string; net: string };
+  perEmployee: VarianceEmployeeRow[];
+  pagination: Pagination;
+}> {
   const limit = Math.min(pagination.limit ?? 100, 100);
   const prevMonthStr = prevMonth(month);
   const [currentRun, previousRun] = await Promise.all([
@@ -308,7 +315,7 @@ export async function getVariance(
     gross: deltaDec(previous.gross, current.gross),
     net: deltaDec(previous.net, current.net),
   };
-  if (!currentRun) return { provisional, current, previous, delta, perEmployee: [] as VarianceEmployeeRow[], pagination: emptyPagination(limit) };
+  if (!currentRun) return { provisional, current, previous, delta, perEmployee: [], pagination: emptyPagination(limit) };
 
   const cursorScope = [
     "report",

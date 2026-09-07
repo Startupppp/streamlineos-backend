@@ -57,9 +57,7 @@ export interface LockCommitInput {
 }
 
 function fiscalYearFromMonth(month: string): string {
-  const [y, m] = month.split("-").map(Number);
-  const year = y!;
-  const mon = m!;
+  const [year, mon] = month.split("-").map(Number);
   // India FY: Apr–Mar
   if (mon >= 4) return `${year}-${String(year + 1).slice(2)}`;
   return `${year - 1}-${String(year).slice(2)}`;

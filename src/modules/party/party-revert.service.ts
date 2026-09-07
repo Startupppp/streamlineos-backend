@@ -64,26 +64,26 @@ export class PartyRevertService {
 
     await updatePartyWithMirror(this.db, organizationId, record.survivorPartyId, {
       name: String(survivorBefore.name ?? ""),
-      legalName: (survivorBefore.legalName ?? null) as string | null,
-      displayName: (survivorBefore.displayName ?? null) as string | null,
-      taxNumber: (survivorBefore.taxNumber ?? null) as string | null,
-      website: (survivorBefore.website ?? null) as string | null,
-      email: (survivorBefore.email ?? null) as string | null,
-      phone: (survivorBefore.phone ?? null) as string | null,
-      notes: (survivorBefore.notes ?? null) as string | null,
-      customFields: (survivorBefore.customFields ?? null) as Record<string, unknown> | null,
+      legalName: survivorBefore.legalName ?? null,
+      displayName: survivorBefore.displayName ?? null,
+      taxNumber: survivorBefore.taxNumber ?? null,
+      website: survivorBefore.website ?? null,
+      email: survivorBefore.email ?? null,
+      phone: survivorBefore.phone ?? null,
+      notes: survivorBefore.notes ?? null,
+      customFields: survivorBefore.customFields ?? null,
     });
 
     await restorePartyWithMirror(this.db, organizationId, record.mergedPartyId, {
       name: String(mergedBefore.name ?? ""),
-      legalName: (mergedBefore.legalName ?? null) as string | null,
-      displayName: (mergedBefore.displayName ?? null) as string | null,
-      taxNumber: (mergedBefore.taxNumber ?? null) as string | null,
-      website: (mergedBefore.website ?? null) as string | null,
-      email: (mergedBefore.email ?? null) as string | null,
-      phone: (mergedBefore.phone ?? null) as string | null,
-      notes: (mergedBefore.notes ?? null) as string | null,
-      customFields: (mergedBefore.customFields ?? null) as Record<string, unknown> | null,
+      legalName: mergedBefore.legalName ?? null,
+      displayName: mergedBefore.displayName ?? null,
+      taxNumber: mergedBefore.taxNumber ?? null,
+      website: mergedBefore.website ?? null,
+      email: mergedBefore.email ?? null,
+      phone: mergedBefore.phone ?? null,
+      notes: mergedBefore.notes ?? null,
+      customFields: mergedBefore.customFields ?? null,
     });
 
     if (snapshot.movedContactIds.length > 0)

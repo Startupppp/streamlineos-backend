@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
@@ -66,17 +67,19 @@ export class LaborService {
       })
       .returning();
 
+    if (!row) throw new InternalServerErrorException("Failed to create union membership");
+
     await this.audit.log({
       orgId,
       actorId,
       entityType: "hr_union_membership",
-      entityId: String(row!.id),
+      entityId: String(row.id),
       action: "union_membership.created",
       after: { userId: input.userId, unionName: input.unionName },
       ipAddress,
     });
 
-    return row!;
+    return row;
   }
 
   async updateMembership(orgId: string, membershipId: number, actorId: string, input: UpdateUnionMembershipInput, ipAddress?: string) {
@@ -94,6 +97,8 @@ export class LaborService {
       .where(and(eq(hrUnionMemberships.orgId, orgId), eq(hrUnionMemberships.id, membershipId)))
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update union membership");
+
     await this.audit.log({
       orgId,
       actorId,
@@ -105,7 +110,7 @@ export class LaborService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async deleteMembership(orgId: string, membershipId: number, actorId: string, ipAddress?: string) {
@@ -177,12 +182,14 @@ export class LaborService {
       })
       .returning();
 
+    if (!row) throw new InternalServerErrorException("Failed to create collective agreement");
+
     await this.audit.log({
-      orgId, actorId, entityType: "hr_collective_agreement", entityId: String(row!.id),
+      orgId, actorId, entityType: "hr_collective_agreement", entityId: String(row.id),
       action: "collective_agreement.created", after: { title: input.title, unionName: input.unionName }, ipAddress,
     });
 
-    return row!;
+    return row;
   }
 
   async updateAgreement(orgId: string, agreementId: number, actorId: string, input: UpdateCollectiveAgreementInput, ipAddress?: string) {
@@ -202,9 +209,11 @@ export class LaborService {
       .where(and(eq(hrCollectiveAgreements.orgId, orgId), eq(hrCollectiveAgreements.id, agreementId)))
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update collective agreement");
+
     await this.audit.log({ orgId, actorId, entityType: "hr_collective_agreement", entityId: String(agreementId), action: "collective_agreement.updated", before: { status: existing.status }, after: input, ipAddress });
 
-    return updated!;
+    return updated;
   }
 
   async deleteAgreement(orgId: string, agreementId: number, actorId: string, ipAddress?: string) {

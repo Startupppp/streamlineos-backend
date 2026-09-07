@@ -16,7 +16,7 @@ const SIGNING_RECIPIENT_TYPES = [
 type SigningRecipientType = (typeof SIGNING_RECIPIENT_TYPES)[number];
 
 export function isSigningType(type: string): type is SigningRecipientType {
-  return (SIGNING_RECIPIENT_TYPES as readonly string[]).includes(type);
+  return SIGNING_RECIPIENT_TYPES.some((recipientType) => recipientType === type);
 }
 
 export interface EnvelopeValidationResult {

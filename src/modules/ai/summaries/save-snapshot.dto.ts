@@ -31,5 +31,5 @@ export const ALLOWED_ENTITY_TYPES = [
 export type AllowedEntityType = (typeof ALLOWED_ENTITY_TYPES)[number];
 
 export function isAllowedEntityType(value: string): value is AllowedEntityType {
-  return (ALLOWED_ENTITY_TYPES as readonly string[]).includes(value);
+  return ALLOWED_ENTITY_TYPES.some((entityType) => entityType === value);
 }

@@ -3,6 +3,9 @@ import {
   pageNumberField,
   pageSizeField,
 } from "../../../../common/pagination/list-query.schema";
+import { payrollWorkerTypeEnum } from "../../../../db/schema";
+
+export const payrollWorkerTypeSchema = z.enum(payrollWorkerTypeEnum.enumValues);
 
 export const runTypeSchema = z.enum([
   "REGULAR",
@@ -71,7 +74,7 @@ export const listRunEmployeesQuerySchema = z
       .default(20),
     search: z.string().optional(),
     status: z.string().optional(),
-    workerType: z.string().optional(),
+    workerType: payrollWorkerTypeSchema.optional(),
   })
   .strict();
 export type ListRunEmployeesQuery = z.infer<typeof listRunEmployeesQuerySchema>;

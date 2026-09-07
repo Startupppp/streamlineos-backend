@@ -3,6 +3,9 @@ import {
   optionalPageNumberField,
   optionalPageSizeField,
 } from "../../../../common/pagination/list-query.schema";
+import { payrollWorkerTypeEnum } from "../../../../db/schema";
+
+const workerTypeFilterSchema = z.enum(payrollWorkerTypeEnum.enumValues);
 
 export const createCalendarEventSchema = z.object({
   type: z.string(),
@@ -193,7 +196,7 @@ export const reportsQuerySchema = z.object({
   format: z.enum(["json", "csv"]).optional(),
   department: z.string().trim().max(100).optional(),
   costCenter: z.string().trim().max(100).optional(),
-  workerType: z.string().trim().max(50).optional(),
+  workerType: workerTypeFilterSchema.optional(),
   limit: optionalPageSizeField(),
   cursor: z.string().trim().min(1).max(2048).optional(),
 }).strict();

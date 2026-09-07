@@ -107,3 +107,27 @@ export interface EntityWriter {
 function requiresSubjectType(entity: ImportEntity): boolean {
   return entity === "subject";
 }
+
+/**
+ * A Drizzle row, widened to the shape `UpdatePath.before` promises.
+ *
+ * The row Drizzle returns is a specific, fully-typed object with no index
+ * signature, and `Record<string, unknown>` cannot describe it without one — a
+ * real conversion, not a cast, because the writer contract is deliberately
+ * polymorphic across entities with different column sets.
+ */
+export function rowToRecord<T extends object>(row: T): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(row));
+}
+
+/** Narrows a before-image column to a string, or `null` if it never was one. */
+export function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+/** Narrows a before-image column to a plain object, or `null` if it never was one. */
+export function recordOrNull(value: unknown): Record<string, unknown> | null {
+  if (value !== null && typeof value === "object" && !Array.isArray(value))
+    return value as Record<string, unknown>;
+  return null;
+}

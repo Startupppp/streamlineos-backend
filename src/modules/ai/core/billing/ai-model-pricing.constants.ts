@@ -29,7 +29,7 @@ const MODEL_TOKEN_PRICING_RAW: Record<string, ModelTokenPricing> = {
 
 function lookupPricing(model: string): ModelTokenPricing {
   const normalized = normalizeModelId(model);
-  return MODEL_TOKEN_PRICING_RAW[normalized] ?? MODEL_TOKEN_PRICING_RAW["DEFAULT"]!;
+  return MODEL_TOKEN_PRICING_RAW[normalized] ?? MODEL_TOKEN_PRICING_RAW["DEFAULT"];
 }
 
 export function computeTokenCharge(

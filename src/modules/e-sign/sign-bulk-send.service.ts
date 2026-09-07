@@ -201,7 +201,7 @@ export class SignBulkSendService {
 
   async cancel(orgId: string, jobId: number, actor: { userId: string }) {
     const { job } = await this.getJob(orgId, jobId);
-    if (!(ACTIVE_JOB_STATUSES as readonly string[]).includes(job.status)) {
+    if (!ACTIVE_JOB_STATUSES.some((status) => status === job.status)) {
       throw new ForbiddenException("Only pending or in-progress jobs can be cancelled");
     }
     const [updated] = await this.db

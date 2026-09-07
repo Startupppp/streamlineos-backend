@@ -29,7 +29,7 @@ import type { HrImportEntity } from "./dto/import-job.dto";
 
 export interface CommitRef {
   table: string;
-  id: string | number;
+  id: number;
 }
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -333,15 +333,15 @@ export class HrImportCommitService {
   async rollbackRef(tx: Tx, ref: CommitRef): Promise<void> {
     const id = ref.id;
     if (ref.table === "hr_people") {
-      await tx.delete(hrPeople).where(eq(hrPeople.id, id as number));
+      await tx.delete(hrPeople).where(eq(hrPeople.id, id));
     } else if (ref.table === "attendance") {
-      await tx.delete(attendance).where(eq(attendance.id, id as number));
+      await tx.delete(attendance).where(eq(attendance.id, id));
     } else if (ref.table === "assets") {
-      await tx.delete(assets).where(eq(assets.id, id as number));
+      await tx.delete(assets).where(eq(assets.id, id));
     } else if (ref.table === "leave_balances") {
-      await tx.delete(leaveBalances).where(eq(leaveBalances.id, id as number));
+      await tx.delete(leaveBalances).where(eq(leaveBalances.id, id));
     } else if (ref.table === "documents") {
-      await tx.delete(documents).where(eq(documents.id, id as number));
+      await tx.delete(documents).where(eq(documents.id, id));
     }
   }
 

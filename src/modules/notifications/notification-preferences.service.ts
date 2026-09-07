@@ -29,7 +29,7 @@ const DEFAULT_PREFERENCES = {
 };
 
 function isNotificationChannel(value: string): value is NotificationChannel {
-  return (ALL_CHANNELS as readonly string[]).includes(value);
+  return ALL_CHANNELS.some((channel) => channel === value);
 }
 
 @Injectable()

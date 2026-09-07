@@ -30,6 +30,13 @@ type SalaryComponentCategory = typeof payrollLineItems.$inferSelect["category"];
 
 type Pagination = CursorPage<unknown>["pagination"];
 
+interface RegisterPage {
+  provisional: boolean;
+  columns: string[];
+  rows: EmployeeRegisterRow[];
+  pagination: Pagination;
+}
+
 function emptyPagination(limit: number): Pagination {
   return { limit, hasMore: false, nextCursor: null };
 }
@@ -79,7 +86,7 @@ async function getRunEmployeePage(
 }
 
 function isLocked(status: string): boolean {
-  return (PAYROLL_LOCKED_STATUSES as readonly string[]).includes(status);
+  return PAYROLL_LOCKED_STATUSES.some((locked) => locked === status);
 }
 
 function pivotByEmployee(
@@ -92,8 +99,9 @@ function pivotByEmployee(
     if (!categoryFilter(lineItem.category)) continue;
     const uid = runEmployee.userId;
     if (!uid) continue;
-    if (!empMap.has(uid)) {
-      empMap.set(uid, {
+    let row = empMap.get(uid);
+    if (!row) {
+      row = {
         employeeId: uid,
         name: userName,
         department: userDept,
@@ -103,9 +111,9 @@ function pivotByEmployee(
         totalDeductions: runEmployee.totalDeductions,
         net: runEmployee.net,
         components: {},
-      });
+      };
+      empMap.set(uid, row);
     }
-    const row = empMap.get(uid)!;
     const existing = row.components[lineItem.code] ?? "0";
     row.components[lineItem.code] = fromPaise(toPaise(existing) + toPaise(lineItem.amount));
   }
@@ -138,11 +146,11 @@ export class ReportsService {
     };
   }
 
-  async getRegister(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
+  async getRegister(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}): Promise<RegisterPage> {
     const limit = Math.min(pagination.limit ?? 100, 100);
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
-    if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: emptyPagination(limit) };
+    if (!run) return { provisional, columns: [], rows: [], pagination: emptyPagination(limit) };
 
     const idPage = await getRunEmployeePage(
       this.db,
@@ -154,7 +162,7 @@ export class ReportsService {
       pagination,
     );
 
-    if (idPage.data.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: idPage.pagination };
+    if (idPage.data.length === 0) return { provisional, columns: [], rows: [], pagination: idPage.pagination };
 
     const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, idPage.data);
     const empMap = new Map<string, EmployeeRegisterRow>();
@@ -162,8 +170,9 @@ export class ReportsService {
     for (const { lineItem, runEmployee, userName, userDept } of items) {
       const uid = runEmployee.userId;
       if (!uid) continue;
-      if (!empMap.has(uid)) {
-        empMap.set(uid, {
+      let row = empMap.get(uid);
+      if (!row) {
+        row = {
           employeeId: uid,
           name: userName,
           department: userDept,
@@ -173,9 +182,9 @@ export class ReportsService {
           totalDeductions: runEmployee.totalDeductions,
           net: runEmployee.net,
           components: {},
-        });
+        };
+        empMap.set(uid, row);
       }
-      const row = empMap.get(uid)!;
       const existing = row.components[lineItem.code] ?? "0";
       row.components[lineItem.code] = fromPaise(toPaise(existing) + toPaise(lineItem.amount));
     }
@@ -203,60 +212,60 @@ export class ReportsService {
     return getCostCenter(this.db, orgId, month, filters, pagination);
   }
 
-  async getEarnings(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
+  async getEarnings(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}): Promise<RegisterPage> {
     const limit = Math.min(pagination.limit ?? 100, 100);
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
-    if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: emptyPagination(limit) };
+    if (!run) return { provisional, columns: [], rows: [], pagination: emptyPagination(limit) };
 
     const idPage = await getRunEmployeePage(this.db, "earnings", orgId, month, run.id, filters, pagination);
 
-    if (idPage.data.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: idPage.pagination };
+    if (idPage.data.length === 0) return { provisional, columns: [], rows: [], pagination: idPage.pagination };
 
     const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, idPage.data);
     const { columns, rows } = pivotByEmployee(items, (cat) => cat === "EARNING" || cat === "REIMBURSEMENT");
     return { provisional, columns, rows, pagination: idPage.pagination };
   }
 
-  async getDeductions(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
+  async getDeductions(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}): Promise<RegisterPage> {
     const limit = Math.min(pagination.limit ?? 100, 100);
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
-    if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: emptyPagination(limit) };
+    if (!run) return { provisional, columns: [], rows: [], pagination: emptyPagination(limit) };
 
     const idPage = await getRunEmployeePage(this.db, "deductions", orgId, month, run.id, filters, pagination);
 
-    if (idPage.data.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: idPage.pagination };
+    if (idPage.data.length === 0) return { provisional, columns: [], rows: [], pagination: idPage.pagination };
 
     const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, idPage.data);
     const { columns, rows } = pivotByEmployee(items, (cat) => cat === "DEDUCTION" || cat === "TAX" || cat === "ADJUSTMENT");
     return { provisional, columns, rows, pagination: idPage.pagination };
   }
 
-  async getReimbursements(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
+  async getReimbursements(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}): Promise<RegisterPage> {
     const limit = Math.min(pagination.limit ?? 100, 100);
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
-    if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: emptyPagination(limit) };
+    if (!run) return { provisional, columns: [], rows: [], pagination: emptyPagination(limit) };
 
     const idPage = await getRunEmployeePage(this.db, "reimbursements", orgId, month, run.id, filters, pagination);
 
-    if (idPage.data.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: idPage.pagination };
+    if (idPage.data.length === 0) return { provisional, columns: [], rows: [], pagination: idPage.pagination };
 
     const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, idPage.data);
     const { columns, rows } = pivotByEmployee(items, (cat) => cat === "REIMBURSEMENT");
     return { provisional, columns, rows, pagination: idPage.pagination };
   }
 
-  async getTax(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
+  async getTax(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}): Promise<RegisterPage> {
     const limit = Math.min(pagination.limit ?? 100, 100);
     const run = await findRunForMonth(this.db, orgId, month);
     const provisional = run === null || !isLocked(run.status);
-    if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: emptyPagination(limit) };
+    if (!run) return { provisional, columns: [], rows: [], pagination: emptyPagination(limit) };
 
     const idPage = await getRunEmployeePage(this.db, "tax", orgId, month, run.id, filters, pagination);
 
-    if (idPage.data.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[], pagination: idPage.pagination };
+    if (idPage.data.length === 0) return { provisional, columns: [], rows: [], pagination: idPage.pagination };
 
     const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, idPage.data);
     const { columns, rows } = pivotByEmployee(items, (cat) => cat === "TAX" || cat === "EMPLOYER_CONTRIBUTION");

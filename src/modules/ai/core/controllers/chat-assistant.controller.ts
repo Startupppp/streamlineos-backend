@@ -83,19 +83,21 @@ type TicketType = (typeof TICKET_TYPES)[number];
 type TicketPriority = (typeof TICKET_PRIORITIES)[number];
 type RecognitionCategory = (typeof RECOGNITION_CATEGORIES)[number];
 
+function pickFromEnum<T extends string>(candidates: readonly T[], v: unknown, fallback: T): T {
+  const s = String(v ?? fallback).toUpperCase();
+  return candidates.find((candidate) => candidate === s) ?? fallback;
+}
+
 function pickTicketType(v: unknown): TicketType {
-  const s = String(v ?? "TASK").toUpperCase();
-  return (TICKET_TYPES as readonly string[]).includes(s) ? (s as TicketType) : "TASK";
+  return pickFromEnum(TICKET_TYPES, v, "TASK");
 }
 
 function pickPriority(v: unknown): TicketPriority {
-  const s = String(v ?? "MEDIUM").toUpperCase();
-  return (TICKET_PRIORITIES as readonly string[]).includes(s) ? (s as TicketPriority) : "MEDIUM";
+  return pickFromEnum(TICKET_PRIORITIES, v, "MEDIUM");
 }
 
 function pickCategory(v: unknown): RecognitionCategory {
-  const s = String(v ?? "KUDOS").toUpperCase();
-  return (RECOGNITION_CATEGORIES as readonly string[]).includes(s) ? (s as RecognitionCategory) : "KUDOS";
+  return pickFromEnum(RECOGNITION_CATEGORIES, v, "KUDOS");
 }
 
 const CONFIRMABLE_ACTIONS = [
@@ -146,7 +148,7 @@ const ticketStatusUpdatePayload = z.object({
 });
 
 function isConfirmableAction(s: string): s is ConfirmableAction {
-  return (CONFIRMABLE_ACTIONS as readonly string[]).includes(s);
+  return CONFIRMABLE_ACTIONS.some((action) => action === s);
 }
 
 const confirmActionBodySchema = z.object({ token: z.string().min(1) });

@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
@@ -93,7 +94,7 @@ export class PayrollEntitiesService {
   ) {
     const [y, m] = periodKey.split("-").map(Number);
     const startDate = `${periodKey}-01`;
-    const lastDay = new Date(y!, m!, 0).getDate();
+    const lastDay = new Date(y, m, 0).getDate();
     const endDate = `${periodKey}-${String(lastDay).padStart(2, "0")}`;
 
     const conditions = [
@@ -120,7 +121,8 @@ export class PayrollEntitiesService {
         status: "OPEN",
       })
       .returning();
-    return row!;
+    if (!row) throw new InternalServerErrorException("Failed to create payroll period");
+    return row;
   }
 
   async getEntity(orgId: string, entityId: number) {

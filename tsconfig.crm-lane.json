@@ -1,0 +1,8 @@
+{ "extends": "./tsconfig.json", "include": [], "files": [
+  "src/@types/express.d.ts",
+  "src/modules/party/party-merge.service.ts",
+  "src/modules/party/party-revert.service.ts",
+  "src/modules/party/dto/party-merge-snapshot.schema.ts",
+  "src/modules/party/party-identifiers.ts",
+  "src/modules/party/party-merge-plan.ts"
+] }

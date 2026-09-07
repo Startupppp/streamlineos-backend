@@ -15,6 +15,7 @@ import { buildDefaultTemplates } from "./seed-default-templates";
 import {
   VALID_TRANSITIONS,
   type CreateTemplateInput,
+  type HrTemplateStatus,
   type RenderTemplateInput,
   type TemplateListQuery,
   type TemplateRendersQuery,
@@ -87,7 +88,8 @@ export class HrTemplatesService {
     const fallback = or(
       ilike(hrTemplates.name, `%${search}%`),
       ilike(hrTemplates.description, `%${search}%`),
-    )!;
+    );
+    if (!fallback) throw new InternalServerErrorException("Failed to build template search fallback");
     const rows = await this.db.execute(
       sql`SELECT app.search_hr_template_ids(${search}, ${TEMPLATE_SEARCH_CAP + 1}) AS id`,
     );
@@ -155,7 +157,7 @@ export class HrTemplatesService {
     return updated;
   }
 
-  async transition(orgId: string, userId: string, templateId: number, to: string): Promise<TemplateRow> {
+  async transition(orgId: string, userId: string, templateId: number, to: HrTemplateStatus): Promise<TemplateRow> {
     const existing = await this.getById(orgId, templateId);
     const allowed = VALID_TRANSITIONS[existing.status] ?? [];
     if (!allowed.includes(to)) {
@@ -164,7 +166,7 @@ export class HrTemplatesService {
 
     const [updated] = await this.db
       .update(hrTemplates)
-      .set({ status: to as TemplateRow["status"], updatedBy: userId })
+      .set({ status: to, updatedBy: userId })
       .where(and(eq(hrTemplates.id, templateId), eq(hrTemplates.orgId, orgId)))
       .returning();
 
@@ -214,8 +216,10 @@ export class HrTemplatesService {
       // caller must hold hr:sensitive:view — enforced in controller before reaching here
     }
 
-    const body = (template.content as Record<string, unknown>)["bodyHtml"] as string | undefined;
-    const subject = (template.content as Record<string, unknown>)["subject"] as string | undefined;
+    const bodyHtml = template.content["bodyHtml"];
+    const body = typeof bodyHtml === "string" ? bodyHtml : undefined;
+    const subjectRaw = template.content["subject"];
+    const subject = typeof subjectRaw === "string" ? subjectRaw : undefined;
 
     const ctx = await this.renderService.buildContext(
       orgId,
@@ -306,7 +310,7 @@ export class HrTemplatesService {
       name: t.name,
       description: t.description,
       status: "active" as const,
-      content: t.content as Record<string, unknown>,
+      content: t.content,
       variablesUsed: t.variablesUsed,
       letterType: t.letterType,
       createdBy: userId,

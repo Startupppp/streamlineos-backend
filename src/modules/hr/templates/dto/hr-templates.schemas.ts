@@ -18,6 +18,7 @@ export const HR_TEMPLATE_KINDS = [
 ] as const;
 
 export const HR_TEMPLATE_STATUSES = ["draft", "review", "approved", "active", "archived"] as const;
+export type HrTemplateStatus = (typeof HR_TEMPLATE_STATUSES)[number];
 
 export const HR_LETTER_TYPES = [
   "offer",
@@ -32,7 +33,7 @@ export const HR_LETTER_TYPES = [
   "termination",
 ] as const;
 
-export const VALID_TRANSITIONS: Record<string, string[]> = {
+export const VALID_TRANSITIONS: Record<HrTemplateStatus, HrTemplateStatus[]> = {
   draft: ["review"],
   review: ["approved", "draft"],
   approved: ["active", "draft"],

@@ -1,4 +1,12 @@
 import { BadRequestException } from "@nestjs/common";
+import { z } from "zod";
+
+const timestampCursorPayloadSchema = z
+  .object({
+    createdAt: z.unknown(),
+    recordId: z.number().int(),
+  })
+  .strict();
 
 export interface TimestampCursor {
   createdAt: Date;
@@ -16,15 +24,14 @@ export function encodeTimestampCursor(value: TimestampCursor): string {
 
 export function decodeTimestampCursor(cursor: string): TimestampCursor {
   try {
-    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
-      createdAt?: unknown;
-      recordId?: unknown;
-    };
+    const parsed = timestampCursorPayloadSchema.parse(
+      JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")),
+    );
     const createdAt = new Date(String(parsed.createdAt));
-    if (!Number.isInteger(parsed.recordId) || Number.isNaN(createdAt.getTime())) {
+    if (Number.isNaN(createdAt.getTime())) {
       throw new Error();
     }
-    return { createdAt, recordId: parsed.recordId as number };
+    return { createdAt, recordId: parsed.recordId };
   } catch {
     throw new BadRequestException("Invalid pagination cursor");
   }

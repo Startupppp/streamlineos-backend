@@ -324,5 +324,5 @@ export async function restoreIdentifiers(
 }
 
 function isKnownKind(row: { kind: string; value: string }): row is IdentifierClaim {
-  return (IDENTIFIER_KINDS as readonly string[]).includes(row.kind);
+  return IDENTIFIER_KINDS.some((kind) => kind === row.kind);
 }

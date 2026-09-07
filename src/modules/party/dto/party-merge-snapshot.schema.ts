@@ -22,9 +22,21 @@ export const legacyIdsByKindSchema = z.object({
   organisation: z.array(z.number()).optional(),
 });
 
+const partySnapshotFieldsSchema = z.object({
+  name: z.string().nullish(),
+  legalName: z.string().nullish(),
+  displayName: z.string().nullish(),
+  taxNumber: z.string().nullish(),
+  website: z.string().nullish(),
+  email: z.string().nullish(),
+  phone: z.string().nullish(),
+  notes: z.string().nullish(),
+  customFields: z.record(z.string(), z.unknown()).nullish(),
+});
+
 export const mergeSnapshotSchema = z.object({
-  survivorBefore: z.record(z.string(), z.unknown()),
-  mergedBefore: z.record(z.string(), z.unknown()),
+  survivorBefore: partySnapshotFieldsSchema,
+  mergedBefore: partySnapshotFieldsSchema,
   movedContactIds: z.array(z.string()).max(100),
   addedRoles: z.array(z.string()),
   movedIdentifierIds: z.array(z.string()).max(100).optional(),

@@ -27,7 +27,7 @@ type TicketActivityAction =
   | "due_date_changed";
 
 function isTicketType(value: string): value is TicketType {
-  return (TICKET_TYPES as readonly string[]).includes(value);
+  return TICKET_TYPES.some((ticketType) => ticketType === value);
 }
 
 function text(input: Record<string, unknown>, name: string): string | null {

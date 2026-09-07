@@ -93,8 +93,8 @@ export class RunBatchLoaderService {
     const membershipIds = membershipRows.map((row) => row.membershipId);
     const profileIds = profiles.map((p) => p.id);
     const [year, mon] = month.split("-").map(Number);
-    const monthStart = new Date(year!, mon! - 1, 1);
-    const monthEnd = new Date(year!, mon!, 0, 23, 59, 59, 999);
+    const monthStart = new Date(year, mon - 1, 1);
+    const monthEnd = new Date(year, mon, 0, 23, 59, 59, 999);
     const fy = getFyString(month);
 
     const [

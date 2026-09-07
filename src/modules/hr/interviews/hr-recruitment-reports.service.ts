@@ -18,7 +18,7 @@ const CANDIDATE_STATUSES = ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "
 type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
 
 function isCandidateStatus(value: string): value is CandidateStatus {
-  return (CANDIDATE_STATUSES as readonly string[]).includes(value);
+  return CANDIDATE_STATUSES.some((status) => status === value);
 }
 
 const CANDIDATE_FIELDS = [
@@ -60,7 +60,7 @@ export class HrRecruitmentReportsService {
     let rows: Record<string, unknown>[] = [];
 
     if (entity === "candidates") {
-      const validFields = fields.filter((f) => (CANDIDATE_FIELDS as readonly string[]).includes(f));
+      const validFields = fields.filter((f) => CANDIDATE_FIELDS.some((field) => field === f));
       const conditions = [eq(candidates.orgId, orgId)];
       if (filters.status && isCandidateStatus(filters.status)) {
         conditions.push(eq(candidates.status, filters.status));
@@ -72,7 +72,7 @@ export class HrRecruitmentReportsService {
     }
 
     if (entity === "jobs") {
-      const validFields = fields.filter((f) => (JOB_FIELDS as readonly string[]).includes(f));
+      const validFields = fields.filter((f) => JOB_FIELDS.some((field) => field === f));
       const conditions = [eq(jobPostings.orgId, orgId)];
       if (filters.dateFrom) conditions.push(gte(jobPostings.createdAt, new Date(filters.dateFrom)));
       if (filters.dateTo) conditions.push(lte(jobPostings.createdAt, new Date(filters.dateTo)));
@@ -82,7 +82,7 @@ export class HrRecruitmentReportsService {
     }
 
     if (entity === "interviews") {
-      const validFields = fields.filter((f) => (INTERVIEW_FIELDS as readonly string[]).includes(f));
+      const validFields = fields.filter((f) => INTERVIEW_FIELDS.some((field) => field === f));
       const conditions = [eq(interviews.orgId, orgId)];
       if (filters.dateFrom) conditions.push(gte(interviews.scheduledAt, new Date(filters.dateFrom)));
       if (filters.dateTo) conditions.push(lte(interviews.scheduledAt, new Date(filters.dateTo)));
@@ -91,7 +91,7 @@ export class HrRecruitmentReportsService {
     }
 
     if (entity === "offers") {
-      const validFields = fields.filter((f) => (OFFER_FIELDS as readonly string[]).includes(f));
+      const validFields = fields.filter((f) => OFFER_FIELDS.some((field) => field === f));
       const conditions = [eq(candidateOffers.orgId, orgId)];
       if (filters.dateFrom) conditions.push(gte(candidateOffers.createdAt, new Date(filters.dateFrom)));
       if (filters.dateTo) conditions.push(lte(candidateOffers.createdAt, new Date(filters.dateTo)));

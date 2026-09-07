@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, lt, or, sql, type SQL } from "drizzle-orm";
 import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import {
@@ -20,6 +20,14 @@ import { AccountingVendorQueryService } from "./accounting-vendor-query.service"
 
 function escapeLike(value: string): string {
   return value.replaceAll("%", "\\%");
+}
+
+function afterCursor(sortLt: SQL, sortEq: SQL, idGt: SQL): SQL {
+  const tie = and(sortEq, idGt);
+  if (!tie) throw new Error("and() of two defined SQL conditions returned undefined");
+  const combined = or(sortLt, tie);
+  if (!combined) throw new Error("or() of two defined SQL conditions returned undefined");
+  return combined;
 }
 
 const BILL_COLUMNS = {
@@ -82,10 +90,11 @@ export class AccountingPayablesQueryService {
     if (pos) {
       const cursorId = Number(pos.id);
       conds.push(
-        or(
+        afterCursor(
           lt(purchaseBills.billDate, pos.sortValue),
-          and(eq(purchaseBills.billDate, pos.sortValue), gt(purchaseBills.id, cursorId))!,
-        )!,
+          eq(purchaseBills.billDate, pos.sortValue),
+          gt(purchaseBills.id, cursorId),
+        ),
       );
     }
     const rows = await this.db

@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollExceptions, payrollRuns, payrollRunEvents } from "../../../db/schema";
 import { users } from "../../../db/schema";
-import type { ResolveExceptionInput, OverrideExceptionInput } from "./dto/runs.schemas";
+import type { ResolveExceptionInput, OverrideExceptionInput, ExceptionFilterInput } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import {
@@ -21,8 +21,8 @@ export class ExceptionsService {
   async listExceptions(
     orgId: string,
     runId: number,
-    severity?: string,
-    status?: string,
+    severity?: ExceptionFilterInput["severity"],
+    status?: ExceptionFilterInput["status"],
     cursor?: string,
     limit = 50,
   ) {
@@ -37,7 +37,7 @@ export class ExceptionsService {
     const position = decodePayrollTextTimestampCursor(cursor, cursorScope);
     if (
       position &&
-      !(EXCEPTION_SEVERITIES as readonly string[]).includes(position.textValue)
+      !EXCEPTION_SEVERITIES.some((s) => s === position.textValue)
     ) {
       throw new BadRequestException("Invalid pagination cursor");
     }
@@ -51,8 +51,8 @@ export class ExceptionsService {
     if (!runCheck[0]) return null;
 
     const conditions = [eq(payrollExceptions.runId, runId), eq(payrollExceptions.orgId, orgId)];
-    if (severity) conditions.push(eq(payrollExceptions.severity, severity as "BLOCKER" | "WARNING" | "INFO"));
-    if (status) conditions.push(eq(payrollExceptions.status, status as "OPEN" | "RESOLVED" | "OVERRIDDEN"));
+    if (severity) conditions.push(eq(payrollExceptions.severity, severity));
+    if (status) conditions.push(eq(payrollExceptions.status, status));
     if (position) {
       conditions.push(
         sql`(${payrollExceptions.severity}, ${payrollExceptions.createdAt}, ${payrollExceptions.id}) > (${sql.param(position.textValue, payrollExceptions.severity)}, ${sql.param(position.createdAt, payrollExceptions.createdAt)}, ${position.id})`,

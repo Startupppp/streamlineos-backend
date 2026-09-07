@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
+import { z } from "zod";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
@@ -51,6 +52,60 @@ interface StoredBriefPayload {
   aiUsage?: AiUsageMeta;
 }
 
+const briefCitationSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  href: z.string(),
+});
+
+const aiUsageMetaSchema = z.object({
+  model: z.string(),
+  promptTokens: z.number(),
+  completionTokens: z.number(),
+  totalTokens: z.number(),
+  credits: z.number(),
+  costUsd: z.number(),
+});
+
+const storedBriefSnapshotSchema = z.object({
+  narrative: z.string().optional(),
+  citations: z.array(briefCitationSchema).optional(),
+  uncertaintyNotes: z.array(z.string()).optional(),
+  aiUsage: aiUsageMetaSchema.optional(),
+});
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+function isProjectHealthSummary(value: unknown): value is {
+  total: number;
+  healthy: number;
+  atRisk: number;
+  critical: number;
+  avgScore: number;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "total" in value &&
+    "avgScore" in value
+  );
+}
+
+function isSupportOverview(value: unknown): value is {
+  openTickets: number;
+  slaBreachCount: number;
+  avgFirstResponseMinutes: number | null;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "openTickets" in value &&
+    "slaBreachCount" in value
+  );
+}
+
 @Injectable()
 export class ExecutiveBriefService {
   private readonly logger = new Logger(ExecutiveBriefService.name);
@@ -81,10 +136,16 @@ export class ExecutiveBriefService {
     const isStale = ageMs > STALE_THRESHOLD_MS;
     const staleSinceMinutes = isStale ? Math.floor(ageMs / 60_000) : undefined;
 
-    let payload: StoredBriefPayload;
-    try {
-      payload = JSON.parse(snapshot.summary) as StoredBriefPayload;
-    } catch {
+    const parsed = storedBriefSnapshotSchema.safeParse(
+      (() => {
+        try {
+          return JSON.parse(snapshot.summary);
+        } catch {
+          return null;
+        }
+      })(),
+    );
+    if (!parsed.success) {
       this.logger.warn(
         "Failed to parse executive brief snapshot summary JSON",
         { id: snapshot.id },
@@ -94,13 +155,11 @@ export class ExecutiveBriefService {
 
     return {
       snapshot: {
-        narrative: payload.narrative ?? "",
-        citations: Array.isArray(payload.citations) ? payload.citations : [],
-        uncertaintyNotes: Array.isArray(payload.uncertaintyNotes)
-          ? payload.uncertaintyNotes
-          : [],
+        narrative: parsed.data.narrative ?? "",
+        citations: parsed.data.citations ?? [],
+        uncertaintyNotes: parsed.data.uncertaintyNotes ?? [],
         generatedAt: snapshot.createdAt.toISOString(),
-        aiUsage: payload.aiUsage,
+        aiUsage: parsed.data.aiUsage,
       },
       isStale,
       staleSinceMinutes,
