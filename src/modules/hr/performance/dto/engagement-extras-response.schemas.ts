@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { campaignStatusEnum } from "../../../../db/schema/hr/engagement-extras";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { successSchema } from "../../../../common/openapi/response-envelopes";
 
@@ -97,7 +98,7 @@ const campaignSchema = z.object({
   description: z.string().nullable(),
   startsAt: nullableWireDate(),
   endsAt: nullableWireDate(),
-  status: z.enum(["draft", "active", "completed"]),
+  status: z.enum(campaignStatusEnum.enumValues),
   audience: z.object({ type: z.string(), ids: z.array(z.string()).optional() }).nullable(),
   createdBy: z.string().nullable(),
   createdByMembershipId: z.number().int().nullable(),
