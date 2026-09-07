@@ -125,9 +125,11 @@ export function stringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 /** Narrows a before-image column to a plain object, or `null` if it never was one. */
 export function recordOrNull(value: unknown): Record<string, unknown> | null {
-  if (value !== null && typeof value === "object" && !Array.isArray(value))
-    return value as Record<string, unknown>;
-  return null;
+  return isPlainRecord(value) ? value : null;
 }
