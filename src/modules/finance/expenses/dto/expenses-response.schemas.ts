@@ -37,6 +37,8 @@ export const expensePolicySchema = z.object({
 
 export const expensePolicyListResponseSchema = z.array(expensePolicySchema);
 
+export const expensePolicyCreatedResponseSchema = expensePolicySchema.omit({ category: true });
+
 const expenseUserSchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
@@ -116,6 +118,8 @@ export const reimbursementBatchSchema = z.object({
   approver: reimbursementBatchActorSchema.nullable(),
 });
 
+export const reimbursementBatchCreatedResponseSchema = reimbursementBatchSchema.omit({ creator: true, approver: true });
+
 export const reimbursementBatchListResponseSchema = z.object({
   data: z.array(reimbursementBatchSchema),
   page: z.number().int(),
@@ -144,7 +148,7 @@ export const reimbursementBatchDetailResponseSchema = z.object({
 export const reimbursementPayResponseSchema = z.object({
   success: z.literal(true),
   replayed: z.boolean(),
-  entryId: z.number().int(),
+  entryId: z.number().int().nullable(),
 });
 
 export { successSchema };

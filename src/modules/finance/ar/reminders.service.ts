@@ -35,6 +35,7 @@ export class RemindersService {
       channel: finReminderPolicies.channel,
       template: finReminderPolicies.template,
       isActive: finReminderPolicies.isActive,
+      archivedAt: finReminderPolicies.archivedAt,
       createdAt: finReminderPolicies.createdAt,
       updatedAt: finReminderPolicies.updatedAt,
     };

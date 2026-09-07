@@ -46,7 +46,7 @@ export const paymentProviderCatalogResponseSchema = z.array(catalogEntrySchema);
 
 export const credentialSaveResponseSchema = z.object({
   credential: publicCredentialSchema,
-  warning: z.string().optional(),
+  warning: z.object({ code: z.string(), message: z.string() }).nullable(),
 });
 
 export const paymentTestTransactionRowSchema = z.object({

@@ -35,7 +35,7 @@ export const budgetVsActualResponseSchema = z.object({
   budget: z.object({
     id: z.number().int(),
     name: z.string(),
-    fiscalYear: z.number().int(),
+    fiscalYear: z.string(),
   }),
   lines: z.array(budgetLineSchema),
 });

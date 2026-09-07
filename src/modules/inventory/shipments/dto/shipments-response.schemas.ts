@@ -55,11 +55,6 @@ export const invShipmentSchema = z.object({
 
 export const listShipmentsResponseSchema = itemsPagedSchema(invShipmentSchema);
 
-export const getShipmentResponseSchema = invShipmentSchema.extend({
-  lines: z.array(shipmentLineSchema),
-  packages: z.array(z.record(z.string(), z.unknown())),
-});
-
 export const invPackageSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -75,6 +70,11 @@ export const invPackageSchema = z.object({
   createdAt: wireDate(),
   updatedAt: wireDate(),
   lines: z.array(packageLineSchema).optional(),
+});
+
+export const getShipmentResponseSchema = invShipmentSchema.extend({
+  lines: z.array(shipmentLineSchema),
+  packages: z.array(invPackageSchema),
 });
 
 export const listPackagesResponseSchema = itemsPagedSchema(invPackageSchema);

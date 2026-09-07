@@ -28,6 +28,7 @@ import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   expensePolicyListResponseSchema,
+  expensePolicyCreatedResponseSchema,
   expensePolicySchema,
   successSchema,
 } from "./dto/expenses-response.schemas";
@@ -48,7 +49,7 @@ export class ExpensePoliciesController {
   }
 
   @Post()
-  @ResponseSchema(expensePolicySchema)
+  @ResponseSchema(expensePolicyCreatedResponseSchema)
   @HttpCode(201)
   @RequirePermission("accounting:reimbursements:manage")
   @Validate({ body: createPolicySchema })

@@ -196,7 +196,7 @@ export class ReimbursementsService {
 
     if (!batch) throw new NotFoundException("Reimbursement batch not found");
     if (batch.status === "PAID") {
-      return { success: true, replayed: true };
+      return { success: true, replayed: true, entryId: batch.journalEntryId };
     }
     if (batch.status !== "APPROVED") {
       throw new BadRequestException("Batch must be in APPROVED status before paying");

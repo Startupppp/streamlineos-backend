@@ -30,6 +30,7 @@ import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   reimbursementBatchListResponseSchema,
+  reimbursementBatchCreatedResponseSchema,
   reimbursementBatchSchema,
   reimbursementBatchDetailResponseSchema,
   reimbursementPayResponseSchema,
@@ -56,7 +57,7 @@ export class FinanceReimbursementsController {
   }
 
   @Post()
-  @ResponseSchema(reimbursementBatchSchema)
+  @ResponseSchema(reimbursementBatchCreatedResponseSchema)
   @HttpCode(201)
   @RequirePermission("accounting:reimbursements:manage")
   @Idempotent("accounting.reimbursement-batch.create")
