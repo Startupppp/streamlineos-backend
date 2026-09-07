@@ -89,9 +89,24 @@ const expenseStatsSchema = z.object({
   avgExpenseAmount: z.number(),
 });
 
+const expensePersonRefSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  email: z.string(),
+  image: z.string().nullable(),
+});
+
+export const expensePageDataRowSchema = expenseRowSchema.extend({
+  user: expensePersonRefSchema.nullable(),
+  approver: expensePersonRefSchema.nullable(),
+  expenseCategory: expenseCategoryRowSchema.nullable(),
+});
+
 export const expensePageDataResponseSchema = z.object({
-  expenses: z.array(expenseRowSchema),
-  pendingExpenses: z.array(expenseRowSchema),
+  expenses: z.array(expensePageDataRowSchema),
+  pendingExpenses: z.array(expensePageDataRowSchema),
   stats: expenseStatsSchema,
   categories: z.array(expenseCategoryRowSchema),
   pagination: z.object({

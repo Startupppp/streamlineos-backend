@@ -265,7 +265,6 @@ export class ExpensesService {
           user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
           approver: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
           expenseCategory: true,
-          project: true,
         },
         orderBy: [
           asc(sql`CASE ${expenses.status} WHEN 'PENDING' THEN 0 WHEN 'APPROVED' THEN 1 WHEN 'REJECTED' THEN 2 WHEN 'PAID' THEN 3 ELSE 4 END`),
@@ -300,7 +299,6 @@ export class ExpensesService {
           user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
           approver: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
           expenseCategory: true,
-          project: true,
         },
             orderBy: [desc(expenses.createdAt)],
             limit: 100,
