@@ -97,8 +97,8 @@ export class CrmSequencesRunnerService {
     const leadCheckIds: number[] = [];
     for (const enrollment of enrollments) {
       const rawStopOn = seqStopOnMap.get(enrollment.sequenceId);
-      if (!rawStopOn || typeof rawStopOn !== "object") continue;
-      if ((rawStopOn as Record<string, unknown>)["converted"] !== true) continue;
+      if (!rawStopOn) continue;
+      if (rawStopOn["converted"] !== true) continue;
       if (enrollment.entityType !== "lead") continue;
       const leadId = parseInt(enrollment.entityId, 10);
       if (Number.isFinite(leadId)) leadCheckIds.push(leadId);
@@ -121,12 +121,8 @@ export class CrmSequencesRunnerService {
     for (const enrollment of enrollments) {
       try {
         const rawStopOn = seqStopOnMap.get(enrollment.sequenceId);
-        if (rawStopOn && typeof rawStopOn === "object") {
-          const { stop, reason } = this.evaluateStopOn(
-            rawStopOn as Record<string, unknown>,
-            enrollment,
-            convertedLeadKeys,
-          );
+        if (rawStopOn) {
+          const { stop, reason } = this.evaluateStopOn(rawStopOn, enrollment, convertedLeadKeys);
           if (stop) {
             await this.db
               .update(crmSequenceEnrollments)

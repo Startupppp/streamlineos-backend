@@ -1,15 +1,28 @@
 import type { signDocuments, signEnvelopes, signFields, signRecipients } from "../../db/schema";
+import {
+  signAuthMethodEnum,
+  signCcTimingEnum,
+  signFieldTypeEnum,
+  signRecipientTypeEnum,
+  signRoutingModeEnum,
+} from "../../db/schema/e-sign/enums";
 
 type SignEnvelopeRow = typeof signEnvelopes.$inferSelect;
 type SignDocumentRow = typeof signDocuments.$inferSelect;
 type SignRecipientRow = typeof signRecipients.$inferSelect;
 type SignFieldRow = typeof signFields.$inferSelect;
 
+type RoutingMode = (typeof signRoutingModeEnum.enumValues)[number];
+type CcTiming = (typeof signCcTimingEnum.enumValues)[number];
+type RecipientType = (typeof signRecipientTypeEnum.enumValues)[number];
+type AuthMethod = (typeof signAuthMethodEnum.enumValues)[number];
+type FieldType = (typeof signFieldTypeEnum.enumValues)[number];
+
 export interface TemplateRole {
   roleName: string;
-  recipientType: string;
+  recipientType: RecipientType;
   routingOrder: number;
-  authMethod: string;
+  authMethod: AuthMethod;
 }
 
 export interface TemplateDocument {
@@ -25,7 +38,7 @@ export interface TemplateDocument {
 export interface TemplateField {
   roleName: string;
   documentIndex: number;
-  fieldType: string;
+  fieldType: FieldType;
   label?: string | null;
   pageNumber: number;
   x: number;

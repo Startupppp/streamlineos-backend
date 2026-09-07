@@ -17,8 +17,10 @@ import {
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { type RoundingRule } from "./money-rounding";
 import { allocateDocumentNumber } from "./invoice-numbering";
+import { assertOneOf } from "./lib/enum-guard";
 import {
   priceDocument,
+  TAX_BEHAVIORS,
   type InvoiceLineInput,
   type TaxBehavior,
 } from "./invoice-pricing";
@@ -273,7 +275,7 @@ export class InvoiceSnapshotService {
         const { lines: priced, totalMinor } = priceDocument(
           input.lines,
           roundingRule,
-          original.taxBehavior as TaxBehavior,
+          original.taxBehavior,
         );
 
         const noteNumber = await allocateDocumentNumber(

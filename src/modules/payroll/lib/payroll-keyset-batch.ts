@@ -22,7 +22,7 @@ export async function readPayrollKeysetBatches<T>(input: {
     result.push(...page);
     if (page.length < batchSize) return result;
 
-    const nextId = input.idOf(page[page.length - 1]!);
+    const nextId = input.idOf(page[page.length - 1]);
     if (afterId !== null && nextId <= afterId) {
       throw new Error("Payroll keyset batch did not advance");
     }

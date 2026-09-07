@@ -3,6 +3,6 @@
   "include": [],
   "files": [
     "src/@types/express.d.ts",
-    "src/modules/hr/lifecycle/onboarding-views.service.ts"
+    "src/modules/hr/governance/delegations/delegations.service.ts"
   ]
 }

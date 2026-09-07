@@ -38,13 +38,13 @@ function money(n: number): string {
 
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
-  if (sorted.length === 1) return sorted[0]!;
+  if (sorted.length === 1) return sorted[0];
   const idx = (sorted.length - 1) * p;
   const lo = Math.floor(idx);
   const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo]!;
+  if (lo === hi) return sorted[lo];
   const w = idx - lo;
-  return sorted[lo]! * (1 - w) + sorted[hi]! * w;
+  return sorted[lo] * (1 - w) + sorted[hi] * w;
 }
 
 /**
@@ -79,8 +79,8 @@ export function analyzePayCompression(
     };
   }
 
-  const min = sorted[0]!;
-  const max = sorted[sorted.length - 1]!;
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
   const mean = sorted.reduce((s, n) => s + n, 0) / sorted.length;
   const median = percentile(sorted, 0.5);
   const p25 = percentile(sorted, 0.25);
