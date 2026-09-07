@@ -151,10 +151,10 @@ export class TeamRewardsService {
     });
 
     const compressionMembers = members
-      .filter((m) => m.annualCtc != null)
+      .filter((m): m is TeamRewardsMemberRow & { annualCtc: string } => m.annualCtc != null)
       .map((m) => ({
         userId: m.userId,
-        annualCtc: parseFloat(m.annualCtc!),
+        annualCtc: parseFloat(m.annualCtc),
         label: m.name,
       }));
     const missingCtcCount = members.filter((m) => m.annualCtc == null).length;

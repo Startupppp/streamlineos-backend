@@ -133,15 +133,14 @@ export class OnboardingViewsService {
     const rowConditions = [...conditions];
     const cursorPosition = decodeOnboardingSummaryCursor(query.cursor);
     if (cursorPosition) {
-      rowConditions.push(
-        cursorPosition.name === null
-          ? and(isNull(users.name), gt(users.id, cursorPosition.userId))!
-          : or(
-              gt(users.name, cursorPosition.name),
-              isNull(users.name),
-              and(eq(users.name, cursorPosition.name), gt(users.id, cursorPosition.userId)),
-            )!,
-      );
+      const cursorCondition = cursorPosition.name === null
+        ? and(isNull(users.name), gt(users.id, cursorPosition.userId))
+        : or(
+            gt(users.name, cursorPosition.name),
+            isNull(users.name),
+            and(eq(users.name, cursorPosition.name), gt(users.id, cursorPosition.userId)),
+          );
+      if (cursorCondition) rowConditions.push(cursorCondition);
     }
 
     const [rows, [countRow]] = await Promise.all([
@@ -487,10 +486,15 @@ export class OnboardingViewsService {
       sql`SELECT app.search_hr_person_ids(${search}, ${OnboardingViewsService.ONBOARDING_SEARCH_CAP + 1}) AS id`,
     );
     if (rows.length === 0) return designationIlike;
-    if (rows.length > OnboardingViewsService.ONBOARDING_SEARCH_CAP)
-      return or(ilike(users.name, `%${search}%`), designationIlike)!;
+    if (rows.length > OnboardingViewsService.ONBOARDING_SEARCH_CAP) {
+      const fallback = or(ilike(users.name, `%${search}%`), designationIlike);
+      if (!fallback) throw new InternalServerErrorException("Failed to build onboarding search fallback");
+      return fallback;
+    }
     const ids = rows.map((r) => Number(r["id"]));
-    return or(inArray(hrPeople.id, ids), designationIlike)!;
+    const condition = or(inArray(hrPeople.id, ids), designationIlike);
+    if (!condition) throw new InternalServerErrorException("Failed to build onboarding search condition");
+    return condition;
   }
 
 }

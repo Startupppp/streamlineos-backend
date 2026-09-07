@@ -75,9 +75,10 @@ function decodeTeamStatusCursor(value: string | undefined) {
     ) {
       throw new Error("invalid team status cursor");
     }
-    const rank = parsed[0] as number;
+    const rank: number = parsed[0];
     if (rank < 0 || rank > 3) throw new Error("invalid status rank");
-    return { rank, name: parsed[1] as string | null, userId: position.id };
+    const name: string | null = parsed[1];
+    return { rank, name, userId: position.id };
   } catch {
     throw new BadRequestException("Invalid pagination cursor");
   }
@@ -207,12 +208,11 @@ export class AttendanceService {
               gt(organizationMembers.userId, cursorPosition.userId),
             ),
           );
-      rowConditions.push(
-        or(
-          sql`${statusRankExpr} > ${cursorPosition.rank}`,
-          and(sql`${statusRankExpr} = ${cursorPosition.rank}`, nameAfter),
-        )!,
+      const cursorCondition = or(
+        sql`${statusRankExpr} > ${cursorPosition.rank}`,
+        and(sql`${statusRankExpr} = ${cursorPosition.rank}`, nameAfter),
       );
+      if (cursorCondition) rowConditions.push(cursorCondition);
     }
 
     const [rows, countRows] = await Promise.all([
@@ -267,7 +267,7 @@ export class AttendanceService {
       OFFLINE: 0,
     };
     for (const row of countRows) {
-      const status = row.status as AttendanceStatus;
+      const status = row.status;
       if (status in counts) counts[status] = row.count;
     }
 

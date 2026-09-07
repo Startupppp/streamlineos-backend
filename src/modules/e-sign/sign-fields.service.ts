@@ -105,7 +105,29 @@ export class SignFieldsService {
   async update(orgId: string, fieldId: number, input: UpdateFieldInput, actor: RequestActorContext) {
     const field = await this.get(orgId, fieldId);
     await this.loadEditableEnvelope(orgId, field.envelopeId);
-    if (Object.keys(input).length > 0) this.validateFieldRules({ ...field, ...input } as CreateFieldInput);
+    if (Object.keys(input).length > 0) {
+      const merged: CreateFieldInput = {
+        documentId: field.documentId,
+        recipientId: field.recipientId,
+        fieldType: input.fieldType ?? field.fieldType,
+        label: input.label ?? field.label ?? undefined,
+        pageNumber: input.pageNumber ?? field.pageNumber,
+        x: input.x ?? field.x,
+        y: input.y ?? field.y,
+        width: input.width ?? field.width,
+        height: input.height ?? field.height,
+        required: input.required ?? field.required,
+        readonly: input.readonly ?? field.readonly,
+        orderIndex: input.orderIndex ?? field.orderIndex,
+        groupId: input.groupId ?? field.groupId ?? undefined,
+        defaultValue: input.defaultValue ?? field.defaultValue ?? undefined,
+        optionsJson: input.optionsJson ?? field.optionsJson ?? undefined,
+        validationType: input.validationType ?? field.validationType ?? undefined,
+        validationRulesJson: input.validationRulesJson ?? field.validationRulesJson ?? undefined,
+        conditionalRulesJson: input.conditionalRulesJson ?? field.conditionalRulesJson ?? undefined,
+      };
+      this.validateFieldRules(merged);
+    }
 
     const [updated] = await this.db
       .update(signFields)

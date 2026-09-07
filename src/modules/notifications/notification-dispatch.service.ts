@@ -259,10 +259,11 @@ export class NotificationDispatchService {
       const digestWindowMs = definition.mandatory
         ? null
         : NotificationDigestService.windowMsFor(digestModeByUser.get(userId));
-      if (digestWindowMs !== null) {
+      const membershipId = memberIdByUser.get(userId);
+      if (digestWindowMs !== null && membershipId !== undefined) {
         await this.digest.enqueue({
           orgId: input.orgId,
-          membershipId: memberIdByUser.get(userId)!,
+          membershipId,
           channel: "EMAIL",
           eventKey: input.eventKey,
           entityType: input.entityType ?? null,
@@ -278,7 +279,7 @@ export class NotificationDispatchService {
         input,
         definition,
         userId,
-        memberIdByUser.get(userId) ?? null,
+        membershipId ?? null,
         routingResult,
         emailMap.get(userId) ?? null,
         templatesByLocale.get(localeByUser.get(userId) ?? "en") ?? new Map(),

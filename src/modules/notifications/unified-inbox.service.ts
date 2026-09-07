@@ -92,6 +92,14 @@ export class UnifiedInboxService {
       },
     ];
 
+    const emptyNotifications: NotificationInboxItem[] = [];
+    const emptyBroadcasts: BroadcastInboxItem[] = [];
+    const emptyMailResult: { items: MailInboxItem[]; nextMailCursor: string | null } = {
+      items: [],
+      nextMailCursor: null,
+    };
+    const emptyApprovals: BuildApprovalInboxItem[] = [];
+
     const [notifItems, broadcastItems, mailResult, approvalItems] =
       await Promise.all([
         wantsNotifications
@@ -103,19 +111,16 @@ export class UnifiedInboxService {
               cursorState.n,
               query.unreadOnly ?? false,
             )
-          : ([] as NotificationInboxItem[]),
+          : emptyNotifications,
         wantsBroadcasts
           ? fetchBroadcastItems(this.broadcasts, orgId, userId, limit + 1, cursorState.b, actingMembershipId(user.principal))
-          : ([] as BroadcastInboxItem[]),
+          : emptyBroadcasts,
         wantsMail && canViewMail
           ? this.fetchMail(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.m)
-          : {
-              items: [] as MailInboxItem[],
-              nextMailCursor: null as string | null,
-            },
+          : emptyMailResult,
         wantsBuildApprovals && canViewBuildApprovals
           ? this.fetchBuildApprovals(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.a)
-          : ([] as BuildApprovalInboxItem[]),
+          : emptyApprovals,
       ]);
 
     const merged = stableSortItems([

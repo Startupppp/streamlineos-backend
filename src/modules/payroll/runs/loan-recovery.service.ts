@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../../db/drizzle.types";
 import { payrollRunEmployees, salaryLoans } from "../../../db/schema";
+import { toCalculationSnapshot } from "../payroll.types";
 
 @Injectable()
 export class LoanRecoveryService {
@@ -25,7 +26,7 @@ export class LoanRecoveryService {
 
     const loanIdSet = new Set<number>();
     for (const emp of empRows) {
-      const snap = emp.calculationSnapshot as { lines?: { code: string }[] } | null;
+      const snap = toCalculationSnapshot(emp.calculationSnapshot);
       for (const line of snap?.lines ?? []) {
         const match = /^LOAN_EMI_(\d+)$/.exec(line.code);
         if (match?.[1]) loanIdSet.add(parseInt(match[1], 10));

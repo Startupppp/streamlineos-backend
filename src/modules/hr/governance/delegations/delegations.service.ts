@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gt, lte, or } from "drizzle-orm";
@@ -32,7 +33,8 @@ export class DelegationsService {
     const actorPredicate = or(
       eq(hrProxyAccess.grantorMembershipId, membershipId),
       eq(hrProxyAccess.proxyMembershipId, membershipId),
-    )!;
+    );
+    if (!actorPredicate) throw new InternalServerErrorException("Failed to build proxy access predicate");
 
     const conditions = [
       eq(hrProxyAccess.orgId, u.orgId),
@@ -108,17 +110,19 @@ export class DelegationsService {
       })
       .returning();
 
+    if (!proxy) throw new InternalServerErrorException("Failed to create proxy access");
+
     await this.audit.log({
       orgId: u.orgId,
       actorId: u.userId,
       entityType: "hr_proxy_access",
-      entityId: String(proxy!.id),
+      entityId: String(proxy.id),
       action: "proxy.granted",
       after: { proxyUserId: input.proxyUserId, scope: input.scope },
       ipAddress,
     });
 
-    return proxy!;
+    return proxy;
   }
 
   async update(orgId: string, proxyId: number, userId: string, membershipId: number | null, input: UpdateProxyInput, ipAddress?: string) {
@@ -157,6 +161,8 @@ export class DelegationsService {
       .where(and(eq(hrProxyAccess.orgId, orgId), eq(hrProxyAccess.id, proxyId)))
       .returning();
 
+    if (!updated) throw new InternalServerErrorException("Failed to update proxy access");
+
     await this.audit.log({
       orgId,
       actorId: userId,
@@ -167,7 +173,7 @@ export class DelegationsService {
       ipAddress,
     });
 
-    return updated!;
+    return updated;
   }
 
   async revoke(orgId: string, proxyId: number, userId: string, membershipId: number | null, isAdmin: boolean, ipAddress?: string) {

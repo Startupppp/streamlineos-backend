@@ -121,7 +121,7 @@ export class SignEnvelopeDispatchService {
 
     const updated = await this.db.transaction(async (tx) => {
       for (const plan of sendPlans) {
-        await (tx as Db)
+        await tx
           .update(signRecipients)
           .set({
             status: plan.shouldInviteNow ? "invited" : "pending",
@@ -131,7 +131,7 @@ export class SignEnvelopeDispatchService {
           })
           .where(eq(signRecipients.id, plan.id));
       }
-      const [row] = await (tx as Db)
+      const [row] = await tx
         .update(signEnvelopes)
         .set({ status: "sent", sentAt: new Date(), expiresAt, finalizationKey })
         .where(eq(signEnvelopes.id, envelopeId))
@@ -264,7 +264,7 @@ export class SignEnvelopeDispatchService {
       if (newStatus === "declined") patch.declinedAt = new Date();
 
       await this.db.transaction(async (tx) => {
-        await (tx as Db)
+        await tx
           .update(signEnvelopes)
           .set(patch)
           .where(eq(signEnvelopes.id, envelopeId));
@@ -297,7 +297,7 @@ export class SignEnvelopeDispatchService {
 
       if (newStatus === "declined") {
         this.integrations.emitEnvelopeEvent(
-          { ...envelope, ...patch } as typeof signEnvelopes.$inferSelect,
+          { ...envelope, status: newStatus, declinedAt: patch.declinedAt ?? envelope.declinedAt },
           "declined",
         );
       }

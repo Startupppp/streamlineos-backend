@@ -10,6 +10,7 @@ import {
 import { toPayrollPolicyConfig } from "../payroll.types";
 import { DEFAULT_PAYROLL_POLICY_CONFIG } from "../setup/payroll-policy-defaults.constants";
 import { AuditService } from "../../../common/audit/audit.service";
+import type { CreateCalendarEvent, PatchCalendarEvent } from "./dto/insights.schemas";
 
 type CalendarEventStatus = "upcoming" | "due" | "overdue";
 
@@ -85,7 +86,7 @@ export class CalendarService {
   async create(
     orgId: string,
     actorId: string,
-    data: { type: string; date: string; title: string; month?: string },
+    data: CreateCalendarEvent,
   ): Promise<CalendarEventRow> {
     validateDate(data.date);
 
@@ -93,7 +94,7 @@ export class CalendarService {
       .insert(payrollCalendarEvents)
       .values({
         orgId,
-        type: data.type as CalendarEventInsert["type"],
+        type: data.type,
         date: data.date,
         title: data.title,
         month: data.month ?? null,
@@ -117,7 +118,7 @@ export class CalendarService {
     orgId: string,
     actorId: string,
     eventId: number,
-    data: { type?: string; date?: string; title?: string; month?: string },
+    data: PatchCalendarEvent,
   ): Promise<CalendarEventRow> {
     validateDate(data.date);
 
@@ -138,7 +139,7 @@ export class CalendarService {
         updatedAt?: Date;
       } = { updatedAt: new Date() };
 
-      if (data.type !== undefined) patch.type = data.type as CalendarEventInsert["type"];
+      if (data.type !== undefined) patch.type = data.type;
       if (data.date !== undefined) patch.date = data.date;
       if (data.title !== undefined) patch.title = data.title;
       if (data.month !== undefined) patch.month = data.month;

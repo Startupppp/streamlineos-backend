@@ -297,7 +297,7 @@ export class BroadcastsService {
         ),
       );
 
-    return or(eq(broadcasts.audienceType, "all"), exists(matchingTarget))!;
+    return or(eq(broadcasts.audienceType, "all"), exists(matchingTarget)) ?? sql`false`;
   }
 
   /**

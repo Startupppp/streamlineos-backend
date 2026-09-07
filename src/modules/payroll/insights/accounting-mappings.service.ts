@@ -41,17 +41,18 @@ export class AccountingMappingsService {
       notes?: string;
     },
   ) {
-    const hasComponent = data.componentId !== undefined;
+    const { componentId } = data;
+    const hasComponent = componentId !== undefined;
     const hasCategory = data.category !== undefined;
     if (hasComponent === hasCategory) {
       throw new BadRequestException("Exactly one of componentId or category must be provided");
     }
 
-    if (hasComponent) {
+    if (componentId !== undefined) {
       const comp = await this.db
         .select({ id: salaryComponents.id })
         .from(salaryComponents)
-        .where(and(eq(salaryComponents.id, data.componentId!), eq(salaryComponents.orgId, orgId)))
+        .where(and(eq(salaryComponents.id, componentId), eq(salaryComponents.orgId, orgId)))
         .limit(1);
       if (comp.length === 0) throw new NotFoundException("Salary component not found");
     }

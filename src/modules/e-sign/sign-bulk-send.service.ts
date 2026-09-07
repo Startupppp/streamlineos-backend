@@ -141,13 +141,13 @@ export class SignBulkSendService {
     let failedCount = 0;
 
     for (const row of rows) {
-      if (row.error) {
+      if (row.error || !row.name) {
         failedCount++;
         continue;
       }
       try {
         const envelope = await this.templates.instantiate(orgId, senderMembershipId, templateId, {
-          recipients: [{ roleName, name: row.name!, email: row.email, phone: row.phone }],
+          recipients: [{ roleName, name: row.name, email: row.email, phone: row.phone }],
         });
         await this.envelopes.send(orgId, envelope.id, actor);
         await this.db

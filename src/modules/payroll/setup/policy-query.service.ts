@@ -15,7 +15,7 @@ import type {
   PayrollPolicyConfig,
   TemplateComponentDef,
 } from "../payroll.types";
-import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
+import { DEFAULT_PAYROLL_TOGGLES, normalizePayrollToggles, toPayrollPolicyConfig } from "../payroll.types";
 import { getStatutoryPack } from "../runs/lib/statutory-packs";
 import { DEFAULT_PAYROLL_CALENDAR as DEFAULT_CALENDAR } from "./payroll-policy-defaults.constants";
 import { format } from "date-fns";
@@ -130,11 +130,7 @@ export class PolicyQueryService {
       ),
     });
 
-    const rawPolicyConfig = activeVersion?.config;
-    const config: PayrollPolicyConfig | null =
-      rawPolicyConfig && typeof rawPolicyConfig === "object"
-        ? (rawPolicyConfig as PayrollPolicyConfig)
-        : null;
+    const config = toPayrollPolicyConfig(activeVersion?.config);
 
     let packData: {
       country: string;
@@ -189,11 +185,7 @@ export class PolicyQueryService {
       components = Array.isArray(rawComponents)
         ? (rawComponents as TemplateComponentDef[])
         : [];
-      const rawToggles = tpl.defaultToggles;
-      baseToggles =
-        rawToggles && typeof rawToggles === "object"
-          ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
-          : { ...DEFAULT_PAYROLL_TOGGLES };
+      baseToggles = normalizePayrollToggles(tpl.defaultToggles);
     }
 
     const toggles: PayrollToggles = { ...baseToggles, ...(input.toggleOverrides ?? {}) };

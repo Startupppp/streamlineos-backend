@@ -7,6 +7,11 @@ import { renderButton } from "../../email/templates/components";
 import { createUnsubscribeToken } from "../../email/unsubscribe-token";
 import { appUrl } from "../../email/app-url";
 import { logger } from "../../../common/logger/logger.service";
+import { z } from "zod";
+
+const emailAttachmentsSchema = z.array(
+  z.object({ filename: z.string(), contentBase64: z.string(), type: z.string() }),
+);
 
 /**
  * COMP-002. RFC 8058 one-click unsubscribe headers, so a mail client can offer the
@@ -67,14 +72,15 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
       return { status: "FAILED", failureCode: "NO_PROVIDER", failureMessage: "No email provider configured", retryable: false };
     }
     try {
+      const parsedAttachments = emailAttachmentsSchema.safeParse(input.metadata?.attachments);
       await this.emailProvider.dispatchEmail({
         to: input.recipientAddress,
         subject: input.title,
         html: buildHtml(input),
         organizationId: input.orgId,
         headers: unsubscribeHeaders(input),
-        attachments: Array.isArray(input.metadata?.attachments)
-          ? (input.metadata.attachments as Array<{ filename: string; contentBase64: string; type: string }>).map((a) => ({
+        attachments: parsedAttachments.success
+          ? parsedAttachments.data.map((a) => ({
               filename: a.filename,
               content: Buffer.from(a.contentBase64, "base64"),
               type: a.type,

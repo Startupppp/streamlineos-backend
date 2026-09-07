@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -62,7 +62,8 @@ export class PayrollJobsService {
           createdBy: params.actorId,
         })
         .returning();
-      return row!;
+      if (!row) throw new InternalServerErrorException("Failed to create payroll job");
+      return row;
     } catch (err) {
       if (!isUniqueViolation(err)) {
         logger.error("payroll-jobs.enqueue: insert failed unexpectedly", {

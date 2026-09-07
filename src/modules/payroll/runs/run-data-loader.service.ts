@@ -13,13 +13,17 @@ import {
 } from "../../../db/schema";
 import {
   PAYROLL_LOCKED_STATUSES,
-  DEFAULT_PAYROLL_TOGGLES,
+  normalizePayrollToggles,
+  toPayrollPolicyConfig,
+  toCalculationSnapshot,
+  toInputsSnapshot,
 } from "../payroll.types";
 import type {
   PayrollToggles,
   PayrollPolicyConfig,
   CalculationSnapshot,
 } from "../payroll.types";
+import { DEFAULT_PAYROLL_POLICY_CONFIG } from "../setup/payroll-policy-defaults.constants";
 import { payrollSubjectKey } from "../lib/payroll-subject";
 import { requirePayrollUserIds } from "../lib/payroll-user-id";
 import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
@@ -51,20 +55,9 @@ export class RunDataLoaderService {
         .limit(1);
 
       if (version[0]) {
-        const rawToggles = version[0].toggles;
-        const rawConfig = version[0].config;
         return {
-          toggles:
-            rawToggles && typeof rawToggles === "object"
-              ? {
-                  ...DEFAULT_PAYROLL_TOGGLES,
-                  ...(rawToggles as Partial<PayrollToggles>),
-                }
-              : { ...DEFAULT_PAYROLL_TOGGLES },
-          config:
-            rawConfig && typeof rawConfig === "object"
-              ? (rawConfig as PayrollPolicyConfig)
-              : ({} as PayrollPolicyConfig),
+          toggles: normalizePayrollToggles(version[0].toggles),
+          config: toPayrollPolicyConfig(version[0].config) ?? DEFAULT_PAYROLL_POLICY_CONFIG,
           policyVersionId: version[0].id,
         };
       }
@@ -85,20 +78,9 @@ export class RunDataLoaderService {
 
     if (!activeVersion[0]) return null;
 
-    const rawActiveToggles = activeVersion[0].payroll_policy_versions.toggles;
-    const rawActiveConfig = activeVersion[0].payroll_policy_versions.config;
     return {
-      toggles:
-        rawActiveToggles && typeof rawActiveToggles === "object"
-          ? {
-              ...DEFAULT_PAYROLL_TOGGLES,
-              ...(rawActiveToggles as Partial<PayrollToggles>),
-            }
-          : { ...DEFAULT_PAYROLL_TOGGLES },
-      config:
-        rawActiveConfig && typeof rawActiveConfig === "object"
-          ? (rawActiveConfig as PayrollPolicyConfig)
-          : ({} as PayrollPolicyConfig),
+      toggles: normalizePayrollToggles(activeVersion[0].payroll_policy_versions.toggles),
+      config: toPayrollPolicyConfig(activeVersion[0].payroll_policy_versions.config) ?? DEFAULT_PAYROLL_POLICY_CONFIG,
       policyVersionId: activeVersion[0].payroll_policy_versions.id,
     };
   }
@@ -217,14 +199,9 @@ export class RunDataLoaderService {
       .limit(1000);
 
     for (const prevEmp of prevEmps) {
-      const rawSnap = prevEmp.calculationSnapshot;
-      if (
-        prevEmp.userId &&
-        rawSnap &&
-        typeof rawSnap === "object" &&
-        !result.has(prevEmp.userId)
-      )
-        result.set(prevEmp.userId, rawSnap as CalculationSnapshot);
+      if (!prevEmp.userId || result.has(prevEmp.userId)) continue;
+      const snap = toCalculationSnapshot(prevEmp.calculationSnapshot);
+      if (snap) result.set(prevEmp.userId, snap);
     }
     return result;
   }
@@ -245,9 +222,7 @@ export class RunDataLoaderService {
       .limit(1000);
 
     const prevIds = existingEmps.flatMap(
-      (e) =>
-        (e.inputsSnapshot as { consumedReimbursementIds?: number[] } | null)
-          ?.consumedReimbursementIds ?? [],
+      (e) => toInputsSnapshot(e.inputsSnapshot)?.consumedReimbursementIds ?? [],
     );
 
     if (prevIds.length > 0) {

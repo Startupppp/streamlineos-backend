@@ -70,9 +70,9 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
   const allowed = new Set<NotificationChannel>(definition.allowedChannels);
   allowed.add("IN_APP");
   let candidates: NotificationChannel[];
-  if (orgPolicy?.eventOverride?.channels?.length) candidates = orgPolicy.eventOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel));
-  else if (orgPolicy?.categoryOverride?.channels?.length) candidates = orgPolicy.categoryOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel));
-  else if (orgPolicy?.moduleOverride?.channels?.length) candidates = orgPolicy.moduleOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel));
+  if (orgPolicy?.eventOverride?.channels?.length) candidates = orgPolicy.eventOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.some((channel) => channel === c));
+  else if (orgPolicy?.categoryOverride?.channels?.length) candidates = orgPolicy.categoryOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.some((channel) => channel === c));
+  else if (orgPolicy?.moduleOverride?.channels?.length) candidates = orgPolicy.moduleOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.some((channel) => channel === c));
   else if (orgPolicy?.defaultChannels?.length) candidates = orgPolicy.defaultChannels;
   else candidates = definition.defaultChannels;
   candidates = Array.from(new Set<NotificationChannel>([...candidates].filter((c) => allowed.has(c))));

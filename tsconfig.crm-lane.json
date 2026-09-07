@@ -1,9 +1,4 @@
 { "extends": "./tsconfig.json", "include": [], "files": [
   "src/@types/express.d.ts",
-  "src/modules/crm/import/connectors/connector-source.ts",
-  "src/modules/crm/import/crm-export.service.ts",
-  "src/modules/crm/import/dto/crm-import-response.schemas.ts",
-  "src/modules/crm/import/dto/crm-import.schemas.ts",
-  "src/modules/crm/import/import-entities.ts",
-  "src/modules/crm/import/import-fields.ts"
+  "src/modules/crm/automation-studio/crm-automation-runner.service.ts"
 ] }

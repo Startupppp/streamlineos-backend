@@ -91,11 +91,12 @@ export class PayrollComplianceService {
         thresholdPct: String(input.thresholdPct),
       })
       .returning();
+    if (!created) throw new BadRequestException("Failed to create variance approval");
     await this.audit.log({
       orgId,
       actorId,
       entityType: "hr_payroll_variance_approvals",
-      entityId: String(created!.id),
+      entityId: String(created.id),
       action: "created",
       after: created,
     });
@@ -194,11 +195,12 @@ export class PayrollComplianceService {
       .insert(hrArrearsAdjustments)
       .values({ orgId, ...input, createdBy: actorId })
       .returning();
+    if (!created) throw new BadRequestException("Failed to create arrears adjustment");
     await this.audit.log({
       orgId,
       actorId,
       entityType: "hr_arrears_adjustments",
-      entityId: String(created!.id),
+      entityId: String(created.id),
       action: "created",
       after: created,
     });
@@ -280,11 +282,12 @@ export class PayrollComplianceService {
       .insert(hrPayrollComplianceTasks)
       .values({ orgId, ...input })
       .returning();
+    if (!created) throw new BadRequestException("Failed to create compliance task");
     await this.audit.log({
       orgId,
       actorId,
       entityType: "hr_payroll_compliance_tasks",
-      entityId: String(created!.id),
+      entityId: String(created.id),
       action: "created",
       after: created,
     });
@@ -344,16 +347,19 @@ export class PayrollComplianceService {
       .limit(1);
     if (!existing) throw new NotFoundException("Compliance task not found");
 
-    const setData: Record<string, unknown> = { ...input };
-    if (input.status === "completed") {
-      setData["completedBy"] = actorId;
-      setData["completedAt"] = new Date();
-    }
+    const setData = {
+      ...(input.countryCode !== undefined && { countryCode: input.countryCode }),
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      ...(input.status !== undefined && { status: input.status }),
+      ...(input.status === "completed" && { completedBy: actorId, completedAt: new Date() }),
+    };
     if (!hasPatchValues(setData)) return existing;
 
     const [updated] = await this.db
       .update(hrPayrollComplianceTasks)
-      .set(setData as never)
+      .set(setData)
       .where(
         and(
           eq(hrPayrollComplianceTasks.id, id),

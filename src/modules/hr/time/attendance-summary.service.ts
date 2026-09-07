@@ -52,7 +52,7 @@ function decodeMemberCursor(value: string | undefined) {
   try {
     const name: unknown = JSON.parse(position.sortValue);
     if (name !== null && typeof name !== "string") throw new Error();
-    return { name: name as string | null, userId: position.id };
+    return { name, userId: position.id };
   } catch {
     throw new BadRequestException("Invalid pagination cursor");
   }
@@ -81,7 +81,7 @@ async function readKeysetBatches<T>(input: {
     const batch = await input.fetch(afterId, ATTENDANCE_READ_BATCH_SIZE);
     rows.push(...batch);
     if (batch.length < ATTENDANCE_READ_BATCH_SIZE) return rows;
-    afterId = input.getId(batch[batch.length - 1]!);
+    afterId = input.getId(batch[batch.length - 1]);
   }
 }
 
@@ -164,21 +164,20 @@ export class AttendanceSummaryService {
       }
       const cursorPosition = decodeMemberCursor(params.cursor);
       if (cursorPosition) {
-        memberConditions.push(
-          cursorPosition.name === null
-            ? and(
-                isNull(users.name),
+        const cursorCondition = cursorPosition.name === null
+          ? and(
+              isNull(users.name),
+              gt(organizationMembers.userId, cursorPosition.userId),
+            )
+          : or(
+              gt(users.name, cursorPosition.name),
+              isNull(users.name),
+              and(
+                eq(users.name, cursorPosition.name),
                 gt(organizationMembers.userId, cursorPosition.userId),
-              )!
-            : or(
-                gt(users.name, cursorPosition.name),
-                isNull(users.name),
-                and(
-                  eq(users.name, cursorPosition.name),
-                  gt(organizationMembers.userId, cursorPosition.userId),
-                ),
-              )!,
-        );
+              ),
+            );
+        if (cursorCondition) memberConditions.push(cursorCondition);
       }
 
       const memberRows = await this.db

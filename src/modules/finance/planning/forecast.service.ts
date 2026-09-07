@@ -22,6 +22,7 @@ import {
   multiplyDecimals,
   compareDecimals,
 } from "../../accounting/core/money.util";
+import { scenarioAssumptionsSchema } from "./dto/finance-planning.schemas";
 import type {
   ForecastQuery,
   CompareScenariosQuery,
@@ -71,24 +72,14 @@ function findWeekIdx(date: Date, windowStart: Date, total: number): number | nul
 }
 
 function parseAssumptions(raw: unknown): ScenarioAssumptions {
-  if (!raw || typeof raw !== "object") return { ...DEFAULT_ASSUMPTIONS };
-  const r = raw as Record<string, unknown>;
-  return {
-    collectionRatePct: typeof r.collectionRatePct === "number" ? r.collectionRatePct : 90,
-    payDelayDays: typeof r.payDelayDays === "number" ? r.payDelayDays : 0,
-    revenueGrowthPct: typeof r.revenueGrowthPct === "number" ? r.revenueGrowthPct : 0,
-    plannedSpend: Array.isArray(r.plannedSpend)
-      ? r.plannedSpend.map((item) => {
-          const i = item as Record<string, unknown>;
-          return {
-            label: typeof i.label === "string" ? i.label : "",
-            amount: typeof i.amount === "number" ? i.amount : 0,
-            startWeek: typeof i.startWeek === "number" ? i.startWeek : 0,
-            recurringWeekly: typeof i.recurringWeekly === "boolean" ? i.recurringWeekly : false,
-          };
-        })
-      : [],
-  };
+  const parsed = scenarioAssumptionsSchema.safeParse(raw ?? {});
+  return parsed.success ? parsed.data : { ...DEFAULT_ASSUMPTIONS };
+}
+
+function readJsonTotal(payload: unknown): number {
+  if (!payload || typeof payload !== "object" || !("total" in payload)) return 0;
+  const { total } = payload;
+  return typeof total === "number" ? total : Number(total ?? 0);
 }
 
 function frequencyDays(f: string): number {
@@ -231,7 +222,7 @@ export class ForecastService {
     }
 
     for (const tmpl of recurInvTmpls) {
-      const tmplTotal = String(Number((tmpl.payload as Record<string, unknown>).total ?? 0));
+      const tmplTotal = String(readJsonTotal(tmpl.payload));
       const effectiveInflow = multiplyDecimals(tmplTotal, collectionRate);
       for (const occ of occurrencesInWindow(tmpl.nextRunDate, tmpl.endDate, tmpl.frequency, windowEnd)) {
         const idx = findWeekIdx(addDays(occ, payDelay), today, weeks);
@@ -247,7 +238,7 @@ export class ForecastService {
     }
 
     for (const tmpl of recurBillTmpls) {
-      const tmplTotal = String(Number((tmpl.payload as Record<string, unknown>).total ?? 0));
+      const tmplTotal = String(readJsonTotal(tmpl.payload));
       for (const occ of occurrencesInWindow(tmpl.nextRunDate, tmpl.endDate, tmpl.frequency, windowEnd)) {
         const idx = findWeekIdx(occ, today, weeks);
         if (idx !== null) accumulateAmounts(outflows, tmplTotal, idx);

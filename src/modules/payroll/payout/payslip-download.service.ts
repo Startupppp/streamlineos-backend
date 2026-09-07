@@ -22,7 +22,7 @@ import { generatePayslipPdf } from "../hr-payroll/lib/payslip-pdf";
 import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { loadRunEmployeePayeeById } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import type { CalculationSnapshot } from "../payroll.types";
+import { toCalculationSnapshot } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
@@ -102,7 +102,13 @@ export class PayslipDownloadService {
         calculationSnapshot: true,
       },
     });
-    if (!runEmployee?.calculationSnapshot) {
+    if (!runEmployee) {
+      throw new ConflictException(
+        "Calculation snapshot not available for this payslip",
+      );
+    }
+    const snapshot = toCalculationSnapshot(runEmployee.calculationSnapshot);
+    if (!snapshot) {
       throw new ConflictException(
         "Calculation snapshot not available for this payslip",
       );
@@ -120,7 +126,6 @@ export class PayslipDownloadService {
       );
     }
 
-    const snapshot = runEmployee.calculationSnapshot as CalculationSnapshot;
     const currentHash = computeSnapshotHash(snapshot);
     if (publication.snapshotHash && currentHash !== publication.snapshotHash) {
       throw new ConflictException(

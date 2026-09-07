@@ -48,7 +48,7 @@ export type ConnectorProvider = "salesforce" | "hubspot" | "zoho" | "pipedrive";
 
 export const CONNECTOR_PROVIDERS = ["salesforce", "hubspot", "zoho", "pipedrive"] as const;
 
-function isConnectorProvider(value: string): value is ConnectorProvider {
+export function isConnectorProvider(value: string): value is ConnectorProvider {
   return CONNECTOR_PROVIDERS.some((provider) => provider === value);
 }
 
@@ -57,7 +57,7 @@ export type ConnectorStream = "accounts" | "contacts" | "deals" | "activities";
 
 export const CONNECTOR_STREAMS = ["accounts", "contacts", "deals", "activities"] as const;
 
-function isConnectorStream(value: string): value is ConnectorStream {
+export function isConnectorStream(value: string): value is ConnectorStream {
   return CONNECTOR_STREAMS.some((stream) => stream === value);
 }
 

@@ -1,4 +1,4 @@
 { "extends": "./tsconfig.json", "include": [], "files": [
   "src/@types/express.d.ts",
-  "src/modules/finance/banking/transfers.service.ts"
+  "src/modules/billing/core/invoice-snapshot.service.ts"
 ] }

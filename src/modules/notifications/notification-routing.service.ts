@@ -99,7 +99,7 @@ export class NotificationRoutingService {
           policy: {
             defaultChannels: (row.defaultChannels ?? []).filter(
               (c): c is NotificationChannel =>
-                ALL_CHANNELS.includes(c as NotificationChannel),
+                ALL_CHANNELS.some((channel) => channel === c),
             ),
             eventOverrides: row.eventOverrides,
             categoryOverrides: row.categoryOverrides,
@@ -185,7 +185,7 @@ export class NotificationRoutingService {
         const m = perUser.get(u);
         if (!m) continue;
         for (const ch of channels)
-          if (!m.has(ch)) m.set(ch, r.reason as SuppressionReason);
+          if (!m.has(ch)) m.set(ch, r.reason);
       }
     }
     return perUser;

@@ -86,7 +86,7 @@ export class CrmImportController {
     @Body() body: PreviewImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const entity = body.entity as ImportEntity;
+    const entity = body.entity;
     await this.assertMayWrite(u, entity);
 
     return this.imports.preview({
@@ -215,17 +215,14 @@ export class CrmImportController {
     @Body() body: ConnectorSyncInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.assertMayWrite(
-      u,
-      targetOf(body.provider as ConnectorProvider, body.stream as ConnectorStream),
-    );
+    await this.assertMayWrite(u, targetOf(body.provider, body.stream));
 
     const { crmConnectorSyncId, workflowRunId } = await this.connectors.startSync({
       organizationId: u.orgId,
       userId: u.userId,
       connectionId: body.connectionId,
-      provider: body.provider as ConnectorProvider,
-      stream: body.stream as ConnectorStream,
+      provider: body.provider,
+      stream: body.stream,
     });
 
     await this.pump.advance(u.orgId, workflowRunId);
@@ -271,7 +268,7 @@ export class CrmImportController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
-    const entity = query.entity as ExportEntity;
+    const entity = query.entity;
     const stamp = new Date().toISOString().slice(0, 10);
     const json = query.format === "json";
 

@@ -20,8 +20,8 @@ import {
   payrollRunEvents,
   payrollTdsYtdLedger,
 } from "../../../db/schema";
-import { canTransitionRun } from "../payroll.types";
-import type { CalculationSnapshot, PayrollRunStatus } from "../payroll.types";
+import { canTransitionRun, toCalculationSnapshot } from "../payroll.types";
+import type { PayrollRunStatus } from "../payroll.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import { GenerateService } from "../runs/generate.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
@@ -248,7 +248,7 @@ export class LockingService {
 
     for (const emp of emps) {
       if (!emp.userId && !emp.workerId) continue;
-      const snap = emp.calculationSnapshot as CalculationSnapshot | null;
+      const snap = toCalculationSnapshot(emp.calculationSnapshot);
       const tdsLine = snap?.lines?.find(
         (l) =>
           l.code === "TDS" || l.code === "INCOME_TAX" || l.category === "TAX",

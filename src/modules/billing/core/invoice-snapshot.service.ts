@@ -145,28 +145,32 @@ export class InvoiceSnapshotService {
           );
 
         await tx.insert(billingInvoiceLineSnapshots).values(
-          input.lines.map((line, index) => ({
-            snapshotId: snapshot.id,
-            orgId: input.orgId,
-            lineType: line.lineType,
-            description: line.description,
-            quantity: line.quantity,
-            unitAmountMinor: line.unitAmountMinor,
-            currency: input.currency,
-            subtotalMinor: priced[index]!.subtotalMinor,
-            taxRateBps: line.taxRateBps ?? 0,
-            taxAmountMinor: priced[index]!.taxAmountMinor,
-            totalMinor: priced[index]!.totalMinor,
-            prorationLineId: line.prorationLineId ?? null,
-            usageRollupId: line.usageRollupId ?? null,
-            sortOrder: index,
-          })),
+          input.lines.map((line, index) => {
+            const p = priced[index];
+            if (!p) throw new Error(`Missing priced line at index ${index} for org ${input.orgId}`);
+            return {
+              snapshotId: snapshot.id,
+              orgId: input.orgId,
+              lineType: line.lineType,
+              description: line.description,
+              quantity: line.quantity,
+              unitAmountMinor: line.unitAmountMinor,
+              currency: input.currency,
+              subtotalMinor: p.subtotalMinor,
+              taxRateBps: line.taxRateBps ?? 0,
+              taxAmountMinor: p.taxAmountMinor,
+              totalMinor: p.totalMinor,
+              prorationLineId: line.prorationLineId ?? null,
+              usageRollupId: line.usageRollupId ?? null,
+              sortOrder: index,
+            };
+          }),
         );
 
         return {
           id: snapshot.id,
           invoiceNumber,
-          status: "ISSUED" as InvoiceStatus,
+          status: "ISSUED",
           currency: input.currency,
           subtotalMinor,
           taxAmountMinor,
@@ -299,19 +303,23 @@ export class InvoiceSnapshotService {
           throw new Error(`Credit note for org ${input.orgId} was not written`);
 
         await tx.insert(billingCreditNoteLines).values(
-          input.lines.map((line, index) => ({
-            creditNoteId: note.id,
-            orgId: input.orgId,
-            description: line.description,
-            quantity: line.quantity,
-            unitAmountMinor: line.unitAmountMinor,
-            currency: original.currency,
-            subtotalMinor: priced[index]!.subtotalMinor,
-            taxRateBps: line.taxRateBps ?? 0,
-            taxAmountMinor: priced[index]!.taxAmountMinor,
-            totalMinor: priced[index]!.totalMinor,
-            sortOrder: index,
-          })),
+          input.lines.map((line, index) => {
+            const p = priced[index];
+            if (!p) throw new Error(`Missing priced line at index ${index} for org ${input.orgId}`);
+            return {
+              creditNoteId: note.id,
+              orgId: input.orgId,
+              description: line.description,
+              quantity: line.quantity,
+              unitAmountMinor: line.unitAmountMinor,
+              currency: original.currency,
+              subtotalMinor: p.subtotalMinor,
+              taxRateBps: line.taxRateBps ?? 0,
+              taxAmountMinor: p.taxAmountMinor,
+              totalMinor: p.totalMinor,
+              sortOrder: index,
+            };
+          }),
         );
 
         return { id: note.id, noteNumber, totalMinor };
@@ -385,6 +393,10 @@ export class InvoiceSnapshotService {
       .limit(1);
 
     if (!header) return null;
-    return { ...header, status: header.status as InvoiceStatus };
+    return {
+      ...header,
+      status: assertOneOf(INVOICE_STATUSES, header.status, "billing_invoice_snapshots.status"),
+      taxBehavior: assertOneOf(TAX_BEHAVIORS, header.taxBehavior, "billing_invoice_snapshots.tax_behavior"),
+    };
   }
 }

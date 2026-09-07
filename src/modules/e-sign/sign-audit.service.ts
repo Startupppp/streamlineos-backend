@@ -121,7 +121,7 @@ export class SignAuditService {
   async record(input: SignAuditRecordInput | readonly SignAuditRecordInput[], tx?: Tx): Promise<void> {
     const inputs = Array.isArray(input) ? input : [input];
     if (inputs.length === 0) return;
-    const db = (tx ?? this.db) as Db;
+    const db = tx ?? this.db;
     for (let offset = 0; offset < inputs.length; offset += SIGN_AUDIT_INSERT_CHUNK) {
       const chunk = inputs.slice(offset, offset + SIGN_AUDIT_INSERT_CHUNK);
       await db.insert(signAuditEvents).values(chunk.map(toRow));

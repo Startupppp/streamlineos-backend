@@ -9,6 +9,7 @@ import {
   tasks,
   deals,
   organizationMembers,
+  taskEntityTypeEnum,
 } from "../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD } from "../crm-party-reads";
@@ -24,6 +25,18 @@ import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
 
 const ALLOWLISTED_LEAD_FIELDS = ["status", "priority", "source", "assignedToId", "score"];
 const ALLOWLISTED_DEAL_FIELDS = ["stage", "priority", "assignedToId"];
+
+const STUDIO_OPERATORS: readonly StudioCondition["operator"][] = [
+  "eq", "neq", "gt", "lt", "contains", "in", "changed_to",
+];
+
+function isStudioOperator(value: unknown): value is StudioCondition["operator"] {
+  return typeof value === "string" && STUDIO_OPERATORS.some((operator) => operator === value);
+}
+
+function isTaskEntityType(value: string): value is (typeof taskEntityTypeEnum.enumValues)[number] {
+  return taskEntityTypeEnum.enumValues.some((entityType) => entityType === value);
+}
 
 @Injectable()
 export class CrmAutomationRunnerService {
@@ -49,13 +62,13 @@ export class CrmAutomationRunnerService {
         .returning({ id: crmAutomationRuns.id });
       runId = run?.id;
 
-      const graph = (rule.graph ?? []) as AutomationGraphNode[];
+      const graph = rule.graph ?? [];
 
       if (graph.length > 0) {
         runSteps = await this.walkGraph(orgId, graph, payload);
       } else {
-        const legacyConditions = (rule.conditions ?? []) as CrmAutomationCondition[];
-        const legacyActions = (rule.actions ?? []) as string[];
+        const legacyConditions = rule.conditions;
+        const legacyActions = rule.actions;
 
         const matched = evaluateConditions(
           legacyConditions.map((c) => ({ field: c.field, operator: "eq" as const, value: c.value })),
@@ -147,10 +160,10 @@ export class CrmAutomationRunnerService {
         let nextId: string | undefined;
 
         for (const branch of branches) {
-          const cond = branch.condition as { field?: unknown; operator?: unknown; value?: unknown };
+          const cond = branch.condition;
           const studioCond: StudioCondition = {
             field: typeof cond.field === "string" ? cond.field : "",
-            operator: (typeof cond.operator === "string" ? cond.operator : "eq") as StudioCondition["operator"],
+            operator: isStudioOperator(cond.operator) ? cond.operator : "eq",
             value: typeof cond.value === "string" ? cond.value : String(cond.value ?? ""),
           };
           if (evaluateConditions([studioCond], payload.data)) {
@@ -196,10 +209,11 @@ export class CrmAutomationRunnerService {
           const dueDate = typeof config["dueInDays"] === "number"
             ? new Date(Date.now() + config["dueInDays"] * 86400000)
             : null;
+          const upperEntityType = payload.entityType.toUpperCase();
           await this.db.insert(tasks).values({
             orgId,
             title: String(config["title"] ?? "Task from automation"),
-            entityType: payload.entityType.toUpperCase() as "LEAD" | "DEAL" | "CONTACT",
+            entityType: isTaskEntityType(upperEntityType) ? upperEntityType : null,
             entityId: parseInt(payload.entityId, 10),
             assigneeId: typeof config["assigneeId"] === "string" ? config["assigneeId"] : null,
             dueDate,

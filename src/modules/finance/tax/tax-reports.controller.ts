@@ -61,7 +61,7 @@ export class TaxReportsController {
         "Content-Disposition",
         `attachment; filename="output-tax-${query.from}-${query.to}.csv"`,
       );
-      const rows = (result.data as OutputTaxLine[]).map(toCsvRow).join("\n");
+      const rows = result.data.map(toCsvRow).join("\n");
       return res.send(CSV_HEADER + rows);
     }
     return result;
@@ -84,7 +84,7 @@ export class TaxReportsController {
         "Content-Disposition",
         `attachment; filename="input-tax-${query.from}-${query.to}.csv"`,
       );
-      const rows = (result.data as InputTaxLine[]).map(toCsvRow).join("\n");
+      const rows = result.data.map(toCsvRow).join("\n");
       return res.send(CSV_HEADER + rows);
     }
     return result;

@@ -32,7 +32,7 @@ import {
   loadRunEmployeePayees,
 } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import { normalizePayrollToggles } from "../payroll.types";
+import { normalizePayrollToggles, toCalculationSnapshot } from "../payroll.types";
 import type { CalculationSnapshot } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
 import { PAYROLL_READ_CAP } from "../lib/query-bounds";
@@ -159,8 +159,9 @@ export class PayslipBulkPublisherService {
 
     for (const payee of payees) {
       const emp = snapshotByRunEmployee.get(payee.runEmployeeId);
-      if (!emp?.calculationSnapshot) continue;
-      const snapshot = emp.calculationSnapshot as CalculationSnapshot;
+      if (!emp) continue;
+      const snapshot = toCalculationSnapshot(emp.calculationSnapshot);
+      if (!snapshot) continue;
       const snapshotHash = computeSnapshotHash(snapshot);
 
       const bank = payee.bankDetails;

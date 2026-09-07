@@ -297,6 +297,19 @@ export interface CalculationSnapshot {
   wageDefinitionWarning?: string | null;
 }
 
+/**
+ * Same JSONB seam as toggles/config, for `payroll_run_employees.calculation_snapshot`
+ * and `.inputs_snapshot` — written exclusively by this module's own calculation
+ * engine, never by an untrusted caller.
+ */
+export function toCalculationSnapshot(raw: unknown): CalculationSnapshot | null {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as CalculationSnapshot) : null;
+}
+
+export function toInputsSnapshot(raw: unknown): InputsSnapshot | null {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as InputsSnapshot) : null;
+}
+
 export interface VarianceSummary {
   previousMonth: string | null;
   currentNet: string;

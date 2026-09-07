@@ -26,6 +26,24 @@ const SIGNED_URL_EXPIRY_SECONDS = 900;
 
 type SignCertificateRow = typeof signCertificates.$inferSelect;
 
+function readSignatureAssetId(valueJson: Record<string, unknown> | null): number | undefined {
+  const value = valueJson?.["signatureAssetId"];
+  return typeof value === "number" ? value : undefined;
+}
+
+function readChecked(valueJson: Record<string, unknown> | null): boolean {
+  return valueJson?.["checked"] === true;
+}
+
+function readTextValue(valueJson: Record<string, unknown> | null): string | undefined {
+  const value = valueJson?.["value"];
+  return typeof value === "string" ? value : undefined;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 @Injectable()
 export class SignFinalizationService {
   constructor(
@@ -116,7 +134,7 @@ export class SignFinalizationService {
     if (!mergedPdf) throw new NotFoundException("Envelope has no documents to finalize");
 
     const assetIds = fields
-      .map((f) => (f.valueJson as { signatureAssetId?: number } | null)?.signatureAssetId)
+      .map((f) => readSignatureAssetId(f.valueJson))
       .filter((id): id is number => typeof id === "number");
     const assets =
       assetIds.length > 0
@@ -137,7 +155,7 @@ export class SignFinalizationService {
       };
 
       if (field.fieldType === "signature" || field.fieldType === "initials" || field.fieldType === "stamp") {
-        const assetId = (field.valueJson as { signatureAssetId?: number } | null)?.signatureAssetId;
+        const assetId = readSignatureAssetId(field.valueJson);
         const asset = assetId ? assetById.get(assetId) : undefined;
         if (!asset) continue;
         if (asset.method === "typed" && asset.typedText) {
@@ -152,12 +170,12 @@ export class SignFinalizationService {
       }
 
       if (field.fieldType === "checkbox") {
-        const checked = Boolean((field.valueJson as { checked?: boolean } | null)?.checked);
+        const checked = readChecked(field.valueJson);
         stampFields.push({ ...base, checked });
         continue;
       }
 
-      const value = (field.valueJson as { value?: string } | null)?.value ?? field.defaultValue ?? undefined;
+      const value = readTextValue(field.valueJson) ?? field.defaultValue ?? undefined;
       if (value) stampFields.push({ ...base, textValue: value });
     }
 
@@ -328,7 +346,7 @@ export class SignFinalizationService {
       watermarked: Boolean(prevJson["watermarked"]),
       completedAt: String(prevJson["completedAt"] ?? new Date().toISOString()),
       documents: Array.isArray(prevJson["documents"]) ? prevJson["documents"].map((d: unknown) => {
-        const doc = typeof d === "object" && d !== null ? (d as Record<string, unknown>) : {};
+        const doc = isPlainRecord(d) ? d : {};
         return {
           fileName: String(doc["fileName"] ?? ""),
           sha256Hash: String(doc["sha256Hash"] ?? ""),
@@ -336,7 +354,7 @@ export class SignFinalizationService {
         };
       }) : [],
       recipients: Array.isArray(prevJson["recipients"]) ? prevJson["recipients"].map((r: unknown) => {
-        const rec = typeof r === "object" && r !== null ? (r as Record<string, unknown>) : {};
+        const rec = isPlainRecord(r) ? r : {};
         return {
           name: String(rec["name"] ?? ""),
           email: rec["email"] != null ? String(rec["email"]) : null,

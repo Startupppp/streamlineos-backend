@@ -109,7 +109,7 @@ export class TaxReportsService {
     }));
 
     if (invPage.data.length === 0) {
-      return { ...invPage, data: [] as OutputTaxLine[] };
+      return { ...invPage, data: [] };
     }
 
     const pageInvRows = invPage.data;
@@ -123,7 +123,7 @@ export class TaxReportsService {
         .where(inArray(invoiceItems.invoiceId, invoiceIds)),
       clientIds.length > 0
         ? this.db.select({ id: clients.id, name: clients.name }).from(clients).where(inArray(clients.id, clientIds))
-        : Promise.resolve([] as { id: number; name: string }[]),
+        : Promise.resolve<{ id: number; name: string }[]>([]),
     ]);
 
     const clientMap = new Map(clientRows.map((c) => [c.id, c.name]));
@@ -209,7 +209,7 @@ export class TaxReportsService {
     }));
 
     if (billPage.data.length === 0) {
-      return { ...billPage, data: [] as InputTaxLine[] };
+      return { ...billPage, data: [] };
     }
 
     const pageBillRows = billPage.data;
@@ -223,7 +223,7 @@ export class TaxReportsService {
         .where(inArray(purchaseBillItems.billId, billIds)),
       vendorIds.length > 0
         ? this.db.select({ id: clients.id, name: clients.name }).from(clients).where(inArray(clients.id, vendorIds))
-        : Promise.resolve([] as { id: number; name: string }[]),
+        : Promise.resolve<{ id: number; name: string }[]>([]),
     ]);
 
     const vendorMap = new Map(vendorRows.map((v) => [v.id, v.name]));

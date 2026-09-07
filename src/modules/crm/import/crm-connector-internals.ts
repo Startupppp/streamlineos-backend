@@ -1,7 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.types";
 import { crmConnectorSyncs, userIntegrationConnections } from "../../../db/schema";
-import type { ConnectorRequest } from "./connectors/connector-source";
+import { streamFor } from "./connectors/connector-catalog";
+import {
+  isConnectorProvider,
+  isConnectorStream,
+  type ConnectorRequest,
+  type ConnectorStreamDescriptor,
+} from "./connectors/connector-source";
 
 export type WalkExtent = {
   readonly settled: boolean;
@@ -48,6 +54,26 @@ export async function getSync(
     .limit(1);
 
   return row ?? null;
+}
+
+/**
+ * The stream descriptor a sync row names, validated rather than trusted.
+ *
+ * `provider` and `stream` are stored as plain text — no enum, no CHECK — so a
+ * row from an older release or a manual edit can name a pair the catalog no
+ * longer has. Narrowing with the same guards `isConnectorProvider` uses is a
+ * real check, not a cast that just hopes the column still agrees with the code.
+ */
+export function descriptorForSync(sync: {
+  readonly crmConnectorSyncId: string;
+  readonly provider: string;
+  readonly stream: string;
+}): ConnectorStreamDescriptor {
+  if (!isConnectorProvider(sync.provider) || !isConnectorStream(sync.stream))
+    throw new Error(
+      `Connector sync ${sync.crmConnectorSyncId} names an unrecognised provider/stream: ${sync.provider}/${sync.stream}`,
+    );
+  return streamFor(sync.provider, sync.stream);
 }
 
 export async function getConnection(

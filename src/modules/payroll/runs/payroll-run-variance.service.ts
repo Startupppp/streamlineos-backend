@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollRunEmployees, payrollRuns, users } from "../../../db/schema";
-import { PAYROLL_LOCKED_STATUSES, type VarianceSummary } from "../payroll.types";
+import { PAYROLL_LOCKED_STATUSES, toCalculationSnapshot, type VarianceSummary } from "../payroll.types";
 import { fromPaise, toPaise } from "./lib/money";
 
 @Injectable()
@@ -46,18 +46,7 @@ export class PayrollRunVarianceService {
       .limit(10);
 
     const withBaselines = topMovers.map((m) => {
-      const snap = m.calculationSnapshot as {
-        variance?: {
-          baselineSource?: string | null;
-          inputBaseline?: {
-            lockedPaidDays: string | null;
-            lockedLopDays: string | null;
-            paidDaysDelta: number | null;
-            lopDaysDelta: number | null;
-          } | null;
-          netDeltaPercent?: number | null;
-        } | null;
-      } | null;
+      const snap = toCalculationSnapshot(m.calculationSnapshot);
       return {
         userId: m.userId,
         net: m.net,
