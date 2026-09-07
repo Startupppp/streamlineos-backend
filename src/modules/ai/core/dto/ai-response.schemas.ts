@@ -519,12 +519,21 @@ const briefCitationSchema = z.object({
   title: z.string(),
   href: z.string(),
 });
+const aiUsageMetaSchema = z.object({
+  model: z.string(),
+  promptTokens: z.number().int(),
+  completionTokens: z.number().int(),
+  totalTokens: z.number().int(),
+  credits: z.number(),
+  costUsd: z.number(),
+});
+
 const executiveBriefSnapshotSchema = z.object({
   narrative: z.string(),
   citations: z.array(briefCitationSchema),
   uncertaintyNotes: z.array(z.string()),
   generatedAt: z.string(),
-  aiUsage: z.unknown().nullable(),
+  aiUsage: aiUsageMetaSchema.nullable(),
 });
 export const executiveBriefGetLatestResponseSchema = z.object({
   snapshot: executiveBriefSnapshotSchema.nullable(),
