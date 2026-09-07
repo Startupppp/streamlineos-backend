@@ -60,8 +60,24 @@ const explainResponseSchema = z.object({
   suggestedActions: z.array(z.string()),
 });
 
+const reorderEvidenceSchema = z.object({
+  productVariantId: z.number().int(),
+  variantSku: z.string(),
+  variantName: z.string(),
+  productName: z.string(),
+  currentOnHand: z.number(),
+  forecastedQty: z.number(),
+  suggestedOrderQty: z.number(),
+  vendorId: z.number().int().nullable(),
+  leadTimeDays: z.number().int(),
+  expectedDeliveryDate: z.string(),
+  reorderReason: z.string(),
+  warehouseId: z.number().int().nullable(),
+  warehouseName: z.string().nullable(),
+});
+
 export const reorderProposalResponseSchema = z.object({
-  evidence: z.record(z.string(), z.unknown()),
+  evidence: reorderEvidenceSchema,
   explanation: explainResponseSchema,
   proposal: z.object({
     proposalId: z.number().int(),
