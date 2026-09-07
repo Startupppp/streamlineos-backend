@@ -55,6 +55,15 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # The live half of `artifact:record-hashes` (self-test wired hermetically in `gates`)
+      # hashes every file under `dist/`, which only this job's Build step above produces — it
+      # cannot run in `gates`, which deliberately builds nothing. architecture-refactor/
+      # RELEASE-ENGINEERING.md §7.3 tracked this as the one remaining CI handoff alongside
+      # `sbom:generate`. MEASURED locally against a real `dist/`: exit 0, 7,539 files hashed.
+      - name: Record build artifact hashes
+        if: ${{ !cancelled() }}
+        run: pnpm artifact:record-hashes
+
       # KNOWINGLY RED, and allow-failure for that reason. MEASURED 2026-09-03 (v2 ticket 30) at
       # head through the release mutex: `pnpm exec knip --no-progress` exit 1 — unused exports
       # and unused exported types in src/modules/** (chat, notifications, ai, gdpr,
@@ -718,6 +727,41 @@ jobs:
       - name: Dependency licences
         if: ${{ !cancelled() }}
         run: pnpm check:licenses:self-test && pnpm check:licenses
+
+      # `sbom:generate` and `artifact:record-hashes` were defined in package.json
+      # (backed by src/scripts/generate-sbom.mjs and record-artifact-hashes.mjs) and named by
+      # no workflow step in this repository at all — architecture-refactor/RELEASE-ENGINEERING.md
+      # §7.3 tracked this as the one remaining CI handoff. Both fall outside `check:gate-wiring`
+      # entirely: it only resolves scripts named `check:*`, and neither of these two is.
+      #
+      # `sbom:generate` is hermetic here: it shells out to `pnpm licenses list --json` over the
+      # dependency tree already installed above and writes a CycloneDX document, opening no
+      # database and needing no build output. MEASURED locally: self-test exit 0 (component
+      # builder + SHA-256 shape), live run exit 0 — 914 components, sbom.json written.
+      - name: Software bill of materials generates
+        if: ${{ !cancelled() }}
+        run: pnpm sbom:generate:self-test && pnpm sbom:generate
+
+      # RELEASE-ENGINEERING.md §7.3 asks for generation AND upload. Generation alone
+      # writes a file into a runner that is then thrown away, which answers nobody
+      # asking "what shipped in release X". Retained so the document is retrievable
+      # after the run.
+      - name: Upload the SBOM
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.json
+          if-no-files-found: error
+          retention-days: 90
+
+      # `artifact:record-hashes` hashes every file under `dist/`, which this job does not
+      # produce (`verify`'s own Build step below is the one that does) — its live half belongs
+      # there, not here. The self-test is hermetic (hashes a throwaway temp file and compares
+      # against a known digest) and runs in this job for that reason. MEASURED locally: exit 0.
+      - name: Artifact-hash recorder self-test
+        if: ${{ !cancelled() }}
+        run: pnpm artifact:record-hashes:self-test
 
       - name: Feature flag governance
         if: ${{ !cancelled() }}
