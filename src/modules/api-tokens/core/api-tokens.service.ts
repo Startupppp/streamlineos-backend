@@ -128,7 +128,8 @@ export class ApiTokensService {
     const [existing] = await this.db
       .select({ id: apiKeys.id, orgId: apiKeys.orgId, isRevoked: apiKeys.isRevoked })
       .from(apiKeys)
-      .where(and(eq(apiKeys.id, tokenId), eq(apiKeys.orgId, orgId)));
+      .where(and(eq(apiKeys.id, tokenId), eq(apiKeys.orgId, orgId)))
+      .limit(1);
 
     if (!existing) throw new NotFoundException("API token not found");
     if (existing.isRevoked) throw new ConflictException("API token is already revoked");

@@ -44,7 +44,8 @@ export async function loadActiveRelocationTargets(db: Db): Promise<readonly Trac
         eq(organizationRelocations.isActive, true),
         eq(organizationRelocations.currentState, "ACTIVE_TARGET"),
       ),
-    );
+    )
+    .limit(10_000);
   return rows.map((row) => ({ orgId: row.orgId, cellId: row.cellId }));
 }
 

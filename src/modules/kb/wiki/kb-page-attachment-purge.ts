@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { kbPageAttachments } from "../../../db/schema";
 import { storagePendingPurge } from "../../../db/schema/common/storage-pending-purge";
@@ -35,12 +35,27 @@ export async function recordPageAttachmentPurge(
 ): Promise<string[]> {
   if (pageIds.length === 0) return [];
 
-  const rows = await db
-    .select({ fileKey: kbPageAttachments.fileKey })
-    .from(kbPageAttachments)
-    .where(and(eq(kbPageAttachments.orgId, orgId), inArray(kbPageAttachments.pageId, pageIds)));
-
-  const keys = [...new Set(rows.map((r) => r.fileKey))];
+  const seen = new Set<string>();
+  let afterId = 0;
+  for (;;) {
+    const batch = await db
+      .select({ id: kbPageAttachments.id, fileKey: kbPageAttachments.fileKey })
+      .from(kbPageAttachments)
+      .where(
+        and(
+          eq(kbPageAttachments.orgId, orgId),
+          inArray(kbPageAttachments.pageId, pageIds),
+          gt(kbPageAttachments.id, afterId),
+        ),
+      )
+      .orderBy(asc(kbPageAttachments.id))
+      .limit(PURGE_BOOKKEEPING_CHUNK);
+    for (const r of batch) seen.add(r.fileKey);
+    const last = batch[batch.length - 1];
+    if (batch.length < PURGE_BOOKKEEPING_CHUNK || last === undefined) break;
+    afterId = last.id;
+  }
+  const keys = [...seen];
   if (keys.length === 0) return [];
 
   await runInNewTenantTransaction(db, orgId, async (tx) => {

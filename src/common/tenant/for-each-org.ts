@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { organizations } from "../../db/schema";
 import { logger } from "../logger/logger.service";
@@ -201,16 +201,28 @@ export async function forEachOrg(
   options: ForEachOrgOptions = {},
 ): Promise<ForEachOrgResult> {
   const enumerationDb = resolveEnumerationDb(db);
-  // status, not just deletedAt: the purge worker parks an org in PURGE_SCHEDULED/PURGED without soft-deleting it
-  const enumerated = await enumerationDb
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(and(isNull(organizations.deletedAt), eq(organizations.status, "ACTIVE")))
-    .orderBy(asc(organizations.id));
-
-  // Rotation is applied here rather than in the ORDER BY so the enumeration stays
-  // one plain indexed ascending scan, identical for every sweep and every cursor.
-  const orgs = rotateAfterOrgId(enumerated, options.startAfterOrgId);
+  const ORG_ENUM_PAGE = 500;
+  const allEnumerated: Array<{ id: string }> = [];
+  let enumAfter: string | undefined;
+  for (;;) {
+    const page = await enumerationDb
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(
+        and(
+          isNull(organizations.deletedAt),
+          eq(organizations.status, "ACTIVE"),
+          enumAfter ? gt(organizations.id, enumAfter) : undefined,
+        ),
+      )
+      .orderBy(asc(organizations.id))
+      .limit(ORG_ENUM_PAGE);
+    for (const row of page) allEnumerated.push(row);
+    const last = page[page.length - 1];
+    if (page.length < ORG_ENUM_PAGE || last === undefined) break;
+    enumAfter = last.id;
+  }
+  const orgs = rotateAfterOrgId(allEnumerated, options.startAfterOrgId);
 
   let succeeded = 0;
   let visited = 0;

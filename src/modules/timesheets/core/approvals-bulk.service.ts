@@ -3,10 +3,18 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
-import { timesheetPeriods, timesheets } from "../../../db/schema";
+import { timesheetPeriods, timesheets, timesheetSettings } from "../../../db/schema";
 import { actingMembershipId } from "../../../common/auth/principal";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
+import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
-import { ApprovalsService, isExpectedApprovalSkip } from "./approvals.service";
+import { ApprovalsService } from "./approvals.service";
+import { RateResolverService } from "./rate-resolver.service";
+import { canActOnPeriod } from "./lib/approval-guard";
 import type {
   BulkApproveInput,
   BulkRejectInput,
@@ -20,6 +28,7 @@ export class ApprovalsBulkService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: TimesheetsAuditService,
     private readonly approvals: ApprovalsService,
+    private readonly rateResolver: RateResolverService,
   ) {}
 
   async rejectPeriod(
@@ -124,26 +133,174 @@ export class ApprovalsBulkService {
 
   async bulkApprove(u: CurrentUserContext, input: BulkApproveInput) {
     const requestedIds = await this.assertPeriodsInOrg(u.orgId, input.periodIds);
-    let approved = 0;
-    let skipped = 0;
-    for (const periodId of requestedIds) {
-      try {
-        await this.approvals.approveSinglePeriod(u, periodId);
-        approved++;
-      } catch (error) {
-        if (isExpectedApprovalSkip(error)) {
-          skipped++;
-          continue;
-        }
-        logger.error("bulkApprove: failed to approve period", {
-          orgId: u.orgId,
-          periodId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
-      }
+
+    const candidates = await this.db
+      .select({
+        id: timesheetPeriods.id,
+        userMembershipId: timesheetPeriods.userMembershipId,
+        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+      })
+      .from(timesheetPeriods)
+      .where(
+        and(
+          eq(timesheetPeriods.orgId, u.orgId),
+          inArray(timesheetPeriods.id, requestedIds),
+          eq(timesheetPeriods.status, "SUBMITTED"),
+        ),
+      );
+
+    const actorMembershipIdForDelegation = actingMembershipId(u.principal);
+    const delegations =
+      actorMembershipIdForDelegation === null
+        ? new Set<number>()
+        : await this.approvals.activeDelegationsToActor(
+            u.orgId,
+            actorMembershipIdForDelegation,
+            candidates
+              .map(p => p.currentApproverMembershipId)
+              .filter((id): id is number => id !== null),
+          );
+
+    const membershipId = actingMembershipId(u.principal);
+    const actor = { membershipId, isOrgOwner: !!u.isOrgOwner };
+
+    const approvable: typeof candidates = [];
+    for (const p of candidates) {
+      const delegateeOfApprover =
+        p.currentApproverMembershipId !== null &&
+        membershipId !== null &&
+        p.currentApproverMembershipId !== membershipId &&
+        p.userMembershipId !== membershipId
+          ? delegations.has(p.currentApproverMembershipId)
+          : false;
+      const decision = canActOnPeriod(actor, p, { delegateeOfApprover });
+      if (decision.allowed) approvable.push(p);
     }
-    return { approved, skipped };
+
+    const skipped = requestedIds.length - approvable.length;
+    if (approvable.length === 0) return { approved: 0, skipped };
+
+    const ids = approvable.map(p => p.id);
+
+    const approverActor = await assertOrganizationActor(this.db, u.orgId, {
+      kind: "user",
+      userId: u.userId,
+    }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
+    const [settings] = await this.db
+      .select({ lockAfterApproval: timesheetSettings.lockAfterApproval })
+      .from(timesheetSettings)
+      .where(eq(timesheetSettings.orgId, u.orgId))
+      .limit(1);
+    const lockAfterApproval = settings?.lockAfterApproval ?? true;
+
+    const now = new Date();
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(timesheetPeriods)
+        .set({
+          status: "APPROVED",
+          approvedAt: now,
+          approvedByMembershipId: approverActor.membershipId,
+          lockedAt: lockAfterApproval ? now : null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(timesheetPeriods.orgId, u.orgId),
+            inArray(timesheetPeriods.id, ids),
+          ),
+        );
+
+      await tx
+        .update(timesheets)
+        .set({
+          status: "APPROVED",
+          approvedByMembershipId: approverActor.membershipId,
+          approvedAt: now,
+          lockedAt: lockAfterApproval ? now : null,
+          lockedByMembershipId: lockAfterApproval ? approverActor.membershipId : null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            inArray(timesheets.timesheetPeriodId, ids),
+            eq(timesheets.orgId, u.orgId),
+            isNull(timesheets.voidedAt),
+          ),
+        );
+
+      const billableEntries = await tx
+        .select()
+        .from(timesheets)
+        .where(
+          and(
+            inArray(timesheets.timesheetPeriodId, ids),
+            eq(timesheets.orgId, u.orgId),
+            eq(timesheets.isBillable, true),
+            isNull(timesheets.billRate),
+            isNull(timesheets.voidedAt),
+          ),
+        );
+
+      const resolvedRates = await this.rateResolver.resolveMany(
+        u.orgId,
+        billableEntries.map(entry => ({
+          projectId: entry.projectId,
+          userMembershipId: entry.userMembershipId,
+          ticketId: entry.ticketId,
+          date: entry.date,
+        })),
+      );
+
+      const rateRows: Array<{ key: number; values: [string, string | null, string, string | null] }> = [];
+      for (const [i, entry] of billableEntries.entries()) {
+        const resolved = resolvedRates[i];
+        if (!resolved || resolved.billRate === null) continue;
+        rateRows.push({
+          key: entry.id,
+          values: [
+            resolved.billRate.toString(),
+            resolved.costRate !== null ? resolved.costRate.toString() : null,
+            resolved.currency,
+            resolved.source,
+          ],
+        });
+      }
+      if (rateRows.length > 0) {
+        await bulkUpdateFromValues(tx, {
+          table: timesheets,
+          orgId: u.orgId,
+          key: { column: "id", type: "integer" },
+          columns: [
+            { column: "bill_rate", type: "numeric(10, 2)" },
+            { column: "cost_rate", type: "numeric(10, 2)" },
+            { column: "currency", type: "text" },
+            { column: "rate_source", type: "timesheet_rate_source" },
+          ],
+          rows: rateRows,
+          touch: ["updated_at"],
+        });
+      }
+
+      await this.audit.recordMany(
+        tx,
+        ids.map(id => ({
+          orgId: u.orgId,
+          actorMembershipId: actingMembershipId(u.principal),
+          entityType: "period",
+          entityId: id.toString(),
+          action: "period.approved",
+          after: { status: "APPROVED" },
+        })),
+      );
+    });
+
+    return { approved: ids.length, skipped };
   }
 
   async bulkReject(u: CurrentUserContext, input: BulkRejectInput) {

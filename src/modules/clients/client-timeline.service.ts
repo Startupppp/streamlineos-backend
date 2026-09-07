@@ -66,7 +66,8 @@ export class ClientTimelineService {
           eq(leadPartyMap.organizationId, orgId),
         ),
       )
-      .where(and(...clientPartyScope(orgId), clientIdIs(clientId)));
+      .where(and(...clientPartyScope(orgId), clientIdIs(clientId)))
+      .limit(1);
     if (!client) return null;
 
     const events: TimelineEvent[] = [];
@@ -84,7 +85,9 @@ export class ClientTimelineService {
     const clientDeals = await this.db
       .select({ id: deals.id, name: deals.name, createdAt: deals.createdAt })
       .from(deals)
-      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.clientId, clientId)));
+      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.clientId, clientId)))
+      .orderBy(desc(deals.id))
+      .limit(200);
 
     for (const deal of clientDeals) {
       events.push({

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
 import { clientAccounts, users } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
@@ -17,7 +17,8 @@ export async function getCrmAssignmentStats(db: Db, access: AccessService, orgId
   const csMembers = await db
     .select({ userId: users.id, name: users.name, image: users.image })
     .from(users)
-    .where(inArray(users.id, csMemberIds));
+    .where(inArray(users.id, csMemberIds))
+    .limit(CS_MEMBER_LIMIT);
 
   const memberIds = csMembers.map((m) => m.userId);
 
@@ -58,66 +59,74 @@ export async function backfillCrmAssignments(db: Db, access: AccessService, orgI
 
   const memberIds = csMembers.map((m) => m.userId);
 
-  const [countRows, unassigned] = await Promise.all([
-    db
-      .select({ userId: clientAccounts.assignedCrmId, activeCount: count() })
-      .from(clientAccounts)
-      .where(
-        and(
-          eq(clientAccounts.orgId, orgId),
-          inArray(clientAccounts.assignedCrmId, memberIds),
-          sql`${clientAccounts.status} != 'INVESTED'`,
-        ),
-      )
-      .groupBy(clientAccounts.assignedCrmId),
-    db
-      .select({ id: clientAccounts.id })
-      .from(clientAccounts)
-      .where(and(eq(clientAccounts.orgId, orgId), isNull(clientAccounts.assignedCrmId)))
-      .orderBy(desc(clientAccounts.createdAt)),
-  ]);
-
-  if (unassigned.length === 0) return;
+  const countRows = await db
+    .select({ userId: clientAccounts.assignedCrmId, activeCount: count() })
+    .from(clientAccounts)
+    .where(
+      and(
+        eq(clientAccounts.orgId, orgId),
+        inArray(clientAccounts.assignedCrmId, memberIds),
+        sql`${clientAccounts.status} != 'INVESTED'`,
+      ),
+    )
+    .groupBy(clientAccounts.assignedCrmId);
 
   const counts: Record<string, number> = Object.fromEntries(memberIds.map((id) => [id, 0]));
   for (const row of countRows) {
     if (row.userId) counts[row.userId] = row.activeCount;
   }
 
-  const assignments: Record<string, number[]> = {};
-  for (const account of unassigned) {
-    let minCount = Infinity;
-    let assignee: string | null = null;
-    for (const id of memberIds) {
-      if ((counts[id] ?? 0) < minCount) {
-        minCount = counts[id] ?? 0;
-        assignee = id;
+  const BACKFILL_CHUNK = 500;
+  let afterId = 0;
+  for (;;) {
+    const chunk = await db
+      .select({ id: clientAccounts.id })
+      .from(clientAccounts)
+      .where(
+        and(
+          eq(clientAccounts.orgId, orgId),
+          isNull(clientAccounts.assignedCrmId),
+          gt(clientAccounts.id, afterId),
+        ),
+      )
+      .orderBy(asc(clientAccounts.id))
+      .limit(BACKFILL_CHUNK);
+
+    if (chunk.length === 0) break;
+
+    const assignments: Record<string, number[]> = {};
+    for (const account of chunk) {
+      let minCount = Infinity;
+      let assignee: string | null = null;
+      for (const id of memberIds) {
+        if ((counts[id] ?? 0) < minCount) {
+          minCount = counts[id] ?? 0;
+          assignee = id;
+        }
+      }
+      if (assignee) {
+        (assignments[assignee] ??= []).push(account.id);
+        counts[assignee] = (counts[assignee] ?? 0) + 1;
       }
     }
-    if (assignee) {
-      (assignments[assignee] ??= []).push(account.id);
-      counts[assignee] = (counts[assignee] ?? 0) + 1;
+
+    const rows: BulkUpdateRow[] = [];
+    for (const [assigneeId, ids] of Object.entries(assignments))
+      for (const id of ids) rows.push({ key: id, values: [assigneeId] });
+
+    if (rows.length > 0) {
+      await bulkUpdateFromValues(db, {
+        table: clientAccounts,
+        orgId,
+        key: { column: "id", type: "integer" },
+        columns: [{ column: "assigned_crm_id", type: "text" }],
+        rows,
+        touch: ["updated_at"],
+      });
     }
+
+    const last = chunk[chunk.length - 1];
+    if (chunk.length < BACKFILL_CHUNK || last === undefined) break;
+    afterId = last.id;
   }
-
-  const rows: BulkUpdateRow[] = [];
-  for (const [assigneeId, ids] of Object.entries(assignments))
-    for (const id of ids) rows.push({ key: id, values: [assigneeId] });
-
-  /*
-   * One statement, not one per assignee. Every account carries a DIFFERENT
-   * `assigned_crm_id`, so `inArray` can only batch the accounts that share an
-   * assignee and the round trips grew with the number of distinct assignees.
-   * `UPDATE ... FROM (VALUES ...)` is the batched form for a per-row value; the
-   * tenant predicate is mandatory there, and a repeated account id is refused
-   * rather than applying one arbitrary assignee.
-   */
-  await bulkUpdateFromValues(db, {
-    table: clientAccounts,
-    orgId,
-    key: { column: "id", type: "integer" },
-    columns: [{ column: "assigned_crm_id", type: "text" }],
-    rows,
-    touch: ["updated_at"],
-  });
 }

@@ -563,15 +563,15 @@ const STILL_DETECTED_VERDICTS = new Set(["BATCHED", "FALSE-POSITIVE", "ACTIONABL
 const ACTIONABLE_UNDETECTED_VERDICT = "ACTIONABLE-UNDETECTED";
 
 /**
- * Files holding a human-confirmed N+1 the patterns cannot match. MEASURED 3 on
- * 2026-09-03, each read and each residual named in its classification note:
- *   /hr/core/hr-effective-change-applier.service.ts — `applyOne` per due change.
- *   /hr/time/leave-approver.service.ts — one accumulate step per approver rule.
- *   /timesheets/core/approvals-bulk.service.ts — `approveSinglePeriod` per period.
+ * Files holding a human-confirmed N+1 the patterns cannot match. WAS 3 on
+ * 2026-09-03; fixed to 0 on 2026-09-07:
+ *   /hr/core/hr-effective-change-applier.service.ts — inArray preload before loop.
+ *   /hr/time/leave-approver.service.ts — Promise.all preload before loop.
+ *   /timesheets/core/approvals-bulk.service.ts — set-based bulkApprove, no approveSinglePeriod per period.
  * May only go down. Do not add a file here to silence a red gate; the verdict
  * exists so that a defect the detector cannot see is still counted as a defect.
  */
-const ACTIONABLE_UNDETECTED_BASELINE = 3;
+const ACTIONABLE_UNDETECTED_BASELINE = 0;
 
 /**
  * Entries asserting "still detected" that the detector no longer matches.

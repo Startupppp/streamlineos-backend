@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, or, type SQL } from "drizzle-orm";
 import { users } from "../../db/schema";
 import { businessParties, clientPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -133,24 +133,57 @@ export class ClientsService {
   }
 
   async exportCsv(orgId: string, userId: string, scope: DataScope): Promise<string> {
-    const rows = await this.db
-      .select({
-        id: CLIENT_PARTY_COLUMNS.id,
-        name: CLIENT_PARTY_COLUMNS.name,
-        email: CLIENT_PARTY_COLUMNS.email,
-        phone: CLIENT_PARTY_COLUMNS.phone,
-        company: CLIENT_PARTY_COLUMNS.company,
-        city: CLIENT_PARTY_COLUMNS.city,
-        status: CLIENT_PARTY_COLUMNS.status,
-        healthScore: CLIENT_PARTY_COLUMNS.healthScore,
-        healthStatus: CLIENT_PARTY_COLUMNS.healthStatus,
-        investmentValue: CLIENT_PARTY_COLUMNS.investmentValue,
-        createdAt: CLIENT_PARTY_COLUMNS.createdAt,
-      })
-      .from(clientPartyMap)
-      .innerJoin(businessParties, CLIENT_PARTY_JOIN)
-      .where(and(...clientPartyScope(orgId), clientPartyViewScope(orgId, userId, scope)))
-      .orderBy(asc(CLIENT_PARTY_COLUMNS.name), asc(CLIENT_PARTY_COLUMNS.id));
+    const EXPORT_PAGE = 500;
+    type ExportRow = {
+      id: number;
+      name: string;
+      email: string | null;
+      phone: string | null;
+      company: string | null;
+      city: string | null;
+      status: string;
+      healthScore: number;
+      healthStatus: string;
+      investmentValue: string | null;
+      createdAt: Date | null;
+    };
+    const rows: ExportRow[] = [];
+    let afterName: string | undefined;
+    let afterId: number | undefined;
+    for (;;) {
+      const baseConditions = [...clientPartyScope(orgId), clientPartyViewScope(orgId, userId, scope)];
+      if (afterName !== undefined && afterId !== undefined) {
+        const cursorCond = or(
+          gt(CLIENT_PARTY_COLUMNS.name, afterName),
+          and(eq(CLIENT_PARTY_COLUMNS.name, afterName), gt(CLIENT_PARTY_COLUMNS.id, afterId)),
+        );
+        if (cursorCond) baseConditions.push(cursorCond);
+      }
+      const page = await this.db
+        .select({
+          id: CLIENT_PARTY_COLUMNS.id,
+          name: CLIENT_PARTY_COLUMNS.name,
+          email: CLIENT_PARTY_COLUMNS.email,
+          phone: CLIENT_PARTY_COLUMNS.phone,
+          company: CLIENT_PARTY_COLUMNS.company,
+          city: CLIENT_PARTY_COLUMNS.city,
+          status: CLIENT_PARTY_COLUMNS.status,
+          healthScore: CLIENT_PARTY_COLUMNS.healthScore,
+          healthStatus: CLIENT_PARTY_COLUMNS.healthStatus,
+          investmentValue: CLIENT_PARTY_COLUMNS.investmentValue,
+          createdAt: CLIENT_PARTY_COLUMNS.createdAt,
+        })
+        .from(clientPartyMap)
+        .innerJoin(businessParties, CLIENT_PARTY_JOIN)
+        .where(and(...baseConditions))
+        .orderBy(asc(CLIENT_PARTY_COLUMNS.name), asc(CLIENT_PARTY_COLUMNS.id))
+        .limit(EXPORT_PAGE);
+      for (const row of page) rows.push(row);
+      const last = page[page.length - 1];
+      if (page.length < EXPORT_PAGE || last === undefined) break;
+      afterName = last.name;
+      afterId = last.id;
+    }
 
     const headers = [
       "id",
