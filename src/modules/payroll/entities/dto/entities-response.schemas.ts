@@ -51,7 +51,7 @@ export const entityContextResponseSchema = z.object({
   entity: payrollEntitySchema,
   countryPack: countryPackDescriptorSchema.nullable(),
   readiness: z.array(entityReadinessItemSchema),
-  readinessScore: z.number(),
+  readinessScore: z.object({ done: z.number(), total: z.number(), percent: z.number() }),
   isolation: z.object({ note: z.string() }),
   honestyNote: z.string(),
 });
