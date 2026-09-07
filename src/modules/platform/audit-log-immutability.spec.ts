@@ -118,12 +118,48 @@ describe("audit_logs immutability — repository contract (not deployed evidence
     expect(migration).toContain("DROP TRIGGER IF EXISTS audit_logs_append_only");
   });
 
+  it("blocks TRUNCATE, which the 0930 row-level trigger never saw", () => {
+    const migration = readFileSync(
+      join(resolve(BACKEND_SRC, ".."), "migrations/1070_audit_logs_no_truncate.sql"),
+      "utf8",
+    );
+    expect(migration).toContain("CREATE TRIGGER audit_logs_no_truncate");
+    expect(migration).toContain("BEFORE TRUNCATE ON public.audit_logs");
+    expect(migration).toContain("FOR EACH STATEMENT");
+    expect(migration).toContain("app.prevent_audit_log_mutation()");
+    expect(migration).toContain("DROP TRIGGER IF EXISTS audit_logs_no_truncate");
+  });
+
+  it("registers 1070 in the journal, without which it never runs", () => {
+    const journal = JSON.parse(
+      readFileSync(join(resolve(BACKEND_SRC, ".."), "migrations", "meta", "_journal.json"), "utf8"),
+    ) as { entries: Array<{ idx: number; when: number; tag: string }> };
+    expect(journal.entries.some((e) => e.tag === "1070_audit_logs_no_truncate")).toBe(true);
+    const idxs = journal.entries.map((e) => e.idx);
+    expect(new Set(idxs).size).toBe(idxs.length);
+    const whens = journal.entries.map((e) => e.when);
+    expect([...whens].sort((a, b) => a - b)).toEqual(whens);
+  });
+
+  it("keeps 1070's rollback explicit that it reopens the hole", () => {
+    const rollback = readFileSync(
+      join(resolve(BACKEND_SRC, ".."), "migrations/rollback/1070_audit_logs_no_truncate.down.sql"),
+      "utf8",
+    );
+    expect(rollback).toContain("DROP TRIGGER IF EXISTS audit_logs_no_truncate");
+    expect(rollback).toContain("release authority's compensating control");
+  });
+
   it("requires the live verifier to identify the named trigger and both mutation events", () => {
     const verifier = readFileSync(
       join(resolve(BACKEND_SRC, "scripts/verify-audit-log-privileges.mjs")),
       "utf8",
     );
-    expect(verifier).toContain("'audit_logs', 'audit_logs_append_only', 'prevent_audit_log_mutation'");
+    expect(verifier).toContain(
+      "'audit_logs', 'audit_logs_append_only', 'prevent_audit_log_mutation', 'audit_logs_no_truncate'",
+    );
+    expect(verifier).toContain("(t.tgtype::integer & 32) <> 0");
+    expect(verifier).toContain("truncateGuardPresent");
     expect(verifier).toContain("t.tgname = target.trgname");
     expect(verifier).toContain("fn.nspname = 'app'");
     expect(verifier).toContain("p.proname = target.fnname");

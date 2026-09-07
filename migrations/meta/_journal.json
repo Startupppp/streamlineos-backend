@@ -4873,6 +4873,13 @@
       "when": 1803000010147,
       "tag": "1069_operator_access_log_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 829,
+      "version": "7",
+      "when": 1803000010148,
+      "tag": "1070_audit_logs_no_truncate",
+      "breakpoints": true
     }
   ]
 }

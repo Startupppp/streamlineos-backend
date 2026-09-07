@@ -27,33 +27,33 @@ export function evaluatePrivilegeRow(row) {
     updateRevoked: row.canUpdate === false,
     deleteRevoked: row.canDelete === false,
     triggerPresent: row.triggerPresent === true,
+    // A row-level trigger cannot see TRUNCATE, so the row-level guard alone left
+    // one statement able to empty an append-only trail. Checked separately because
+    // the two triggers are separate objects and either can be dropped alone.
+    truncateGuardPresent: row.truncateGuardPresent === true,
   };
 }
 
 if (selfTest) {
-  const safe = evaluatePrivilegeRow({ role: "streamline_app", canUpdate: false, canDelete: false, triggerPresent: true });
-  const unsafe = evaluatePrivilegeRow({ role: "streamline_app", canUpdate: true, canDelete: false, triggerPresent: true });
-  const missingNamedTrigger = evaluatePrivilegeRow({
-    role: "streamline_app",
-    canUpdate: false,
-    canDelete: false,
-    triggerPresent: false,
-  });
-  const wrongRole = evaluatePrivilegeRow({
-    role: "neon_superuser",
-    canUpdate: false,
-    canDelete: false,
-    triggerPresent: true,
-  });
+  const base = { role: "streamline_app", canUpdate: false, canDelete: false, triggerPresent: true, truncateGuardPresent: true };
+  const safe = evaluatePrivilegeRow(base);
+  const unsafe = evaluatePrivilegeRow({ ...base, canUpdate: true });
+  const missingNamedTrigger = evaluatePrivilegeRow({ ...base, triggerPresent: false });
+  const missingTruncateGuard = evaluatePrivilegeRow({ ...base, truncateGuardPresent: false });
+  const wrongRole = evaluatePrivilegeRow({ ...base, role: "neon_superuser" });
   const pass =
     safe.isAppRole &&
     safe.updateRevoked &&
     safe.deleteRevoked &&
     safe.triggerPresent &&
+    safe.truncateGuardPresent &&
     !unsafe.updateRevoked &&
     !missingNamedTrigger.triggerPresent &&
+    !missingTruncateGuard.truncateGuardPresent &&
     !wrongRole.isAppRole;
-  process.stdout.write(JSON.stringify({ selfTest: true, pass, safe, unsafe, wrongRole }) + "\n");
+  process.stdout.write(
+    JSON.stringify({ selfTest: true, pass, safe, unsafe, missingTruncateGuard, wrongRole }) + "\n",
+  );
   process.exit(pass ? 0 : 1);
 }
 
@@ -97,11 +97,23 @@ try {
           AND p.proname = target.fnname
           AND (t.tgtype::integer & 16) <> 0
           AND (t.tgtype::integer & 8) <> 0
-      ) AS trigger_present
+      ) AS trigger_present,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname = target.relname
+          AND t.tgname = target.trunc_trgname
+          AND NOT t.tgisinternal
+          AND t.tgenabled <> 'D'
+          AND (t.tgtype::integer & 32) <> 0
+      ) AS truncate_guard_present
     FROM (VALUES
-      ('audit_logs', 'audit_logs_append_only', 'prevent_audit_log_mutation'),
-      ('operator_access_log', 'operator_access_log_append_only', 'prevent_operator_access_log_mutation')
-    ) AS target(relname, trgname, fnname)
+      ('audit_logs', 'audit_logs_append_only', 'prevent_audit_log_mutation', 'audit_logs_no_truncate'),
+      ('operator_access_log', 'operator_access_log_append_only', 'prevent_operator_access_log_mutation', 'operator_access_log_no_truncate')
+    ) AS target(relname, trgname, fnname, trunc_trgname)
   `;
   if (rows.length !== 2) throw new Error(`append-only privilege query returned ${rows.length} rows, expected 2`);
   const results = rows.map((row) => ({
@@ -111,11 +123,13 @@ try {
       canUpdate: row.can_update,
       canDelete: row.can_delete,
       triggerPresent: row.trigger_present,
+      truncateGuardPresent: row.truncate_guard_present,
     }),
   }));
   process.stdout.write(JSON.stringify(results) + "\n");
   const failed = results.filter(
-    (r) => !r.isAppRole || !r.updateRevoked || !r.deleteRevoked || !r.triggerPresent,
+    (r) =>
+      !r.isAppRole || !r.updateRevoked || !r.deleteRevoked || !r.triggerPresent || !r.truncateGuardPresent,
   );
   if (failed.length > 0) {
     process.stderr.write(`APPEND-ONLY BOUNDARY FAILED: ${failed.map((r) => r.table).join(", ")}\n`);
