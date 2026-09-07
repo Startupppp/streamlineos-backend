@@ -285,6 +285,25 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
 
   let tokenRetries = 0;
 
+  /**
+   * A 403 the server raised about the CALLER's own standing, not about the object in the path.
+   *
+   * A sweep this long mutates the tenants it probes, so a credential minted 40 seconds ago can
+   * describe a membership the server has since stopped honouring. That refusal is a 403, not a
+   * 401, so the re-mint below never fired and the stale token kept being sent until the TTL
+   * expired. The scorer only sees a status, and 403-on-a-real-id beside 404-on-an-absent-id is
+   * exactly the shape of an existence oracle — so a credential problem was reported as a
+   * disclosure. Measured: `POST /hr/enterprise/ops/emergency/events/:eventId/respond` scored
+   * EXISTENCE-ORACLE in a full sweep with body ORG_MEMBERSHIP_INACTIVE, and PASSES with probe
+   * 404 when re-probed alone.
+   *
+   * Re-minting and asking again suppresses nothing: a genuine object-level 403 carries a
+   * different body, and a membership that is really revoked answers 403 again on the fresh
+   * credential and is scored exactly as before.
+   */
+  const isCallerStateRefusal = (sent: Sent): boolean =>
+    sent.status === 403 && sent.body.includes("ORG_MEMBERSHIP_INACTIVE");
+
   /** Sends as the named principal, re-minting once if the credential is refused. */
   const sendAs = async (
     who: "source" | "prober",
@@ -294,7 +313,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
   ): Promise<Sent> => {
     const token = (): string => (who === "source" ? sourceToken : proberToken);
     const first = await send(verb, path, token(), body);
-    if (first.status !== 401) return first;
+    if (first.status !== 401 && !isCallerStateRefusal(first)) return first;
     tokenRetries += 1;
     await refreshTokens(true);
     return send(verb, path, token(), body);
@@ -681,8 +700,19 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
             attemptProbe = await sendAs("prober", planned.verb, tryUrl, bodyFor());
             attemptControl = await sendAs("source", planned.verb, tryUrl, bodyFor());
           } else {
-            attemptControl = await sendAs("source", planned.verb, tryUrl, bodyFor());
-            attemptProbe = await sendAs("prober", planned.verb, tryUrl, bodyFor());
+            /**
+             * A read pair is issued concurrently. Sequentially it pays twice the server's own
+             * database latency per attempt, and with ~1,900 routes and up to MAX_ATTEMPTS tries
+             * each that is the difference between a sweep that finishes and one that hits the
+             * per-test timeout without returning. Only the two requests inside a single attempt
+             * overlap: the route loop stays sequential, so the borrow pool still hands each id
+             * out once and every outcome is still recorded in plan order. Safe only here —
+             * the mutating branch above must probe BEFORE the control consumes the object.
+             */
+            [attemptControl, attemptProbe] = await Promise.all([
+              sendAs("source", planned.verb, tryUrl, bodyFor()),
+              sendAs("prober", planned.verb, tryUrl, bodyFor()),
+            ]);
           }
           spent += 1;
           control = attemptControl;

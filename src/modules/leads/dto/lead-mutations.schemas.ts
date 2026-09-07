@@ -4,7 +4,7 @@ const MERGE_FIELD_SIDES = ["winner", "loser"] as const;
 
 export const logActivitySchema = z.object({
   type: z.string(),
-  date: z.string(),
+  date: z.string().datetime(),
   duration: z.number().optional(),
   subject: z.string().optional(),
   location: z.string().optional(),
