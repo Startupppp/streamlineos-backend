@@ -7,7 +7,7 @@ import {
   payrollPolicies,
   payrollPolicyVersions,
 } from "../../../db/schema";
-import { toPayrollPolicyConfig } from "../payroll.types";
+import { toPayrollPolicyConfig } from "../dto/payroll.schemas";
 import { DEFAULT_PAYROLL_POLICY_CONFIG } from "../setup/payroll-policy-defaults.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CreateCalendarEvent, PatchCalendarEvent } from "./dto/insights.schemas";

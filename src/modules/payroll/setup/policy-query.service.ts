@@ -15,7 +15,8 @@ import type {
   PayrollPolicyConfig,
   TemplateComponentDef,
 } from "../payroll.types";
-import { DEFAULT_PAYROLL_TOGGLES, normalizePayrollToggles, toPayrollPolicyConfig, toTemplateComponentDefs } from "../payroll.types";
+import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
+import { normalizePayrollToggles, toPayrollPolicyConfig, toTemplateComponentDefs } from "../dto/payroll.schemas";
 import { getStatutoryPack } from "../runs/lib/statutory-packs";
 import { DEFAULT_PAYROLL_CALENDAR as DEFAULT_CALENDAR } from "./payroll-policy-defaults.constants";
 import { format } from "date-fns";

@@ -30,13 +30,12 @@ import type {
   PayrollPolicyConfig,
   TemplateComponentDef,
 } from "../payroll.types";
+import { DEFAULT_PAYROLL_TOGGLES, isPayrollToggleKey } from "../payroll.types";
 import {
-  DEFAULT_PAYROLL_TOGGLES,
   normalizePayrollToggles,
   toPayrollPolicyConfig,
   toTemplateComponentDefs,
-  isPayrollToggleKey,
-} from "../payroll.types";
+} from "../dto/payroll.schemas";
 import { DEFAULT_PAYROLL_POLICY_CONFIG } from "./payroll-policy-defaults.constants";
 import {
   buildDefaultConfig,

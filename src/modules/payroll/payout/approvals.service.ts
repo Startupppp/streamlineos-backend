@@ -23,11 +23,8 @@ import {
 import { AccessService } from "../../access/access.service";
 import { logger } from "../../../common/logger/logger.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
-import {
-  normalizePayrollToggles,
-  toPayrollPolicyConfig,
-  type PayrollApprovalStageDef,
-} from "../payroll.types";
+import type { PayrollApprovalStageDef } from "../payroll.types";
+import { normalizePayrollToggles, toPayrollPolicyConfig } from "../dto/payroll.schemas";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PayrollApproverResolverService } from "./payroll-approver-resolver.service";

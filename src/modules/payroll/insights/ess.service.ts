@@ -22,7 +22,8 @@ import {
 import { hrBenefitEnrollments, hrBenefitPlans } from "../../../db/schema/hr/benefits";
 import { hrEquityGrants } from "../../../db/schema/hr/enterprise-comp";
 import { TaxService } from "../hr-payroll/tax.service";
-import { DEFAULT_PAYROLL_TOGGLES, normalizePayrollToggles, PayrollToggles } from "../payroll.types";
+import { DEFAULT_PAYROLL_TOGGLES, PayrollToggles } from "../payroll.types";
+import { normalizePayrollToggles } from "../dto/payroll.schemas";
 import { buildTotalRewardsStatement } from "./lib/total-rewards";
 
 @Injectable()

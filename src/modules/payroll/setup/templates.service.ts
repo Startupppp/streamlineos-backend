@@ -11,7 +11,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { PAYROLL_TEMPLATE_SEEDS } from "./payroll-template-seeds";
 import { computeTemplatePreview } from "./lib/template-preview";
 import type { ListTemplatesInput, TemplatePreviewInput, DuplicateTemplateInput } from "./dto/setup.schemas";
-import { normalizePayrollToggles, toTemplateComponentDefs } from "../payroll.types";
+import { normalizePayrollToggles, toTemplateComponentDefs } from "../dto/payroll.schemas";
 import type { PayrollToggles } from "../payroll.types";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";

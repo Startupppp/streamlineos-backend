@@ -32,7 +32,7 @@ import {
   loadRunEmployeePayees,
 } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import { normalizePayrollToggles, toCalculationSnapshot } from "../payroll.types";
+import { normalizePayrollToggles, toCalculationSnapshot } from "../dto/payroll.schemas";
 import type { CalculationSnapshot } from "../payroll.types";
 import { normalizePayslipTemplateConfig } from "./dto/payout.schemas";
 import { PAYROLL_READ_CAP } from "../lib/query-bounds";

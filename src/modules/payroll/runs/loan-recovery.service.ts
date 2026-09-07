@@ -3,7 +3,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../../db/drizzle.types";
 import { payrollRunEmployees, salaryLoans } from "../../../db/schema";
-import { toCalculationSnapshot } from "../payroll.types";
+import { toCalculationSnapshot } from "../dto/payroll.schemas";
 
 @Injectable()
 export class LoanRecoveryService {

@@ -22,7 +22,7 @@ import { generatePayslipPdf } from "../hr-payroll/lib/payslip-pdf";
 import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { loadRunEmployeePayeeById } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
-import { toCalculationSnapshot } from "../payroll.types";
+import { toCalculationSnapshot } from "../dto/payroll.schemas";
 import { normalizePayslipTemplateConfig } from "./dto/payout.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";

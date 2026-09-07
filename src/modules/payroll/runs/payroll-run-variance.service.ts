@@ -3,7 +3,8 @@ import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollRunEmployees, payrollRuns, users } from "../../../db/schema";
-import { PAYROLL_LOCKED_STATUSES, toCalculationSnapshot, type VarianceSummary } from "../payroll.types";
+import { PAYROLL_LOCKED_STATUSES, type VarianceSummary } from "../payroll.types";
+import { toCalculationSnapshot } from "../dto/payroll.schemas";
 import { fromPaise, toPaise } from "./lib/money";
 
 @Injectable()

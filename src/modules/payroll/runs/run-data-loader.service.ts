@@ -11,13 +11,13 @@ import {
   reimbursements,
   payrollRunAllocations,
 } from "../../../db/schema";
+import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import {
-  PAYROLL_LOCKED_STATUSES,
   normalizePayrollToggles,
   toPayrollPolicyConfig,
   toCalculationSnapshot,
   toInputsSnapshot,
-} from "../payroll.types";
+} from "../dto/payroll.schemas";
 import type {
   PayrollToggles,
   PayrollPolicyConfig,

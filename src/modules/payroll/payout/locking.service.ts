@@ -20,7 +20,8 @@ import {
   payrollRunEvents,
   payrollTdsYtdLedger,
 } from "../../../db/schema";
-import { canTransitionRun, toCalculationSnapshot } from "../payroll.types";
+import { canTransitionRun } from "../payroll.types";
+import { toCalculationSnapshot } from "../dto/payroll.schemas";
 import type { PayrollRunStatus } from "../payroll.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import { GenerateService } from "../runs/generate.service";
@@ -268,11 +269,19 @@ export class LockingService {
       };
 
       if (emp.userId) {
-        byUser.set(emp.userId, { ...base, userId: emp.userId, workerId: emp.workerId });
+        byUser.set(emp.userId, {
+          ...base,
+          userId: emp.userId,
+          workerId: emp.workerId,
+        });
         continue;
       }
       if (emp.workerId)
-        byWorker.set(emp.workerId, { ...base, userId: null, workerId: emp.workerId });
+        byWorker.set(emp.workerId, {
+          ...base,
+          userId: null,
+          workerId: emp.workerId,
+        });
     }
 
     if (byUser.size > 0)

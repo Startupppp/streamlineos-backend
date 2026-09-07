@@ -171,11 +171,6 @@ const DOUBLE_CAST_LEDGER = new Map([
   ["src/scripts/verify-cell-admission.ts", { count: 1, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::builds a standalone client that exposes the surface the app's Db alias is used through", invariant: "same Drizzle instantiation seam as verify-cell-degraded-control-plane.ts." }],
   ["src/scripts/seed-permissions.ts", { count: 1, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::builds a standalone client that exposes the surface the app's Db alias is used through", invariant: "same Drizzle instantiation seam; a seed script constructing its own client." }],
   ["src/test/sql-predicate.ts", { count: 2, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::still reads drizzle-orm's private SQL chunk shape, and says so by matching", invariant: "reads Drizzle's internal SQL AST node shape, which the library does not export. Test-support code for asserting that a predicate was built, not application code, and it breaks loudly on a Drizzle upgrade rather than silently." }],
-
-  // -- external: a runtime shape the type system cannot see --
-  ["src/db/query-telemetry.ts", { count: 3, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::awaits a wrapped result that is thenable without declaring PromiseLike", invariant: "the instrumentation proxy wraps a Drizzle query builder that is thenable at runtime but not declared `PromiseLike`. The cast names the `.then` that is provably there — the proxy only reaches this branch after checking for it." }],
-  ["src/modules/platform/operator-session.guard.ts", { count: 1, seam: "external", test: "src/scripts/__tests__/assertion-seam-contracts.spec.ts::degrades an absent Express route object to the raw url instead of throwing", invariant: "`req.route` is attached by Express at dispatch time and is absent from the Nest request type. Read optionally with a `?? req.url` fallback, so an absent route degrades to the raw URL rather than throwing." }],
-
 ]);
 
 /**
