@@ -27,7 +27,6 @@ import {
 } from "./dto/projects.schemas";
 import { projectIdParams } from "./dto/build-params.schemas";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { successSchema } from "../../../common/openapi/response-envelopes";
 import { linkManagedProductResultSchema } from "./dto/build-core-response.schemas";
 import { projectDetailSchema } from "./dto/build-project-detail-response.schemas";
 
@@ -53,7 +52,7 @@ export class ProjectsByIdController {
 
   @Patch(":projectId")
   @RequirePermission("build:update")
-  @ResponseSchema(successSchema)
+  @ResponseSchema(projectDetailSchema)
   @Validate({ params: projectIdParams, body: updateProjectSchema })
   updateProject(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
