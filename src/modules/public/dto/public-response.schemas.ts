@@ -43,8 +43,11 @@ const jobSummarySchema = z.object({
   location: z.string().nullable(),
   type: z.string().nullable(),
   experience: z.string().nullable(),
-  salaryMin: z.number().nullable(),
-  salaryMax: z.number().nullable(),
+  salaryMin: z.string().nullable(),
+  salaryMax: z.string().nullable(),
+  openings: z.number().int(),
+  applicationDeadline: z.string().nullable(),
+  createdAt: wireDate(),
 });
 
 export const jobListSchema = z.object({
@@ -68,8 +71,13 @@ export const jobApplicationSchema = z.object({
 
 export const offerDetailSchema = z.object({
   id: z.number().int(),
-  status: z.string(),
+  offerStatus: z.string(),
   currency: z.string(),
+  offeredSalary: z.string().nullable(),
+  offeredDesignation: z.string().nullable(),
+  joiningDate: z.string().nullable(),
+  validUntil: z.string().nullable(),
+  notes: z.string().nullable(),
   negotiations: z.array(z.record(z.string(), z.unknown())),
 });
 
@@ -122,8 +130,15 @@ export const externalReferralSubmitSchema = z.discriminatedUnion("alreadyReferre
 
 export const vendorPortalSchema = z.object({
   vendorName: z.string().nullable(),
-  orgName: z.string(),
-  openJobs: z.array(z.record(z.string(), z.unknown())),
+  submissions: z.array(
+    z.object({
+      id: z.number().int(),
+      candidateName: z.string(),
+      jobTitle: z.string().nullable(),
+      placementStatus: z.string(),
+      submittedAt: wireDate(),
+    }),
+  ),
 });
 
 export const intakeSubmitSchema = z.object({
@@ -226,7 +241,7 @@ const kbArticleSummarySchema = z.object({
   id: z.number().int(),
   title: z.string(),
   slug: z.string(),
-  summary: z.string().nullable(),
+  excerpt: z.string().nullable(),
   publishedAt: nullableWireDate(),
 });
 
@@ -238,7 +253,7 @@ const kbCategorySchema = z.object({
 
 export const kbListSchema = z.object({
   categories: z.array(kbCategorySchema),
-  data: z.array(kbArticleSummarySchema),
+  articles: z.array(kbArticleSummarySchema),
   pagination: z.object({
     limit: z.number().int(),
     hasMore: z.boolean(),
@@ -251,7 +266,11 @@ export const kbArticleSchema = z.object({
   title: z.string(),
   slug: z.string(),
   content: z.string().nullable(),
-  summary: z.string().nullable(),
+  excerpt: z.string().nullable(),
+  seoTitle: z.string().nullable(),
+  seoDescription: z.string().nullable(),
+  categoryName: z.string().nullable(),
+  tags: z.array(z.string()),
   views: z.number().int(),
   publishedAt: nullableWireDate(),
 });

@@ -52,7 +52,7 @@ describe("KbService — cross-tenant isolation", () => {
     const svc = new KbService(db);
     const result = await svc.list({ org: ATTACKER, pageSize: 10 });
 
-    expect(result.data).toHaveLength(0);
+    expect(result.articles).toHaveLength(0);
     expect(categoriesChain.where).toHaveBeenCalled();
     const allVals = sqlValues(categoriesChain.where.mock.calls[0]?.[0]);
     expect(allVals).toContain(ATTACKER);
@@ -73,6 +73,6 @@ describe("KbService — cross-tenant isolation", () => {
     const svc = new KbService(db);
     const result = await svc.list({ org: OWNER, pageSize: 10 });
 
-    expect(result.data).toHaveLength(1);
+    expect(result.articles).toHaveLength(1);
   });
 });
