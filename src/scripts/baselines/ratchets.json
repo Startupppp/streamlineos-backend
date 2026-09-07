@@ -174,10 +174,10 @@
         "direction": "floor"
       },
       "ACTIONABLE_UNDETECTED_BASELINE": {
-        "value": 3,
+        "value": 0,
         "direction": "ratchet",
         "owner": "perf/db owner",
-        "reason": "Introduced by c0daca5b while UNDETECTED_CLAIM_BASELINE went 2 -> 0 in the same file: net 2 -> 3. That net raise is the reason this gate exists, and it is recorded here rather than argued away."
+        "reason": "Banked 3 -> 0 on 2026-09-07. This class is 'a real N+1 the detector's patterns cannot match because the per-row work is a service call', and all three were resolved: hr-effective-change-applier (reads hoisted to two inArray preloads; its per-row WRITES stay proportional on purpose and are classified PARTIALLY-BATCHED, not claimed fixed), leave-approver (the Promise.all 'fix' was withdrawn - it deleted an early exit and made a one-resolution path always resolve up to 100; the sequential loop is restored and classified BOUNDED), and approvals-bulk. All three now carry query-count regression specs that were bite-proved by reintroducing the N+1. Earlier note, kept because the raise it records is why this gate exists: introduced by c0daca5b while UNDETECTED_CLAIM_BASELINE went 2 -> 0 in the same file, a net 2 -> 3."
       },
       "UNDETECTED_CLAIM_BASELINE": {
         "value": 0,
@@ -294,10 +294,10 @@
         "direction": "floor"
       },
       "BASELINE": {
-        "value": 60,
+        "value": 9,
         "direction": "ratchet",
         "owner": "hr owner",
-        "reason": "HR list endpoints still unpaginated. Lowered 87 -> 60 by 7723ef819; never raised."
+        "reason": "HR list endpoints still unpaginated. Lowered 87 -> 60 by 7723ef819, then 60 -> 33 -> 18 -> 9 on 2026-09-07; never raised. Every reduction was a deleted dead parameter, a keyset cursor or a bounded drain - no .limit() value was moved out of the gate's 101-500 detection window in either direction, and 20 such raises attempted mid-session were reverted. The 9 that remain are honest: 7 back live NUMBERED pagers reading a real `total` (one uses totalPages as load-bearing input to page-overshoot correction), which a cursor cannot serve without changing TablePagination and DataTablePagination, both shared repo-wide; 2 are per-person reads the gate cannot classify because it has no false-positive mechanism."
       }
     },
     "check-hr-table-freeze.mjs": {
