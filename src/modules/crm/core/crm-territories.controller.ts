@@ -35,7 +35,7 @@ import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-o
 import {
   territorySchema,
   territoryPreviewSchema as territoryPreviewResponseSchema,
-} from "./dto/crm-core-response.schemas";
+} from "./dto/crm-territories-response.schemas";
 
 const territoryIdParams = z.object({ territoryId: z.coerce.number().int().positive() }).strict();
 

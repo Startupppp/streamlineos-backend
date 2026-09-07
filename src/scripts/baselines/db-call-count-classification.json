@@ -355,6 +355,14 @@
       "verdict": "ACTIONABLE",
       "note": "one employment SELECT per hr_people row on the subject export. Read all of them with a single inArray over the person ids and group in memory"
     },
+    "/hr/automations/hr-webhooks.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-08. The one detected site is the keyset drain in run(): `for (let page = 0; page < HR_SCAN_MAX_PAGES; page++)` (HR_SCAN_MAX_PAGES = 200, a compile-time constant in modules/hr/hr-read-limits.ts) over hr_webhook_subscriptions, stepping on gt(id, afterSubscriptionId) with .limit(HR_SCAN_PAGE) and returning the moment a short page comes back. Statements per iteration are fixed at two and do not grow with the subscription count: one bounded SELECT that IS the next page, then one multi-row INSERT of that page's hr_webhook_deliveries. attemptDelivery does issue one UPDATE per delivery, but it is called from a separate method (outside the 30-line body window) and that UPDATE is that delivery's own terminal state after its own outbound fetch, not a repeated lookup - the same shape already classified FALSE-POSITIVE on /ai/jobs/ai-jobs-worker.service.ts. Read and classified 2026-09-08 by the gate-repair lane; the file belongs to the HR lane and was not edited."
+    },
+    "/hr/config/hr-holidays.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-08. announceHoliday is a keyset drain over organization_members INNER JOIN users: `for (let page = 0; page < HR_SCAN_MAX_PAGES; page++)` stepping on gt(organizationMembers.id, afterMembershipId) with .limit(HR_SCAN_PAGE), returning on a short page. One bounded SELECT per page - the loop's query IS the next page - and one dispatch.emit per page that carries the whole page as a single targetUserIds array, not one emit per recipient. Read and classified 2026-09-08 by the gate-repair lane; the file belongs to the HR lane and was not edited."
+    },
     "/hr/core/hr-audit.service.ts": {
       "verdict": "BATCHED",
       "note": "First seen 2026-09-03. `for (let offset = 0; offset < rows.length; offset += HR_AUDIT_LOG_CHUNK) await db.insert(hrAuditLogs).values(rows.slice(...))` â€” this IS logMany, the batching ticket 21's third pass introduced. Bounded by ceil(n/CHUNK)."
@@ -366,6 +374,14 @@
     "/hr/core/person-employment-backfill.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "REAL N+1, newly visible: `members.map((m) => ensureFromUser(this.db, m.userId))` opens a fresh runInNewTenantTransaction plus ~4-6 statements PER ACTIVE ORG MEMBER, windowed 4 at a time over pages of 100 â€” the window is concurrency, not batching. Batched form: per fetched page, one inArray read of hr_people keyed on the page's userIds, one multi-row insert(hrPeople).onConflictDoNothing().returning(), one multi-row employment insert, and bulkUpdateFromValues for the rows needing a patch â€” one transaction per page instead of per member."
+    },
+    "/hr/directory/employee-bulk-onboarding.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "First seen 2026-09-08. ACTIONABLE rather than FALSE-POSITIVE, deliberately, because the file has two loops and only the harmless one is detected. DETECTED (:28): a keyset drain that materialises the org's DEPARTMENT org_units once before any row is processed - `for (let page = 0; page < HR_SCAN_MAX_PAGES; page++)` stepping on gt(orgUnits.id, afterOrgUnitId) with .limit(HR_SCAN_PAGE), one bounded SELECT per page, breaking on a short page. That site alone would be a false positive. UNDETECTED (:130): `for (let i = 0; i < rows.length; i += 1)` runs one complete EmployeeOnboardingService.onboardEmployee(actor, payload) per uploaded row, which is root CLAUDE.md section 5's 'never N complete single-row workflows' - user + membership + hr_people + hr_employments + invitation per row, plus a possible orgUnits INSERT per new department name via resolveDepartmentId. The detector cannot match it because the per-row work is a service call with no db/tx handle in its argument list. Not filed as ACTIONABLE-UNDETECTED because that verdict is for a file the detector does not match at all and its ratchet is 0; this file IS matched, so ACTIONABLE records the same debt without weakening a floor. Batched form: resolve/insert every distinct department name once up front, then per page of rows do one membership/seat reservation, one multi-row users insert, one multi-row hr_people insert and one multi-row hr_employments insert, keeping the per-row results[] entry as an in-memory join rather than a per-row transaction. Read and classified 2026-09-08 by the gate-repair lane; the file belongs to the HR lane and was not edited."
+    },
+    "/hr/global/compliance-requirements.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "First seen 2026-09-08. generateEvents is a keyset drain over hr_compliance_requirements: `for (let page = 0; page < HR_SCAN_MAX_PAGES; page++)` stepping on gt(id, afterRequirementId) with .limit(HR_SCAN_PAGE), breaking on a short page. Three statements per page regardless of page contents: the page SELECT, one inArray SELECT of existing hr_compliance_events for that page's requirement ids, and one multi-row INSERT of the missing ones. The nested `for (const req of reqs)` and `for (const d of dates)` at :226/:228 are pure in-memory date arithmetic (computeDueDates) and issue nothing. Read and classified 2026-09-08 by the gate-repair lane; the file belongs to the HR lane and was not edited."
     },
     "/hr/governance/retention/retention.service.ts": {
       "verdict": "ACTIONABLE",

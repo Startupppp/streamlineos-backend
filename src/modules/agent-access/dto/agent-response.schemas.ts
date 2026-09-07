@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../common/openapi/response-envelopes";
-import { projectListPageSchema } from "../../build/core/dto/build-core-response.schemas";
-
-export { projectListPageSchema };
 
 export const agentMeSchema = z.object({
   userId: z.string(),

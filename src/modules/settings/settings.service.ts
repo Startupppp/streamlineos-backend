@@ -18,11 +18,19 @@ import {
   generateApiKey,
   parseOrgFeatureFlags,
 } from "./settings.helpers";
+import { SETTINGS_PROVENANCE_SECTIONS } from "./dto/settings.schemas";
 import type { CreateApiKeyInput, FeatureFlagInput } from "./dto/settings.schemas";
 import { logger } from "../../common/logger/logger.service";
 
 /** The key list is a page, not a dump. Mirrors `SESSION_LIST_CAP`. */
 export const API_KEY_LIST_CAP = 100;
+
+type SectionProvenance = {
+  actorId: string;
+  actorName: string | null;
+  action: string;
+  at: string;
+};
 
 @Injectable()
 export class SettingsService {
@@ -32,22 +40,26 @@ export class SettingsService {
     private readonly cache: CacheService,
   ) {}
 
+  /**
+   * One query per section, and the section list arrives from the client. The
+   * query schema restricts each entry to `SETTINGS_PROVENANCE_SECTIONS` but does
+   * not deduplicate, so `?sections=org&sections=org&…` fanned out one audit-log
+   * read per repeat with no ceiling. Intersecting the request with the fixed
+   * vocabulary caps the fan-out at its real size — six — and the response is
+   * unchanged, because it is keyed by section name and duplicates already
+   * collapsed in `Object.fromEntries`.
+   */
   async getSectionProvenance(
     orgId: string,
     sections: readonly string[],
-  ): Promise<
-    Record<
-      string,
-      {
-        actorId: string;
-        actorName: string | null;
-        action: string;
-        at: string;
-      } | null
-    >
-  > {
+  ): Promise<Record<string, SectionProvenance | null>> {
+    const requested = new Set(sections);
+    const wanted = SETTINGS_PROVENANCE_SECTIONS.filter((section) =>
+      requested.has(section),
+    );
+
     const rows = await Promise.all(
-      sections.map((section) =>
+      wanted.map((section) =>
         this.db
           .select({
             action: auditLogs.action,
@@ -68,8 +80,8 @@ export class SettingsService {
       ),
     );
 
-    return Object.fromEntries(
-      sections.map((section, index) => {
+    const resolved = new Map<string, SectionProvenance | null>(
+      wanted.map((section, index) => {
         const row = rows[index]?.[0];
         return [
           section,
@@ -81,8 +93,12 @@ export class SettingsService {
                 at: row.createdAt.toISOString(),
               }
             : null,
-        ];
+        ] as const;
       }),
+    );
+
+    return Object.fromEntries(
+      [...requested].map((section) => [section, resolved.get(section) ?? null]),
     );
   }
 

@@ -82,5 +82,4 @@ export const ingestSchema = z
 export type ListInput = z.infer<typeof listSchema>;
 export type CreateInput = z.infer<typeof createSchema>;
 export type UpdateInput = z.infer<typeof updateSchema>;
-export type LeadQualification = z.infer<typeof leadQualificationSchema>;
 export type IngestInput = z.infer<typeof ingestSchema>;

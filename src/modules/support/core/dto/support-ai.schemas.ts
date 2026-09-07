@@ -1,9 +1,15 @@
 import { z } from "zod";
-import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
+/**
+ * `GET /support/ai/report` returns one aggregate metrics object — acceptance,
+ * resolution, reopen and escalation rates computed with `count(*) filter (…)`
+ * over the whole matching set. There is no row list, so there was never anything
+ * to page: `SupportAiReportHelper.getAiReport` reads only `dateFrom`/`dateTo`,
+ * and `cursor`/`limit` reached the type declaration and nothing else. Advertising
+ * them made the route look paginated to `check:envelope-consistency` and made a
+ * client's cursor silently disappear. The only caller never sent either.
+ */
 export const supportAiReportFiltersSchema = z.object({
-  cursor: z.coerce.number().int().min(0).default(0),
-  limit: pageSizeField(50, 100),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
 }).strict();

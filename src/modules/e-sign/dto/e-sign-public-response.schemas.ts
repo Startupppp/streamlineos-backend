@@ -34,11 +34,6 @@ export const getSessionResponseSchema = z.discriminatedUnion("state", [
   }),
 ]);
 
-export const getPublicDocumentPreviewResponseSchema = z.object({
-  url: z.string(),
-  expiresInSeconds: z.number().int(),
-});
-
 export const requestOtpResponseSchema = z.object({ sent: z.literal(true) });
 
 export const authenticateResponseSchema = z.object({ authenticated: z.literal(true) });

@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { successSchema } from "../../../../common/openapi/response-envelopes";
 
 export const portalTicketSummarySchema = z.object({
   id: z.number().int(),
@@ -93,4 +92,3 @@ export const portalCreateTicketSchema = z.object({
   possibleDuplicateOf: z.object({ id: z.number().int(), title: z.string() }).nullable(),
 });
 
-export { successSchema };

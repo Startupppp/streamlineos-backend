@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 const marketplaceAppSchema = z.object({
   id: z.number().int(),
@@ -117,4 +117,3 @@ export const purchaseAiCreditsResponseSchema = z.union([
   }),
 ]);
 
-export { successSchema };

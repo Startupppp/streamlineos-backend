@@ -2,7 +2,7 @@ import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema, itemsPagedSchema, successSchema } from "../../../../common/openapi/response-envelopes";
 
-export const bonusRowSchema = z.object({
+const bonusRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   userId: z.string(),
@@ -21,8 +21,7 @@ export const bonusRowSchema = z.object({
   userEmail: z.string().nullable(),
 });
 
-export const bonusListItemSchema = bonusRowSchema;
-export const bonusListResponseSchema = cursorPageSchema(bonusListItemSchema);
+export const bonusListResponseSchema = cursorPageSchema(bonusRowSchema);
 
 export const bonusCreatedSchema = bonusRowSchema.omit({ userName: true, userEmail: true });
 

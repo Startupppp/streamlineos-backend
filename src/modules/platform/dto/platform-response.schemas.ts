@@ -3,8 +3,6 @@ import { wireDate } from "../../../common/openapi/wire-types";
 
 export const platformContactResponseSchema = z.object({ ok: z.literal(true) });
 
-export const platformVisitUsageResponseSchema = z.object({ usage: z.string() });
-
 const orgStatusEnum = z.enum(["ACTIVE", "ARCHIVED", "PURGE_SCHEDULED", "PURGED"]);
 
 const orgRowSchema = z.object({

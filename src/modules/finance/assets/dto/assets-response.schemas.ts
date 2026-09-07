@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 export const assetCategorySchema = z.object({
   id: z.number().int(),
@@ -104,4 +104,3 @@ export const depreciationRunReverseResponseSchema = z.object({
   reversalEntryNumber: z.string(),
 });
 
-export { successSchema };

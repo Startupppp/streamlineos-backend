@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 export const pmWorkspaceRowSchema = z.object({
   pmWorkspaceId: z.string(),
@@ -28,4 +28,3 @@ export const pmWorkspaceMemberRowSchema = z.object({
 
 export const pmWorkspaceMemberPageSchema = cursorPageSchema(pmWorkspaceMemberRowSchema);
 
-export { successSchema };

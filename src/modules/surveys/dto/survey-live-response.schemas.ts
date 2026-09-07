@@ -33,8 +33,3 @@ export const liveSessionResultsSchema = z.object({
   }).nullable(),
 });
 
-export const joinLiveSessionSchema = z.object({
-  participantToken: z.string(),
-});
-
-export const submitLiveAnswerSchema = z.object({ success: z.literal(true) });

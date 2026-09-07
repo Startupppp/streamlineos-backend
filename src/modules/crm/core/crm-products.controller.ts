@@ -28,7 +28,11 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { crmProductsListSchema, crmProductSchema, successSchema } from "./dto/crm-core-response.schemas";
+import {
+  crmProductsListSchema,
+  crmProductSchema,
+} from "./dto/crm-products-response.schemas";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 
 const productIdParams = z.object({ productId: z.coerce.number().int().positive() }).strict();
 

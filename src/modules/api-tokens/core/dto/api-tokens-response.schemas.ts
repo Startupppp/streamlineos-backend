@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 const apiTokenItemSchema = z.object({
   id: z.number().int(),
@@ -21,4 +21,3 @@ export const apiTokenRowSchema = apiTokenItemSchema.extend({
   rawKey: z.string().optional(),
 });
 
-export { successSchema };

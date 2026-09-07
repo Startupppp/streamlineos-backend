@@ -13,7 +13,7 @@ import {
   salesDashboardSchema,
   supportDashboardSchema,
   ceDashboardSchema,
-} from "./dto/crm-core-response.schemas";
+} from "./dto/crm-dashboards-response.schemas";
 
 @RequireModule("crm")
 @Controller("crm")

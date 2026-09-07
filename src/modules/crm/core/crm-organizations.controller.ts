@@ -46,12 +46,14 @@ import {
   crmOrgDuplicatePairSchema,
   crmOrgPotentialDuplicatesSchema,
   crmOrgWithContactsSchema,
+} from "./dto/crm-organizations-response.schemas";
+import {
   orgMergeResultSchema,
   orgHierarchyNodeSchema,
   orgRollupSchema,
   orgTimelineSchema,
   orgRelatedLeadsSchema,
-} from "./dto/crm-core-response.schemas";
+} from "./dto/crm-org-insights-response.schemas";
 
 const organizationIdParams = z.object({ organizationId: z.coerce.number().int().positive() }).strict();
 

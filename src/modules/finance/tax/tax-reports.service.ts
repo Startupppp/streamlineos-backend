@@ -11,7 +11,7 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId, keysetBeforeValue } from "../../../common/pagination/keyset";
-import type { TaxDateRangeQuery } from "./dto/tax-reports.schemas";
+import type { TaxDateRangeQuery, TaxLiabilitySummaryQuery } from "./dto/tax-reports.schemas";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const INVOICE_POSTED = ["ISSUED", "PAID", "FAILED"] as const;
@@ -69,7 +69,7 @@ export class TaxReportsService {
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeInputReport(orgId, query), 120);
   }
 
-  async getLiabilitySummary(orgId: string, query: TaxDateRangeQuery) {
+  async getLiabilitySummary(orgId: string, query: TaxLiabilitySummaryQuery) {
     const cacheKey = `liability:${query.from}:${query.to}`;
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeLiabilitySummary(orgId, query), 120);
   }
@@ -276,7 +276,7 @@ export class TaxReportsService {
     return { ...billPage, data: lines };
   }
 
-  private async computeLiabilitySummary(orgId: string, query: TaxDateRangeQuery) {
+  private async computeLiabilitySummary(orgId: string, query: TaxLiabilitySummaryQuery) {
     const { from, to } = query;
     const fromDate = new Date(`${from}T00:00:00.000Z`);
     const toDate = new Date(`${to}T23:59:59.999Z`);

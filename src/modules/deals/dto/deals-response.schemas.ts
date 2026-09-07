@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
-import { successSchema } from "../../../common/openapi/response-envelopes";
 
 export const dealSchema = z.object({
   id: z.number().int(),
@@ -288,4 +287,3 @@ export const dealUpdateResultSchema = z.union([
   }),
 ]);
 
-export { successSchema };

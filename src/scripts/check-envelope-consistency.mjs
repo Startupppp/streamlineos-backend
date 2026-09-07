@@ -211,6 +211,31 @@ export function countPaginatedGets(document) {
   return { total, readable };
 }
 
+/**
+ * A pagination envelope is a shape in a JSON body. A `text/csv` or
+ * `application/octet-stream` response is a file, and no arrangement of its bytes
+ * can carry `nextCursor` — so asserting the rule against one asserts something
+ * impossible, and the endpoint can never be made to pass.
+ *
+ * The rule ALREADY says this. `readPaginatedGets` counts a handler that writes
+ * to `@Res()` and returns nothing as `downloads`, and the gate's own summary line
+ * prints them as "non-JSON downloads the rule does not cover". That carve-out
+ * simply never reached three real CSV exports — `/accounting/audit/export`,
+ * `/hr/export/{entity}` and `/payroll/tax/export` — because each declares its
+ * response with `@ApiOkResponse({ content: { "text/csv": … } })`. A declared
+ * schema makes `readPaginatedGets` defer to this function, and this function
+ * walked EVERY media type without asking what it was, so `{ type: "string" }`
+ * read as "a 200 schema with no pagination signal".
+ *
+ * Judged per media type, never per operation: an operation that offers BOTH
+ * `application/json` and `text/csv` is still fully judged on its JSON branch, so
+ * adding a CSV variant cannot be used to hide a bare JSON array. Proved by
+ * `mixedMediaTypes` in the self-test.
+ */
+function isJsonMediaType(name) {
+  return /^application\/(?:[\w.+-]+\+)?json$/i.test(String(name).split(";")[0].trim());
+}
+
 export function findUnpaginatedCollections(document) {
   const violations = [];
   for (const [pathTemplate, pathItem] of Object.entries(document.paths ?? {})) {
@@ -229,7 +254,8 @@ export function findUnpaginatedCollections(document) {
       const content = resp.content;
       if (typeof content !== "object" || content === null) continue;
 
-      for (const mediaType of Object.values(content)) {
+      for (const [mediaTypeName, mediaType] of Object.entries(content)) {
+        if (!isJsonMediaType(mediaTypeName)) continue;
         if (typeof mediaType !== "object" || mediaType === null) continue;
         const schema = mediaType.schema;
         if (typeof schema !== "object" || schema === null) continue;
@@ -1077,6 +1103,46 @@ if (SELF_TEST) {
   if (findUnpaginatedCollections(paginatedBad).length !== 1)
     fail("bare-array-bites", "expected 1 violation for paginated endpoint with bare array schema");
   else pass("bare-array-bites — bare array schema on a paginated endpoint is flagged");
+
+  // --- non-JSON downloads: the carve-out the rule already claims, and its limit ---
+  const csvDownload = { paths: { "/x/export": { get: {
+    parameters: [{ name: "cursor", in: "query" }],
+    responses: { "200": { content: { "text/csv": { schema: { type: "string" } } } } },
+  }}}};
+  if (findUnpaginatedCollections(csvDownload).length !== 0)
+    fail("csv-download-not-flagged", "a text/csv download cannot carry a pagination envelope and must not be judged against one");
+  else pass("csv-download-not-flagged — a declared text/csv download is outside the rule");
+
+  // The carve-out must be per media type, or `text/csv` becomes a way to hide a JSON defect.
+  const mixedMediaTypes = { paths: { "/x/both": { get: {
+    parameters: [{ name: "cursor", in: "query" }],
+    responses: { "200": { content: {
+      "text/csv": { schema: { type: "string" } },
+      "application/json": { schema: { type: "array" } },
+    } } },
+  }}}};
+  const mixed = findUnpaginatedCollections(mixedMediaTypes);
+  if (mixed.length !== 1 || !mixed[0].issue.includes("bare array"))
+    fail("mixed-media-still-bites", `a JSON bare array must still be flagged when a CSV variant sits beside it; got ${JSON.stringify(mixed)}`);
+  else pass("mixed-media-still-bites — adding a CSV media type does not hide a JSON bare array");
+
+  // `application/*+json` is still JSON and stays in scope.
+  const problemJson = { paths: { "/x/p": { get: {
+    parameters: [{ name: "cursor", in: "query" }],
+    responses: { "200": { content: { "application/problem+json": { schema: { type: "array" } } } } },
+  }}}};
+  if (findUnpaginatedCollections(problemJson).length !== 1)
+    fail("suffixed-json-in-scope", "application/problem+json is JSON and must still be judged");
+  else pass("suffixed-json-in-scope — a +json media type stays in scope");
+
+  // A charset parameter must not push a JSON body out of scope.
+  const jsonWithCharset = { paths: { "/x/c": { get: {
+    parameters: [{ name: "cursor", in: "query" }],
+    responses: { "200": { content: { "application/json; charset=utf-8": { schema: { type: "array" } } } } },
+  }}}};
+  if (findUnpaginatedCollections(jsonWithCharset).length !== 1)
+    fail("json-charset-in-scope", "application/json with a charset parameter must still be judged");
+  else pass("json-charset-in-scope — a charset parameter does not remove a JSON body from scope");
 
   /* --- the source reader: every case below is a real shape that misled an earlier draft --- */
 

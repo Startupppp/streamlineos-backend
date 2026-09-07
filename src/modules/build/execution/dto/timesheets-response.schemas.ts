@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { successSchema } from "../../../../common/openapi/response-envelopes";
 
 const ticketRefSchema = z.object({
   id: z.number().int(),
@@ -64,4 +63,3 @@ export const billingSummaryItemSchema = z.object({
   totalHours: z.number(),
 });
 
-export { successSchema };

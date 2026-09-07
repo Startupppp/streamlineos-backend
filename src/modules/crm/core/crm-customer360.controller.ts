@@ -17,7 +17,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CrmCustomer360Service } from "./crm-customer360.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { customer360Schema, customer360TimelineSchema } from "./dto/crm-core-response.schemas";
+import {
+  customer360Schema,
+  customer360TimelineSchema,
+} from "./dto/crm-customer360-response.schemas";
 
 const companyIdParams = z.object({ companyId: z.coerce.number().int().positive() }).strict();
 const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();

@@ -1,9 +1,6 @@
 export {
   aiFeedbackCreateResponseSchema,
-  aiFeedbackSummaryItemSchema,
   aiFeedbackSummaryResponseSchema,
-  aiSummarySnapshotSchema,
-  snapshotWithDiffResponseSchema,
   snapshotWithDiffNullableResponseSchema,
   aiSummariesSaveSnapshotResponseSchema,
 } from "./ai-feedback-summaries-response.schemas";
@@ -17,7 +14,6 @@ export {
 } from "./ai-usage-blog-survey-response.schemas";
 
 export {
-  chatMessageSchema,
   chatHistoryResponseSchema,
   chatClearHistoryResponseSchema,
   aiConversationSchema,
@@ -27,8 +23,6 @@ export {
 } from "./ai-chat-response.schemas";
 
 export {
-  scoreLeadSingleResponseSchema,
-  scoreLeadBatchResponseSchema,
   scoreLeadResponseSchema,
   predictDealResponseSchema,
   churnRiskResponseSchema,
@@ -36,8 +30,6 @@ export {
   accountSummaryResponseSchema,
   nlSearchResponseSchema,
   enrichLeadResponseSchema,
-  generateEmailSingleResponseSchema,
-  generateEmailBatchResponseSchema,
   generateEmailResponseSchema,
   objectionHandlerResponseSchema,
   sentimentAnalysisResponseSchema,

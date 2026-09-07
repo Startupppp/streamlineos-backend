@@ -11,7 +11,10 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { readRequestScope } from "../../organization/core/read-request-scope";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { crmPeopleSlugsSchema, crmPersonDetailSchema } from "./dto/crm-core-response.schemas";
+import {
+  crmPeopleSlugsSchema,
+  crmPersonDetailSchema,
+} from "./dto/crm-people-response.schemas";
 
 const entityIdParams = z.object({ entityId: z.string().min(1) }).strict();
 

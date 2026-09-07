@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 export const roadmapItemSchema = z.object({
   id: z.number().int(),
@@ -87,4 +87,3 @@ export const applyTemplateResultSchema = z.object({
   tickets: z.array(z.object({ id: z.number().int(), title: z.string() })),
 });
 
-export { successSchema };

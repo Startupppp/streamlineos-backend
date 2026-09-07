@@ -1,5 +1,4 @@
 export {
-  signEnvelopeRowSchema,
   envelopeMutationResponseSchema,
   listEnvelopesResponseSchema,
   getEnvelopeFullResponseSchema,
@@ -20,17 +19,14 @@ export {
 } from "./e-sign-recipients-response.schemas";
 
 export {
-  signFieldRowSchema,
   fieldMutationResponseSchema,
   listFieldsResponseSchema,
 } from "./e-sign-fields-response.schemas";
 
 export {
-  signTemplateRowSchema,
   templateMutationResponseSchema,
   listTemplatesResponseSchema,
   instantiateTemplateResponseSchema,
-  signPublicFormRowSchema,
   publishPublicFormResponseSchema,
 } from "./e-sign-templates-response.schemas";
 
@@ -44,7 +40,6 @@ export {
 
 export {
   getSessionResponseSchema,
-  getPublicDocumentPreviewResponseSchema,
   requestOtpResponseSchema,
   authenticateResponseSchema,
   consentResponseSchema,
@@ -74,4 +69,3 @@ export {
   signAiSummarizeResponseSchema,
 } from "./e-sign-reports-response.schemas";
 
-export { successSchema } from "../../../common/openapi/response-envelopes";

@@ -27,7 +27,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
-import { webFormSchema } from "./dto/crm-core-response.schemas";
+import { webFormSchema } from "./dto/crm-web-forms-response.schemas";
 
 const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
 

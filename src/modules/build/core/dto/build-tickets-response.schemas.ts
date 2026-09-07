@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 const userSummarySchema = z.object({
   id: z.string(),
@@ -179,7 +179,6 @@ export const commentRowSchema = z.object({
 });
 
 export const commentEditResultSchema = z.object({ updated: z.literal(true) });
-export const commentDeleteResultSchema = z.object({ deleted: z.literal(true) });
 
 export const reactionSchema = z.object({
   commentId: z.number().int(),
@@ -240,4 +239,3 @@ export const allWorkPageSchema = z.object({
   total: z.number().int().optional(),
 });
 
-export { successSchema };

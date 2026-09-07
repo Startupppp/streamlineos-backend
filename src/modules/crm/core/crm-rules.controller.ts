@@ -44,8 +44,8 @@ import {
   scoringRuleSchema,
   emailTemplateSchema,
   assignmentPreviewSchema as assignmentPreviewResponseSchema,
-  successSchema,
-} from "./dto/crm-core-response.schemas";
+} from "./dto/crm-rules-response.schemas";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();

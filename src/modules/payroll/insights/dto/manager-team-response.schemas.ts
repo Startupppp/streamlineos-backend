@@ -1,18 +1,5 @@
 import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
-import { totalRewardsStatementSchema } from "./ess-response.schemas";
-
-export { totalRewardsStatementSchema };
-
-export const updateReimbursementResultSchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(false), reason: z.enum(["not_found", "own_request"]) }),
-  z.object({ ok: z.literal(true) }),
-]);
-
-export const updateLoanResultSchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(false), reason: z.enum(["not_found", "own_request"]) }),
-  z.object({ ok: z.literal(true) }),
-]);
 
 const managerTeamMemberSchema = z.object({
   userId: z.string(),

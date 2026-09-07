@@ -201,3 +201,17 @@ export const reportsQuerySchema = z.object({
   cursor: z.string().trim().min(1).max(2048).optional(),
 }).strict();
 export type ReportsQuery = z.infer<typeof reportsQuerySchema>;
+
+/**
+ * `/payroll/reports/summary` answers ONE payroll run for one month:
+ * `ReportsService.getSummary(orgId, month)` takes no pagination argument and the
+ * handler reads only `month` and `format`. It inherited `cursor` and `limit`
+ * from sharing `reportsQuerySchema` with the nine register/cost reports that do
+ * page, so the route advertised a cursor it never honoured. The remaining
+ * filters stay because the client still sends them.
+ */
+export const reportsSummaryQuerySchema = reportsQuerySchema.omit({
+  cursor: true,
+  limit: true,
+});
+export type ReportsSummaryQuery = z.infer<typeof reportsSummaryQuerySchema>;

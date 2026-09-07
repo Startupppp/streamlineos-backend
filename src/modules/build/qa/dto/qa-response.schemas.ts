@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { successSchema } from "../../../../common/openapi/response-envelopes";
 
 export const testSuiteRowSchema = z.object({
   id: z.number().int(),
@@ -114,4 +113,3 @@ export const bugRowSchema = z.object({
   deletedAt: nullableWireDate(),
 });
 
-export { successSchema };

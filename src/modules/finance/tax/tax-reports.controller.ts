@@ -13,7 +13,9 @@ import {
 } from "./tax-reports.service";
 import {
   taxDateRangeQuerySchema,
+  taxLiabilitySummaryQuerySchema,
   type TaxDateRangeQuery,
+  type TaxLiabilitySummaryQuery,
 } from "./dto/tax-reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -94,9 +96,9 @@ export class TaxReportsController {
   @ResponseSchema(taxLiabilitySummaryResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
-  @Validate({ query: taxDateRangeQuerySchema })
+  @Validate({ query: taxLiabilitySummaryQuerySchema })
   liabilitySummary(
-    @Query() query: TaxDateRangeQuery,
+    @Query() query: TaxLiabilitySummaryQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getLiabilitySummary(u.orgId, query);

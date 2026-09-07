@@ -37,7 +37,7 @@ import {
   campaignRoiSchema,
   campaignLeadsSchema,
   campaignAttributionSchema,
-} from "./dto/crm-core-response.schemas";
+} from "./dto/crm-campaigns-response.schemas";
 
 const campaignIdParams = z.object({ campaignId: z.coerce.number().int().positive() }).strict();
 

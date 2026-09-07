@@ -43,6 +43,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { cursorPageSchema } from "../../../common/openapi/response-envelopes";
 import {
   roadmapItemSchema,
   roadmapPageSchema,
@@ -109,7 +110,7 @@ export class ProjectsRoadmapController {
 
   @Get("feedback")
   @RequirePermission("build:roadmap:view")
-  @ResponseSchema(z.array(feedbackPostSchema))
+  @ResponseSchema(cursorPageSchema(feedbackPostSchema))
   @Validate({ query: feedbackListQuerySchema })
   listFeedback(
     @Query() query: FeedbackListQuery,
@@ -168,7 +169,7 @@ export class ProjectsRoadmapController {
 
   @Get("changelog")
   @RequirePermission("build:roadmap:view")
-  @ResponseSchema(z.array(changelogEntrySchema))
+  @ResponseSchema(cursorPageSchema(changelogEntrySchema))
   @Validate({ query: changelogListQuerySchema })
   listChangelog(
     @Query() query: ChangelogListQuery,

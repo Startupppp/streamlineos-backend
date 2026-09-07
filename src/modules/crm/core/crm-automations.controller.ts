@@ -41,8 +41,8 @@ import {
   automationActionsListSchema,
   automationRunsPageSchema,
   automationDryRunSchema,
-  successSchema,
-} from "./dto/crm-core-response.schemas";
+} from "./dto/crm-automations-response.schemas";
+import { successSchema } from "../../../common/openapi/response-envelopes";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 

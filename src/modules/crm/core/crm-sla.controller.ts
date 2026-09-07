@@ -31,7 +31,7 @@ import {
   slaPolicySchema,
   slaBreachedListSchema,
   slaReportSchema,
-} from "./dto/crm-core-response.schemas";
+} from "./dto/crm-sla-response.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 

@@ -19,10 +19,6 @@ export function idCursorPageSchema<T extends ZodType>(item: T) {
   });
 }
 
-export function itemsTotalSchema<T extends ZodType>(item: T) {
-  return z.object({ items: z.array(item), total: z.number().int() });
-}
-
 export function itemsPagedSchema<T extends ZodType>(item: T) {
   return z.object({
     items: z.array(item),
@@ -33,7 +29,5 @@ export function itemsPagedSchema<T extends ZodType>(item: T) {
 }
 
 export const successSchema = z.object({ success: z.literal(true) });
-
-export const idSchema = z.object({ id: z.string() });
 
 export const numericIdSchema = z.object({ id: z.number().int() });

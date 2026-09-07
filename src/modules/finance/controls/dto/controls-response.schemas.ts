@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 export const approvalPolicySchema = z.object({
   id: z.number().int(),
@@ -78,4 +78,3 @@ export const exchangeRateSchema = z.object({
 
 export const exchangeRateListResponseSchema = cursorPageSchema(exchangeRateSchema);
 
-export { successSchema };

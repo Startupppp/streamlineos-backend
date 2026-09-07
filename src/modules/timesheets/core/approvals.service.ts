@@ -38,15 +38,6 @@ import { canActOnPeriod } from "./lib/approval-guard";
 import type { ApprovalsQuery } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-export function isExpectedApprovalSkip(error: unknown): boolean {
-  return (
-    error instanceof ConflictException ||
-    error instanceof NotFoundException ||
-    error instanceof ForbiddenException ||
-    error instanceof BadRequestException
-  );
-}
-
 @Injectable()
 export class ApprovalsService {
   constructor(

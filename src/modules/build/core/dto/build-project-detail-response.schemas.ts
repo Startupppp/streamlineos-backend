@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { successSchema } from "../../../../common/openapi/response-envelopes";
 
 const userColsSchema = z.object({
   id: z.string(),
@@ -64,4 +63,3 @@ export const projectDetailSchema = projectRowSchema.extend({
   members: z.array(projectMemberDetailSchema),
 });
 
-export { successSchema };

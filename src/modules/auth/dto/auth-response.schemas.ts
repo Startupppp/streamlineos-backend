@@ -82,9 +82,6 @@ export const authGoogleOAuthResponseSchema = z.object({
   sessionId: z.string(),
 });
 
-/** `AuthTokensService.verifyEmailOtp` — same auto-login token shape. */
-export const authVerifyEmailOtpResponseSchema = authAutoLoginTokenResponseSchema;
-
 /**
  * `AuthController.sessionExchange` — typed inline in the handler as `{ token: string }`.
  * Carries a backend JWT; the content is sensitive and must not be widened.

@@ -33,20 +33,6 @@ const announcementRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
-const announcementListItemSchema = z.object({
-  id: z.number().int(),
-  content: z.string(),
-  isPinned: z.boolean(),
-  expiresAt: nullableWireDate(),
-  createdAt: wireDate(),
-  authorId: z.string(),
-  authorName: z.string().nullable(),
-  authorFirstName: z.string().nullable(),
-  authorLastName: z.string().nullable(),
-});
-
-export const announcementsListSchema = z.array(announcementListItemSchema);
-
 export const announcementCreateSchema = announcementRowSchema;
 
 export const announcementDeleteSchema = z.object({ success: z.literal(true) });

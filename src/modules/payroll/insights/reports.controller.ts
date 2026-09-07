@@ -20,7 +20,7 @@ import { ApiOkResponse } from "@nestjs/swagger";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ReportsService } from "./reports.service";
 import { buildCsv } from "./lib/csv";
-import { reportsQuerySchema, type ReportsQuery } from "./dto/insights.schemas";
+import { reportsQuerySchema, reportsSummaryQuerySchema, type ReportsQuery, type ReportsSummaryQuery } from "./dto/insights.schemas";
 import {
   summaryReportSchema,
   employeeRegisterReportSchema,
@@ -59,10 +59,10 @@ export class PayrollInsightsReportsController {
   }
 
   @Get("summary")
-  @Validate({ query: reportsQuerySchema })
+  @Validate({ query: reportsSummaryQuerySchema })
   @ApiOkResponse({ schema: summaryReportSchema })
   async getSummary(
-    @Query() q: ReportsQuery,
+    @Query() q: ReportsSummaryQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
