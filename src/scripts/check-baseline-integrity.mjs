@@ -69,7 +69,12 @@ const MIN_BASELINE_JSON_FILES = 5;
 const MIN_JSON_RATCHETS = 5;
 
 const GATE_RE = /^check-.*\.(mjs|ts)$/;
-const CONST_RE = /^const\s+([A-Z][A-Z0-9_]*)\s*=\s*(-?\d+)\s*;/gm;
+// The `export` prefix is not optional decoration: the two drift gates and the
+// membership-parity gate EXPORT their anti-vacuity floors so their self-tests can
+// assert on them, which is the better practice — and it made those floors invisible
+// here. Ten floors across four gates were unregistered for that reason alone and
+// could have been lowered to zero without this gate noticing.
+const CONST_RE = /^(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*=\s*(-?\d+)\s*;/gm;
 const DIRECTIONS = new Set(["ratchet", "floor", "pinned"]);
 
 /**

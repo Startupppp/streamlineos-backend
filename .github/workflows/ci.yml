@@ -468,6 +468,16 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:plan-limit-enforcement:self-test && pnpm check:plan-limit-enforcement
 
+      # Derives the route list from the 12 Settings/organization/module-access
+      # controllers themselves, so a 160th handler is picked up without editing the
+      # gate. Static by construction -- it proves a spec CONTAINS a matching supertest
+      # call, never that the call passes; the execution half is the e2e run of
+      # test/{settings,module-access}/*permission-fence.e2e-spec.ts, and both are
+      # required. Currently 159/159.
+      - name: Settings and module-access routes have e2e coverage
+        if: ${{ !cancelled() }}
+        run: pnpm check:settings-route-e2e-coverage:self-test && pnpm check:settings-route-e2e-coverage
+
       # The index half of the RLS invariant, which needs no database: the policy
       # half is db:verify-rls in the tenant-isolation job below, and that job only
       # runs on a schedule because it needs credentials. Without a leading tenant

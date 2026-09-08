@@ -4,5 +4,6 @@ exports[`Razorpay adapter import boundary documents every current importer so re
 [
   "src/modules/billing/payments/payments.module.ts",
   "src/modules/billing/payments/razorpay-adapter-readiness.spec.ts",
+  "src/modules/billing/payments/razorpay-sandbox-failure.spec.ts",
 ]
 `;

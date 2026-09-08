@@ -90,28 +90,22 @@ function rulingsFor(table: string, column: string): RemovalAction[] {
  * outright). calendar_events.created_by_membership_id left this list by being ruled
  * blocks-removal, which is what migration 0839 actually left in the catalog.
  *
+ * Shrunk from 40 to 16 on 2026-09-08. All twenty-four went away because the DRIZZLE
+ * DECLARATION was corrected, not the ruling and not the catalog: `check:referential-
+ * action-drift`, run against a live database for the first time, showed pg_catalog
+ * already doing what MEMBERSHIP_ARTIFACTS ruled in every one of them, over a
+ * declaration that said `restrict` by hand or said nothing at all. The sixteen that
+ * remain are the `pending-migration` class — declared RESTRICT in Drizzle with no
+ * foreign key in the migrated schema at all — and they stay until that sweep lands.
+ *
  * This list can only shrink. A new entry means a ruling and a declaration were
  * allowed to diverge in the same change.
  */
 const RULING_DISAGREES_WITH_DRIZZLE: readonly string[] = [
-  "audit_logs.actor_membership_id",
-  "chat_channel_members.membership_id",
-  "chat_message_reactions.membership_id",
-  "helpdesk_tickets.assignee_membership_id",
   "hr_employments.archived_by_membership_id",
   "hr_employments.updated_by_membership_id",
   "hr_people.archived_by_membership_id",
   "hr_people.updated_by_membership_id",
-  "kb_page_favorites.membership_id",
-  "kb_page_visits.membership_id",
-  "kb_pages.created_by_membership_id",
-  "kb_pages.deleted_by_membership_id",
-  "kb_pages.last_edited_by_membership_id",
-  "kb_pages.owner_membership_id",
-  "kb_pages.verified_by_membership_id",
-  "leave_requests.approver_membership_id",
-  "leave_requests.created_by_membership_id",
-  "leave_requests.updated_by_membership_id",
   "onboarding_documents.updated_by_membership_id",
   "onboarding_tasks.created_by_membership_id",
   "onboarding_tasks.updated_by_membership_id",
@@ -119,16 +113,6 @@ const RULING_DISAGREES_WITH_DRIZZLE: readonly string[] = [
   "org_units.updated_by_membership_id",
   "organization_people.archived_by_membership_id",
   "organization_people.updated_by_membership_id",
-  "project_approvals.approver_membership_id",
-  "project_members.membership_id",
-  "role_assignments.assigned_by_membership_id",
-  "ticket_activity_log.user_membership_id",
-  "ticket_assignees.membership_id",
-  "ticket_comment_mentions.mentioned_user_membership_id",
-  "tickets.assignee_membership_id",
-  "tickets.reporter_membership_id",
-  "user_permission_grants.granted_by_membership_id",
-  "wfh_requests.approver_membership_id",
   "worker_engagements.archived_by_membership_id",
   "worker_engagements.updated_by_membership_id",
   "workers.archived_by_membership_id",
@@ -136,17 +120,22 @@ const RULING_DISAGREES_WITH_DRIZZLE: readonly string[] = [
   "workers.updated_by_membership_id",
 ];
 
+/**
+ * Shrunk from 10 to 6 on 2026-09-08. Four left because the DECLARATION was corrected
+ * to the CASCADE that MEMBERSHIP_ARTIFACTS rules and pg_catalog has always had:
+ * chat_channel_members.membership_id, chat_message_reactions.membership_id,
+ * project_members.membership_id and ticket_assignees.membership_id. Each was declared
+ * RESTRICT over a NOT NULL column, which is the shape that blocks a membership removal
+ * outright and cannot be resolved by nulling anything — so they were listed here as
+ * blockers while the database was quietly cascading them.
+ */
 const NOT_NULL_BLOCKERS: readonly string[] = [
   "calendar_events.created_by_membership_id",
-  "chat_channel_members.membership_id",
-  "chat_message_reactions.membership_id",
   "module_ownerships.owner_membership_id",
   "ownership_transfers.from_membership_id",
   "ownership_transfers.initiated_by_membership_id",
   "ownership_transfers.to_membership_id",
-  "project_members.membership_id",
   "support_tickets.created_by_membership_id",
-  "ticket_assignees.membership_id",
 ];
 
 describe("every membership foreign key is ruled in MEMBERSHIP_ARTIFACTS", () => {

@@ -144,6 +144,34 @@
         "direction": "floor"
       }
     },
+    "check-conflict-target-inference.ts": {
+      "MIN_TARGETED_SITES": {
+        "value": 100,
+        "direction": "floor",
+        "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
+        "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on ON CONFLICT sites the scan must find."
+      },
+      "MIN_RESOLVED_SITES": {
+        "value": 100,
+        "direction": "floor",
+        "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
+        "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on sites whose conflict target must resolve."
+      },
+      "MIN_PARTIAL_INDEX_TARGETS": {
+        "value": 5,
+        "direction": "floor",
+        "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
+        "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on partial-index targets the scan must find."
+      }
+    },
+    "check-date-in-sql-template.ts": {
+      "MIN_SQL_TEMPLATES": {
+        "value": 50,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Anti-vacuity floor: the scan must find at least this many sql`` templates or it reports a clean sweep because its collector stopped matching. The live scan sees roughly 1,900, so 50 is a collapse detector, not a target. Raising it is tightening; lowering it needs a reason."
+      }
+    },
     "check-db-call-count.mjs": {
       "LOOP_BODY_LOOKFORWARD": {
         "value": 30,
@@ -198,14 +226,6 @@
         "direction": "floor"
       }
     },
-    "check-envelope-consistency.mjs": {
-      "MAX_HOPS": {
-        "value": 8,
-        "direction": "ratchet",
-        "owner": "api/platform owner",
-        "reason": "New constant, not a rename — registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe — it only turns resolved handlers back into honestly-unresolved ones."
-      }
-    },
     "check-drop-column-safety.mjs": {
       "MIN_MIGRATION_FILES": {
         "value": 100,
@@ -217,6 +237,28 @@
       },
       "MIN_DROPS": {
         "value": 1,
+        "direction": "floor"
+      }
+    },
+    "check-envelope-consistency.mjs": {
+      "MAX_HOPS": {
+        "value": 8,
+        "direction": "ratchet",
+        "owner": "api/platform owner",
+        "reason": "New constant, not a rename — registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe — it only turns resolved handlers back into honestly-unresolved ones."
+      }
+    },
+    "check-evidence-redaction.mjs": {
+      "MIN_SEALS": {
+        "value": 2,
+        "direction": "floor"
+      },
+      "MIN_FILES_SCANNED": {
+        "value": 40,
+        "direction": "floor"
+      },
+      "MIN_PATTERNS": {
+        "value": 10,
         "direction": "floor"
       }
     },
@@ -347,6 +389,20 @@
     "check-log-secrets.mjs": {
       "MIN_SOURCE_FILES": {
         "value": 500,
+        "direction": "floor"
+      }
+    },
+    "check-membership-artifact-parity.ts": {
+      "MIN_ARTIFACTS": {
+        "value": 250,
+        "direction": "floor"
+      },
+      "MIN_ENFORCED": {
+        "value": 150,
+        "direction": "floor"
+      },
+      "MIN_LIVE_MEMBERSHIP_FKS": {
+        "value": 100,
         "direction": "floor"
       }
     },
@@ -602,6 +658,24 @@
         "direction": "floor"
       }
     },
+    "check-redundant-objects.ts": {
+      "MIN_DECLARED_TABLES": {
+        "value": 700,
+        "direction": "floor",
+        "owner": "database architecture owner",
+        "reason": "Anti-vacuity floor on the Drizzle declaration scan: below this the schema walk has stopped resolving and every live index would read as redundant. The catalog declares well over 700 tables."
+      }
+    },
+    "check-referential-action-drift.ts": {
+      "MIN_DECLARED_FKS": {
+        "value": 1500,
+        "direction": "floor"
+      },
+      "MIN_LIVE_FKS": {
+        "value": 2000,
+        "direction": "floor"
+      }
+    },
     "check-relation-hydration.mjs": {
       "MAX_UNPROJECTED_RELATIONS": {
         "value": 186,
@@ -658,6 +732,24 @@
         "direction": "pinned"
       }
     },
+    "check-retention-coverage.mjs": {
+      "MIN_TABLES_SCANNED": {
+        "value": 200,
+        "direction": "floor"
+      },
+      "MIN_HIGH_GROWTH_TABLES": {
+        "value": 1,
+        "direction": "floor"
+      }
+    },
+    "check-route-budgets.mjs": {
+      "WATERMARK_CEILING": {
+        "value": 42,
+        "direction": "ratchet",
+        "owner": "backend platform owner",
+        "reason": "Ceiling on routes that may carry no declared budget. Measured at 42 when the watermark was introduced; it may only fall as budgets are declared, never rise."
+      }
+    },
     "check-set-null-column-lists.ts": {
       "MIN_DECLARED": {
         "value": 100,
@@ -665,6 +757,20 @@
       },
       "MIN_REQUIRING_COLUMN_LIST": {
         "value": 20,
+        "direction": "floor"
+      }
+    },
+    "check-settings-route-e2e-coverage.mjs": {
+      "MIN_ROUTES": {
+        "value": 100,
+        "direction": "floor"
+      },
+      "RATCHET": {
+        "value": 159,
+        "direction": "floor"
+      },
+      "MIN_CONTROLLERS": {
+        "value": 12,
         "direction": "floor"
       }
     },
@@ -811,50 +917,6 @@
       "MIN_EXPECTS": {
         "value": 20000,
         "direction": "floor"
-      }
-    },
-    "check-conflict-target-inference.ts": {
-      "MIN_TARGETED_SITES": {
-        "value": 100,
-        "direction": "floor",
-        "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
-        "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on ON CONFLICT sites the scan must find."
-      },
-      "MIN_RESOLVED_SITES": {
-        "value": 100,
-        "direction": "floor",
-        "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
-        "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on sites whose conflict target must resolve."
-      },
-      "MIN_PARTIAL_INDEX_TARGETS": {
-        "value": 5,
-        "direction": "floor",
-        "owner": "check-conflict-target-inference owner (NOT v2 ticket 30)",
-        "reason": "Anti-vacuity floor declared by that gate's own header (\"Floors, not targets. A rename of `onConflictDoNothing`, a move of the schema folder or a broken table registry would otherwise leave this gate scanning nothing and reporting clean.\"). Registered as a FLOOR at its authored value by v2 ticket 30 on 2026-09-03 -- the gate landed in package.json during that session, unregistered and unwired, and check:baseline-integrity is blocking. Ticket 30 registered the direction, not the number: it does not own this gate. Lower bound on partial-index targets the scan must find."
-      }
-    },
-    "check-date-in-sql-template.ts": {
-      "MIN_SQL_TEMPLATES": {
-        "value": 50,
-        "direction": "floor",
-        "owner": "backend platform owner",
-        "reason": "Anti-vacuity floor: the scan must find at least this many sql`` templates or it reports a clean sweep because its collector stopped matching. The live scan sees roughly 1,900, so 50 is a collapse detector, not a target. Raising it is tightening; lowering it needs a reason."
-      }
-    },
-    "check-redundant-objects.ts": {
-      "MIN_DECLARED_TABLES": {
-        "value": 700,
-        "direction": "floor",
-        "owner": "database architecture owner",
-        "reason": "Anti-vacuity floor on the Drizzle declaration scan: below this the schema walk has stopped resolving and every live index would read as redundant. The catalog declares well over 700 tables."
-      }
-    },
-    "check-route-budgets.mjs": {
-      "WATERMARK_CEILING": {
-        "value": 42,
-        "direction": "ratchet",
-        "owner": "backend platform owner",
-        "reason": "Ceiling on routes that may carry no declared budget. Measured at 42 when the watermark was introduced; it may only fall as budgets are declared, never rise."
       }
     }
   }

@@ -369,6 +369,8 @@
     "check:membership-parity": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-membership-artifact-parity.ts",
     "check:membership-parity:self-test": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-membership-artifact-parity.ts --self-test",
     "check:membership-parity:list": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-membership-artifact-parity.ts --list",
+    "check:settings-route-e2e-coverage": "node src/scripts/check-settings-route-e2e-coverage.mjs",
+    "check:settings-route-e2e-coverage:self-test": "node src/scripts/check-settings-route-e2e-coverage.mjs --self-test",
     "bootstrap:interrupt-resume": "node src/scripts/bootstrap-interrupt-resume.mjs",
     "bootstrap:interrupt-resume:self-test": "node src/scripts/bootstrap-interrupt-resume.mjs --self-test",
     "check:lifecycle-predicates": "node src/scripts/check-lifecycle-predicates.mjs",
