@@ -84,6 +84,7 @@ export class ImportController {
   @Post("staged/:jobId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
+  @Idempotent("inventory.import.staged.cancel")
   cancelStaged(
     @Param("jobId", ParseIntPipe) jobId: number,
     @CurrentUser() u: CurrentUserContext,

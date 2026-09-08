@@ -105,6 +105,7 @@ export class InvStockAdjustmentsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
+  @Idempotent("inventory.stock-adjustment.cancel")
   @Validate({ params: adjustmentIdParams })
   cancelAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,

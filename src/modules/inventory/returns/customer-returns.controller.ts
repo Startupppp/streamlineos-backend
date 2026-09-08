@@ -98,6 +98,7 @@ export class CustomerReturnsController {
   @Post(":returnId/approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Idempotent("inventory.customer-return.approve")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: returnIdParams, body: approveReturnSchema })
   approve(
@@ -125,6 +126,7 @@ export class CustomerReturnsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Idempotent("inventory.customer-return.cancel")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: returnIdParams })
   cancel(

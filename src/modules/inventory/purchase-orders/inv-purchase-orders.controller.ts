@@ -111,6 +111,7 @@ export class InvPurchaseOrdersController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
+  @Idempotent("inventory.purchase-order.close")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: poIdParams })
   close(
@@ -124,6 +125,7 @@ export class InvPurchaseOrdersController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
+  @Idempotent("inventory.purchase-order.cancel")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: poIdParams })
   cancel(

@@ -26,6 +26,7 @@ import {
 } from "./proposals/dto/inv-ai-proposal.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
@@ -121,6 +122,7 @@ export class InvAiExplainController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
+  @Idempotent("inventory.ai.reorder-proposal.confirm")
   @Validate({ body: confirmProposalBodySchema })
   confirmReorderProposal(
     @Body() body: z.infer<typeof confirmProposalBodySchema>,

@@ -63,6 +63,7 @@ export class InvPhysicalAuditsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.physical-audit.start")
   @Validate({ params: auditIdParams })
   start(
     @Param("auditId", ParseIntPipe) auditId: number,
@@ -87,6 +88,7 @@ export class InvPhysicalAuditsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.physical-audit.review")
   @Validate({ params: auditIdParams })
   review(
     @Param("auditId", ParseIntPipe) auditId: number,
@@ -111,6 +113,7 @@ export class InvPhysicalAuditsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.physical-audit.cancel")
   @Validate({ params: auditIdParams })
   cancel(
     @Param("auditId", ParseIntPipe) auditId: number,

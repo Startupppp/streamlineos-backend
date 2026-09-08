@@ -25,6 +25,7 @@ import {
   type ListPickExceptionsInput,
   type ResolvePickExceptionInput,
 } from "./dto/picking.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 /**
  * B5, items 2, 4 and 5 — the supervisor's side of picking.
@@ -58,6 +59,7 @@ export class PickExceptionController {
   @Post(":pickLineId/assign")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:picking:review")
+  @Idempotent("inventory.pick-exception.assign")
   assign(
     @Param("pickLineId", ParseIntPipe) pickLineId: number,
     @Body(new ZodValidationPipe(assignPickExceptionSchema)) body: AssignPickExceptionInput,
@@ -69,6 +71,7 @@ export class PickExceptionController {
   @Post(":pickLineId/resolve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:picking:review")
+  @Idempotent("inventory.pick-exception.resolve")
   resolve(
     @Param("pickLineId", ParseIntPipe) pickLineId: number,
     @Body(new ZodValidationPipe(resolvePickExceptionSchema)) body: ResolvePickExceptionInput,

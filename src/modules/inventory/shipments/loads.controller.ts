@@ -93,6 +93,7 @@ export class LoadsController {
   @Post(":loadId/close")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Idempotent("inventory.load.close")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: loadIdParams, body: closeLoadSchema })
   close(
@@ -107,6 +108,7 @@ export class LoadsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Idempotent("inventory.load.cancel")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: loadIdParams })
   cancel(

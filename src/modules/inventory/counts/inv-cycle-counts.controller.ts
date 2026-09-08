@@ -63,6 +63,7 @@ export class InvCycleCountsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.cycle-count.start")
   @Validate({ params: countIdParams })
   start(
     @Param("countId", ParseIntPipe) countId: number,
@@ -87,6 +88,7 @@ export class InvCycleCountsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.cycle-count.review")
   @Validate({ params: countIdParams })
   review(
     @Param("countId", ParseIntPipe) countId: number,
@@ -111,6 +113,7 @@ export class InvCycleCountsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.cycle-count.cancel")
   @Validate({ params: countIdParams })
   cancel(
     @Param("countId", ParseIntPipe) countId: number,

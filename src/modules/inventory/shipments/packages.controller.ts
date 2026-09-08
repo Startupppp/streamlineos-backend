@@ -137,6 +137,7 @@ export class PackagesController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
+  @Idempotent("inventory.package.close")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: packageIdParams, body: closePackageSchema })
   close(
@@ -151,6 +152,7 @@ export class PackagesController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
+  @Idempotent("inventory.package.reopen")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: packageIdParams })
   reopen(

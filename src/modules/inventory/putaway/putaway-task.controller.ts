@@ -89,6 +89,7 @@ export class PutawayTaskController {
   @Post("tasks/:taskId/claim")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Idempotent("inventory.putaway.task.claim")
   claimTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -126,6 +126,7 @@ export class PickWaveController {
   @Post("waves/:pickListId/claim")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
+  @Idempotent("inventory.picking.wave.claim")
   claimWave(
     @Param("pickListId", ParseIntPipe) pickListId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -146,6 +147,7 @@ export class PickWaveController {
   @Post("waves/:pickListId/reassign")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
+  @Idempotent("inventory.picking.wave.reassign")
   reassignWave(
     @Param("pickListId", ParseIntPipe) pickListId: number,
     @Body(new ZodValidationPipe(reassignWaveSchema)) body: ReassignWaveInput,

@@ -73,6 +73,7 @@ export class InspectionsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Idempotent("inventory.quality.inspection.start")
   @Validate({ params: inspectionIdParams })
   start(
     @Param("inspectionId", ParseIntPipe) id: number,
@@ -97,6 +98,7 @@ export class InspectionsController {
   @Post(":inspectionId/fail")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Idempotent("inventory.quality.inspection.fail")
   @Validate({ params: inspectionIdParams, body: failInspectionSchema })
   fail(
     @Param("inspectionId", ParseIntPipe) id: number,
@@ -143,6 +145,7 @@ export class InspectionsController {
   @Post(":inspectionId/correct")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Idempotent("inventory.quality.inspection.correct")
   @Validate({ params: inspectionIdParams, body: correctInspectionSchema })
   correct(
     @Param("inspectionId", ParseIntPipe) id: number,

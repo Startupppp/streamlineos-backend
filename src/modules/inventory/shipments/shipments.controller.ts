@@ -107,6 +107,7 @@ export class ShipmentsController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Idempotent("inventory.shipment.cancel")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: shipmentIdParams })
   cancel(
