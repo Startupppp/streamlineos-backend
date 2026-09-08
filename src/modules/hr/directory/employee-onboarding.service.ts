@@ -87,7 +87,7 @@ export class EmployeeOnboardingService {
 
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
     const existingUser = await this.db.query.users.findFirst({
-      where: eq(users.email, body.email.toLowerCase()),
+      where: eq(users.email, body.email),
       columns: { id: true },
     });
 
@@ -259,7 +259,7 @@ export class EmployeeOnboardingService {
         .insert(users)
         .values({
           id: userId,
-          email: body.email.toLowerCase(),
+          email: body.email,
           name: `${body.firstName} ${body.lastName}`,
           firstName: body.firstName,
           lastName: body.lastName,

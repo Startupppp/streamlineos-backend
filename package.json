@@ -492,7 +492,8 @@
       "e2e-spec",
       "\\.db\\.spec\\.ts$",
       "node_modules",
-      "dist"
+      "dist",
+      "\\.claude[\\\\/]worktrees"
     ],
     "transform": {
       "^.+\\.ts$": [

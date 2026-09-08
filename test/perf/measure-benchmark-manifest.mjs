@@ -336,8 +336,7 @@ async function main() {
       // the reference tenant; a default ceiling is recorded beside it and never treated as one.
       const routes = routeBudgets[id] ?? [];
       const counted = routes.filter(
-        (r) =>
-          r.measuredDbCalls !== null && r.dbCallBasis !== "manifest-default",
+        (r) => r.measuredDbCalls !== null && r.dbCallBasis !== "default-ceiling",
       );
       if (counted.length === 1 && measurements.large.status === "measured")
         measurements.large.measuredDbCalls = counted[0].measuredDbCalls;

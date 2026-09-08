@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { crmBlueprints, crmBlueprintTransitions, crmPipelineStages, auditLogs, dealActivities, leadActivities, quotes } from "../../../db/schema";
+import { crmBlueprints, crmBlueprintTransitions, crmPipelines, crmPipelineStages, auditLogs, dealActivities, leadActivities, quotes } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateBlueprintInput, UpdateBlueprintInput, CreateTransitionInput, UpdateTransitionInput } from "./dto/blueprints.schemas";
 
@@ -15,6 +15,7 @@ export class CrmBlueprintsService {
   }
 
   async create(u: CurrentUserContext, input: CreateBlueprintInput) {
+    await this.assertPipelineInOrg(u.orgId, input.pipelineId);
     const [row] = await this.db.insert(crmBlueprints).values({ orgId: u.orgId, ...input }).returning();
     void this.auditLog(u, "crm_blueprint.created", row.id, { name: input.name, pipelineId: input.pipelineId });
     return row;
@@ -152,6 +153,15 @@ export class CrmBlueprintsService {
       requiresApproval: Boolean(transition.requiresApproval),
       missingFields,
     };
+  }
+
+  private async assertPipelineInOrg(orgId: string, pipelineId: string) {
+    const [pipeline] = await this.db
+      .select({ id: crmPipelines.id })
+      .from(crmPipelines)
+      .where(and(eq(crmPipelines.id, pipelineId), eq(crmPipelines.orgId, orgId), isNull(crmPipelines.deletedAt)))
+      .limit(1);
+    if (!pipeline) throw new NotFoundException("Pipeline not found");
   }
 
   private async assertOwner(orgId: string, blueprintId: string) {

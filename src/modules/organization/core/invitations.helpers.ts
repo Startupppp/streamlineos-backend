@@ -3,7 +3,7 @@ import { and, eq, gt, isNull, lt } from "drizzle-orm";
 import { invitationEvents, invitations, organizationMembers, organizations } from "../../../db/schema";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { Db } from "../../../db/drizzle.module";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 export interface InviteActor {
   userId: string;
@@ -68,16 +68,13 @@ export async function recordDeliveryFailure(
     `Invitation email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
   );
   try {
-    await runInTenantTransaction(
-      db,
-      (tx) =>
-        tx.insert(invitationEvents).values({
-          orgId,
-          invitationId,
-          event: "DELIVERY_FAILED",
-          actorMembershipId: null,
-        }),
-      { orgId },
+    await runInNewTenantTransaction(db, orgId, (tx) =>
+      tx.insert(invitationEvents).values({
+        orgId,
+        invitationId,
+        event: "DELIVERY_FAILED",
+        actorMembershipId: null,
+      }),
     );
   } catch (recordErr: unknown) {
     logger.error(

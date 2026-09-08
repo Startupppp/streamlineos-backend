@@ -5,7 +5,7 @@
   "testTimeout": 60000,
   "workerIdleMemoryLimit": "1GB",
   "testRegex": "\\.e2e-spec\\.ts$",
-  "testPathIgnorePatterns": ["seeded-e2e-spec", "node_modules", "dist"],
+  "testPathIgnorePatterns": ["seeded-e2e-spec", "node_modules", "dist", "\\.claude[\\\\/]worktrees"],
   "transform": { "^.+\\.(t|j|mj)s$": ["ts-jest", { "tsconfig": { "allowJs": true, "isolatedModules": true }, "diagnostics": false }] },
   "transformIgnorePatterns": [
     "/node_modules/(?!(?:\\.pnpm/)?(?:@scure|otplib|@otplib|@noble|@composio|@openrouter|@ai-sdk|@workflow|@standard-schema|eventsource-parser|ai)[@/+])"

@@ -1,6 +1,13 @@
 import { type SQL } from "drizzle-orm";
-import type { PgColumn } from "drizzle-orm/pg-core";
+import { PgDialect, pgTable, text } from "drizzle-orm/pg-core";
 import { applyScope } from "./apply-scope";
+
+const dialect = new PgDialect();
+
+function render(value: SQL): { sql: string; params: unknown[] } {
+  const query = dialect.sqlToQuery(value);
+  return { sql: query.sql, params: query.params };
+}
 
 function isSqlLiteral(s: SQL, literal: string): boolean {
   const first: unknown = s.queryChunks[0];
@@ -18,23 +25,15 @@ function isSqlTrue(s: SQL): boolean {
   return s.queryChunks.length === 1 && isSqlLiteral(s, "true");
 }
 
-const makeCol = (): PgColumn =>
-  ({
-    table: { _: { name: "test_table" } },
-    _: {
-      name: "col",
-      columnType: "PgText",
-      dataType: "string",
-      notNull: true,
-      hasDefault: false,
-      isPrimaryKey: false,
-    },
-  }) as unknown as PgColumn;
+const testTable = pgTable("test_table", {
+  assignedToId: text("assigned_to_id").notNull(),
+  teamId: text("team_id").notNull(),
+});
 
 describe("applyScope", () => {
   const userId = "user-abc";
-  const ownerColumn = makeCol();
-  const teamColumn = makeCol();
+  const ownerColumn = testTable.assignedToId;
+  const teamColumn = testTable.teamId;
 
   describe("all", () => {
     it("returns sql`true`", () => {
@@ -51,39 +50,56 @@ describe("applyScope", () => {
   });
 
   describe("own", () => {
-    it("returns an eq expression (not the literal false)", () => {
-      const result = applyScope("own", "org-a", userId, { ownerColumn });
+    it("binds the owner column to the acting user, not to any other column or id", () => {
+      const result = applyScope("own", "org-a", userId, { ownerColumn, teamColumn });
+
       expect(isSqlFalse(result)).toBe(false);
       expect(isSqlTrue(result)).toBe(false);
+
+      const { sql, params } = render(result);
+      expect(sql).toBe('"test_table"."assigned_to_id" = $1');
+      expect(sql).not.toContain("team_id");
+      expect(params).toEqual([userId]);
     });
   });
 
   describe("team", () => {
     it("falls back to own scope when no teamColumn or teamIds supplied", () => {
       const result = applyScope("team", "org-a", userId, { ownerColumn });
-      expect(isSqlFalse(result)).toBe(false);
-      expect(isSqlTrue(result)).toBe(false);
+
+      const { sql, params } = render(result);
+      expect(sql).toBe('"test_table"."assigned_to_id" = $1');
+      expect(params).toEqual([userId]);
     });
 
     it("falls back to own scope when teamIds is empty", () => {
       const result = applyScope("team", "org-a", userId, { ownerColumn, teamColumn, teamIds: [] });
-      expect(isSqlFalse(result)).toBe(false);
-      expect(isSqlTrue(result)).toBe(false);
+
+      const { sql, params } = render(result);
+      expect(sql).toBe('"test_table"."assigned_to_id" = $1');
+      expect(sql).not.toContain("team_id");
+      expect(params).toEqual([userId]);
     });
 
-    it("uses the explicit team column when teamColumn + teamIds are populated", () => {
+    it("ORs the owner predicate with an IN over the explicit team column", () => {
       const result = applyScope("team", "org-a", userId, {
         ownerColumn,
         teamColumn,
         teamIds: ["team-1", "team-2"],
       });
-      expect(isSqlFalse(result)).toBe(false);
-      expect(isSqlTrue(result)).toBe(false);
+
+      const { sql, params } = render(result);
+      expect(sql).toBe(
+        '("test_table"."assigned_to_id" = $1 OR "test_table"."team_id" in ($2, $3))',
+      );
+      expect(params).toEqual([userId, "team-1", "team-2"]);
     });
 
     it("never widens to every row", () => {
       for (const cols of [{ ownerColumn }, { ownerColumn, teamColumn, teamIds: ["team-1"] }]) {
-        expect(isSqlTrue(applyScope("team", "org-a", userId, cols))).toBe(false);
+        const result = applyScope("team", "org-a", userId, cols);
+        expect(isSqlTrue(result)).toBe(false);
+        expect(render(result).sql).toContain("assigned_to_id");
       }
     });
   });

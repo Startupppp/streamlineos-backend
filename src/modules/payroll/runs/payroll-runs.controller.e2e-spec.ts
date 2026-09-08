@@ -52,16 +52,118 @@ const viewOnlyAccess = withAccessResolution({
   moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
 });
 
-const mockRun = { id: 1, orgId: "org_1", month: "2026-07", status: "DRAFT" };
-const mockEmployee = { id: 1, runId: 1, userId: "u1", status: "PENDING" };
+const mockRunListItem = {
+  id: 1,
+  month: "2026-07",
+  status: "DRAFT",
+  runType: "REGULAR",
+  entityId: null,
+  statutoryRuleVersion: null,
+  grossTotal: "0.00",
+  netTotal: "0.00",
+  employeeCount: 0,
+  exceptionCount: 0,
+  createdAt: new Date("2026-07-01T00:00:00.000Z"),
+};
+
+const mockRunDetail = {
+  id: 1,
+  orgId: "org_1",
+  policyVersionId: null,
+  month: "2026-07",
+  runType: "REGULAR",
+  sourcePeriodKey: null,
+  sourceRunId: null,
+  entityId: null,
+  periodId: null,
+  calculationVersion: null,
+  statutoryRuleVersion: null,
+  inputSnapshotHash: null,
+  status: "DRAFT" as const,
+  payDate: null,
+  grossTotal: "0.00",
+  deductionTotal: "0.00",
+  employerCostTotal: "0.00",
+  netTotal: "0.00",
+  employeeCount: 0,
+  exceptionCount: 0,
+  lockedAt: null,
+  lockedBy: null,
+  lockedByMembershipId: null,
+  approvedAt: null,
+  approvedByMembershipId: null,
+  paidAt: null,
+  paidBy: null,
+  paidByMembershipId: null,
+  publishedAt: null,
+  publishedBy: null,
+  publishedByMembershipId: null,
+  closedAt: null,
+  closedBy: null,
+  closedByMembershipId: null,
+  reopenedAt: null,
+  reopenedBy: null,
+  reopenedByMembershipId: null,
+  reopenReason: null,
+  postingState: "pending" as const,
+  generationLockToken: null,
+  generationLockedAt: null,
+  createdBy: null,
+  createdByMembershipId: null,
+  createdAt: new Date("2026-07-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+};
+
+const mockRunEmployee = {
+  id: 1,
+  userId: "u1",
+  workerType: "EMPLOYEE",
+  currency: "INR",
+  gross: "0.00",
+  totalDeductions: "0.00",
+  net: "0.00",
+  status: "PENDING",
+  holdReason: null,
+  userName: "Test User",
+  userEmail: "test@example.com",
+};
 
 const mockRunsService = {
   createRun: jest.fn().mockResolvedValue({ ok: true, runId: 1 }),
-  listRuns: jest.fn().mockResolvedValue({ items: [mockRun], total: 1 }),
-  getRunById: jest.fn().mockResolvedValue(mockRun),
-  listRunEmployees: jest.fn().mockResolvedValue({ items: [mockEmployee], total: 1 }),
-  getRunEmployee: jest.fn().mockResolvedValue(mockEmployee),
-  getVariance: jest.fn().mockResolvedValue({ summary: [], perEmployee: [] }),
+  listRuns: jest.fn().mockResolvedValue({
+    data: [mockRunListItem],
+    pagination: { limit: 20, hasMore: false, nextCursor: null },
+  }),
+  getRunById: jest.fn().mockResolvedValue({
+    run: mockRunDetail,
+    checklist: [],
+    varianceSummary: null,
+    payoutHealth: null,
+  }),
+  listRunEmployees: jest.fn().mockResolvedValue({
+    data: [mockRunEmployee],
+    pagination: { limit: 20, hasMore: false, nextCursor: null },
+  }),
+  getRunEmployee: jest.fn().mockResolvedValue({
+    id: 1,
+    userId: "u1",
+    workerType: "EMPLOYEE",
+    currency: "INR",
+    gross: "0.00",
+    totalDeductions: "0.00",
+    net: "0.00",
+    status: "PENDING",
+    holdReason: null,
+    calculationSnapshot: null,
+    userName: "Test User",
+    userEmail: "test@example.com",
+  }),
+  getVariance: jest.fn().mockResolvedValue({
+    currentRun: { id: 1, month: "2026-07", grossTotal: "0.00", netTotal: "0.00" },
+    previousRun: null,
+    topMovers: [],
+    lockedInputBaselinesUsed: false,
+  }),
 };
 
 const mockGenerateService = {
@@ -72,8 +174,27 @@ const mockGeneratePipelineService = {
   runCalcAndDetect: jest.fn().mockResolvedValue({ ok: true }),
 };
 
+const mockException = {
+  id: 1,
+  code: "MISSING_ATTENDANCE",
+  severity: "BLOCKER" as const,
+  status: "OPEN" as const,
+  message: "Attendance not imported",
+  metadata: null,
+  userId: "u1",
+  resolvedBy: null,
+  resolvedAt: null,
+  overrideReason: null,
+  createdAt: new Date("2026-07-01T00:00:00.000Z"),
+  userName: "Test User",
+  userEmail: "test@example.com",
+};
+
 const mockExceptionsService = {
-  listExceptions: jest.fn().mockResolvedValue([]),
+  listExceptions: jest.fn().mockResolvedValue({
+    data: [mockException],
+    pagination: { limit: 20, hasMore: false, nextCursor: null },
+  }),
   resolveException: jest.fn().mockResolvedValue({ ok: true }),
   overrideException: jest.fn().mockResolvedValue({ ok: true }),
 };
@@ -85,7 +206,32 @@ const mockInputsService = {
 };
 
 const mockCommandCenterService = {
-  getCommandCenter: jest.fn().mockResolvedValue({ runs: [], checklist: [] }),
+  getCommandCenter: jest.fn().mockResolvedValue({
+    header: {
+      runId: 1,
+      month: "2026-07",
+      status: "DRAFT",
+      grossTotal: "0.00",
+      deductionTotal: "0.00",
+      netTotal: "0.00",
+      employerCostTotal: "0.00",
+      employeeCount: 0,
+      exceptionCounts: { BLOCKER: 0, WARNING: 0, INFO: 0 },
+    },
+    checklist: [],
+    panels: {
+      runStatus: "DRAFT",
+      topExceptions: [],
+      varianceSummary: null,
+      pendingApprovals: [],
+      payoutReadiness: false,
+      statutoryReadiness: {
+        taxDeclarationsLocked: false,
+        packComplianceChecklist: [],
+      },
+    },
+    upcomingCalendarEvents: [],
+  }),
 };
 
 const mockLoanAdjustmentsService = {

@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../../db/drizzle.module";
 
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
@@ -13,27 +14,11 @@ import { MarketplaceService } from "../marketplace.service";
 import { ReferralService } from "../referral.service";
 import { InvoiceSnapshotService } from "../invoice-snapshot.service";
 
-function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return [value];
-  }
-  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
-  if (typeof value !== "object" || seen.has(value)) return [];
+const dialect = new PgDialect();
+type Condition = Parameters<PgDialect["sqlToQuery"]>[0];
 
-  seen.add(value);
-  const record = value as { queryChunks?: unknown[]; value?: unknown };
-  return [
-    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
-    ...(Object.prototype.hasOwnProperty.call(record, "value")
-      ? sqlValues(record.value, seen)
-      : []),
-  ];
+function render(condition: unknown) {
+  return dialect.sqlToQuery(condition as Condition);
 }
 
 const ATTACKER_ORG = "org-attacker";
@@ -71,8 +56,10 @@ describe("AiCreditsPacksService — cross-tenant isolation", () => {
 
     expect(itemsWhere).toHaveBeenCalled();
     const predicate = itemsWhere.mock.calls[0]?.[0];
-    expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
-    expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
+    const query = render(predicate);
+    expect(query.sql).toContain('"ai_credit_transactions"."org_id" = $');
+    expect(query.params).toContain(ATTACKER_ORG);
+    expect(query.params).not.toContain(OWNER_ORG);
     expect(result.data).toHaveLength(0);
   });
 
@@ -121,8 +108,10 @@ describe("ReferralService — cross-tenant isolation", () => {
 
     expect(where).toHaveBeenCalled();
     const predicate = where.mock.calls[0]?.[0];
-    expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
-    expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
+    const query = render(predicate);
+    expect(query.sql).toContain('"referrals"."referrer_org_id" = $');
+    expect(query.params).toContain(ATTACKER_ORG);
+    expect(query.params).not.toContain(OWNER_ORG);
     expect(result).toHaveLength(0);
   });
 
@@ -176,8 +165,10 @@ describe("MarketplaceService — cross-tenant isolation", () => {
 
     expect(installsWhere).toHaveBeenCalled();
     const predicate = installsWhere.mock.calls[0]?.[0];
-    expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
-    expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
+    const query = render(predicate);
+    expect(query.sql).toContain('"app_installations"."org_id" = $');
+    expect(query.params).toContain(ATTACKER_ORG);
+    expect(query.params).not.toContain(OWNER_ORG);
   });
 
   it("listApps returns apps with installation data for the owning org (control)", async () => {

@@ -19,9 +19,11 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
   };
 }
 
-function makeChain(rows: unknown[]) {
+function makeChain(rows: unknown[], honourLimit = false) {
   const resolved = Promise.resolve(rows);
-  const limitFn = jest.fn().mockResolvedValue(rows);
+  const limitFn = honourLimit
+    ? jest.fn((n: number) => Promise.resolve(rows.slice(0, n)))
+    : jest.fn().mockResolvedValue(rows);
   const thenable: Record<string, unknown> = {
     then: resolved.then.bind(resolved),
     catch: resolved.catch.bind(resolved),
@@ -186,6 +188,16 @@ describe("ModuleAccessRosterService — keyset pagination", () => {
       expect(page.data).toHaveLength(0);
       expect(page.hasMore).toBe(false);
     });
+
+    it("clamps a pageSize above 100 to the hard cap before querying", async () => {
+      const capped = makeChain([], true);
+      mockDb.select.mockReturnValue(makeChain([{ id: 10 }]));
+      mockDb.selectDistinct.mockReturnValue(capped);
+
+      await service.listMembers(makeActor(), "hr", { pageSize: 500, cursor: undefined });
+
+      expect(capped.limit as jest.Mock).toHaveBeenCalledWith(101);
+    });
   });
 
   describe("listMemberCandidates keyset pagination", () => {
@@ -288,6 +300,20 @@ describe("ModuleAccessRosterService — keyset pagination", () => {
         ...r2.data.map((c) => c.userId),
       ];
       expect(new Set(allUserIds).size).toBe(allUserIds.length);
+    });
+
+    it("clamps a pageSize above 100 to the hard cap before querying", async () => {
+      const capped = makeChain([], true);
+      mockDb.select.mockReturnValue(capped);
+
+      await service.listMemberCandidates(makeActor(), "hr", {
+        pageSize: 500,
+        search: "",
+        excludeAssigned: false,
+        cursor: undefined,
+      });
+
+      expect(capped.limit as jest.Mock).toHaveBeenCalledWith(101);
     });
   });
 });

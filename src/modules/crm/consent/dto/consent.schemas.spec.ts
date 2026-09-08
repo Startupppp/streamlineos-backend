@@ -1,7 +1,14 @@
+import "reflect-metadata";
 import {
+  contactParamSchema,
   missingConsentQuerySchema,
   recordConsentSchema,
 } from "./consent.schemas";
+import {
+  VALIDATION_SCHEMAS,
+  type ValidationSchemas,
+} from "../../../../common/validation/validate.decorator";
+import { CrmConsentController } from "../crm-consent.controller";
 
 const VALID = {
   channel: "EMAIL" as const,
@@ -51,5 +58,37 @@ describe("missingConsentQuerySchema", () => {
   it("requires a channel rather than defaulting to one", () => {
     expect(() => missingConsentQuerySchema.parse({})).toThrow();
     expect(missingConsentQuerySchema.parse({ channel: "SMS" }).channel).toBe("SMS");
+  });
+});
+
+describe("contactParamSchema", () => {
+  it("coerces the path string to the number the service signature declares", () => {
+    const parsed = contactParamSchema.parse({ contactId: "42" });
+    expect(parsed.contactId).toBe(42);
+    expect(typeof parsed.contactId).toBe("number");
+  });
+
+  it("rejects a non-numeric, zero, negative or fractional contact id", () => {
+    for (const contactId of ["abc", "0", "-1", "1.5"]) {
+      expect(() => contactParamSchema.parse({ contactId })).toThrow();
+    }
+  });
+});
+
+describe("CrmConsentController param contract", () => {
+  function paramsSchemaOf(handler: unknown) {
+    const schemas = Reflect.getMetadata(VALIDATION_SCHEMAS, handler as object) as
+      | ValidationSchemas
+      | undefined;
+    return schemas?.params;
+  }
+
+  it.each([
+    ["listForContact", CrmConsentController.prototype.listForContact],
+    ["record", CrmConsentController.prototype.record],
+  ])("%s validates :contactId with contactParamSchema, not a string schema", (_name, handler) => {
+    const params = paramsSchemaOf(handler);
+    expect(params).toBe(contactParamSchema);
+    expect(params?.parse({ contactId: "7" })).toEqual({ contactId: 7 });
   });
 });

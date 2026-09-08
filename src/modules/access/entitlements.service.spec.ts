@@ -1,8 +1,12 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { EntitlementsService } from "./entitlements.service";
 import type { Db } from "../../db/drizzle.module";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { PlanLimitsService } from "../billing/core/plan-limits.service";
+import {
+  PLAN_LOCKED_MODULES,
+  type PlanTier,
+} from "../billing/core/plan-entitlements.constants";
 import { ADMINISTRABLE_MODULES, MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 
 type DeepPartial<T> = {
@@ -113,8 +117,9 @@ function buildService(
   db: Db,
   cache: CacheService,
   migrationMode: "off" | "degrade" = "off",
+  tier: PlanTier = "ENTERPRISE",
 ) {
-  const resolveTier = jest.fn().mockResolvedValue({ tier: "ENTERPRISE", plan: "ENTERPRISE" });
+  const resolveTier = jest.fn().mockResolvedValue({ tier, plan: tier });
   const planLimits: DeepPartial<PlanLimitsService> = { resolveTier };
   return new EntitlementsService(
     db,
@@ -253,6 +258,81 @@ describe("EntitlementsService", () => {
 
       expect(result).toBe(false);
       expect(dbMocks.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("setModuleEnabled — plan gate", () => {
+    it.each(PLAN_LOCKED_MODULES.FREE)(
+      "refuses to enable %s on FREE and writes nothing",
+      async (moduleKey) => {
+        const { db, mocks } = buildMockDb();
+        const { cache } = buildMockCache();
+
+        await expect(
+          buildService(db, cache, "off", "FREE").setModuleEnabled(
+            "org-1",
+            moduleKey,
+            true,
+            "user-1",
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+
+        expect(mocks.transaction).not.toHaveBeenCalled();
+        expect(mocks.insert).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(PLAN_LOCKED_MODULES.FREE)(
+      "allows %s on a paid tier, so the FREE refusal is the plan gate and not the module",
+      async (moduleKey) => {
+        const { db, mocks } = buildMockDb();
+        const { cache } = buildMockCache();
+
+        await buildService(db, cache, "off", "PAID").setModuleEnabled(
+          "org-1",
+          moduleKey,
+          true,
+          "user-1",
+        );
+
+        expect(mocks.values).toHaveBeenCalledWith({
+          orgId: "org-1",
+          moduleKey,
+          enabled: true,
+          enabledBy: "user-1",
+        });
+      },
+    );
+
+    it("never blocks a DISABLE on FREE, so a downgrade cannot strand an org", async () => {
+      const { db, mocks } = buildMockDb();
+      const { cache } = buildMockCache();
+
+      await buildService(db, cache, "off", "FREE").setModuleEnabled(
+        "org-1",
+        "payroll",
+        false,
+        "user-1",
+      );
+
+      expect(mocks.values).toHaveBeenCalledWith({
+        orgId: "org-1",
+        moduleKey: "payroll",
+        enabled: false,
+        enabledBy: "user-1",
+      });
+    });
+
+    it("leaves an already-enabled paid module enabled on FREE — enablement is never revoked", async () => {
+      const { db } = buildMockDb();
+      const { cache } = buildMockCache(async () => ({ payroll: true }));
+
+      const service = buildService(db, cache, "off", "FREE");
+
+      await expect(service.isModuleEnabled("org-1", "payroll")).resolves.toBe(true);
+      await expect(
+        service.setModuleEnabled("org-1", "payroll", true, "user-1"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 

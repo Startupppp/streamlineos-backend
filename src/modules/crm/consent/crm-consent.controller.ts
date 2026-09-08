@@ -29,15 +29,12 @@ import {
   type UnsubscribeInput,
 } from "./dto/consent.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   consentListSchema,
   consentCountMissingSchema,
   successSchema,
 } from "./dto/crm-consent-response.schemas";
-
-const contactIdParams = z.object({ contactId: z.string().min(1) }).strict();
 
 @Controller("crm/consent")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -47,7 +44,7 @@ export class CrmConsentController {
   @Get("contacts/:contactId")
   @RequirePermission("crm:contacts:view")
   @ResponseSchema(consentListSchema)
-  @Validate({ params: contactIdParams })
+  @Validate({ params: contactParamSchema })
   listForContact(
     @Param() params: ContactParam,
     @CurrentUser() u: CurrentUserContext,
@@ -59,7 +56,7 @@ export class CrmConsentController {
   @HttpCode(200)
   @RequirePermission("crm:contacts:manage")
   @ResponseSchema(successSchema)
-  @Validate({ params: contactIdParams, body: recordConsentSchema })
+  @Validate({ params: contactParamSchema, body: recordConsentSchema })
   async record(
     @Param() params: ContactParam,
     @Body() body: RecordConsentInput,

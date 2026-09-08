@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { canonicalEmailSchema } from "../../../users/dto/users.schemas";
 
 export const listEmployeesSchema = z.object({
   cursor: z.string().min(1).max(2048).optional(),
@@ -227,7 +228,7 @@ export const updateEmployeeSchema = z
 export const onboardEmployeeSchema = z.object({
   firstName: z.string(),
   lastName: z.string(),
-  email: z.string(),
+  email: canonicalEmailSchema,
   phone: z.string().optional(),
   whatsappSameAsPhone: z.boolean().optional(),
   whatsappNumber: z.string().optional(),
