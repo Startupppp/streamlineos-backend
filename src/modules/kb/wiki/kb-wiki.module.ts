@@ -14,6 +14,7 @@ import { KbPageDuplicateService } from "./kb-page-duplicate.service";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
+import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 import { KbPageRecordLinksService } from "./kb-page-record-links.service";
 import { KbMediaService } from "./kb-media.service";
 import { KbSourcesService } from "./kb-sources.service";
@@ -61,6 +62,7 @@ import { KbPageAiController } from "./kb-page-ai.controller";
     KbPageCommentsService,
     KbPageTemplatesService,
     KbPageReviewsService,
+    KbPageReviewsQueryService,
     KbPageRecordLinksService,
     KbMediaService,
     KbSourcesService,

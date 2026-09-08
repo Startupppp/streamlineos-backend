@@ -11,7 +11,6 @@ import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronProjectsService } from "./cron-projects.service";
 import { CrmSequencesRunnerService } from "../crm/automation-studio/crm-sequences-runner.service";
-import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
@@ -19,9 +18,6 @@ import { CronLeaseService } from "./cron-lease.service";
 import {
   projectsRecurringFlushResponseSchema,
   crmSequencesFlushResponseSchema,
-  financeRecurringFlushResponseSchema,
-  financeDueChecksResponseSchema,
-  financeDepreciationResponseSchema,
   crmTasksOverdueFlushResponseSchema,
   buildRetentionPruneResponseSchema,
   buildDailySnapshotsResponseSchema,
@@ -34,7 +30,6 @@ export class CronBuildController {
   constructor(
     private readonly cronProjects: CronProjectsService,
     private readonly crmSequencesRunner: CrmSequencesRunnerService,
-    private readonly cronFinance: CronFinanceService,
     private readonly crmTasks: CronCrmTasksService,
     private readonly buildRetention: CronBuildRetentionService,
     private readonly buildSnapshots: CronBuildSnapshotsService,
@@ -67,48 +62,6 @@ export class CronBuildController {
   @ResponseSchema(crmSequencesFlushResponseSchema)
   postCrmSequencesFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmSequencesFlush(authorization);
-  }
-
-  @Get("finance-recurring-flush")
-  @ResponseSchema(financeRecurringFlushResponseSchema)
-  getFinanceRecurringFlush(@Headers("authorization") authorization?: string) {
-    return this.runFinanceRecurringFlush(authorization);
-  }
-
-  @Post("finance-recurring-flush")
-  @BodylessAction()
-  @HttpCode(200)
-  @ResponseSchema(financeRecurringFlushResponseSchema)
-  postFinanceRecurringFlush(@Headers("authorization") authorization?: string) {
-    return this.runFinanceRecurringFlush(authorization);
-  }
-
-  @Get("finance-due-checks")
-  @ResponseSchema(financeDueChecksResponseSchema)
-  getFinanceDueChecks(@Headers("authorization") authorization?: string) {
-    return this.runFinanceDueChecks(authorization);
-  }
-
-  @Post("finance-due-checks")
-  @BodylessAction()
-  @HttpCode(200)
-  @ResponseSchema(financeDueChecksResponseSchema)
-  postFinanceDueChecks(@Headers("authorization") authorization?: string) {
-    return this.runFinanceDueChecks(authorization);
-  }
-
-  @Get("finance-depreciation")
-  @ResponseSchema(financeDepreciationResponseSchema)
-  getFinanceDepreciation(@Headers("authorization") authorization?: string) {
-    return this.runFinanceDepreciation(authorization);
-  }
-
-  @Post("finance-depreciation")
-  @BodylessAction()
-  @HttpCode(200)
-  @ResponseSchema(financeDepreciationResponseSchema)
-  postFinanceDepreciation(@Headers("authorization") authorization?: string) {
-    return this.runFinanceDepreciation(authorization);
   }
 
   @Get("crm-tasks-overdue-flush")
@@ -187,63 +140,6 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("CRM sequences flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runFinanceRecurringFlush(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("finance-recurring-flush", 300, () =>
-        this.cronFinance.runRecurringFlush(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "finance-recurring-flush already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message: `Finance recurring flush: ${result.ran.join(", ")} — ${result.errors.length} error(s)`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Finance recurring flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runFinanceDueChecks(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("finance-due-checks", 300, () =>
-        this.cronFinance.runDueChecks(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "finance-due-checks already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message: `Finance due checks: ${result.ran.join(", ")} — ${result.errors.length} error(s)`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Finance due checks cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runFinanceDepreciation(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("finance-depreciation", 300, () =>
-        this.cronFinance.runDepreciation(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "finance-depreciation already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message: `Finance depreciation: ${result.ran.join(", ")} — ${result.errors.length} error(s)`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Finance depreciation cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

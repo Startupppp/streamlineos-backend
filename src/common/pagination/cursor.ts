@@ -50,6 +50,40 @@ export function decodeCursor(cursor: string | undefined | null): CursorPosition 
   return { sortValue, id };
 }
 
+/**
+ * The same opaque encoding for a sort of more than two columns.
+ *
+ * A `(sortValue, id)` cursor is only a total order when the sort really is two
+ * columns. `ORDER BY date DESC, created_at DESC` with a serial tie-breaker is
+ * three, and squeezing it into two — by dropping a column or by concatenating
+ * two into one string — either skips rows at a page boundary or compares text
+ * where the database compares a timestamp. `arity` is checked on decode so a
+ * cursor minted for one sort cannot be replayed against a different one.
+ */
+export function encodeTupleCursor(parts: readonly string[]): string {
+  return Buffer.from(parts.join(SEPARATOR), "utf8").toString("base64url");
+}
+
+export function decodeTupleCursor(
+  cursor: string | undefined | null,
+  arity: number,
+): string[] | null {
+  if (typeof cursor !== "string" || cursor.length === 0) return null;
+
+  let decoded: string;
+  try {
+    decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  } catch {
+    return null;
+  }
+
+  const parts = decoded.split(SEPARATOR);
+  if (parts.length !== arity) return null;
+  if (parts.some((part) => part.length === 0)) return null;
+
+  return parts;
+}
+
 export interface CursorPage<T> {
   readonly data: T[];
   readonly pagination: {
@@ -89,6 +123,23 @@ export function buildCursorPage<T>(
       limit,
       hasMore,
       nextCursor: hasMore && last ? encodeCursor(toPosition(last)) : null,
+    },
+  };
+}
+
+export function buildTupleCursorPage<T>(
+  rows: T[],
+  limit: number,
+  toParts: (row: T) => readonly string[],
+): CursorPage<T> {
+  const { data, hasMore, last } = trimSentinel(rows, limit);
+
+  return {
+    data,
+    pagination: {
+      limit,
+      hasMore,
+      nextCursor: hasMore && last ? encodeTupleCursor(toParts(last)) : null,
     },
   };
 }

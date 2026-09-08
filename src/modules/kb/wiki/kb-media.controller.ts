@@ -16,7 +16,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbMediaService, type KbMediaUploadResult } from "./kb-media.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { kbMediaUploadSchema } from "./dto/kb-wiki-response.schemas";
+import { kbMediaUploadSchema } from "./dto/kb-space-response.schemas";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 

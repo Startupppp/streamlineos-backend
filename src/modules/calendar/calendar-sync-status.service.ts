@@ -1,20 +1,14 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { aliasedTable, and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
-import {
-  calendarEvents,
-  calendarProviderSyncQueue,
-  eventAttendees,
-  organizationMembers,
-} from "../../db/schema";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { calendarProviderSyncQueue } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { assertReadable, resolveCallerMembershipId } from "./calendar-sync-visibility";
 import type {
   SyncCancelResponse,
   SyncRetryResponse,
   SyncStatusResponse,
 } from "./dto/sync-status.schemas";
-
-const attendeeVisibility = aliasedTable(eventAttendees, "att_sync_visibility");
 
 function mapState(
   state: "PENDING" | "IN_FLIGHT" | "PROCESSED" | "FAILED",
@@ -28,97 +22,6 @@ function mapState(
 @Injectable()
 export class CalendarSyncStatusService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
-
-  private async resolveCallerMembershipId(
-    orgId: string,
-    userId: string,
-  ): Promise<number> {
-    const row = await this.db.query.organizationMembers.findFirst({
-      columns: { id: true },
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-    });
-    return row?.id ?? 0;
-  }
-
-  private async findVisibleEvent(
-    orgId: string,
-    eventId: number,
-    callerMembershipId: number,
-  ): Promise<{ id: number; createdByMembershipId: number } | null> {
-    const rows = await this.db
-      .select({
-        id: calendarEvents.id,
-        createdByMembershipId: calendarEvents.createdByMembershipId,
-      })
-      .from(calendarEvents)
-      .leftJoin(
-        attendeeVisibility,
-        and(
-          eq(attendeeVisibility.orgId, calendarEvents.orgId),
-          eq(attendeeVisibility.eventId, calendarEvents.id),
-          eq(attendeeVisibility.membershipId, callerMembershipId),
-        ),
-      )
-      .where(
-        and(
-          eq(calendarEvents.id, eventId),
-          eq(calendarEvents.orgId, orgId),
-          or(
-            eq(calendarEvents.visibility, "org"),
-            eq(calendarEvents.createdByMembershipId, callerMembershipId),
-            isNotNull(attendeeVisibility.id),
-          ),
-        ),
-      )
-      .limit(1);
-    return rows[0] ?? null;
-  }
-
-  /**
-   * A delete leaves a tombstone: the local row is gone but the queue row that must
-   * remove the provider copy survives. Visibility can no longer be resolved from the
-   * event, so it is resolved from the tombstone's own author — the person `deleteEvent`
-   * already verified as the creator. Without this, a delete that exhausts its attempts
-   * is invisible and unretryable, and the provider copy lives forever.
-   */
-  private async findDeleteTombstone(
-    orgId: string,
-    eventId: number,
-    userId: string,
-  ): Promise<{ id: number } | null> {
-    const rows = await this.db
-      .select({ id: calendarProviderSyncQueue.id })
-      .from(calendarProviderSyncQueue)
-      .where(
-        and(
-          eq(calendarProviderSyncQueue.orgId, orgId),
-          eq(calendarProviderSyncQueue.eventId, eventId),
-          eq(calendarProviderSyncQueue.operation, "delete"),
-          sql`${calendarProviderSyncQueue.payload} ->> 'userId' = ${userId}`,
-        ),
-      )
-      .orderBy(desc(calendarProviderSyncQueue.id))
-      .limit(1);
-    return rows[0] ?? null;
-  }
-
-  private async assertReadable(
-    orgId: string,
-    eventId: number,
-    userId: string,
-    callerMembershipId: number,
-  ): Promise<{ createdByMembershipId: number | null }> {
-    const visible = await this.findVisibleEvent(orgId, eventId, callerMembershipId);
-    if (visible) return { createdByMembershipId: visible.createdByMembershipId };
-
-    const tombstone = await this.findDeleteTombstone(orgId, eventId, userId);
-    if (!tombstone) throw new NotFoundException("Event not found");
-    return { createdByMembershipId: null };
-  }
 
   /**
    * The newest job for this event, among `states`, that a later success has NOT made
@@ -192,8 +95,8 @@ export class CalendarSyncStatusService {
     userId: string,
     eventId: number,
   ): Promise<SyncStatusResponse> {
-    const callerMembershipId = await this.resolveCallerMembershipId(orgId, userId);
-    await this.assertReadable(orgId, eventId, userId, callerMembershipId);
+    const callerMembershipId = await resolveCallerMembershipId(this.db, orgId, userId);
+    await assertReadable(this.db, orgId, eventId, userId, callerMembershipId);
 
     // A live failure outranks a live queued job, which outranks the newest row: the
     // headline has to describe the WORST outstanding target, never the luckiest one.
@@ -262,8 +165,8 @@ export class CalendarSyncStatusService {
     userId: string,
     eventId: number,
   ): Promise<SyncRetryResponse> {
-    const callerMembershipId = await this.resolveCallerMembershipId(orgId, userId);
-    const access = await this.assertReadable(orgId, eventId, userId, callerMembershipId);
+    const callerMembershipId = await resolveCallerMembershipId(this.db, orgId, userId);
+    const access = await assertReadable(this.db, orgId, eventId, userId, callerMembershipId);
     if (
       access.createdByMembershipId !== null &&
       access.createdByMembershipId !== callerMembershipId
@@ -320,8 +223,8 @@ export class CalendarSyncStatusService {
     userId: string,
     eventId: number,
   ): Promise<SyncCancelResponse> {
-    const callerMembershipId = await this.resolveCallerMembershipId(orgId, userId);
-    const access = await this.assertReadable(orgId, eventId, userId, callerMembershipId);
+    const callerMembershipId = await resolveCallerMembershipId(this.db, orgId, userId);
+    const access = await assertReadable(this.db, orgId, eventId, userId, callerMembershipId);
     // Same bar as retrySync: seeing an event is not standing to change what it pushes.
     if (
       access.createdByMembershipId !== null &&

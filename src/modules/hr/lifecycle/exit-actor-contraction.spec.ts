@@ -13,7 +13,7 @@ const USER_ID = "user-exit";
 const ACTIVE_MEMBERSHIP_ID = 11;
 
 function makeBaseParams(): ListResignationsQueryInput {
-  return { page: 1, limit: 20, status: undefined };
+  return { limit: 20, status: undefined };
 }
 
 function buildDbMock(rows: unknown[]) {

@@ -33,7 +33,7 @@ import {
   kbSourcePageSchema,
   kbSourceSchema,
   kbSourceSuccessSchema,
-} from "./dto/kb-wiki-response.schemas";
+} from "./dto/kb-space-response.schemas";
 import { z } from "zod";
 
 const sourceIdParams = z.object({ sourceId: z.coerce.number().int().positive() }).strict();

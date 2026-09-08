@@ -340,6 +340,7 @@ const MATRIX_SIBLING_FILES = [
   "cache-invalidation-rbac-auth.ts",
   "cache-invalidation-finance.ts",
   "cache-invalidation-inventory.ts",
+  "cache-invalidation-inventory-fulfillment.ts",
   "cache-invalidation-crm.ts",
   "cache-invalidation-hr.ts",
 ];

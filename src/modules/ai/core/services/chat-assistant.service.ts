@@ -19,7 +19,7 @@ import {
   type AiCreditLedger,
 } from "../gateway/credit-ledger.interface";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
-import { settleStream } from "../gateway/ai-gateway-credit.helper";
+import { settleStream } from "../gateway/ai-gateway-stream-credit";
 import { AiCallMetrics } from "../telemetry/ai-call-metrics";
 import { AiConcurrencyLimitException } from "./ai-service-exceptions";
 import { AiUsageService } from "./ai-usage.service";

@@ -170,6 +170,60 @@ export function keysetBeforeUuidValue(
 }
 
 /**
+ * One column of a multi-column keyset, paired with the value to compare it to.
+ *
+ * A three-column sort cannot use the two-column helpers above, and it cannot
+ * be flattened into one text value either: `ORDER BY date DESC, created_at
+ * DESC` compares a date and a timestamp with their own collations, and a
+ * concatenated string compares neither. Each term still binds through its own
+ * column's encoder for the reason at the top of this file — a bare `Date`
+ * reaching postgres-js as text throws only on page two.
+ *
+ * The value is validated by the caller through `keysetTimestamp` /
+ * `keysetInteger` / `keysetTextValue`, so a hand-edited cursor is a 400 rather
+ * than a driver-level 500.
+ */
+export interface KeysetTupleTerm {
+  readonly column: PgColumn;
+  readonly value: string | number | Date;
+}
+
+function tupleComparison(terms: readonly KeysetTupleTerm[], operator: SQL): SQL {
+  if (terms.length < 2) invalidCursor();
+  const columns = sql.join(terms.map((term) => sql`${term.column}`), sql`, `);
+  const values = sql.join(
+    terms.map((term) => sql.param(term.value, term.column)),
+    sql`, `,
+  );
+  return sql`(${columns}) ${operator} (${values})`;
+}
+
+/** Everything strictly before the position, for a list read newest-first. */
+export function keysetBeforeTuple(terms: readonly KeysetTupleTerm[]): SQL {
+  return tupleComparison(terms, sql`<`);
+}
+
+/** Everything strictly after the position, for a list read oldest-first. */
+export function keysetAfterTuple(terms: readonly KeysetTupleTerm[]): SQL {
+  return tupleComparison(terms, sql`>`);
+}
+
+export function keysetTimestamp(raw: string): Date {
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? invalidCursor() : date;
+}
+
+export function keysetInteger(raw: string): number {
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : invalidCursor();
+}
+
+/** A date-as-text or an already-ordered text column; length-capped so a cursor cannot carry a payload. */
+export function keysetTextValue(raw: string): string {
+  return raw.length > 0 && raw.length <= 512 ? raw : invalidCursor();
+}
+
+/**
  * Everything up to and including the position, newest-first.
  *
  * `<=` rather than `<` because the anchor is part of the window rather than the

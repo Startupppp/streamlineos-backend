@@ -121,8 +121,8 @@ export class AttendanceService {
     return this.reader.status(orgId, userId);
   }
 
-  history(orgId: string, userId: string, page: number, limit: number) {
-    return this.reader.history(orgId, userId, page, limit);
+  history(orgId: string, userId: string, cursor: string | undefined, limit: number) {
+    return this.reader.history(orgId, userId, cursor, limit);
   }
 
   logs(

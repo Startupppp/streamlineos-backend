@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listEmployeesSchema = z.object({
   cursor: z.string().min(1).max(2048).optional(),
@@ -117,7 +117,7 @@ export const patchDeviceSchema = z.object({
 }).strict();
 
 export const listAssetsQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   status: z.enum(["AVAILABLE", "ASSIGNED", "MAINTENANCE", "RETIRED"]).optional(),
 }).strict();

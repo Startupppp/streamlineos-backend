@@ -22,6 +22,12 @@ import { buildDefaultPolicies } from "./seed-default-policies";
 import { HrPolicyEvaluationService } from "./hr-policy-evaluation.service";
 import { HrPolicyConflictService } from "./hr-policy-conflict.service";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
+import {
+  keysetBeforeTuple,
+  keysetInteger,
+  keysetTimestamp,
+} from "../../../common/pagination/keyset";
 
 const POLICY_CACHE = (orgId: string, id: number) => `hr:policies:detail:${orgId}:${id}`;
 const POLICY_SEARCH_CAP = 500;
@@ -35,32 +41,43 @@ export class HrPoliciesService {
     private readonly conflicts: HrPolicyConflictService,
   ) {}
 
+  /**
+   * `(priority, created_at, id)` — the sort is two columns and neither is
+   * unique, so the serial id completes the total order. All three ride in the
+   * cursor: a `(priority, id)` cursor would order by something the query does
+   * not, and skip rows wherever two policies share a priority.
+   */
   async list(orgId: string, query: PoliciesListQuery) {
-    const { page, limit, type, status, search } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, type, status, search } = query;
 
     const conditions = [eq(hrPolicies.orgId, orgId), isNull(hrPolicies.deletedAt)];
     if (type) conditions.push(eq(hrPolicies.policyType, type));
     if (status) conditions.push(eq(hrPolicies.status, status));
     if (search) conditions.push(await this.policySearchCondition(search));
 
-    const where = and(...conditions);
+    const position = decodeTupleCursor(cursor, 3);
+    if (position) {
+      conditions.push(
+        keysetBeforeTuple([
+          { column: hrPolicies.priority, value: keysetInteger(position[0] ?? "") },
+          { column: hrPolicies.createdAt, value: keysetTimestamp(position[1] ?? "") },
+          { column: hrPolicies.id, value: keysetInteger(position[2] ?? "") },
+        ]),
+      );
+    }
 
-    const [rows, countRows] = await Promise.all([
-      this.db.query.hrPolicies.findMany({
-        where,
-        with: { scopes: true },
-        orderBy: [desc(hrPolicies.priority), desc(hrPolicies.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db
-        .select({ total: count() })
-        .from(hrPolicies)
-        .where(where),
+    const rows = await this.db.query.hrPolicies.findMany({
+      where: and(...conditions),
+      with: { scopes: true },
+      orderBy: [desc(hrPolicies.priority), desc(hrPolicies.createdAt), desc(hrPolicies.id)],
+      limit: limit + 1,
+    });
+
+    return buildTupleCursorPage(rows, limit, (row) => [
+      String(row.priority),
+      row.createdAt.toISOString(),
+      String(row.id),
     ]);
-
-    return { data: rows, total: Number(countRows[0]?.total ?? 0), page, limit };
   }
 
   private async policySearchCondition(search: string): Promise<SQL> {

@@ -22,6 +22,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { QuotesService, isSendNotDraft } from "./quotes.service";
+import { QuotesQueryService } from "./quotes-query.service";
 import {
   createSchema,
   exportSchema,
@@ -60,7 +61,10 @@ const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).
 @Controller("quotes")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class QuotesController {
-  constructor(private readonly quotes: QuotesService) {}
+  constructor(
+    private readonly quotes: QuotesService,
+    private readonly quotesQuery: QuotesQueryService,
+  ) {}
 
   @Get()
   @ResponseSchema(quoteListResponseSchema)
@@ -70,7 +74,7 @@ export class QuotesController {
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.quotes.list(u.orgId, filters);
+    return this.quotesQuery.list(u.orgId, filters);
   }
 
   @Post()
@@ -112,7 +116,7 @@ export class QuotesController {
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const quote = await this.quotes.getQuote(u.orgId, quoteId);
+    const quote = await this.quotesQuery.getQuote(u.orgId, quoteId);
     if (!quote) throw new NotFoundException("Quote not found");
     return quote;
   }

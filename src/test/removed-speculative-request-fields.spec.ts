@@ -1,4 +1,4 @@
-import { attachmentSchema } from "../modules/build/core/dto/ticket.schemas";
+import { attachmentSchema } from "../modules/build/core/dto/ticket-subresources.schemas";
 import { sectionQuerySchema } from "../modules/hr/payroll-inputs/dto/payroll-inputs.schemas";
 import { policyPreviewSchema } from "../modules/payroll/setup/dto/setup.schemas";
 import { kbAskSchema } from "../modules/support/core/dto/support-kb.schemas";

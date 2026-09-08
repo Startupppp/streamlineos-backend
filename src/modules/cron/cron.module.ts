@@ -34,9 +34,12 @@ import { CronPlatformController } from "./cron-platform.controller";
 import { CronCalendarController } from "./cron-calendar.controller";
 import { CronGdprController } from "./cron-gdpr.controller";
 import { CronNotificationsController } from "./cron-notifications.controller";
+import { CronNotificationRetentionController } from "./cron-notification-retention.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
 import { CronSupportController } from "./cron-support.controller";
+import { CronKbController } from "./cron-kb.controller";
 import { CronBuildController } from "./cron-build.controller";
+import { CronFinanceController } from "./cron-finance.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
 import { NotificationRetentionService } from "../notifications/notification-retention.service";
@@ -134,9 +137,12 @@ import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.ser
     CronCalendarController,
     CronGdprController,
     CronNotificationsController,
+    CronNotificationRetentionController,
     CronOutboxController,
     CronSupportController,
+    CronKbController,
     CronBuildController,
+    CronFinanceController,
     CronInvitationExpiryController,
     CronStorageController,
   ],

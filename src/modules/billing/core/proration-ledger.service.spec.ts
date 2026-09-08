@@ -4,6 +4,7 @@ import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { BillingModule } from "./billing.module";
 import { ProrationLedgerService, type ProrationChangeInput } from "./proration-ledger.service";
+import { ProrationLedgerReportsService } from "./proration-ledger-reports.service";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 
 let ambientTx: unknown = null;
@@ -93,6 +94,13 @@ async function buildService(catalog: VersionedCatalogService): Promise<Proration
     ],
   }).compile();
   return moduleRef.get(ProrationLedgerService);
+}
+
+async function buildReportsService(): Promise<ProrationLedgerReportsService> {
+  const moduleRef = await Test.createTestingModule({
+    providers: [ProrationLedgerReportsService, { provide: DRIZZLE, useValue: {} }],
+  }).compile();
+  return moduleRef.get(ProrationLedgerReportsService);
 }
 
 function changeInput(overrides: Partial<ProrationChangeInput> = {}): ProrationChangeInput {
@@ -351,7 +359,12 @@ describe("ProrationLedgerService — provider proration is reconciled, not trust
   });
 });
 
-describe("ProrationLedgerService — reading the ledger back", () => {
+describe("ProrationLedgerReportsService — reading the ledger back", () => {
+  it("is a provider of BillingModule", () => {
+    const providers: unknown = Reflect.getMetadata(MODULE_METADATA.PROVIDERS, BillingModule);
+    expect(Array.isArray(providers) ? providers : []).toContain(ProrationLedgerReportsService);
+  });
+
   it("separates charges from credits so a negative adjustment is never netted away silently", async () => {
     const { tx, selectResults } = makeTx();
     selectResults.push([
@@ -360,7 +373,7 @@ describe("ProrationLedgerService — reading the ledger back", () => {
       { id: 3, lineType: "QUANTITY_CHANGE", amountMinor: 40_000, currency: "INR" },
     ]);
     ambientTx = tx;
-    const service = await buildService(makeCatalog({}));
+    const service = await buildReportsService();
 
     const result = await service.listForSubscription("org1", 7);
 
@@ -374,7 +387,7 @@ describe("ProrationLedgerService — reading the ledger back", () => {
     const { tx, selectResults } = makeTx();
     selectResults.push([]);
     ambientTx = tx;
-    const service = await buildService(makeCatalog({}));
+    const service = await buildReportsService();
 
     await expect(service.listUnreconciled("org1", 10_000)).resolves.toEqual([]);
   });
@@ -383,7 +396,7 @@ describe("ProrationLedgerService — reading the ledger back", () => {
     const { tx, selectResults } = makeTx();
     selectResults.push([]);
     ambientTx = tx;
-    const service = await buildService(makeCatalog({}));
+    const service = await buildReportsService();
 
     await expect(service.sumForPeriod("org1", 7, PERIOD_START, PERIOD_END)).resolves.toEqual({
       netMinor: 0,

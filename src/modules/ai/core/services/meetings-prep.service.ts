@@ -15,7 +15,8 @@ import {
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-import { AiConfirmationService, type ProposeResult } from "../../confirmation/ai-confirmation.service";
+import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
+import type { ProposeResult } from "../../confirmation/ai-confirmation.helpers";
 import { ComposioGateway, ComposioToolError } from "../../../integrations/core/composio.gateway";
 import { unwrapAiResult } from "./gateway-result.util";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";

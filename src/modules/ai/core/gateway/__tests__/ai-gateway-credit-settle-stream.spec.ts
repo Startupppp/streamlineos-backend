@@ -1,4 +1,4 @@
-import { settleStream } from '../ai-gateway-credit.helper';
+import { settleStream } from '../ai-gateway-stream-credit';
 import { computeTokenCharge } from '../../billing/ai-model-pricing.constants';
 import type { AiCreditLedger } from '../credit-ledger.interface';
 import type { TrackAiUsageParams } from '../../services/ai-usage.service';

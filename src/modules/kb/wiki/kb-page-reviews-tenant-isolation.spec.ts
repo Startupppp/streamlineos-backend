@@ -1,5 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
-import { KbPageReviewsService } from "./kb-page-reviews.service";
+import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -58,7 +58,7 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
   it("scopes review list query to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
     holdsMock.mockResolvedValue(true);
-    const svc = new KbPageReviewsService(db, audit, dispatch, access);
+    const svc = new KbPageReviewsQueryService(db, access);
 
     await svc.list(makeUser(ATTACKER), undefined, undefined);
 
@@ -71,7 +71,7 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
   it("returns reviews for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
     holdsMock.mockResolvedValue(true);
-    const svc = new KbPageReviewsService(db, audit, dispatch, access);
+    const svc = new KbPageReviewsQueryService(db, access);
 
     const result = await svc.list(makeUser(OWNER), undefined, undefined);
 

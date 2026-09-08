@@ -73,7 +73,7 @@ describe("a sub-resource list whose parent id is outside the caller's org answer
       (db, org) =>
         new HrAutomationEngineService(db, stub<ConstructorParameters<typeof HrAutomationEngineService>[1]>()).listRuns(
           org,
-          { ruleId: 1, page: 1, limit: 20 },
+          { ruleId: 1, limit: 20 },
         ),
     ],
   ];

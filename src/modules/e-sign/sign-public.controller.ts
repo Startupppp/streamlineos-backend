@@ -19,7 +19,7 @@ import {
   type AdoptSignatureInput,
   type DeclineInput,
   type PublicFormESignSubmitInput,
-} from "./dto/e-sign.schemas";
+} from "./dto/e-sign-public.schemas";
 import { resolveClientIpOr } from "../../common/http/client-ip";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {

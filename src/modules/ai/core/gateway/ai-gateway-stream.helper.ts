@@ -9,7 +9,7 @@ import { AiStreamBreaker, type AiStreamBreakerRedis } from "../streaming/ai-stre
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
 import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
 import { AiUsageService } from "../services/ai-usage.service";
-import { settleStream } from "./ai-gateway-credit.helper";
+import { settleStream } from "./ai-gateway-stream-credit";
 import { type AiCreditLedger } from "./credit-ledger.interface";
 import type { AiInvokeActor, AiInvokePrompt } from "./ai-gateway.types";
 import {

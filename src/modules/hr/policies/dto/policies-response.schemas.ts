@@ -35,9 +35,11 @@ export const hrPolicyRowSchema = z.object({
 
 export const hrPolicyListSchema = z.object({
   data: z.array(hrPolicyRowSchema),
-  total: z.number().int(),
-  page: z.number().int(),
-  limit: z.number().int(),
+  pagination: z.object({
+    limit: z.number().int(),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  }),
 });
 
 export const hrPolicySeedResultSchema = z.object({

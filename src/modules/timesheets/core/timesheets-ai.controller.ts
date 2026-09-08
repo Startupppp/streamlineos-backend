@@ -14,6 +14,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { TimesheetsAiService } from "./timesheets-ai.service";
+import { TimesheetsBillingAiService } from "./timesheets-billing-ai.service";
 import {
   describeEntrySchema,
   type DescribeEntryInput,
@@ -56,7 +57,10 @@ const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard, RateLimitGuard)
 @UseInterceptors(AiRequestAbortInterceptor)
 export class TimesheetsAiController {
-  constructor(private readonly ai: TimesheetsAiService) {}
+  constructor(
+    private readonly ai: TimesheetsAiService,
+    private readonly billingAi: TimesheetsBillingAiService,
+  ) {}
 
   @Post("periods/:periodId/ai/summarize")
   @BodylessAction()
@@ -113,7 +117,7 @@ export class TimesheetsAiController {
     @Body() body: BillingNarrativeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ai.billingNarrative(u, body);
+    return this.billingAi.billingNarrative(u, body);
   }
 
   @Post("ai/reports-narrative")
@@ -127,7 +131,7 @@ export class TimesheetsAiController {
     @Body() body: OverviewQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ai.reportsNarrative(u, body);
+    return this.billingAi.reportsNarrative(u, body);
   }
 
   @Post("periods/:periodId/ai/summarize/stream")
@@ -202,7 +206,7 @@ export class TimesheetsAiController {
   ): Promise<void> {
     return this.respondText(req, res, u, "timesheets.billing-narrative",
       "POST /timesheets/ai/billing-narrative/stream",
-      (signal) => this.ai.streamBillingNarrative(u, body, signal));
+      (signal) => this.billingAi.streamBillingNarrative(u, body, signal));
   }
 
   @Post("ai/reports-narrative/stream")
@@ -218,7 +222,7 @@ export class TimesheetsAiController {
   ): Promise<void> {
     return this.respondText(req, res, u, "timesheets.reports-narrative",
       "POST /timesheets/ai/reports-narrative/stream",
-      (signal) => this.ai.streamReportsNarrative(u, body, signal));
+      (signal) => this.billingAi.streamReportsNarrative(u, body, signal));
   }
 
   private respondText(

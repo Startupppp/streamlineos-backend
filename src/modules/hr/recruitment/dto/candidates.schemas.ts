@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
+import { optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const NAME_REGEX = /[a-zA-Z]/;
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
@@ -22,28 +22,17 @@ export const candidateListSchema = z
     source: z.string().optional(),
     jobId: z.coerce.number().int().positive().optional(),
     search: z.string().trim().max(100).optional(),
-    page: optionalPageNumberField(),
-    pageSize: optionalPageSizeField(),
-    /** @deprecated prefer page/pageSize */
+    cursor: z.string().optional(),
     limit: optionalPageSizeField(),
-    /** @deprecated prefer page/pageSize */
-    offset: z.coerce.number().int().min(0).optional(),
   }).strict()
-  .transform((q) => {
-    const pageSize = q.pageSize ?? q.limit ?? 20;
-    const page =
-      q.page ?? (q.offset != null ? Math.floor(q.offset / pageSize) + 1 : 1);
-    return {
-      status: q.status,
-      source: q.source,
-      jobId: q.jobId,
-      search: q.search || undefined,
-      page,
-      pageSize,
-      limit: pageSize,
-      offset: (page - 1) * pageSize,
-    };
-  });
+  .transform((q) => ({
+    status: q.status,
+    source: q.source,
+    jobId: q.jobId,
+    search: q.search || undefined,
+    cursor: q.cursor,
+    limit: q.limit ?? 20,
+  }));
 export type CandidateListInput = z.output<typeof candidateListSchema>;
 
 export const createCandidateSchema = z.object({

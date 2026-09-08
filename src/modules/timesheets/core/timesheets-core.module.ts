@@ -34,6 +34,7 @@ import { TimesheetExceptionsController } from "./exceptions.controller";
 import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import { TimesheetsAiController } from "./timesheets-ai.controller";
 import { TimesheetsAiService } from "./timesheets-ai.service";
+import { TimesheetsBillingAiService } from "./timesheets-billing-ai.service";
 import { AiModule } from "../../ai/core/ai.module";
 
 @Module({
@@ -76,6 +77,7 @@ import { AiModule } from "../../ai/core/ai.module";
     ExceptionsService,
     ExceptionsDetectorService,
     TimesheetsAiService,
+    TimesheetsBillingAiService,
   ],
   exports: [SettingsService, ExceptionsDetectorService, EntriesPeriodService],
 })

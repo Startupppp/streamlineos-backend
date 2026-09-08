@@ -10,7 +10,7 @@ import { SignTokensService } from "./sign-tokens.service";
 import { SignTemplatesService } from "./sign-templates.service";
 import { parseTemplateSnapshot } from "./sign-template-snapshot";
 import { SignSettingsService } from "./sign-settings.service";
-import type { PublicFormESignSubmitInput } from "./dto/e-sign.schemas";
+import type { PublicFormESignSubmitInput } from "./dto/e-sign-public.schemas";
 
 const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
 

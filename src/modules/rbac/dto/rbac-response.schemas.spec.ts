@@ -6,9 +6,11 @@ import {
   discoveryMembersResponseSchema,
   permissionCatalogResponseSchema,
   rolePermissionMutationResponseSchema,
+} from "./rbac-response.schemas";
+import {
   roleTemplateCatalogResponseSchema,
   seededRolesResponseSchema,
-} from "./rbac-response.schemas";
+} from "./roles-response.schemas";
 
 describe("RBAC response contracts", () => {
   it("accepts the permission and template catalogs", () => {

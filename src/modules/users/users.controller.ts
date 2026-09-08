@@ -40,7 +40,6 @@ import {
   userIdentityListResponseSchema,
   userStatsResponseSchema,
   invitationListResponseSchema,
-  orgAuditLogResponseSchema,
   createUserResponseSchema,
   inviteUserResponseSchema,
   bulkInviteResponseSchema,
@@ -51,17 +50,20 @@ import {
   userIdentityResponseSchema,
   userDetailResponseSchema,
   userMutationResponseSchema,
+  sendSigninLinkResponseSchema,
+} from "./dto/users-response.schemas";
+import {
   userSessionsResponseSchema,
   revokeSessionResponseSchema,
   exportUserDataResponseSchema,
   userAuditLogResponseSchema,
+  orgAuditLogResponseSchema,
   userPreferencesResponseSchema,
   updatePreferencesResponseSchema,
   loginHistoryResponseSchema,
   userMembershipResponseSchema,
   updateMembershipResponseSchema,
-  sendSigninLinkResponseSchema,
-} from "./dto/users-response.schemas";
+} from "./dto/user-profile-response.schemas";
 
 const invitationIdParams = z.object({ invitationId: z.string().min(1) }).strict();
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();

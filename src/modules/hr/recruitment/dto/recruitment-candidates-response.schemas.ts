@@ -39,11 +39,12 @@ export const candidateSchema = z.object({
 });
 
 export const candidateListResponseSchema = z.object({
-  items: z.array(candidateSchema),
-  total: z.number().int(),
-  page: z.number().int(),
-  pageSize: z.number().int(),
-  totalPages: z.number().int(),
+  data: z.array(candidateSchema),
+  pagination: z.object({
+    limit: z.number().int(),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  }),
   statusCounts: z.record(z.string(), z.number()),
 });
 

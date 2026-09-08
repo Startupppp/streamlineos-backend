@@ -131,7 +131,7 @@ export class EmployeeAttendanceController {
     return this.attendance.history(
       user.orgId,
       user.userId,
-      query.page,
+      query.cursor,
       query.limit,
     );
   }

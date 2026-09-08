@@ -92,7 +92,7 @@ export class HrPoliciesController {
   @ResponseSchema(hrPolicyListSchema)
   @RequirePermission("hr:policies:manage")
   getSeedStatus(@CurrentUser() u: CurrentUserContext) {
-    return this.service.list(u.orgId, { page: 1, limit: 1 });
+    return this.service.list(u.orgId, { limit: 1 });
   }
 
   @Post("seed-defaults")

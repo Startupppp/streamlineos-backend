@@ -57,7 +57,7 @@ import {
   setRolePermissionsResponseSchema,
   roleMembersResponseSchema,
   roleMemberMutationResponseSchema,
-} from "./dto/rbac-response.schemas";
+} from "./dto/roles-response.schemas";
 import { z } from "zod";
 
 const targetUserIdParams = z.object({ targetUserId: z.string().min(1) }).strict();

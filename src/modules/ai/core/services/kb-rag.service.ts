@@ -5,7 +5,7 @@ import { streamText, type ToolSet } from "ai";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.interface";
 import { AiUsageService } from "./ai-usage.service";
-import { settleStream } from "../gateway/ai-gateway-credit.helper";
+import { settleStream } from "../gateway/ai-gateway-stream-credit";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
 import { resolveChatModel, resolveChatModelId } from "./chat-assistant-model";
 import { logger } from "../../../../common/logger/logger.service";

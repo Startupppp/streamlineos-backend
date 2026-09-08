@@ -31,7 +31,7 @@ import {
   kbSpaceListSchema,
   kbSpaceFullSchema,
   kbSpaceSuccessSchema,
-} from "./dto/kb-wiki-response.schemas";
+} from "./dto/kb-space-response.schemas";
 import { accountableMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 

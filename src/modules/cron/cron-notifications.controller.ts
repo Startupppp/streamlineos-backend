@@ -10,23 +10,17 @@ import { Public } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
-import { CronNotificationRetentionService } from "./cron-notification-retention.service";
-import { NotificationRetentionService } from "../notifications/notification-retention.service";
 import { NotificationOutboxRelayService } from "../notifications/notification-outbox-relay.service";
 import { NotificationDigestService } from "../notifications/notification-digest.service";
 import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
 import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
 import { CronLeaseService } from "./cron-lease.service";
-import { CronNotificationOutboxRetentionService } from "./cron-notification-outbox-retention.service";
 import {
   notificationTimeSweepsResponseSchema,
   notificationDigestFlushResponseSchema,
   notificationOutboxFlushResponseSchema,
-  notificationsRetentionSweepResponseSchema,
-  notificationsRetentionDetachResponseSchema,
   chatReplyRemindersResponseSchema,
   notificationDeliveryFlushResponseSchema,
-  notificationOutboxRetentionSweepResponseSchema,
 } from "./dto/cron-notifications-response.schemas";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
@@ -37,14 +31,11 @@ export class CronNotificationsController {
   constructor(
     private readonly chatReplyReminders: ChatReplyRemindersService,
     private readonly notificationDelivery: CronNotificationDeliveryService,
-    private readonly notificationRetention: CronNotificationRetentionService,
-    private readonly partitionRetention: NotificationRetentionService,
     private readonly outboxRelay: NotificationOutboxRelayService,
     private readonly digest: NotificationDigestService,
     private readonly crmFollowupSweep: CrmFollowupSweepService,
     private readonly timeSweeps: NotificationTimeSweepsService,
     private readonly cronLease: CronLeaseService,
-    private readonly notificationOutboxRetention: CronNotificationOutboxRetentionService,
   ) {}
 
   @Get("notification-time-sweeps")
@@ -87,34 +78,6 @@ export class CronNotificationsController {
   @ResponseSchema(notificationOutboxFlushResponseSchema)
   postNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationOutboxFlush(authorization);
-  }
-
-  @Get("notifications-retention-sweep")
-  @ResponseSchema(notificationsRetentionSweepResponseSchema)
-  getNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionSweep(authorization);
-  }
-
-  @Post("notifications-retention-sweep")
-  @BodylessAction()
-  @HttpCode(200)
-  @ResponseSchema(notificationsRetentionSweepResponseSchema)
-  postNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionSweep(authorization);
-  }
-
-  @Get("notifications-retention-detach")
-  @ResponseSchema(notificationsRetentionDetachResponseSchema)
-  getNotificationsRetentionDetach(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionDetach(authorization);
-  }
-
-  @Post("notifications-retention-detach")
-  @BodylessAction()
-  @HttpCode(200)
-  @ResponseSchema(notificationsRetentionDetachResponseSchema)
-  postNotificationsRetentionDetach(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionDetach(authorization);
   }
 
   @Get("chat-reply-reminders")
@@ -206,44 +169,6 @@ export class CronNotificationsController {
     }
   }
 
-  private async runNotificationsRetentionSweep(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("notifications-retention-sweep", 300, () =>
-        this.notificationRetention.sweep(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "notifications-retention-sweep already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message:
-          `Purged ${result.emailBodiesPurged} email bodies and ${result.deliveryBodiesPurged} delivery bodies; ` +
-          `deleted ${result.emailRecordsDeleted} email rows and ${result.deliveryRecordsDeleted} delivery rows`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification retention sweep cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runNotificationsRetentionDetach(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const result = await this.partitionRetention.sweep();
-      if (result === null)
-        return { success: true, skipped: true, message: "notification-retention-detach already running" };
-      return {
-        success: true,
-        message: `Detached ${result.partitionsDetached} partitions and dropped ${result.partitionsDropped}`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification retention detach cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
   private async runChatReplyReminders(authorization?: string) {
     assertCronSecret(authorization);
     try {
@@ -278,42 +203,6 @@ export class CronNotificationsController {
       };
     } catch (error) {
       logger.error("Notification delivery flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  @Get("notification-outbox-retention-sweep")
-  @ResponseSchema(notificationOutboxRetentionSweepResponseSchema)
-  getNotificationOutboxRetentionSweep(@Headers("authorization") authorization?: string) {
-    return this.runNotificationOutboxRetentionSweep(authorization);
-  }
-
-  @Post("notification-outbox-retention-sweep")
-  @BodylessAction()
-  @HttpCode(200)
-  @ResponseSchema(notificationOutboxRetentionSweepResponseSchema)
-  postNotificationOutboxRetentionSweep(@Headers("authorization") authorization?: string) {
-    return this.runNotificationOutboxRetentionSweep(authorization);
-  }
-
-  private async runNotificationOutboxRetentionSweep(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("notification-outbox-retention-sweep", 1800, () =>
-        this.notificationOutboxRetention.sweep(),
-      );
-      if (!outcome.ran)
-        return { success: true, skipped: true, message: "notification-outbox-retention-sweep already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message:
-          `Notification outbox retention: ${result.rowsDeleted} rows across ${result.organizationsScanned} orgs` +
-          (result.truncated ? " (truncated — rerun)" : ""),
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification outbox retention sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

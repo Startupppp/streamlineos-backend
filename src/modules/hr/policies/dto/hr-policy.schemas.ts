@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const HR_POLICY_TYPES = [
   "leave",
@@ -35,7 +35,7 @@ export const HR_SCOPE_TYPES = [
 ] as const;
 
 export const policiesListQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   type: z.enum(HR_POLICY_TYPES).optional(),
   status: z.enum(HR_POLICY_STATUSES).optional(),

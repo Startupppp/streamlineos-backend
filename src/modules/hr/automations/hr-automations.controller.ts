@@ -90,7 +90,7 @@ export class HrAutomationsController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListRunsInput,
   ) {
-    return this.engine.listRuns(u.orgId, { page: query.page, limit: query.limit });
+    return this.engine.listRuns(u.orgId, { cursor: query.cursor, limit: query.limit });
   }
 
   @Get(":ruleId")
@@ -175,6 +175,6 @@ export class HrAutomationsController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListRunsInput,
   ) {
-    return this.engine.listRuns(u.orgId, { ruleId, page: query.page, limit: query.limit });
+    return this.engine.listRuns(u.orgId, { ruleId, cursor: query.cursor, limit: query.limit });
   }
 }

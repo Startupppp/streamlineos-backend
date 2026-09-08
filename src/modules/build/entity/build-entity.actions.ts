@@ -1,12 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../db/drizzle.types";
 import {
   projectMembers,
   organizationMembers,
-  projects,
   ticketActivityLog,
   tickets,
 } from "../../../db/schema";
@@ -17,23 +16,13 @@ import type {
   EntityReference,
 } from "../../entity-reference/entity-reference.types";
 import { resolveValidTicketStatuses } from "../core/ticket-status.util";
-
-const TICKET_TYPES = ["TASK", "BUG"] as const;
-type TicketType = (typeof TICKET_TYPES)[number];
+import { isProjectMember, text } from "./build-entity-action-helpers";
+import { createTicketFromAction } from "./build-entity-ticket-create";
 
 type TicketActivityAction =
   | "status_changed"
   | "assignee_changed"
   | "due_date_changed";
-
-function isTicketType(value: string): value is TicketType {
-  return TICKET_TYPES.some((ticketType) => ticketType === value);
-}
-
-function text(input: Record<string, unknown>, name: string): string | null {
-  const value = input[name];
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
 
 @Injectable()
 export class BuildEntityActions {
@@ -52,7 +41,7 @@ export class BuildEntityActions {
     if (!Number.isInteger(id) || id <= 0) return { ok: false, reason: "not-found" };
 
     if (reference.type === "project" && actionId === "create-ticket")
-      return this.createTicket(actor, id, input);
+      return createTicketFromAction(this.db, this.audit, actor, id, input);
 
     if (reference.type !== "ticket") return { ok: false, reason: "invalid" };
 
@@ -72,7 +61,7 @@ export class BuildEntityActions {
     });
     if (!ticket?.projectId) return { ok: false, reason: "not-found" };
 
-    const allowed = await this.isProjectMember(actor, ticket.projectId);
+    const allowed = await isProjectMember(this.db, actor, ticket.projectId);
     if (!allowed) return { ok: false, reason: "forbidden" };
 
     if (actionId === "status")
@@ -83,22 +72,6 @@ export class BuildEntityActions {
       return this.setDueDate(actor, ticket.id, ticket.projectId, ticket.dueDate, input);
 
     return { ok: false, reason: "invalid" };
-  }
-
-  private async isProjectMember(
-    actor: EntityActor,
-    projectId: number,
-  ): Promise<boolean> {
-    if (actor.isOrgOwner) return true;
-    const membership = await this.db.query.projectMembers.findFirst({
-      where: and(
-        eq(projectMembers.orgId, actor.orgId),
-        eq(projectMembers.projectId, projectId),
-        eq(projectMembers.membershipId, actor.membershipId ?? -1),
-      ),
-      columns: { projectId: true },
-    });
-    return Boolean(membership);
   }
 
   private async changeStatus(
@@ -241,80 +214,6 @@ export class BuildEntityActions {
     });
 
     return { ok: true, message: `Due date set to ${dueDate}`, data: {} };
-  }
-
-  private async createTicket(
-    actor: EntityActor,
-    projectId: number,
-    input: Record<string, unknown>,
-  ): Promise<EntityActionResult> {
-    const allowed = await this.isProjectMember(actor, projectId);
-    if (!allowed) return { ok: false, reason: "forbidden" };
-
-    const type = text(input, "type");
-    if (!type || !isTicketType(type)) return { ok: false, reason: "invalid" };
-
-    const project = await this.db.query.projects.findFirst({
-      where: and(
-        eq(projects.id, projectId),
-        eq(projects.orgId, actor.orgId),
-        isNull(projects.deletedAt),
-      ),
-      columns: { key: true },
-    });
-    if (!project) return { ok: false, reason: "forbidden" };
-
-    const description = text(input, "description") ?? "";
-    const title = (text(input, "title") ?? description.slice(0, 80)).trim() || "Untitled";
-
-    const created = await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-
-      const [maxRow] = await tx
-        .select({ max: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-        .from(tickets)
-        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, actor.orgId)));
-
-      const [row] = await tx
-        .insert(tickets)
-        .values({
-          orgId: actor.orgId,
-          projectId,
-          ticketNumber: (maxRow?.max ?? 0) + 1,
-          title,
-          description: description || null,
-          type,
-          status: "TODO",
-          priority: "MEDIUM",
-          reporterId: actor.userId,
-        })
-        .returning();
-
-      return row;
-    });
-
-    if (!created) return { ok: false, reason: "invalid" };
-
-    this.audit.log({
-      action: "ticket.created_from_message",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(created.id),
-      targetType: "ticket",
-      metadata: { projectId, type },
-    });
-
-    return {
-      ok: true,
-      message: `Created ${type} ${project.key}-${created.ticketNumber}: ${created.title}`,
-      data: {
-        ticketId: created.id,
-        ticketNumber: created.ticketNumber,
-        projectKey: project.key,
-        title: created.title,
-        status: created.status,
-      },
-    };
   }
 
   private async logActivity(

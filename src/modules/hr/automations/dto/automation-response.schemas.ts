@@ -53,10 +53,9 @@ export const automationRuleDetailSchema = automationRuleRowSchema;
 export const automationRunListSchema = z.object({
   data: z.array(automationRunRowSchema),
   pagination: z.object({
-    page: z.number().int(),
     limit: z.number().int(),
-    total: z.number().int(),
-    totalPages: z.number().int(),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
   }),
 });
 

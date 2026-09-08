@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { TERMINATION_REASONS, TERMINATION_REASON_OTHER, RESIGNATION_REASONS } from "../hr-separation.constants";
 
 const VALID_REASONS: readonly string[] = TERMINATION_REASONS;
@@ -192,7 +192,7 @@ export type ListTerminationsQueryInput = z.infer<typeof listTerminationsQuerySch
 export type AttendanceAnalyticsQuery = z.infer<typeof attendanceAnalyticsQuerySchema>;
 
 export const listResignationsQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   status: z
     .enum([

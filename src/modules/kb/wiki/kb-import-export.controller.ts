@@ -27,7 +27,7 @@ import {
   kbImportJobListSchema,
   kbExportResultSchema,
   kbExportJobListSchema,
-} from "./dto/kb-wiki-response.schemas";
+} from "./dto/kb-space-response.schemas";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();

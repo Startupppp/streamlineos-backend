@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { attendance } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -9,6 +9,13 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveAttendanceScope } from "./attendance-scope";
 import { AttendancePolicyService } from "./attendance-policy.service";
 import { requireOrganizationMembershipId } from "./organization-membership";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
+import {
+  keysetBeforeTuple,
+  keysetInteger,
+  keysetTextValue,
+  keysetTimestamp,
+} from "../../../common/pagination/keyset";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 
@@ -119,32 +126,44 @@ export class AttendanceReadService {
     return this.getAttendanceLogs(u.orgId, userMembershipId, year, month);
   }
 
-  async history(orgId: string, userId: string, page: number, limit: number) {
+  /**
+   * Attendance grows by one row per person per day, so this is the deepest
+   * list in HR and the one an OFFSET hurt most. The sort is three columns —
+   * `date` is not unique per membership (no unique index backs it, only
+   * `idx_attendance_org_user_membership_date`), so `created_at` breaks the day
+   * tie and the serial id breaks the rest. All three are in the cursor; a
+   * two-column one would skip a row every time two records share a day and a
+   * millisecond.
+   */
+  async history(orgId: string, userId: string, cursor: string | undefined, limit: number) {
     const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
-    const where = and(
+    const conditions = [
       eq(attendance.orgId, orgId),
       eq(attendance.userMembershipId, userMembershipId),
-    );
-    const offset = (page - 1) * limit;
-    const [data, totalRows] = await Promise.all([
-      this.db.query.attendance.findMany({
-        where,
-        orderBy: [desc(attendance.date), desc(attendance.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db.select({ total: count() }).from(attendance).where(where),
+    ];
+
+    const position = decodeTupleCursor(cursor, 3);
+    if (position) {
+      conditions.push(
+        keysetBeforeTuple([
+          { column: attendance.date, value: keysetTextValue(position[0] ?? "") },
+          { column: attendance.createdAt, value: keysetTimestamp(position[1] ?? "") },
+          { column: attendance.id, value: keysetInteger(position[2] ?? "") },
+        ]),
+      );
+    }
+
+    const rows = await this.db.query.attendance.findMany({
+      where: and(...conditions),
+      orderBy: [desc(attendance.date), desc(attendance.createdAt), desc(attendance.id)],
+      limit: limit + 1,
+    });
+
+    return buildTupleCursorPage(rows, limit, (row) => [
+      row.date,
+      row.createdAt.toISOString(),
+      String(row.id),
     ]);
-    const total = totalRows[0]?.total ?? 0;
-    return {
-      data,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
   }
 
   private getAttendanceLogs(

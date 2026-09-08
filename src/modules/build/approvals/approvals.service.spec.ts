@@ -2,6 +2,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ApprovalsService } from "./approvals.service";
+import { ApprovalsReadService } from "./approvals-read.service";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { ChatChannelsService } from "../../chat/chat-channels.service";
@@ -219,7 +220,7 @@ describe("ApprovalsService.decideApproval", () => {
   });
 });
 
-describe("ApprovalsService — project membership gate (BOLA fix)", () => {
+describe("ApprovalsReadService — project membership gate (BOLA fix)", () => {
   const ORG = "org-1";
   const gateAccess = {
     holds: jest.fn(),
@@ -291,13 +292,13 @@ describe("ApprovalsService — project membership gate (BOLA fix)", () => {
 
   it("rejects non-member with ForbiddenException on listApprovals", async () => {
     const db = makeNonMemberDb();
-    const svc = new ApprovalsService(db, mockAudit, gateAccess, mockChatChannels, mockChatMessages);
+    const svc = new ApprovalsReadService(db, gateAccess);
     await expect(svc.listApprovals(gateU, 1, {})).rejects.toThrow(ForbiddenException);
   });
 
   it("allows direct project member on listApprovals", async () => {
     const db = makeMemberDb();
-    const svc = new ApprovalsService(db, mockAudit, gateAccess, mockChatChannels, mockChatMessages);
+    const svc = new ApprovalsReadService(db, gateAccess);
     await expect(svc.listApprovals(gateU, 1, {})).resolves.toBeDefined();
   });
 });

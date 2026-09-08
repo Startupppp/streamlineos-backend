@@ -19,6 +19,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { ApprovalsService } from "./approvals.service";
+import { ApprovalsReadService } from "./approvals-read.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   createApprovalSchema,
@@ -42,7 +43,7 @@ const projectAndApprovalIdParams = z.object({ projectId: z.coerce.number().int()
 @Controller("build/approvals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ApprovalsInboxController {
-  constructor(private readonly svc: ApprovalsService) {}
+  constructor(private readonly reads: ApprovalsReadService) {}
 
   @Get("inbox")
   @RequirePermission("build:approvals:view")
@@ -50,7 +51,7 @@ export class ApprovalsInboxController {
   getInbox(@CurrentUser() u: CurrentUserContext) {
     const mid = actingMembershipId(u.principal);
     if (mid === null) return Promise.resolve([]);
-    return this.svc.getInbox(u.orgId, mid);
+    return this.reads.getInbox(u.orgId, mid);
   }
 }
 
@@ -58,7 +59,10 @@ export class ApprovalsInboxController {
 @Controller("build/:projectId/approvals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class BuildApprovalsController {
-  constructor(private readonly svc: ApprovalsService) {}
+  constructor(
+    private readonly svc: ApprovalsService,
+    private readonly reads: ApprovalsReadService,
+  ) {}
 
   @Get()
   @RequirePermission("build:approvals:view")
@@ -69,7 +73,7 @@ export class BuildApprovalsController {
     @Query() query: ListApprovalsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listApprovals(u, projectId, query);
+    return this.reads.listApprovals(u, projectId, query);
   }
 
   @Get(":approvalId")
@@ -81,7 +85,7 @@ export class BuildApprovalsController {
     @Param("approvalId", ParseIntPipe) approvalId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getApproval(u.orgId, projectId, approvalId);
+    return this.reads.getApproval(u.orgId, projectId, approvalId);
   }
 
   @Post()

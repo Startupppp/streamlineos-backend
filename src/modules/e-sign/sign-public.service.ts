@@ -22,7 +22,7 @@ import type {
   AdoptSignatureInput,
   DeclineInput,
   PublicFormESignSubmitInput,
-} from "./dto/e-sign.schemas";
+} from "./dto/e-sign-public.schemas";
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 const MAX_AUTH_ATTEMPTS = 5;

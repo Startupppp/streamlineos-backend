@@ -145,7 +145,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
       const { db, findMany } = makeDb([]);
       const mockEmployment = {} as unknown as EmploymentFactsService;
       const svc = new ExitService(db, mockEmployment);
-      const result = await svc.list(ATTACKER, "user-1", true, { page: 1, limit: 10 });
+      const result = await svc.list(ATTACKER, "user-1", true, { limit: 10 });
       expect(result.data).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -156,7 +156,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const mockEmployment = {} as unknown as EmploymentFactsService;
       const svc = new ExitService(db, mockEmployment);
-      const result = await svc.list(OWNER, "user-1", true, { page: 1, limit: 10 });
+      const result = await svc.list(OWNER, "user-1", true, { limit: 10 });
       expect(result.data).toHaveLength(1);
     });
   });

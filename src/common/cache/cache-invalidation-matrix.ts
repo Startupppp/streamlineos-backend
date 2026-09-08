@@ -2,6 +2,7 @@ export type { CacheNamespaceEntry } from "./cache-invalidation-types";
 import type { CacheNamespaceEntry } from "./cache-invalidation-types";
 import { FINANCE_CACHE_ENTRIES } from "./cache-invalidation-finance";
 import { INVENTORY_CACHE_ENTRIES } from "./cache-invalidation-inventory";
+import { INVENTORY_FULFILLMENT_CACHE_ENTRIES } from "./cache-invalidation-inventory-fulfillment";
 import { RBAC_AUTH_CACHE_ENTRIES } from "./cache-invalidation-rbac-auth";
 import { CRM_CACHE_ENTRIES } from "./cache-invalidation-crm";
 import { HR_CACHE_ENTRIES } from "./cache-invalidation-hr";
@@ -9,6 +10,7 @@ import { HR_CACHE_ENTRIES } from "./cache-invalidation-hr";
 export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   ...FINANCE_CACHE_ENTRIES,
   ...INVENTORY_CACHE_ENTRIES,
+  ...INVENTORY_FULFILLMENT_CACHE_ENTRIES,
   ...RBAC_AUTH_CACHE_ENTRIES,
   ...CRM_CACHE_ENTRIES,
   ...HR_CACHE_ENTRIES,

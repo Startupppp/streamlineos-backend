@@ -105,10 +105,7 @@ export class HrHubService {
         this.probation.listDueForReview(user.orgId, { limit: 20 }),
       ),
       this.capture(capabilities.canExit, () =>
-        this.exit.list(user.orgId, user.userId, isExitAdmin, {
-          page: 1,
-          limit: 5,
-        }),
+        this.exit.hubDigest(user.orgId, user.userId, isExitAdmin),
       ),
       this.capture(capabilities.canDocuments, async () => {
         const scope = await resolveDocumentsScope(this.access, user, permissions);

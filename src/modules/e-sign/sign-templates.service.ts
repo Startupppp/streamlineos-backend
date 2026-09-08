@@ -12,8 +12,8 @@ import type {
   CreateTemplateInput,
   UpdateTemplateInput,
   CreateEnvelopeFromTemplateInput,
-  PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
+import type { PublishPublicFormInput } from "./dto/e-sign-public.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
 @Injectable()

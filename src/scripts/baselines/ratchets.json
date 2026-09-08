@@ -524,10 +524,10 @@
         "reason": "CLAUDE.md §7's 300-line target. Policy, not debt."
       },
       "BASELINE": {
-        "value": 392,
+        "value": 390,
         "direction": "ratchet",
         "owner": "release owner",
-        "reason": "Files over 300 lines. Was RAISED ONCE, 392 -> 394 by c3f0b73db -- the one upward move in either repository this release has not justified away. LOWERED BACK to 392 and banked 2026-09-03 by v2 ticket 30 as ticket 37's splits landed. RE-MEASURED at head: 388 of 3,646 production files, four BELOW the ratchet, gate exit 0. The stale note here read 'RED at head: 406 vs 394'; that is no longer true."
+        "reason": "Files over 300 lines. Was RAISED ONCE, 392 -> 394 by c3f0b73db -- the one upward move in either repository this release has not justified away. LOWERED BACK to 392 and banked 2026-09-03 by v2 ticket 30 as ticket 37's splits landed. LOWERED to 390 on 2026-09-08: the gate had drifted RED at 414, and 26 files were split along a responsibility seam (cron controllers by product domain, DTO contract files by owning controller, services by read/write) taking the count to 390 of 4,086 production files. Two of the 414 crossed 300 during that window from work outside this change (hr/core/person-employment-sync.service.ts, hr/time/attendance-read.service.ts) and are counted in the 390."
       },
       "MIN_FILES": {
         "value": 50,

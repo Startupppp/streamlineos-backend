@@ -272,8 +272,8 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
         db, cache as never, {} as never, {} as never,
         {} as never, {} as never, {} as never, {} as never,
       );
-      const result = await svc.list(ATTACKER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined, source: undefined, jobId: undefined, search: undefined });
-      expect(result.items).toHaveLength(0);
+      const result = await svc.list(ATTACKER, { limit: 10, cursor: undefined, status: undefined, source: undefined, jobId: undefined, search: undefined });
+      expect(result.data).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
@@ -286,8 +286,8 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
         db, cache as never, {} as never, {} as never,
         {} as never, {} as never, {} as never, {} as never,
       );
-      const result = await svc.list(OWNER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined, source: undefined, jobId: undefined, search: undefined });
-      expect(result.items).toHaveLength(1);
+      const result = await svc.list(OWNER, { limit: 10, cursor: undefined, status: undefined, source: undefined, jobId: undefined, search: undefined });
+      expect(result.data).toHaveLength(1);
     });
   });
 

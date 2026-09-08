@@ -6,7 +6,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { TimesheetsAiController } from "./timesheets-ai.controller";
-import { TimesheetsAiService } from "./timesheets-ai.service";
+import { TimesheetsBillingAiService } from "./timesheets-billing-ai.service";
 import { PeriodsService } from "./periods.service";
 import { BillingService } from "./billing.service";
 import { ReportsService } from "./reports.service";
@@ -51,7 +51,7 @@ describe("timesheets prose streams", () => {
       return { totalHours: 4, byDay: [], byProject: [] };
     });
     const module = await Test.createTestingModule({
-      providers: [TimesheetsAiService,
+      providers: [TimesheetsBillingAiService,
         { provide: DRIZZLE, useValue: {} },
         { provide: AiGatewayService, useValue: gateway },
         { provide: PeriodsService, useValue: {} },
@@ -60,7 +60,7 @@ describe("timesheets prose streams", () => {
       ],
     }).compile();
     try {
-      const service = module.get(TimesheetsAiService);
+      const service = module.get(TimesheetsBillingAiService);
       const signal = new AbortController().signal;
       await service.streamReportsNarrative(actor, {}, signal);
       expect(getOverview).toHaveBeenCalledWith(actor, {});

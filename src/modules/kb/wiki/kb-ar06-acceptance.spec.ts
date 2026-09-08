@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 import { KbPageReviewsService, reviewerCanSeeAllReviews } from "./kb-page-reviews.service";
+import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -175,7 +176,7 @@ describe("AR-06 Criterion 3: listDue pagination and scope", () => {
       }),
     } as unknown as Db;
 
-    const svc = new KbPageReviewsService(db, audit, dispatch, makeAccessAllow());
+    const svc = new KbPageReviewsQueryService(db, makeAccessAllow());
     const cursor = { sortValue: new Date("2025-12-31T00:00:00Z"), id: "50" };
 
     const result = await svc.listDue(makeUser(ORG), cursor);

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Ratchet gate: count of backend production TypeScript files over 300 lines
- * must not increase beyond the baseline, first set on 2026-08-31 and lowered
- * to 392 on 2026-09-03 by splitting fourteen files along a responsibility seam.
- * The baseline may only ever move DOWN.
+ * must not increase beyond the baseline, first set on 2026-08-31, lowered to
+ * 392 on 2026-09-03 and to 390 on 2026-09-08, each time by splitting files
+ * along a responsibility seam. The baseline may only ever move DOWN.
  *
  * Scans: src/**\/*.ts excluding *.spec.ts, *.e2e-spec.ts, *.d.ts (same scope as check-file-sizes.mjs).
  * Passes when actual count <= BASELINE. Fails when it increases.
@@ -19,7 +19,7 @@ import { join, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const LIMIT = 300;
-const BASELINE = 392;
+const BASELINE = 390;
 const MIN_FILES = 50;
 
 function resolvePath(rel) {

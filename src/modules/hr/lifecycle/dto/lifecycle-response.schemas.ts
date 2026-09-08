@@ -94,10 +94,9 @@ export const resignationListItemSchema = resignationSchema.extend({
 export const resignationListSchema = z.object({
   data: z.array(resignationListItemSchema),
   pagination: z.object({
-    page: z.number().int(),
     limit: z.number().int(),
-    total: z.number().int(),
-    totalPages: z.number().int(),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
   }),
 });
 

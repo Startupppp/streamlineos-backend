@@ -38,7 +38,7 @@ export const selfAttendanceLogsQuerySchema = attendanceLogsQuerySchema.omit({
 }).strict();
 
 export const selfAttendanceHistoryQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
 }).strict();
 

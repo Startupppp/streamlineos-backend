@@ -18,6 +18,8 @@ import { HrWebhooksService } from "./hr-webhooks.service";
 import { evaluateNormalizedCondition, evaluateNormalizedConditions, type NormalizedCondition } from "../../automation/shared-condition-evaluator";
 import { boundHrReadLimit } from "../hr-read-limits";
 import { buildListResponse } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 const MAX_DEPTH = 3;
@@ -315,30 +317,24 @@ export class HrAutomationEngineService {
       if (!rule) throw new NotFoundException("Automation rule not found");
     }
     const limit = Math.min(params.limit, 100);
-    const offset = (params.page - 1) * limit;
-    const where = ruleId
-      ? and(eq(hrAutomationRuns.orgId, orgId), eq(hrAutomationRuns.ruleId, ruleId))
-      : eq(hrAutomationRuns.orgId, orgId);
+    const conditions = [eq(hrAutomationRuns.orgId, orgId)];
+    if (ruleId !== undefined) conditions.push(eq(hrAutomationRuns.ruleId, ruleId));
 
-    const [data, countRows] = await Promise.all([
-      this.db.query.hrAutomationRuns.findMany({
-        where,
-        orderBy: [desc(hrAutomationRuns.createdAt)],
-        limit,
-        offset,
-      }),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(hrAutomationRuns)
-        .where(where)
-        .limit(1),
-    ]);
+    const position = decodeCursor(params.cursor);
+    if (position)
+      conditions.push(keysetBeforeId(hrAutomationRuns.createdAt, hrAutomationRuns.id, position));
 
-    const total = countRows[0]?.total ?? 0;
+    const rows = await this.db.query.hrAutomationRuns.findMany({
+      where: and(...conditions),
+      orderBy: [desc(hrAutomationRuns.createdAt), desc(hrAutomationRuns.id)],
+      limit: limit + 1,
+    });
 
-    return {
-      data,
-      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
+
+    return { data: page.data, pagination: page.pagination };
   }
 }

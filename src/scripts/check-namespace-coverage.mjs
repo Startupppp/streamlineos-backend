@@ -438,6 +438,7 @@ function runFullScan() {
     join(BACKEND_SRC, "common", "cache", "cache-invalidation-crm.ts"),
     join(BACKEND_SRC, "common", "cache", "cache-invalidation-finance.ts"),
     join(BACKEND_SRC, "common", "cache", "cache-invalidation-inventory.ts"),
+    join(BACKEND_SRC, "common", "cache", "cache-invalidation-inventory-fulfillment.ts"),
     join(BACKEND_SRC, "common", "cache", "cache-invalidation-rbac-auth.ts"),
   ];
   const ttlOnlyExceptions = new Set();

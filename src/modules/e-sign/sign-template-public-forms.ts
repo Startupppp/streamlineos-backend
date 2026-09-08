@@ -5,7 +5,7 @@ import type { Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { isUniqueViolationOn } from "../../common/db/postgres-error";
-import type { PublishPublicFormInput } from "./dto/e-sign.schemas";
+import type { PublishPublicFormInput } from "./dto/e-sign-public.schemas";
 
 export interface PublicFormPublication {
   orgId: string;

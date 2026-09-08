@@ -39,7 +39,7 @@ import {
   groupMutationResponseSchema,
   groupMembersResponseSchema,
   groupAssignedRolesResponseSchema,
-} from "./dto/rbac-response.schemas";
+} from "./dto/principal-groups-response.schemas";
 
 const groupIdParams = z.object({ groupId: z.string().min(1) }).strict();
 const groupIdmembershipIdParams = z.object({ groupId: z.string().min(1), membershipId: z.string().min(1) }).strict();

@@ -16,6 +16,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
+import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 import {
   approveReviewSchema,
   createPageReviewSchema,
@@ -42,7 +43,10 @@ const reviewIdParams = z.object({ reviewId: z.coerce.number().int().positive() }
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class KbPageReviewsController {
-  constructor(private readonly reviews: KbPageReviewsService) {}
+  constructor(
+    private readonly reviews: KbPageReviewsService,
+    private readonly reviewsQuery: KbPageReviewsQueryService,
+  ) {}
 
   @Get("page-reviews")
   @RequirePermission("kb:reviews:view")
@@ -52,7 +56,7 @@ export class KbPageReviewsController {
     @Query() query: ListReviewsQuery,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.reviews.list(u, query.status, query.type);
+    return this.reviewsQuery.list(u, query.status, query.type);
   }
 
   @Get("page-reviews/due")
@@ -67,7 +71,7 @@ export class KbPageReviewsController {
       query.afterDueAt && query.afterId
         ? { sortValue: query.afterDueAt, id: query.afterId }
         : undefined;
-    return this.reviews.listDue(u, cursor);
+    return this.reviewsQuery.listDue(u, cursor);
   }
 
   @Post("pages/:pageId/reviews")

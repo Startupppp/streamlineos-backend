@@ -22,13 +22,15 @@ import {
   updateTemplateSchema,
   saveAsTemplateSchema,
   createEnvelopeFromTemplateSchema,
-  publishPublicFormSchema,
   type CreateTemplateInput,
   type UpdateTemplateInput,
   type SaveAsTemplateInput,
   type CreateEnvelopeFromTemplateInput,
-  type PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
+import {
+  publishPublicFormSchema,
+  type PublishPublicFormInput,
+} from "./dto/e-sign-public.schemas";
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();

@@ -12,7 +12,7 @@ import {
   kbSpaceMemberListSchema,
   kbSpaceMemberSchema,
   kbSpaceMemberSuccessSchema,
-} from "./dto/kb-wiki-response.schemas";
+} from "./dto/kb-space-response.schemas";
 import { z } from "zod";
 
 const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();

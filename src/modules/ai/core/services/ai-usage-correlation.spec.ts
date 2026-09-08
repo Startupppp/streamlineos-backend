@@ -6,7 +6,7 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
 
 import { randomUUID } from "node:crypto";
 import { runWithObservabilityContext } from "../../../../common/observability";
-import { settleStream } from "../gateway/ai-gateway-credit.helper";
+import { settleStream } from "../gateway/ai-gateway-stream-credit";
 import { AiUsageService } from "./ai-usage.service";
 import type { AiCreditLedger } from "../gateway/credit-ledger.interface";
 

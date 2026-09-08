@@ -58,7 +58,7 @@ describe("HrPoliciesService — cross-tenant isolation", () => {
     const mockEvaluation = { evaluate: jest.fn() };
     const mockConflicts = { detectConflicts: jest.fn().mockResolvedValue({ conflicts: [] }) };
     const svc = new HrPoliciesService(db, mockCache as never, mockEvaluation as never, mockConflicts as never);
-    await svc.list(ATTACKER, { page: 1, limit: 10 });
+    await svc.list(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -68,7 +68,7 @@ describe("HrPoliciesService — cross-tenant isolation", () => {
     const mockEvaluation = { evaluate: jest.fn() };
     const mockConflicts = { detectConflicts: jest.fn().mockResolvedValue({ conflicts: [] }) };
     const svc = new HrPoliciesService(db, mockCache as never, mockEvaluation as never, mockConflicts as never);
-    await svc.list(OWNER, { page: 1, limit: 10 });
+    await svc.list(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
