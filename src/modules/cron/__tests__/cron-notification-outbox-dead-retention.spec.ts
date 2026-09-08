@@ -65,7 +65,12 @@ describe("notification outbox DEAD retention", () => {
     expect(sql).toContain("state IN ('PROCESSED', 'DEAD')");
     expect(sql).toMatch(/CASE WHEN state = 'DEAD' THEN/);
 
-    const dates = params.filter((p): p is Date => p instanceof Date);
+    const dates = params
+      .filter(
+        (p): p is string =>
+          typeof p === "string" && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(p),
+      )
+      .map((iso) => new Date(iso));
     expect(dates).toHaveLength(2);
     const [deadCutoff, processedCutoff] = [...dates].sort(
       (a, b) => a.getTime() - b.getTime(),

@@ -24,13 +24,20 @@ function makeMockDb(orgIds: string[]): Db {
   interface SelectChain {
     from: jest.Mock<SelectChain, []>;
     where: jest.Mock<SelectChain, [SQL]>;
-    orderBy: jest.Mock<Promise<{ id: string }[]>, []>;
+    orderBy: jest.Mock<SelectChain, []>;
+    limit: jest.Mock<Promise<{ id: string }[]>, [number]>;
   }
   const rows = orgIds.map((id) => ({ id }));
+  let drained = 0;
   const chain: SelectChain = {
     from: jest.fn((): SelectChain => chain),
     where: jest.fn((_condition: SQL): SelectChain => chain),
-    orderBy: jest.fn(() => Promise.resolve(rows)),
+    orderBy: jest.fn((): SelectChain => chain),
+    limit: jest.fn((pageSize: number) => {
+      const page = rows.slice(drained, drained + pageSize);
+      drained += page.length;
+      return Promise.resolve(page);
+    }),
   };
   const db = {
     select: jest.fn(() => chain),

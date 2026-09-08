@@ -37,16 +37,26 @@ function makeMockDb(orgIds: string[]): { db: Db; capture: ChainCapture; execute:
   interface SelectChain {
     from: jest.Mock<SelectChain, []>;
     where: jest.Mock<SelectChain, [SQL]>;
-    orderBy: jest.Mock<Promise<{ id: string }[]>, []>;
+    orderBy: jest.Mock<SelectChain, []>;
+    limit: jest.Mock<Promise<{ id: string }[]>, [number]>;
   }
 
+  // The enumeration is a keyset drain, so the double has to serve successive pages and
+  // then a short one — a mock that answers the whole set to every call would let a
+  // broken cursor pass, and one that ends at .orderBy() does not model the query at all.
+  let drained = 0;
   const chain: SelectChain = {
     from: jest.fn((): SelectChain => chain),
     where: jest.fn((condition: SQL): SelectChain => {
       capture.where = condition;
       return chain;
     }),
-    orderBy: jest.fn(() => Promise.resolve(rows)),
+    orderBy: jest.fn((): SelectChain => chain),
+    limit: jest.fn((pageSize: number) => {
+      const page = rows.slice(drained, drained + pageSize);
+      drained += page.length;
+      return Promise.resolve(page);
+    }),
   };
 
   const db = {
@@ -183,6 +193,38 @@ describe("forEachOrg — rotation makes the sweep resumable", () => {
     );
 
     expect(seen).toEqual(["org-a", "org-b", "org-c"]);
+  });
+});
+
+// The enumeration became a keyset drain (ORG_ENUM_PAGE = 500) and nothing exercised it:
+// every fixture in this file is a handful of organisations, so one page answered the whole
+// set and a drain that stopped after its first page would have passed. These fixtures
+// straddle the page boundary in both directions.
+describe("forEachOrg — the enumeration drains every page, not just the first", () => {
+  const pageSize = 500;
+
+  it("visits organizations past the first page", async () => {
+    const orgIds = Array.from({ length: pageSize + 137 }, (_, i) => `org-${String(i).padStart(4, "0")}`);
+    const { db } = makeMockDb(orgIds);
+    const seen: string[] = [];
+
+    const result = await forEachOrg(db, "test-sweep", async (_tx, orgId) => { seen.push(orgId); });
+
+    expect(seen).toHaveLength(orgIds.length);
+    expect(seen[0]).toBe(orgIds[0]);
+    expect(seen[seen.length - 1]).toBe(orgIds[orgIds.length - 1]);
+    expect(result.organizations).toBe(orgIds.length);
+  });
+
+  it("asks for one more page when the last one came back exactly full", async () => {
+    const orgIds = Array.from({ length: pageSize }, (_, i) => `org-${String(i).padStart(4, "0")}`);
+    const { db } = makeMockDb(orgIds);
+    const seen: string[] = [];
+
+    await forEachOrg(db, "test-sweep", async (_tx, orgId) => { seen.push(orgId); });
+
+    expect(seen).toHaveLength(pageSize);
+    expect(new Set(seen).size).toBe(pageSize);
   });
 });
 

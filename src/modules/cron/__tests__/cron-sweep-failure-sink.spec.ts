@@ -13,7 +13,8 @@ const ORG_COUNT = 250;
 interface SelectChain {
   from: jest.Mock<SelectChain, []>;
   where: jest.Mock<SelectChain, [unknown]>;
-  orderBy: jest.Mock<Promise<{ id: string }[]>, []>;
+  orderBy: jest.Mock<SelectChain, []>;
+  limit: jest.Mock<Promise<{ id: string }[]>, [number]>;
 }
 
 function makeMockDb(orgIds: string[]): Db {
@@ -21,7 +22,8 @@ function makeMockDb(orgIds: string[]): Db {
   const chain: SelectChain = {
     from: jest.fn((): SelectChain => chain),
     where: jest.fn((_condition: unknown): SelectChain => chain),
-    orderBy: jest.fn(() => Promise.resolve(rows)),
+    orderBy: jest.fn((): SelectChain => chain),
+    limit: jest.fn((pageSize: number) => Promise.resolve(rows.slice(0, pageSize))),
   };
   const db = {
     select: jest.fn(() => chain),

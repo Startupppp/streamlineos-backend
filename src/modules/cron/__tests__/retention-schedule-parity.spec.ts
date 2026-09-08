@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { RETENTION_JOBS, UNSCHEDULED_PURGE_JOBS } from "../retention-schedule";
 
@@ -10,15 +10,14 @@ function cron(file: string): string {
   return readFileSync(resolve(CRON_DIR, file), "utf8");
 }
 
-const CONTROLLERS = [
-  "cron-hr.controller.ts",
-  "cron-platform.controller.ts",
-  "cron-notifications.controller.ts",
-  "cron-outbox.controller.ts",
-  "cron-support.controller.ts",
-  "cron-build.controller.ts",
-  "cron-gdpr.controller.ts",
-].map(cron);
+// Enumerated from the directory, never hand-listed. The hand-written list named seven
+// files and missed cron-kb.controller.ts (4 leased retention routes) and
+// cron-notification-retention.controller.ts (2), so the parity check ran over 10 of the
+// 16 routes that exist and its floor was calibrated to the truncated number — the exact
+// drift this file was written to catch, in the file that catches it.
+const CONTROLLERS = readdirSync(CRON_DIR)
+  .filter((file) => file.endsWith(".controller.ts"))
+  .map(cron);
 
 const ALERT_SCRIPT = readFileSync(
   resolve(SCRIPTS_DIR, "alert-retention-dead-man.mjs"),
@@ -42,7 +41,7 @@ describe("retention schedule — the declaration is the source of truth", () => 
         if (/retention|purge|prune/.test(key)) leased.add(key);
       }
 
-    expect(leased.size).toBeGreaterThanOrEqual(11);
+    expect(leased.size).toBeGreaterThanOrEqual(16);
     const accounted = new Set([
       ...RETENTION_JOBS.map((j) => j.jobKey),
       ...UNSCHEDULED_PURGE_JOBS.map((j) => j.jobKey),
