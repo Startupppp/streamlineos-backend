@@ -32,35 +32,159 @@ const forbiddenAccess = withAccessResolution({
   moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
 });
 
-const mockTemplate = { id: 1, key: "INDIAN_STANDARD", name: "Indian Standard", category: "EMPLOYEE", isRecommended: true };
-const mockPolicy = { id: 1, orgId: "org_1", country: "IN", currency: "INR", status: "DRAFT" };
-const mockComponent = { id: 1, orgId: "org_1", code: "BASIC", name: "Basic", type: "EARNING" };
-const mockPreview = { lines: [], totals: { gross: "0.00", deductions: "0.00", net: "0.00", employerContributions: "0.00" } };
+const mockTemplate = {
+  id: 1,
+  orgId: null,
+  key: "INDIAN_STANDARD",
+  name: "Indian Standard",
+  description: "Standard Indian payroll template",
+  bestFor: "Small businesses",
+  complexity: "SIMPLE",
+  badge: null,
+  category: "INDIAN_STANDARD" as const,
+  defaultToggles: {},
+  defaultComponents: [],
+  isSystem: true,
+  isRecommended: true,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
+const mockPolicy = {
+  id: 1,
+  orgId: "org_1",
+  status: "DRAFT" as const,
+  country: "IN",
+  state: null,
+  legalEntityName: null,
+  currency: "INR",
+  payFrequency: "MONTHLY" as const,
+  payDay: 1,
+  employeeCount: null,
+  startMonth: "2026-01",
+  activeVersionId: null,
+  createdBy: null,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
+const mockComponent = {
+  id: 1,
+  orgId: "org_1",
+  code: "BASIC",
+  name: "Basic",
+  type: "EARNING" as const,
+  calcMethod: "FIXED" as const,
+  amount: "0.00",
+  percent: null,
+  formula: null,
+  taxable: true,
+  showOnPayslip: true,
+  includeInCtc: true,
+  isStatutory: false,
+  statutoryKey: null,
+  sortOrder: 1,
+  isActive: true,
+  effectiveFrom: null,
+  effectiveTo: null,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
+const mockToggles = {
+  pf: false,
+  esi: false,
+  professionalTax: false,
+  tds: false,
+  gratuity: false,
+  lwf: false,
+  lopFromAttendance: false,
+  overtime: false,
+  timesheets: false,
+  leaveSync: false,
+  expenseSync: false,
+  salesIncentives: false,
+  manualAdjustments: false,
+  reimbursements: false,
+  bonuses: false,
+  incentives: false,
+  loans: false,
+  contractorPayments: false,
+  multiCurrency: false,
+  employeeDeclarations: false,
+  payrollVarianceWarnings: false,
+  requireLockedPayrollInputs: false,
+  countryComplianceChecklist: false,
+  globalPaymentReport: false,
+  bankPayoutFile: false,
+  payslipPublishing: false,
+  emailPayslips: false,
+  approvalWorkflow: false,
+  managerApproval: false,
+  financeApproval: false,
+  lockAfterApproval: false,
+  essShowSalaryStructure: false,
+  essAllowBankUpdate: false,
+  essAllowLoanRequests: false,
+  essAllowTaxDeclarations: false,
+  essAllowReimbursements: false,
+};
+const mockTemplatePreview = {
+  template: { id: 1, key: "INDIAN_STANDARD", name: "Indian Standard" },
+  effectiveToggles: mockToggles,
+  annualCtc: 1200000,
+  monthlyCtc: 100000,
+  components: [],
+  totals: {
+    grossEarnings: "100000.00",
+    totalDeductions: "0.00",
+    employerContributions: "0.00",
+    netTakeHome: "100000.00",
+  },
+};
+const mockPolicyPreview = {
+  toggles: mockToggles,
+  components: [],
+  approvalChain: [],
+  calendarPlan: [],
+  essOptions: {
+    showSalaryStructure: false,
+    allowBankUpdate: false,
+    allowLoanRequests: false,
+    allowTaxDeclarations: false,
+    allowReimbursements: false,
+  },
+  statutoryPack: {
+    country: "IN",
+    countryName: "India",
+    currency: "INR",
+    taxRegimeApplicable: true,
+    items: [],
+    complianceChecklist: [],
+  },
+};
 
 const mockTemplatesService = {
-  list: jest.fn().mockResolvedValue({ items: [mockTemplate], total: 1 }),
+  list: jest.fn().mockResolvedValue({ items: [mockTemplate], pagination: { limit: 25, hasMore: false, nextCursor: null } }),
   getById: jest.fn().mockResolvedValue(mockTemplate),
-  preview: jest.fn().mockResolvedValue(mockPreview),
-  duplicate: jest.fn().mockResolvedValue({ id: 2, name: "Copy" }),
+  preview: jest.fn().mockResolvedValue(mockTemplatePreview),
+  duplicate: jest.fn().mockResolvedValue({ ...mockTemplate, id: 2, name: "Copy" }),
   deleteCustomTemplate: jest.fn().mockResolvedValue({ success: true }),
 };
 
 const mockPolicyQueryService = {
-  getCurrent: jest.fn().mockResolvedValue(mockPolicy),
-  toggleImpact: jest.fn().mockResolvedValue({ impactedEmployees: 0, components: [] }),
-  preview: jest.fn().mockResolvedValue(mockPreview),
+  getCurrent: jest.fn().mockResolvedValue({ policy: mockPolicy }),
+  toggleImpact: jest.fn().mockResolvedValue({ toggle: "pf", affectedEmployeeCount: 0, affectedStatutoryCodes: [] }),
+  preview: jest.fn().mockResolvedValue(mockPolicyPreview),
   listVersions: jest.fn().mockResolvedValue([]),
 };
 
 const mockPolicyMutationService = {
   create: jest.fn().mockResolvedValue(mockPolicy),
   update: jest.fn().mockResolvedValue(mockPolicy),
-  activate: jest.fn().mockResolvedValue({ policyId: 1, versionId: 1, checklist: [] }),
+  activate: jest.fn().mockResolvedValue({ componentCount: 0, checklist: [] }),
   createVersion: jest.fn().mockResolvedValue({ versionId: 2 }),
 };
 
 const mockComponentsService = {
-  list: jest.fn().mockResolvedValue({ items: [mockComponent], total: 1 }),
+  list: jest.fn().mockResolvedValue({ items: [mockComponent], pagination: { limit: 25, hasMore: false, nextCursor: null } }),
   create: jest.fn().mockResolvedValue(mockComponent),
   update: jest.fn().mockResolvedValue(mockComponent),
   remove: jest.fn().mockResolvedValue({ ok: true }),
@@ -179,7 +303,7 @@ describe("payroll-setup RBAC — 200 view routes with view permission (e2e)", ()
       .set("Authorization", `Bearer ${token}`)
       .send({ annualCtc: 1200000 });
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ lines: expect.any(Array), totals: expect.any(Object) });
+    expect(res.body).toMatchObject({ components: expect.any(Array), totals: expect.any(Object) });
   });
 
   it("GET /payroll/policies/current → 200", async () => {
@@ -329,7 +453,7 @@ describe("payroll-setup — complexity filter (e2e)", () => {
   afterAll(async () => app.close());
 
   it("GET /payroll/templates?complexity=SIMPLE → 200 passes complexity to service", async () => {
-    mockTemplatesService.list.mockResolvedValueOnce({ items: [], total: 0 });
+    mockTemplatesService.list.mockResolvedValueOnce({ items: [], pagination: { limit: 25, hasMore: false, nextCursor: null } });
     const token = await signToken({ permissions: [], enabledModules: [] });
     const res = await request(app.getHttpServer())
       .get("/payroll/templates?complexity=SIMPLE")

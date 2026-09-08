@@ -48,27 +48,73 @@ const approveOnlyAccess = withAccessResolution({
   moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
 });
 
-const mockApproval = { id: 1, runId: 1, stage: 1, status: "PENDING" };
-const mockBatch = { id: 1, runId: 1, format: "NEFT_CSV", status: "DRAFT", totalAmount: "0.00" };
-const mockPublication = { id: 1, runId: 1, userId: "u1", publishedAt: new Date().toISOString() };
-const mockTemplate = { id: 1, name: "Default", layout: "CLASSIC" };
+const mockApproval = {
+  id: 1,
+  orgId: "org1",
+  runId: 1,
+  stage: 1,
+  stageName: "Finance Review",
+  requiredPermission: "payroll:runs:approve",
+  status: "PENDING",
+  actedByMembershipId: null,
+  actedAt: null,
+  comment: null,
+  createdAt: new Date("2026-07-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+  isCurrentUserApprover: true,
+  approverName: "Finance Approver",
+};
+const mockBatch = {
+  id: 1,
+  orgId: "org1",
+  runId: 1,
+  batchNumber: "PB-2026-01-001",
+  status: "DRAFT",
+  format: "NEFT_CSV",
+  totalAmount: "0.00",
+  itemCount: 1,
+  generatedBy: null,
+  generatedAt: null,
+  sentAt: null,
+  idempotencyKey: null,
+};
+const mockPublication = {
+  id: 1,
+  userId: "u1",
+  workerId: null,
+  runEmployeeId: 1,
+  status: "PUBLISHED",
+  pdfUrl: null,
+  publishedAt: new Date("2026-07-01T00:00:00.000Z"),
+  failureReason: null,
+};
+const mockTemplate = {
+  id: 1,
+  orgId: "org1",
+  name: "Default",
+  layout: "CLASSIC",
+  config: {},
+  isDefault: true,
+  createdAt: new Date("2026-07-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+};
 
 const mockApprovalsService = {
-  submitApproval: jest.fn().mockResolvedValue({ ok: true }),
+  submitApproval: jest.fn().mockResolvedValue({ autoApproved: false, runStatus: "PENDING_APPROVAL" }),
   listApprovals: jest.fn().mockResolvedValue([mockApproval]),
-  approveStage: jest.fn().mockResolvedValue({ ok: true }),
-  rejectStage: jest.fn().mockResolvedValue({ ok: true }),
+  approveStage: jest.fn().mockResolvedValue({ success: true, runStatus: "PENDING_APPROVAL" }),
+  rejectStage: jest.fn().mockResolvedValue({ success: true, runStatus: "REJECTED" }),
 };
 
 const mockLockingService = {
-  lock: jest.fn().mockResolvedValue({ ok: true }),
-  reopen: jest.fn().mockResolvedValue({ ok: true }),
-  close: jest.fn().mockResolvedValue({ ok: true }),
+  lock: jest.fn().mockResolvedValue({ success: true, lockedAt: new Date("2026-07-01T00:00:00.000Z") }),
+  reopen: jest.fn().mockResolvedValue({ success: true, reopenedAt: new Date("2026-07-01T00:00:00.000Z") }),
+  close: jest.fn().mockResolvedValue({ success: true, closedAt: new Date("2026-07-01T00:00:00.000Z") }),
 };
 
 const mockPayoutBatchesService = {
-  listBatches: jest.fn().mockResolvedValue([mockBatch]),
-  getBatch: jest.fn().mockResolvedValue(mockBatch),
+  listBatches: jest.fn().mockResolvedValue({ data: [mockBatch], pagination: { limit: 25, hasMore: false, nextCursor: null } }),
+  getBatch: jest.fn().mockResolvedValue({ batch: mockBatch, items: { data: [], hasMore: false, nextCursor: null } }),
   downloadFile: jest.fn().mockResolvedValue({
     file: {
       body: Readable.from([Buffer.from("account,amount\n")]),
@@ -77,7 +123,17 @@ const mockPayoutBatchesService = {
     },
     fileName: "PB-2026-01-001.csv",
   }),
-  getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
+  getBankDetails: jest.fn().mockResolvedValue({
+    userId: "u1",
+    employeeName: "Test User",
+    accountNumber: "***1234",
+    bankName: "Test Bank",
+    branch: "Main",
+    ifsc: "SBIN0001",
+    accountHolder: "Test User",
+    pfUanNumber: null,
+    bankCountry: "IN",
+  }),
 };
 
 const mockBatchCreatorService = {
@@ -85,10 +141,10 @@ const mockBatchCreatorService = {
 };
 
 const mockBatchStatusService = {
-  markSent: jest.fn().mockResolvedValue({ ok: true }),
-  markBatchPaid: jest.fn().mockResolvedValue({ ok: true }),
-  markItemPaid: jest.fn().mockResolvedValue({ ok: true }),
-  markItemFailed: jest.fn().mockResolvedValue({ ok: true }),
+  markSent: jest.fn().mockResolvedValue({ success: true }),
+  markBatchPaid: jest.fn().mockResolvedValue({ success: true }),
+  markItemPaid: jest.fn().mockResolvedValue({ success: true }),
+  markItemFailed: jest.fn().mockResolvedValue({ success: true }),
   importBankReturn: jest.fn().mockResolvedValue({
     success: true,
     paid: 1,
@@ -105,7 +161,7 @@ const mockPayoutValidationService = {
 };
 
 const mockPayslipTemplatesService = {
-  list: jest.fn().mockResolvedValue([mockTemplate]),
+  list: jest.fn().mockResolvedValue({ data: [mockTemplate], pagination: { limit: 25, hasMore: false, nextCursor: null } }),
   preview: jest.fn().mockReturnValue("<html>payslip</html>"),
   create: jest.fn().mockResolvedValue(mockTemplate),
   update: jest.fn().mockResolvedValue(mockTemplate),

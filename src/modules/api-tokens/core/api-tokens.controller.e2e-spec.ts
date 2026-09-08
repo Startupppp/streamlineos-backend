@@ -5,7 +5,23 @@ import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { ApiTokensService } from "./api-tokens.service";
 
 const stubApiTokens = {
-  listTokens: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+  listTokens: jest.fn().mockResolvedValue({
+    data: [
+      {
+        id: 1,
+        name: "CRM lead ingest",
+        description: null,
+        keyPrefix: "slos_ab12",
+        scopes: ["leads:write"],
+        isRevoked: false,
+        lastUsedAt: null,
+        expiresAt: null,
+        createdBy: "user_1",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ],
+    pagination: { limit: 20, hasMore: false, nextCursor: null },
+  }),
   createToken: jest.fn().mockResolvedValue({ id: "tok_1", token: "secret" }),
   revokeToken: jest.fn().mockResolvedValue({ revoked: true }),
 };

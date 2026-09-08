@@ -45,18 +45,32 @@ const stubOwnership = {
   ownerUserId: "u_owner_1",
   ownerName: "Alice",
   ownerEmail: "alice@example.com",
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  createdAt: new Date(),
+  updatedAt: new Date(),
 };
 
 const stubTransferResponse = {
   transferId: TRANSFER_ID,
-  expiresAt: new Date(Date.now() + 48 * 3_600_000).toISOString(),
+  expiresAt: new Date(Date.now() + 48 * 3_600_000),
+};
+
+const stubTransferItem = {
+  id: TRANSFER_ID,
+  scope: "MODULE",
+  moduleKey: "hr",
+  fromMembershipId: 1,
+  initiatedByMembershipId: 1,
+  toMembershipId: 2,
+  status: "PENDING",
+  initiatedAt: new Date(),
+  respondedAt: null,
+  expiresAt: new Date(Date.now() + 48 * 3_600_000),
+  reason: null,
 };
 
 const stubListResponse = {
-  data: [],
-  pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+  data: [stubTransferItem],
+  pagination: { limit: 20, hasMore: false, nextCursor: null },
 };
 
 const mockOwnershipService = {

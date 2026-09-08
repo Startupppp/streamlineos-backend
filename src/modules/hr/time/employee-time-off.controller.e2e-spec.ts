@@ -93,21 +93,96 @@ const ROUTES: readonly RouteCase[] = [
   },
 ];
 
+const LEAVE_REQUEST_ROW = {
+  id: 9,
+  orgId: "org_1",
+  userId: SELF,
+  workerId: null,
+  workerEngagementId: null,
+  leaveTypeId: 4,
+  startDate: "2026-09-10",
+  endDate: "2026-09-10",
+  reason: "Family commitment out of town.",
+  priority: "NORMAL",
+  status: "PENDING",
+  approverId: "user_manager",
+  rejectionReason: null,
+  managerComment: null,
+  attachmentUrl: null,
+  isHalfDay: false,
+  halfDayPeriod: null,
+  coveringEmployeeId: null,
+  lopDays: "0",
+  approverMembershipId: 2,
+  userMembershipId: 1,
+  coveringEmployeeMembershipId: null,
+  rowVersion: 1,
+  createdByMembershipId: 1,
+  updatedByMembershipId: null,
+  createdAt: new Date("2026-09-08T09:00:00.000Z"),
+  updatedAt: new Date("2026-09-08T09:00:00.000Z"),
+};
+
+const LEAVE_REQUEST_WITH_RELATIONS = {
+  ...LEAVE_REQUEST_ROW,
+  leaveType: { id: 4, name: "Casual Leave", daysPerYear: 12 },
+  approver: { id: "user_manager", name: "Manager One", firstName: "Manager", lastName: "One" },
+};
+
+const LEAVES_THIS_WEEK_ITEM = {
+  ...LEAVE_REQUEST_ROW,
+  status: "APPROVED",
+  leaveType: { id: 4, name: "Casual Leave" },
+  user: {
+    id: SELF,
+    name: "Self User",
+    firstName: "Self",
+    lastName: "User",
+    image: null,
+    designation: "Engineer",
+  },
+};
+
+const WFH_REQUEST_ROW = {
+  id: 5,
+  orgId: "org_1",
+  userId: SELF,
+  date: "2026-09-10",
+  reason: "Fibre install at home.",
+  status: "PENDING",
+  approverId: "user_manager",
+  approverMembershipId: 2,
+  userMembershipId: 1,
+  rejectionReason: null,
+  createdAt: new Date("2026-09-08T09:00:00.000Z"),
+  updatedAt: new Date("2026-09-08T09:00:00.000Z"),
+};
+
 describe("EmployeeTimeOffController — /me/time-off (e2e)", () => {
   let app: INestApplication;
 
-  const leavesPage = { pageData: jest.fn().mockResolvedValue({ balances: [], requests: [] }) };
+  const leavesPage = {
+    pageData: jest.fn().mockResolvedValue({
+      balances: [{ id: 1, leaveTypeId: 4, balance: "10", typeName: "Casual Leave", daysPerYear: 12 }],
+      types: [{ id: 4, orgId: "org_1", name: "Casual Leave", daysPerYear: 12, carryForward: false }],
+      joiningDate: "2025-01-01",
+      approvers: [{ id: "user_manager", name: "Manager One", email: "manager@example.com" }],
+    }),
+  };
   const leaves = {
-    my: jest.fn().mockResolvedValue({ data: [], nextCursor: null }),
-    thisWeek: jest.fn().mockResolvedValue([]),
+    my: jest.fn().mockResolvedValue({
+      data: [LEAVE_REQUEST_WITH_RELATIONS],
+      pageInfo: { limit: 20, hasMore: false, nextCursor: null },
+    }),
+    thisWeek: jest.fn().mockResolvedValue([LEAVES_THIS_WEEK_ITEM]),
   };
   const leavesWrite = {
-    create: jest.fn().mockResolvedValue({ id: 11 }),
+    create: jest.fn().mockResolvedValue({ success: true }),
     cancel: jest.fn().mockResolvedValue({ ok: true }),
   };
   const wfh = {
-    list: jest.fn().mockResolvedValue([]),
-    create: jest.fn().mockResolvedValue({ id: 5 }),
+    list: jest.fn().mockResolvedValue([WFH_REQUEST_ROW]),
+    create: jest.fn().mockResolvedValue({ success: true }),
   };
 
   const allServiceFns = [
@@ -304,7 +379,14 @@ describe("EmployeeTimeOffController — /me/time-off (e2e)", () => {
 describe("EmployeeTimeOffController — BITE PROOF (the self permissions are load-bearing)", () => {
   let guarded: INestApplication;
   let ungated: INestApplication;
-  const leavesPage = { pageData: jest.fn().mockResolvedValue({ balances: [] }) };
+  const leavesPage = {
+    pageData: jest.fn().mockResolvedValue({
+      balances: [],
+      types: [],
+      joiningDate: null,
+      approvers: [],
+    }),
+  };
 
   beforeAll(async () => {
     guarded = await createE2eApp({

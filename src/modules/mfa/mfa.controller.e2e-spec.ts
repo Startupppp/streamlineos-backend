@@ -5,7 +5,12 @@ import { ALL_MODULES, signToken } from "test/helpers/sign-token";
 import { MfaService } from "./mfa.service";
 
 const stubMfa = {
-  setup: jest.fn().mockResolvedValue({ secret: "TOTP_SECRET", uri: "otpauth://..." }),
+  setup: jest.fn().mockResolvedValue({
+    qrDataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    secret: "TOTP_SECRET",
+    manualEntryKey: "TOTP_SECRET",
+    backupCodes: ["11111111", "22222222"],
+  }),
   verify: jest.fn().mockResolvedValue({ enabled: true }),
   disable: jest.fn().mockResolvedValue({ disabled: true }),
   status: jest.fn().mockResolvedValue({ enabled: false }),

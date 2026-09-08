@@ -49,7 +49,7 @@ const ROUTES: readonly RouteCase[] = [
   { method: "post", path: "/me/attendance/check-out", body: {}, idempotent: true, service: "attendance" },
   { method: "post", path: "/me/attendance/break", idempotent: true, service: "attendance" },
   { method: "get", path: "/me/attendance/logs?year=2026&month=9", service: "attendance" },
-  { method: "get", path: "/me/attendance/history?page=1&limit=20", service: "attendance" },
+  { method: "get", path: "/me/attendance/history?limit=20", service: "attendance" },
   { method: "get", path: "/me/attendance/monthly?year=2026&month=9", service: "attendance" },
   { method: "get", path: "/me/attendance/heatmap?year=2026", service: "attendance" },
   { method: "get", path: "/me/attendance/holidays", service: "attendance" },
@@ -76,21 +76,88 @@ function bodyFor(route: RouteCase): Record<string, unknown> | undefined {
   return route.body;
 }
 
+const ATTENDANCE_ROW = {
+  id: 101,
+  orgId: "org_1",
+  userId: SELF,
+  userMembershipId: 1,
+  workerId: null,
+  workerEngagementId: null,
+  date: "2026-09-08",
+  checkIn: new Date("2026-09-08T09:00:00.000Z"),
+  checkOut: null,
+  status: "PRESENT",
+  workHours: "0.00",
+  breakHours: "0.00",
+  breaks: [],
+  locationData: null,
+  isOvertime: false,
+  autoCheckedOut: false,
+  locationVerified: false,
+  createdAt: new Date("2026-09-08T09:00:00.000Z"),
+};
+
+const ORG_HOLIDAY_ROW = {
+  id: "holiday_1",
+  orgId: "org_1",
+  name: "Founders' Day",
+  date: "2026-09-15",
+  recurring: false,
+  createdBy: SELF,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+};
+
+const REGULARIZATION_ROW = {
+  id: 3,
+  orgId: "org_1",
+  userId: SELF,
+  attendanceDate: "2026-09-07",
+  requestedCheckIn: new Date("2026-09-07T09:00:00.000Z"),
+  requestedCheckOut: new Date("2026-09-07T18:00:00.000Z"),
+  reason: "Badge reader was offline that morning.",
+  status: "PENDING",
+  workflowInstanceId: null,
+  approvedBy: null,
+  approvedByMembershipId: null,
+  approvedAt: null,
+  rejectedBy: null,
+  rejectedByMembershipId: null,
+  rejectedAt: null,
+  rejectionReason: null,
+  attendanceId: null,
+  userMembershipId: 1,
+  createdAt: new Date("2026-09-07T19:00:00.000Z"),
+  updatedAt: new Date("2026-09-07T19:00:00.000Z"),
+};
+
 describe("EmployeeAttendanceController — /me/attendance (e2e)", () => {
   let app: INestApplication;
 
   const attendance = {
-    status: jest.fn().mockResolvedValue({ status: "OFFLINE" }),
-    checkIn: jest.fn().mockResolvedValue({ ok: true }),
-    checkOut: jest.fn().mockResolvedValue({ ok: true }),
-    toggleBreak: jest.fn().mockResolvedValue({ ok: true }),
-    logs: jest.fn().mockResolvedValue([]),
-    history: jest.fn().mockResolvedValue({ data: [], pagination: null }),
-    monthly: jest.fn().mockResolvedValue({ days: [] }),
-    heatmap: jest.fn().mockResolvedValue({ days: [] }),
-    listHolidays: jest.fn().mockResolvedValue([]),
+    status: jest.fn().mockResolvedValue({
+      status: "OFFLINE",
+      logs: [ATTENDANCE_ROW],
+      todayLog: ATTENDANCE_ROW,
+      dailyStats: { workHours: "0.00", breakHours: "0.00", isOvertime: false },
+      cooldownRemaining: 0,
+    }),
+    checkIn: jest.fn().mockResolvedValue({ success: true }),
+    checkOut: jest.fn().mockResolvedValue({ success: true }),
+    toggleBreak: jest.fn().mockResolvedValue({ success: true }),
+    logs: jest.fn().mockResolvedValue([ATTENDANCE_ROW]),
+    history: jest
+      .fn()
+      .mockResolvedValue({ data: [ATTENDANCE_ROW], pagination: { limit: 20, hasMore: false, nextCursor: null } }),
+    monthly: jest.fn().mockResolvedValue([ATTENDANCE_ROW]),
+    heatmap: jest.fn().mockResolvedValue({
+      year: 2026,
+      userId: SELF,
+      heatmap: [{ date: "2026-09-08", hours: 8, sessions: 1, intensity: 2 }],
+      summary: { totalDays: 1, totalHours: "8.0", avgHoursPerDay: "8.0", longestStreak: 1 },
+    }),
+    listHolidays: jest.fn().mockResolvedValue([ORG_HOLIDAY_ROW]),
   };
-  const regularizations = { create: jest.fn().mockResolvedValue({ id: 3 }) };
+  const regularizations = { create: jest.fn().mockResolvedValue(REGULARIZATION_ROW) };
 
   beforeAll(async () => {
     app = await createE2eApp({
@@ -174,9 +241,9 @@ describe("EmployeeAttendanceController — /me/attendance (e2e)", () => {
     expect(attendance.status).toHaveBeenCalledWith("org_1", SELF);
 
     await agent
-      .get("/me/attendance/history?page=1&limit=20")
+      .get("/me/attendance/history?cursor=some-cursor&limit=20")
       .set("Authorization", auth);
-    expect(attendance.history).toHaveBeenCalledWith("org_1", SELF, 1, 20);
+    expect(attendance.history).toHaveBeenCalledWith("org_1", SELF, "some-cursor", 20);
 
     await agent.get("/me/attendance/monthly?year=2026&month=9").set("Authorization", auth);
     const monthlyArgs = attendance.monthly.mock.calls[0] as unknown[];
@@ -279,7 +346,15 @@ describe("EmployeeAttendanceController — /me/attendance (e2e)", () => {
 describe("EmployeeAttendanceController — BITE PROOF (the self:attendance gate is load-bearing)", () => {
   let guarded: INestApplication;
   let ungated: INestApplication;
-  const attendance = { status: jest.fn().mockResolvedValue({ status: "OFFLINE" }) };
+  const attendance = {
+    status: jest.fn().mockResolvedValue({
+      status: "OFFLINE",
+      logs: [ATTENDANCE_ROW],
+      todayLog: ATTENDANCE_ROW,
+      dailyStats: { workHours: "0.00", breakHours: "0.00", isOvertime: false },
+      cooldownRemaining: 0,
+    }),
+  };
 
   beforeAll(async () => {
     guarded = await createE2eApp({

@@ -21,7 +21,10 @@ const ORG_B = "org_b";
  * to rule out.
  */
 function makeStore() {
-  const rows = new Map<string, { layoutKey: string; hidden: string[] }>();
+  const rows = new Map<
+    string,
+    { layoutKey: string; order: string[]; hidden: string[]; groups: { id: string; title: string; fields: string[] }[]; updatedAt: string }
+  >();
   const calls: { method: string; orgId: string; layoutKey: string }[] = [];
   const at = (orgId: string, layoutKey: string) => `${orgId}::${layoutKey}`;
 
@@ -37,7 +40,13 @@ function makeStore() {
       body: { hidden?: string[] },
     ) {
       calls.push({ method: "save", orgId, layoutKey });
-      const stored = { layoutKey, hidden: body.hidden ?? [] };
+      const stored = {
+        layoutKey,
+        order: [],
+        hidden: body.hidden ?? [],
+        groups: [],
+        updatedAt: new Date().toISOString(),
+      };
       rows.set(at(orgId, layoutKey), stored);
       return stored;
     },

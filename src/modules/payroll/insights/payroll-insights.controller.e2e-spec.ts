@@ -47,12 +47,75 @@ const mockRegister = { rows: [], columns: [] };
 const mockRows = { rows: [] };
 const mockVariance = { perEmployee: [] };
 const mockJournal = { lines: [], totalDebit: "0.00", totalCredit: "0.00" };
-const mockFnfList = [{ id: 1, status: "DRAFT", userId: "u1" }];
-const mockFnfItem = { id: 1, status: "DRAFT" };
-const mockFnfStatement = { lines: [], total: "0.00" };
-const mockWindow = { id: 1, financialYear: "2026-27", status: "UPCOMING" };
+const mockFnfRow = {
+  id: 1,
+  orgId: "org1",
+  userId: "u1",
+  resignationId: null,
+  basicDues: "0.00",
+  leaveEncashment: "0.00",
+  bonusDue: "0.00",
+  deductions: "0.00",
+  loanRecovery: "0.00",
+  netPayable: "0.00",
+  status: "DRAFT",
+  userMembershipId: null,
+  approvedBy: null,
+  notes: null,
+  reimbursementsDue: "0.00",
+  assetRecovery: "0.00",
+  noticeRecovery: "0.00",
+  otherDeductions: "0.00",
+  statementPublishedAt: null,
+  createdAt: new Date("2026-07-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+  user: { name: "Test User", email: "test@example.com" },
+};
+const mockFnfList = { items: [mockFnfRow], total: 1, page: 1, totalPages: 1 };
+const mockFnfItem = {
+  id: 1,
+  orgId: "org1",
+  userId: "u1",
+  basicDues: "0.00",
+  leaveEncashment: "0.00",
+  bonusDue: "0.00",
+  deductions: "0.00",
+  loanRecovery: "0.00",
+  netPayable: "0.00",
+  status: "DRAFT",
+  approvedBy: null,
+  notes: null,
+  reimbursementsDue: "0.00",
+  assetRecovery: "0.00",
+  noticeRecovery: "0.00",
+  otherDeductions: "0.00",
+  statementPublishedAt: null,
+  createdAt: new Date("2026-07-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+  userName: "Test User",
+  userEmail: "test@example.com",
+};
+const mockFnfStatement = {
+  settlementId: 1,
+  employee: { id: "u1", name: "Test User", email: "test@example.com" },
+  components: [],
+  netPayable: "0.00",
+  status: "DRAFT",
+};
+const mockWindow = {
+  id: 1,
+  orgId: "org1",
+  financialYear: "2026-27",
+  opensAt: new Date("2026-04-01T00:00:00.000Z"),
+  closesAt: new Date("2027-03-31T00:00:00.000Z"),
+  proofDeadline: null,
+  lockDate: null,
+  status: "UPCOMING",
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
 const mockMappingList = [{ id: 1, ledgerName: "Salary" }];
-const mockCalendarEvents = [{ id: 1, type: "PREVIEW", date: "2026-07-28" }];
+const mockCalendarEvents = [{ id: 1, orgId: "org1", month: "2026-07", type: "PREVIEW", date: "2026-07-28", title: "Preview run", status: "SCHEDULED" }];
 
 const mockReportsService = {
   getSummary: jest.fn().mockResolvedValue(mockSummary),
@@ -84,8 +147,29 @@ const mockTaxWindowsService = {
   update: jest.fn().mockResolvedValue(mockWindow),
 };
 
+const mockEssOverview = {
+  toggles: {},
+  capabilities: {
+    mode: "employee_self_service" as const,
+    honestyNote: "Illustrative only.",
+    canViewSalaryStructure: true,
+    canUpdateBank: true,
+    canRequestLoans: true,
+    canDeclareTax: true,
+    canClaimReimbursements: true,
+  },
+  latestPayslip: null,
+  nextPayDate: null,
+  ytd: { gross: "0.00", net: "0.00" },
+  activeLoanBalance: "0.00",
+  pendingReimbursementsCount: 0,
+  taxWindow: null,
+  declarationStatus: null,
+  actionRequired: [],
+};
+
 const mockEssService = {
-  getOverview: jest.fn().mockResolvedValue({ balance: "0.00", ytdGross: "0.00" }),
+  getOverview: jest.fn().mockResolvedValue(mockEssOverview),
   getPayslips: jest.fn().mockResolvedValue([]),
   getSalaryStructure: jest.fn().mockResolvedValue({ components: [] }),
   getOwnFnf: jest.fn().mockResolvedValue(null),
@@ -104,10 +188,10 @@ const mockEssSelfServiceService = {
   createReimbursement: jest.fn().mockResolvedValue({ id: 1 }),
   listLoans: jest.fn().mockResolvedValue([]),
   createLoan: jest.fn().mockResolvedValue({ id: 1 }),
-  getTaxDeclaration: jest.fn().mockResolvedValue(null),
+  getTaxDeclaration: jest.fn().mockResolvedValue({ windowStatus: null, declaration: null, proofs: [] }),
   submitTaxDeclaration: jest.fn().mockResolvedValue({ id: 1 }),
   addTaxProof: jest.fn().mockResolvedValue({ id: 1 }),
-  getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
+  getBankDetails: jest.fn().mockResolvedValue({ hasBank: false, masked: null }),
   updateBankDetails: jest.fn().mockResolvedValue({ ok: true }),
 };
 
@@ -301,18 +385,28 @@ describe("payroll-insights ESS — auth-only routes (e2e)", () => {
     const tokenA = await signToken({ sub: "userA", userId: "userA" } as Parameters<typeof signToken>[0]);
     const tokenB = await signToken({ sub: "userB", userId: "userB" } as Parameters<typeof signToken>[0]);
 
-    mockEssService.getPayslips.mockResolvedValueOnce([{ id: 1, userId: "userA" }]);
+    mockEssService.getPayslips.mockResolvedValueOnce([
+      { publicationId: 1, month: "2026-06", net: "5000.00", publishedAt: new Date("2026-07-01T00:00:00.000Z"), downloadHref: "/payroll/me/payslips/1/download" },
+    ]);
     const resA = await request(app.getHttpServer())
       .get("/payroll/me/payslips")
       .set("Authorization", `Bearer ${tokenA}`);
     expect(resA.status).toBe(200);
+    expect(resA.body).toEqual([
+      expect.objectContaining({ publicationId: 1, downloadHref: "/payroll/me/payslips/1/download" }),
+    ]);
     expect(mockEssService.getPayslips).toHaveBeenLastCalledWith(expect.any(String), "userA", 1);
 
-    mockEssService.getPayslips.mockResolvedValueOnce([{ id: 2, userId: "userB" }]);
+    mockEssService.getPayslips.mockResolvedValueOnce([
+      { publicationId: 2, month: "2026-06", net: "6000.00", publishedAt: new Date("2026-07-01T00:00:00.000Z"), downloadHref: "/payroll/me/payslips/2/download" },
+    ]);
     const resB = await request(app.getHttpServer())
       .get("/payroll/me/payslips")
       .set("Authorization", `Bearer ${tokenB}`);
     expect(resB.status).toBe(200);
+    expect(resB.body).toEqual([
+      expect.objectContaining({ publicationId: 2, downloadHref: "/payroll/me/payslips/2/download" }),
+    ]);
     expect(mockEssService.getPayslips).toHaveBeenLastCalledWith(expect.any(String), "userB", 1);
   });
 });

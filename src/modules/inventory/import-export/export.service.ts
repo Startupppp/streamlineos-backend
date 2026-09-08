@@ -156,6 +156,7 @@ export class ExportService {
           errorRows: invExportJobs.errorRows,
           errors: invExportJobs.errors,
           createdBy: invExportJobs.createdBy,
+          createdByMembershipId: invExportJobs.createdByMembershipId,
           createdAt: invExportJobs.createdAt,
           updatedAt: invExportJobs.updatedAt,
           windowTotal: sql<string>`count(*) OVER ()`,

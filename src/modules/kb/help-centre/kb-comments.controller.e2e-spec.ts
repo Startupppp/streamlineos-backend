@@ -14,18 +14,54 @@ describe("KB Comments auth/RBAC (e2e)", () => {
         {
           provide: KbCommentsService,
           useValue: {
-            list: async () => [],
+            list: async () => [
+              {
+                id: 1,
+                orgId: "org_1",
+                articleId: 1,
+                authorId: "user_1",
+                content: "Great article",
+                parentId: null,
+                resolvedAt: null,
+                createdAt: new Date("2026-01-01T00:00:00.000Z"),
+                updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+                authorName: "Jamie Author",
+              },
+            ],
             create: async () => ({
               id: 1,
+              orgId: "org_1",
               articleId: 1,
               authorId: "user_1",
               content: "Great article",
               parentId: null,
               resolvedAt: null,
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-01-01T00:00:00.000Z"),
             }),
-            update: async () => ({ id: 1, content: "Updated content" }),
+            update: async () => ({
+              id: 1,
+              orgId: "org_1",
+              articleId: 1,
+              authorId: "user_1",
+              content: "Updated content",
+              parentId: null,
+              resolvedAt: null,
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+            }),
             remove: async () => undefined,
-            resolve: async () => ({ id: 1, resolvedAt: new Date().toISOString() }),
+            resolve: async () => ({
+              id: 1,
+              orgId: "org_1",
+              articleId: 1,
+              authorId: "user_1",
+              content: "Great article",
+              parentId: null,
+              resolvedAt: new Date("2026-01-02T00:00:00.000Z"),
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+            }),
           },
         },
       ],
@@ -107,6 +143,7 @@ describe("KB Comments auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toMatchObject([{ id: 1, content: "Great article", authorName: "Jamie Author" }]);
   });
 
   it("POST /kb/articles/1/comments creates comment with valid body", async () => {

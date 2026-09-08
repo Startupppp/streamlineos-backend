@@ -78,7 +78,7 @@ describe("Agent Tokens controller auth/RBAC (e2e)", () => {
       .get("/agent-tokens")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(stubAgentTokens.list).toHaveBeenCalledWith("user_1", "org_1");
+    expect(stubAgentTokens.list).toHaveBeenCalledWith("user_1", "org_1", 1);
   });
 
   it("cross-tenant: revoke with another org token id returns 404 not 403", async () => {

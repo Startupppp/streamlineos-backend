@@ -14,10 +14,32 @@ describe("KB Tags auth/RBAC (e2e)", () => {
         {
           provide: KbTagsService,
           useValue: {
-            list: async () => [],
-            create: async () => ({ id: 1, name: "test", slug: "test", orgId: "org_1" }),
-            remove: async () => ({ deleted: true }),
-            getArticleTags: async () => [],
+            list: async () => [
+              {
+                id: 2,
+                name: "onboarding",
+                slug: "onboarding",
+                orgId: "org_1",
+                createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              },
+            ],
+            create: async () => ({
+              id: 1,
+              name: "test",
+              slug: "test",
+              orgId: "org_1",
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+            }),
+            remove: async () => ({ success: true }),
+            getArticleTags: async () => [
+              {
+                id: 2,
+                name: "onboarding",
+                slug: "onboarding",
+                orgId: "org_1",
+                createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              },
+            ],
             setArticleTags: async () => [],
           },
         },
@@ -102,6 +124,7 @@ describe("KB Tags auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toMatchObject([{ id: 2, name: "onboarding", slug: "onboarding" }]);
   });
 
   it("POST /kb/tags creates a tag with valid body", async () => {
@@ -127,5 +150,6 @@ describe("KB Tags auth/RBAC (e2e)", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toMatchObject([{ id: 2, name: "onboarding", slug: "onboarding" }]);
   });
 });

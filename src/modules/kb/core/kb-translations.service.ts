@@ -70,7 +70,7 @@ export class KbTranslationsService {
     return row;
   }
 
-  async remove(orgId: string, articleId: number, locale: string): Promise<TranslationRow> {
+  async remove(orgId: string, articleId: number, locale: string): Promise<{ success: boolean }> {
     const [deleted] = await this.db
       .delete(kbArticleTranslations)
       .where(
@@ -80,9 +80,9 @@ export class KbTranslationsService {
           eq(kbArticleTranslations.locale, locale),
         ),
       )
-      .returning();
+      .returning({ id: kbArticleTranslations.id });
     if (!deleted) throw new NotFoundException("Translation not found");
-    return deleted;
+    return { success: true };
   }
 
   private async assertArticleExists(orgId: string, articleId: number): Promise<void> {

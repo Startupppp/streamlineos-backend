@@ -149,31 +149,109 @@ describe("Dashboard auth (e2e)", () => {
    * against whatever DATABASE_URL happens to point at — which is how a suite
    * that means to assert authorization ends up asserting connectivity.
    */
-  const stats = { getDashboardStats: jest.fn().mockResolvedValue({ orgName: "Acme" }) };
-  const availability = {
-    getTeamAttendance: jest.fn().mockResolvedValue([]),
-    getTeamAvailability: jest.fn().mockResolvedValue([]),
+  const stats = {
+    getDashboardStats: jest.fn().mockResolvedValue({
+      orgName: "Acme",
+      orgSlug: "acme",
+      totalEmployees: 42,
+      activeProjects: 3,
+      presentToday: 17,
+    }),
   };
-  const birthdays = { getBirthdays: jest.fn().mockResolvedValue([]) };
-  const personal = {
-    getPersonalDashboard: jest
+  const availability = {
+    getTeamAttendance: jest
       .fn()
-      .mockResolvedValue({ myTasks: [], timesheetStatus: null, upcomingEvents: [], degraded: [] }),
+      .mockResolvedValue([
+        { userId: "user_2", name: "Jamie Lee", image: null, checkIn: "09:00", checkOut: null, isOnline: true },
+      ]),
+    getTeamAvailability: jest
+      .fn()
+      .mockResolvedValue([
+        { userId: "user_2", name: "Jamie Lee", image: null, checkIn: "09:00", checkOut: null, isOnline: true },
+      ]),
+  };
+  const birthdays = {
+    getBirthdays: jest
+      .fn()
+      .mockResolvedValue([
+        { id: "user_2", name: "Jamie Lee", designation: "Engineer", image: null, type: "birthday", date: "2026-09-10" },
+      ]),
+  };
+  const personal = {
+    getPersonalDashboard: jest.fn().mockResolvedValue({
+      myTasks: [
+        { id: 1, title: "Ship the release", status: "IN_PROGRESS", priority: "HIGH", dueDate: null, projectName: "Core" },
+      ],
+      timesheetStatus: { submitted: false, weekLabel: "Sep 8 – Sep 14", hoursLogged: 12 },
+      upcomingEvents: [
+        {
+          id: 1,
+          title: "Sprint planning",
+          startTime: new Date("2026-09-09T10:00:00.000Z"),
+          endTime: new Date("2026-09-09T11:00:00.000Z"),
+          type: "meeting",
+        },
+      ],
+      degraded: [],
+    }),
   };
   const leave = {
-    getLeavesToday: jest.fn().mockResolvedValue([]),
-    getMyLeaveBalance: jest.fn().mockResolvedValue([]),
-    getPendingApprovals: jest.fn().mockResolvedValue([]),
-    getUpcomingHolidays: jest.fn().mockResolvedValue([]),
+    getLeavesToday: jest.fn().mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          startDate: "2026-09-08",
+          endDate: "2026-09-08",
+          leaveTypeId: 4,
+          employeeName: "Jamie Lee",
+          employeeDesignation: "Engineer",
+          employeeImage: null,
+        },
+      ],
+      total: 1,
+      hasMore: false,
+    }),
+    getMyLeaveBalance: jest
+      .fn()
+      .mockResolvedValue([{ id: 1, balance: 10, year: 2026, leaveTypeName: "Casual Leave", daysPerYear: 12 }]),
+    getPendingApprovals: jest
+      .fn()
+      .mockResolvedValue({ pendingLeaves: 2, pendingResignations: 1, total: 3 }),
+    getUpcomingHolidays: jest
+      .fn()
+      .mockResolvedValue([{ id: 1, name: "Founders' Day", date: "2026-09-15", message: null }]),
   };
   const announcements = {
-    getActiveAnnouncements: jest.fn().mockResolvedValue([]),
-    createAnnouncement: jest.fn().mockResolvedValue({ id: 1 }),
+    getActiveAnnouncements: jest.fn().mockResolvedValue([
+      {
+        id: 1,
+        content: "Please join in the main room at 10:00.",
+        isPinned: false,
+        expiresAt: null,
+        createdAt: new Date("2026-09-01T09:00:00.000Z"),
+        authorId: "user_1",
+        authorName: "Self User",
+        authorFirstName: "Self",
+        authorLastName: "User",
+      },
+    ]),
+    createAnnouncement: jest.fn().mockResolvedValue({
+      id: 1,
+      orgId: "org_1",
+      title: "All-hands on Friday",
+      content: "Please join in the main room at 10:00.",
+      isPinned: false,
+      expiresAt: null,
+      status: "PUBLISHED",
+      authorId: "user_1",
+      createdAt: new Date("2026-09-01T09:00:00.000Z"),
+      updatedAt: new Date("2026-09-01T09:00:00.000Z"),
+    }),
     deleteAnnouncement: jest.fn().mockResolvedValue({ success: true }),
   };
   const crm = {
-    getExecutiveDashboard: jest.fn().mockResolvedValue({}),
-    getTodayActivities: jest.fn().mockResolvedValue([]),
+    getExecutiveDashboard: jest.fn().mockResolvedValue({ headcount: 42, openRoles: 3, activeProjects: 3 }),
+    getTodayActivities: jest.fn().mockResolvedValue([{ type: "call", subject: "Follow-up with Acme" }]),
   };
   const project = {
     getActiveSprintSummary: jest.fn().mockResolvedValue(null),

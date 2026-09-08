@@ -29,10 +29,86 @@ const SELF = "user_1";
 const VICTIM = "user_victim";
 const SELF_PERMISSION = "self:expenses";
 
+const EXPENSE_ROW = {
+  id: 7,
+  orgId: "org_1",
+  userId: SELF,
+  categoryId: 1,
+  category: "Meals",
+  amount: "2400",
+  currency: "USD",
+  description: null,
+  receiptUrl: null,
+  receiptFileName: null,
+  merchant: "Bistro",
+  receiptNumber: null,
+  receiptHash: null,
+  taxAmount: null,
+  paymentMethod: null,
+  projectId: null,
+  status: "PENDING",
+  userMembershipId: 1,
+  approverId: null,
+  approverMembershipId: null,
+  approvedAt: null,
+  rejectionReason: null,
+  paidAt: null,
+  transactionRef: null,
+  reimbursementBatchId: null,
+  postedJournalEntryId: null,
+  policyFlag: null,
+  expenseDate: "2026-09-01",
+  createdAt: new Date("2026-09-01T09:00:00.000Z"),
+  updatedAt: new Date("2026-09-01T09:00:00.000Z"),
+};
+
+const EXPENSE_PAGE_DATA_ROW = {
+  ...EXPENSE_ROW,
+  user: { id: SELF, name: "Self User", firstName: "Self", lastName: "User", email: "self@example.com", image: null },
+  approver: null,
+  expenseCategory: {
+    id: 1,
+    orgId: "org_1",
+    name: "Meals",
+    description: null,
+    budgetLimit: null,
+    budgetPeriod: "MONTHLY",
+    isActive: true,
+    ledgerAccountId: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  },
+};
+
 const PAGE_DATA = {
-  expenses: [],
-  pagination: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
-  stats: null,
+  expenses: [EXPENSE_PAGE_DATA_ROW],
+  pendingExpenses: [EXPENSE_PAGE_DATA_ROW],
+  stats: {
+    totalAmount: 2400,
+    pendingAmount: 2400,
+    approvedAmount: 0,
+    rejectedAmount: 0,
+    paidAmount: 0,
+    totalCount: 1,
+    pendingCount: 1,
+    approvedCount: 0,
+    rejectedCount: 0,
+    paidCount: 0,
+    avgExpenseAmount: 2400,
+  },
+  categories: [
+    {
+      id: 1,
+      orgId: "org_1",
+      name: "Meals",
+      description: null,
+      budgetLimit: null,
+      budgetPeriod: "MONTHLY",
+      isActive: true,
+      ledgerAccountId: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    },
+  ],
+  pagination: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
   isAdmin: false,
 };
 
@@ -46,8 +122,8 @@ const CREATE_BODY = {
 describe("EmployeeExpensesController — /me/expenses (e2e)", () => {
   let app: INestApplication;
   const getPageData = jest.fn().mockResolvedValue(PAGE_DATA);
-  const create = jest.fn().mockResolvedValue({ id: 7 });
-  const updateOwn = jest.fn().mockResolvedValue({ id: 7 });
+  const create = jest.fn().mockResolvedValue(EXPENSE_ROW);
+  const updateOwn = jest.fn().mockResolvedValue({ success: true });
 
   beforeAll(async () => {
     app = await createE2eApp({

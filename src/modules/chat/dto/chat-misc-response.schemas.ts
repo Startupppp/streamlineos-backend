@@ -132,11 +132,29 @@ const entityReferenceSchema = z.object({
   id: z.string(),
 });
 
+const entityActionOptionSourceSchema = z.object({
+  from: entityReferenceSchema,
+});
+
+const entityActionInputSchema = z.object({
+  name: z.string(),
+  kind: z.enum(["text", "date", "user", "choice"]),
+  required: z.boolean(),
+  choices: z.array(z.string()).optional(),
+  options: entityActionOptionSourceSchema.optional(),
+});
+
+const entityActionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  inputs: z.array(entityActionInputSchema),
+});
+
 export const chatAvailableActionsSchema = z.object({
   references: z.array(
     z.object({
       reference: entityReferenceSchema,
-      actions: z.array(z.string()),
+      actions: z.array(entityActionSchema),
     }),
   ),
 });

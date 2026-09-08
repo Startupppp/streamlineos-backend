@@ -250,6 +250,7 @@ export class ImportService {
           errors: invImportJobs.errors,
           resultUrl: invImportJobs.resultUrl,
           createdBy: invImportJobs.createdBy,
+          createdByMembershipId: invImportJobs.createdByMembershipId,
           createdAt: invImportJobs.createdAt,
           updatedAt: invImportJobs.updatedAt,
           windowTotal: sql<string>`count(*) OVER ()`,

@@ -14,10 +14,48 @@ describe("KB Translations auth/RBAC (e2e)", () => {
         {
           provide: KbTranslationsService,
           useValue: {
-            list: async () => [],
-            get: async () => ({ id: 1, articleId: 1, locale: "es", title: "Hola", content: "" }),
-            upsert: async () => ({ id: 1, articleId: 1, locale: "es", title: "Hola", content: "" }),
-            remove: async () => ({ deleted: true }),
+            list: async () => [
+              {
+                id: 1,
+                orgId: "org_1",
+                articleId: 1,
+                locale: "es",
+                title: "Hola",
+                content: "",
+                contentText: "",
+                excerpt: null,
+                status: "draft",
+                createdAt: new Date("2026-01-01T00:00:00.000Z"),
+                updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+              },
+            ],
+            get: async () => ({
+              id: 1,
+              orgId: "org_1",
+              articleId: 1,
+              locale: "es",
+              title: "Hola",
+              content: "",
+              contentText: "",
+              excerpt: null,
+              status: "draft",
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+            }),
+            upsert: async () => ({
+              id: 1,
+              orgId: "org_1",
+              articleId: 1,
+              locale: "es",
+              title: "Hola",
+              content: "",
+              contentText: "",
+              excerpt: null,
+              status: "draft",
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+            }),
+            remove: async () => ({ success: true }),
           },
         },
       ],
@@ -122,5 +160,6 @@ describe("KB Translations auth/RBAC (e2e)", () => {
       .delete("/kb/articles/1/translations/es")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true });
   });
 });
