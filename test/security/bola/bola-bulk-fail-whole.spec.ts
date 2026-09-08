@@ -13,6 +13,7 @@ import type { CacheService } from "src/common/cache/cache.service";
 import type { AuditService } from "src/common/audit/audit.service";
 import type { EmailService } from "src/modules/email/email.service";
 import type { AutomationService } from "src/modules/automation/automation.service";
+import type { PlanLimitsService } from "src/modules/billing/core/plan-limits.service";
 import type { NotificationEventService } from "src/modules/notifications/notification-event.service";
 import type { Db } from "src/db/drizzle.module";
 import type { CurrentUserContext } from "src/common/auth/backend-claims";
@@ -175,6 +176,9 @@ describe("BOLA probe — recruitment bulk actions refuse a mixed-tenant candidat
       { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
       email,
       { runAutomationsForEvent: jest.fn() } as unknown as AutomationService,
+      {
+        assertWithinLimit: jest.fn().mockResolvedValue(undefined),
+      } as unknown as PlanLimitsService,
     );
     return { ops, rec, email };
   };

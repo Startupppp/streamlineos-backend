@@ -640,6 +640,12 @@
         "direction": "floor",
         "owner": "billing owner",
         "reason": "Anti-vacuity floor on the number of source files the walk visits before filtering to the ones that mention assertWithinLimit. Measured 4097 at authoring time; a collapsed walkTs (wrong root, an early filter) would drop this near zero long before the call-site count itself moved."
+      },
+      "MIN_CANDIDATES_INSERTS": {
+        "value": 5,
+        "direction": "floor",
+        "owner": "billing owner",
+        "reason": "Anti-vacuity floor on the INVERSE check added 2026-09-08. The gate previously proved only that each LimitKey had at least one assertWithinLimit call site somewhere; it now walks every .insert(candidates) site and requires assertWithinLimit(\"hrCandidates\", ...) ahead of it in the same enclosing function body. Measured 9 sites at authoring time, floor set with headroom so ordinary refactoring does not false-positive. Without this floor a broken table matcher finds zero inserts and the inverse check reports clean over nothing — which is the exact shape of the gap it was written to close: hrCandidates had 1 covered site and 7 uncovered ones, two of them reachable from @Public() unauthenticated endpoints."
       }
     },
     "check-public-object-urls.mjs": {

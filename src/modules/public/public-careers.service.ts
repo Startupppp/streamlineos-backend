@@ -16,11 +16,15 @@ import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { randomBytes } from "node:crypto";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { ApplyInput } from "./dto/public.schemas";
 
 @Injectable()
 export class PublicCareersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly planLimits: PlanLimitsService,
+  ) {}
 
   async getApplicationStatus(token: string) {
     const application = await withPublicToken(this.db, token, (tx) =>
@@ -126,6 +130,14 @@ export class PublicCareersService {
     const trackingToken = randomBytes(32).toString("hex");
 
     return runInTenantTransaction(this.db, async (tx) => {
+      const [existingByEmail] = await tx
+        .select({ id: candidates.id })
+        .from(candidates)
+        .where(and(eq(candidates.email, input.email), eq(candidates.orgId, org.id)))
+        .limit(1);
+      if (!existingByEmail) {
+        await this.planLimits.assertWithinLimit(org.id, "hrCandidates", 1, tx);
+      }
       const [candidate] = await tx
         .insert(candidates)
         .values({
@@ -142,14 +154,14 @@ export class PublicCareersService {
         .onConflictDoNothing()
         .returning({ id: candidates.id });
 
-      let candidateId: number | undefined = candidate?.id;
+      let candidateId: number | undefined = existingByEmail?.id ?? candidate?.id;
       if (!candidateId) {
-        const [existing] = await tx
+        const [raced] = await tx
           .select({ id: candidates.id })
           .from(candidates)
           .where(and(eq(candidates.email, input.email), eq(candidates.orgId, org.id)))
           .limit(1);
-        candidateId = existing?.id;
+        candidateId = raced?.id;
       }
 
       if (!candidateId) throw new InternalServerErrorException("Failed to process application.");

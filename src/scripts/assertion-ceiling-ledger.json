@@ -233,10 +233,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/careers/careers.service.ts": {
-      "as": 0,
-      "nonNull": 1
-    },
     "src/modules/chat/chat-channel-list.service.ts": {
       "as": 3,
       "nonNull": 0
@@ -760,10 +756,6 @@
     "src/modules/platform/platform-operator-access.service.ts": {
       "as": 0,
       "nonNull": 3
-    },
-    "src/modules/public/public-referrers.service.ts": {
-      "as": 0,
-      "nonNull": 1
     },
     "src/modules/rbac/rbac.service.ts": {
       "as": 1,

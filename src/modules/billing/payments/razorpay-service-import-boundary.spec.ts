@@ -8,9 +8,15 @@ const BILLING_SERVICE = join(__dirname, "../core/billing.service.ts");
 
 /**
  * The composition root is allowed to name the adapter — that is where a provider
- * implementation is bound to the provider-neutral token. Nothing else may.
+ * implementation is bound to the provider-neutral token. The sandbox verification
+ * harness is the only other file allowed to, because proving the adapter's failure
+ * mapping against the live sandbox means driving the adapter itself; it is a
+ * standalone `pnpm verify:razorpay-sandbox` entry point, and the last assertion
+ * below keeps it that way by refusing any import of it from the application.
  */
 const COMPOSITION_ROOT = "src/modules/billing/payments/payments.module.ts";
+const SANDBOX_VERIFIER = "src/scripts/verify-razorpay-sandbox.ts";
+const ALLOWED_IMPORTERS = [COMPOSITION_ROOT, SANDBOX_VERIFIER];
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "coverage", ".next"]);
 
@@ -58,7 +64,15 @@ describe("Razorpay adapter import boundary", () => {
       (f) => !f.endsWith(".spec.ts") && !f.endsWith("-spec.ts"),
     );
 
-    expect(productionImporters).toEqual([COMPOSITION_ROOT]);
+    expect(productionImporters.sort()).toEqual([...ALLOWED_IMPORTERS].sort());
+  });
+
+  it("the sandbox verifier stays a standalone entry point — nothing imports it", () => {
+    const verifierImporters = allFiles
+      .filter((f) => /from\s+['"][^'"]*verify-razorpay-sandbox['"]/.test(readFileSync(f, "utf8")))
+      .map((f) => relative(REPO_ROOT, f).replace(/\\/g, "/"));
+
+    expect(verifierImporters).toEqual([]);
   });
 
   it("keeps provider credential fields out of BillingService", () => {

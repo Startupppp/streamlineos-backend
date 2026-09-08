@@ -22,7 +22,7 @@ describe("CareersService — cross-tenant isolation", () => {
       cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
       invalidateNamespace: jest.fn().mockResolvedValue(undefined),
     };
-    const svc = new CareersService(db, cache as never);
+    const svc = new CareersService(db, cache as never, {} as never);
     const result = await svc.listOpenJobs();
     expect(result).toHaveLength(0);
   });
@@ -33,7 +33,7 @@ describe("CareersService — cross-tenant isolation", () => {
       cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
       invalidateNamespace: jest.fn().mockResolvedValue(undefined),
     };
-    const svc = new CareersService(db, cache as never);
+    const svc = new CareersService(db, cache as never, {} as never);
     const result = await svc.apply({
       jobPostingId: 9999,
       name: "Attacker",

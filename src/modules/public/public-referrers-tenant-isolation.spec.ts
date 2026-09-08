@@ -27,7 +27,7 @@ describe("PublicReferrersService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a non-existent org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const svc = new PublicReferrersService(db);
+    const svc = new PublicReferrersService(db, {} as never);
     await expect(
       svc.registerExternalReferrer({ orgId: ATTACKER, email: "attacker@evil.com", name: "Attacker" }),
     ).rejects.toThrow(NotFoundException);
@@ -35,7 +35,7 @@ describe("PublicReferrersService — cross-tenant isolation", () => {
 
   it("registers referrer for a valid org (control — correct org)", async () => {
     const db = makeDb({ id: OWNER, name: "Owner Corp" });
-    const svc = new PublicReferrersService(db);
+    const svc = new PublicReferrersService(db, {} as never);
     const result = await svc.registerExternalReferrer({ orgId: OWNER, email: "ref@owner.com", name: "Referrer" });
     expect(result).toBeDefined();
   });

@@ -1,13 +1,23 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
+import { randomUUID } from "node:crypto";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
 import { BillingService } from "./billing.service";
 
 const stubBilling = {
   handlePaymentProviderWebhook: jest.fn().mockResolvedValue({ status: 401, body: { ok: false } }),
-  createOrder: jest.fn().mockResolvedValue({ orderId: "order_1", amount: 100, currency: "INR", keyId: "key_1" }),
+  createOrder: jest.fn().mockResolvedValue({
+    orderId: "order_1",
+    amount: 100,
+    currency: "INR",
+    keyId: "key_1",
+    plan: "STARTER",
+    billingCycle: "monthly",
+    discountAmount: 0,
+  }),
   verifyAndActivate: jest.fn().mockResolvedValue({ success: true, plan: "STARTER", status: "ACTIVE" }),
+  getSubscription: jest.fn().mockResolvedValue({ subscription: null, publicKeyId: null, isConfigured: false }),
 };
 
 describe("Billing auth/RBAC (e2e)", () => {
@@ -103,5 +113,36 @@ describe("Billing auth/RBAC (e2e)", () => {
       .send({ event: "payment.captured", payload: {} });
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ ok: false });
+  });
+
+  it("200 on GET /billing with billing:subscription:view — ResponseContractInterceptor validates subscriptionResponseSchema", async () => {
+    const token = await signToken({ permissions: ["billing:subscription:view"], enabledModules: ALL_MODULES });
+    const res = await request(app.getHttpServer())
+      .get("/billing")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ isConfigured: false, subscription: null, publicKeyId: null });
+  });
+
+  it("200 on POST /billing/checkout with billing:subscription:manage — ResponseContractInterceptor validates checkoutResponseSchema", async () => {
+    const token = await signToken({ permissions: ["billing:subscription:manage"], enabledModules: ALL_MODULES });
+    const res = await request(app.getHttpServer())
+      .post("/billing/checkout")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
+      .send({ plan: "STARTER" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ orderId: "order_1", plan: "STARTER", billingCycle: "monthly", discountAmount: 0 });
+  });
+
+  it("200 on PATCH /billing/checkout with billing:subscription:manage — ResponseContractInterceptor validates verifyActivateResponseSchema", async () => {
+    const token = await signToken({ permissions: ["billing:subscription:manage"], enabledModules: ALL_MODULES });
+    const res = await request(app.getHttpServer())
+      .patch("/billing/checkout")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", randomUUID())
+      .send({ orderId: "order_1", paymentId: "pay_1", signature: "sig", plan: "STARTER" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true, plan: "STARTER", status: "ACTIVE" });
   });
 });

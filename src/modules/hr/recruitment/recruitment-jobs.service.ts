@@ -435,6 +435,7 @@ export class RecruitmentJobsService {
     if (existing) {
       candidateId = existing.id;
     } else {
+      await this.planLimits.assertWithinLimit(orgId, "hrCandidates");
       const [created] = await this.db
         .insert(candidates)
         .values({
@@ -445,6 +446,7 @@ export class RecruitmentJobsService {
           source: "INTERNAL",
         })
         .returning({ id: candidates.id });
+      if (!created) throw new InternalServerErrorException("Failed to create candidate.");
       candidateId = created.id;
     }
 

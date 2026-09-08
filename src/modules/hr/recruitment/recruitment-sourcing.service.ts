@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, count, desc, eq, sql } from "drizzle-orm";
@@ -36,12 +37,14 @@ import type {
 } from "./dto/sourcing.schemas";
 import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
 import { assertOrganizationActor } from "../../../common/organization/organization-actor";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 
 @Injectable()
 export class RecruitmentSourcingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly vendorSourcing: RecruitmentVendorSourcingService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private async actorMembershipId(orgId: string, userId: string, membershipId?: number | null): Promise<number> {
@@ -76,6 +79,7 @@ export class RecruitmentSourcingService {
     if (existing) {
       candidateId = existing.id;
     } else {
+      await this.planLimits.assertWithinLimit(orgId, "hrCandidates");
       const [created] = await this.db
         .insert(candidates)
         .values({
@@ -87,6 +91,7 @@ export class RecruitmentSourcingService {
           source: "REFERRAL",
         })
         .returning({ id: candidates.id });
+      if (!created) throw new InternalServerErrorException("Failed to create candidate.");
       candidateId = created.id;
     }
 

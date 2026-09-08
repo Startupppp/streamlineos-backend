@@ -20,6 +20,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { AutomationService } from "../../automation/automation.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { getCandidateRejectionEmail } from "../../email/templates/recruitment";
 import type {
   BgvStatusInput,
@@ -39,6 +40,7 @@ export class RecruitmentCandidateOpsService {
     private readonly cache: CacheService,
     private readonly email: EmailService,
     private readonly automation: AutomationService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async bulkImport(orgId: string, input: BulkImportInput) {
@@ -91,6 +93,7 @@ export class RecruitmentCandidateOpsService {
     }
 
     if (toInsert.length > 0) {
+      await this.planLimits.assertWithinLimit(orgId, "hrCandidates", toInsert.length);
       const chunkSize = 50;
       for (let i = 0; i < toInsert.length; i += chunkSize) {
         const chunk = toInsert.slice(i, i + chunkSize);
@@ -117,6 +120,7 @@ export class RecruitmentCandidateOpsService {
       status: "NEW" as const,
     }));
 
+    await this.planLimits.assertWithinLimit(orgId, "hrCandidates", values.length);
     const inserted = await this.db.insert(candidates).values(values).returning({ id: candidates.id });
     await this.cache.invalidateNamespace(`hr:candidates:list:${orgId}`);
     return { imported: inserted.length };

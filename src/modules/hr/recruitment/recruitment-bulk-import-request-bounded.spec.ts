@@ -60,6 +60,7 @@ function makeService(db: Db) {
     cache as unknown as ConstructorParameters<typeof RecruitmentCandidateOpsService>[2],
     stub<ConstructorParameters<typeof RecruitmentCandidateOpsService>[3]>(),
     stub<ConstructorParameters<typeof RecruitmentCandidateOpsService>[4]>(),
+    { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as unknown as ConstructorParameters<typeof RecruitmentCandidateOpsService>[5],
   );
 }
 

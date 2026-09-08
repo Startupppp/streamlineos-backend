@@ -227,7 +227,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
       const { db, where } = makeDb([]);
       const cache = makeCacheMock();
       const svc = new RecruitmentCandidateOpsService(
-        db, {} as never, cache as never, {} as never, {} as never,
+        db, {} as never, cache as never, {} as never, {} as never, {} as never,
       );
       await svc.bulkImport(ATTACKER, { rows: [] });
       expect(where).toHaveBeenCalled();
@@ -238,7 +238,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
       const { db, where } = makeDb([{ email: "existing@example.com" }]);
       const cache = makeCacheMock();
       const svc = new RecruitmentCandidateOpsService(
-        db, {} as never, cache as never, {} as never, {} as never,
+        db, {} as never, cache as never, {} as never, {} as never, {} as never,
       );
       await svc.bulkImport(OWNER, { rows: [] });
       expect(where).toHaveBeenCalled();
@@ -466,7 +466,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
   describe("RecruitmentSourcingService", () => {
     it("scopes referrals to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
-      const svc = new RecruitmentSourcingService(db, {} as never);
+      const svc = new RecruitmentSourcingService(db, {} as never, {} as never);
       const result = await svc.listReferrals(ATTACKER, "user-1", true);
       expect(result).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
@@ -476,7 +476,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
 
     it("returns referrals for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
-      const svc = new RecruitmentSourcingService(db, {} as never);
+      const svc = new RecruitmentSourcingService(db, {} as never, {} as never);
       const result = await svc.listReferrals(OWNER, "user-1", true);
       expect(result).toHaveLength(1);
     });

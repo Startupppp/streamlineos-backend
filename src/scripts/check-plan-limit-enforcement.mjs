@@ -94,6 +94,22 @@ const MIN_SCANNED_FILES = 2000;
 const MEMBERS_KEY = "members";
 const LOCK_MARKERS = ["lockMembersQuota(", "quota:${orgId}:members", "quota:\" + orgId + \":members"];
 
+/**
+ * Table-to-key mapping for the inverse check: for each entry, every
+ * `.insert(TABLE)` in the corpus must be preceded by an
+ * `assertWithinLimit(_, "KEY", ...)` in the same enclosing function body.
+ *
+ * Currently covers hrCandidates/candidates.  Adding an entry here is the
+ * canonical way to extend coverage to a new resource without touching the
+ * key-coverage check above.
+ */
+const TABLE_KEY_MAP = [
+  { table: "candidates", key: "hrCandidates" },
+];
+
+/** Anti-vacuity: the corpus must contain at least this many .insert(candidates) sites. */
+const MIN_CANDIDATES_INSERTS = 5;
+
 // -- source-of-truth parsing --------------------------------------------------
 
 /** The LimitKey union, read straight from plan-entitlements.constants.ts. */
@@ -373,6 +389,60 @@ export function classifyMembersLock(original, site) {
     : { verdict: "LOCK-MISSING", why: "no quota:${orgId}:members advisory lock precedes the assert in the same body" };
 }
 
+/**
+ * Inverse check: for each (table, key) pair in the map, find every
+ * `.insert(TABLE)` call in `stripped` and verify that an
+ * `assertWithinLimit(_, "KEY", ...)` appears BEFORE it in the same enclosing
+ * function body.  Returns sites where no such assert is found — these are
+ * inserts that bypass the quota gate entirely.
+ *
+ * "Before" is textual: if the assert's call offset is less than the insert's
+ * offset within the same body, the ordering rule is satisfied.  A conditional
+ * assert (inside an if-block that also contains the insert) satisfies this
+ * rule because the enclosing function body contains both, and the assert
+ * appears earlier in the source.
+ */
+export function findUncoveredTableInserts(stripped, original, filePath, tableKeyMap) {
+  const braceRanges = allBraceRanges(stripped);
+  const results = [];
+
+  for (const { table, key } of tableKeyMap) {
+    const insertRe = new RegExp(`\\.insert\\s*\\(\\s*${table}\\s*\\)`, "g");
+    let m;
+    while ((m = insertRe.exec(stripped)) !== null) {
+      const insertOffset = m.index;
+      const body = enclosingFunctionBody(braceRanges, stripped, insertOffset);
+      if (!body) continue;
+
+      const bodyBeforeInsert = stripped.slice(body.start, insertOffset);
+
+      let covered = false;
+      const assertRe = /\.assertWithinLimit\s*\(/g;
+      let am;
+      while ((am = assertRe.exec(bodyBeforeInsert)) !== null) {
+        const absoluteOpenParen = body.start + am.index + am[0].length - 1;
+        const args = balanced(original, absoluteOpenParen);
+        if (!args) continue;
+        const keyMatch = /,\s*["']([A-Za-z][A-Za-z0-9]*)["']/.exec(args);
+        if (keyMatch && keyMatch[1] === key) {
+          covered = true;
+          break;
+        }
+      }
+
+      if (!covered) {
+        results.push({
+          file: filePath,
+          line: lineOf(stripped, insertOffset),
+          table,
+          key,
+        });
+      }
+    }
+  }
+  return results;
+}
+
 // -- repository walk ------------------------------------------------------------
 
 function walkTs(dir, out = []) {
@@ -411,6 +481,9 @@ function scan() {
   const files = walkTs(SRC);
 
   const sites = [];
+  const uncoveredInserts = [];
+  let candidatesInsertCount = 0;
+
   for (const file of files) {
     let source;
     try {
@@ -418,18 +491,37 @@ function scan() {
     } catch {
       continue;
     }
-    if (!source.includes("assertWithinLimit")) continue;
+    const hasAssert = source.includes("assertWithinLimit");
+    const hasTableInsert = TABLE_KEY_MAP.some(({ table }) => source.includes(table));
+    if (!hasAssert && !hasTableInsert) continue;
+
     const stripped = stripCommentsAndStrings(source);
     const rel = relative(BACKEND_ROOT, file).replace(/\\/g, "/");
-    for (const site of findAssertCalls(stripped, source, rel)) {
-      const order = classifyOrder(stripped, site);
-      const lock = classifyMembersLock(source, site);
-      const name = site.body ? enclosingFunctionName(stripped, site.body.start) : null;
-      sites.push({ ...site, order, lock, enclosingFunction: name });
+
+    if (hasAssert) {
+      for (const site of findAssertCalls(stripped, source, rel)) {
+        const order = classifyOrder(stripped, site);
+        const lock = classifyMembersLock(source, site);
+        const name = site.body ? enclosingFunctionName(stripped, site.body.start) : null;
+        sites.push({ ...site, order, lock, enclosingFunction: name });
+      }
+    }
+
+    if (hasTableInsert) {
+      for (const { table } of TABLE_KEY_MAP) {
+        const countRe = new RegExp(`\\.insert\\s*\\(\\s*${table}\\s*\\)`, "g");
+        const matches = stripped.match(countRe);
+        if (table === "candidates" && matches) candidatesInsertCount += matches.length;
+      }
+      if (!rel.startsWith("src/scripts/")) {
+        for (const finding of findUncoveredTableInserts(stripped, source, rel, TABLE_KEY_MAP)) {
+          uncoveredInserts.push(finding);
+        }
+      }
     }
   }
 
-  return { keys, files, sites };
+  return { keys, files, sites, uncoveredInserts, candidatesInsertCount };
 }
 
 // -- self-test --------------------------------------------------------------
@@ -618,6 +710,61 @@ class Svc {
     classifyMembersLock(nonMembersFixture, nonMembersSites[0]) === null,
   );
 
+  const coveredInsertFixture = `
+class Svc {
+  async create(orgId) {
+    await this.planLimits.assertWithinLimit(orgId, "hrCandidates", 1);
+    const [row] = await this.db.insert(candidates).values({ orgId }).returning();
+    return row;
+  }
+}
+`;
+  const strippedCovered = stripCommentsAndStrings(coveredInsertFixture);
+  const coveredFindings = findUncoveredTableInserts(strippedCovered, coveredInsertFixture, "fixture.ts", [{ table: "candidates", key: "hrCandidates" }]);
+  assert("a covered .insert(candidates) preceded by assertWithinLimit(hrCandidates) produces no finding", coveredFindings.length === 0);
+
+  const uncoveredInsertFixture = `
+class Svc {
+  async create(orgId) {
+    const [row] = await this.db.insert(candidates).values({ orgId }).returning();
+    return row;
+  }
+}
+`;
+  const strippedUncovered = stripCommentsAndStrings(uncoveredInsertFixture);
+  const uncoveredFindings = findUncoveredTableInserts(strippedUncovered, uncoveredInsertFixture, "fixture.ts", [{ table: "candidates", key: "hrCandidates" }]);
+  assert("an .insert(candidates) with NO assertWithinLimit before it produces one UNCOVERED-INSERT finding", uncoveredFindings.length === 1);
+  assert("the UNCOVERED-INSERT finding names the correct table and key", uncoveredFindings[0]?.table === "candidates" && uncoveredFindings[0]?.key === "hrCandidates");
+
+  const wrongKeyFixture = `
+class Svc {
+  async create(orgId) {
+    await this.planLimits.assertWithinLimit(orgId, "crmLeads", 1);
+    const [row] = await this.db.insert(candidates).values({ orgId }).returning();
+    return row;
+  }
+}
+`;
+  const strippedWrongKey = stripCommentsAndStrings(wrongKeyFixture);
+  const wrongKeyFindings = findUncoveredTableInserts(strippedWrongKey, wrongKeyFixture, "fixture.ts", [{ table: "candidates", key: "hrCandidates" }]);
+  assert("assertWithinLimit with a DIFFERENT key does not satisfy the candidates coverage requirement", wrongKeyFindings.length === 1);
+
+  const conditionalAssertFixture = `
+class Svc {
+  async create(orgId, existing) {
+    if (!existing) {
+      await this.planLimits.assertWithinLimit(orgId, "hrCandidates", 1);
+      const [row] = await this.db.insert(candidates).values({ orgId }).returning();
+      return row;
+    }
+    return existing;
+  }
+}
+`;
+  const strippedConditional = stripCommentsAndStrings(conditionalAssertFixture);
+  const conditionalFindings = findUncoveredTableInserts(strippedConditional, conditionalAssertFixture, "fixture.ts", [{ table: "candidates", key: "hrCandidates" }]);
+  assert("a conditional assert (in an if-block) before the insert in the SAME function body satisfies coverage", conditionalFindings.length === 0);
+
   // -- the real repository, so a parser/regex change that empties the scan fails here --
   const real = scan();
   assert(`the real constants file parses at least ${MIN_KEYS} keys (found ${real.keys.length})`, real.keys.length >= MIN_KEYS);
@@ -648,6 +795,16 @@ class Svc {
     directReal > 0,
   );
 
+  assert(
+    `the real corpus has at least ${MIN_CANDIDATES_INSERTS} .insert(candidates) sites — anti-vacuity for the inverse check (found ${real.candidatesInsertCount})`,
+    real.candidatesInsertCount >= MIN_CANDIDATES_INSERTS,
+  );
+
+  assert(
+    `every real .insert(candidates) site is preceded by assertWithinLimit("hrCandidates", ...) — no gaps allowed (${real.uncoveredInserts.length} uncovered)`,
+    real.uncoveredInserts.length === 0,
+  );
+
   if (failures.length > 0) {
     for (const f of failures) console.error(`  FAIL: ${f}`);
     console.error(`check-plan-limit-enforcement self-tests: ${failures.length} failed, ${passed} passed`);
@@ -661,9 +818,9 @@ if (SELF_TEST) runSelfTest();
 
 // -- main ---------------------------------------------------------------------
 
-const { keys, files, sites } = scan();
+const { keys, files, sites, uncoveredInserts, candidatesInsertCount } = scan();
 
-console.log(`LimitKey union: ${keys.length} keys  ·  source files scanned ${files.length}  ·  assertWithinLimit call sites ${sites.length}`);
+console.log(`LimitKey union: ${keys.length} keys  ·  source files scanned ${files.length}  ·  assertWithinLimit call sites ${sites.length}  ·  .insert(candidates) sites ${candidatesInsertCount}`);
 
 if (keys.length < MIN_KEYS || files.length < MIN_SCANNED_FILES || sites.length < MIN_CALL_SITES) {
   console.error(
@@ -730,10 +887,24 @@ if (lockMissing.length > 0) {
   failed = true;
 }
 
+if (candidatesInsertCount < MIN_CANDIDATES_INSERTS) {
+  console.error(
+    `\nINCONCLUSIVE — found only ${candidatesInsertCount} .insert(candidates) site(s) in the corpus (floor ${MIN_CANDIDATES_INSERTS}). The inverse check is vacuous; a clean result would prove nothing.`,
+  );
+  failed = true;
+}
+
+if (uncoveredInserts.length > 0) {
+  console.error(`\nFAIL — ${uncoveredInserts.length} .insert(candidates) site(s) with no assertWithinLimit("hrCandidates", ...) before them in the same function body:`);
+  for (const u of uncoveredInserts) console.error(`  ${u.file}:${u.line}  table=${u.table}  expected-key=${u.key}`);
+  console.error("Each of these is a quota enforcement gap: a candidate insert that runs without checking the plan limit first.");
+  failed = true;
+}
+
 if (failed) process.exit(1);
 
 console.log(
-  `\nOK — all ${keys.length} keys have at least one call site, no insert precedes its assert, and every members site carries the quota lock.`,
+  `\nOK — all ${keys.length} keys have at least one call site, no insert precedes its assert, every members site carries the quota lock, and all ${candidatesInsertCount} .insert(candidates) site(s) are preceded by assertWithinLimit("hrCandidates", ...).`,
 );
 console.log(
   `${delegated.length} call site(s) are DELEGATED — the write is not visible in the enclosing body (a cross-file helper). These are NOT proven ordered and are not counted as a pass; run with --list to review them.`,

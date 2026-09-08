@@ -3,6 +3,7 @@ import {
   GoneException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
@@ -20,6 +21,7 @@ import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { randomBytes } from "node:crypto";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type {
   ExternalReferralSubmitInput,
   ExternalReferrerRegisterInput,
@@ -27,7 +29,10 @@ import type {
 
 @Injectable()
 export class PublicReferrersService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly planLimits: PlanLimitsService,
+  ) {}
 
   async registerExternalReferrer(input: ExternalReferrerRegisterInput) {
     const org = await this.db.query.organizations.findFirst({
@@ -160,21 +165,25 @@ export class PublicReferrersService {
           columns: { id: true },
         });
 
-        const candidateId = existingCandidate
-          ? existingCandidate.id
-          : (
-              await tx
-                .insert(candidates)
-                .values({
-                  orgId: referrer.orgId,
-                  firstName: input.firstName,
-                  lastName: input.lastName,
-                  email: normalizedEmail,
-                  phone: input.phone,
-                  source: "EXTERNAL_REFERRAL",
-                })
-                .returning({ id: candidates.id })
-            )[0]!.id;
+        let candidateId: number;
+        if (existingCandidate) {
+          candidateId = existingCandidate.id;
+        } else {
+          await this.planLimits.assertWithinLimit(referrer.orgId, "hrCandidates", 1, tx);
+          const [created] = await tx
+            .insert(candidates)
+            .values({
+              orgId: referrer.orgId,
+              firstName: input.firstName,
+              lastName: input.lastName,
+              email: normalizedEmail,
+              phone: input.phone,
+              source: "EXTERNAL_REFERRAL",
+            })
+            .returning({ id: candidates.id });
+          if (!created) throw new InternalServerErrorException("Failed to create candidate.");
+          candidateId = created.id;
+        }
 
         const existingReferral = await tx.query.externalReferrals.findFirst({
           columns: { id: true },
