@@ -123,7 +123,14 @@ function makeFakeDb(backlog: Map<string, number>) {
 
   const db = {
     select: () => ({
-      from: () => ({ where: () => ({ orderBy: () => Promise.resolve(orgIds.map((id) => ({ id }))) }) }),
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({
+            limit: (pageSize: number) =>
+              Promise.resolve(orgIds.map((id) => ({ id })).slice(0, pageSize)),
+          }),
+        }),
+      }),
     }),
     transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
   };

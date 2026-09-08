@@ -50,7 +50,9 @@ describe("NotificationOutboxRelayService", () => {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockResolvedValue([{ id: ORG }]),
+          orderBy: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([{ id: ORG }]),
+          }),
         }),
       }),
     }),
