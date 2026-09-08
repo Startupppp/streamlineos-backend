@@ -79,15 +79,12 @@ async function assignStructuralRoles(
   membershipIdByUserId: Map<string, number>,
   accepted: readonly PlannedEmployee[],
 ): Promise<void> {
+  const structuralSlugs = [ORG_MEMBER_ROLES.ORG_ADMIN, ORG_MEMBER_ROLES.MEMBER];
   const roleRows = await tx
     .select({ id: roles.id, slug: roles.slug })
     .from(roles)
-    .where(
-      and(
-        eq(roles.orgId, orgId),
-        inArray(roles.slug, [ORG_MEMBER_ROLES.ORG_ADMIN, ORG_MEMBER_ROLES.MEMBER]),
-      ),
-    );
+    .where(and(eq(roles.orgId, orgId), inArray(roles.slug, structuralSlugs)))
+    .limit(structuralSlugs.length);
   const roleIdBySlug = new Map(roleRows.map((role) => [role.slug, role.id]));
 
   const assignments: Array<typeof roleAssignments.$inferInsert> = [];

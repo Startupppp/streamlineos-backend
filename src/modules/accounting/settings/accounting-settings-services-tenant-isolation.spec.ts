@@ -48,10 +48,19 @@ function makeSelectDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   (builder.orderBy as jest.Mock).mockReturnValue(builder);
   (builder.groupBy as jest.Mock).mockReturnValue(builder);
   (builder.offset as jest.Mock).mockReturnValue(builder);
-  const insertChain = {
-    values: jest.fn().mockReturnThis(),
-    onConflictDoUpdate: jest.fn().mockReturnThis(),
-    returning: jest.fn().mockResolvedValue([]),
+  let inserted: unknown = null;
+  interface InsertChain {
+    values: jest.Mock<InsertChain, [unknown]>;
+    onConflictDoUpdate: jest.Mock<InsertChain, []>;
+    returning: jest.Mock<Promise<unknown[]>, []>;
+  }
+  const insertChain: InsertChain = {
+    values: jest.fn((v: unknown): InsertChain => {
+      inserted = v;
+      return insertChain;
+    }),
+    onConflictDoUpdate: jest.fn((): InsertChain => insertChain),
+    returning: jest.fn(() => Promise.resolve(inserted === null ? [] : [inserted])),
   };
   const db = {
     select: jest.fn().mockReturnValue(builder),
@@ -93,7 +102,7 @@ describe("accounting settings services — cross-tenant isolation", () => {
 
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain("org-attacker");
-      expect(result).toBeUndefined();
+      expect(result).toMatchObject({ orgId: "org-attacker" });
     });
 
     it("getSettings returns settings for the correct org — CONTROL case", async () => {

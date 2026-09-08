@@ -51,7 +51,8 @@ export async function ensureManyFromUsers(
         isNull(hrEmployments.deletedAt),
         inArray(hrEmployments.personId, personIds),
       ),
-    );
+    )
+    .limit(personIds.length);
   const primaryByPersonId = new Map(primaryRows.map((row) => [row.personId, row.id]));
 
   const numberRows = await tx
@@ -67,7 +68,8 @@ export async function ensureManyFromUsers(
         isNull(hrEmployments.deletedAt),
         inArray(hrEmployments.employeeNumber, employeeNumbers),
       ),
-    );
+    )
+    .limit(employeeNumbers.length);
   const byNumber = new Map(numberRows.map((row) => [row.employeeNumber, row]));
 
   const rows: EnsureManyRow[] = [];

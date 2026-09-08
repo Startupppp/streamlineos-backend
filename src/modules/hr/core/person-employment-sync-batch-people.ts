@@ -32,7 +32,8 @@ export async function resolveOrganizationPeople(
           inArray(sql`lower(trim(${organizationPeople.workEmail}))`, emails),
         ),
       ),
-    );
+    )
+    .limit(userIds.length + emails.length);
 
   const byUserId = new Map<string, string>();
   const byEmail = new Map<string, string>();
@@ -98,7 +99,8 @@ export async function resolveHrPeople(
           inArray(hrPeople.organizationPersonId, orgPersonIds),
         ),
       ),
-    );
+    )
+    .limit(userIds.length + orgPersonIds.length);
 
   const byUserId = new Map<string, number>();
   const byOrgPersonId = new Map<string, number>();

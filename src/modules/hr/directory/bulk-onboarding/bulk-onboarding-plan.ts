@@ -44,7 +44,8 @@ export async function preloadIdentities(
   const existingUsers = await db
     .select({ id: users.id, email: users.email })
     .from(users)
-    .where(inArray(sql`lower(${users.email})`, [...emails]));
+    .where(inArray(sql`lower(${users.email})`, [...emails]))
+    .limit(emails.length);
   for (const user of existingUsers) snapshot.userIdByEmail.set(user.email.toLowerCase(), user.id);
 
   const userIds = [...snapshot.userIdByEmail.values()];
@@ -57,7 +58,8 @@ export async function preloadIdentities(
           eq(organizationMembers.orgId, orgId),
           inArray(organizationMembers.userId, userIds),
         ),
-      );
+      )
+      .limit(userIds.length);
     for (const membership of memberships) snapshot.memberUserIds.add(membership.userId);
   }
 
@@ -75,7 +77,8 @@ export async function preloadIdentities(
           eq(hrEmployments.isPrimary, true),
           inArray(hrEmployments.employeeNumber, [...employeeNumbers]),
         ),
-      );
+      )
+      .limit(employeeNumbers.length);
     for (const row of taken) snapshot.employeeNumberOwner.set(row.employeeNumber, row.userId);
   }
 

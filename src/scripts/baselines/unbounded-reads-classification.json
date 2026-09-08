@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "classifiedAt": "2026-09-01",
+  "classifiedAt": "2026-09-08",
   "note": "Verdicts: KEYSET-MIGRATED|BOUNDED|AGGREGATE|STREAM|FALSE-POSITIVE|EXCLUDED-MODULE|ACTIONABLE",
   "offset": {
     "/accounting/core/accounting-receivables.service.ts": {
@@ -3171,6 +3171,36 @@
     "/hr/core/hr-effective-change-applier.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "two inArray-bounded selects (employmentRows at ~:106, jobLevelIds at ~:134); bounded by request batch but lack explicit .limit() — fix deferred: file is in the exclusive-ownership lane of a concurrent agent"
+    },
+    "/hr/core/person-employment-sync-batch-people.ts": {
+      "verdict": "BOUNDED",
+      "note": "inArray-bounded by a DTO-capped request batch",
+      "justification": "resolveOrganizationPeople/resolveHrPeople read with inArray over the batch userIds/emails, org-scoped. Sole production caller is bulk-onboarding-writes.ts:207 via PersonEmploymentSyncService.ensureManyFromUsers, and bulkOnboardEmployeesSchema caps the payload at 100 rows. Split out of person-employment-sync.service.ts 2026-09-07."
+    },
+    "/hr/core/person-employment-sync-batch.ts": {
+      "verdict": "BOUNDED",
+      "note": "inArray-bounded by a DTO-capped request batch",
+      "justification": "ensureManyFromUsers reads hr_employments with inArray(personIds) and inArray(employeeNumbers), both derived from the same capped batch, org-scoped and deleted_at-filtered. bulkOnboardEmployeesSchema caps the payload at 100 rows. Split out of person-employment-sync.service.ts 2026-09-07."
+    },
+    "/hr/directory/bulk-onboarding/bulk-onboarding-departments.ts": {
+      "verdict": "BOUNDED",
+      "note": "inArray-bounded by a DTO-capped request batch",
+      "justification": "org_units read is inArray(lower(name), stillMissing) plus orgId and kind=DEPARTMENT; stillMissing is a subset of the request batch. bulkOnboardEmployeesSchema caps the payload at 100 rows. Split out of employee-bulk-onboarding.service.ts 2026-09-07."
+    },
+    "/hr/directory/bulk-onboarding/bulk-onboarding-plan.ts": {
+      "verdict": "BOUNDED",
+      "note": "inArray-bounded by a DTO-capped request batch",
+      "justification": "preloadIdentities takes three inArray reads over the batch emails/userIds/employeeNumbers instead of three per row; the memberships and employments reads are org-scoped, the users read is global identity by design. bulkOnboardEmployeesSchema caps the payload at 100 rows. Split out of employee-bulk-onboarding.service.ts 2026-09-07."
+    },
+    "/hr/directory/bulk-onboarding/bulk-onboarding-salary.ts": {
+      "verdict": "BOUNDED",
+      "note": "inArray-bounded by a DTO-capped request batch",
+      "justification": "salary_structure_templates read is inArray(templateIds) over the batch; the sibling salary_components read already carries .limit(100). bulkOnboardEmployeesSchema caps the payload at 100 rows. Split out of employee-bulk-onboarding.service.ts 2026-09-07."
+    },
+    "/hr/directory/bulk-onboarding/bulk-onboarding-writes.ts": {
+      "verdict": "BOUNDED",
+      "note": "inArray-bounded by a DTO-capped request batch",
+      "justification": "roles read is bounded by two literal slugs (ORG_ADMIN, MEMBER) under eq(roles.orgId); not batch-dependent at all. Split out of employee-bulk-onboarding.service.ts 2026-09-07."
     }
   }
 }

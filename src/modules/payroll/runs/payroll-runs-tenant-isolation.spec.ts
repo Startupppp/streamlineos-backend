@@ -43,10 +43,24 @@ function makeDb(rows: unknown[]) {
   builder.groupBy.mockReturnValue(builder);
   const queryProxy = new Proxy({} as Record<string, unknown>, { get: () => ({ findMany, findFirst }) });
   const updateWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) });
+  const insertValues = jest.fn();
+  interface InsertChain {
+    values: jest.Mock<InsertChain, [unknown]>;
+    returning: jest.Mock<Promise<unknown[]>, []>;
+  }
+  const insertChain: InsertChain = {
+    values: jest.fn((v: unknown): InsertChain => {
+      insertValues(v);
+      return insertChain;
+    }),
+    returning: jest.fn(() =>
+      Promise.resolve(rows.length > 0 ? rows : insertValues.mock.calls.map((c) => c[0]).slice(-1)),
+    ),
+  };
   const txDb = {
     select: jest.fn().mockReturnValue(builder),
     query: queryProxy,
-    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }),
+    insert: jest.fn().mockReturnValue(insertChain),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) }),
     execute: jest.fn().mockResolvedValue(rows),
@@ -55,7 +69,7 @@ function makeDb(rows: unknown[]) {
     ...txDb,
     transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn(txDb)),
   } as unknown as Db;
-  return { db, where, findMany, findFirst, updateWhere };
+  return { db, where, findMany, findFirst, updateWhere, insertValues };
 }
 
 function allArgs(where: jest.Mock, findFirst: jest.Mock, findMany?: jest.Mock, updateWhere?: jest.Mock): unknown[] {

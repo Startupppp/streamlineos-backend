@@ -114,7 +114,11 @@ export async function ensureDepartments(
   if (stillMissing.length === 0) return;
 
   const found = await db
-    .select({ id: orgUnits.id, name: orgUnits.name, code: orgUnits.code })
+    .selectDistinctOn([sql`lower(${orgUnits.name})`], {
+      id: orgUnits.id,
+      name: orgUnits.name,
+      code: orgUnits.code,
+    })
     .from(orgUnits)
     .where(
       and(
@@ -123,6 +127,8 @@ export async function ensureDepartments(
         isNull(orgUnits.deletedAt),
         inArray(sql`lower(${orgUnits.name})`, stillMissing),
       ),
-    );
+    )
+    .orderBy(sql`lower(${orgUnits.name})`, asc(orgUnits.id))
+    .limit(stillMissing.length);
   for (const department of found) record(catalog, department);
 }

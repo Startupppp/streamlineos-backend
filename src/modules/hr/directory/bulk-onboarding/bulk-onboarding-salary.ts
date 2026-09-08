@@ -64,7 +64,8 @@ export async function seedSalaryProfiles(
           eq(salaryStructureTemplates.isActive, true),
           inArray(salaryStructureTemplates.id, templateIds),
         ),
-      );
+      )
+      .limit(templateIds.length);
     for (const template of templates)
       splitByTemplateId.set(template.id, splitFromTemplate(template));
   }
