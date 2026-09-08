@@ -20,20 +20,19 @@
  * worth the blast radius).
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import postgres from "postgres";
 import { buildReimbursementPayload } from "../payroll-inputs-money";
 import { buildCalcPullsFromSections } from "../../../payroll/runs/lib/input-puller";
 import { toPaise } from "../../../payroll/runs/lib/money";
 
 function connect() {
-  if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
-    dotenv.config({ path: ".env" });
-  }
   // DATABASE_URL (owner) first: hr_insurance_claims carries a tenant_isolation
   // RLS policy and this spec sets no app.current_org_id GUC.
-  const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("payroll-inputs-reimbursement-units.db.spec.ts requires DATABASE_URL or APP_DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "payroll-inputs-reimbursement-units.db.spec.ts",
+    vars: ["DATABASE_URL", "APP_DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const ssl = url.hostname === "localhost" || url.hostname === "127.0.0.1" ? false : "require";

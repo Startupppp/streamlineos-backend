@@ -23,7 +23,7 @@
 import { Test } from "@nestjs/testing";
 import { and, asc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import postgres from "postgres";
 import * as schema from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
@@ -45,9 +45,10 @@ import {
 class Rollback extends Error {}
 
 function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("invoice-edit-gst-integrity.db.spec.ts requires DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "invoice-edit-gst-integrity.db.spec.ts",
+    vars: ["DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), {

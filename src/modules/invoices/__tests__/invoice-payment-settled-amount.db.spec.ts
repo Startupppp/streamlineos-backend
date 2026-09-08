@@ -25,7 +25,7 @@
  * ON DELETE CASCADE.
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { and, eq } from "drizzle-orm";
@@ -45,9 +45,10 @@ import type { NotificationDispatchService } from "../../notifications/notificati
 import type { CrmAutomationBusService } from "../../crm/automation-studio/crm-automation-bus.service";
 
 function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("invoice-payment-settled-amount.db.spec.ts requires DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "invoice-payment-settled-amount.db.spec.ts",
+    vars: ["DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const sslmode = url.searchParams.get("sslmode");

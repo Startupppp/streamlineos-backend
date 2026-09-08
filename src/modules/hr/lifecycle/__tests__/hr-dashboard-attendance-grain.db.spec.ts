@@ -17,7 +17,7 @@
  * only way to measure it. It runs the real buildAttendanceAnalytics against
  * seeded rows and removes them afterwards.
  */
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "../../../../db/schema";
@@ -26,11 +26,10 @@ import { buildAttendanceAnalytics } from "../hr-dashboard-attendance";
 import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "../../../../../test/helpers/probe-org";
 
 function connect() {
-  if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
-    dotenv.config({ path: ".env" });
-  }
-  const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("hr-dashboard-attendance-grain.db.spec.ts requires DATABASE_URL or APP_DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "hr-dashboard-attendance-grain.db.spec.ts",
+    vars: ["DATABASE_URL", "APP_DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const ssl = url.hostname === "localhost" || url.hostname === "127.0.0.1" ? false : "require";

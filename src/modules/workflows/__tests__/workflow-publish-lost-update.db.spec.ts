@@ -30,15 +30,16 @@
  * row cascades. Run via `pnpm test:db-specs` (jest-db.json).
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import postgres from "postgres";
 
 jest.setTimeout(120_000);
 
 function connect(): ReturnType<typeof postgres> {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("workflow-publish-lost-update.db.spec.ts requires DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "workflow-publish-lost-update.db.spec.ts",
+    vars: ["DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const plaintext =

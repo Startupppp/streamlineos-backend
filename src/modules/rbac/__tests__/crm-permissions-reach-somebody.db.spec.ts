@@ -1,4 +1,4 @@
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import postgres from "postgres";
 import {
   IMPORT_ENTITY_PERMISSIONS,
@@ -36,10 +36,10 @@ describe("every CRM permission reaches somebody", () => {
   let sql: ReturnType<typeof postgres>;
 
   beforeAll(() => {
-    // Jest does not boot the app, so nothing has loaded `.env` for us.
-    if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-    const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("crm-permissions-reach-somebody.db.spec.ts requires DATABASE_URL");
+    const url = requireApprovedDatabaseUrl({
+      spec: "crm-permissions-reach-somebody.db.spec.ts",
+      vars: ["DATABASE_URL"],
+    });
     sql = postgres(url, { max: 1, prepare: false });
   });
 

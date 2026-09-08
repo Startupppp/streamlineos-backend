@@ -9,18 +9,16 @@
  * semantics and ledger/snapshot agreement are only provable against Postgres.
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import postgres from "postgres";
 
 function connect() {
-  if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
-    // jest-setup.ts does not load .env; these specs are opt-in and need the real URL.
-    dotenv.config({ path: ".env" });
-  }
   // DATABASE_URL first: these specs create and drop scratch tables, which the
   // RLS-enforced application role is not permitted to do.
-  const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "stock-engine.db.spec.ts",
+    vars: ["DATABASE_URL", "APP_DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), { prepare: false, max: 10, ssl: "require", connect_timeout: 30 });

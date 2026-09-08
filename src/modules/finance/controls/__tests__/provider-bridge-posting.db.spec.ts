@@ -18,7 +18,7 @@
  * ON DELETE CASCADE, so the database is left exactly as it was found.
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { and, eq } from "drizzle-orm";
@@ -33,9 +33,10 @@ import type { CacheService } from "../../../../common/cache/cache.service";
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 
 function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("provider-bridge-posting.db.spec.ts requires DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "provider-bridge-posting.db.spec.ts",
+    vars: ["DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   // A local Postgres has no TLS; a hosted one requires it. Derive rather than

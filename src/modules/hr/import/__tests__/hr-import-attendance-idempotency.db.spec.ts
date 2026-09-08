@@ -17,7 +17,7 @@
  * happily report the guard working. Everything is written inside a Drizzle
  * transaction that is always rolled back.
  */
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
@@ -31,11 +31,10 @@ const DATE = "2026-07-06";
 const ROLLBACK = "__rollback__";
 
 function connect() {
-  if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
-    dotenv.config({ path: ".env" });
-  }
-  const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("hr-import-attendance-idempotency.db.spec.ts requires DATABASE_URL or APP_DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "hr-import-attendance-idempotency.db.spec.ts",
+    vars: ["DATABASE_URL", "APP_DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const ssl = url.hostname === "localhost" || url.hostname === "127.0.0.1" ? false : "require";

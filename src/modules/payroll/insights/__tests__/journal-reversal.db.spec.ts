@@ -28,7 +28,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { ConflictException } from "@nestjs/common";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -50,9 +50,10 @@ jest.setTimeout(300_000);
 class Rollback extends Error {}
 
 function connect(): ReturnType<typeof postgres> {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("journal-reversal.db.spec.ts requires DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "journal-reversal.db.spec.ts",
+    vars: ["DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const plaintext =

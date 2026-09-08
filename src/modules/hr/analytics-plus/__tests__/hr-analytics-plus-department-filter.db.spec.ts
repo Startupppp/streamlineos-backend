@@ -15,7 +15,7 @@
  * catalog, that the page query and its COUNT carry the same predicate, and that
  * the semi-join does not multiply rows the way an added JOIN would.
  */
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../../test/db-spec-guard";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { sql } from "drizzle-orm";
@@ -46,11 +46,10 @@ const METRICS = ["attrition", "leave", "attendance", "cases"] as const;
 const MIN_COVERED_METRICS = 2;
 
 function connect() {
-  if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
-    dotenv.config({ path: ".env" });
-  }
-  const raw = process.env.DATABASE_URL || process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("hr-analytics-plus-department-filter.db.spec.ts requires DATABASE_URL or APP_DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "hr-analytics-plus-department-filter.db.spec.ts",
+    vars: ["DATABASE_URL", "APP_DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const ssl = url.hostname === "localhost" || url.hostname === "127.0.0.1" ? false : "require";

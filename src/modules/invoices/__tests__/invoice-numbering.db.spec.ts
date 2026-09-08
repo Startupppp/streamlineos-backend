@@ -14,15 +14,14 @@
  * here with genuine concurrent Postgres transactions.
  */
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import postgres from "postgres";
 
 function connect() {
-  if (!process.env.DATABASE_URL && !process.env.APP_DATABASE_URL) {
-    dotenv.config({ path: ".env" });
-  }
-  const raw = process.env.DATABASE_URL ?? process.env.APP_DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL required");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "invoice-numbering.db.spec.ts",
+    vars: ["DATABASE_URL", "APP_DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   // TLS is hardcoded nowhere else in this repo's DB tooling; honouring PGSSLMODE

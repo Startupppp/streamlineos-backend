@@ -24,7 +24,7 @@
  */
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
 import postgres from "postgres";
 import * as schema from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.types";
@@ -39,9 +39,10 @@ import { FeedbackService } from "./feedback.service";
 class Rollback extends Error {}
 
 function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.HR_PROBE_DATABASE_URL ?? process.env.DATABASE_URL;
-  if (!raw) throw new Error("feedback-results-shape.db.spec.ts requires HR_PROBE_DATABASE_URL or DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "feedback-results-shape.db.spec.ts",
+    vars: ["HR_PROBE_DATABASE_URL", "DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
