@@ -173,8 +173,17 @@ export class AutonomyReviewController {
    * this is where a tenant finds out why a customer stopped hearing from them —
    * without it, follow-ups thin out and the reason is only in a table.
    */
+  /**
+   * Spelled out rather than `REVIEW_PERMISSION`, unlike its neighbours.
+   *
+   * `gated-keys-are-catalogued.spec.ts` ratchets how many gates its regex cannot
+   * resolve, because a decorator taking a shared constant is a gate that scan is
+   * quietly not covering. The allowance was at its ceiling of 25 and adding this
+   * route took it to 26. Raising the ratchet would buy the consistency by
+   * covering one less gate, which is the wrong side of that trade.
+   */
   @Get("class-stops")
-  @RequirePermission(REVIEW_PERMISSION)
+  @RequirePermission("crm:autonomy:view")
   liveClassStops(@CurrentUser() u: CurrentUserContext) {
     return this.holds.liveClassStops(u.orgId);
   }
