@@ -216,11 +216,110 @@ errors before and after this pass.
   commercial guardrails should be tighter than "the deal moved, we have a
   number, nobody has quoted yet", that is the paragraph to revisit.
 
+## The headline: nothing schedules the loops
+
+Phase 4's first goal is that the loops run with no human step. They do not run at
+all unless somebody posts to a route.
+
+There is no scheduler in this repository — no `@nestjs/schedule`, no `@Cron`, no
+`ScheduleModule` anywhere in `src/`. The codebase says so itself at
+`src/modules/lifecycle/lifecycle-triggers.service.ts:61`: *"NOTHING SCHEDULES
+THIS… a renewal opens a conversation when a person or a job posts to that route,
+and not before."* That comment is honest and it is load-bearing.
+
+The one CRM thing on a cron path is `CronCrmTasksService.flushOverdueTasks`
+(task reminders), reached via `cron-build.controller.ts`. No cron controller
+mentions lifecycle, outbound, repair, forecast or relationship sweeps.
+
+So today: the durable workflow advances when `POST /cron/workflow-tick` is
+driven, and every other autonomous loop — renewals, churn risk, silence
+detection, field repair — waits for a human or an external job. The golden path
+passes because the spec drives the tick itself. **This is the single largest gap
+between what the CRM claims and what it does**, and it is infrastructure, not a
+CRM feature: whatever runs on a timer should call these services rather than
+grow its own copy.
+
+## Phase 4 was never ticketed either
+
+No tickets were derived from `2026-08-24-crm-phase-4-loops-prd.md`. A sweep found
+a great deal genuinely built — relationship state derived from activities,
+out-of-office distinguished from a reply, compose → hold → send-time snapshot,
+consent and suppression evaluated at send time, per-party frequency caps, the
+cold-outbound gate with ramp and self-pause, auto-repair with per-item revert,
+one decision-record shape across loops, and kill switches per kind and tenant
+with a UI. That is real.
+
+Unreached, same shape as the rest:
+
+| Surface | State |
+|---|---|
+| **The learned forecast** | `src/modules/deals/forecast/{logistic-regression,training-examples,deal-forecast-features,forecast-metrics,matrix-solve}.ts` are imported only by their own specs. `crmDealForecastModels` and `crmDealForecastScores` have zero references outside `db/schema`. Shipped forecasting is stage-probability × value. |
+| **`LifecycleTriggersService.sweep`** | The only autonomous caller of `composeAndHold`. Nothing invokes it. |
+| **`POST /crm/autonomy/outbound`** | No frontend caller. |
+| **The whole repair operator surface** | Four endpoints — repair policies GET/PATCH, repairs/run, repairs, repair-measure — have no frontend caller at all, only an unused permission key. US18/20/21 have no operator: a steward can neither set classes nor see the ratio. |
+| **`RelationshipStateService.read()` / `listAwaitingReply()`** | No callers outside the module. |
+| **`meeting_request` outbound class** | `outbound.service.ts:845` hardcodes `meetingRequested: false`, so the eligibility branch can never fire. No calendar free/busy anywhere. |
+
+Missing: deal-gone-quiet detection (US1), champion→procurement shift (US2),
+thread-fork-as-opportunity (US3), automatic competitor capture (US4 — capture is
+a manual POST), and the entire forecast intelligence set (US12–17: confidence
+interval, ranked factors, learning from the tenant's closed deals, rep
+calibration, what-would-change-its-mind, accuracy over time). A stopped message
+does not stop its class for that party — `crmOutboundClassStops` is read and
+never written. Nothing writes `crmSuppressionHashes`, so cold-track unsubscribes
+are not ingested. Renewal is not an outbound class.
+
+Partial: silence is judged on fixed 10/45-day constants, never against the
+relationship's own stored `replyP50Seconds`; `partyTimezone` is hardcoded `null`
+at `outbound.service.ts:548`, so working hours are always the tenant's; the cold
+track can be paused but never enabled or warmed, because nothing writes
+`crmColdOutboundSettings` or `crmSendingDomains`; and there is no eval dataset or
+gate for outbound, forecast, relationship or repair.
+
+The renderer migration (D28, US27–29) is out of scope for this programme and is
+not counted as a gap — but for the record, `@/features/renderer` has no consumers
+outside `crm/` and `party/`.
+
+## Phase 5 was never ticketed, and a sweep of it found four more unreached surfaces
+
+No tickets were ever derived from `2026-08-24-crm-phase-5-best-in-class-prd.md`,
+so until 2026-09-08 nothing had checked it against the code. A sweep did. Four
+findings are the same shape as `generateAndHoldQuote` — written, reviewed, and
+reached by nothing:
+
+| Surface | State |
+|---|---|
+| **Multi-touch attribution** | `src/modules/attribution/attribution-models.ts` implements linear, time-decay and position-based weighting as complete pure functions. There is no module, no service, no controller, and `AttributionModule` appears **zero** times in `app.module.ts`. Nothing outside that directory calls `weightsFor`, `orderTouches` or `touchesUpTo`. The shipped attribution is the first/last-touch report the PRD exists to replace. |
+| **Nurture sequences** | `crm_nurture_sequences`, `_steps`, `_enrollments`, `_step_attempts` exist, carrying `autonomyHoldId`, `outboundMessageId` and `exitReason`. Outside `db/schema`, the only files that reference them are `sequence-reply-exit.service.ts` and its spec. No controller, no enrollment writer, no step sender. |
+| **Reply-exit** | `SequenceReplyExitService.onInboundReply` is fully written and its module is registered, but `grep -rn "onInboundReply" src` outside its own directory returns nothing. The PRD calls continuing to send after someone replies the single most damaging behaviour in the product. |
+| **The reporting query surface** | `@Controller("crm/reporting")` is registered and complete — parameterised compilation, tenancy and DataScope applied by the compiler, injection-tested. Zero frontend files reference `crm/reporting`. Its only caller is `crm_run_report` inside the MCP service, which sits behind `JwtAuthGuard` and so cannot be reached by the agent tokens it was built for. |
+
+**A correction to the 2026-09-08 record.** An earlier edition of this section
+said "the nurture-sequences half is complete end to end", citing
+`@Controller("crm/sequences")`, `CrmSequencesService` and `/crm/settings/sequences`.
+That was a name match, not a verification. Those are a **different** feature over
+the `crm_sequences` task tables; that service contains zero references to the
+nurture tables and zero to consent, frequency caps, working hours or holds. The
+claim was wrong and is withdrawn.
+
+Also missing outright, from the same sweep: segments at every layer (no table,
+service, route or hook); per-rep call aggregates and trends; best-call exemplar
+search; ARR movement (new / expansion / contraction / churn — the trigger kinds
+are exactly `renewal-due` and `churn-risk`, with no expansion trigger); a report
+builder UI, report scheduling and delivery; MCP being off by default per tenant;
+and MCP tool execution reaching the audit trail (`grep -rni audit
+src/modules/crm/mcp/` returns nothing).
+
+Partial: commissions calculate correctly but only on an explicit POST — there is
+no scheduler anywhere in `src/`, so "calculated continuously" and "clawback is
+automatic" are both manual today. Campaign attribution sums `deals.value` with no
+won-stage predicate, so it reports pipeline value, not closed revenue. MCP
+exposes six tools, all reads.
+
 ## Not Built, and Not a Gap to Close by Testing
 
-- **P5-mk segments.** The nurture-sequences half is complete end to end
-  (`@Controller("crm/sequences")`, `CrmSequencesService`, and a UI at
-  `/crm/settings/sequences`). The **segments** half does not exist at any
-  layer — no table, no service, no route, no UI. It is a feature to be built,
-  not a gap to be closed, and building the UI first would produce exactly the
-  "shipped but unreachable" surface this programme has been correcting.
+- **P5-mk segments.** Confirmed absent at every layer — no table in
+  `src/db/schema/crm/`, no service, no controller, no route, no hook. A feature
+  to be built, not a gap to be closed, and building the UI first would produce
+  exactly the "shipped but unreachable" surface this programme has been
+  correcting — of which phase 5 already has four.
