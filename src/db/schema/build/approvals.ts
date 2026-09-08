@@ -54,5 +54,5 @@ export const projectApprovals = build.table("project_approvals", {
     columns: [t.orgId, t.approverMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_project_approvals_approver_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
 ]);

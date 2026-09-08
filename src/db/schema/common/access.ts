@@ -65,7 +65,7 @@ export const roleAssignments = pgTable(
       name: "fk_role_assignments_assigner_membership",
       columns: [table.orgId, table.assignedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-    }),
+    }).onDelete("set null"),
   ],
 );
 
@@ -135,7 +135,7 @@ export const userPermissionGrants = pgTable(
       name: "fk_user_permission_grants_granter_membership",
       columns: [table.orgId, table.grantedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-    }),
+    }).onDelete("set null"),
     foreignKey({
       name: "fk_user_permission_grants_module",
       columns: [table.moduleKey],

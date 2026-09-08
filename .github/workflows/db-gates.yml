@@ -168,6 +168,22 @@ jobs:
         env:
           REFERENTIAL_ACTION_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
 
+      # The third leg. The two drift gates above compare the Drizzle source to the
+      # catalog; this one compares MEMBERSHIP_ARTIFACTS -- the product's contract for
+      # what survives a membership removal -- to the same catalog. It belongs here and
+      # not in the hermetic `gates` job for the same reason as its neighbours: whether
+      # a foreign key exists at all lives only in pg_constraint. MEASURED locally at
+      # journal head: self-test 20/20; the gate found 8 foreign keys the schema had
+      # declared for months and no migration had ever created (fixed in 1072) and now
+      # exits 0 over 344 column-level expectations. With no database it exits 2
+      # (INCONCLUSIVE), the prerequisite-absent code, not a red.
+      - name: Membership artifacts match the catalog
+        run: >-
+          pnpm check:membership-parity:self-test &&
+          pnpm check:membership-parity
+        env:
+          MEMBERSHIP_PARITY_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
       # UNPROVEN. Unlike every gate above it, this suite has never completed anywhere —
       # not in CI, not in this ticket's measurement pass. Making an unmeasured 45-minute
       # suite a required pull-request check is how a pipeline gets muted, so it runs on

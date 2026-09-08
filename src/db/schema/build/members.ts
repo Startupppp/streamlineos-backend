@@ -43,7 +43,7 @@ export const projectMembers = build.table("project_members", {
     columns: [table.orgId, table.membershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_project_members_member_actor",
-  }).onDelete("restrict"),
+  }).onDelete("cascade"),
 ]);
 
 export const projectViews = build.table("project_views", {

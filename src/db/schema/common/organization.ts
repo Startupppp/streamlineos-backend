@@ -9,7 +9,6 @@ import {
   foreignKey,
   check,
   jsonb,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizationMembers, organizations } from "./auth";
@@ -49,9 +48,7 @@ export const orgUnits = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     kind: text("kind").$type<OrgUnitKind>().notNull(),
-    parentId: text("parent_id").references((): AnyPgColumn => orgUnits.id, {
-      onDelete: "set null",
-    }),
+    parentId: text("parent_id"),
     name: text("name").notNull(),
     code: text("code").notNull(),
     description: text("description"),

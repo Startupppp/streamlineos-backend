@@ -85,7 +85,7 @@ export const chatChannelMembers = pgTable(
     index("idx_chat_members_channel").on(table.channelId),
     unique("uniq_chat_channel_members_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_channel_members_org_channel" }),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_channel_members_org_membership" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_channel_members_org_membership" }).onDelete("cascade"),
   ],
 );
 

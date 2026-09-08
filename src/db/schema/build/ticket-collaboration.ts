@@ -48,7 +48,7 @@ export const ticketAssignees = build.table(
       columns: [table.orgId, table.membershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_ticket_assignees_member_actor",
-    }).onDelete("restrict"),
+    }).onDelete("cascade"),
   ],
 );
 

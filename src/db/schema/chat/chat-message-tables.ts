@@ -90,7 +90,7 @@ export const chatMessageReactions = pgTable(
     index("idx_chat_message_reactions_membership").on(table.orgId, table.membershipId),
     unique("uniq_chat_message_reactions_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.messageId], foreignColumns: [chatMessages.orgId, chatMessages.id], name: "fk_chat_message_reactions_org_message" }),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_message_reactions_org_membership" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_message_reactions_org_membership" }).onDelete("cascade"),
   ],
 );
 

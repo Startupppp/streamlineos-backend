@@ -21,7 +21,9 @@ export const auditLogs = pgTable(
     userId: text("user_id")
       .references(() => users.id)
       .notNull(),
-    orgId: text("org_id").references(() => organizations.id, { onDelete: "set null" }),
+    // NOT "set null": chk_audit_logs_tenant_or_platform pins (org_id IS NULL) = is_platform_event,
+    // so nulling a tenant row's org_id on organization delete raises 23514 instead of succeeding.
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "no action" }),
     targetId: text("target_id"),
     targetType: text("target_type"),
     actorUserId: text("actor_user_id"),
@@ -51,7 +53,7 @@ export const auditLogs = pgTable(
       columns: [table.orgId, table.actorMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_audit_logs_org_actor_membership",
-    }),
+    }).onDelete("set null"),
     index("idx_audit_logs_action").on(table.action),
     index("idx_audit_logs_created_at").on(table.createdAt),
     index("idx_audit_logs_org_created").on(table.orgId, table.createdAt),

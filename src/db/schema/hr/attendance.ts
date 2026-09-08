@@ -101,7 +101,7 @@ export const wfhRequests = pgTable("wfh_requests", {
     columns: [table.orgId, table.approverMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_wfh_requests_approver_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.userMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -138,7 +138,7 @@ export const helpdeskTickets = pgTable("helpdesk_tickets", {
     columns: [table.orgId, table.assigneeMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_helpdesk_tickets_assignee_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
 ]);
 
 export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {

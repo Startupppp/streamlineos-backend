@@ -459,6 +459,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:module-gate:self-test && pnpm check:module-gate
 
+      # Landed in package.json in the previous session and never wired, so the property
+      # it proves -- every limited creation path calls assertWithinLimit BEFORE its
+      # insert -- was still only a hand-audit. Purely static (it derives the LimitKey
+      # values from plan-entitlements.constants.ts and resolves call sites by brace
+      # balancing), so the hermetic job is its right home.
+      - name: Plan limits are asserted before the insert
+        if: ${{ !cancelled() }}
+        run: pnpm check:plan-limit-enforcement:self-test && pnpm check:plan-limit-enforcement
+
       # The index half of the RLS invariant, which needs no database: the policy
       # half is db:verify-rls in the tenant-isolation job below, and that job only
       # runs on a schedule because it needs credentials. Without a leading tenant

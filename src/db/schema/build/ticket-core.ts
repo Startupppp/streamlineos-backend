@@ -145,12 +145,12 @@ export const tickets = build.table(
       columns: [t.orgId, t.assigneeMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_tickets_assignee_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [t.orgId, t.reporterMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_tickets_reporter_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
   ],
 );
 

@@ -108,17 +108,17 @@ export const leaveRequests = pgTable("leave_requests", {
     columns: [table.orgId, table.approverMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_leave_requests_approver_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.createdByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_leave_requests_created_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.updatedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_leave_requests_updated_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   check("chk_leave_requests_row_version", sql`${table.rowVersion} > 0`),
   check(
     "chk_leave_requests_priority",

@@ -4880,6 +4880,20 @@
       "when": 1803000010148,
       "tag": "1070_audit_logs_no_truncate",
       "breakpoints": true
+    },
+    {
+      "idx": 830,
+      "version": "7",
+      "when": 1803000010149,
+      "tag": "1071_hierarchy_and_person_fk_restrict",
+      "breakpoints": true
+    },
+    {
+      "idx": 831,
+      "version": "7",
+      "when": 1803000010150,
+      "tag": "1072_attendance_shift_membership_fks",
+      "breakpoints": true
     }
   ]
 }

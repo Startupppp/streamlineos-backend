@@ -50,7 +50,7 @@ export const ticketActivityLog = buildEvents.table("ticket_activity_log", {
     name: "fk_ticket_activity_log_user_actor",
     columns: [table.orgId, table.userMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
 ]);
 
 export const ticketCommentMentions = build.table("ticket_comment_mentions", {
@@ -68,7 +68,7 @@ export const ticketCommentMentions = build.table("ticket_comment_mentions", {
     name: "fk_ticket_comment_mentions_mentioned_user_actor",
     columns: [table.orgId, table.mentionedUserMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
 ]);
 
 export const ticketActivityLogRelations = relations(ticketActivityLog, ({ one }) => ({

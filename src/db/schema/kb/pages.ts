@@ -84,11 +84,11 @@ export const kbPages = pgTable(
     foreignKey({ columns: [table.orgId, table.parentPageId], foreignColumns: [table.orgId, table.id], name: "fk_kb_pages_org_parent" }),
     foreignKey({ columns: [table.orgId, table.sourceArticleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_pages_org_source_article" }).onDelete("set null"),
     foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_kb_pages_org_project" }).onDelete("set null"),
-    foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_created_membership" }),
-    foreignKey({ columns: [table.orgId, table.lastEditedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_edited_membership" }),
-    foreignKey({ columns: [table.orgId, table.deletedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_deleted_membership" }),
-    foreignKey({ columns: [table.orgId, table.ownerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_owner_membership" }),
-    foreignKey({ columns: [table.orgId, table.verifiedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_verified_membership" }),
+    foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_created_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.lastEditedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_edited_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.deletedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_deleted_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.ownerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_owner_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.verifiedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_pages_org_verified_membership" }).onDelete("set null"),
   ],
 );
 
@@ -110,7 +110,7 @@ export const kbPageFavorites = pgTable(
     index("idx_kb_page_favorites_org_membership_sort").on(table.orgId, table.membershipId, table.sortOrder, table.createdAt),
     unique("uniq_kb_page_favorites_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_favorites_org_page" }),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_favorites_org_membership" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_favorites_org_membership" }).onDelete("cascade"),
   ],
 );
 
@@ -131,7 +131,7 @@ export const kbPageVisits = pgTable(
     index("idx_kb_page_visits_org_membership_visited").on(table.orgId, table.membershipId, table.visitedAt),
     unique("uniq_kb_page_visits_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_page_visits_org_page" }),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_visits_org_membership" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_page_visits_org_membership" }).onDelete("cascade"),
   ],
 );
 
