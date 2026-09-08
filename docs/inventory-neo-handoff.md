@@ -20,6 +20,13 @@ the queue reopened on that one clause. Five tickets, GitHub #56–#60.
 
 **Fenced routes in inventory: 13 → 78.** Backend `tsc --noEmit` EXIT=0.
 
+**Re-verified at the final HEAD (`ff3607353`): 53 suites / 566 tests / EXIT=0**, after the
+seven T27 fences and the T28 DELETE readings — plus backend 6 suites / 33 tests, frontend
+34 suites / 373 tests, and `tsc --noEmit` clean on both sides. **All 85 inventory fence
+command names are distinct** (85 fences, 85 names); a sweep of the whole backend for
+duplicates found three in HR (`hr.attendance.check-in` / `check-out` / `toggle-break`,
+declared by two controllers), pre-existing since `828dba9a6` and left alone as out of scope.
+
 **The whole `test/inventory` seeded suite: 53 suites / 566 tests / EXIT=0**, against
 `inv_t02_probe`. That is the regression check that mattered: `@Idempotent` makes the header
 *required*, so 65 inventory routes now answer a keyless caller with 400, and not one existing
