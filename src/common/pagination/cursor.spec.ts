@@ -1,4 +1,12 @@
-import { buildCursorPage, buildIdCursorPage, decodeCursor, encodeCursor } from "./cursor";
+import {
+  buildCursorPage,
+  buildIdCursorPage,
+  buildTupleCursorPage,
+  decodeCursor,
+  decodeTupleCursor,
+  encodeCursor,
+  encodeTupleCursor,
+} from "./cursor";
 
 describe("cursor encoding", () => {
   it("round-trips a position", () => {
@@ -183,5 +191,53 @@ describe("buildIdCursorPage", () => {
     expect(page.data).toEqual([]);
     expect(page.hasMore).toBe(false);
     expect(page.nextCursor).toBeNull();
+  });
+});
+
+describe("tuple cursor encoding", () => {
+  it("round-trips a three-part position", () => {
+    const parts = ["2026-08-20", "2026-08-20T09:00:00.000Z", "41"];
+    expect(decodeTupleCursor(encodeTupleCursor(parts), 3)).toEqual(parts);
+  });
+
+  it("is opaque and URL-safe, like the two-part form", () => {
+    const cursor = encodeTupleCursor(["a+b/c=d", "2026-08-20T09:00:00.000Z", "41"]);
+    expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(cursor).not.toContain("2026");
+  });
+
+  /**
+   * The arity check is what stops a cursor minted for one sort being replayed
+   * against another: the parts would bind to the wrong columns and the page
+   * would be a window from a different result set, silently.
+   */
+  it("refuses a cursor whose part count does not match the sort", () => {
+    const cursor = encodeTupleCursor(["0", "Offer Letter", "7"]);
+    expect(decodeTupleCursor(cursor, 2)).toBeNull();
+    expect(decodeTupleCursor(cursor, 4)).toBeNull();
+  });
+
+  it("returns the first page rather than throwing on a hand-edited cursor", () => {
+    expect(decodeTupleCursor("not base64url !!", 3)).toBeNull();
+    expect(decodeTupleCursor("", 3)).toBeNull();
+    expect(decodeTupleCursor(undefined, 3)).toBeNull();
+  });
+
+  it("rejects an empty part, which would bind as an empty value", () => {
+    expect(decodeTupleCursor(encodeTupleCursor(["0", "", "7"]), 3)).toBeNull();
+  });
+
+  it("takes the next cursor from the last kept row, never the sentinel", () => {
+    const rows = [{ n: 1 }, { n: 2 }, { n: 3 }];
+    const page = buildTupleCursorPage(rows, 2, (row) => ["a", "b", String(row.n)]);
+
+    expect(page.data).toEqual([{ n: 1 }, { n: 2 }]);
+    expect(page.pagination.hasMore).toBe(true);
+    expect(decodeTupleCursor(page.pagination.nextCursor, 3)).toEqual(["a", "b", "2"]);
+  });
+
+  it("reports no next cursor on the last page", () => {
+    const page = buildTupleCursorPage([{ n: 1 }], 2, (row) => ["a", "b", String(row.n)]);
+    expect(page.pagination).toEqual({ limit: 2, hasMore: false, nextCursor: null });
   });
 });

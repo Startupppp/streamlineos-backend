@@ -59,10 +59,11 @@ export const documentTypeRowSchema = z.object({
 
 export const documentTypeListPageSchema = z.object({
   data: z.array(documentTypeRowSchema),
-  total: z.number().int(),
-  page: z.number().int(),
-  limit: z.number().int(),
-  totalPages: z.number().int(),
+  pagination: z.object({
+    limit: z.number().int(),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  }),
 });
 
 export const emailTemplateRowSchema = z.object({

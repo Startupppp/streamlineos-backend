@@ -213,7 +213,9 @@ export function keysetTimestamp(raw: string): Date {
   return Number.isNaN(date.getTime()) ? invalidCursor() : date;
 }
 
+/** Zero and negatives are legitimate sort positions; the empty string is not — `Number("")` is 0. */
 export function keysetInteger(raw: string): number {
+  if (raw.trim().length === 0) invalidCursor();
   const value = Number(raw);
   return Number.isSafeInteger(value) ? value : invalidCursor();
 }

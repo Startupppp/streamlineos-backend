@@ -2,15 +2,20 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { BadRequestException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { activities } from "../../db/schema";
+import { activities, attendance } from "../../db/schema";
 import {
   keysetAfter,
   keysetAfterId,
+  keysetAfterTuple,
   keysetAfterValue,
   keysetBefore,
   keysetBeforeId,
+  keysetBeforeTuple,
   keysetBeforeUuid,
   keysetBeforeValue,
+  keysetInteger,
+  keysetTextValue,
+  keysetTimestamp,
 } from "./keyset";
 
 const dialect = new PgDialect();
@@ -119,6 +124,84 @@ describe("UUID keyset cursor validation", () => {
         id: "0198d510-9d64-7f53-8bd6-aef1c1b695d2",
       }),
     ).not.toThrow();
+  });
+});
+
+describe("multi-column keyset", () => {
+  /**
+   * The shape three HR lists needed: a sort of two non-unique columns plus the
+   * serial id. Rendering it through PgDialect is the only assertion that sees
+   * the tuple — walking the Drizzle object would pass on a comparison that
+   * names one column.
+   */
+  it("renders every column on the left and every value on the right, in order", () => {
+    const query = dialect.sqlToQuery(
+      keysetBeforeTuple([
+        { column: attendance.date, value: keysetTextValue("2026-08-20") },
+        { column: attendance.createdAt, value: keysetTimestamp("2026-08-20T09:00:00.000Z") },
+        { column: attendance.id, value: keysetInteger("41") },
+      ]),
+    );
+
+    expect(query.sql).toBe(
+      '("attendance"."date", "attendance"."created_at", "attendance"."id") < ($1, $2, $3)',
+    );
+    expect(query.params).toEqual(["2026-08-20", "2026-08-20T09:00:00.000Z", 41]);
+  });
+
+  it("binds the timestamp through its column rather than as a bare Date", () => {
+    const query = dialect.sqlToQuery(
+      keysetBeforeTuple([
+        { column: attendance.date, value: keysetTextValue("2026-08-20") },
+        { column: attendance.createdAt, value: keysetTimestamp("2026-08-20T09:00:00.000Z") },
+        { column: attendance.id, value: keysetInteger("41") },
+      ]),
+    );
+
+    expect(query.params[1]).not.toBeInstanceOf(Date);
+    expect(typeof query.params[1]).toBe("string");
+  });
+
+  it("reads the other direction for a list that walks ascending", () => {
+    const query = dialect.sqlToQuery(
+      keysetAfterTuple([
+        { column: attendance.date, value: keysetTextValue("2026-08-20") },
+        { column: attendance.id, value: keysetInteger("41") },
+      ]),
+    );
+
+    expect(query.sql).toContain(") > (");
+  });
+
+  it("refuses a single-column tuple, which is not a keyset", () => {
+    expect(() =>
+      keysetBeforeTuple([{ column: attendance.id, value: keysetInteger("41") }]),
+    ).toThrow(BadRequestException);
+  });
+
+  it.each(["", "not-a-date", "2026-13-99T99:99:99Z"])(
+    "rejects %p as a timestamp rather than letting the driver throw on page two",
+    (raw) => {
+      expect(() => keysetTimestamp(raw)).toThrow(BadRequestException);
+    },
+  );
+
+  it.each(["", "1.5", "abc", "9007199254740993"])(
+    "rejects %p as an integer position",
+    (raw) => {
+      expect(() => keysetInteger(raw)).toThrow(BadRequestException);
+    },
+  );
+
+  it("accepts zero and negative integer positions, which are legitimate sort orders", () => {
+    expect(keysetInteger("0")).toBe(0);
+    expect(keysetInteger("-3")).toBe(-3);
+  });
+
+  it("caps a text position so a cursor cannot carry a payload", () => {
+    expect(() => keysetTextValue("")).toThrow(BadRequestException);
+    expect(() => keysetTextValue("x".repeat(513))).toThrow(BadRequestException);
+    expect(keysetTextValue("Offer Letter")).toBe("Offer Letter");
   });
 });
 

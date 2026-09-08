@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, eq, max, sql } from "drizzle-orm";
+import { and, asc, eq, max, sql } from "drizzle-orm";
 import { documentTypes, documentTypeRoles } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -10,42 +10,53 @@ import type {
   UpdateDocumentTypeInput,
 } from "./dto/document-types.schemas";
 import { boundHrReadLimit } from "../hr-read-limits";
+import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
+import {
+  keysetAfterTuple,
+  keysetInteger,
+  keysetTextValue,
+} from "../../../common/pagination/keyset";
 
 @Injectable()
 export class HrDocumentTypesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /**
+   * `(sort_order, name, id)` ascending — the display sort is two columns and
+   * neither is unique per org, so the serial id completes the total order and
+   * all three ride in the cursor. Dropping `name` from the cursor would order
+   * by something the query does not and repeat rows wherever two types share a
+   * sort order.
+   */
   async list(orgId: string, isAdmin: boolean, query: ListDocumentTypesInput) {
-    const page = query.page ?? 1;
     const limit = boundHrReadLimit(query.limit ?? 20);
-    const offset = (page - 1) * limit;
 
-    const where = isAdmin
-      ? eq(documentTypes.orgId, orgId)
-      : and(eq(documentTypes.orgId, orgId), eq(documentTypes.isActive, true));
+    const conditions = [eq(documentTypes.orgId, orgId)];
+    if (!isAdmin) conditions.push(eq(documentTypes.isActive, true));
 
-    const [rows, [totalRow]] = await Promise.all([
-      this.db.query.documentTypes.findMany({
-        where,
-        with: { roles: { columns: { roleSlug: true } } },
-        orderBy: [asc(documentTypes.sortOrder), asc(documentTypes.name)],
-        limit,
-        offset,
-      }),
-      this.db
-        .select({ total: count() })
-        .from(documentTypes)
-        .where(where),
+    const position = decodeTupleCursor(query.cursor, 3);
+    if (position) {
+      conditions.push(
+        keysetAfterTuple([
+          { column: documentTypes.sortOrder, value: keysetInteger(position[0] ?? "") },
+          { column: documentTypes.name, value: keysetTextValue(position[1] ?? "") },
+          { column: documentTypes.id, value: keysetInteger(position[2] ?? "") },
+        ]),
+      );
+    }
+
+    const rows = await this.db.query.documentTypes.findMany({
+      where: and(...conditions),
+      with: { roles: { columns: { roleSlug: true } } },
+      orderBy: [asc(documentTypes.sortOrder), asc(documentTypes.name), asc(documentTypes.id)],
+      limit: limit + 1,
+    });
+
+    return buildTupleCursorPage(rows, limit, (row) => [
+      String(row.sortOrder),
+      row.name,
+      String(row.id),
     ]);
-
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      total,
-      page,
-      limit,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
-    };
   }
 
   getById(orgId: string, id: number) {
