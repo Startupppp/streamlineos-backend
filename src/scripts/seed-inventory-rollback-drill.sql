@@ -13,8 +13,57 @@
 
 BEGIN;
 
+-- Bootstrap a tenant when the database has none.
+--
+-- This used to read org_id/created_by off an existing inv_products row, which
+-- meant that on a COLD-BUILT database -- no organisations, no users, no products
+-- -- every INSERT below matched zero scope rows and the script reported success
+-- having seeded nothing. The drill's own row floor caught it (0 rows, EXIT=2),
+-- but a seed script that silently seeds nothing is a defect on its own.
+--
+-- organizations.owner_membership_id and organization_members.org_id reference
+-- each other, so the pair only inserts with constraints deferred inside one
+-- transaction.
+SET CONSTRAINTS ALL DEFERRED;
+
+INSERT INTO users (id, email)
+SELECT 'drill-seed-user', 'drill-seed@drill.invalid'
+WHERE NOT EXISTS (SELECT 1 FROM inv_products)
+  AND NOT EXISTS (SELECT 1 FROM users WHERE id = 'drill-seed-user');
+
+INSERT INTO organizations (id, name, slug, owner_membership_id)
+SELECT 'drill-seed-org', 'Rollback Drill Org', 'rollback-drill-org', 0
+WHERE NOT EXISTS (SELECT 1 FROM inv_products)
+  AND NOT EXISTS (SELECT 1 FROM organizations WHERE id = 'drill-seed-org');
+
+INSERT INTO organization_members (org_id, user_id)
+SELECT 'drill-seed-org', 'drill-seed-user'
+WHERE EXISTS (SELECT 1 FROM organizations WHERE id = 'drill-seed-org')
+  AND NOT EXISTS (
+    SELECT 1 FROM organization_members WHERE org_id = 'drill-seed-org' AND user_id = 'drill-seed-user'
+  );
+
+UPDATE organizations o
+   SET owner_membership_id = m.id
+  FROM organization_members m
+ WHERE o.id = 'drill-seed-org' AND m.org_id = o.id AND o.owner_membership_id = 0;
+
+-- One product, so the scope query below has something to read.
+INSERT INTO inv_products (org_id, name, sku, created_by)
+SELECT 'drill-seed-org', 'Drill Seed Anchor', 'DRILL-ANCHOR-000000', 'drill-seed-user'
+WHERE EXISTS (SELECT 1 FROM organizations WHERE id = 'drill-seed-org')
+  AND NOT EXISTS (SELECT 1 FROM inv_products WHERE sku = 'DRILL-ANCHOR-000000');
+
 CREATE TEMP TABLE drill_scope ON COMMIT DROP AS
 SELECT org_id, created_by FROM inv_products ORDER BY id LIMIT 1;
+
+-- Refuse rather than seed nothing. A silent no-op here produces a drill run that
+-- reports a clean round trip over an empty schema.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM drill_scope) THEN
+    RAISE EXCEPTION 'seed-inventory-rollback-drill: no tenant to seed under, and the bootstrap above did not create one. Refusing to seed nothing.';
+  END IF;
+END $$;
 
 INSERT INTO inv_uom (org_id, name, abbreviation)
 SELECT s.org_id, 'Drill UOM ' || n, 'du' || n

@@ -6,9 +6,12 @@
 -- id it sits beside survives, so the rows are not orphaned, but which membership
 -- acted is gone and reapplying 0818 backfills only what it can recompute today.
 --
--- Generated from the forward migration's own object lists, so the two cannot drift.
+-- Generated from the forward migration's own object lists, so the two cannot
+-- drift. The @data-loss list below is the COMPLETE set of tables -- an earlier
+-- revision truncated it to twelve, and the drill's round trip correctly reported
+-- inv_warehouses as undeclared loss.
 --
--- @data-loss: inv_audit_events, inv_customer_returns, inv_cycle_counts, inv_export_jobs, inv_grns, inv_import_jobs, inv_loads, inv_packages, inv_physical_audits, inv_pick_lists, inv_products, inv_purchase_orders
+-- @data-loss: inv_audit_events, inv_customer_returns, inv_cycle_counts, inv_export_jobs, inv_grns, inv_import_jobs, inv_loads, inv_packages, inv_physical_audits, inv_pick_lists, inv_products, inv_purchase_orders, inv_quality_holds, inv_quality_inspections, inv_recall_events, inv_sales_orders, inv_shipments, inv_standard_costs, inv_stock_adjustments, inv_stock_transactions, inv_stock_transfers, inv_user_warehouses, inv_vendor_returns, inv_vendors, inv_warehouses
 SET statement_timeout = 0;
 --> statement-breakpoint
 SET lock_timeout = '5s';

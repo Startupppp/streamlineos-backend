@@ -134,12 +134,22 @@ function declaredLossTables(text) {
 /** Thrown to make the driver discard a dry-run transaction. */
 class Discard extends Error {}
 
+/**
+ * Journal ARRAY order -- the order migrations actually run in.
+ *
+ * This used to sort by `when`, which is wrong and was quietly costing depth.
+ * `db-bootstrap.mjs` iterates `journal.entries` as-is (and reaches head 634/634
+ * that way), and drizzle-kit does the same; `when` is only the watermark it
+ * compares against. The journal carries five timestamp regressions, so the two
+ * orders genuinely differ -- the `b` chain-repairs carry when=1798000157000+ and
+ * sorted to just under the head, which put `0676b` (no rollback file) directly
+ * beneath `0910` and truncated tier 1's contiguous suffix from six migrations to
+ * two. The drill was rehearsing a descent that never happens.
+ */
 function journalTags() {
   const path = join(MIGRATIONS, "meta", "_journal.json");
   const journal = JSON.parse(readFileSync(path, "utf8"));
-  return [...journal.entries]
-    .sort((a, b) => a.when - b.when || a.idx - b.idx)
-    .map((e) => e.tag);
+  return journal.entries.map((e) => e.tag);
 }
 
 /**
@@ -485,6 +495,21 @@ async function tierOne(sql, tags, findings) {
         "fingerprint different from where it started",
     );
     console.log("  round trip: FINGERPRINT DID NOT RETURN (finding)");
+    // Say WHAT differs. A fingerprint mismatch with no detail sends the reader
+    // back to diff two multi-thousand-line strings by hand, which is how a real
+    // finding gets shrugged off as "the drill is flaky".
+    const beforeLines = new Set(String(before).split("\n"));
+    const afterLines = new Set(String(after).split("\n"));
+    const lost = [...beforeLines].filter((l) => l && !afterLines.has(l));
+    const gained = [...afterLines].filter((l) => l && !beforeLines.has(l));
+    const show = (label, xs) => {
+      if (xs.length === 0) return;
+      console.log(`    ${label} (${xs.length}):`);
+      for (const l of xs.slice(0, 12)) console.log(`      ${l}`);
+      if (xs.length > 12) console.log(`      ... and ${xs.length - 12} more`);
+    };
+    show("gone after the round trip", lost);
+    show("appeared after the round trip", gained);
   } else {
     console.log(`  round trip: ${rolledBack.length} reversed and restored, fingerprint returned exactly`);
   }
@@ -665,6 +690,18 @@ function selfTest() {
     statementsOf(`DO $$ BEGIN\n  DROP TYPE t;\nEND $$;`)[0]?.includes("END $$"),
   );
   check("the journal is readable and non-trivial", journalTags().length > 500);
+  check(
+    "the drill walks the journal in the same order the migration runner does",
+    // db-bootstrap.mjs iterates journal.entries as-is. If the drill ever sorts
+    // differently again, it rehearses an order that never runs.
+    (() => {
+      const raw = JSON.parse(
+        readFileSync(join(MIGRATIONS, "meta", "_journal.json"), "utf8"),
+      ).entries.map((e) => e.tag);
+      const walked = journalTags();
+      return raw.length === walked.length && raw.every((t, i) => walked[i] === t);
+    })(),
+  );
   check(
     "the rehearsal floor is a production-shaped number, not a token one",
     MIN_REHEARSAL_ROWS >= 10_000,
