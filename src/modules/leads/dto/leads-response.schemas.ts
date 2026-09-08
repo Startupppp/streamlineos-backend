@@ -271,8 +271,25 @@ export const leadsUnverifiedSchema = z.array(
   }),
 );
 
+const duplicateLeadEntrySchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  company: z.string().nullable(),
+  status: z.string(),
+  source: z.string().nullable(),
+  createdAt: z.date().nullable(),
+});
+
 export const leadsDuplicateGroupsSchema = z.object({
-  groups: z.array(z.record(z.string(), z.unknown())),
+  groups: z.array(
+    z.object({
+      leads: z.array(duplicateLeadEntrySchema),
+      matchReason: z.array(z.string()),
+      score: z.number(),
+    }),
+  ),
   total: z.number().int(),
 });
 

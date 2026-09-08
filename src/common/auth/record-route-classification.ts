@@ -34,19 +34,29 @@ function read(key: string, handler: object, classRef: object): unknown {
   return own === undefined ? Reflect.getMetadata(key, classRef) : own;
 }
 
-function readString(key: string, handler: object, classRef: object): string | undefined {
-  const value = read(key, handler, classRef);
-  return typeof value === "string" ? value : undefined;
+function classifyAt(target: object): RouteExposure | null {
+  if (Reflect.getMetadata(IS_PUBLIC, target) === true) return { mode: "public" };
+  if (Reflect.getMetadata(IS_UNIVERSAL, target) === true) return { mode: "universal" };
+  const by: unknown = Reflect.getMetadata(AUTHORIZED_IN_SERVICE, target);
+  if (typeof by === "string" && by !== "") return { mode: "in-service", by };
+  const permission: unknown = Reflect.getMetadata(REQUIRE_PERMISSION, target);
+  if (typeof permission === "string") return { mode: "permissioned", permission };
+  return null;
 }
 
+/**
+ * The handler's OWN declaration wins outright; the class is only a fallback.
+ *
+ * Reading the four keys in a fixed order across both levels made a class-level
+ * declaration outrank a method-level one, and `AgentController` is exactly that
+ * shape: `@Public()` on the class because these routes authenticate with an agent
+ * token instead of a user JWT, `@UseGuards(AgentTokenGuard, PermissionGuard)`
+ * alongside it, and `@RequirePermission` on every handler. All nine operations
+ * published `x-permission: null` while the guard was enforcing `build:*`, which is
+ * the document understating the gate rather than the gate being absent.
+ */
 export function classifyHandler(handler: object, classRef: object): RouteExposure {
-  if (read(IS_PUBLIC, handler, classRef) === true) return { mode: "public" };
-  if (read(IS_UNIVERSAL, handler, classRef) === true) return { mode: "universal" };
-  const by = readString(AUTHORIZED_IN_SERVICE, handler, classRef);
-  if (by !== undefined && by !== "") return { mode: "in-service", by };
-  const permission = readString(REQUIRE_PERMISSION, handler, classRef);
-  if (permission !== undefined) return { mode: "permissioned", permission };
-  return { mode: "undeclared" };
+  return classifyAt(handler) ?? classifyAt(classRef) ?? { mode: "undeclared" };
 }
 
 export function describeExposure(exposure: RouteExposure): string {
