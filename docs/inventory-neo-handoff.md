@@ -743,7 +743,62 @@ next reader can tell staleness from fact without re-deriving it.
 The cold-build repair is `1c167fdc1`; what it fixed, and the ordering defect
 underneath it, is described in §4.
 
-### Neon — still not applied, for a different reason than before
+### Neon — inventory applied 2026-09-08, on an explicit human decision
+
+**Applied 2026-09-08. All 51 inventory migrations are now recorded on the shared
+Neon branch.** The owner authorised it directly, after being shown the three
+findings below; the "not applied" decision recorded further down was correct on
+the evidence available on 2026-09-05 and is kept for the record.
+
+**`db:migrate` could not have done this, and would have said it did.**
+`check:migration-chain` against Neon reports `(f) WATERMARK AHEAD OF JOURNAL` —
+the highest applied `created_at` is `1803000010148` (2027-02-19), above the
+newest journal entry `1803000010006`. Drizzle only applies entries above the
+watermark, so every pending entry sits below it: `db:migrate` exits 0, reports
+success and applies nothing. **This defect is still live** and still applies to
+every non-inventory migration. The apply was done with `db:apply-one`, which
+addresses one journalled entry by tag and bypasses the watermark entirely.
+
+**Outcome — 51/51, of which 5 were reconciliation rather than application.**
+Starting state: 15 applied, 36 pending by hash.
+
+- **31 applied by execution**, each inside a transaction, statement by statement.
+- **5 could not execute because the object already existed** and no row recorded
+  the migration — schema ahead of bookkeeping. `0420` (`inv_webhook_event_subscriptions`,
+  42P07), `0519` (type `inv_import_row_status`, 42710), `0553`
+  (`chk_inv_settings_one_pack`, 42710), `0561` (`chk_inv_products_tax_treatment_rate`
+  and `chk_inv_so_lines_composition_no_outward_tax`, 42710), `0588`
+  (`excl_inv_dock_appointments_door_window`, 42P07).
+
+Those five were reconciled with a new `--skip-existing` mode on `db:apply-one`,
+which skips **only** already-exists errors (42P07/42710/42701/42P16), rolls the
+whole migration back on anything else, and **prints every statement it skipped**.
+A skip is an assertion that the existing object matches the one the migration
+declares; the output is the only place that distinction survives, which is why it
+is printed rather than counted. Migration files were **not** edited — editing an
+applied migration changes its hash and re-proposes it against every other
+database.
+
+**Two defects found in `apply-journalled-migration.mjs` while doing this**, both
+fixed: skipping a statement needs the driver's own `savepoint()` (a raw
+`SAVEPOINT` string leaves postgres.js's transaction state marked failed, so the
+commit rolls back anyway, and every statement after the first failure dies with
+25P02); and its outer `catch {}` swallowed the rollback cause, so a failed apply
+read as "just didn't work" instead of naming the statement that killed it.
+
+**What was NOT verified this time:** `pg_stat_activity`. The 2026-09-05 revision
+stopped partly because five `streamlineos-api` connections were live. That probe
+could not be run in this session, so the apply proceeded on the owner's explicit
+acceptance of the risk rather than on evidence that the branch was idle.
+
+**Still open:** the watermark defect above; the 17 duplicate journal prefixes and
+5 timestamp regressions `check:migration-chain` reports (23 issues, unchanged by
+this apply — they are properties of the journal files, not of Neon); and the
+non-inventory half of the pending set, which was deliberately not touched.
+
+---
+
+### Neon — the 2026-09-05 decision, kept for the record
 
 **Re-measured 2026-09-05. Two of the three reasons below have changed, and the
 conclusion has not.**
