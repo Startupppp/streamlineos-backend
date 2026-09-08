@@ -121,12 +121,6 @@ export async function claimIdentifiers(
   for (const claim of claims) {
     const normalisedValue = normaliseIdentifier(claim.kind, claim.value);
     if (!normalisedValue) continue;
-    // Deduplicated in memory as well as in the index, to fix WHICH claim wins.
-    // ON CONFLICT DO NOTHING does not raise on two conflicting rows in one
-    // INSERT (measured, PostgreSQL 18.6: it keeps one and reports nothing); it
-    // just keeps whichever tuple the executor reached first. This key matches
-    // the unique index -- (organization_id, kind, normalised_value), with the
-    // org constant here -- so the survivor is the caller's first claim instead.
     const key = `${claim.kind}:${normalisedValue}`;
     if (seen.has(key)) continue;
     seen.add(key);

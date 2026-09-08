@@ -208,10 +208,6 @@ describe("PRD-C143 §2 — correct invalidation: version bump prevents stale cac
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
-  // invalidateManyForOrg exists so a fan-out stops being one round trip per key. The
-  // trap it avoids is invalidateMany, which uses the default Redis and an UNPREFIXED
-  // key — that would delete nothing here, so the assertion is that the org-scoped
-  // entries are actually gone, not merely that a del was issued.
   it("invalidateManyForOrg clears every org-scoped key in one pass and leaves other orgs alone", async () => {
     const store = new Map<string, unknown>();
     const redis = makeWorkingRedis(store);

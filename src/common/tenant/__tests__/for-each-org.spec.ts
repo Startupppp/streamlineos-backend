@@ -41,9 +41,6 @@ function makeMockDb(orgIds: string[]): { db: Db; capture: ChainCapture; execute:
     limit: jest.Mock<Promise<{ id: string }[]>, [number]>;
   }
 
-  // The enumeration is a keyset drain, so the double has to serve successive pages and
-  // then a short one — a mock that answers the whole set to every call would let a
-  // broken cursor pass, and one that ends at .orderBy() does not model the query at all.
   let drained = 0;
   const chain: SelectChain = {
     from: jest.fn((): SelectChain => chain),
@@ -196,10 +193,6 @@ describe("forEachOrg — rotation makes the sweep resumable", () => {
   });
 });
 
-// The enumeration became a keyset drain (ORG_ENUM_PAGE = 500) and nothing exercised it:
-// every fixture in this file is a handful of organisations, so one page answered the whole
-// set and a drain that stopped after its first page would have passed. These fixtures
-// straddle the page boundary in both directions.
 describe("forEachOrg — the enumeration drains every page, not just the first", () => {
   const pageSize = 500;
 

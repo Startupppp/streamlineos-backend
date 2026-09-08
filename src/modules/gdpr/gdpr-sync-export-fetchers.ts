@@ -89,13 +89,6 @@ export async function fetchSyncEmployment(
   const employment: SubjectExportResult["employment"] = [];
   if (hrPersonRows.length === 0) return employment;
 
-  /**
-   * One statement for every person, with the per-person cap kept exactly where it was:
-   * `row_number()` partitions by person so each subject still yields at most
-   * `SYNC_EXPORT_CAP` rows and still reports its own truncation by name. A plain
-   * `inArray` without the window would silently widen or narrow the exported row set,
-   * which on a compliance surface is the one thing batching may not do.
-   */
   const ranked = db
     .select({
       personId: hrEmployments.personId,

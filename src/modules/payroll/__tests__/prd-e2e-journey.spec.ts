@@ -126,8 +126,6 @@ describe("PRD E2E scenarios 1–12 (contract journey)", () => {
         }),
       }),
     };
-    // `forEachOrg` enumerates organizations in keyset pages, so the chain ends at
-    // `.limit(ORG_ENUM_PAGE)`; a page shorter than the page size stops the loop.
     const enumeration = {
       from: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),

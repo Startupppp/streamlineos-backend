@@ -10,11 +10,6 @@ function cron(file: string): string {
   return readFileSync(resolve(CRON_DIR, file), "utf8");
 }
 
-// Enumerated from the directory, never hand-listed. The hand-written list named seven
-// files and missed cron-kb.controller.ts (4 leased retention routes) and
-// cron-notification-retention.controller.ts (2), so the parity check ran over 10 of the
-// 16 routes that exist and its floor was calibrated to the truncated number — the exact
-// drift this file was written to catch, in the file that catches it.
 const CONTROLLERS = readdirSync(CRON_DIR)
   .filter((file) => file.endsWith(".controller.ts"))
   .map(cron);

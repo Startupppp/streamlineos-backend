@@ -319,15 +319,6 @@ export async function finishExecution(
     );
 }
 
-/**
- * A dead-letter write is the record that work was abandoned, so which columns it
- * touches is the contract. `DeadLetterWrite` is that contract stated once:
- * `deadLetterExecution` hands the whole object to `.set()` and
- * `deadLetterExecutions` builds its `SET` list from the same object, so neither
- * form can start setting a column the other does not. `DEAD_LETTER_COLUMNS` is
- * keyed on `keyof DeadLetterWrite`, so a new field fails to compile until it is
- * given a column.
- */
 interface DeadLetterWrite {
   readonly status: "dead_lettered";
   readonly dlqReason: string;
@@ -363,11 +354,6 @@ interface DeadLetterCell {
   readonly value: unknown;
 }
 
-/**
- * The half of the write that differs per execution, and therefore rides in the
- * `VALUES` list. `durationMs` is absent on purpose: it is an expression over the
- * target row's own `started_at`, not a value, so it stays in the uniform `SET`.
- */
 function deadLetterCells(write: DeadLetterWrite): readonly DeadLetterCell[] {
   return [
     { column: DEAD_LETTER_COLUMNS.status, value: write.status },
@@ -377,16 +363,10 @@ function deadLetterCells(write: DeadLetterWrite): readonly DeadLetterCell[] {
   ];
 }
 
-/** Bound as a parameter through the column's own encoder, then cast to the column's own type. */
 function deadLetterParam(column: AnyPgColumn, value: unknown): SQL {
   return sql`${sql.param(value, column)}::${sql.raw(column.getSQLType())}`;
 }
 
-/**
- * A repeated id joins the target row twice and Postgres applies one arbitrary
- * VALUES row while discarding the rest — which for this statement means one
- * execution's abandonment reason is silently lost. Refuse instead.
- */
 function assertDistinctExecutions(rows: ReadonlyArray<{ id: string }>): void {
   const seen = new Set<string>();
   for (const row of rows) {
@@ -421,20 +401,6 @@ export interface DeadLetterTarget {
   readonly state: WorkflowRunState;
 }
 
-/**
- * One `UPDATE … FROM (VALUES …)` for a whole batch of abandoned executions.
- *
- * Every terminal field except `duration_ms` differs per execution — the reason,
- * the moment it was abandoned and the run state frozen into `context` — so an
- * `inArray` with a uniform `SET` cannot express it and the fallback was one
- * statement per row.
- *
- * The tenant predicate is not optional: the join key is a surrogate id, so
- * `org_id` has to be in the `WHERE` for the statement to stay tenant-correlated
- * even where RLS would also catch it. `status = 'running'` carries the same
- * compare-and-set the single form relies on, so an execution cancelled between
- * the read and this write is simply not matched.
- */
 export async function deadLetterExecutions(
   tx: TenantTx,
   orgId: string,

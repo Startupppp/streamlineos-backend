@@ -358,8 +358,6 @@ export class RetentionService {
     let processed = 0;
     let skipped = 0;
 
-    /* Every statement below is once per SWEEP, not once per request: the org-wide hold, the
-     * multi-key subject probe, the anonymisation and the completion marking are each one. */
     const orgHeld = await this.isOrgUnderLegalHold(orgId);
 
     const heldSubjects = orgHeld
@@ -466,8 +464,6 @@ export class RetentionService {
       );
   }
 
-  /** One grouped read answers "in this org" and "holds another membership" for the whole set;
-   * one UPDATE then derives each anonymised address from the row's own id. */
   private async anonymizeSubjects(orgId: string, subjectUserIds: string[]): Promise<Set<string>> {
     if (subjectUserIds.length === 0) return new Set();
 

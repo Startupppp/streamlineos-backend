@@ -114,12 +114,6 @@ function ledgerInserts(inserts: CapturedInsert[]) {
   return inserts.filter((i) => i.table === "payroll_tds_ytd_ledger");
 }
 
-/**
- * `toCalculationSnapshot` validates the stored jsonb against the whole
- * `CalculationSnapshot` shape and returns null on any mismatch, so a partial double
- * silently made every row's TDS zero. The snapshot is built in full, with the TDS
- * amount as the MoneyString the engine writes.
- */
 function snapshot(gross: string, tds: string) {
   return {
     policyVersionId: null,

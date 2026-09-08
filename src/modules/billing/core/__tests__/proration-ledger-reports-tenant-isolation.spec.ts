@@ -50,16 +50,6 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   return { db, where };
 }
 
-/**
- * proration-ledger-reports.service.ts was split out of the billing core by
- * a076c5e1a and its cross-tenant coverage did not follow it, so the file existed
- * for a release with no negative test at all. Every read here is org-scoped in
- * SQL AND wrapped in runInTenantTransaction, and both halves are asserted: the
- * predicate must name the caller's org, and the transaction must be opened with
- * that org so the RLS GUC is set — a query that is correct in SQL and opened
- * without the GUC dies 42501, and one opened with the wrong org reads another
- * tenant's ledger.
- */
 describe("ProrationLedgerReportsService — cross-tenant isolation", () => {
   beforeEach(() => {
     tenantOptions.length = 0;

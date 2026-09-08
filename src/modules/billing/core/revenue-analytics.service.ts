@@ -72,8 +72,6 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
     await OutboxWriter.emit(tx, this.envelope(input));
   }
 
-  // One outbox INSERT for a whole sweep's worth of movements. The envelope is built by the same
-  // method `emit` uses, so a batched emission and N single ones are the same rows.
   async emitMany(tx: DbOrTx, inputs: readonly RevenueEventInput[]): Promise<void> {
     await OutboxWriter.emitMany(tx, inputs.map((input) => this.envelope(input)));
   }

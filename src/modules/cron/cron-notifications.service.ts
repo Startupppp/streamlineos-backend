@@ -76,16 +76,6 @@ export class CronNotificationsService {
     return { birthdayCount, leaveCount, anniversaryCount };
   }
 
-  /**
-   * Every member × every announcement, in one statement.
-   *
-   * The recipient set used to be re-read once per celebrant and the rows written
-   * one insert per celebrant. The fan-out now happens in the database: the
-   * announcements ride as a single jsonb parameter and the cross join expands
-   * them against the org's members, so the parameter count no longer grows with
-   * the size of the organisation. `type` is left to its column default, which is
-   * the `INFO` this sweep always sent.
-   */
   private async announceToOrg(
     tx: TenantTx,
     orgId: string,

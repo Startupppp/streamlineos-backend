@@ -22,16 +22,6 @@ const ATTACKER_ORG = "org-attacker";
 const LIVE_CONTACT = 1;
 const DELETED_CONTACT = 2;
 
-/**
- * The seam stands in for `contact_party_map` ⋈ `business_parties`.
- *
- * Keyed on (org, contact) because that is the map's primary key, so a contact
- * asked for under the wrong tenant resolves unresolved rather than resolving to
- * somebody else's party — the property the direct `contacts` read used to get
- * from its own `org_id` predicate. `deletedAt` comes back with the answer, which
- * is the party's and therefore the contact's: the only two writers of
- * `contacts.deleted_at` derive it from that column in the same statement.
- */
 const CONTACTS = new Map<string, Date | null>([
   [`${OWNER_ORG}:${LIVE_CONTACT}`, null],
   [`${OWNER_ORG}:${DELETED_CONTACT}`, new Date("2026-01-01T00:00:00Z")],

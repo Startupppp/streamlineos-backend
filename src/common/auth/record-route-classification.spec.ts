@@ -140,13 +140,6 @@ describe("recordRouteClassification", () => {
     expect(document.paths["/p0"].get.description ?? "").toContain("UNDECLARED");
   });
 
-  /**
-   * A method with no route metadata never enters the handler map, so nothing is
-   * stamped for it — but the operation naming it is then unclassified, and that is
-   * counted rather than skipped. The silent `continue` this replaced is what let two
-   * `@Version`ed operations ship with no `x-exposure` while the generator reported
-   * "0 undeclared" over a document it had not classified.
-   */
   it("stamps nothing for a method that carries no route metadata, and counts the orphan operation", () => {
     const document = documentFor(["MixedController_notARoute"]);
     expect(recordRouteClassification(appWith([new MixedController()]), document)).toEqual({

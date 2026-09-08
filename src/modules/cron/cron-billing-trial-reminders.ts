@@ -4,14 +4,6 @@ interface TrialEnd {
   trialEndsAt: Date | null;
 }
 
-/**
- * Which trial-expiry reminders an organisation is due today.
- *
- * The org's live trial ends are read once and matched against every window in
- * memory, so a reminder ladder of any length still costs one query. Each window
- * is a whole local calendar day, because a trial ending at 09:00 and one ending
- * at 23:00 are both "ending in three days" to the person being told.
- */
 export function dueReminderDays(trialEnds: readonly TrialEnd[], now: Date): number[] {
   const due: number[] = [];
 

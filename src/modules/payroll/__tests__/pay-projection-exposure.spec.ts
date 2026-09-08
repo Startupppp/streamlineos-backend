@@ -231,10 +231,6 @@ describe("pay-projection-exposure", () => {
 
       const result = await service.list("org-1");
 
-      // The allowlist is the route's declared response schema, not a second list that
-      // can drift from it: `@ResponseSchema(salaryTemplateListSchema)` publishes these
-      // keys, so a projection narrower than this strips a declared field and a
-      // projection wider than it ships an undeclared one.
       const TEMPLATE_KEYS = Object.keys(salaryTemplateRowSchema.shape).sort();
       expect(TEMPLATE_KEYS).toContain("updatedAt");
       expect(Object.keys(db.select.mock.calls[0][0] as object).sort()).toEqual(
@@ -242,7 +238,6 @@ describe("pay-projection-exposure", () => {
       );
       const first = result.data[0] ?? {};
       expect(Object.keys(first).sort()).toEqual(TEMPLATE_KEYS);
-      // Nothing outside the declared row reaches the caller.
       expect(first).not.toHaveProperty("deletedAt");
     });
 

@@ -59,7 +59,6 @@ function unresolvedLead(legacyLeadId: number): string {
   return `Lead ${legacyLeadId} has no party in this tenant; run the 0241 backfill before converting from it`;
 }
 
-/** A whole set of unadopted clients at once; see `adoptLeads` for the argument. */
 async function adoptClients(
   db: MirrorDb,
   organizationId: string,
@@ -208,11 +207,6 @@ export async function updateMirroredClients(
         ),
     );
 
-    /*
-     * The other half of the same read, and for the same reason: which lead each
-     * party was converted from is one map, so a bulk patch of fifty clients asks
-     * for it once instead of once per derived row.
-     */
     const sourcePartyIds = [...moved.values()]
       .map((party) => party.convertedFromPartyId)
       .filter((id): id is string => id !== null);

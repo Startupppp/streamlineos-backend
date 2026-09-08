@@ -35,7 +35,6 @@ const migration = (name: string): string =>
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
 
-/** postgres.js errors are cross-realm, so `instanceof` is unreliable here. */
 function sqlStateOf(error: unknown): string | null {
   if (typeof error !== "object" || error === null || !("code" in error)) return null;
   const code = error.code;
@@ -280,22 +279,6 @@ describe("party identifiers — real database", () => {
     expect(held).toBe(0);
   });
 
-  /**
-   * What Postgres actually does with two conflicting rows inside ONE INSERT.
-   *
-   * `claimIdentifiers` deduplicates in memory before it writes, and the comment
-   * beside it used to justify that by claiming `ON CONFLICT DO NOTHING` raises
-   * 21000 on an intra-statement duplicate. It does not — measured here on
-   * PostgreSQL 18.6, it inserts one row and reports no error. Only `DO UPDATE`
-   * raises, because only `DO UPDATE` has to decide which of the two writes wins.
-   *
-   * Both halves are asserted rather than the one the code takes, because the
-   * difference is the whole reason the dedupe is a deliberate choice instead of
-   * an error handler: it fixes the winner in TypeScript, in the caller's order,
-   * where `DO NOTHING` would leave it to whichever tuple the executor reached
-   * first. Each probe runs in its own SAVEPOINT — an expected failure without one
-   * aborts the transaction and every later assertion dies 25P02 instead.
-   */
   it("keeps one of two identical claims in one INSERT, and only DO UPDATE raises 21000", async () => {
     const outcome = await withBackfill(async (tx, orgId, marker) => {
       const parties = await tx`

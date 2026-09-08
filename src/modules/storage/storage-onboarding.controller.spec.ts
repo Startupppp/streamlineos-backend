@@ -60,11 +60,6 @@ function buildTxMock(onboardingStepResult: object | null = null) {
   };
 }
 
-/**
- * `withTenant` reads the active relocation targets off the pool handle before it
- * opens the transaction, so the double answers that read with an empty set
- * rather than throwing inside a detached promise.
- */
 function buildRelocationSelect() {
   const targets = {
     from: jest.fn().mockReturnThis(),
@@ -74,15 +69,6 @@ function buildRelocationSelect() {
   return jest.fn().mockReturnValue(targets);
 }
 
-/**
- * The blob upload used to be deferred with `registerAfterCommit`; it is now
- * handed to `MediaTransformRunner`, which bounds concurrency and compensates a
- * failure. The guarantees the hook provided are unchanged and are what is
- * asserted here — the row is written first, the caller never waits on the
- * object write, and a failed write deletes the object it half-produced. They
- * are observed through the collaborators rather than through the mechanism, so
- * the next replacement does not silently pass.
- */
 describe("OnboardingDocumentsController.upload — the object write leaves the request thread", () => {
   const callOrder: string[] = [];
   let codec: { promise: Promise<void>; resolve: () => void };

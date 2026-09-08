@@ -44,10 +44,8 @@ const OTHER_ORG = "org-attacker";
 const LIVE_CONTACT = 1;
 const DELETED_CONTACT = 2;
 const ABSENT_CONTACT = 9999;
-/** Live, but owned by OTHER_ORG — the cross-tenant probe. */
 const FOREIGN_CONTACT = 7;
 
-/** Stands in for `contact_party_map` ⋈ `business_parties`, keyed on (org, contact). */
 const CONTACTS = new Map<string, Date | null>([
   [`${OWNER_ORG}:${LIVE_CONTACT}`, null],
   [`${OWNER_ORG}:${DELETED_CONTACT}`, new Date("2026-01-01T00:00:00Z")],
@@ -129,14 +127,6 @@ class StubAuthGuard implements CanActivate {
   }
 }
 
-/**
- * The public unsubscribe endpoint promises one response for every caller. The
- * BOLA hardening in `2f9fd242c` made `record` throw 404 for an absent,
- * soft-deleted or foreign contact — correct for the authenticated routes, and on
- * the anonymous route it turned the status code into an existence oracle over
- * contacts. These tests pin BOTH halves: uniform on the public surface, 404 kept
- * on the authenticated one.
- */
 describe("POST /crm/consent/unsubscribe — no existence oracle", () => {
   const ORIGINAL_KEY = process.env.ENCRYPTION_KEY;
   let app: INestApplication;
@@ -205,8 +195,6 @@ describe("POST /crm/consent/unsubscribe — no existence oracle", () => {
   });
 
   it("answers the same 200 { success: true } for another tenant's contact", async () => {
-    // Contact 7 is live, but it belongs to OTHER_ORG, so resolving it under
-    // OWNER_ORG is a cross-tenant miss — indistinguishable from a live hit.
     const res = await unsubscribe(OWNER_ORG, FOREIGN_CONTACT);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true });
@@ -321,7 +309,6 @@ describe("POST /crm/consent/contacts/:contactId — the authenticated route keep
   });
 
   it("still 404s a contact belonging to another tenant", async () => {
-    // TEST_USER is in OWNER_ORG; contact 7 is live under OTHER_ORG.
     expect((await record(FOREIGN_CONTACT)).status).toBe(404);
   });
 });

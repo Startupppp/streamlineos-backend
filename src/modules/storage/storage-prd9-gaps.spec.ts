@@ -64,12 +64,6 @@ function buildPlanResult(overrides: Partial<{ key: string }> = {}) {
   };
 }
 
-/**
- * `upload` runs the permission check, the quota check and the quarantine insert
- * inside `runInTenantTransaction`, so the double has to be able to open one.
- * The callback is invoked rather than stubbed — a bare `jest.fn()` here would
- * silently void every assertion that depends on the work inside it.
- */
 function tenantTransactionSupport(query: Record<string, unknown>) {
   const tx = { query, execute: jest.fn().mockResolvedValue([]) };
   const relocationTargets = {

@@ -224,11 +224,6 @@ export class CrmConsentService {
     await runInTenantTransaction(
       this.db,
       async (tx) => {
-        // Through the seam, not `contacts`: `contact_party_map` is org-scoped on
-        // both sides, and the party's `deleted_at` IS the contact's — the only two
-        // writers of `contacts.deleted_at` derive it from this column in the same
-        // statement (`party-legacy-writer.ts:399`, `party-legacy-contacts.ts:260`).
-        // A miss is 404, never 403: a 403 on another org's id is an existence oracle.
         const contact = await resolveLegacyParty(tx, orgId, {
           kind: "CONTACT",
           legacyId: input.contactId,
@@ -310,22 +305,6 @@ export class CrmConsentService {
     );
   }
 
-  /**
-   * The anonymous unsubscribe path, and the ONLY caller allowed to absorb
-   * `record`'s 404.
-   *
-   * `record` answers 404 for a contact that is absent, soft-deleted or outside
-   * the org — correct for the authenticated endpoints, an existence oracle on a
-   * `@Public()` one, where the status code is the whole answer. So the miss is
-   * absorbed here and reported to the caller as an ordinary opt-out. It is not
-   * lost: it is logged with the signed payload, which is everything needed to
-   * investigate, since the token binds org, contact and channel.
-   *
-   * Only the existence case is absorbed. Anything else — a database fault, a
-   * denied RLS predicate, an audit failure — still propagates, because
-   * answering "unsubscribed" for a write that never landed is the one failure
-   * mode this endpoint must never have.
-   */
   async recordUnsubscribe(input: {
     orgId: string;
     contactId: number;

@@ -19,15 +19,6 @@ import {
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import { updateMirroredLeads } from "../party/party-legacy-leads";
 
-/**
- * The counter advance, in one statement.
- *
- * It was a `SELECT` followed by an `UPDATE` or an `INSERT` — two round trips per
- * rule, and a read-modify-write that two concurrent leads could interleave onto
- * the same index. The upsert produces the same rotation (the first assignment
- * takes index 0, every later one `(last + 1) % pool`) with the row locked by the
- * insert itself.
- */
 async function advanceRoundRobinState(db: Db, ruleId: number, userIds: string[]): Promise<string> {
   const [state] = await db
     .insert(assignmentRuleState)
@@ -84,16 +75,6 @@ async function pickLeastLoaded(db: Db, orgId: string, userIds: string[], openKey
 
 type AssignmentRule = typeof leadAssignmentRules.$inferSelect;
 
-/**
- * Which rule wins and how its assignee is picked — decided before a single
- * assignment query runs.
- *
- * Every rule type except `territory` is decidable from the rule row alone: an
- * empty pool or a missing user is the only reason one is skipped, and both are
- * in memory. So the search for the winning rule needs no database access at all
- * unless a territory rule sits ahead of it, and the one round trip the winner
- * costs moves out of the search loop entirely.
- */
 type AssignmentPlan =
   | { readonly kind: "direct"; readonly rule: AssignmentRule; readonly userId: string }
   | { readonly kind: "round_robin"; readonly rule: AssignmentRule; readonly pool: string[] }

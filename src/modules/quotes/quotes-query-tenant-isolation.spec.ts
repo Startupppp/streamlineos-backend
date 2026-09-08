@@ -73,14 +73,6 @@ function listInput(overrides: Partial<ListInput> = {}): ListInput {
   return { pageSize: 20, ...overrides } as ListInput;
 }
 
-/**
- * quotes-query.service.ts was split out by a076c5e1a and its cross-tenant
- * coverage did not follow it. This service is one of the few that can leak two
- * different ways, so both are asserted: the SQL predicate, and the cache
- * namespace. A correct predicate cached under a namespace that omits the org
- * serves the first caller's rows to the next one and defeats the predicate in
- * both directions.
- */
 describe("QuotesQueryService — cross-tenant isolation", () => {
   it("list binds the requesting org into the predicate and never the other org", async () => {
     const { db, cache, where } = makeHarness();

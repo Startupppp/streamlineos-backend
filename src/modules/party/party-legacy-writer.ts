@@ -54,7 +54,6 @@ import { convertedFromColumnOf, parentColumnOf } from "./party-legacy-associatio
  * Callers that hold their own `tx` pass it instead, and the savepoint nests.
  */
 
-/** A Drizzle handle: the tenant-aware `this.db`, or a caller's own transaction. */
 export type MirrorDb = Db;
 
 export type LeadRow = typeof leads.$inferSelect;
@@ -267,17 +266,6 @@ export async function movePartiesFor(
   return moved;
 }
 
-/**
- * What `claimIdentifiers` records, for a whole set of parties in one insert.
- *
- * Deduplicated across the set as well as within a party, to fix WHICH claim wins.
- * ON CONFLICT DO NOTHING does not raise on two conflicting rows in one INSERT
- * (measured, PostgreSQL 18.6: it keeps one and reports nothing) — it keeps
- * whichever tuple the executor reached first, and RETURNING order is unspecified.
- * The dedupe key matches the unique index `(organization_id, kind,
- * normalised_value)`, so the survivor is the first claimant, exactly as the
- * statement-per-party loop this replaces did.
- */
 async function claimIdentifiersOfParties(
   db: MirrorDb,
   organizationId: string,
@@ -390,7 +378,6 @@ async function refreshMirrorsOfParty(
         ...CLIENT_MIRROR.derive(party),
         // Outside the pure derivation because it crosses id spaces; see
         // `party-legacy-associations.ts`. Without it, re-pointing a client at a
-        // different lead on the Party surface would leave `clients.lead_id` behind.
         ...(await convertedFromColumnOf(db, organizationId, party.convertedFromPartyId)),
       })
       .where(and(eq(clients.orgId, organizationId), inArray(clients.id, clientIds)));
@@ -404,7 +391,6 @@ async function refreshMirrorsOfParty(
         // Outside the pure derivation because they cross id spaces; see
         // `party-legacy-employer.ts` and `party-legacy-associations.ts`. Without
         // them, moving somebody to a new employer or a new source lead on the
-        // Party surface would leave the legacy columns on the old ones.
         ...(await employerColumnOf(db, organizationId, party)),
         ...(await convertedFromColumnOf(db, organizationId, party.convertedFromPartyId)),
       })
@@ -425,11 +411,6 @@ async function refreshMirrorsOfParty(
       );
 }
 
-/**
- * The `contacts.organization_id` this party's employer means, as a whole column
- * rather than a conditional: a party with no employer must write `null`, not
- * nothing, or clearing one would leave the old employer on the legacy row.
- */
 export async function employerColumnOf(
   db: MirrorDb,
   organizationId: string,

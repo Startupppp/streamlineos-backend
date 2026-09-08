@@ -40,7 +40,6 @@ export function normalizePayrollToggles(raw: unknown): PayrollToggles {
   return toggles;
 }
 
-/** The in-memory `TemplateComponentDef`: every flag decided, nothing left to default. */
 export const templateComponentDefSchema = z.object({
   code: z.string(),
   name: z.string(),
@@ -59,14 +58,6 @@ export const templateComponentDefSchema = z.object({
 
 const templateComponentDefsSchema = z.array(templateComponentDefSchema);
 
-/**
- * The STORED shape of `payroll_templates.default_components`, which is not the
- * in-memory shape. Identity and calculation basis are required — nothing can stand
- * in for a missing `code` or `calcMethod` — but the four flags and the sort order
- * are defaultable, and a template row whose jsonb predates them must still preview
- * and still activate. Requiring them rejected the whole array, so one absent
- * `taxable` previewed as zero components and activated a policy with none.
- */
 const storedTemplateComponentsSchema = z.array(
   templateComponentDefSchema.partial({
     taxable: true,

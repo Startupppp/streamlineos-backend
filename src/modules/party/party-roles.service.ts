@@ -22,13 +22,6 @@ import { assertPartyInOrg } from "./party-tenant";
 /** How many potential matches one detection pass will consider. */
 const CANDIDATE_LIMIT = 25;
 
-/**
- * How many identifier rows one detection pass reads for its whole candidate set.
- *
- * The subject plus `CANDIDATE_LIMIT` others, at a generous allowance per party —
- * a bound rather than a page, because the scorer compares whole identifier sets
- * and a truncated one reads as a record with less identity than it has.
- */
 const IDENTIFIER_READ_LIMIT = (CANDIDATE_LIMIT + 1) * 32;
 
 export interface DetectionResult {
@@ -36,7 +29,6 @@ export interface DetectionResult {
   queued: { candidateId: string; otherPartyId: string; score: number }[];
 }
 
-/** A pair the pass decided needs a human, held until the one upsert that writes them all. */
 interface QueuedCandidate {
   readonly otherPartyId: string;
   readonly lowPartyId: string;
@@ -222,14 +214,6 @@ export class PartyRolesService {
       });
     }
 
-    /*
-     * One upsert for the whole review queue, after the loop rather than inside it.
-     * The auto-merge branch has to stay sequential — a merge can remove the subject
-     * — but a queued pair is only ever written here, and `closeCandidate` touches
-     * only the pair it just merged, so nothing in the loop reads what this writes.
-     * `excluded.*` keeps the per-row score and signals a multi-row upsert would
-     * otherwise flatten to one value; `blockers` stays insert-only, as it was.
-     */
     if (queued.length === 0) return result;
 
     const written = await this.db
@@ -318,14 +302,6 @@ export class PartyRolesService {
     });
   }
 
-  /**
-   * Everything the whole candidate set is reachable at, in one read.
-   *
-   * `identifiersOfParty` answers for one party, which is the right shape for the
-   * merge and the wrong one here: the detector compares the subject against up to
-   * `CANDIDATE_LIMIT` others, so asking per candidate made the cost of finding a
-   * duplicate a function of how many duplicates there were.
-   */
   private async identifiersOfParties(
     organizationId: string,
     partyIds: readonly string[],

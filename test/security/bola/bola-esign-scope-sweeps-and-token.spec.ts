@@ -209,12 +209,6 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
     candidateWhere: () => SQL | undefined;
     /** Every `where` handed to an `update()` builder, in call order. */
     updateWheres: SQL[];
-    /**
-     * Every raw statement handed to `db.execute`. The signing-token rotation became one
-     * `UPDATE … FROM (VALUES …)` through `bulkUpdateFromValues` in the N+1 pass, so its
-     * tenant predicate is inside the statement text rather than in a `where()` argument
-     * and has to be read there.
-     */
     executed: SQL[];
     sendReminder: jest.Mock;
     listForEnvelope: jest.Mock;
@@ -322,17 +316,6 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
     expect(matchesPredicate(h.updateWheres[1], { sign_envelopes: [envelopeColumns(OTHER_ORG, past)] })).toBe(false);
   });
 
-  /**
-   * REWRITTEN 2026-09-08. The rotation used to be one `update(signRecipients).set().where()`
-   * per recipient and the predicate arrived as a `where()` argument `matchesPredicate` could
-   * evaluate. The N+1 pass replaced it with a single `UPDATE … FROM (VALUES …)` built by
-   * `bulkUpdateFromValues`, which reaches the driver through `db.execute`, so the harness had
-   * no `execute` and the whole sweep died on a TypeError — the tenant question stopped being
-   * asked rather than being answered wrongly. The batched statement is rendered here and read
-   * for the predicate directly: it must carry `sign_recipients.org_id` bound to the caller's
-   * organisation and the envelope's own id, and no other organisation may appear in its
-   * parameters.
-   */
   it("runReminderSweep binds the signing-token rotation to the envelope's own organisation", async () => {
     const h = makeSweeps([ownEnvelopeRow]);
     await h.service.runReminderSweep(CALLER_ORG);

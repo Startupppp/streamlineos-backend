@@ -110,7 +110,6 @@ describe("what makes scheduling them safe — the database guards, not the lease
     expect(body).toContain('eq(subscriptions.status, "TRIAL")');
     expect(body).toContain("lt(subscriptions.trialEndsAt, now)");
     expect(body).toContain(".returning(");
-    // One churn event per RETURNING row, batched into a single emit, so a no-op run emits nothing.
     expect(body).toMatch(/expiredRows\.map\([\s\S]{0,400}this\.revenue\.emitMany\(tx, lapsedChurn\)/);
     expect(body).toContain("if (lapsedChurn.length > 0)");
   });

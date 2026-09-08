@@ -1,14 +1,3 @@
-/**
- * The bite proof for the `.db.spec.ts` approval gate.
- *
- * A guard nobody has watched refuse is not a guard, and the URL below is the
- * real one: `backend/.env`'s `DATABASE_URL` names this Neon endpoint, and
- * `party-identifiers.db.spec.ts` would have run `DROP TABLE ... CASCADE`
- * against it the moment somebody ran `pnpm test:db-specs` with nothing exported.
- *
- * Runs under the default hermetic jest config (its name does not end in
- * `.db.spec.ts`), so the guard is proved without a database.
- */
 import {
   ALLOWED_HOSTS_VAR,
   OPT_IN_VAR,
@@ -78,7 +67,6 @@ describe("db-spec-guard", () => {
       expect(message).toContain("neondb");
       expect(message).toContain(`Set ${OPT_IN_VAR}=1`);
       expect(message).toContain("127.0.0.1");
-      // The password is in the URL and must not be in the refusal.
       expect(message).not.toContain("npg_secret");
     });
   });

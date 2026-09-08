@@ -37,8 +37,6 @@ import {
 
 const ORG = "org-1";
 
-// The attachment read gained an ORDER BY, so a double that resolves at .where() breaks on
-// the query's shape rather than on its behaviour. This chain is thenable AND chainable.
 function attachmentDb(rows: Array<{ fileKey: string }>) {
   interface AttachmentChain {
     orderBy: jest.Mock<AttachmentChain, []>;

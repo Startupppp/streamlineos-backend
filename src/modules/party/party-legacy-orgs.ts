@@ -99,9 +99,6 @@ async function adoptOrganisations(
     rows.map((row, index): [string, CrmOrgRow] => [partyIds[index], row]),
   );
 
-  // The parties this call is minting, added to the map the read produced: a
-  // subsidiary and its parent can both arrive unadopted in the same set, and the
-  // loop this replaced resolved that only when the parent came first in the ids.
   rows.forEach((row, index) => partyByParent.set(row.id, partyIds[index]));
 
   await movePartiesFor(db, organizationId, partyIds, (party) => {
@@ -221,8 +218,6 @@ export async function updateMirroredOrganizations(
         ),
     );
 
-    // The hierarchy resolved once for the whole set, for the reason the patch half
-    // above is: reading it per derived row was a query per child.
     const parentPartyIds = [...moved.values()]
       .map((party) => party.parentPartyId)
       .filter((id): id is string => id !== null);

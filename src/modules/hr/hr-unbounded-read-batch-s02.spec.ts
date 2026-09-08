@@ -54,9 +54,6 @@ describe("S02 HR collection read caps", () => {
     ["core/hr-custom-fields.service.ts", "customFieldDefinitions.displayOrder"],
     ["core/hr-sensitive-record-compat.ts", "sourceOrdinal"],
     ["directory/employee-analytics.service.ts", "inArray(users.id, directReportIds)"],
-    // The department scan moved out of `employee-bulk-onboarding.service.ts` when the
-    // bulk writer was split; a path-keyed gate stops covering a file that moved, so the
-    // entry follows the query rather than the old filename.
     ["directory/bulk-onboarding/bulk-onboarding-departments.ts", "orgUnits.kind"],
     ["directory/employee-mutations.service.ts", "targetUserId)))"],
     ["directory/employee-skills-page-query.ts", ".limit(Math.max(1, employeeUserIds.length"],
@@ -81,8 +78,6 @@ describe("S02 HR collection read caps", () => {
     expect(source).toMatch(/HR_SCAN_MAX_PAGES/);
   });
 
-  // `.limit(directReportIds.length)` bounds a read only as far as that list is bounded,
-  // so the cap that makes it a bound is asserted where it is actually written.
   it("caps the direct-report id list the manager scorecard sizes its read from", () => {
     const source = readFileSync(
       resolve(sourceRoot, "../directory/employment-facts.service.ts"),

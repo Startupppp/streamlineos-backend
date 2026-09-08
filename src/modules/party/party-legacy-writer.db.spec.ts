@@ -226,21 +226,6 @@ describe("party-legacy-writer — real database", () => {
     });
   });
 
-  /**
-   * The same soft delete at batch size two.
-   *
-   * Every db test above drives these rewritten paths with a SINGLE row, so the
-   * multi-row shape the N+1 pass introduced was inferred rather than exercised:
-   * one id makes `inArray(...)` a one-element list and `groupByPayload` a single
-   * group, which is exactly the case that cannot tell a correct batch from a
-   * batch that writes one row and drops the rest.
-   *
-   * Two ids, one `{ deletedAt }` patch, so both parties land in ONE grouped
-   * `UPDATE ... WHERE party_id IN (a, b)`. The assertion is per row on both
-   * sides: each lead is stamped, each lead's OWN party is stamped, and the two
-   * parties are distinct — a mirror that stamped one party twice, or that
-   * returned two rows while writing one, fails here and passes at size one.
-   */
   it("soft-deletes two leads in one batch, and both mirrors agree", async () => {
     await withTenant(async (tx, orgId) => {
       const first = await createMirroredLead(tx, orgId, { orgId, name: "Batch One" });
@@ -279,9 +264,6 @@ describe("party-legacy-writer — real database", () => {
       expect(parties).toHaveLength(2);
       for (const party of parties) expect(party.deletedAt).toBeInstanceOf(Date);
 
-      // Each lead kept its own name through the batch: the party patch is one
-      // group, but the derived legacy payload is not, and a single arbitrary
-      // payload applied to both is the failure mode grouping can introduce.
       const rows = await tx
         .select()
         .from(leads)
@@ -291,22 +273,6 @@ describe("party-legacy-writer — real database", () => {
     });
   });
 
-  /**
-   * Two parties claiming ONE address inside a single `INSERT ... ON CONFLICT`.
-   *
-   * `updateMirroredLeads` with a uniform `{ email }` patch produces one payload
-   * for both parties, so `movePartiesFor` issues ONE `UPDATE` and hands both
-   * RETURNING rows to `claimIdentifiersOfParties` — a single insert whose rows
-   * carry the same `(organization_id, kind, normalised_value)` the unique index
-   * is on. `party-identifiers.db.spec.ts` measures what raw Postgres does with
-   * that; this measures what the write path does, which is emit one row.
-   *
-   * Which of the two wins is not asserted: the winner is the first row in
-   * RETURNING order and Postgres promises no order there. That exactly one row
-   * exists is the property — two would mean the index did not hold, zero would
-   * mean the claim was dropped, and a raise would mean the dedupe is load-bearing
-   * in a way the code does not say.
-   */
   it("claims a shared address once when two parties are updated in one statement", async () => {
     await withTenant(async (tx, orgId) => {
       const first = await createMirroredLead(tx, orgId, { orgId, name: "Sharer One" });
@@ -314,8 +280,6 @@ describe("party-legacy-writer — real database", () => {
 
       const shared = `shared-${randomUUID().slice(0, 8)}@example.test`;
       const updated = await updateMirroredLeads(tx, orgId, [first.id, second.id], {
-        // Written differently on the two rows on purpose: `normaliseIdentifier`
-        // lower-cases and trims, so one identifier value reaches the index twice.
         email: shared.toUpperCase(),
       });
       expect(updated).toHaveLength(2);
@@ -347,8 +311,6 @@ describe("party-legacy-writer — real database", () => {
       expect(claims[0]?.kind).toBe("email");
       expect(partyIds).toContain(claims[0]?.partyId);
 
-      // Anti-vacuity: the loser holds nothing rather than the whole set holding
-      // nothing, which is what an empty `party_identifiers` would also satisfy.
       const held = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(partyIdentifiers)
@@ -362,19 +324,6 @@ describe("party-legacy-writer — real database", () => {
     });
   });
 
-  /**
-   * `UPDATE ... FROM (VALUES ...)` with two keys, each taking its OWN value.
-   *
-   * `refreshEmployerColumns` is the one party path that cannot group: the new
-   * `contacts.organization_id` differs per contact, so `bulkUpdateFromValues`
-   * builds a two-tuple VALUES list joined on the contact id. At batch size one a
-   * builder that emitted a single value for every row is indistinguishable from a
-   * correct one — this is the size at which "one arbitrary winner" is visible.
-   *
-   * Both legacy columns are cleared first. Without that the create path has
-   * already written the right ids and every assertion below passes whether or not
-   * the statement under test ran at all.
-   */
   it("gives each contact its own employer id in one bulk update", async () => {
     await withTenant(async (tx, orgId) => {
       const marker = randomUUID().slice(0, 8);
@@ -440,8 +389,6 @@ describe("party-legacy-writer — real database", () => {
       const byContact = new Map(repaired.map((row) => [row.id, row.organizationId]));
       expect(byContact.get(contactOne.id)).toBe(employerOne.id);
       expect(byContact.get(contactTwo.id)).toBe(employerTwo.id);
-      // The whole point: two keys, two different values, neither overwritten by
-      // the other. Equal values here would pass every single-row test.
       expect(byContact.get(contactOne.id)).not.toBe(byContact.get(contactTwo.id));
 
       const employers = await tx

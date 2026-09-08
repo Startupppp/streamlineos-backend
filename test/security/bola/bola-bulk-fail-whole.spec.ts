@@ -314,16 +314,6 @@ describe("BOLA probe — timesheet bulk approvals refuse a mixed-tenant period l
     expect(rec.updateWhere.length).toBe(0);
   });
 
-  /**
-   * REWRITTEN 2026-09-08 against the set-based `bulkApprove`. The N+1 pass replaced the
-   * per-period `approveSinglePeriod` loop with one `inArray` UPDATE per table, so
-   * `toHaveBeenCalledTimes(2)` was asserting a call the service no longer makes — and the
-   * stub had no `activeDelegationsToActor`, so the control died on a TypeError while the
-   * cross-tenant halves above kept passing by throwing earlier. Both replacements are
-   * STRONGER than what they replace: the batched writes are rendered through `PgDialect`
-   * and read for the tenant predicate, because a batched UPDATE that dropped `org_id`
-   * would satisfy any count-based assertion.
-   */
   it("SAME-TENANT: a wholly owned list still approves every period, tenant-scoped", async () => {
     const periods = [
       { id: OWNED_ID, userMembershipId: 5, currentApproverMembershipId: 1 },

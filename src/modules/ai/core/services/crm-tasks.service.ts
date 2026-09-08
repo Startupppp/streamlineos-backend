@@ -78,9 +78,6 @@ export class CrmTasksService {
       const leadIds = idsOf("LEAD");
       const dealIds = idsOf("DEAL");
 
-      // A task can outlive the lead it was raised on, and the SLA line it carries is the
-      // reason it is still worth ranking -- so the deleted record is still read, exactly
-      // as it was before.
       const leadRows = leadIds.length === 0 ? [] : await tx
         .select({
           id: LEAD_PARTY_COLUMNS.id,

@@ -17,16 +17,6 @@ export interface SuspensionDeps extends PastDueDeps {
   readonly revenue: RevenueAnalyticsService;
 }
 
-/**
- * Every subscription past the suspension day, cancelled by one statement.
- *
- * The claim stays exactly as conditional as it was per row — `status =
- * 'PAST_DUE'` is still in the predicate, so a sweep that lost the race flips
- * nothing and the row is simply absent from `RETURNING`. The metadata patch is
- * identical for every row, so it is merged server-side with `||` rather than
- * read-modify-written per subscription, which also stops a concurrent metadata
- * write being clobbered.
- */
 export async function suspendPastDue(
   deps: SuspensionDeps,
   tx: TenantTx,
@@ -67,9 +57,6 @@ export async function suspendPastDue(
 
   const cancelled = entries.filter((entry) => claimed.has(entry.subscription.id));
 
-  // The one churn event per paying customer lost, committed with the cancellation in the
-  // sweep's own transaction. The dedupeKey names the movement, so a re-run of this sweep
-  // conflicts on the outbox event id instead of committing a second churn row.
   const suspensionChurn = cancelled.map((entry): RevenueEventInput => ({
     type: "churn",
     orgId,

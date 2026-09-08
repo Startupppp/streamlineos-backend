@@ -18,7 +18,6 @@ export function syncStructuralRoleAssignment(
   return syncStructuralRoleAssignments(tx, orgId, [organizationMembershipId], role);
 }
 
-/** The same sync for many memberships that share one role — four statements for any count. */
 export async function syncStructuralRoleAssignments(
   tx: DbOrTx,
   orgId: string,

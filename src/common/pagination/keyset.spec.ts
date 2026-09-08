@@ -225,12 +225,6 @@ describe("no cursor rebuilds a Date inside a sql template", () => {
     });
   }
 
-  /**
-   * The type-directed checker for this exact defect carries the shape as a string
-   * inside its own self-test fixture — and carries the SAFE `.toISOString()` form
-   * at that. Excluding it keeps the grep pointed at production code; the checker's
-   * own correctness is asserted by `check:date-in-sql-template:self-test`.
-   */
   const CHECKER = join("scripts", "check-date-in-sql-template.ts");
 
   it("finds none", () => {

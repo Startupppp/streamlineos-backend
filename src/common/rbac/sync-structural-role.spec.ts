@@ -35,7 +35,6 @@ function onlyStatementOn(captured: Statement[], fragment: string): Statement {
   return matches[0];
 }
 
-/** (membershipId, roleId) pairs an INSERT ... VALUES grants, read off the flattened params. */
 function grantedPairs(statement: Statement): Array<[number, number]> {
   const pairs: Array<[number, number]> = [];
   for (let index = 0; index + 3 < statement.params.length; index += 4) {
@@ -47,7 +46,6 @@ function grantedPairs(statement: Statement): Array<[number, number]> {
   return pairs;
 }
 
-/** (membershipId, roleId) pairs a batched DELETE revokes: org, memberships…, roles…. */
 function revokedPairs(statement: Statement, membershipCount: number): Array<[number, number]> {
   const memberships = statement.params.slice(1, 1 + membershipCount);
   const roleIds = statement.params.slice(1 + membershipCount);
@@ -59,11 +57,6 @@ function revokedPairs(statement: Statement, membershipCount: number): Array<[num
   return pairs;
 }
 
-/**
- * The per-membership contract, restated independently of the implementation so
- * the batched form is compared against the rule and not against a helper that
- * now shares its code.
- */
 function perMembershipReference(
   membershipIds: readonly number[],
   role: string,

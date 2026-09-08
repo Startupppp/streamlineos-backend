@@ -147,13 +147,6 @@ export class CronAttendanceService {
 
       if (writes.length === 0) return;
 
-      /*
-       * One statement for the whole sweep. Every record closes at its own policy's
-       * time with its own hours, so the batched form is `UPDATE … FROM (VALUES …)`;
-       * the `check_out IS NULL` compare-and-set the per-row update relied on rides
-       * in `extraWhere`, so a record someone closed meanwhile is still skipped and
-       * still absent from the returned keys.
-       */
       const closed = await bulkUpdateFromValues(tx, {
         table: attendance,
         orgId,
@@ -188,14 +181,6 @@ export class CronAttendanceService {
     };
   }
 
-  /**
-   * Both policies for every record, resolved once per distinct date.
-   *
-   * A sweep reads far more open records than it does distinct `(employee, date)`
-   * pairs, and the two resolutions used to run per record. The policy service
-   * already answers for a set of employees on one date, so this collapses to two
-   * round trips per date rather than two per record.
-   */
   private async resolvePolicies(
     orgId: string,
     records: ReadonlyArray<{ userId: string; date: string }>,

@@ -25,17 +25,6 @@ interface MappedRow {
   error?: string;
 }
 
-/**
- * The outcome of one row, held until the whole job has run.
- *
- * Instantiating and sending an envelope is irreducibly per row — each one is a
- * distinct document with a distinct recipient — but the row's own status write
- * is not, and it used to be a second round trip per row inside the same loop.
- * Collecting the outcomes turns 2N statements into N + one
- * `UPDATE … FROM (VALUES …)`, and loses nothing on a crash: `process` runs
- * inside the request transaction, so a failure mid-job already rolled back
- * every status the loop had written.
- */
 interface RowOutcome {
   readonly rowNumber: number;
   readonly status: "success" | "failed";
@@ -200,11 +189,6 @@ export class SignBulkSendService {
     this.integrations.emitBulkSendCompleted(orgId, senderMember?.user?.id ?? null, jobId, { totalCount: rows.length, successCount, failedCount });
   }
 
-  /**
-   * `row_number` is unique within a job, so it joins the outcome to its row
-   * exactly once the job is pinned in the `WHERE` — which it is, beside the
-   * tenant predicate the builder always adds.
-   */
   private async writeRowOutcomes(orgId: string, jobId: number, outcomes: readonly RowOutcome[]): Promise<void> {
     if (outcomes.length === 0) return;
     await bulkUpdateFromValues(this.db, {

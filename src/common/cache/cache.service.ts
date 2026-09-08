@@ -299,12 +299,6 @@ export class CacheService {
     );
   }
 
-  /**
-   * The org-routed form of `invalidateMany`. It exists because the two are not
-   * interchangeable: `invalidateMany` uses the default Redis and an unprefixed key,
-   * so substituting it for a loop of `invalidateForOrg` sends the deletes to the
-   * wrong cell in a regional deployment and leaves the real entries live.
-   */
   async invalidateManyForOrg(
     orgId: string,
     localKeys: readonly ExactCacheKey[],

@@ -92,9 +92,6 @@ function publicWriteHandlers(): Handler[] {
       const decorators = lines.slice(top, signature).join("\n");
       if (!decorators.includes("@Public()")) continue;
 
-      // POSIX separators unconditionally: `relative()` answers `modules\ingress\…` on
-      // Windows, so every identity missed the registry keys below — the crm-mailbox gap
-      // read as unrecorded and the three closed gaps read as handlers that no longer exist.
       const rel = relative(CONTROLLER_ROOT, file).replace(/\\/g, "/");
       const routeLine = lines[route] ?? "";
       const verb = /@(Post|Put|Patch|Delete)\(/.exec(routeLine)?.[1] ?? "";

@@ -23,16 +23,6 @@ interface PlannedAttempt {
 const attemptKey = (subscriptionId: number, pastDueAt: Date, milestone: string): string =>
   `${subscriptionId}|${pastDueAt.getTime()}|${milestone}`;
 
-/**
- * The next unsent milestone for every still-recoverable subscription.
- *
- * The unique index on `(org, subscription, period, milestone)` used to be
- * consulted by attempting an insert per milestone per subscription. The
- * milestones already recorded are now read once for the whole batch, the
- * remaining ones claimed by a single `onConflictDoNothing` insert — which is
- * still the authority, so a sweep racing this one notifies nobody twice — and
- * marked `SENT` by one update.
- */
 export async function remindPastDue(
   deps: PastDueDeps,
   tx: TenantTx,
@@ -42,6 +32,9 @@ export async function remindPastDue(
 ): Promise<{ notified: number; skipped: number }> {
   if (entries.length === 0) return { notified: 0, skipped: 0 };
 
+  const periodStarts = [...new Set(entries.map((entry) => entry.pastDueAt.getTime()))].map(
+    (time) => new Date(time),
+  );
   const existing = await tx
     .select({
       subscriptionId: dunningAttempts.subscriptionId,
@@ -56,8 +49,10 @@ export async function remindPastDue(
           dunningAttempts.subscriptionId,
           entries.map((entry) => entry.subscription.id),
         ),
+        inArray(dunningAttempts.periodStart, periodStarts),
       ),
-    );
+    )
+    .limit(entries.length * DUNNING_SCHEDULE_DAYS.length);
 
   const recorded = new Set(
     existing.map((row) => attemptKey(row.subscriptionId, row.periodStart, row.milestone)),

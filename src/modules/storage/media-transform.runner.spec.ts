@@ -150,12 +150,6 @@ function makeFile(): Express.Multer.File {
   } as unknown as Express.Multer.File;
 }
 
-/**
- * `upload` runs its permission, quota and quarantine work inside
- * `runInTenantTransaction`, so the double has to be able to open one. The
- * callback is invoked rather than stubbed — a bare `jest.fn()` here would
- * silently void every assertion that depends on the work inside it.
- */
 function buildTenantDb() {
   const state = { open: 0, opened: 0 };
   const tx = { query: {}, execute: jest.fn().mockResolvedValue([]) };
@@ -299,15 +293,6 @@ describe("POST /storage/upload — no transform runs on the request thread", () 
     expect(storage.deleteFileIfPresent).toHaveBeenCalledWith("org-1", "org-1/uploads/uuid-photo.webp");
   });
 
-  /**
-   * The transform is submitted from inside the request's tenant transaction, so
-   * the job inherits an AsyncLocalStorage context whose handle is already
-   * committed by the time the codec returns. `file_quarantine_records` is
-   * RLS-guarded and fails closed without the GUC, so a release written on that
-   * dead handle never lands and the stored, scanned object stays blocked
-   * forever. The release must therefore open its own transaction, after the
-   * request's have closed — and the object write must stay outside it.
-   */
   it("releases the quarantine row in a tenant transaction of its own, opened after the request's", async () => {
     const runner = new MediaTransformRunner();
     const { controller, db, quarantine, storage } = buildUploadController(runner);

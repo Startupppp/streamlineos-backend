@@ -9,13 +9,6 @@ import type { KbIndexingService } from "../retrieval/kb-indexing.service";
 
 const BACKEND_ROOT = join(__dirname, "..", "..", "..", "..");
 
-/**
- * The source assertions below match multi-line SQL with "\n". Git checks these files out
- * with CRLF on Windows, so a raw read makes every multi-line toContain fail on the line
- * ending rather than on the constraint — which is how this suite went red while migration
- * 1040 was correct. Normalising on read is the only option here: the migration's bytes are
- * hashed by the seeded preflight, so the file itself must not be touched.
- */
 function readText(path: string): string {
   return readFileSync(path, "utf-8").replace(/\r\n/g, "\n");
 }

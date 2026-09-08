@@ -27,13 +27,6 @@ export interface PastDueDeps {
   readonly dispatch: NotificationDispatchService;
 }
 
-/**
- * Which past-due subscriptions get a reminder and which get suspended.
- *
- * The date each subscription fell past due is read from its own metadata and
- * falls back to `updatedAt`, so a row that never recorded the transition is
- * still measured from something rather than skipped.
- */
 export function triagePastDue(
   pastDueSubs: readonly PastDueSubscription[],
   now: Date,

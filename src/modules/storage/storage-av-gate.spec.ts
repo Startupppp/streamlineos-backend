@@ -8,13 +8,6 @@ import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 
-/**
- * The upload path opens tenant transactions — one for the permission and quota
- * checks, one for the quarantine insert, and one on the transform runner to
- * release the row. The double opens them for real rather than stubbing the
- * helper, so a call site that stops opening one is visible here. The callback is
- * invoked: a bare `jest.fn()` would void every assertion inside it.
- */
 function buildTenantDb() {
   const tx = { query: {}, execute: jest.fn().mockResolvedValue([]) };
   const relocationTargets = {

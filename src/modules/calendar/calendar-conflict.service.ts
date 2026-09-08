@@ -14,23 +14,6 @@ import { logger } from "../../common/logger/logger.service";
 
 const CONFLICT_SCAN_BATCH_SIZE = 100;
 
-/**
- * The overall budget the keyset drain is allowed to spend, in candidate rows.
- *
- * The loop below is correct in shape — one indexed page per round trip — but it had no
- * overall bound: it accumulated every matching row into a Node array, on the create-event
- * write transaction, so the memory and the time still grew with the caller's history
- * rather than with the meeting being booked (ticket 20 measured 8,653 rows / ~87 pages for
- * a 7-day window in the large tenant, before `mineOrAttending` narrowed the candidates).
- *
- * This is a hard cap that FAILS, not a `LIMIT` that truncates. `checkConflictsInTx`
- * returns the conflicts it found and nothing else, so a truncated drain is indistinguishable
- * from "no further conflicts" — the caller would be told a meeting is free when it is not,
- * silently and forever. A caller who organises or attends more than this many events
- * overlapping one window is a runaway, and the right answer is to say so where an operator
- * can see it. The value is ~100x the largest plausible real answer: on the post-narrowing
- * measurement the same tenant returned 50 rows in a single page.
- */
 const CONFLICT_SCAN_MAX_EVENTS = 5000;
 
 @Injectable()

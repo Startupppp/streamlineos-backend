@@ -174,9 +174,6 @@ describe("HrHubService", () => {
     expect(harness.attendance.teamStatus).toHaveBeenCalledWith(USER, {
       limit: 1,
     });
-    // The hub asks the exit module for one digest instead of a list plus a count,
-    // so the page size moved inside `hubDigest`. The tenant, the actor and the
-    // admin standing the section is read under are still the hub's to pass.
     expect(harness.exit.hubDigest).toHaveBeenCalledTimes(1);
     expect(harness.exit.hubDigest).toHaveBeenCalledWith("org-1", "user-1", true);
     expect(harness.opsInbox.getOpsInbox).toHaveBeenCalledWith(

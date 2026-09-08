@@ -73,9 +73,17 @@ function makeDb(seed: {
           limit: () => Promise.resolve(owners),
           then: (resolve) => Promise.resolve(owners).then(resolve),
         };
+        const rows = table === subscriptions ? (seed.pastDue ?? []) : [];
+        const plain: {
+          limit: () => typeof plain;
+          then: (resolve: (value: typeof rows) => unknown) => Promise<unknown>;
+        } = {
+          limit: () => plain,
+          then: (resolve) => Promise.resolve(rows).then(resolve),
+        };
         return {
           innerJoin: () => joined,
-          where: () => Promise.resolve(table === subscriptions ? (seed.pastDue ?? []) : []),
+          where: () => plain,
           limit: () => Promise.resolve([]),
         };
       },
@@ -102,8 +110,6 @@ async function build(db: ReturnType<typeof makeDb>) {
   const emitted: EmittedEvent[] = [];
   const planLimits = { bust: jest.fn() };
   const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
-  // The sweep emits the whole batch in one call. `emit` stays on the double so a regression to
-  // one outbox row per subscription is a failed assertion rather than an untracked extra path.
   const revenue = {
     emit: jest.fn(),
     emitMany: jest.fn().mockImplementation(async (_tx: unknown, events: readonly EmittedEvent[]) => {
@@ -135,8 +141,6 @@ describe("c17-05 — a trial that lapses records churn", () => {
 
     expect(revenue.emit).not.toHaveBeenCalled();
     expect(revenue.emitMany).toHaveBeenCalledTimes(1);
-    // The handle the batch is written through is the sweep's own tenant transaction, so the
-    // events commit with the EXPIRED rows they describe.
     expect(revenue.emitMany.mock.calls[0]?.[0]).toBe(db);
     expect(revenue.emitMany.mock.calls[0]?.[1]).toHaveLength(2);
     expect(emitted).toHaveLength(2);

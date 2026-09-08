@@ -27,9 +27,6 @@ const REWRITTEN = [
   "modules/payroll/runs/exceptions.service.ts",
   "modules/hr/governance/positions/positions-taxonomy.service.ts",
   "modules/organization/core/org-membership-access-revocation.ts",
-  // The HR probe kept its bounded shape but moved: the reconciliation service now
-  // delegates to `computeHrSignals`, which is where all 21 `select({ one: sql`1` })
-  // … .limit(1)` reads live. Following the seam rather than dropping the entry.
   "modules/hr/onboarding/flow/hr-checklist-signals.ts",
 ];
 

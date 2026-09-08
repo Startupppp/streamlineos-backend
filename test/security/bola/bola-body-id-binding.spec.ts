@@ -130,7 +130,6 @@ describe("the surface, enumerated from the committed contract", () => {
     //   +1  GET /blog/admin/categories
     //   +1  GET /finance/bank-accounts/{bankAccountId}
     //   +2  GET /v2/users, GET /v2/users/{userId}
-    //
     // CORRECTED. The comment that stood here claimed `queryFields`, `idFields` and
     // `operationsWithIdFields` were unmoved because "six operations arrived and brought no
     // id-shaped request field with them". That was FALSE and it was hiding the one operation
@@ -141,16 +140,6 @@ describe("the surface, enumerated from the committed contract", () => {
     // route with four org-scoping id filters is either swept or it is a blind spot.
     // This census tracks `openapi.json`, so it has to be re-read after the release's final
     // `pnpm openapi:generate` rather than assumed.
-    //
-    // RE-READ 2026-09-08 against the regenerated contract: 3648 -> 3666, bodyFields 813 -> 816,
-    // queryFields 243 -> 244, idFields 1056 -> 1060, operationsWithIdFields 672 -> 675. These five
-    // are a CENSUS, not a verdict — they say "the contract moved, go look". The delta cannot be
-    // attributed operation-by-operation from any stored artifact, so the security-bearing halves of
-    // it are pinned BY NAME instead of by count: every actor selector is listed in
-    // `actor-selector-surface.json` below, and every id-field verdict change lands in the ratchet
-    // and the named finding sets further down. A future contract regeneration re-reads these five
-    // and has to account for the named sets, which is where a new client-sent actor id or a new
-    // unresolved write shows up as a name rather than as a number.
     expect(counts.operations).toBe(3666);
     expect(counts.bodyFields).toBe(816);
     expect(counts.queryFields).toBe(244);
@@ -176,14 +165,6 @@ describe("the surface, enumerated from the committed contract", () => {
       expect([field, verdict]).toEqual([field, expect.stringMatching(/^(?:org-predicate|filter-in-org-query)$/)]);
   });
 
-  /**
-   * The actor selector is the field CLAUDE.md §5 says a client may never send about itself, so
-   * WHICH routes accept one is the security question — a count answers it only until the next
-   * regeneration, where a removed selector and an added one cancel out. The surface is therefore
-   * pinned by name in `actor-selector-surface.json`: a route that starts accepting `userId`,
-   * `actorId`, `createdById`, `authorId`, `currentUserId` or `requesterId` fails here with its own
-   * path printed, and one that stops accepting it fails too rather than making room for another.
-   */
   it("splits out the tenant and actor selectors rather than analysing them as object references", () => {
     const { counts } = enumerateIdFieldSites();
     expect(counts.tenantSelectors).toHaveLength(12);
@@ -254,42 +235,9 @@ describe("the surface, enumerated from the committed contract", () => {
  * `ActivitiesController_timeline` went `filter-in-org-query` -> `never-read` on that commit alone.
  * The file-size programme will keep producing that shape, so the fix belongs in the analyser.
  */
-/**
- * RAISED 223 -> 226 on 2026-09-08, and once more the reason is VISIBILITY, not regression.
- *
- * `spreadIntoWrite` was consulted only AFTER the `unresolved` fallback, so a carrier that is spread
- * into a write literal — `.set({ ...input })` — stopped being counted as a write the moment the
- * field was ALSO named once outside that literal. `SignFieldsService.update` gained a validation
- * object (`groupId: input.groupId ?? field.groupId`) and the write it still performs through
- * `...input` silently dropped from `written-unresolved` to `unresolved`; the ratchet stopped
- * measuring a write that never went away. The order is now spread-before-fallback
- * (`body-id-binding.ts`), and five sites came back into view at once —
- * `written-unresolved` 221 -> 226, `unresolved` 165 -> 160.
- *
- * All five are pinned by name below with what was measured about each, so raising the number
- * cannot absorb them. None is new code.
- */
 const WRITTEN_UNRESOLVED_BASELINE = 226;
 const UNRESOLVED_BASELINE = 179;
 
-/**
- * The five the spread-before-fallback ordering made visible.
- *
- * Three are caught in the service and are named so they are not mistaken for live defects:
- * `AssetCategoriesService.update` calls `validateAccountLinks(orgId, …)` whenever any of the three
- * account ids is present, and that helper selects `ledgerAccounts` filtered by `orgId` and throws
- * 422 for an id outside the map (`src/modules/finance/assets/asset-categories.service.ts:107`).
- * The analyser cannot follow it because the membership test is a `Map.has`, not a SQL predicate.
- *
- * `SignFieldsController_update|groupId` is the PATCH twin of the `POST …/fields groupId` site the
- * e-sign block below already names: `sign_fields.group_id` is a bare `text` column with no foreign
- * key at all, so it is a grouping label rather than a reference to any row.
- *
- * `CrmMetadataController_createBlueprint|pipelineId` is a LIVE cross-tenant write, reported rather
- * than repaired because CRM is excluded from this release: `CrmBlueprintsService.create` inserts
- * `{ orgId: u.orgId, ...input }` and never resolves `pipelineId`, and `crm_blueprints.pipeline_id`
- * references `crm_pipelines(id)` on the bare column, so another organisation's pipeline id lands.
- */
 const NEWLY_VISIBLE_BY_SPREAD_ORDERING: readonly string[] = [
   "AssetCategoriesController_update|assetAccountId",
   "AssetCategoriesController_update|depreciationExpenseAccountId",

@@ -106,16 +106,6 @@ export async function employerLegacyIds(
   return crmOrgIdsOfParties(db, organizationId, present);
 }
 
-/**
- * A legacy id resolved through a map the caller read once for a whole set.
- *
- * The bulk half of `absorbEmployerColumn` and its two siblings in
- * `party-legacy-associations.ts`, and it keeps their refusal: a null link stays
- * null, and a link naming a record this tenant has no party for is a request
- * that cannot be honoured rather than one to answer with a silent null. The
- * message is the caller's, because only the caller knows which backfill is
- * missing.
- */
 export function linkedPartyId(
   resolved: ReadonlyMap<number, string>,
   legacyId: number | null,

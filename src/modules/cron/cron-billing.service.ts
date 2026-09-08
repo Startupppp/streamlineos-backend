@@ -86,8 +86,6 @@ export class CronBillingService {
       const owner = ownerRows[0];
       if (!owner?.email || !owner.userId) return;
 
-      // Every reminder window answered by one read of the org's live trial ends,
-      // rather than one bounded-but-repeated query per reminder day.
       const trialEnds = await tx
         .select({ trialEndsAt: subscriptions.trialEndsAt })
         .from(subscriptions)

@@ -128,7 +128,6 @@ export async function syncCanonicalReportingLine(
   return outcomes.get(userId) ?? { status: "unmappable", reason: "employment-missing" };
 }
 
-/** The same sync for many reportees that share one manager — six statements for any count. */
 export async function syncCanonicalReportingLines(
   db: DbOrTx,
   orgId: string,

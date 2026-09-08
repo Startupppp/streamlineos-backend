@@ -39,11 +39,6 @@ import type { RequestActorContext } from "../../common/audit/actor-context";
  */
 const EXPIRATION_SWEEP_CHUNK = 500;
 
-/**
- * A recipient whose reminder is owed, carried in the shape the eligibility test
- * already narrowed it to — so the token rotation and the mail loop share one
- * pre-filtered list without re-testing `email` or asserting it non-null.
- */
 interface RemindableRecipient {
   readonly id: number;
   readonly name: string;

@@ -64,7 +64,6 @@ const unresolvedEmployer = (id: number): string =>
 const unresolvedLead = (id: number): string =>
   `Lead ${id} has no party in this tenant; run the 0241 backfill before converting from it`;
 
-/** A whole set of unadopted contacts at once; see `adoptLeads` for the argument. */
 async function adoptContacts(
   db: MirrorDb,
   organizationId: string,
@@ -206,8 +205,6 @@ export async function updateMirroredContacts(
     const adopted = await adoptContacts(tx, organizationId, unadopted);
     for (const [contactId, partyId] of adopted) partyByContact.set(contactId, partyId);
 
-    // Resolved once, outside the per-party derivation: which company the caller
-    // named is a property of the patch, not of whoever is being patched.
     const employerPatch = await absorbEmployerColumn(tx, organizationId, patch.organizationId);
     const leadPatch = await absorbLeadColumn(tx, organizationId, patch.leadId);
 
@@ -222,8 +219,6 @@ export async function updateMirroredContacts(
         ),
     );
 
-    // Both crossings resolved once for the whole set, for the reason the patch
-    // half above is: they are two maps, not two maps per derived row.
     const movedParties = [...moved.values()];
     const employerPartyIds = movedParties.map((party) => party.employerPartyId);
     const employerLegacyByParty = await employerLegacyIds(tx, organizationId, employerPartyIds);

@@ -326,14 +326,6 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
     result: synthesizeRequest(op.verb, op.path.replace(/\{([A-Za-z0-9_]+)\}/g, ":$1")),
   }));
 
-  /**
-   * RE-READ 2026-09-08: 1386 -> 1396 after `openapi.json` was regenerated. This number is an
-   * anti-vacuity guard on the population the two assertions below sweep, not a ratchet — and both
-   * of those held across the move: every one of the 1,387 JSON-bodied operations still got a
-   * satisfying body, and the nine that carry no JSON schema are still the same nine multipart
-   * uploads named below. A contract that grows and a synthesiser that keeps up is the pass; a
-   * population that SHRINKS toward zero is what this stops.
-   */
   it("ANTI-VACUITY: the contract really does carry the 1,396 mutating bodies the gate counts", () => {
     expect(mutating.length).toBe(1396);
   });

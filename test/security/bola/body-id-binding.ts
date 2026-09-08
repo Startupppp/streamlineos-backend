@@ -163,7 +163,6 @@ export function enumerateIdFieldSites(): { sites: IdFieldSite[]; counts: Surface
   };
 }
 
-
 // --- source tracing ----------------------------------------------------------
 
 const ORG_TOKEN_RE = /\b(?:orgId|organizationId|current_org_id|currentOrgId)\b/;
@@ -564,14 +563,6 @@ function traceSymbol(
       where: at,
       writeTable: writeTable ?? undefined,
     };
-  /**
-   * The carrier is spread into a write literal, so the field lands in the row
-   * whether or not it is also named somewhere else in the method. This is asked
-   * BEFORE the `unresolved` fallback on purpose: it used to sit after it, so one
-   * unrelated mention outside the literal — `groupId: input.groupId ?? field.groupId`
-   * in a validation object — downgraded a real `...input` write to `unresolved`
-   * and the ratchet stopped counting it. Measured on `PATCH /sign/fields/{fieldId}`.
-   */
   const spread = spreadIntoWrite(body, symbol);
   if (spread)
     return {

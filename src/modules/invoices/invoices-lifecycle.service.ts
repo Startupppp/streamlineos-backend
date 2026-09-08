@@ -21,16 +21,6 @@ type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
  */
 const PAID_TOLERANCE = "0.0050";
 
-/**
- * Fallback notification recipients per organisation for an overdue invoice that
- * names no collection owner.
- *
- * The read is loop-INVARIANT per organisation — the same membership query, with
- * the same answer, once per invoice — so it is resolved for every organisation
- * in the sweep in one ranked pass before the notification loop starts. The rank
- * filter is what keeps that one statement equivalent to the per-org `LIMIT`:
- * without it a single organisation's membership would fill the whole result.
- */
 const FALLBACK_RECIPIENTS_PER_ORG = 5;
 
 @Injectable()

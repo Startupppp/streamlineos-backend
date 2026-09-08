@@ -462,15 +462,6 @@ process.stdout.write(JSON.stringify(r));`;
     expect(r.findings.filter((f) => f.metric === "downstreamCalls" && f.fired).length).toBe(0);
   });
 
-  /**
-   * A quiet replicate study for the DB-call count: three replicates that never moved.
-   *
-   * `requestDbCalls` is a NOISE_COUNT_METRIC, not an exact ratchet — the count includes
-   * authentication, permission resolution and module entitlement reads whose cache state
-   * varies between captures, so an exact ratchet fired on every rerun. Arming it therefore
-   * takes a measured envelope; with a zero swing the band is zero and any increase fires,
-   * which is the same bite the exact ratchet had, now earned rather than assumed.
-   */
   const quietDbCallEnvelope = {
     n: 3, min: 3, max: 3, mean: 3, p50: 3, p95: 3, p99: 3,
     sd: 0, cv: 0, maxAbsSwing: 0, maxRelSwing: 0,
@@ -539,9 +530,6 @@ process.stdout.write(JSON.stringify(r));`;
     const noise = {
       "GET /x@reference": {
         latencyMs: { p95: envelope },
-        // Corroboration now has to be earned: `requestDbCalls` only fires against a
-        // measured band, so without this envelope it degrades to an advisory and the
-        // latency finding it is meant to corroborate never arms.
         requestDbCalls: quietDbCallEnvelope,
       },
     };

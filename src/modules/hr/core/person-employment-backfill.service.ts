@@ -121,10 +121,6 @@ export class PersonEmploymentBackfillService {
     );
   }
 
-  /**
-   * One tenant transaction per fetched page, not per member: the whole page goes
-   * through the batched `ensureManyFromUsers`, whose statement count is fixed.
-   */
   private async processMemberBatch(
     orgId: string,
     actorId: string | null,

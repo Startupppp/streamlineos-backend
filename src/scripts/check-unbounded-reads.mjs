@@ -71,9 +71,19 @@ const MIN_DB_FILES = 300;
  * Four further reads were BOUNDED in code in the same pass rather than suppressed, so they
  * are not in this number at all: both crm-tasks reads (.limit on the id-set length), the
  * gdpr outer read (persons x cap), and the cron-projects status read (DISTINCT ON plus a
- * limit of the project count). Lower this the moment any of the seven above is bounded.
+ * limit of the project count).
+ *
+ * LOWERED 650 -> 649 the same day, and this is the ratchet working in the intended
+ * direction. Splitting cron-billing.service.ts moved the dunning milestone read into
+ * /cron/cron-billing-dunning.ts, which surfaced it as an unclassified path rather than
+ * letting it inherit its old file's justification. It was then BOUNDED instead of
+ * re-suppressed: it had read every dunning attempt ever recorded for the batch's
+ * subscriptions, while planAttempts only ever consults an entry's CURRENT pastDueAt, so
+ * its row count grew with account age rather than with the batch. Narrowing it to the
+ * periods in play caps it at one row per (entry, milestone), which its limit now states.
+ * Six newly hidden reads remain. Lower this the moment any of them is bounded.
  */
-const MAX_SUPPRESSED_UNBOUNDED = 650;
+const MAX_SUPPRESSED_UNBOUNDED = 649;
 const ORDER_BY_LOOKBACK = 25;
 const STATEMENT_MAX_LINES = 120;
 

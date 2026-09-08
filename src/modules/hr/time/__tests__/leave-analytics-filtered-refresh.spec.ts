@@ -30,13 +30,6 @@ function makeUser(userId: string): CurrentUserContext {
   };
 }
 
-/**
- * `CacheFiller` writes a filled entry with a compare-and-set Lua script rather than
- * a plain `SET`, and releases the fill lease with a second one. A fake that treated
- * every `eval` as the release script deleted the entry it was being asked to store,
- * so nothing was ever cached and every read was a miss. Both scripts are modelled
- * here, told apart by their key count, and `get` reproduces Upstash's JSON decode.
- */
 class FakeRedis {
   readonly store = new Map<string, unknown>();
 

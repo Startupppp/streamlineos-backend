@@ -141,12 +141,6 @@ export class KbPageDuplicateService {
     });
   }
 
-  /**
-   * Breadth-first levels of the subtree: every node at one depth is inserted in a single
-   * statement, so the copy costs one round trip per depth instead of one per node. A child
-   * also cannot be planned before its parent's generated id exists, which the previous
-   * map-order walk did not guarantee — a child seen first was grafted to the space root.
-   */
   private levelsOf(subtreeMap: Map<number, PageRow>, rootId: number): PageRow[][] {
     const childrenByParent = new Map<number, PageRow[]>();
     for (const page of subtreeMap.values()) {

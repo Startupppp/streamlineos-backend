@@ -18,15 +18,6 @@ export interface RemediationDeps {
   readonly logger: Logger;
 }
 
-/**
- * Perform what each claimed finding proposed.
- *
- * `none` is the common case and costs nothing: most findings exist so a person
- * looks at a record, and there is no safe automatic remedy to run. Only
- * `merge-parties` executes, and merging is irreducibly pairwise — there is no
- * set-based statement that merges four hundred pairs — so it is the one thing
- * here that iterates, and every iteration is isolated.
- */
 export async function applyAll(
   deps: RemediationDeps,
   organizationId: string,
@@ -56,14 +47,6 @@ export async function applyAll(
   return failures;
 }
 
-/**
- * The tokens of a whole batch, in one statement.
- *
- * Every merge leaves a different token, which is what used to make this one
- * UPDATE per applied finding. The map rides as a single jsonb bind parameter
- * and each row picks its own entry out of it by key, so four hundred merges
- * record four hundred tokens in one round trip.
- */
 async function recordUndoTokens(
   db: Db,
   organizationId: string,
@@ -102,18 +85,10 @@ async function execute(
   const outcome = await deps.merges.merge(organizationId, {
     leftPartyId: finding.partyId,
     rightPartyId: finding.relatedPartyId,
-    // A human confirmed this one, which is what separates it from the merges
-    // the detector was confident enough to make on its own.
     decidedBy: "USER",
     userId,
   });
 
-  /**
-   * Captured now, not reconstructed later. `party_merges` holds both rows
-   * verbatim, and this is the pointer an undo replays — deriving it afterwards
-   * from the surviving record cannot tell a field the merge filled from one a
-   * person edited since.
-   */
   return {
     partyMergeId: outcome.partyMergeId,
     survivorPartyId: outcome.survivorPartyId,

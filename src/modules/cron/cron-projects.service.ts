@@ -85,7 +85,6 @@ export class CronProjectsService {
         else due.push(template);
       }
 
-      // Identical SET for every template that has run out of schedule, so one statement.
       if (finished.length > 0) {
         await tx
           .update(tickets)
@@ -104,16 +103,6 @@ export class CronProjectsService {
     return { spawned, advanced };
   }
 
-  /**
-   * Every due template's child ticket, in a fixed number of statements.
-   *
-   * The numbering high-water mark and the first board column used to be read per
-   * template and the child, its watcher, its activity row and the template's own
-   * advance written per template — nine round trips for one ticket. They are now
-   * two grouped reads, three multi-row writes and one `UPDATE … FROM (VALUES …)`
-   * for the advance, whose `recurrence_next_run_at` is the one value that differs
-   * per row.
-   */
   private async spawnBatch(
     tx: TenantTx,
     orgId: string,

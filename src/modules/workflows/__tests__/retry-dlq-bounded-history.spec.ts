@@ -122,9 +122,7 @@ beforeEach(() => {
   (finishExecution as jest.Mock).mockResolvedValue(undefined);
 });
 
-// ──────────────────────────────────────────────────────────────────────────────
 // Group A — Infrastructure failure retries; deterministic failure does not
-// ──────────────────────────────────────────────────────────────────────────────
 
 describe("A — infra failure retries; deterministic failure does not", () => {
   it("a transient ECONNRESET from advanceExecution triggers releaseToWaiting (retry)", async () => {
@@ -185,9 +183,7 @@ describe("A — infra failure retries; deterministic failure does not", () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────────────
 // Group B — Exhausted retry budget → dead_lettered state with reason preserved
-// ──────────────────────────────────────────────────────────────────────────────
 
 describe("B — exhausted retry budget lands in dead_lettered state", () => {
   it("when infraAttempt = OUTBOX_MAX_RETRIES and advance throws transiently, returns dead_lettered", async () => {
@@ -279,9 +275,7 @@ describe("B — exhausted retry budget lands in dead_lettered state", () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────────────
 // Group C — Step history is bounded: sweep prunes old terminal-execution steps
-// ──────────────────────────────────────────────────────────────────────────────
 
 describe("C — step history is bounded by the sweep pruning pass", () => {
   function makeDbWithPruneSetup(oldExecIds: string[], deletedSteps: object[]): Db {
@@ -383,9 +377,7 @@ describe("C — step history is bounded by the sweep pruning pass", () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────────────
 // Group D — Expired lease reclaim: expireStuck re-queues crashed workers
-//
 // Bite proof (test "below-budget stuck execution released to waiting"):
 //   Before implementing the SELECT+loop in expireStuck, the function issued a
 //   batch UPDATE to timed_out without reading any rows. The Group D tests were
@@ -394,7 +386,6 @@ describe("C — step history is bounded by the sweep pruning pass", () => {
 //     - "timedOutCall" was defined → expect(timedOutCall).toBeUndefined() FAILED.
 //   After rewriting expireStuck to SELECT rows then conditionally UPDATE to
 //   waiting/dead_lettered, all Group D tests pass.
-// ──────────────────────────────────────────────────────────────────────────────
 
 describe("D — expired lease reclaim: expireStuck re-queues crashed workers", () => {
   type PrivateStuck = { expireStuck(tx: unknown, orgId: string): Promise<void> };
@@ -519,15 +510,6 @@ describe("D — expired lease reclaim: expireStuck re-queues crashed workers", (
     expect(timedOutCall).toBeUndefined();
   });
 
-  /*
-   * Was `expect(deadLetterExecution).toHaveBeenCalledWith(tx, ORG, "exec-stuck-4", …)`,
-   * which pins one call per exhausted execution — the shape being removed. The
-   * invariant that test really protected is that EVERY exhausted execution is
-   * abandoned with the timeout reason and its own frozen run state; that is
-   * asserted here against the batched contract, as ONE call carrying every id,
-   * so a regression back to per-row writes fails on the call count rather than
-   * passing on "was called".
-   */
   it("every exhausted stuck execution is dead-lettered by ONE batched call carrying all of them", async () => {
     const exhaustedRows = [4, 5, 6].map((n) => ({
       id: `exec-stuck-${n}`,
@@ -603,15 +585,6 @@ describe("D — expired lease reclaim: expireStuck re-queues crashed workers", (
   });
 });
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Group E — the batched dead-letter write itself, read as rendered SQL
-//
-// Group D asserts what the runner HANDS to the engine; the module is mocked
-// there, so it can say nothing about what reaches Postgres. This group runs the
-// real `execution-advance` through PgDialect and reads the statement — a column
-// walk over a Drizzle table would pass against a statement that sets nothing.
-// ──────────────────────────────────────────────────────────────────────────────
-
 describe("E — the batched dead-letter statement, rendered", () => {
   const engine = jest.requireActual<typeof import("../engine/execution-advance")>(
     "../engine/execution-advance",
@@ -619,7 +592,6 @@ describe("E — the batched dead-letter statement, rendered", () => {
   const dialect = new PgDialect();
   const DLQ_REASON = `execution timed out after ${OUTBOX_MAX_RETRIES} infra attempts`;
 
-  /** Drizzle property name → the column name the statement has to name. */
   const DEAD_LETTER_COLUMN_NAMES: Record<string, string> = {
     status: "status",
     dlqReason: "dlq_reason",

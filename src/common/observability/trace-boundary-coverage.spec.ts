@@ -130,9 +130,6 @@ describe("trace context reaches every boundary PRD §9 names", () => {
  */
 describe("the join key survives the projection that reads the row back", () => {
   it("claims workflow_runs.correlation_id along with the run", () => {
-    // The claim seam was extracted out of `workflow-store.ts`, which now re-exports
-    // it; the projection itself is unchanged, so the assertion follows the file
-    // rather than being relaxed to accept its absence.
     const text = source("src/common/workflow/workflow-claim.ts");
     const returning = /RETURNING ([^\n]*)/.exec(text)?.[1] ?? "";
     expect(returning).toContain("correlation_id");
