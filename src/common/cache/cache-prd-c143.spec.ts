@@ -207,6 +207,47 @@ describe("PRD-C143 §2 — correct invalidation: version bump prevents stale cac
     expect(after).toEqual({ v: 2 });
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  // invalidateManyForOrg exists so a fan-out stops being one round trip per key. The
+  // trap it avoids is invalidateMany, which uses the default Redis and an UNPREFIXED
+  // key — that would delete nothing here, so the assertion is that the org-scoped
+  // entries are actually gone, not merely that a del was issued.
+  it("invalidateManyForOrg clears every org-scoped key in one pass and leaves other orgs alone", async () => {
+    const store = new Map<string, unknown>();
+    const redis = makeWorkingRedis(store);
+    const cache = new CacheService(redis);
+    const load = (value: number) => jest.fn().mockResolvedValue({ v: value });
+
+    await cache.cachedForOrg("org-a", "module-access:ownership:hr", load(1));
+    await cache.cachedForOrg("org-a", "module-access:ownership:build", load(1));
+    await cache.cachedForOrg("org-b", "module-access:ownership:hr", load(1));
+
+    await cache.invalidateManyForOrg("org-a", [
+      "module-access:ownership:hr",
+      "module-access:ownership:build",
+    ]);
+
+    expect(store.has("org-a:module-access:ownership:hr")).toBe(false);
+    expect(store.has("org-a:module-access:ownership:build")).toBe(false);
+    expect(store.has("org-b:module-access:ownership:hr")).toBe(true);
+
+    const refetch = load(2);
+    await expect(
+      cache.cachedForOrg("org-a", "module-access:ownership:hr", refetch),
+    ).resolves.toEqual({ v: 2 });
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("invalidateManyForOrg is a no-op on an empty list rather than deleting a prefix", async () => {
+    const store = new Map<string, unknown>();
+    const redis = makeWorkingRedis(store);
+    const cache = new CacheService(redis);
+
+    await cache.cachedForOrg("org-a", "data:key", jest.fn().mockResolvedValue({ v: 1 }));
+    await cache.invalidateManyForOrg("org-a", []);
+
+    expect(store.has("org-a:data:key")).toBe(true);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

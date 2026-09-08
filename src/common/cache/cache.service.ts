@@ -298,4 +298,33 @@ export class CacheService {
       redis.del(key, this.fill.leaseKey(key)),
     );
   }
+
+  /**
+   * The org-routed form of `invalidateMany`. It exists because the two are not
+   * interchangeable: `invalidateMany` uses the default Redis and an unprefixed key,
+   * so substituting it for a loop of `invalidateForOrg` sends the deletes to the
+   * wrong cell in a regional deployment and leaves the real entries live.
+   */
+  async invalidateManyForOrg(
+    orgId: string,
+    localKeys: readonly ExactCacheKey[],
+  ): Promise<void> {
+    const redis = await this.region.redisForOrg(orgId);
+    const scoped = await Promise.all(
+      [...new Set(localKeys)].map((localKey) => this.region.scopedKey(orgId, localKey)),
+    );
+    for (const key of scoped) this.fill.drop(key);
+    if (!redis) return;
+    const unique = [...new Set(scoped.flatMap((key) => [key, this.fill.leaseKey(key)]))];
+    for (let i = 0; i < unique.length; i += CacheService.INVALIDATE_KEY_CHUNK) {
+      const chunk = unique.slice(i, i + CacheService.INVALIDATE_KEY_CHUNK);
+      const [head, ...rest] = chunk;
+      if (head === undefined) continue;
+      await this.invalidateWithRetry(
+        "invalidateManyForOrg",
+        `${String(chunk.length)} keys`,
+        () => redis.del(head, ...rest),
+      );
+    }
+  }
 }

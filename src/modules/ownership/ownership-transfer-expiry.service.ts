@@ -54,7 +54,7 @@ export class OwnershipTransferExpiryService {
           rows.flatMap((row) => [row.fromMembershipId, row.toMembershipId]),
         );
 
-        const expiredModuleKeys: string[] = [];
+        const expiredModuleKeys = new Set<string>();
         for (const row of rows) {
           const targetUserIds = Array.from(
             new Set(
@@ -65,13 +65,14 @@ export class OwnershipTransferExpiryService {
           );
           expired.push({ orgId, transferId: row.id, targetUserIds });
           if (row.scope === "MODULE" && row.moduleKey !== null)
-            expiredModuleKeys.push(row.moduleKey);
+            expiredModuleKeys.add(row.moduleKey);
         }
 
         await Promise.all([
           this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
-          ...expiredModuleKeys.map((k) =>
-            this.cache.invalidateForOrg(orgId, `module-access:ownership:${k}`),
+          this.cache.invalidateManyForOrg(
+            orgId,
+            [...expiredModuleKeys].map((moduleKey) => `module-access:ownership:${moduleKey}`),
           ),
         ]);
       },
