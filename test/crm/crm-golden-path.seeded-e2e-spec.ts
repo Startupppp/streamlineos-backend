@@ -471,6 +471,35 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
         .where(eq(businessParties.organizationId, fixture.orgId));
       if (!party) throw new Error("no party to write to");
 
+      /**
+       * The previous test stopped a nudge to this same party, and stopping a
+       * message stops its CLASS for that party — so this one cannot compose
+       * until a person lifts that stop. That is ticket 07's US8 working, not an
+       * obstacle to route around: before the writer existed the table was always
+       * empty and the send-time guardrail always passed, so this test used to
+       * re-nudge somebody who had just been stopped and nobody noticed.
+       *
+       * Lifted through the real endpoint rather than by writing to the table,
+       * because the release is half the feature: a stop with no person-shaped
+       * exit is a one-way door, and this is the assertion that it has one.
+       */
+      const stops = await request(seeded.app.getHttpServer())
+        .get("/crm/autonomy/class-stops")
+        .set("Authorization", `Bearer ${token}`);
+      expect(stops.status).toBe(200);
+      // The cancellation in the previous test is what put this here.
+      expect(stops.body.length).toBeGreaterThan(0);
+      expect(stops.body[0]).toMatchObject({ partyId: party.partyId, outboundClass: "nudge" });
+
+      for (const stop of stops.body as { outboundClassStopId: string }[]) {
+        const released = await request(seeded.app.getHttpServer())
+          .post(`/crm/autonomy/class-stops/${stop.outboundClassStopId}/release`)
+          .set("Authorization", `Bearer ${token}`)
+          .set("Idempotency-Key", `golden-path-release-stop-${stop.outboundClassStopId}`)
+          .send({});
+        expect(released.status).toBeLessThan(300);
+      }
+
       const composed = await request(seeded.app.getHttpServer())
         .post("/crm/autonomy/outbound")
         .set("Authorization", `Bearer ${token}`)

@@ -166,6 +166,30 @@ export class AutonomyReviewController {
     return this.holds.cancelHold(u.orgId, u.userId, holdId, body.reason);
   }
 
+  /**
+   * Which classes are currently stopped for which parties.
+   *
+   * Cancelling a held message stops its class for that party open-endedly, so
+   * this is where a tenant finds out why a customer stopped hearing from them —
+   * without it, follow-ups thin out and the reason is only in a table.
+   */
+  @Get("class-stops")
+  @RequirePermission(REVIEW_PERMISSION)
+  liveClassStops(@CurrentUser() u: CurrentUserContext) {
+    return this.holds.liveClassStops(u.orgId);
+  }
+
+  /** Let that class reach that party again. The stop's only exit. */
+  @Post("class-stops/:outboundClassStopId/release")
+  @Idempotent("crm.autonomy.release-class-stop")
+  @RequirePermission("crm:autonomy:manage")
+  releaseClassStop(
+    @Param("outboundClassStopId") outboundClassStopId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.holds.releaseClassStop(u.orgId, u.userId, outboundClassStopId);
+  }
+
   @Get("settings")
   @RequirePermission(REVIEW_PERMISSION)
   settings(@CurrentUser() u: CurrentUserContext) {

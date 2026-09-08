@@ -282,6 +282,79 @@ export class AutonomyHoldService {
     return { held: true as const, quoteId, ...held };
   }
 
+  /**
+   * The classes currently stopped, and who stopped each.
+   *
+   * A stop is open-ended, so without a way to see them a tenant would gradually
+   * stop reaching people and have nowhere to find out why the follow-ups had
+   * quietly thinned out.
+   */
+  async liveClassStops(organizationId: string) {
+    return this.db
+      .select({
+        outboundClassStopId: crmOutboundClassStops.outboundClassStopId,
+        partyId: crmOutboundClassStops.partyId,
+        outboundClass: crmOutboundClassStops.outboundClass,
+        outboundMessageId: crmOutboundClassStops.outboundMessageId,
+        reason: crmOutboundClassStops.reason,
+        stoppedByUserId: crmOutboundClassStops.stoppedByUserId,
+        stoppedAt: crmOutboundClassStops.stoppedAt,
+      })
+      .from(crmOutboundClassStops)
+      .where(
+        and(
+          eq(crmOutboundClassStops.organizationId, organizationId),
+          isNull(crmOutboundClassStops.releasedAt),
+        ),
+      );
+  }
+
+  /**
+   * Let this class reach this party again.
+   *
+   * The other half of the stop, and the half without which it is a one-way door:
+   * `released_at` is documented as cleared only by a person, and until this
+   * existed there was no person-shaped way to clear it — a single cancellation
+   * silenced a class for that party permanently, recoverable only by hand in the
+   * database.
+   *
+   * Scoped to the organisation and to a live stop. Releasing an already-released
+   * one is a conflict rather than a silent success, because "it is released" and
+   * "you released it" are different things to tell somebody who is trying to
+   * work out why a customer stopped hearing from them.
+   */
+  async releaseClassStop(organizationId: string, userId: string, outboundClassStopId: string) {
+    const released = await this.db
+      .update(crmOutboundClassStops)
+      .set({ releasedAt: new Date(), releasedByUserId: userId })
+      .where(
+        and(
+          eq(crmOutboundClassStops.organizationId, organizationId),
+          eq(crmOutboundClassStops.outboundClassStopId, outboundClassStopId),
+          isNull(crmOutboundClassStops.releasedAt),
+        ),
+      )
+      .returning({ id: crmOutboundClassStops.outboundClassStopId });
+
+    if (released.length === 0) {
+      const [existing] = await this.db
+        .select({ releasedAt: crmOutboundClassStops.releasedAt })
+        .from(crmOutboundClassStops)
+        .where(
+          and(
+            eq(crmOutboundClassStops.organizationId, organizationId),
+            eq(crmOutboundClassStops.outboundClassStopId, outboundClassStopId),
+          ),
+        )
+        .limit(1);
+
+      if (!existing) throw new NotFoundException("Stop not found");
+      throw new ConflictException("That stop was already released.");
+    }
+
+    return { released: true };
+  }
+
   /** Everything still waiting, with the time each has left. */
   async liveHolds(organizationId: string) {
     const rows = await this.db
