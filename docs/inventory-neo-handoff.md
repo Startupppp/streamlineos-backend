@@ -26,10 +26,27 @@ the queue reopened on that one clause. Five tickets, GitHub #56–#60.
 seeded spec broke. (53/566 against the previous pass's 52/562 — the extra suite is
 `idempotent-create-replay`.) Frontend: 31 `hooks/api` suites / 363 tests EXIT=0.
 
-### What still needs a human — unchanged
+### T27 closed the reading T26 would not fake
 
-RF on a device (#45, no credentials), the Neon reconcile-or-rebaseline decision (#46), CI
-(#53, account billing), and live q-commerce / a real WES, which are secret-blocked by design.
+T26 read the method each controller names and found 31 of 48 refusing. It refused to call the
+other 17 cleared, because two visibly delegated. Following those hops: **40 of 48 refuse, not
+31** — the exemption held for one route in six. Seven more fenced (**78 → 85**), and two
+entries corrected from "converges" to "refuses, and is safe only because it was already
+fenced". The instructive one is `customer-returns::inspectLine`, which genuinely converges
+because its `DRAFT` precondition is on the *return* and inspecting a *line* does not change
+the return's status — the guard is not one its own first run invalidates.
+
+**The gate holding all 85 fences was the one CI did not run.** `Inventory ratchets` ran seven
+specs by name and `inventory-idempotency-coverage` was not among them. It is now the eighth.
+
+### What still needs a human — re-verified 2026-09-08
+
+| | |
+|---|---|
+| **CI (#53)** | **Account billing.** Verified today: CI now fires on every push (the T20 fix works) and every run dies in 3-5s on *"recent account payments have failed or your spending limit needs to be increased"*. All seven jobs are configured and queued. Nothing in the repo can fix it. |
+| **Neon (#46)** | **Still in use.** Six live `streamlineos-api` connections today, so nothing was applied. The decision is unchanged and human: 316 of 630 entries pending *by hash against objects that already exist* — drift, not missing schema. |
+| **RF (#45)** | **The recorded reason was wrong.** It was closed as "no automated sign-in can exist — passwordless". Sign-in was never the obstacle: NextAuth is `strategy: "jwt"`, and a session cookie was minted with the library's own `encode` and round-tripped through its `decode` against the on-disk secret. What blocks it is environmental — the `:3000` dev server belongs to another session and rejects the cookie (a secret this session cannot read), and Next 16 refuses a second dev server in that directory unless PID 50018 is killed, which was not done. **Free the frontend directory and the run is minutes, not credentials.** |
+| Live q-commerce, a real WES | Secret-blocked by design. Unchanged. |
 
 ### The thing worth carrying forward
 
