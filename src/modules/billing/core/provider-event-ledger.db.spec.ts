@@ -95,17 +95,13 @@ describe("ProviderEventLedger.claim() — real Postgres conflict semantics", () 
     expect(row?.n).toBe(1);
   });
 
-  it("FOREIGN branch is unreachable from this spec", () => {
-    // claim() returns FOREIGN when the INSERT conflicts (inserted.length===0) AND the
-    // follow-up SELECT with the same (orgId, provider, providerEventId) WHERE clause
-    // finds no row. The only unique index on provider_webhook_events is
-    // uq_provider_webhook_events_provider_event on (org_id, provider, provider_event_id),
-    // which is exactly what matches() queries. So the row that blocked the insert is always
-    // the row the SELECT returns. FOREIGN cannot be triggered without either (a) corrupting
-    // the index metadata or (b) racing a concurrent DELETE inside the same transaction window.
-    expect(true).toBe(true);
-  });
-
+  // The next case is what stands in for a FOREIGN test. `claim()` returns FOREIGN only
+  // when the INSERT conflicts AND the follow-up SELECT on the same
+  // (orgId, provider, providerEventId) finds no row — but that SELECT queries exactly the
+  // columns of the only unique index on the table, so the row that blocked the insert is
+  // always the row it returns. FOREIGN is therefore unreachable unless that index changes
+  // shape, which is the thing asserted below. A test that said so with expect(true) would
+  // assert nothing; this one fails if the premise stops holding.
   it("live catalog confirms the unique index covers (org_id, provider, provider_event_id)", async () => {
     const [row] = await client<Array<{ def: string }>>`
       SELECT indexdef AS def

@@ -104,6 +104,13 @@ const UNWIRED_BY_DESIGN = Object.freeze({
   "db:check-hr-reads": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
   "db:check-read-budgets": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
   "db:check-request-txn": "needs a booted app plus a live database. Owner: gate-wiring.",
+  "verify:razorpay-sandbox":
+    "calls api.razorpay.com with real test-mode credentials, which no CI job holds. It " +
+    "refuses any RAZORPAY_KEY_ID not beginning rzp_test_ before opening a socket, and exits 2 " +
+    "(INCONCLUSIVE) rather than 0 when the credentials or the network are absent, so a silent " +
+    "environment can never read as a pass. MEASURED 2026-09-08: 3/3 probes against the sandbox, " +
+    "and exit 2 with no credentials. ci.yml names its self-test only, and says so. " +
+    "Owner: gate-wiring.",
 
   // 2026-09-03 — BOTH OF THESE WERE HIDDEN BY THE SUBSTRING MATCHER. ci.yml runs their
   // `:self-test` and nothing else, and a gate name is a prefix of its own self-test, so the

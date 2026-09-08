@@ -235,14 +235,20 @@ describe("the surface, enumerated from the committed contract", () => {
  * `ActivitiesController_timeline` went `filter-in-org-query` -> `never-read` on that commit alone.
  * The file-size programme will keep producing that shape, so the fix belongs in the analyser.
  */
-const WRITTEN_UNRESOLVED_BASELINE = 226;
+const WRITTEN_UNRESOLVED_BASELINE = 225;
 const UNRESOLVED_BASELINE = 179;
 
+/**
+ * Four, not five. `CrmMetadataController_createBlueprint|pipelineId` left this list on
+ * 2026-09-08 because the site was FIXED, not because the analyser stopped seeing it:
+ * `analyzeIdFields` now returns `org-predicate` for it, so the write is tenant-scoped.
+ * Checked by querying the analyser directly rather than inferring it from the absence.
+ * The pin did its job — the site could not vanish quietly.
+ */
 const NEWLY_VISIBLE_BY_SPREAD_ORDERING: readonly string[] = [
   "AssetCategoriesController_update|assetAccountId",
   "AssetCategoriesController_update|depreciationExpenseAccountId",
   "AssetCategoriesController_update|accumulatedDepreciationAccountId",
-  "CrmMetadataController_createBlueprint|pipelineId",
   "SignFieldsController_update|groupId",
 ];
 

@@ -351,7 +351,7 @@ function selfTest(): void {
 async function main(): Promise<void> {
   if (SELF_TEST) return selfTest();
 
-  const artifacts = MEMBERSHIP_ARTIFACTS as readonly Artifact[];
+  const artifacts: readonly Artifact[] = MEMBERSHIP_ARTIFACTS;
   if (artifacts.length < MIN_ARTIFACTS) {
     console.error(
       `check-membership-artifact-parity: INCONCLUSIVE — resolved ${String(artifacts.length)} artifacts, floor is ${String(MIN_ARTIFACTS)}. The registry import is broken, not the database.`,

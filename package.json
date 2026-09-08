@@ -113,6 +113,8 @@
     "verify:chat-mentions:self-test": "node src/scripts/verify-chat-mentions-self-test.mjs",
     "verify:permissions": "node src/scripts/check-permission-keys.mjs",
     "verify:permissions:self-test": "node src/scripts/verify-permissions-self-test.mjs",
+    "verify:razorpay-sandbox": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/verify-razorpay-sandbox.ts",
+    "verify:razorpay-sandbox:self-test": "node -r ts-node/register/transpile-only src/scripts/verify-razorpay-sandbox.ts --self-test",
     "seed:build-load": "node --env-file=.env src/scripts/seed-build-load.mjs",
     "baseline:build": "node --env-file=.env src/scripts/capture-build-baseline.mjs",
     "backfill:member-roles": "node src/scripts/backfill-member-role-assignments.mjs",

@@ -110,6 +110,8 @@ const baseSchema = z
     COMPOSIO_AUTH_CONFIG_GMAIL: z.string().optional(),
     /** Guards POST /webhooks/calendar/provider (@Public). Unset = receiver not deployed (it 503s deliveries). Min 32 chars — the only gate on that public endpoint. */
     CALENDAR_PROVIDER_WEBHOOK_SECRET: z.preprocess(emptyToUndefined, z.string().min(32, "CALENDAR_PROVIDER_WEBHOOK_SECRET must be at least 32 characters — it is the only check on the public calendar webhook endpoint.").optional()),
+    /** "1" re-arms live email under NODE_ENV=test, which is off by default so a suite cannot send real mail. Anything else, including unset, keeps the provider clients null. */
+    EMAIL_ALLOW_LIVE_SEND: z.preprocess(emptyToUndefined, z.enum(["0", "1"]).optional()),
     EMAIL_FROM_NAME: z.preprocess(emptyToUndefined, z.string().trim().optional()),
     EMAIL_APP_URL: optionalUrl,
     NOREPLY_EMAIL: optionalEmail,

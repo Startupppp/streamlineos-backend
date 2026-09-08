@@ -478,6 +478,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:settings-route-e2e-coverage:self-test && pnpm check:settings-route-e2e-coverage
 
+      # SELF-TEST ONLY, and that is the whole entry. The live half calls api.razorpay.com
+      # with real test-mode keys, which this job does not have; run it by hand as
+      # `pnpm verify:razorpay-sandbox`, where an absent prerequisite is exit 2, not a pass.
+      # The self-test proves the part CI can prove: that the rzp_test_ prefix guard refuses
+      # a live key, and that the terminal-vs-retried timing predicate discriminates.
+      - name: Razorpay sandbox verifier self-test
+        if: ${{ !cancelled() }}
+        run: pnpm verify:razorpay-sandbox:self-test
+
       # The index half of the RLS invariant, which needs no database: the policy
       # half is db:verify-rls in the tenant-isolation job below, and that job only
       # runs on a schedule because it needs credentials. Without a leading tenant
