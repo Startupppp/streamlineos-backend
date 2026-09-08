@@ -18,9 +18,18 @@ import { employerLegacyIds } from "./party-legacy-employer";
  * The shared half of the Party-first write, and the Party surface itself.
  *
  * Party is canonical from this ticket onward. That is a decision, not a
- * mechanism: legacy tables keep taking writes so unmigrated modules keep
- * working, but nothing reads them as truth again, which turns a disagreement
- * from "two sources, pick one" into "the mirror is stale". Every function here
+ * mechanism: the legacy-SHAPED write keeps happening so unmigrated modules keep
+ * working, but nothing reads it as truth again, which turns a disagreement from
+ * "two sources, pick one" into "the mirror is stale".
+ *
+ * The legacy tables themselves are gone. `leads`, `clients`, `contacts` and
+ * `crm_organizations` were dropped by phase 2 ticket 08 and no `pgTable` for
+ * them exists anywhere in `src/db/schema/`; what this file writes is the Party
+ * row and its `*PartyMap` entry, which is the whole import list above. The
+ * sentence that used to stand here said the old tables "keep taking writes",
+ * which was true when it was written and had been false since the drop —
+ * corrected rather than deleted because the distinction it draws is the point
+ * of the file. Every function here
  * writes the Party row first and the legacy row second inside one transaction,
  * and the legacy values always come out of `party-legacy-mirror`'s single
  * derivation rather than being assembled a second time.
