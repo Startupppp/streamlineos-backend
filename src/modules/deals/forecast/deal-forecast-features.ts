@@ -19,8 +19,15 @@
  * A model is stored with the version it was trained under and refuses to score
  * against a different one, because coefficients fitted to one vocabulary applied
  * to another are numbers with no meaning that still look like a probability.
+ *
+ * 2 — the smoothing prior no longer removes the row's own outcome from the
+ * organisation-wide baseline. Membership is unchanged; `repWinRate` and
+ * `sourceWinRate` take different values because the prior they are smoothed
+ * towards does. See `assembleDealFeatures`: under 1 that prior was a
+ * two-valued encoding of the label, and any model trained under it learned the
+ * answer key. No model should be carried across this boundary.
  */
-export const FORECAST_FEATURE_SPEC_VERSION = "1";
+export const FORECAST_FEATURE_SPEC_VERSION = "2";
 
 export const DEAL_FEATURE_NAMES = [
   "stageProbability",
@@ -262,8 +269,35 @@ function readLedger(
 export function assembleDealFeatures(input: DealFeatureInput): DealFeatureVector {
   const { asOf, deal, timeline, stageProbabilities, rates, ownOutcome } = input;
 
-  const baseline = withoutOwnOutcome(rates.baseline, ownOutcome);
-  const prior = baseWinRate(baseline);
+  /**
+   * The organisation-wide rate, WITH this deal in it — deliberately not
+   * leave-one-out, unlike the rep and source rates below.
+   *
+   * Leaving one out is right for a group of four deals and wrong for a group of
+   * four hundred, and here it was actively harmful. The baseline is one group
+   * per organisation, so removing the row's own outcome gives the prior exactly
+   * two values across the entire training set — `(won-1)/(total-1)` for a deal
+   * that was won and `won/(total-1)` for one that was lost — and which of the
+   * two a row receives is decided by nothing but its own label. Worked at three
+   * sizes: 40/100 gives 0.403670 against 0.412844, 200/500 gives 0.400786
+   * against 0.402750, 8/20 gives 0.413793 against 0.448276. Distinct every time,
+   * which is all a linear model needs to separate on it perfectly.
+   *
+   * That is target leakage the acceptance gate cannot catch, because the
+   * held-out rows carry the same encoding of their own outcomes. A model fitted
+   * on it would clear `minAuc` and beat naive on Brier while having learned the
+   * answer key.
+   *
+   * It also skewed serving against training: an open deal has no outcome to
+   * remove, so `prior` took a third value there — 0.409091 in the first case —
+   * that appeared in no training row at all.
+   *
+   * Including the row costs a 1/N contamination of a rate over hundreds of
+   * deals, which is the ordinary and harmless kind. `withoutOwnOutcome` stays
+   * where it belongs: on `rates.rep` and `rates.source`, whose groups really are
+   * small enough for one deal to move them.
+   */
+  const prior = baseWinRate(rates.baseline ?? { won: 0, total: 0 });
 
   const probabilityOf = (stage: string | null): number => {
     if (stage === null) return 0;

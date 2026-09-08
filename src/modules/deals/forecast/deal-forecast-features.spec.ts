@@ -319,15 +319,18 @@ describe("assembleDealFeatures – rep and source encoding", () => {
 
   /**
    * The leak this exists to stop: a training example whose own outcome is inside
-   * the counts would otherwise be told the answer through its own rep's rate.
+   * its own REP's counts would be told the answer through that rep's rate.
    *
-   * Worked by hand for a won deal. Baseline drops to 39/99 = 0.393939...
-   * Rep becomes (8 - 1 + 0.393939 x 10) / (10 - 1 + 10) = 10.93939.../19.
-   * Source becomes (1 - 1 + 3.93939...) / 19.
+   * The prior it is smoothed towards is the whole organisation's rate, and that
+   * one keeps the example in. Removing it there is what the test below refuses.
+   *
+   * Worked by hand for a won deal. Prior stays 40/100 = 0.4.
+   * Rep becomes (8 - 1 + 0.4 x 10) / (10 - 1 + 10) = 11/19.
+   * Source becomes (1 - 1 + 4) / 19.
    */
   it("leaves a training example's own outcome out of its own encoding", () => {
     const vector = assembleDealFeatures(baseInput({ rates: HISTORY, ownOutcome: "won" }));
-    const prior = 39 / 99;
+    const prior = 40 / 100;
 
     expect(vector.values.repWinRate).toBeCloseTo((7 + prior * 10) / 19, 12);
     expect(vector.values.sourceWinRate).toBeCloseTo((0 + prior * 10) / 19, 12);
@@ -335,10 +338,48 @@ describe("assembleDealFeatures – rep and source encoding", () => {
 
   it("leaves a lost training example out too", () => {
     const vector = assembleDealFeatures(baseInput({ rates: HISTORY, ownOutcome: "lost" }));
-    const prior = 40 / 99;
+    const prior = 40 / 100;
 
     expect(vector.values.repWinRate).toBeCloseTo((8 + prior * 10) / 19, 12);
     expect(vector.values.sourceWinRate).toBeCloseTo((1 + prior * 10) / 19, 12);
+  });
+
+  /**
+   * The prior must NOT be leave-one-out, and this is the assertion that says so.
+   *
+   * The baseline is one group per organisation, so removing the row's own
+   * outcome would leave the prior with exactly two values across the whole
+   * training set — one per label — and a linear model separates on that
+   * perfectly while learning nothing. The held-out rows carry the same encoding,
+   * so `FORECAST_ACCEPTANCE` cannot catch it: the model clears `minAuc` and beats
+   * naive on Brier having read the answer key.
+   *
+   * Two won and two lost examples, identical but for their outcome and rep. If
+   * the prior ever goes back to leave-one-out, the two won rows and the two lost
+   * rows stop agreeing and this fails.
+   */
+  it("gives the same prior to a won and a lost example, so it cannot encode the label", () => {
+    const flat = rates({
+      baseline: { won: 40, total: 100 },
+      byRep: new Map([["rep-1", { won: 5, total: 10 }]]),
+      bySource: new Map([["referral", { won: 5, total: 10 }]]),
+    });
+
+    const won = assembleDealFeatures(baseInput({ rates: flat, ownOutcome: "won" }));
+    const lost = assembleDealFeatures(baseInput({ rates: flat, ownOutcome: "lost" }));
+    const serving = assembleDealFeatures(baseInput({ rates: flat, ownOutcome: null }));
+
+    /**
+     * Each still differs by its own rep count being decremented — that is the
+     * legitimate leave-one-out. What must not differ is the prior underneath,
+     * so it is read back by undoing the rep arithmetic.
+     */
+    const priorFrom = (repWinRate: number, ownWon: 0 | 1, hasOwn: 0 | 1): number =>
+      (repWinRate * (10 - hasOwn + 10) - (5 - ownWon)) / 10;
+
+    expect(priorFrom(won.values.repWinRate, 1, 1)).toBeCloseTo(0.4, 12);
+    expect(priorFrom(lost.values.repWinRate, 0, 1)).toBeCloseTo(0.4, 12);
+    expect(priorFrom(serving.values.repWinRate, 0, 0)).toBeCloseTo(0.4, 12);
   });
 
   it("cannot be driven below zero by leaving out the only example there was", () => {
