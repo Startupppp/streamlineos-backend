@@ -115,8 +115,21 @@ export interface MutatingRoute {
   handler: string;
   /** `<file>::<handler>` — the id the classification is keyed on. */
   id: string;
-  /** The handler declares `@IdempotencyKey()`. */
+  /** The handler declares `@IdempotencyKey()`, so the key reaches the service. */
   takesClientKey: boolean;
+  /**
+   * The handler carries `@Idempotent("name")`, so the global
+   * `IdempotencyInterceptor` claims the key, stores the response and replays it.
+   *
+   * This is the second of the two real coverage mechanisms, and reading only the
+   * first is how three fenced routes — `purchase-orders::create`,
+   * `projects::create`, `projects::addRequirement` — came to be recorded as
+   * duplicating on retry, each under a hand-written reason asserting a duplicate
+   * the interceptor makes impossible.
+   */
+  carriesInterceptorFence: boolean;
+  /** The command name the fence registers under, when there is one. */
+  fenceCommand: string | null;
   /** Any service method the handler calls that is resolvable at all. */
   callsResolved: number;
   /** Service commands (`Class.method`) the handler calls that declare an idempotency key. */
@@ -155,6 +168,11 @@ export function mutatingInventoryRoutes(): MutatingRoute[] {
           commands.push(`${cls}.${call[2]}`);
       }
 
+      // The decorator run between the verb and the method name. `@Idempotent`
+      // sits inside it by convention in every one of the thirteen live uses.
+      const decorators = source.slice(m.index, owner.at);
+      const fence = /@Idempotent\(\s*["'`]([^"'`]+)["'`]/.exec(decorators);
+
       const sub = m[2] ?? m[3] ?? "";
       routes.push({
         file,
@@ -163,10 +181,22 @@ export function mutatingInventoryRoutes(): MutatingRoute[] {
         handler: owner.name,
         id: `${file}::${owner.name}`,
         takesClientKey: params.includes("@IdempotencyKey()"),
+        carriesInterceptorFence: fence !== null,
+        fenceCommand: fence?.[1] ?? null,
         callsResolved,
         commands,
       });
     }
   }
   return routes;
+}
+
+/**
+ * Covered means a retry is answered rather than re-executed, by either mechanism:
+ * the handler takes the client's key and hands it to a service that claims it, or
+ * the handler is fenced and the global interceptor claims, stores and replays for
+ * it. Both are real; a check that knows only one reports the other as broken.
+ */
+export function isCovered(route: MutatingRoute): boolean {
+  return route.takesClientKey || route.carriesInterceptorFence;
 }

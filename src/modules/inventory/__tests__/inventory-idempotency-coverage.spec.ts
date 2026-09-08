@@ -15,7 +15,11 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { inventoryControllerPaths, mutatingInventoryRoutes } from "./inventory-mutating-routes";
+import {
+  inventoryControllerPaths,
+  isCovered,
+  mutatingInventoryRoutes,
+} from "./inventory-mutating-routes";
 import {
   COMMAND_CLASSIFICATION,
   COMMAND_CLASS_RATIONALE,
@@ -117,6 +121,11 @@ describe("A3 — idempotency coverage across inventory commands", () => {
     expect(inventoryControllerPaths().length).toBeGreaterThan(60);
     expect(routes.length).toBeGreaterThan(200);
     expect(routes.filter((r) => r.takesClientKey).length).toBeGreaterThan(50);
+    // The second coverage mechanism has its own floor. Without one, a decorator
+    // walk that matched nothing would report every fenced route as unfenced and
+    // the assertion below would pass by having no fenced routes to check.
+    expect(routes.filter((r) => r.carriesInterceptorFence).length).toBeGreaterThan(10);
+    expect(routes.filter((r) => r.carriesInterceptorFence && r.fenceCommand === null)).toEqual([]);
     expect(routes.filter((r) => r.commands.length > 0).length).toBeGreaterThan(45);
     // The census keys the classification on `<file>::<handler>`. Two routes
     // sharing an id would let one of them inherit the other's classification.
@@ -145,9 +154,12 @@ describe("A3 — idempotency coverage across inventory commands", () => {
     // read off the source. Everything else has to be argued for in
     // COMMAND_CLASSIFICATION, and an unclassified route is a failure rather
     // than an absence — the shape `NO_DATA_ROUTES` and `CANNOT_INVALIDATE` use.
+    // Covered by EITHER mechanism. Reading only `takesClientKey` here is what
+    // forced an argument out of routes the interceptor already fences, and the
+    // arguments written to satisfy it were wrong.
     const classified = new Set(COMMAND_CLASSIFICATION.map((c) => c.route));
     const unclassified = routes
-      .filter((r) => !r.takesClientKey && !classified.has(r.id))
+      .filter((r) => !isCovered(r) && !classified.has(r.id))
       .map((r) => `${r.verb} ${r.path} (${r.id})`);
 
     expect(unclassified).toEqual([]);
@@ -188,10 +200,32 @@ describe("A3 — idempotency coverage across inventory commands", () => {
     const findings = COMMAND_CLASSIFICATION.filter(
       (c) => c.commandClass === "DUPLICATES_ON_RETRY",
     );
-    expect(findings.length).toBeLessThanOrEqual(40);
+    expect(findings.length).toBeLessThanOrEqual(37);
     // Not zero, and not silently zero: a walk that found nothing would satisfy
     // the bound above.
     expect(findings.length).toBeGreaterThan(30);
+  });
+
+  it("does not call a fenced route one that duplicates, because the fence answers the retry", () => {
+    // The correction T23 exists for. `DUPLICATES_ON_RETRY` asserts something
+    // specific and checkable — "a retry raises a second document" — and for a
+    // route carrying `@Idempotent` that is false: the global interceptor claims
+    // the key, stores the response and replays it, so the second call never
+    // reaches the handler.
+    //
+    // Three routes were recorded that way (`purchase-orders::create`,
+    // `projects::create`, `projects::addRequirement`), each with a reason
+    // written by hand describing the duplicate in detail. The detail is what
+    // made them convincing. The census could not have contradicted them,
+    // because it only ever read `@IdempotencyKey()`.
+    const fenced = new Map(
+      routes.filter((r) => r.carriesInterceptorFence).map((r) => [r.id, r.fenceCommand]),
+    );
+    const contradicted = COMMAND_CLASSIFICATION.filter(
+      (c) => c.commandClass === "DUPLICATES_ON_RETRY" && fenced.has(c.route),
+    ).map((c) => `${c.route} is fenced by @Idempotent("${fenced.get(c.route)}")`);
+
+    expect(contradicted).toEqual([]);
   });
 
   it("does not make a read-only POST ask for a key it has no use for", () => {
