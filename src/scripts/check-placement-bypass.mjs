@@ -227,6 +227,10 @@ export const CONTEXT_EXIT_ALLOWLIST = new Map([
     "import pump escapes the HTTP request transaction so each workflow step can open its own tenant transaction and steps are safe to replay on retry",
   ],
   [
+    "src/modules/storage/storage.controller.ts",
+    "audited 2026-09-08: three exits inside the upload-transform enqueue closure, all deferred past the response. `transforms.submit` runs `publishUpload`/`retractUpload` after the request transaction has committed, so the ambient context holds a DEAD handle and reusing it would fail 42501 — the exit is the fix for that class, not a shortcut around tenancy. Both callees immediately re-open `runInNewTenantTransaction(this.db, orgId, ...)` against the SAME orgId, so every database statement still runs under the tenant GUC; nothing reads or writes cross-tenant. The exit also spans the S3 work (`compressToKey`, `deleteFileIfPresent`), which is the second reason it is deliberate: holding a pooled tenant connection across a blob upload would tie a database slot to someone else's network latency",
+  ],
+  [
     "src/modules/organization/setup/org-setup.service.ts",
     "post-setup work fires after the setup transaction commits via setImmediate; running outside the ambient context is the design",
   ],

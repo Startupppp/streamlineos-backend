@@ -94,7 +94,7 @@ const MIN_READ_SITES = 500;
  * go down. It exists so the join class — which no statement scanner can see —
  * cannot grow silently.
  */
-const JOIN_CANDIDATE_BASELINE = 335;
+const JOIN_CANDIDATE_BASELINE = 230;
 
 /**
  * Primary reads (`from` / `db.query`) of a lifecycle table with no predicate,
@@ -102,7 +102,7 @@ const JOIN_CANDIDATE_BASELINE = 335;
  * A ratchet on a previously ungated class, not a clean bill: ticket 06 hand-
  * audited 27 of these and found 11 genuine. It may only go down.
  */
-const PRIMARY_CANDIDATE_BASELINE = 75;
+const PRIMARY_CANDIDATE_BASELINE = 69;
 
 /**
  * Read sites ticket 06 opened individually and ruled correct as written, plus the
@@ -235,11 +235,63 @@ export function isColumnWritten(allSources, symbol, props) {
   return false;
 }
 
-export function classifyReadSite({ statement, fileSource, symbol, props, columnWritten }) {
+/**
+ * A helper takes the table as a defaulted parameter (`employments = hrEmployments`)
+ * and then predicates through the alias, so the strict `symbol.prop` test never
+ * matches inside its body. Only ever applied to a body already proven to name the
+ * table symbol, so the alias cannot belong to a different table.
+ */
+function aliasedLifecyclePredicate(body, props) {
+  for (const p of props)
+    if (new RegExp(`isNull\\s*\\(\\s*\\w+\\.${p}\\b`).test(body)) return true;
+  return false;
+}
+
+/**
+ * Exported helpers that build the lifecycle predicate for a table, keyed by the
+ * table symbol they cover. `liveEmployment(orgId)` is `isNull(hrEmployments.deletedAt)`
+ * behind a name, so a read that calls it IS predicated — but the predicate lives in
+ * another file, which the in-file rescue cannot see. Without this the scanner reports
+ * correct code, and the only way to keep the gate green is to raise its baseline.
+ */
+export function collectLifecycleHelpers(allSources, bySymbol) {
+  const byHelper = new Map();
+  const defRe = /export\s+function\s+(\w+)\s*\(/g;
+  for (const src of allSources) {
+    defRe.lastIndex = 0;
+    let m;
+    while ((m = defRe.exec(src)) !== null) {
+      const name = m[1];
+      const next = src.indexOf("\nexport ", m.index + 1);
+      const body = src.slice(m.index, next === -1 ? src.length : next);
+      for (const [symbol, entry] of bySymbol) {
+        if (!body.includes(symbol)) continue;
+        if (!mentionsLifecycle(body, symbol, entry.props) && !aliasedLifecyclePredicate(body, entry.props))
+          continue;
+        if (!byHelper.has(name)) byHelper.set(name, new Set());
+        byHelper.get(name).add(symbol);
+      }
+    }
+  }
+  return byHelper;
+}
+
+export function statementCallsLifecycleHelper(statement, symbol, helpers) {
+  if (!helpers) return false;
+  for (const [name, symbols] of helpers) {
+    if (!symbols.has(symbol)) continue;
+    if (new RegExp(`\\b${name}\\s*\\(`).test(statement)) return true;
+  }
+  return false;
+}
+
+export function classifyReadSite({ statement, fileSource, symbol, props, columnWritten, helpers }) {
   const inStatement = mentionsLifecycle(statement, symbol, props);
   const inFile = mentionsLifecycle(fileSource, symbol, props);
   if (inStatement) return { verdict: "OK", why: "predicate is in the read's own expression" };
   if (inFile) return { verdict: "OK-FILE", why: "predicate is built elsewhere in the file (conditions array or helper)" };
+  if (statementCallsLifecycleHelper(statement, symbol, helpers))
+    return { verdict: "OK-HELPER", why: "the read calls an exported helper that builds the lifecycle predicate for this table" };
   if (!columnWritten) return { verdict: "DORMANT", why: "the lifecycle column is never written by any code path" };
   return { verdict: "CANDIDATE", why: "neither the statement nor the file names the lifecycle column, and the column is live" };
 }
@@ -273,6 +325,8 @@ function scan() {
     return writtenCache.get(symbol);
   };
 
+  const helpers = collectLifecycleHelpers(allSources, bySymbol);
+
   const sites = [];
   for (const [file, source] of sources) {
     const rel = relative(SRC, file).replace(/\\/g, "/");
@@ -289,6 +343,7 @@ function scan() {
             symbol,
             props: entry.props,
             columnWritten: columnWritten(symbol, entry.props),
+            helpers,
           });
           sites.push({
             file: rel,

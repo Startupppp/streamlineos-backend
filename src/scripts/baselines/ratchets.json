@@ -332,16 +332,16 @@
         "direction": "floor"
       },
       "JOIN_CANDIDATE_BASELINE": {
-        "value": 335,
+        "value": 230,
         "direction": "ratchet",
         "owner": "backend platform owner",
-        "reason": "Joined reads with no lifecycle predicate. Never moved."
+        "reason": "Joined reads with no lifecycle predicate. Lowered 335 -> 230 on 2026-09-08 by retiring a false-positive class rather than repricing it: the scanner only rescued a predicate named in the SAME FILE, so a read calling an exported helper that builds it (livePersonOfEmployment, which is isNull(people.deletedAt) behind a name) was reported as unpredicated correct code. classifyReadSite now takes a helper map and returns OK-HELPER. The rescue is deliberately narrow - the helper body must name the table symbol AND contain isNull(<alias>.<lifecycle prop>) - so it cannot bless a read whose helper predicates a different table."
       },
       "PRIMARY_CANDIDATE_BASELINE": {
-        "value": 75,
+        "value": 69,
         "direction": "ratchet",
         "owner": "backend platform owner",
-        "reason": "Primary reads with no lifecycle predicate. Fixed at source rather than baselined when it drifted to 76 (ticket 35 S10)."
+        "reason": "Primary reads with no lifecycle predicate. Fixed at source rather than baselined when it drifted to 76 (ticket 35 S10). Drifted to 77 on 2026-09-08; the two new sites (bulk-onboarding-plan.ts and employee-onboarding.service.ts) were NOT defects - both predicate through liveEmployment()/livePersonOfEmployment(), which the in-file rescue could not see. Lowered 75 -> 69 by teaching the scanner to follow those helpers instead of raising the ceiling to admit correct code."
       }
     },
     "check-log-secrets.mjs": {
