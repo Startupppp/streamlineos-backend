@@ -142,13 +142,38 @@ function journalTags() {
     .map((e) => e.tag);
 }
 
+/**
+ * Hide dollar-quoted bodies behind placeholders so the semicolon split cannot
+ * cut through one.
+ *
+ * A `DO $$ BEGIN ... ; EXCEPTION ... ; END $$;` block contains semicolons
+ * followed by uppercase keywords, which is exactly the shape the fallback split
+ * looks for -- so a guarded rollback (the only way to write "drop this type if
+ * nothing depends on it") was being torn in half and reported as an unterminated
+ * dollar-quoted string. Forward migrations use these blocks constantly; rollback
+ * files must be able to as well.
+ */
+function maskDollarQuoted(text) {
+  const bodies = [];
+  const masked = text.replace(/\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1?\$/g, (m) => {
+    bodies.push(m);
+    return `\u0000DQ${bodies.length - 1}\u0000`;
+  });
+  return { masked, bodies };
+}
+
+function unmask(statement, bodies) {
+  return statement.replace(/\u0000DQ(\d+)\u0000/g, (_, i) => bodies[Number(i)]);
+}
+
 function statementsOf(text) {
-  return text
+  const { masked, bodies } = maskDollarQuoted(text);
+  return masked
     .split("--> statement-breakpoint")
     .flatMap((chunk) =>
       chunk.includes("--> statement-breakpoint") ? [chunk] : chunk.split(/;\s*\n(?=\s*(?:--|[A-Z]))/),
     )
-    .map((s) => s.trim().replace(/;$/, "").trim())
+    .map((s) => unmask(s, bodies).trim().replace(/;$/, "").trim())
     .filter((s) => s.length > 0 && DDL.test(s));
 }
 
@@ -628,6 +653,16 @@ function selfTest() {
   check(
     "statements split on bare semicolons too, for the older files",
     statementsOf(`SET lock_timeout = '5s';\nALTER TABLE a DROP COLUMN b;\nDROP INDEX c;`).length === 2,
+  );
+  check(
+    "a dollar-quoted block is one statement, not cut at its inner semicolons",
+    statementsOf(
+      `DROP INDEX a;\nDO $$ BEGIN\n  DROP TYPE t;\nEXCEPTION WHEN others THEN\n  RAISE NOTICE 'x';\nEND $$;`,
+    ).length === 2,
+  );
+  check(
+    "a dollar-quoted block survives the split intact",
+    statementsOf(`DO $$ BEGIN\n  DROP TYPE t;\nEND $$;`)[0]?.includes("END $$"),
   );
   check("the journal is readable and non-trivial", journalTags().length > 500);
   check(
