@@ -12,7 +12,7 @@
   "transformIgnorePatterns": [
     "/node_modules/(?!(?:\\.pnpm/)?(?:@scure|otplib|@otplib|@noble|@composio|@openrouter|@ai-sdk|@workflow|@standard-schema|eventsource-parser|ai)[@/+])"
   ],
-  "setupFiles": ["<rootDir>/src/test/jest-setup.ts"],
+  "setupFiles": ["<rootDir>/src/test/jest-db-setup.ts", "<rootDir>/src/test/jest-setup.ts"],
   "moduleNameMapper": { "^src/(.*)$": "<rootDir>/src/$1", "^test/(.*)$": "<rootDir>/test/$1" },
   "workerIdleMemoryLimit": "1GB"
 }

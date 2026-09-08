@@ -211,6 +211,14 @@ jobs:
         run: pnpm test:db-specs
         env:
           NODE_OPTIONS: --max-old-space-size=8192
+          # 2026-09-08: these suites are destructive (party-identifiers drops
+          # `party_identifiers`, party-legacy-backfill drops two `business_parties`
+          # constraints), and each file used to fall back to `backend/.env` — a
+          # REMOTE Neon database — whenever DATABASE_URL was unset.
+          # `src/test/db-spec-guard.ts` now refuses unless the target host is
+          # loopback AND the operator has stated destructive intent here. Every URL
+          # in this step is already 127.0.0.1; this line is the second condition.
+          ALLOW_DESTRUCTIVE_DB_TESTS: "1"
           # The NON-OWNER role, deliberately. `db:bootstrap-role` creates
           # streamline_app NOBYPASSRLS with APP_DB_PASSWORD, and an RLS-sensitive
           # spec pointed at the `ci` owner would pass by bypassing the policy it

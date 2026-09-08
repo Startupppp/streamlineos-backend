@@ -18,7 +18,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../test/db-spec-guard";
 import postgres from "postgres";
 
 /**
@@ -42,11 +42,12 @@ const migration = (name: string) =>
 class Rollback extends Error {}
 
 function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   // DATABASE_URL, not APP_DATABASE_URL: applying the migration needs DDL rights
   // the RLS-enforced application role does not have.
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("party-legacy-backfill.db.spec.ts requires DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "party-legacy-backfill.db.spec.ts",
+    vars: ["DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   // Notices are expected here -- the expand is idempotent and says so loudly.

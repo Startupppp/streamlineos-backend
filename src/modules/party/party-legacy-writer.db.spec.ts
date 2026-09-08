@@ -15,14 +15,21 @@
  * Everything happens inside a transaction that is rolled back, fixtures
  * included, so the tests leave the database exactly as they found it.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../test/db-spec-guard";
 import postgres from "postgres";
 import * as schema from "../../db/schema";
 import type { Db } from "../../db/drizzle.types";
-import { businessParties, leadPartyMap, partyRoles } from "../../db/schema/party";
-import { clients, contacts } from "../../db/schema/crm/contacts";
+import {
+  businessParties,
+  contactPartyMap,
+  leadPartyMap,
+  partyIdentifiers,
+  partyRoles,
+} from "../../db/schema/party";
+import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
 import { leads } from "../../db/schema/crm/leads";
 import { PartyDivergenceService } from "./party-divergence.service";
 import { diffLegacyMirror, LEAD_MIRROR } from "./party-legacy-mirror";
@@ -31,9 +38,12 @@ import {
   createMirroredLead,
   softDeleteMirroredLeads,
   updateMirroredLead,
+  updateMirroredLeads,
 } from "./party-legacy-leads";
 import { createMirroredClient } from "./party-legacy-clients";
 import { createMirroredContact } from "./party-legacy-contacts";
+import { createMirroredOrganization } from "./party-legacy-orgs";
+import { refreshEmployerColumns } from "./party-legacy-employer";
 
 jest.setTimeout(60_000);
 
@@ -41,9 +51,10 @@ jest.setTimeout(60_000);
 class Rollback extends Error {}
 
 function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("party-legacy-writer.db.spec.ts requires DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "party-legacy-writer.db.spec.ts",
+    vars: ["DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), {
@@ -212,6 +223,237 @@ describe("party-legacy-writer — real database", () => {
         .from(businessParties)
         .where(eq(businessParties.partyId, map!.partyId));
       expect(again?.deletedAt?.getTime()).toBe(stamp);
+    });
+  });
+
+  /**
+   * The same soft delete at batch size two.
+   *
+   * Every db test above drives these rewritten paths with a SINGLE row, so the
+   * multi-row shape the N+1 pass introduced was inferred rather than exercised:
+   * one id makes `inArray(...)` a one-element list and `groupByPayload` a single
+   * group, which is exactly the case that cannot tell a correct batch from a
+   * batch that writes one row and drops the rest.
+   *
+   * Two ids, one `{ deletedAt }` patch, so both parties land in ONE grouped
+   * `UPDATE ... WHERE party_id IN (a, b)`. The assertion is per row on both
+   * sides: each lead is stamped, each lead's OWN party is stamped, and the two
+   * parties are distinct — a mirror that stamped one party twice, or that
+   * returned two rows while writing one, fails here and passes at size one.
+   */
+  it("soft-deletes two leads in one batch, and both mirrors agree", async () => {
+    await withTenant(async (tx, orgId) => {
+      const first = await createMirroredLead(tx, orgId, { orgId, name: "Batch One" });
+      const second = await createMirroredLead(tx, orgId, { orgId, name: "Batch Two" });
+      expect(first.id).not.toBe(second.id);
+
+      const deleted = await softDeleteMirroredLeads(tx, orgId, [first.id, second.id]);
+
+      expect(deleted).toHaveLength(2);
+      expect(deleted.map((row) => row.id).sort()).toEqual([first.id, second.id].sort());
+      for (const row of deleted) expect(row.deletedAt).toBeInstanceOf(Date);
+
+      const maps = await tx
+        .select()
+        .from(leadPartyMap)
+        .where(
+          and(
+            eq(leadPartyMap.organizationId, orgId),
+            inArray(leadPartyMap.leadId, [first.id, second.id]),
+          ),
+        );
+      expect(maps).toHaveLength(2);
+
+      const partyIds = maps.map((row) => row.partyId);
+      expect(new Set(partyIds).size).toBe(2);
+
+      const parties = await tx
+        .select()
+        .from(businessParties)
+        .where(
+          and(
+            eq(businessParties.organizationId, orgId),
+            inArray(businessParties.partyId, partyIds),
+          ),
+        );
+      expect(parties).toHaveLength(2);
+      for (const party of parties) expect(party.deletedAt).toBeInstanceOf(Date);
+
+      // Each lead kept its own name through the batch: the party patch is one
+      // group, but the derived legacy payload is not, and a single arbitrary
+      // payload applied to both is the failure mode grouping can introduce.
+      const rows = await tx
+        .select()
+        .from(leads)
+        .where(and(eq(leads.orgId, orgId), inArray(leads.id, [first.id, second.id])));
+      expect(rows.map((row) => row.name).sort()).toEqual(["Batch One", "Batch Two"]);
+      for (const row of rows) expect(row.deletedAt).toBeInstanceOf(Date);
+    });
+  });
+
+  /**
+   * Two parties claiming ONE address inside a single `INSERT ... ON CONFLICT`.
+   *
+   * `updateMirroredLeads` with a uniform `{ email }` patch produces one payload
+   * for both parties, so `movePartiesFor` issues ONE `UPDATE` and hands both
+   * RETURNING rows to `claimIdentifiersOfParties` — a single insert whose rows
+   * carry the same `(organization_id, kind, normalised_value)` the unique index
+   * is on. `party-identifiers.db.spec.ts` measures what raw Postgres does with
+   * that; this measures what the write path does, which is emit one row.
+   *
+   * Which of the two wins is not asserted: the winner is the first row in
+   * RETURNING order and Postgres promises no order there. That exactly one row
+   * exists is the property — two would mean the index did not hold, zero would
+   * mean the claim was dropped, and a raise would mean the dedupe is load-bearing
+   * in a way the code does not say.
+   */
+  it("claims a shared address once when two parties are updated in one statement", async () => {
+    await withTenant(async (tx, orgId) => {
+      const first = await createMirroredLead(tx, orgId, { orgId, name: "Sharer One" });
+      const second = await createMirroredLead(tx, orgId, { orgId, name: "Sharer Two" });
+
+      const shared = `shared-${randomUUID().slice(0, 8)}@example.test`;
+      const updated = await updateMirroredLeads(tx, orgId, [first.id, second.id], {
+        // Written differently on the two rows on purpose: `normaliseIdentifier`
+        // lower-cases and trims, so one identifier value reaches the index twice.
+        email: shared.toUpperCase(),
+      });
+      expect(updated).toHaveLength(2);
+      for (const row of updated) expect(row.email).toBe(shared.toUpperCase());
+
+      const maps = await tx
+        .select()
+        .from(leadPartyMap)
+        .where(
+          and(
+            eq(leadPartyMap.organizationId, orgId),
+            inArray(leadPartyMap.leadId, [first.id, second.id]),
+          ),
+        );
+      const partyIds = maps.map((row) => row.partyId);
+      expect(new Set(partyIds).size).toBe(2);
+
+      const claims = await tx
+        .select()
+        .from(partyIdentifiers)
+        .where(
+          and(
+            eq(partyIdentifiers.organizationId, orgId),
+            eq(partyIdentifiers.normalisedValue, shared),
+          ),
+        );
+
+      expect(claims).toHaveLength(1);
+      expect(claims[0]?.kind).toBe("email");
+      expect(partyIds).toContain(claims[0]?.partyId);
+
+      // Anti-vacuity: the loser holds nothing rather than the whole set holding
+      // nothing, which is what an empty `party_identifiers` would also satisfy.
+      const held = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(partyIdentifiers)
+        .where(
+          and(
+            eq(partyIdentifiers.organizationId, orgId),
+            inArray(partyIdentifiers.partyId, partyIds),
+          ),
+        );
+      expect(held[0]?.n).toBe(1);
+    });
+  });
+
+  /**
+   * `UPDATE ... FROM (VALUES ...)` with two keys, each taking its OWN value.
+   *
+   * `refreshEmployerColumns` is the one party path that cannot group: the new
+   * `contacts.organization_id` differs per contact, so `bulkUpdateFromValues`
+   * builds a two-tuple VALUES list joined on the contact id. At batch size one a
+   * builder that emitted a single value for every row is indistinguishable from a
+   * correct one — this is the size at which "one arbitrary winner" is visible.
+   *
+   * Both legacy columns are cleared first. Without that the create path has
+   * already written the right ids and every assertion below passes whether or not
+   * the statement under test ran at all.
+   */
+  it("gives each contact its own employer id in one bulk update", async () => {
+    await withTenant(async (tx, orgId) => {
+      const marker = randomUUID().slice(0, 8);
+      const employerOne = await createMirroredOrganization(tx, orgId, {
+        orgId,
+        name: `Employer A ${marker}`,
+      });
+      const employerTwo = await createMirroredOrganization(tx, orgId, {
+        orgId,
+        name: `Employer B ${marker}`,
+      });
+      expect(employerOne.id).not.toBe(employerTwo.id);
+
+      const contactOne = await createMirroredContact(tx, orgId, {
+        orgId,
+        name: `Employee A ${marker}`,
+        organizationId: employerOne.id,
+      });
+      const contactTwo = await createMirroredContact(tx, orgId, {
+        orgId,
+        name: `Employee B ${marker}`,
+        organizationId: employerTwo.id,
+      });
+
+      const maps = await tx
+        .select()
+        .from(contactPartyMap)
+        .where(
+          and(
+            eq(contactPartyMap.organizationId, orgId),
+            inArray(contactPartyMap.contactId, [contactOne.id, contactTwo.id]),
+          ),
+        );
+      const partyOf = new Map(maps.map((row) => [row.contactId, row.partyId]));
+      const partyOne = partyOf.get(contactOne.id);
+      const partyTwo = partyOf.get(contactTwo.id);
+      expect(typeof partyOne).toBe("string");
+      expect(typeof partyTwo).toBe("string");
+      expect(partyOne).not.toBe(partyTwo);
+
+      await tx
+        .update(contacts)
+        .set({ organizationId: null })
+        .where(
+          and(eq(contacts.orgId, orgId), inArray(contacts.id, [contactOne.id, contactTwo.id])),
+        );
+      const cleared = await tx
+        .select({ id: contacts.id, organizationId: contacts.organizationId })
+        .from(contacts)
+        .where(
+          and(eq(contacts.orgId, orgId), inArray(contacts.id, [contactOne.id, contactTwo.id])),
+        );
+      expect(cleared.map((row) => row.organizationId)).toEqual([null, null]);
+
+      await refreshEmployerColumns(tx, orgId, [String(partyOne), String(partyTwo)]);
+
+      const repaired = await tx
+        .select({ id: contacts.id, organizationId: contacts.organizationId })
+        .from(contacts)
+        .where(
+          and(eq(contacts.orgId, orgId), inArray(contacts.id, [contactOne.id, contactTwo.id])),
+        );
+      const byContact = new Map(repaired.map((row) => [row.id, row.organizationId]));
+      expect(byContact.get(contactOne.id)).toBe(employerOne.id);
+      expect(byContact.get(contactTwo.id)).toBe(employerTwo.id);
+      // The whole point: two keys, two different values, neither overwritten by
+      // the other. Equal values here would pass every single-row test.
+      expect(byContact.get(contactOne.id)).not.toBe(byContact.get(contactTwo.id));
+
+      const employers = await tx
+        .select({ id: crmOrganizations.id, name: crmOrganizations.name })
+        .from(crmOrganizations)
+        .where(
+          and(
+            eq(crmOrganizations.orgId, orgId),
+            inArray(crmOrganizations.id, [employerOne.id, employerTwo.id]),
+          ),
+        );
+      expect(employers).toHaveLength(2);
     });
   });
 

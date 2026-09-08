@@ -270,11 +270,13 @@ export async function movePartiesFor(
 /**
  * What `claimIdentifiers` records, for a whole set of parties in one insert.
  *
- * Deduplicated across the set as well as within a party, because the unique index
- * is `(organization_id, kind, normalised_value)` and ON CONFLICT DO NOTHING
- * cannot resolve two conflicting rows inside one INSERT — Postgres raises 21000
- * rather than dropping one. First claimant wins, exactly as the statement-per-
- * party loop this replaces did.
+ * Deduplicated across the set as well as within a party, to fix WHICH claim wins.
+ * ON CONFLICT DO NOTHING does not raise on two conflicting rows in one INSERT
+ * (measured, PostgreSQL 18.6: it keeps one and reports nothing) — it keeps
+ * whichever tuple the executor reached first, and RETURNING order is unspecified.
+ * The dedupe key matches the unique index `(organization_id, kind,
+ * normalised_value)`, so the survivor is the first claimant, exactly as the
+ * statement-per-party loop this replaces did.
  */
 async function claimIdentifiersOfParties(
   db: MirrorDb,

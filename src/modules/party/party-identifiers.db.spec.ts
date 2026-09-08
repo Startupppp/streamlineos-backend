@@ -25,7 +25,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import dotenv from "dotenv";
+import { requireApprovedDatabaseUrl } from "../../test/db-spec-guard";
 import postgres from "postgres";
 import { normaliseIdentifier, type IdentifierKind } from "../ingress/inbound-event";
 
@@ -35,12 +35,20 @@ const migration = (name: string): string =>
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
 
+/** postgres.js errors are cross-realm, so `instanceof` is unreliable here. */
+function sqlStateOf(error: unknown): string | null {
+  if (typeof error !== "object" || error === null || !("code" in error)) return null;
+  const code = error.code;
+  return typeof code === "string" ? code : null;
+}
+
 function connect() {
-  if (!process.env.DATABASE_URL) dotenv.config({ path: ".env" });
   // DATABASE_URL, not APP_DATABASE_URL: applying the migration needs DDL rights
   // the RLS-enforced application role does not have.
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error("party-identifiers.db.spec.ts requires DATABASE_URL");
+  const raw = requireApprovedDatabaseUrl({
+    spec: "party-identifiers.db.spec.ts",
+    vars: ["DATABASE_URL"],
+  });
   const url = new URL(raw);
   url.searchParams.delete("channel_binding");
   return postgres(url.toString(), {
@@ -270,6 +278,81 @@ describe("party identifiers — real database", () => {
     });
 
     expect(held).toBe(0);
+  });
+
+  /**
+   * What Postgres actually does with two conflicting rows inside ONE INSERT.
+   *
+   * `claimIdentifiers` deduplicates in memory before it writes, and the comment
+   * beside it used to justify that by claiming `ON CONFLICT DO NOTHING` raises
+   * 21000 on an intra-statement duplicate. It does not — measured here on
+   * PostgreSQL 18.6, it inserts one row and reports no error. Only `DO UPDATE`
+   * raises, because only `DO UPDATE` has to decide which of the two writes wins.
+   *
+   * Both halves are asserted rather than the one the code takes, because the
+   * difference is the whole reason the dedupe is a deliberate choice instead of
+   * an error handler: it fixes the winner in TypeScript, in the caller's order,
+   * where `DO NOTHING` would leave it to whichever tuple the executor reached
+   * first. Each probe runs in its own SAVEPOINT — an expected failure without one
+   * aborts the transaction and every later assertion dies 25P02 instead.
+   */
+  it("keeps one of two identical claims in one INSERT, and only DO UPDATE raises 21000", async () => {
+    const outcome = await withBackfill(async (tx, orgId, marker) => {
+      const parties = await tx`
+        SELECT party_id FROM business_parties
+        WHERE organization_id = ${orgId} AND name LIKE ${`fixture ${marker}%`}
+        LIMIT 2`;
+      const first = String(parties[0]?.party_id);
+      const second = String(parties[1]?.party_id);
+
+      const doNothingValue = `intra-nothing-${marker}@example.test`;
+      let doNothing: { raised: boolean; inserted: number; code: string | null };
+      try {
+        const rows = await tx.savepoint(
+          async (sp) => sp`
+            INSERT INTO party_identifiers
+              (party_identifier_id, organization_id, party_id, kind, value, normalised_value)
+            VALUES (gen_random_uuid()::text, ${orgId}, ${first}, 'email',
+                    ${doNothingValue}, ${doNothingValue}),
+                   (gen_random_uuid()::text, ${orgId}, ${second}, 'email',
+                    ${doNothingValue}, ${doNothingValue})
+            ON CONFLICT DO NOTHING
+            RETURNING party_id`,
+        );
+        doNothing = { raised: false, inserted: rows.length, code: null };
+      } catch (error) {
+        doNothing = { raised: true, inserted: 0, code: sqlStateOf(error) };
+      }
+
+      const doUpdateValue = `intra-update-${marker}@example.test`;
+      let doUpdate: { raised: boolean; code: string | null };
+      try {
+        await tx.savepoint(
+          async (sp) => sp`
+            INSERT INTO party_identifiers
+              (party_identifier_id, organization_id, party_id, kind, value, normalised_value)
+            VALUES (gen_random_uuid()::text, ${orgId}, ${first}, 'email',
+                    ${doUpdateValue}, ${doUpdateValue}),
+                   (gen_random_uuid()::text, ${orgId}, ${second}, 'email',
+                    ${doUpdateValue}, ${doUpdateValue})
+            ON CONFLICT (organization_id, kind, normalised_value)
+            DO UPDATE SET value = excluded.value`,
+        );
+        doUpdate = { raised: false, code: null };
+      } catch (error) {
+        doUpdate = { raised: true, code: sqlStateOf(error) };
+      }
+
+      const survived = await tx`
+        SELECT count(*)::int AS n FROM party_identifiers
+        WHERE organization_id = ${orgId} AND normalised_value = ${doNothingValue}`;
+
+      return { doNothing, doUpdate, survived: Number(survived[0]?.n ?? -1) };
+    });
+
+    expect(outcome.doNothing).toEqual({ raised: false, inserted: 1, code: null });
+    expect(outcome.doUpdate).toEqual({ raised: true, code: "21000" });
+    expect(outcome.survived).toBe(1);
   });
 
   /**
