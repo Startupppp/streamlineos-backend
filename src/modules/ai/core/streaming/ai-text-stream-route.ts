@@ -80,6 +80,9 @@ export async function respondWithAiTextStream(
 
   try {
     const { stream, sources } = await produce(abort.signal);
+    // Spreading always yields an object, so `headers !== undefined` was always true and an
+    // empty `{ headers: {} }` init reached the transport on every route that declares no
+    // sourcesHeader and no contentType. Decide on emptiness, which is what was meant.
     const headers = {
       ...sourceHeaders(options, sources),
       ...(options.contentType ? { "content-type": options.contentType } : {}),
@@ -87,7 +90,7 @@ export async function respondWithAiTextStream(
     await pipeAiTextStream(res, stream, {
       feature: options.feature,
       orgId: options.orgId,
-      ...(headers !== undefined ? { headers } : {}),
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
     });
   } catch (error) {
     rethrowStreamRouteError(error, { route: options.route });

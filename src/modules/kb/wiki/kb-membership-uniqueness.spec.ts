@@ -9,6 +9,17 @@ import type { KbIndexingService } from "../retrieval/kb-indexing.service";
 
 const BACKEND_ROOT = join(__dirname, "..", "..", "..", "..");
 
+/**
+ * The source assertions below match multi-line SQL with "\n". Git checks these files out
+ * with CRLF on Windows, so a raw read makes every multi-line toContain fail on the line
+ * ending rather than on the constraint — which is how this suite went red while migration
+ * 1040 was correct. Normalising on read is the only option here: the migration's bytes are
+ * hashed by the seeded preflight, so the file itself must not be touched.
+ */
+function readText(path: string): string {
+  return readFileSync(path, "utf-8").replace(/\r\n/g, "\n");
+}
+
 const ORG = "org-uniq-kb";
 const SPACE_ID = 3;
 
@@ -117,10 +128,10 @@ describe("KbPageTemplatesService", () => {
 });
 
 describe("the constraints exist in both declarations", () => {
-  const spaces = readFileSync(join(BACKEND_ROOT, "src/db/schema/kb/spaces.ts"), "utf-8");
-  const collab = readFileSync(join(BACKEND_ROOT, "src/db/schema/kb/page-collab.ts"), "utf-8");
+  const spaces = readText(join(BACKEND_ROOT, "src/db/schema/kb/spaces.ts"));
+  const collab = readText(join(BACKEND_ROOT, "src/db/schema/kb/page-collab.ts"));
   const tag = "1040_t29_kb_membership_and_template_uniques";
-  const sql = readFileSync(join(BACKEND_ROOT, `migrations/${tag}.sql`), "utf-8");
+  const sql = readText(join(BACKEND_ROOT, `migrations/${tag}.sql`));
 
   it("declares both kb_space_members grains as partial uniques", () => {
     expect(spaces).toContain('uniqueIndex("uniq_kb_space_members_org_space_membership")');

@@ -37,8 +37,16 @@ import {
 
 const ORG = "org-1";
 
+// The attachment read gained an ORDER BY, so a double that resolves at .where() breaks on
+// the query's shape rather than on its behaviour. This chain is thenable AND chainable.
 function attachmentDb(rows: Array<{ fileKey: string }>) {
-  const where = jest.fn().mockResolvedValue(rows);
+  const chain = {
+    orderBy: jest.fn(() => chain),
+    limit: jest.fn(() => chain),
+    then: <R,>(resolve: (value: Array<{ fileKey: string }>) => R) =>
+      Promise.resolve(rows).then(resolve),
+  };
+  const where = jest.fn(() => chain);
   return {
     select: jest.fn(() => ({ from: jest.fn(() => ({ where })) })),
     where,

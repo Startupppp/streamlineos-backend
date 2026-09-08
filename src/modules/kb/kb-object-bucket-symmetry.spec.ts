@@ -70,6 +70,27 @@ function captureS3(bodyFor: () => unknown = () => Readable.from(["hello"])): Sen
   return sent;
 }
 
+/**
+ * The attachment read is a select chain that may end at .where(), .orderBy() or .limit()
+ * depending on the caller. A double that resolves at .where() alone breaks the moment a
+ * read gains an ORDER BY, which is how this spec went red: the chain is thenable AND
+ * chainable so the shape of the query cannot silently fail the test.
+ */
+function attachmentRows<T>(rows: T[]): PromiseLike<T[]> & {
+  orderBy: () => PromiseLike<T[]>;
+  limit: (n: number) => PromiseLike<T[]>;
+} {
+  const chain = {
+    orderBy: () => chain,
+    limit: (n: number) => attachmentRows(rows.slice(0, n)),
+    then: <R,>(resolve: (value: T[]) => R) => Promise.resolve(rows).then(resolve),
+  };
+  return chain as PromiseLike<T[]> & {
+    orderBy: () => PromiseLike<T[]>;
+    limit: (n: number) => PromiseLike<T[]>;
+  };
+}
+
 function only(sent: Sent[], command: string): Sent {
   const match = sent.filter((s) => s.command === command);
   expect(match).toHaveLength(1);
@@ -259,7 +280,7 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
     const treeDb = {
       query: { kbPages: { findFirst: async () => ({ id: 10, title: "P" }) } },
       transaction: async (fn: (t: unknown) => unknown) => fn(tx),
-      select: () => ({ from: () => ({ where: async () => [{ fileKey: put.key }] }) }),
+      select: () => ({ from: () => ({ where: () => attachmentRows([{ fileKey: put.key }]) }) }),
       insert: () => ({
         values: () => ({ onConflictDoUpdate: async () => undefined }),
       }),
