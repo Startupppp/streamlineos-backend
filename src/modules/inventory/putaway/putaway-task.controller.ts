@@ -110,6 +110,7 @@ export class PutawayTaskController {
   @Post("tasks/:taskId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Idempotent("inventory.putaway.task.cancel")
   cancelTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @CurrentUser() u: CurrentUserContext,

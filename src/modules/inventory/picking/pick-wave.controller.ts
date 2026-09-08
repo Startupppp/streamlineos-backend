@@ -87,6 +87,7 @@ export class PickWaveController {
   @Post("waves/:pickListId/join")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
+  @Idempotent("inventory.picking.wave.join")
   joinWave(
     @Param("pickListId", ParseIntPipe) pickListId: number,
     @Body(new ZodValidationPipe(createWaveSchema)) body: CreateWaveInput,

@@ -181,6 +181,7 @@ export class InvSalesOrdersController {
   @Post(":soId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:update")
+  @Idempotent("inventory.sales-order.cancel")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: soIdParams, body: cancelSoSchema })
   cancel(

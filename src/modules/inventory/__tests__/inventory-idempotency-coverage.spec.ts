@@ -124,7 +124,7 @@ describe("A3 — idempotency coverage across inventory commands", () => {
     // The second coverage mechanism has its own floor. Without one, a decorator
     // walk that matched nothing would report every fenced route as unfenced and
     // the assertion below would pass by having no fenced routes to check.
-    expect(routes.filter((r) => r.carriesInterceptorFence).length).toBeGreaterThan(70);
+    expect(routes.filter((r) => r.carriesInterceptorFence).length).toBeGreaterThan(80);
     expect(routes.filter((r) => r.carriesInterceptorFence && r.fenceCommand === null)).toEqual([]);
     expect(routes.filter((r) => r.commands.length > 0).length).toBeGreaterThan(45);
     // The census keys the classification on `<file>::<handler>`. Two routes
@@ -210,7 +210,7 @@ describe("A3 — idempotency coverage across inventory commands", () => {
     // routes, not because the table itself vanished or the walk broke. The
     // fenced floor in the surface test guards the other half.
     expect(COMMAND_CLASSIFICATION.length).toBeGreaterThan(80);
-    expect(routes.filter((r) => r.carriesInterceptorFence).length).toBeGreaterThan(70);
+    expect(routes.filter((r) => r.carriesInterceptorFence).length).toBeGreaterThan(80);
   });
 
   it("does not call a fenced route one that duplicates, because the fence answers the retry", () => {

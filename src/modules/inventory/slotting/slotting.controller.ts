@@ -103,6 +103,7 @@ export class SlottingController {
   @Post("recommendations/:recommendationId/dismiss")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
+  @Idempotent("inventory.slotting.recommendation.dismiss")
   dismiss(
     @Param("recommendationId", ParseIntPipe) recommendationId: number,
     @Body(new ZodValidationPipe(dismissRecommendationSchema)) body: DismissRecommendationInput,

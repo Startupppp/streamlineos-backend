@@ -16,6 +16,7 @@ import {
 } from "./dto/inv-purchase-orders.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const grnIdParams = z.object({ grnId: z.coerce.number().int().positive() }).strict();
 
@@ -78,6 +79,7 @@ export class GrnController {
   @Post(":grnId/count")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
+  @Idempotent("inventory.grn.counting.start")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: grnIdParams })
   startCounting(
@@ -90,6 +92,7 @@ export class GrnController {
   @Post(":grnId/quality-review")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
+  @Idempotent("inventory.grn.quality-review.submit")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: grnIdParams })
   submitForQualityReview(
@@ -115,6 +118,7 @@ export class GrnController {
   @Post(":grnId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
+  @Idempotent("inventory.grn.cancel")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: grnIdParams, body: cancelGrnSchema })
   cancel(
