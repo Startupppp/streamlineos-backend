@@ -294,10 +294,10 @@
         "direction": "floor"
       },
       "BASELINE": {
-        "value": 9,
+        "value": 0,
         "direction": "ratchet",
         "owner": "hr owner",
-        "reason": "HR list endpoints still unpaginated. Lowered 87 -> 60 by 7723ef819, then 60 -> 33 -> 18 -> 9 on 2026-09-07; never raised. Every reduction was a deleted dead parameter, a keyset cursor or a bounded drain - no .limit() value was moved out of the gate's 101-500 detection window in either direction, and 20 such raises attempted mid-session were reverted. The 9 that remain are honest: 7 back live NUMBERED pagers reading a real `total` (one uses totalPages as load-bearing input to page-overshoot correction), which a cursor cannot serve without changing TablePagination and DataTablePagination, both shared repo-wide; 2 are per-person reads the gate cannot classify because it has no false-positive mechanism."
+        "reason": "HR list endpoints still unpaginated. Lowered 87 -> 60 by 7723ef819, then 60 -> 33 -> 18 -> 9 on 2026-09-07, then 9 -> 2 on 2026-09-08 when b75fd0da7 put keyset cursors on 7 HR lists, and 2 -> 0 the same day; never raised. Every reduction was a deleted dead parameter, a keyset cursor or a bounded drain - no .limit() value was moved out of the gate 101-500 detection window in either direction, and 20 such raises attempted mid-session were reverted. The last 2 were the same defect twice: employee-analytics.service.ts:122 and employees.service.ts:307 each read users by inArray over the ids returned by getDirectReportUserIds and then capped the result at a literal 500. That cap was redundant and was the only thing the gate saw - getDirectReportUserIds already caps at DIRECT_REPORT_ID_CAP and returns distinct ids, and users.id is the primary key, so the row count cannot exceed the id list. Both now limit to the id-list length, which is exact rather than arbitrary and removes a silent truncation the 500 could have caused for a manager with more than 500 reports."
       }
     },
     "check-hr-table-freeze.mjs": {

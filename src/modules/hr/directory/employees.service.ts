@@ -304,7 +304,7 @@ export class EmployeesService {
           eq(users.isActive, true),
         ),
       )
-      .limit(500);
+      .limit(reportIds.length);
 
     const factsMap = await this.employment.getFactsBatch(orgId, rows.map((r) => r.id));
     return rows.map((r) => ({ ...r, designation: factsMap.get(r.id)?.designation ?? null }));

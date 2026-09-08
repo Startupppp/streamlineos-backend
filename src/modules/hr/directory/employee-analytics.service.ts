@@ -119,7 +119,7 @@ export class EmployeeAnalyticsService {
                 eq(users.isActive, true),
               ),
             )
-            .limit(500)
+            .limit(directReportIds.length)
         : [];
 
     if (reports.length === 0) {

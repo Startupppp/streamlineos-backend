@@ -1691,8 +1691,8 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/import/hr-import.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "justification": "every select carries an explicit .limit(): the job/row list pagers read limit+1, the single-row reads limit(1), the row drains limit(IMPORT_ROW_BATCH_SIZE) and the sibling count is an aggregate. Verified 2026-09-08; the gate no longer detects this file."
     },
     "/hr/interviews/hr-hiring-flows.service.ts": {
       "verdict": "BOUNDED",
@@ -1929,8 +1929,8 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "justification": "every select carries an explicit .limit(): the history pager reads query.limit+1, the log read limit(100), the holiday read limit(1), and the status roll-up is a count aggregate. Verified 2026-09-08; the gate no longer detects this file."
     },
     "/hr/time/biometric.service.ts": {
       "verdict": "BOUNDED",
@@ -3134,9 +3134,8 @@
       "justification": "NEWLY VISIBLE 2026-09-03: src/common entered this gate's corpus for the first time. forEachOrg selects every ACTIVE, non-deleted organization with no .limit() and holds the whole list in memory before the sweep loop starts; it is called from 84 sites, so it is the widest unbounded read in the repository and it was outside the scan. Bounded today only by the tenant count (3 ACTIVE orgs measured on a database at journal head), which is exactly the kind of bound that stops holding. Fix is a keyset drain over organizations.id — the loop already processes one org at a time and needs no full list."
     },
     "@common/tenant/org-admin-recipients.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "NEWLY VISIBLE 2026-09-03 with src/common. getOrgAdminUserIds selects every ACTIVE OWNER/ORG_ADMIN membership for an org with no .limit(). Bounded by orgId alone — 'an org has few admins' is a convention, not a cap, and it is exactly the shape of justification this file was found suppressing real unbounded exports with. Banked rather than blessed."
+      "verdict": "KEYSET-MIGRATED",
+      "justification": "getOrgAdminUserIds is now a keyset drain over (org, ACTIVE, OWNER|ORG_ADMIN) ordered by organization_members.id with gt(afterId) and .limit(ADMIN_PAGE_SIZE=500) per page. A page, never a cap - it returns every administrator rather than truncating, which is why a cap was refused here. Verified 2026-09-08."
     },
     "@common/tenant/org-membership.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -3169,8 +3168,8 @@
       "justification": "IN-list is the distinct set_status values of the request's own actions, tenant- and project-scoped. The actions array was uncapped when this was flagged; createAutomationSchema now caps conditions and actions at 50 each and their strings at 200/2000, so the IN-list has a hard ceiling of 50 2026-09-07"
     },
     "/hr/core/hr-effective-change-applier.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "two inArray-bounded selects (employmentRows at ~:106, jobLevelIds at ~:134); bounded by request batch but lack explicit .limit() — fix deferred: file is in the exclusive-ownership lane of a concurrent agent"
+      "verdict": "BOUNDED",
+      "justification": "the two inArray reads now carry exact limits: the employments read limits to uniqueEmploymentIds.length and the job-levels read to uniqueJobLevelIds.length. Both key columns are primary keys, so neither limit can truncate. Fixed 2026-09-08; the file was previously deferred as another lane territory."
     },
     "/hr/core/person-employment-sync-batch-people.ts": {
       "verdict": "BOUNDED",

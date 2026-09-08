@@ -117,6 +117,7 @@ export class HrEffectiveChangeApplierService {
               isNull(hrPeople.deletedAt),
             ),
           )
+          .limit(uniqueEmploymentIds.length)
           .for("update");
         const employmentById = new Map<number, EmploymentRow>(
           employmentRows.map(e => [e.id, e]),
@@ -139,7 +140,8 @@ export class HrEffectiveChangeApplierService {
                 eq(hrJobLevels.orgId, orgId),
                 eq(hrJobLevels.isActive, true),
               ),
-            );
+            )
+            .limit(uniqueJobLevelIds.length);
           for (const level of levels) activeJobLevelIds.add(level.id);
         }
 
