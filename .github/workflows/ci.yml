@@ -142,10 +142,21 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
 
-      # Anti-vacuity. Seven `--testPathPattern` runs that match nothing exit 1 under
+      # T23-T27. The gate that holds every idempotency claim in the module: the
+      # population is derived from the controllers, every route is covered by one
+      # of the two real mechanisms or carries a classification and a reason, and
+      # DUPLICATES_ON_RETRY is an equality at zero in both directions. It was the
+      # one ratchet this job did not run, which meant the 85 fences it enforces
+      # were held by nothing between local runs.
+      - name: Ratchet - inventory idempotency coverage
+        run: pnpm exec jest --ci --testPathPattern=inventory-idempotency-coverage
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      # Anti-vacuity. Eight `--testPathPattern` runs that match nothing exit 1 under
       # `--ci`, but a renamed spec would also just stop existing quietly if anyone
       # ever added `--passWithNoTests`. This asserts the files are actually there.
-      - name: The seven ratchets exist
+      - name: The eight ratchets exist
         run: |
           set -euo pipefail
           missing=0
@@ -156,6 +167,7 @@ jobs:
             src/modules/inventory/__tests__/idempotent-guard-placement.spec.ts \
             src/modules/inventory/stock-engine/__tests__/quantity.property.spec.ts \
             src/modules/inventory/__tests__/inventory-gate-exemptions.spec.ts \
+            src/modules/inventory/__tests__/inventory-idempotency-coverage.spec.ts \
             src/db/cold-build-integrity.spec.ts ; do
             if [ ! -f "$f" ]; then echo "MISSING RATCHET: $f"; missing=1; fi
           done
