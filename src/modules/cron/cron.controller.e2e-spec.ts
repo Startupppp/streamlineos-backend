@@ -26,6 +26,16 @@ describe("Cron auth (e2e)", () => {
     ["post", "/cron/interview-no-shows"],
     ["get", "/cron/support-sla-escalations"],
     ["post", "/cron/support-sla-escalations"],
+    /**
+     * The renewal sweep, which until now had no scheduled entry point at all.
+     *
+     * A 401 here is the assertion that matters twice over: the route is mounted
+     * (an absent one answers 404, not 401), and `AppModule` booted with
+     * `CronModule` holding `LifecycleTriggersModule` — a provider Nest cannot
+     * resolve fails at boot, which `tsc` cannot see.
+     */
+    ["get", "/cron/crm-lifecycle-triggers-sweep"],
+    ["post", "/cron/crm-lifecycle-triggers-sweep"],
   ];
 
   function callRoute(method: Method, path: string): request.Test {

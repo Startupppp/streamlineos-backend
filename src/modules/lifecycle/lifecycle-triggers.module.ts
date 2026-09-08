@@ -14,14 +14,15 @@ import { LifecycleTriggersService } from "./lifecycle-triggers.service";
  * the shape this codebase has already paid for once (see
  * `deal-party-projection.ts`).
  *
- * So the dependency runs the other way. This module sits downstream of both, is
- * imported by nothing, and is registered on `AppModule` alone. It owns the
- * trigger and nothing else; the renewal book stays where it was and the outbound
- * loop stays where it was.
+ * So the dependency runs the other way. This module sits downstream of both and
+ * owns the trigger and nothing else; the renewal book stays where it was and the
+ * outbound loop stays where it was. It is registered on `AppModule`, and imported
+ * by `CronModule` alone — for the scheduled sweep below, which needs the service
+ * and nothing else here.
  *
- * It exports `LifecycleTriggersService` so that whatever eventually runs the
- * sweep on a timer calls it rather than growing its own copy of the decision.
- * Nothing runs it on a timer today; see the note on the service.
+ * It exports `LifecycleTriggersService` so that whatever runs the sweep on a
+ * timer calls it rather than growing its own copy of the decision. `CronModule`
+ * now does exactly that, through `POST /cron/crm-lifecycle-triggers-sweep`.
  */
 @Module({
   imports: [AutonomyModule, DealsModule],

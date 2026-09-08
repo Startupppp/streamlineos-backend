@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronProjectsService } from "./cron-projects.service";
 import { CrmSequencesRunnerService } from "../crm/automation-studio/crm-sequences-runner.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
+import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -23,6 +24,7 @@ export class CronBuildController {
     private readonly cronProjects: CronProjectsService,
     private readonly crmSequencesRunner: CrmSequencesRunnerService,
     private readonly crmTasks: CronCrmTasksService,
+    private readonly crmLifecycle: CronCrmLifecycleService,
     private readonly buildRetention: CronBuildRetentionService,
     private readonly buildSnapshots: CronBuildSnapshotsService,
     private readonly cronLease: CronLeaseService,
@@ -48,6 +50,17 @@ export class CronBuildController {
   @HttpCode(200)
   postCrmSequencesFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmSequencesFlush(authorization);
+  }
+
+  @Get("crm-lifecycle-triggers-sweep")
+  getCrmLifecycleTriggersSweep(@Headers("authorization") authorization?: string) {
+    return this.runCrmLifecycleTriggersSweep(authorization);
+  }
+
+  @Post("crm-lifecycle-triggers-sweep")
+  @HttpCode(200)
+  postCrmLifecycleTriggersSweep(@Headers("authorization") authorization?: string) {
+    return this.runCrmLifecycleTriggersSweep(authorization);
   }
 
   @Get("crm-tasks-overdue-flush")
@@ -117,6 +130,36 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("CRM sequences flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * The renewal book, considered.
+   *
+   * A 600-second lease rather than the 120 its neighbours use: this walks every
+   * organisation and each contract that turns out to be due costs a provider
+   * call, so a slow pass must not have a second scheduler start over the top of
+   * it. The sweep is already idempotent per term — the once-per-term claim stops
+   * a duplicate opportunity and the re-offer interval stops a duplicate draft —
+   * so the lease is about spend and pool pressure, not correctness.
+   */
+  private async runCrmLifecycleTriggersSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("crm-lifecycle-triggers-sweep", 600, () =>
+        this.crmLifecycle.sweepLifecycleTriggers(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "crm-lifecycle-triggers-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Considered ${result.considered} contract(s) across ${result.organizations} organization(s): opened ${result.opened}, re-offered ${result.reoffered}, held ${result.held}`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("CRM lifecycle triggers sweep failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

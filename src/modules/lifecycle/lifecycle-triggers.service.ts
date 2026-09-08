@@ -56,14 +56,19 @@ import type { SweepTriggersQuery, ListTriggersQuery } from "./dto/triggers.schem
  * Every query carries the organisation predicate explicitly. RLS is the
  * backstop; this reads what each customer pays and who owns them.
  *
- * NOTHING SCHEDULES THIS. The sweep is reachable only through
- * `POST /crm/lifecycle-triggers/sweep`, because this repository has no scheduler
- * — there is no `@nestjs/schedule`, no `@Cron` anywhere in `src/`, and inventing
- * one for this feature would be a second piece of infrastructure inside a wiring
- * ticket. The service is exported and the sweep is idempotent per term precisely
- * so that whatever eventually runs on a timer calls THIS rather than growing its
- * own copy of the decision. Until something does, a renewal opens a conversation
- * when a person or a job posts to that route, and not before.
+ * This is now on the cron surface, and the reasoning that used to sit here still
+ * holds: there is no `@nestjs/schedule` and no `@Cron` anywhere in `src/`, and
+ * none was invented for this. What the repository has, and had all along, is 47
+ * endpoints behind `assertCronSecret` that the deployment's own scheduler drives
+ * — billing, HR, notifications, support and Build all reach their sweeps that
+ * way. The renewal loop simply was not on it.
+ *
+ * `CronCrmLifecycleService` (`POST /cron/crm-lifecycle-triggers-sweep`) walks the
+ * organisations and calls THIS, which is what the export was for. The decision
+ * about what is due, what has already been offered and whether to open a
+ * conversation stays here, in one place.
+ *
+ * `POST /crm/lifecycle-triggers/sweep` remains, for one tenant on demand.
  */
 @Injectable()
 export class LifecycleTriggersService {
