@@ -86,8 +86,28 @@ const KNOWN_BROKEN = [];
 
 const DDL = /\b(ALTER|DROP|CREATE|TRUNCATE|UPDATE|DELETE|INSERT)\b/i;
 
-/** Above this many rows a table is counted but not digested: a digest is a full scan. */
-const DIGEST_ROW_CAP = 20_000;
+/**
+ * Above this many rows a table is counted but not digested: a digest is a full scan.
+ *
+ * Set to 20_000 when the drill ran against an empty database, which made the
+ * largest table — the one a bad rollback damages most — the one table the drill
+ * never verified. Measured 2026-09-08: md5(string_agg(...)) over 27k rows costs
+ * ~140ms, so ~5us/row; the census runs twice, so 500k rows costs about 5s.
+ * A production-sized tenant now digests whole.
+ */
+const DIGEST_ROW_CAP = 500_000;
+
+/**
+ * Below this many inventory rows the round trip proves almost nothing.
+ *
+ * A rollback that drops a column passes over an empty table and fails over a
+ * full one, so "the schema returned exactly" on 7 rows is not evidence that a
+ * real rollback is safe. The drill states its dataset size on every run, and
+ * refuses (exit 2, prerequisite unmet) to report a pass below this floor rather
+ * than letting a green be read as more than it is.
+ * Seed with src/scripts/seed-inventory-rollback-drill.sql.
+ */
+const MIN_REHEARSAL_ROWS = 10_000;
 
 /**
  * `-- @data-loss: table, table` in a `.down.sql`, naming what reversing it costs.
@@ -177,6 +197,8 @@ async function rowCensus(sql) {
   const digests = new Map();
   let total = 0;
   let undigested = 0;
+  let undigestedRows = 0;
+  const undigestedTables = [];
   for (const { tablename } of tables) {
     const [row] = await sql.unsafe(`SELECT count(*)::bigint AS n FROM "${tablename}"`);
     const n = Number(row.n);
@@ -187,7 +209,11 @@ async function rowCensus(sql) {
     // see. Capped, because digesting a large table is a full scan and this drill
     // must stay runnable on a database that is not empty.
     if (n === 0 || n > DIGEST_ROW_CAP) {
-      if (n > DIGEST_ROW_CAP) undigested++;
+      if (n > DIGEST_ROW_CAP) {
+        undigested++;
+        undigestedRows += n;
+        undigestedTables.push(tablename);
+      }
       continue;
     }
     const [d] = await sql.unsafe(
@@ -195,7 +221,15 @@ async function rowCensus(sql) {
     );
     digests.set(tablename, d.d);
   }
-  return { counts, digests, total, tables: tables.length, undigested };
+  return {
+    counts,
+    digests,
+    total,
+    tables: tables.length,
+    undigested,
+    undigestedRows,
+    undigestedTables,
+  };
 }
 
 async function fingerprint(sql) {
@@ -241,14 +275,68 @@ function suffixWithRollbacks(tags) {
   return out;
 }
 
+/**
+ * Migrations applied above `tag` that touch an inventory object.
+ *
+ * Reversing an inventory migration while something above it depends on that
+ * schema is not a rollback rehearsal, it is a corruption rehearsal. The drill
+ * used to sidestep this by only ever descending from the very head of the
+ * journal — which made the depth of inventory's rehearsal hostage to whatever
+ * unrelated migration happened to land last. It measures the inventory chain
+ * now, so the ordering assumption has to be checked instead of inherited.
+ */
+function inventoryTouchingAbove(tags, lowest) {
+  const from = tags.indexOf(lowest);
+  if (from === -1) return [];
+  return tags.slice(from + 1).filter((tag) => {
+    try {
+      return /\binv_[a-z0-9_]+/i.test(readFileSync(join(MIGRATIONS, `${tag}.sql`), "utf8"));
+    } catch {
+      return false;
+    }
+  });
+}
+
 async function tierOne(sql, tags, findings) {
-  const suffix = suffixWithRollbacks(tags);
-  console.log(`\nTIER 1 — round trip on the ${suffix.length} migration(s) at the top of the chain`);
+  // The INVENTORY chain, not the global one. `0912_feedbucket_modules_catalog`
+  // and `0913_party_map_drop_legacy_fks` landed with no rollback files and took
+  // this tier from two migrations to zero without touching a line of inventory.
+  const inventoryTags = tags.filter((tag) => INVENTORY_TAG.test(tag));
+  const suffix = suffixWithRollbacks(inventoryTags);
+  const headMost = suffix[0] ?? inventoryTags[inventoryTags.length - 1] ?? "";
+  const above = tags.length - tags.indexOf(headMost) - 1;
+  console.log(
+    `\nTIER 1 — round trip on the ${suffix.length} inventory migration(s) at the top of the ` +
+      `inventory chain (${inventoryTags.length} inventory of ${tags.length} journalled` +
+      (above > 0 ? `, ${above} non-inventory migration(s) sit above them` : "") +
+      ")",
+  );
   if (suffix.length === 0) {
-    console.log("  none: the head migration has no rollback file, so nothing can be round-tripped");
-    findings.push("tier 1 rehearsed nothing — the head migration has no rollback file");
+    console.log("  none: the head inventory migration has no rollback file");
+    findings.push(
+      "tier 1 rehearsed nothing — the head INVENTORY migration has no rollback file",
+    );
     return;
   }
+
+  // The ordering precondition, checked rather than assumed.
+  // Above the HEAD-MOST member: the suffix's own migrations are what we descend
+  // through, not obstacles to it. Measuring from the lowest member counted the
+  // suffix against itself and refused a descent that was perfectly valid.
+  const blockers = inventoryTouchingAbove(tags, headMost);
+  if (blockers.length > 0) {
+    console.log(
+      `  refusing: ${blockers.length} migration(s) above the suffix touch inventory objects — ` +
+        `${blockers.slice(0, 3).join(", ")}`,
+    );
+    findings.push(
+      `tier 1 cannot descend: ${blockers.join(", ")} sit above the inventory suffix and touch ` +
+        "inventory objects, so reversing beneath them would not be a valid order",
+    );
+    return;
+  }
+  if (above > 0)
+    console.log(`  ${above} migration(s) above the suffix, none touching an inventory object`);
 
   const before = await fingerprint(sql);
   const rowsBefore = await rowCensus(sql);
@@ -257,8 +345,16 @@ async function tierOne(sql, tags, findings) {
       `tables, ${rowsBefore.digests.size} of them digested` +
       (rowsBefore.undigested > 0 ? `, ${rowsBefore.undigested} too large to digest` : ""),
   );
-  if (rowsBefore.total === 0)
-    console.log("  (empty — this run rehearses the schema only, not what a rollback does to data)");
+  if (rowsBefore.total < MIN_REHEARSAL_ROWS) {
+    process.stderr.write(
+      `\ndrill:rollback PREREQUISITE UNMET: the rehearsal database holds ${rowsBefore.total} ` +
+        `inventory row(s), below the ${MIN_REHEARSAL_ROWS}-row floor. A rollback that drops a ` +
+        `column passes over an empty table and fails over a full one, so a pass here would not ` +
+        `mean what it says.\nSeed it first:\n` +
+        `  psql "$DATABASE_URL" -f src/scripts/seed-inventory-rollback-drill.sql\n`,
+    );
+    process.exit(2);
+  }
   const rolledBack = [];
 
   // Descend: each down is applied on top of the ones already reversed, which is
@@ -342,8 +438,20 @@ async function tierOne(sql, tags, findings) {
     );
     console.log(`  round trip: UNDECLARED DATA LOSS (finding) — ${undeclared.join(", ")}`);
   }
-  if (lost.length === 0 && altered.length === 0 && rowsBefore.total > 0)
-    console.log(`  round trip: all ${rowsBefore.total} inventory rows survived, byte for byte`);
+  if (lost.length === 0 && altered.length === 0 && rowsBefore.total > 0) {
+    // "byte for byte" is a claim about digested rows only. Counting a table the
+    // census could not digest into that sentence is how a partial verification
+    // reads as a total one.
+    const verified = rowsBefore.total - rowsBefore.undigestedRows;
+    console.log(
+      `  round trip: all ${verified} digested inventory rows survived, byte for byte` +
+        (rowsBefore.undigestedRows > 0
+          ? `; ${rowsBefore.undigestedRows} further row(s) in ` +
+            `${rowsBefore.undigestedTables.join(", ")} were counted but NOT value-checked ` +
+            `(over the ${DIGEST_ROW_CAP}-row digest cap)`
+          : ""),
+    );
+  }
 
   const after = await fingerprint(sql);
   if (after !== before) {
@@ -522,6 +630,20 @@ function selfTest() {
     statementsOf(`SET lock_timeout = '5s';\nALTER TABLE a DROP COLUMN b;\nDROP INDEX c;`).length === 2,
   );
   check("the journal is readable and non-trivial", journalTags().length > 500);
+  check(
+    "the rehearsal floor is a production-shaped number, not a token one",
+    MIN_REHEARSAL_ROWS >= 10_000,
+  );
+  check(
+    "the digest cap sits above the rehearsal floor",
+    // Otherwise the floor admits exactly the dataset the census cannot verify:
+    // the drill would demand volume and then decline to value-check it.
+    DIGEST_ROW_CAP > MIN_REHEARSAL_ROWS,
+  );
+  check(
+    "the seed script the floor's message points at exists",
+    existsSync(new URL("./seed-inventory-rollback-drill.sql", import.meta.url)),
+  );
   check(
     "the inventory tag rule selects inventory and nothing else",
     INVENTORY_TAG.test("0911_inv_projects_rls") &&
