@@ -88,6 +88,7 @@ import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
 import { ComplianceModule } from "./modules/compliance/compliance.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
+import { AttributionModule } from "./modules/attribution/attribution.module";
 import { RelationshipsModule } from "./modules/relationships/relationships.module";
 import { CallsModule } from "./modules/calls/calls.module";
 import { CommissionModule } from "./modules/commission/commission.module";
@@ -172,6 +173,7 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     ComplianceModule,
     DataQualityModule,
     ActivitiesModule,
+    AttributionModule,
     RelationshipsModule,
     /*
       Phase 5. Registered here and nowhere else, because a module that exists and

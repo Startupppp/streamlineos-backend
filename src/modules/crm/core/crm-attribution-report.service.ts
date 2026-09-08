@@ -1,10 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { crmLeadTouchpoints, crmCampaigns, crmPipelineStages, deals } from "../../../db/schema";
+import { crmLeadTouchpoints, crmCampaigns, deals } from "../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { resolveWonStageKeys } from "./won-stage-keys";
 
 export interface CampaignAttribution {
   campaignId: number | null;
@@ -20,7 +21,7 @@ export class CrmAttributionReportService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async getFirstTouchAttribution(orgId: string): Promise<CampaignAttribution[]> {
-    const wonStageKeys = await this.resolveWonStageKeys(orgId);
+    const wonStageKeys = await resolveWonStageKeys(this.db, orgId);
 
     const rows = await this.db
       .select({
@@ -56,7 +57,7 @@ export class CrmAttributionReportService {
   }
 
   async getLastTouchAttribution(orgId: string): Promise<CampaignAttribution[]> {
-    const wonStageKeys = await this.resolveWonStageKeys(orgId);
+    const wonStageKeys = await resolveWonStageKeys(this.db, orgId);
 
     const lastTouchSub = this.db
       .select({
@@ -100,17 +101,6 @@ export class CrmAttributionReportService {
       .groupBy(crmLeadTouchpoints.campaignId, crmCampaigns.name);
 
     return rows.map((r) => this.toAttribution(r));
-  }
-
-  private async resolveWonStageKeys(orgId: string): Promise<string[]> {
-    const wonStages = await this.db
-      .select({ key: crmPipelineStages.key })
-      .from(crmPipelineStages)
-      .where(and(
-        eq(crmPipelineStages.orgId, orgId),
-        eq(crmPipelineStages.stageType, "won"),
-      ));
-    return wonStages.length ? wonStages.map((s) => s.key) : ["WON", "Closed Won"];
   }
 
   async recordTouch(params: {
