@@ -58,65 +58,116 @@ export class KbPageDuplicateService {
         .limit(1);
       const rootNextSort = (rootSibRow?.sortOrder ?? 0) + 100;
 
-      const childSortCounters = new Map<number, number>();
+      let newRoot: PageRow | undefined;
 
-      for (const [originalId, original] of subtreeMap.entries()) {
-        const isRoot = originalId === pageId;
-        const newParentId = isRoot
-          ? original.parentPageId
-          : (idMapping.get(original.parentPageId ?? -1) ?? null);
+      for (const level of this.levelsOf(subtreeMap, pageId)) {
+        const childSortCounters = new Map<number, number>();
+        const plan = level.map(function planNode(original) {
+          const isRoot = original.id === pageId;
+          const newParentId = isRoot
+            ? original.parentPageId
+            : (idMapping.get(original.parentPageId ?? -1) ?? null);
+          const counterKey = newParentId ?? -1;
+          const counter = (childSortCounters.get(counterKey) ?? 0) + 1;
+          childSortCounters.set(counterKey, counter);
+          return {
+            originalId: original.id,
+            values: {
+              orgId,
+              spaceId: original.spaceId,
+              parentPageId: newParentId,
+              title: isRoot ? `${original.title} (copy)` : original.title,
+              icon: original.icon,
+              coverImage: original.coverImage,
+              content: original.content ?? null,
+              contentText: original.contentText,
+              sortOrder: isRoot ? rootNextSort : counter * 100,
+              isLocked: false,
+              createdById: user.userId,
+              lastEditedById: user.userId,
+            },
+          };
+        });
 
-        let sortOrder: number;
-        if (isRoot) {
-          sortOrder = rootNextSort;
-        } else {
-          const key = newParentId ?? -1;
-          const counter = (childSortCounters.get(key) ?? 0) + 1;
-          childSortCounters.set(key, counter);
-          sortOrder = counter * 100;
-        }
-
-        const [created] = await tx
+        const created = await tx
           .insert(kbPages)
-          .values({
-            orgId,
-            spaceId: original.spaceId,
-            parentPageId: newParentId,
-            title: isRoot ? `${original.title} (copy)` : original.title,
-            icon: original.icon,
-            coverImage: original.coverImage,
-            content: original.content ?? null,
-            contentText: original.contentText,
-            sortOrder,
-            isLocked: false,
-            createdById: user.userId,
-            lastEditedById: user.userId,
-          })
+          .values(plan.map((entry) => entry.values))
           .returning(KB_PAGE_COLUMNS);
-        if (!created) throw new Error("Failed to duplicate page");
-        idMapping.set(originalId, created.id);
-
-        const linkIds = extractPageLinkIds(original.content);
-        if (linkIds.length > 0) {
-          const validLinks = await tx
-            .select({ id: kbPages.id })
-            .from(kbPages)
-            .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, linkIds)));
-          const validIds = validLinks.map((l) => l.id);
-          if (validIds.length > 0) {
-            await tx.insert(kbPageLinks).values(
-              validIds.map((targetId) => ({ orgId, sourcePageId: created.id, targetPageId: targetId })),
-            ).onConflictDoNothing();
-          }
+        if (created.length !== plan.length) throw new Error("Failed to duplicate page");
+        const createdByPosition = new Map<string, PageRow>(
+          created.map(function keyRow(row) {
+            return [`${row.parentPageId ?? "root"}:${row.sortOrder}`, row];
+          }),
+        );
+        for (const entry of plan) {
+          const row = createdByPosition.get(
+            `${entry.values.parentPageId ?? "root"}:${entry.values.sortOrder}`,
+          );
+          if (!row) throw new Error("Failed to duplicate page");
+          idMapping.set(entry.originalId, row.id);
+          if (entry.originalId === pageId) newRoot = row;
         }
       }
 
-      const newRootId = idMapping.get(pageId);
-      if (!newRootId) throw new Error("Duplication root lost");
-      const [newRoot] = await tx.select(KB_PAGE_COLUMNS).from(kbPages).where(eq(kbPages.id, newRootId));
       if (!newRoot) throw new NotFoundException("Duplicated page not found");
+
+      const linkIdsByOriginal = new Map<number, number[]>();
+      const allLinkIds = new Set<number>();
+      for (const original of subtreeMap.values()) {
+        const linkIds = extractPageLinkIds(original.content);
+        if (linkIds.length === 0) continue;
+        linkIdsByOriginal.set(original.id, linkIds);
+        for (const linkId of linkIds) allLinkIds.add(linkId);
+      }
+
+      if (allLinkIds.size > 0) {
+        const validLinks = await tx
+          .select({ id: kbPages.id })
+          .from(kbPages)
+          .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, [...allLinkIds])));
+        const validIds = new Set(validLinks.map((l) => l.id));
+        const linkRows: Array<{ orgId: string; sourcePageId: number; targetPageId: number }> = [];
+        for (const [originalId, linkIds] of linkIdsByOriginal) {
+          const sourcePageId = idMapping.get(originalId);
+          if (sourcePageId === undefined) continue;
+          for (const targetPageId of linkIds)
+            if (validIds.has(targetPageId)) linkRows.push({ orgId, sourcePageId, targetPageId });
+        }
+        if (linkRows.length > 0)
+          await tx.insert(kbPageLinks).values(linkRows).onConflictDoNothing();
+      }
+
       return newRoot;
     });
+  }
+
+  /**
+   * Breadth-first levels of the subtree: every node at one depth is inserted in a single
+   * statement, so the copy costs one round trip per depth instead of one per node. A child
+   * also cannot be planned before its parent's generated id exists, which the previous
+   * map-order walk did not guarantee — a child seen first was grafted to the space root.
+   */
+  private levelsOf(subtreeMap: Map<number, PageRow>, rootId: number): PageRow[][] {
+    const childrenByParent = new Map<number, PageRow[]>();
+    for (const page of subtreeMap.values()) {
+      if (page.id === rootId || page.parentPageId === null) continue;
+      const siblings = childrenByParent.get(page.parentPageId) ?? [];
+      siblings.push(page);
+      childrenByParent.set(page.parentPageId, siblings);
+    }
+    for (const siblings of childrenByParent.values())
+      siblings.sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+
+    const root = subtreeMap.get(rootId);
+    const levels: PageRow[][] = [];
+    let current = root ? [root] : [];
+    while (current.length > 0) {
+      levels.push(current);
+      const next: PageRow[] = [];
+      for (const node of current) next.push(...(childrenByParent.get(node.id) ?? []));
+      current = next;
+    }
+    return levels;
   }
 
   private async buildSubtreeMap(

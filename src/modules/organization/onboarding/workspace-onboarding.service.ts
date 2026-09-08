@@ -6,6 +6,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { orgUnits, organizations } from "../../../db/schema";
 import { ModuleChecklistService } from "../../hr/onboarding/flow/module-checklist.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { OrgHierarchyCacheService } from "../../../common/cache/org-hierarchy-cache.service";
 
 const INDUSTRY_TEMPLATES: Record<string, string[]> = {
@@ -242,18 +243,29 @@ export class WorkspaceOnboardingService {
         createdTeams = teamsToInsert.length;
       }
 
+      const teamReparents = new Map<string, string>();
       for (const { dept: deptName, teams: teamNames } of allTeamNamesByDept) {
         const departmentId = deptIdByName.get(deptName);
+        if (departmentId === undefined) continue;
         for (const teamName of teamNames) {
           const existingTeam = existingTeamByName.get(teamName);
-          if (existingTeam && existingTeam.parentId !== departmentId) {
-            await tx
-              .update(orgUnits)
-              .set({ parentId: departmentId })
-              .where(and(eq(orgUnits.id, existingTeam.id), eq(orgUnits.orgId, orgId)));
-          }
+          if (existingTeam && existingTeam.parentId !== departmentId)
+            teamReparents.set(existingTeam.id, departmentId);
         }
       }
+
+      if (teamReparents.size > 0)
+        await bulkUpdateFromValues(tx, {
+          table: orgUnits,
+          orgId,
+          key: { column: "id", type: "text" },
+          columns: [{ column: "parent_id", type: "text" }],
+          touch: ["updated_at"],
+          rows: [...teamReparents].map(([teamId, departmentId]) => ({
+            key: teamId,
+            values: [departmentId],
+          })),
+        });
     }, { orgId });
 
     await this.hierarchyCache.invalidateAfterMutation(orgId);

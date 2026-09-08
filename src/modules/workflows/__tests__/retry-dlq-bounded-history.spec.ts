@@ -43,14 +43,21 @@ jest.mock("../../../common/tenant/for-each-org", () => ({
 jest.mock("../engine/execution-advance", () => ({
   advanceExecution: jest.fn(),
   deadLetterExecution: jest.fn().mockResolvedValue(undefined),
+  deadLetterExecutions: jest.fn().mockResolvedValue(undefined),
   finishExecution: jest.fn().mockResolvedValue(undefined),
   MAX_STEPS_PER_EXECUTION: 200,
 }));
 
 import { WorkflowRunnerService, isTransientInfraError } from "../engine/workflow-runner.service";
-import { advanceExecution, deadLetterExecution, finishExecution } from "../engine/execution-advance";
+import {
+  advanceExecution,
+  deadLetterExecution,
+  deadLetterExecutions,
+  finishExecution,
+} from "../engine/execution-advance";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
+import type { WorkflowRunState } from "../engine/workflow-execution-context";
 import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
 import type { Db } from "../../../db/drizzle.module";
 import type { NodeDispatchPort } from "../engine/node-outcome";
@@ -111,6 +118,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   (advanceExecution as jest.Mock).mockResolvedValue("completed");
   (deadLetterExecution as jest.Mock).mockResolvedValue(undefined);
+  (deadLetterExecutions as jest.Mock).mockResolvedValue(undefined);
   (finishExecution as jest.Mock).mockResolvedValue(undefined);
 });
 
@@ -455,7 +463,7 @@ describe("D — expired lease reclaim: expireStuck re-queues crashed workers", (
   }
 
   beforeEach(() => {
-    (deadLetterExecution as jest.Mock).mockResolvedValue(undefined);
+    (deadLetterExecutions as jest.Mock).mockResolvedValue(undefined);
   });
 
   it("a stuck running execution below budget is released to waiting with incremented infraAttempt", async () => {
@@ -511,23 +519,63 @@ describe("D — expired lease reclaim: expireStuck re-queues crashed workers", (
     expect(timedOutCall).toBeUndefined();
   });
 
-  it("a stuck execution that has exhausted its infra budget is dead-lettered", async () => {
-    const exhaustedCtx = {
-      cursor: "node-d", resumeAt: null, variables: {}, steps: 5,
-      infraAttempt: OUTBOX_MAX_RETRIES, dlqReason: null,
-    };
-    const { tx } = makeTxWithStuck([{ id: "exec-stuck-4", context: exhaustedCtx }]);
+  /*
+   * Was `expect(deadLetterExecution).toHaveBeenCalledWith(tx, ORG, "exec-stuck-4", …)`,
+   * which pins one call per exhausted execution — the shape being removed. The
+   * invariant that test really protected is that EVERY exhausted execution is
+   * abandoned with the timeout reason and its own frozen run state; that is
+   * asserted here against the batched contract, as ONE call carrying every id,
+   * so a regression back to per-row writes fails on the call count rather than
+   * passing on "was called".
+   */
+  it("every exhausted stuck execution is dead-lettered by ONE batched call carrying all of them", async () => {
+    const exhaustedRows = [4, 5, 6].map((n) => ({
+      id: `exec-stuck-${n}`,
+      context: {
+        cursor: `node-${n}`, resumeAt: null, variables: { n }, steps: 5,
+        infraAttempt: OUTBOX_MAX_RETRIES, dlqReason: null,
+      },
+    }));
+    const { tx } = makeTxWithStuck(exhaustedRows);
     const svc = makeMinimalService();
 
     await (svc as unknown as PrivateStuck).expireStuck(tx, ORG);
 
-    expect(deadLetterExecution).toHaveBeenCalledWith(
+    expect(deadLetterExecutions).toHaveBeenCalledTimes(1);
+    expect(deadLetterExecutions).toHaveBeenCalledWith(
       tx,
       ORG,
-      "exec-stuck-4",
-      expect.stringContaining("timed out"),
-      expect.objectContaining({ infraAttempt: OUTBOX_MAX_RETRIES }),
+      exhaustedRows.map((row) => ({
+        executionId: row.id,
+        reason: expect.stringContaining("timed out"),
+        state: expect.objectContaining({
+          cursor: row.context.cursor,
+          steps: 5,
+          infraAttempt: OUTBOX_MAX_RETRIES,
+        }),
+      })),
     );
+    expect(deadLetterExecution).not.toHaveBeenCalled();
+  });
+
+  it("the reason is identical for every execution in the batch", async () => {
+    const exhaustedRows = [7, 8].map((n) => ({
+      id: `exec-stuck-${n}`,
+      context: {
+        cursor: `node-${n}`, resumeAt: null, variables: {}, steps: 1,
+        infraAttempt: OUTBOX_MAX_RETRIES, dlqReason: null,
+      },
+    }));
+    const { tx } = makeTxWithStuck(exhaustedRows);
+    const svc = makeMinimalService();
+
+    await (svc as unknown as PrivateStuck).expireStuck(tx, ORG);
+
+    const targets = (deadLetterExecutions as jest.Mock).mock.calls[0]?.[2] as
+      | Array<{ executionId: string; reason: string }>
+      | undefined;
+    expect(targets?.map((t) => t.executionId)).toEqual(["exec-stuck-7", "exec-stuck-8"]);
+    expect(new Set(targets?.map((t) => t.reason)).size).toBe(1);
   });
 
   it("an exhausted stuck run is NOT released to waiting — budget is the gate", async () => {
@@ -551,6 +599,168 @@ describe("D — expired lease reclaim: expireStuck re-queues crashed workers", (
     await (svc as unknown as PrivateStuck).expireStuck(tx, ORG);
 
     expect(allSetCalls).toHaveLength(0);
-    expect(deadLetterExecution).not.toHaveBeenCalled();
+    expect(deadLetterExecutions).not.toHaveBeenCalled();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Group E — the batched dead-letter write itself, read as rendered SQL
+//
+// Group D asserts what the runner HANDS to the engine; the module is mocked
+// there, so it can say nothing about what reaches Postgres. This group runs the
+// real `execution-advance` through PgDialect and reads the statement — a column
+// walk over a Drizzle table would pass against a statement that sets nothing.
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("E — the batched dead-letter statement, rendered", () => {
+  const engine = jest.requireActual<typeof import("../engine/execution-advance")>(
+    "../engine/execution-advance",
+  );
+  const dialect = new PgDialect();
+  const DLQ_REASON = `execution timed out after ${OUTBOX_MAX_RETRIES} infra attempts`;
+
+  /** Drizzle property name → the column name the statement has to name. */
+  const DEAD_LETTER_COLUMN_NAMES: Record<string, string> = {
+    status: "status",
+    dlqReason: "dlq_reason",
+    completedAt: "completed_at",
+    durationMs: "duration_ms",
+    context: "context",
+  };
+
+  function stateFor(n: number): WorkflowRunState {
+    return {
+      cursor: `node-${n}`,
+      resumeAt: null,
+      variables: { n },
+      steps: n,
+      infraAttempt: OUTBOX_MAX_RETRIES,
+      dlqReason: null,
+    };
+  }
+
+  const TARGETS = [1, 2, 3].map((n) => ({
+    executionId: `exec-dlq-${n}`,
+    reason: DLQ_REASON,
+    state: stateFor(n),
+  }));
+
+  function makeExecuteTx(): { tx: unknown; statements: SQL[] } {
+    const statements: SQL[] = [];
+    const tx = {
+      execute: jest.fn().mockImplementation((statement: SQL) => {
+        statements.push(statement);
+        return Promise.resolve([]);
+      }),
+    };
+    return { tx, statements };
+  }
+
+  async function render(
+    targets: ReadonlyArray<{ executionId: string; reason: string; state: WorkflowRunState }>,
+  ): Promise<{ statements: SQL[]; sql: string; params: unknown[] }> {
+    const { tx, statements } = makeExecuteTx();
+    await engine.deadLetterExecutions(tx as never, ORG, targets);
+    const [statement] = statements;
+    if (statement === undefined) return { statements, sql: "", params: [] };
+    const query = dialect.sqlToQuery(statement);
+    return { statements, sql: query.sql, params: query.params };
+  }
+
+  it("N exhausted executions produce exactly ONE statement", async () => {
+    const { statements } = await render(TARGETS);
+    expect(statements).toHaveLength(1);
+  });
+
+  it("an empty batch issues no statement at all", async () => {
+    const { statements } = await render([]);
+    expect(statements).toHaveLength(0);
+  });
+
+  it("refuses a batch that repeats an execution — a dropped VALUES row is a lost dead-letter", async () => {
+    const { tx, statements } = makeExecuteTx();
+    await expect(
+      engine.deadLetterExecutions(tx as never, ORG, [TARGETS[0], TARGETS[0]]),
+    ).rejects.toThrow("appears twice");
+    expect(statements).toHaveLength(0);
+  });
+
+  it("sets exactly the terminal dead-letter columns the single form sets", async () => {
+    const singleSet: Array<Record<string, unknown>> = [];
+    const updateTx = {
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+          singleSet.push(vals);
+          return { where: jest.fn().mockReturnValue(Promise.resolve()) };
+        }),
+      }),
+    };
+    await engine.deadLetterExecution(
+      updateTx as never,
+      ORG,
+      "exec-dlq-1",
+      DLQ_REASON,
+      stateFor(1),
+    );
+    const singleColumns = Object.keys(singleSet[0] ?? {})
+      .map((key) => DEAD_LETTER_COLUMN_NAMES[key])
+      .sort();
+    expect(singleColumns).toEqual(["completed_at", "context", "dlq_reason", "duration_ms", "status"]);
+
+    const { sql } = await render(TARGETS);
+    const setClause = sql.slice(sql.indexOf(" SET "), sql.indexOf(" FROM (VALUES"));
+    const batchedColumns = [...setClause.matchAll(/"(\w+)" =/g)].map((m) => m[1]).sort();
+    expect(batchedColumns).toEqual(singleColumns);
+  });
+
+  it("takes the per-execution columns from the VALUES join and duration_ms from started_at", async () => {
+    const { sql } = await render(TARGETS);
+    expect(sql).toContain('UPDATE "workflow_executions"');
+    expect(sql).toContain('"status" = v."status"');
+    expect(sql).toContain('"dlq_reason" = v."dlq_reason"');
+    expect(sql).toContain('"completed_at" = v."completed_at"');
+    expect(sql).toContain('"context" = v."context"');
+    expect(sql).toContain(
+      '"duration_ms" = EXTRACT(EPOCH FROM (now() - COALESCE("workflow_executions"."started_at", now()))) * 1000',
+    );
+    expect(sql).toContain('AS v("id", "status", "dlq_reason", "completed_at", "context")');
+  });
+
+  it("is tenant-scoped on org_id and compare-and-set on status = running", async () => {
+    const { sql, params } = await render(TARGETS);
+    expect(sql).toContain('"workflow_executions"."id" = v."id"');
+    expect(sql).toContain('"workflow_executions"."org_id" = $');
+    expect(sql).toContain('"workflow_executions"."status" = $');
+    expect(params).toContain(ORG);
+    expect(params).toContain("running");
+  });
+
+  it("carries every exhausted id, and one dead_lettered/reason pair per execution", async () => {
+    const { params } = await render(TARGETS);
+    for (const target of TARGETS) expect(params).toContain(target.executionId);
+    expect(params.filter((p) => p === "dead_lettered")).toHaveLength(TARGETS.length);
+    expect(params.filter((p) => p === DLQ_REASON)).toHaveLength(TARGETS.length);
+  });
+
+  it("freezes each execution's own run state — reason durable in context, cursor cleared", async () => {
+    const { params } = await render(TARGETS);
+    const contexts = params
+      .filter((p): p is string => typeof p === "string" && p.startsWith("{"))
+      .map((p) => JSON.parse(p) as Record<string, unknown>);
+    expect(contexts).toHaveLength(TARGETS.length);
+    expect(contexts.map((c) => c["steps"])).toEqual([1, 2, 3]);
+    for (const context of contexts) {
+      expect(context["dlqReason"]).toBe(DLQ_REASON);
+      expect(context["cursor"]).toBeNull();
+      expect(context["resumeAt"]).toBeNull();
+    }
+  });
+
+  it("stamps a completed_at per execution as an ISO timestamp", async () => {
+    const { params } = await render(TARGETS);
+    const stamps = params.filter(
+      (p): p is string => typeof p === "string" && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(p),
+    );
+    expect(stamps).toHaveLength(TARGETS.length);
   });
 });

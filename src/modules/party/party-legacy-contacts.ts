@@ -5,8 +5,9 @@ import { CONTACT_MIRROR } from "./party-legacy-mirror";
 import {
   applyPartyPatch,
   employerColumnOf,
-  grantRole,
+  grantRoles,
   groupByPayload,
+  insertBareParties,
   insertBareParty,
   movePartiesFor,
   type ContactInsert,
@@ -14,28 +15,30 @@ import {
   type MirrorDb,
   type MirrorWriteOptions,
 } from "./party-legacy-writer";
-import { absorbEmployerColumn } from "./party-legacy-employer";
+import {
+  absorbEmployerColumn,
+  employerLegacyIds,
+  linkedPartyId,
+  partyIdsOfCrmOrgs,
+} from "./party-legacy-employer";
 import {
   absorbLeadColumn,
   convertedFromColumnOf,
+  leadIdsOfParties,
+  partyIdsOfLeads,
   withoutSelfLinks,
 } from "./party-legacy-associations";
 
 /**
  * The `contacts` entry points, Party-first.
  *
- * Two columns here do not go through the field map, and for one reason.
- * `contacts.organization_id` is an integer `crm_organizations` id whose Party
- * counterpart `employer_party_id` is a party id; `contacts.lead_id` is an integer
- * `leads` id whose counterpart `converted_from_party_id` is a party id. Both
- * translations need a `*_party_map` table and therefore a query — which a
- * `MirrorCell` deliberately cannot do. They run through `party-legacy-employer.ts`
- * and `party-legacy-associations.ts` at the three points below, and nowhere else.
- *
- * `contacts.deal_id` is NOT one of them, despite looking like one: it and
- * `primary_deal_id` are the same integer `deals` id, so it is an ordinary cell in
- * `party-mirror-fields.ts` and arrives here through `split` and `derive` like
- * every other column.
+ * Two columns skip the field map: `organization_id` is an integer
+ * `crm_organizations` id against a party id and `lead_id` an integer `leads` id
+ * against another, so both need a `*_party_map` read — which a `MirrorCell`
+ * deliberately cannot do. They run through `party-legacy-employer.ts` and
+ * `party-legacy-associations.ts` and nowhere else, and every path below reads
+ * those maps ONCE per set. `deal_id` is not one: it is the same integer `deals`
+ * id as `primary_deal_id`, so it stays a cell.
  */
 
 async function partyIdsForContacts(
@@ -55,39 +58,65 @@ async function partyIdsForContacts(
   return new Map(rows.map((row) => [row.contactId, row.partyId]));
 }
 
-async function adoptContact(
+const unresolvedEmployer = (id: number): string =>
+  `Organization ${id} has no party in this tenant; run the 0264 backfill before pointing an employer at it`;
+
+const unresolvedLead = (id: number): string =>
+  `Lead ${id} has no party in this tenant; run the 0241 backfill before converting from it`;
+
+/** A whole set of unadopted contacts at once; see `adoptLeads` for the argument. */
+async function adoptContacts(
   db: MirrorDb,
   organizationId: string,
-  contactId: number,
-): Promise<string | null> {
-  const [row] = await db
+  contactIds: readonly number[],
+): Promise<Map<number, string>> {
+  const adopted = new Map<number, string>();
+  if (contactIds.length === 0) return adopted;
+
+  const rows = await db
     .select()
     .from(contacts)
-    .where(and(eq(contacts.id, contactId), eq(contacts.orgId, organizationId)))
-    .limit(1);
-  if (!row) return null;
+    .where(and(eq(contacts.orgId, organizationId), inArray(contacts.id, [...contactIds])))
+    .limit(contactIds.length);
+  if (rows.length === 0) return adopted;
 
-  const party = await insertBareParty(db, organizationId, row.name);
-  const { partyPatch } = CONTACT_MIRROR.split(row, party);
-  await applyPartyPatch(
-    db,
-    organizationId,
-    party.partyId,
-    withoutSelfLinks(
+  const employerIds = rows
+    .map((row) => row.organizationId)
+    .filter((id): id is number => id !== null);
+  const sourceLeadIds = rows.map((row) => row.leadId).filter((id): id is number => id !== null);
+  const partyByEmployer = await partyIdsOfCrmOrgs(db, organizationId, employerIds);
+  const partyByLead = await partyIdsOfLeads(db, organizationId, sourceLeadIds);
+
+  const partyIds = await insertBareParties(db, organizationId, rows.map((row) => row.name));
+  const legacyByParty = new Map(
+    rows.map((row, index): [string, ContactRow] => [partyIds[index], row]),
+  );
+
+  await movePartiesFor(db, organizationId, partyIds, (party) => {
+    const legacy = legacyByParty.get(party.partyId);
+    if (!legacy) return {};
+    return withoutSelfLinks(
       {
-        ...partyPatch,
-        ...(await absorbEmployerColumn(db, organizationId, row.organizationId)),
-        ...(await absorbLeadColumn(db, organizationId, row.leadId)),
+        ...CONTACT_MIRROR.split(legacy, party).partyPatch,
+        employerPartyId: linkedPartyId(partyByEmployer, legacy.organizationId, unresolvedEmployer),
+        convertedFromPartyId: linkedPartyId(partyByLead, legacy.leadId, unresolvedLead),
       },
       party.partyId,
-    ),
-  );
-  await db
-    .insert(contactPartyMap)
-    .values({ organizationId, contactId, partyId: party.partyId, linkedBy: "mirror:adopt" })
-    .onConflictDoNothing();
-  await grantRole(db, organizationId, party.partyId, "CONTACT", "mirror:adopt");
-  return party.partyId;
+    );
+  });
+
+  const links = rows.map((row, index) => ({
+    organizationId,
+    contactId: row.id,
+    partyId: partyIds[index],
+    linkedBy: "mirror:adopt",
+  }));
+
+  await db.insert(contactPartyMap).values(links).onConflictDoNothing();
+  await grantRoles(db, organizationId, partyIds, "CONTACT", "mirror:adopt");
+
+  for (const link of links) adopted.set(link.contactId, link.partyId);
+  return adopted;
 }
 
 export async function createMirroredContact(
@@ -132,10 +161,10 @@ export async function createMirroredContact(
       partyId: party.partyId,
       linkedBy: options.linkedBy ?? "mirror:create",
     });
-    await grantRole(
+    await grantRoles(
       tx,
       organizationId,
-      party.partyId,
+      [party.partyId],
       "CONTACT",
       options.linkedBy ?? "mirror:create",
     );
@@ -144,11 +173,8 @@ export async function createMirroredContact(
 }
 
 /**
- * Many contacts, one transaction, still Party-first.
- *
- * The importer inserts in chunks and bisects a failing chunk, so this has to
- * behave the same way a plain `insert(...).values(rows)` did: all of it lands or
- * none of it does.
+ * Many contacts, one transaction, still Party-first: the importer bisects a
+ * failing chunk, so all of it lands or none of it does.
  */
 export async function createMirroredContacts(
   db: MirrorDb,
@@ -176,17 +202,12 @@ export async function updateMirroredContacts(
 
   return db.transaction(async (tx) => {
     const partyByContact = await partyIdsForContacts(tx, organizationId, ids);
-    for (const contactId of ids) {
-      if (partyByContact.has(contactId)) continue;
-      const adopted = await adoptContact(tx, organizationId, contactId);
-      if (adopted) partyByContact.set(contactId, adopted);
-    }
+    const unadopted = ids.filter((contactId) => !partyByContact.has(contactId));
+    const adopted = await adoptContacts(tx, organizationId, unadopted);
+    for (const [contactId, partyId] of adopted) partyByContact.set(contactId, partyId);
 
-    /*
-     * Resolved once, outside the per-party derivation: which company the caller
-     * named is a property of the patch, not of whoever is being patched, and a
-     * bulk re-point of fifty contacts should read the map once.
-     */
+    // Resolved once, outside the per-party derivation: which company the caller
+    // named is a property of the patch, not of whoever is being patched.
     const employerPatch = await absorbEmployerColumn(tx, organizationId, patch.organizationId);
     const leadPatch = await absorbLeadColumn(tx, organizationId, patch.leadId);
 
@@ -201,6 +222,16 @@ export async function updateMirroredContacts(
         ),
     );
 
+    // Both crossings resolved once for the whole set, for the reason the patch
+    // half above is: they are two maps, not two maps per derived row.
+    const movedParties = [...moved.values()];
+    const employerPartyIds = movedParties.map((party) => party.employerPartyId);
+    const employerLegacyByParty = await employerLegacyIds(tx, organizationId, employerPartyIds);
+    const sourcePartyIds = movedParties
+      .map((party) => party.convertedFromPartyId)
+      .filter((id): id is string => id !== null);
+    const leadIdBySource = await leadIdsOfParties(tx, organizationId, sourcePartyIds);
+
     const derived: { id: number; payload: Partial<ContactInsert> }[] = [];
     for (const [contactId, partyId] of partyByContact) {
       const party = moved.get(partyId);
@@ -212,8 +243,12 @@ export async function updateMirroredContacts(
         id: contactId,
         payload: {
           ...CONTACT_MIRROR.derive(party),
-          ...(await employerColumnOf(tx, organizationId, party)),
-          ...(await convertedFromColumnOf(tx, organizationId, party.convertedFromPartyId)),
+          organizationId: party.employerPartyId
+            ? (employerLegacyByParty.get(party.employerPartyId) ?? null)
+            : null,
+          leadId: party.convertedFromPartyId
+            ? (leadIdBySource.get(party.convertedFromPartyId) ?? null)
+            : null,
           ...legacyOwnedPatch,
         },
       });

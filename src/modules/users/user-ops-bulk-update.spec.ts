@@ -1,17 +1,27 @@
 jest.mock("../../common/hr/sync-canonical-reporting-line", () => ({
-  syncCanonicalReportingLine: jest.fn().mockResolvedValue({ status: "written" }),
+  syncCanonicalReportingLines: jest.fn().mockResolvedValue(new Map()),
+}));
+jest.mock("../../common/rbac/sync-structural-role", () => ({
+  syncStructuralRoleAssignments: jest.fn().mockResolvedValue(undefined),
 }));
 
 import { getTableColumns } from "drizzle-orm";
 import { users, hrEmployments } from "../../db/schema";
-import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
+import { syncCanonicalReportingLines } from "../../common/hr/sync-canonical-reporting-line";
+import { syncStructuralRoleAssignments } from "../../common/rbac/sync-structural-role";
 import { UserOpsService } from "./user-ops.service";
 
-function buildService(scopedMembers: Array<{ userId: string }> = [{ userId: "user-a" }]) {
+function buildService(
+  scopedMembers: Array<{ userId: string }> = [{ userId: "user-a" }],
+  membershipRows: Array<{ id: number }> = [],
+) {
   const updatedTables: unknown[] = [];
   const setCalls: unknown[] = [];
 
-  const updateWhere = jest.fn().mockResolvedValue([]);
+  const returning = jest.fn().mockResolvedValue(membershipRows);
+  const updateWhere = jest
+    .fn()
+    .mockImplementation(() => Object.assign(Promise.resolve([]), { returning }));
   const updateSet = jest.fn().mockImplementation((data: unknown) => {
     setCalls.push(data);
     return { where: updateWhere };
@@ -30,7 +40,13 @@ function buildService(scopedMembers: Array<{ userId: string }> = [{ userId: "use
 
   const selectInnerJoinWhere = jest.fn().mockResolvedValue([]);
   const selectInnerJoin = jest.fn().mockReturnValue({ where: selectInnerJoinWhere });
-  const selectWhere = jest.fn().mockResolvedValue(scopedMembers);
+  const selectWhere = jest
+    .fn()
+    .mockImplementation(() =>
+      Object.assign(Promise.resolve(scopedMembers), {
+        limit: jest.fn().mockResolvedValue([]),
+      }),
+    );
   const selectFrom = jest.fn().mockReturnValue({ where: selectWhere, innerJoin: selectInnerJoin });
   const txSelect = jest.fn().mockReturnValue({ from: selectFrom });
 
@@ -53,7 +69,11 @@ function buildService(scopedMembers: Array<{ userId: string }> = [{ userId: "use
   const service = new UserOpsService(
     db as never,
     { log: jest.fn() } as never,
-    { invalidate: jest.fn(), invalidateForOrg: jest.fn() } as never,
+    {
+      invalidate: jest.fn(),
+      invalidateForOrg: jest.fn(),
+      invalidateNamespace: jest.fn(),
+    } as never,
     {} as never,
     {} as never,
     { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) } as never,
@@ -65,6 +85,12 @@ function buildService(scopedMembers: Array<{ userId: string }> = [{ userId: "use
 }
 
 const actor = { userId: "actor-1", isOrgOwner: false };
+const ownerActor = { userId: "actor-1", isOrgOwner: true };
+
+beforeEach(() => {
+  jest.mocked(syncCanonicalReportingLines).mockClear();
+  jest.mocked(syncStructuralRoleAssignments).mockClear();
+});
 
 describe("bulkUpdateUsers — removed-column regression", () => {
   it("users table has no orgDepartmentId, branchId, or reportingTo columns", () => {
@@ -92,7 +118,6 @@ describe("bulkUpdateUsers — no users table write", () => {
 
 describe("bulkUpdateUsers — cross-org isolation", () => {
   it("only processes members belonging to the target org and returns their count", async () => {
-    jest.mocked(syncCanonicalReportingLine).mockClear();
     const { service } = buildService([{ userId: "user-a" }]);
 
     const result = await service.bulkUpdateUsers("org-a", {
@@ -101,11 +126,11 @@ describe("bulkUpdateUsers — cross-org isolation", () => {
     }, actor);
 
     expect(result.updated).toBe(1);
-    expect(syncCanonicalReportingLine).toHaveBeenCalledTimes(1);
-    expect(syncCanonicalReportingLine).toHaveBeenCalledWith(
+    expect(syncCanonicalReportingLines).toHaveBeenCalledTimes(1);
+    expect(syncCanonicalReportingLines).toHaveBeenCalledWith(
       expect.anything(),
       "org-a",
-      "user-a",
+      ["user-a"],
       "manager-1",
       expect.any(String),
       "actor-1",
@@ -114,10 +139,6 @@ describe("bulkUpdateUsers — cross-org isolation", () => {
 });
 
 describe("bulkUpdateUsers — canonical destination writes", () => {
-  beforeEach(() => {
-    jest.mocked(syncCanonicalReportingLine).mockClear();
-  });
-
   it("writes departmentId to hrEmployments", async () => {
     const { service, updatedTables, setCalls } = buildService([{ userId: "user-a" }]);
 
@@ -142,22 +163,42 @@ describe("bulkUpdateUsers — canonical destination writes", () => {
     expect(setCalls).toContainEqual(expect.objectContaining({ locationId: "branch-1" }));
   });
 
-  it("calls syncCanonicalReportingLine once per user for manager update", async () => {
-    const { service } = buildService([{ userId: "user-a" }]);
+  it("syncs every reportee's manager in one batched call, not one call per user", async () => {
+    const { service } = buildService([{ userId: "user-a" }, { userId: "user-b" }]);
 
     await service.bulkUpdateUsers("org-a", {
-      userIds: ["user-a"],
+      userIds: ["user-a", "user-b"],
       managerUserId: "manager-1",
     }, actor);
 
-    expect(syncCanonicalReportingLine).toHaveBeenCalledTimes(1);
-    expect(syncCanonicalReportingLine).toHaveBeenCalledWith(
+    expect(syncCanonicalReportingLines).toHaveBeenCalledTimes(1);
+    expect(syncCanonicalReportingLines).toHaveBeenCalledWith(
       expect.anything(),
       "org-a",
-      "user-a",
+      ["user-a", "user-b"],
       "manager-1",
       expect.any(String),
       "actor-1",
+    );
+  });
+
+  it("syncs the structural role for every updated membership in one batched call", async () => {
+    const { service } = buildService(
+      [{ userId: "user-a" }, { userId: "user-b" }],
+      [{ id: 11 }, { id: 12 }],
+    );
+
+    await service.bulkUpdateUsers("org-a", {
+      userIds: ["user-a", "user-b"],
+      role: "MEMBER",
+    }, ownerActor);
+
+    expect(syncStructuralRoleAssignments).toHaveBeenCalledTimes(1);
+    expect(syncStructuralRoleAssignments).toHaveBeenCalledWith(
+      expect.anything(),
+      "org-a",
+      [11, 12],
+      "MEMBER",
     );
   });
 });

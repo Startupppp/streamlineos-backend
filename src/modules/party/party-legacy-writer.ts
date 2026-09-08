@@ -1,4 +1,5 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.types";
 import {
   businessParties,
@@ -6,6 +7,7 @@ import {
   contactPartyMap,
   crmOrgPartyMap,
   leadPartyMap,
+  partyIdentifiers,
   partyRoles,
 } from "../../db/schema/party";
 import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
@@ -19,6 +21,7 @@ import {
   type PartyRow,
 } from "./party-legacy-mirror";
 import type { MappedLegacyKind } from "./party-legacy-seam";
+import { normaliseIdentifier } from "../ingress/inbound-event";
 import { claimIdentifiers, claimsOfPatch, identifierClaimsOfColumns } from "./party-identifiers";
 import { employerLegacyIds } from "./party-legacy-employer";
 import { convertedFromColumnOf, parentColumnOf } from "./party-legacy-associations";
@@ -51,10 +54,7 @@ import { convertedFromColumnOf, parentColumnOf } from "./party-legacy-associatio
  * Callers that hold their own `tx` pass it instead, and the savepoint nests.
  */
 
-/**
- * A Drizzle handle: the tenant-aware `this.db`, or a transaction a caller
- * already opened. Both accept the four verbs used below.
- */
+/** A Drizzle handle: the tenant-aware `this.db`, or a caller's own transaction. */
 export type MirrorDb = Db;
 
 export type LeadRow = typeof leads.$inferSelect;
@@ -136,14 +136,11 @@ export async function applyPartyPatch(
   /**
    * The contact columns claimed as identifiers, in the caller's transaction.
    *
-   * 0260 backfilled every address that existed when it ran. Without this the
-   * backfill would be a snapshot: a lead created or edited afterwards would
-   * carry an email address that `resolve-party` cannot match, so the next
-   * message from that customer would create a second record — a migration that
-   * improved the past and broke the present.
-   *
-   * Gated on the patch rather than on the row so that a write touching neither
-   * an address nor a number costs nothing, which is almost all of them.
+   * 0260 backfilled every address that existed when it ran; without this it would
+   * be a snapshot, and a lead created or edited afterwards would carry an address
+   * `resolve-party` cannot match, so the next message from that customer would
+   * start a second record. Gated on the patch rather than on the row, so a write
+   * touching neither an address nor a number costs nothing.
    */
   if (claimsOfPatch(patch) !== null)
     await claimIdentifiers(db, organizationId, partyId, identifierClaimsOfColumns(updated));
@@ -160,6 +157,11 @@ export async function applyPartyPatch(
  * blank `PartyRow` in TypeScript to stand in for one would be a third place that
  * has to be updated whenever a column is added. Both statements are in the same
  * transaction, so nothing ever observes the intermediate row.
+ *
+ * `insertBareParties` is the same for the whole set an adoption path mints, in
+ * one statement rather than one apiece. It mints the ids itself rather than
+ * leaving them to the column default, so the answer pairs back to the names it
+ * was asked for by identity and never by RETURNING order.
  */
 export async function insertBareParty(
   db: MirrorDb,
@@ -171,19 +173,29 @@ export async function insertBareParty(
   return row;
 }
 
-export async function grantRole(
+export async function insertBareParties(
   db: MirrorDb,
   organizationId: string,
-  partyId: string,
+  names: readonly string[],
+): Promise<string[]> {
+  if (names.length === 0) return [];
+  const values = names.map((name) => ({ partyId: randomUUID(), organizationId, name }));
+  await db.insert(businessParties).values(values);
+  return values.map((value) => value.partyId);
+}
+
+export async function grantRoles(
+  db: MirrorDb,
+  organizationId: string,
+  partyIds: readonly string[],
   kind: MappedLegacyKind,
   assignedBy: string,
 ): Promise<void> {
   const role = ROLE_FOR_KIND[kind];
-  if (!role) return;
-  await db
-    .insert(partyRoles)
-    .values({ organizationId, partyId, role, assignedBy })
-    .onConflictDoNothing();
+  const ids = [...new Set(partyIds)];
+  if (!role || ids.length === 0) return;
+  const rows = ids.map((partyId) => ({ organizationId, partyId, role, assignedBy }));
+  await db.insert(partyRoles).values(rows).onConflictDoNothing();
 }
 
 async function loadParties(
@@ -249,11 +261,40 @@ export async function movePartiesFor(
     // go through it. Gated on the payload, so the ownership and stage sweeps
     // that make up nearly every bulk write cost nothing extra.
     if (claimsOfPatch(group.payload) !== null)
-      for (const row of rows)
-        await claimIdentifiers(db, organizationId, row.partyId, identifierClaimsOfColumns(row));
+      await claimIdentifiersOfParties(db, organizationId, rows);
   }
 
   return moved;
+}
+
+/**
+ * What `claimIdentifiers` records, for a whole set of parties in one insert.
+ *
+ * Deduplicated across the set as well as within a party, because the unique index
+ * is `(organization_id, kind, normalised_value)` and ON CONFLICT DO NOTHING
+ * cannot resolve two conflicting rows inside one INSERT — Postgres raises 21000
+ * rather than dropping one. First claimant wins, exactly as the statement-per-
+ * party loop this replaces did.
+ */
+async function claimIdentifiersOfParties(
+  db: MirrorDb,
+  organizationId: string,
+  parties: readonly PartyRow[],
+): Promise<void> {
+  const rows: (typeof partyIdentifiers.$inferInsert)[] = [];
+  const seen = new Set<string>();
+  for (const party of parties) {
+    for (const claim of identifierClaimsOfColumns(party)) {
+      const normalisedValue = normaliseIdentifier(claim.kind, claim.value);
+      const key = `${claim.kind}:${normalisedValue}`;
+      if (!normalisedValue || seen.has(key)) continue;
+      seen.add(key);
+      const value = claim.value.trim();
+      rows.push({ organizationId, partyId: party.partyId, kind: claim.kind, value, normalisedValue });
+    }
+  }
+  if (rows.length === 0) return;
+  await db.insert(partyIdentifiers).values(rows).onConflictDoNothing();
 }
 
 /**
@@ -347,8 +388,7 @@ async function refreshMirrorsOfParty(
         ...CLIENT_MIRROR.derive(party),
         // Outside the pure derivation because it crosses id spaces; see
         // `party-legacy-associations.ts`. Without it, re-pointing a client at a
-        // different lead on the Party surface would leave `clients.lead_id` on
-        // the old one indefinitely.
+        // different lead on the Party surface would leave `clients.lead_id` behind.
         ...(await convertedFromColumnOf(db, organizationId, party.convertedFromPartyId)),
       })
       .where(and(eq(clients.orgId, organizationId), inArray(clients.id, clientIds)));
@@ -362,8 +402,7 @@ async function refreshMirrorsOfParty(
         // Outside the pure derivation because they cross id spaces; see
         // `party-legacy-employer.ts` and `party-legacy-associations.ts`. Without
         // them, moving somebody to a new employer or a new source lead on the
-        // Party surface would leave the legacy columns pointing at the old ones
-        // indefinitely.
+        // Party surface would leave the legacy columns on the old ones.
         ...(await employerColumnOf(db, organizationId, party)),
         ...(await convertedFromColumnOf(db, organizationId, party.convertedFromPartyId)),
       })
@@ -385,12 +424,9 @@ async function refreshMirrorsOfParty(
 }
 
 /**
- * The `contacts.organization_id` this party's employer means, as a patch.
- *
- * A whole column rather than a conditional: a party with no employer must write
- * `null`, not nothing, or clearing an employer would silently leave the old one
- * on the legacy row — which is the exact shape of stale the mirror exists to
- * rule out.
+ * The `contacts.organization_id` this party's employer means, as a whole column
+ * rather than a conditional: a party with no employer must write `null`, not
+ * nothing, or clearing one would leave the old employer on the legacy row.
  */
 export async function employerColumnOf(
   db: MirrorDb,
@@ -460,38 +496,4 @@ export async function restorePartyWithMirror(
   patch: PartyPatch = {},
 ): Promise<PartyRow> {
   return updatePartyWithMirror(db, organizationId, partyId, { ...patch, deletedAt: null });
-}
-
-/**
- * How many legacy rows currently disagree with their Party, per kind.
- *
- * Kept here rather than in the divergence service so that a test of the writer
- * can assert its own claim: after any function above, this is zero.
- */
-async function countMirroredRows(
-  db: MirrorDb,
-  organizationId: string,
-): Promise<Record<MappedLegacyKind, number>> {
-  const [lead] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(leadPartyMap)
-    .where(eq(leadPartyMap.organizationId, organizationId));
-  const [client] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(clientPartyMap)
-    .where(eq(clientPartyMap.organizationId, organizationId));
-  const [contact] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(contactPartyMap)
-    .where(eq(contactPartyMap.organizationId, organizationId));
-  const [organisation] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(crmOrgPartyMap)
-    .where(eq(crmOrgPartyMap.organizationId, organizationId));
-  return {
-    LEAD: lead?.n ?? 0,
-    CLIENT: client?.n ?? 0,
-    CONTACT: contact?.n ?? 0,
-    ORGANISATION: organisation?.n ?? 0,
-  };
 }

@@ -102,10 +102,13 @@ async function build(db: ReturnType<typeof makeDb>) {
   const emitted: EmittedEvent[] = [];
   const planLimits = { bust: jest.fn() };
   const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
+  // The sweep emits the whole batch in one call. `emit` stays on the double so a regression to
+  // one outbox row per subscription is a failed assertion rather than an untracked extra path.
   const revenue = {
-    emit: jest.fn().mockImplementation(async (_tx: unknown, event: EmittedEvent) => {
+    emit: jest.fn(),
+    emitMany: jest.fn().mockImplementation(async (_tx: unknown, events: readonly EmittedEvent[]) => {
       db._store.order.push("emit-churn");
-      emitted.push(event);
+      emitted.push(...events);
     }),
   };
   const module = await Test.createTestingModule({
@@ -124,18 +127,30 @@ async function build(db: ReturnType<typeof makeDb>) {
 }
 
 describe("c17-05 — a trial that lapses records churn", () => {
-  it("emits one churn event per expired trial, inside the sweep's transaction", async () => {
+  it("emits one churn event per expired trial, in one batch inside the sweep's transaction", async () => {
     const db = makeDb({ expired: [{ id: 1, plan: "STARTER" }, { id: 2, plan: "PROFESSIONAL" }] });
-    const { service, emitted } = await build(db);
+    const { service, emitted, revenue } = await build(db);
 
     await service.processTrialExpiry();
 
+    expect(revenue.emit).not.toHaveBeenCalled();
+    expect(revenue.emitMany).toHaveBeenCalledTimes(1);
+    // The handle the batch is written through is the sweep's own tenant transaction, so the
+    // events commit with the EXPIRED rows they describe.
+    expect(revenue.emitMany.mock.calls[0]?.[0]).toBe(db);
+    expect(revenue.emitMany.mock.calls[0]?.[1]).toHaveLength(2);
     expect(emitted).toHaveLength(2);
     expect(emitted[0]).toMatchObject({
       type: "churn",
       orgId: "org1",
       plan: "STARTER",
       metadata: { subscriptionId: 1, source: "trial-expiry" },
+    });
+    expect(emitted[1]).toMatchObject({
+      type: "churn",
+      orgId: "org1",
+      plan: "PROFESSIONAL",
+      metadata: { subscriptionId: 2, source: "trial-expiry" },
     });
   });
 
@@ -161,11 +176,12 @@ describe("c17-05 — a trial that lapses records churn", () => {
 
   it("emits nothing when no trial expired", async () => {
     const db = makeDb({ expired: [] });
-    const { service, emitted } = await build(db);
+    const { service, emitted, revenue } = await build(db);
 
     await service.processTrialExpiry();
 
     expect(emitted).toHaveLength(0);
+    expect(revenue.emitMany).not.toHaveBeenCalled();
   });
 });
 
@@ -180,12 +196,16 @@ describe("c17-05 — a subscription suspended for non-payment records churn", ()
     },
   ];
 
-  it("emits churn carrying the MRR the cancelled plan was worth", async () => {
+  it("emits churn carrying the MRR the cancelled plan was worth, in one batch on the sweep's transaction", async () => {
     const db = makeDb({ expired: [], pastDue: suspendable, owner: { userId: "user1" } });
-    const { service, emitted } = await build(db);
+    const { service, emitted, revenue } = await build(db);
 
     await service.processDunning();
 
+    expect(revenue.emit).not.toHaveBeenCalled();
+    expect(revenue.emitMany).toHaveBeenCalledTimes(1);
+    expect(revenue.emitMany.mock.calls[0]?.[0]).toBe(db);
+    expect(revenue.emitMany.mock.calls[0]?.[1]).toHaveLength(1);
     const churn = emitted.filter((event) => event.type === "churn");
     expect(churn).toHaveLength(1);
     expect(churn[0]).toMatchObject({
@@ -194,6 +214,28 @@ describe("c17-05 — a subscription suspended for non-payment records churn", ()
       mrr: PLAN_PRICES_PAISE.PROFESSIONAL,
       metadata: { subscriptionId: 7, source: "dunning-suspension" },
     });
+  });
+
+  it("puts one event per suspended subscription into the single batch", async () => {
+    const many = [8, 9, 10].map((id) => ({ ...suspendable[0], id }));
+    const db = makeDb({
+      expired: [],
+      pastDue: many,
+      suspended: [{ id: 8 }, { id: 9 }, { id: 10 }],
+      owner: { userId: "user1" },
+    });
+    const { service, emitted, revenue } = await build(db);
+
+    await service.processDunning();
+
+    expect(revenue.emitMany).toHaveBeenCalledTimes(1);
+    expect(emitted).toHaveLength(3);
+    expect(emitted.map((event) => event.metadata?.["subscriptionId"])).toEqual([8, 9, 10]);
+    expect(emitted.map((event) => event.dedupeKey)).toEqual([
+      "dunning-suspension:8",
+      "dunning-suspension:9",
+      "dunning-suspension:10",
+    ]);
   });
 
   it("emits nothing for a subscription that is not yet due for suspension", async () => {
@@ -245,11 +287,12 @@ describe("c17-05 — only the sweep that actually cancelled the subscription rep
 
   it("emits no churn when the conditional cancel flipped no row", async () => {
     const db = makeDb({ expired: [], pastDue: suspendable, suspended: [], owner: { userId: "user1" } });
-    const { service, emitted } = await build(db);
+    const { service, emitted, revenue } = await build(db);
 
     const result = await service.processDunning();
 
     expect(emitted).toHaveLength(0);
+    expect(revenue.emitMany).not.toHaveBeenCalled();
     expect(result.suspended).toBe(0);
   });
 

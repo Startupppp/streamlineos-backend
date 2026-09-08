@@ -11,9 +11,9 @@ import {
   type OutboxEventConsumer,
   type OutboxEventRow,
 } from "../../../common/outbox/outbox-consumer.registry";
+import { type OutboxEventInput } from "../../../common/outbox/outbox-event-schema";
 import { type DbOrTx } from "../../../common/rbac/access-invalidate";
 import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
-import type { Plan } from "./dto/billing.schemas";
 import {
   REVENUE_EVENT_TYPE,
   revenueEventPayloadSchema,
@@ -42,12 +42,12 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
   // Each event is its own aggregate, so the inbox version fence never suppresses a sibling. A
   // caller carrying a dedupeKey gets a stable id instead, so re-running one movement conflicts
   // on uniq_outbox_events_event_id rather than committing a second revenue row.
-  async emit(tx: DbOrTx, input: RevenueEventInput): Promise<void> {
+  private envelope(input: RevenueEventInput): OutboxEventInput {
     const eventId =
       input.dedupeKey === undefined
         ? randomUUID()
         : deterministicEventId(REVENUE_EVENT_TYPE, input.orgId, input.type, input.dedupeKey);
-    await OutboxWriter.emit(tx, {
+    return {
       eventId,
       organizationId: input.orgId,
       aggregateType: "revenue_event",
@@ -65,7 +65,17 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
         metadata: input.metadata ?? null,
       },
       occurredAt: new Date(),
-    });
+    };
+  }
+
+  async emit(tx: DbOrTx, input: RevenueEventInput): Promise<void> {
+    await OutboxWriter.emit(tx, this.envelope(input));
+  }
+
+  // One outbox INSERT for a whole sweep's worth of movements. The envelope is built by the same
+  // method `emit` uses, so a batched emission and N single ones are the same rows.
+  async emitMany(tx: DbOrTx, inputs: readonly RevenueEventInput[]): Promise<void> {
+    await OutboxWriter.emitMany(tx, inputs.map((input) => this.envelope(input)));
   }
 
   // The relay holds the tenant transaction; a failure is rethrown so the outbox retries it.

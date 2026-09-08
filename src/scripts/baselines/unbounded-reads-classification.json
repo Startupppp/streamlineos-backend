@@ -3200,6 +3200,16 @@
       "verdict": "BOUNDED",
       "note": "inArray-bounded by a DTO-capped request batch",
       "justification": "roles read is bounded by two literal slugs (ORG_ADMIN, MEMBER) under eq(roles.orgId); not batch-dependent at all. Split out of employee-bulk-onboarding.service.ts 2026-09-07."
+    },
+    "@common/hr/sync-canonical-reporting-line.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Two reads, both inArray over the caller's own id set - O(batch), never O(org).",
+      "justification": "syncCanonicalReportingLines, which replaced a per-reportee loop on 2026-09-08. :32 reads hr_employments joined to hr_people where hr_people.user_id IN (the reportee userIds), org-scoped and deleted_at-filtered. :185 reads the open primary lines where employment_id IN (the employment ids :32 resolved). Neither carries a .limit() deliberately, and this is the one place in this batching pass where a limit was refused rather than added. The only candidate bound is the id-set length, and it is not safe here: if one person held two primary employments - a data defect, not a schema-prevented state, since there is no partial unique index on (org_id, person_id) WHERE is_primary - a .limit(userIds.length) would silently drop a DIFFERENT user's row, which the per-user .limit(1) it replaced could never do. That would corrupt effective-dated reporting history rather than merely truncate a list. Bounded by the batch, banked here rather than blessed."
+    },
+    "/gdpr/gdpr-sync-export-fetchers.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "One read, and it is a subquery definition rather than an executed statement.",
+      "justification": "The flagged site at :100 is the `ranked` subquery built with .as(\"ranked_employments\"); it is never executed on its own. The statement that runs is the outer select over it, which carries .limit(hrPersonRows.length * (SYNC_EXPORT_CAP + 1)) - an exact upper bound, because the window filter is personRank <= SYNC_EXPORT_CAP + 1 and row_number() partitions by person_id, so no person can contribute more rows than the cap. A .limit() cannot be put on the subquery itself: it would truncate BEFORE row_number() ranks, which would silently change which employments each person exports, and this is a compliance surface. Added 2026-09-08 when the per-person read loop became one windowed statement."
     }
   }
 }

@@ -8,7 +8,6 @@ import {
 } from "../../db/schema";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
 import type { Db } from "../../db/drizzle.module";
-import type { AssignmentConfig } from "../../db/schema/crm/leads";
 import { TerritoryMatchService } from "../crm/core/territory-match.service";
 import {
   INCLUDE_DELETED,
@@ -20,29 +19,36 @@ import {
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import { updateMirroredLeads } from "../party/party-legacy-leads";
 
+/**
+ * The counter advance, in one statement.
+ *
+ * It was a `SELECT` followed by an `UPDATE` or an `INSERT` — two round trips per
+ * rule, and a read-modify-write that two concurrent leads could interleave onto
+ * the same index. The upsert produces the same rotation (the first assignment
+ * takes index 0, every later one `(last + 1) % pool`) with the row locked by the
+ * insert itself.
+ */
 async function advanceRoundRobinState(db: Db, ruleId: number, userIds: string[]): Promise<string> {
-  const [state] = await db.select().from(assignmentRuleState).where(eq(assignmentRuleState.ruleId, ruleId));
-  const idx = state ? (state.lastAssignedIndex + 1) % userIds.length : 0;
-  if (state) {
-    await db.update(assignmentRuleState).set({ lastAssignedIndex: idx }).where(eq(assignmentRuleState.ruleId, ruleId));
-  } else {
-    await db.insert(assignmentRuleState).values({ ruleId, lastAssignedIndex: idx });
-  }
-  return userIds[idx]!;
+  const [state] = await db
+    .insert(assignmentRuleState)
+    .values({ ruleId, lastAssignedIndex: 0 })
+    .onConflictDoUpdate({
+      target: assignmentRuleState.ruleId,
+      set: {
+        lastAssignedIndex: sql`(${assignmentRuleState.lastAssignedIndex} + 1) % ${userIds.length}`,
+      },
+    })
+    .returning({ lastAssignedIndex: assignmentRuleState.lastAssignedIndex });
+  return userIds[state?.lastAssignedIndex ?? 0];
 }
 
-async function pickWeightedRoundRobin(
-  db: Db,
-  ruleId: number,
-  userIds: string[],
-  weights: Record<string, number>,
-): Promise<string> {
+function expandWeightedPool(userIds: string[], weights: Record<string, number>): string[] {
   const expandedPool: string[] = [];
   for (const uid of userIds) {
     const w = Math.max(1, Math.round(weights[uid] ?? 1));
     for (let i = 0; i < w; i++) expandedPool.push(uid);
   }
-  return advanceRoundRobinState(db, ruleId, expandedPool);
+  return expandedPool;
 }
 
 async function pickLeastLoaded(db: Db, orgId: string, userIds: string[], openKeys: string[]): Promise<string> {
@@ -76,6 +82,66 @@ async function pickLeastLoaded(db: Db, orgId: string, userIds: string[], openKey
   return chosen;
 }
 
+type AssignmentRule = typeof leadAssignmentRules.$inferSelect;
+
+/**
+ * Which rule wins and how its assignee is picked — decided before a single
+ * assignment query runs.
+ *
+ * Every rule type except `territory` is decidable from the rule row alone: an
+ * empty pool or a missing user is the only reason one is skipped, and both are
+ * in memory. So the search for the winning rule needs no database access at all
+ * unless a territory rule sits ahead of it, and the one round trip the winner
+ * costs moves out of the search loop entirely.
+ */
+type AssignmentPlan =
+  | { readonly kind: "direct"; readonly rule: AssignmentRule; readonly userId: string }
+  | { readonly kind: "round_robin"; readonly rule: AssignmentRule; readonly pool: string[] }
+  | { readonly kind: "least_loaded"; readonly rule: AssignmentRule; readonly pool: string[] };
+
+function matchesConditions(rule: AssignmentRule, leadRecord: Record<string, unknown>): boolean {
+  return (rule.conditions ?? []).every((cond) => {
+    const fieldVal = String(leadRecord[cond.field] ?? "");
+    switch (cond.operator) {
+      case "eq": return fieldVal === cond.value;
+      case "contains": return fieldVal.toLowerCase().includes(cond.value.toLowerCase());
+      case "gt": return Number(fieldVal) > Number(cond.value);
+      case "lt": return Number(fieldVal) < Number(cond.value);
+      case "in": return cond.value.split(",").map((v: string) => v.trim()).includes(fieldVal);
+      default: return false;
+    }
+  });
+}
+
+function planForRule(rule: AssignmentRule): AssignmentPlan | null {
+  if (rule.assignmentType === "assign_user")
+    return rule.assignToUserId ? { kind: "direct", rule, userId: rule.assignToUserId } : null;
+
+  const pool = rule.roundRobinUserIds ?? [];
+  if (pool.length === 0) return null;
+  if (rule.assignmentType === "round_robin") return { kind: "round_robin", rule, pool };
+  if (rule.assignmentType === "weighted_round_robin")
+    return { kind: "round_robin", rule, pool: expandWeightedPool(pool, rule.config.weights ?? {}) };
+  if (rule.assignmentType === "least_loaded") return { kind: "least_loaded", rule, pool };
+  return null;
+}
+
+async function resolveAssignee(
+  db: Db,
+  orgId: string,
+  plan: AssignmentPlan,
+  openKeys: string[],
+): Promise<string> {
+  switch (plan.kind) {
+    case "direct":
+      return plan.userId;
+    case "least_loaded":
+      return pickLeastLoaded(db, orgId, plan.pool, openKeys);
+    case "round_robin":
+      return advanceRoundRobinState(db, plan.rule.id, plan.pool);
+  }
+}
+
 export async function evaluateAssignmentRules(
   db: Db,
   orgId: string,
@@ -103,68 +169,40 @@ export async function evaluateAssignmentRules(
     .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
   const semantics = resolveLeadStatusSemantics(statusOptions);
 
-  for (const rule of rules) {
-    const conditions = rule.conditions as { field: string; operator: string; value: string }[];
-    const allMatch = conditions.every((cond) => {
-      const fieldVal = String(leadRecord[cond.field] ?? "");
-      switch (cond.operator) {
-        case "eq": return fieldVal === cond.value;
-        case "contains": return fieldVal.toLowerCase().includes(cond.value.toLowerCase());
-        case "gt": return Number(fieldVal) > Number(cond.value);
-        case "lt": return Number(fieldVal) < Number(cond.value);
-        case "in": return cond.value.split(",").map((v: string) => v.trim()).includes(fieldVal);
-        default: return false;
-      }
+  const matched = rules.filter((rule) => matchesConditions(rule, leadRecord));
+
+  let plan: AssignmentPlan | null = null;
+  for (const rule of matched) {
+    if (rule.assignmentType !== "territory") {
+      plan = planForRule(rule);
+      if (plan) break;
+      continue;
+    }
+    if (!territoryMatch) continue;
+    const matchResult = await territoryMatch.match(orgId, {
+      city: lead.city ?? undefined,
+      country: undefined,
+      state: undefined,
+      industry: undefined,
+      companySize: undefined,
+      accountType: undefined,
+      productKeys: [],
     });
-
-    if (!allMatch) continue;
-
-    const config = rule.config as AssignmentConfig | undefined;
-    let assignedUserId: string | null = null;
-
-    if (rule.assignmentType === "assign_user" && rule.assignToUserId) {
-      assignedUserId = rule.assignToUserId;
-    } else if (rule.assignmentType === "round_robin") {
-      const userIds = rule.roundRobinUserIds as string[];
-      if (userIds.length === 0) continue;
-      assignedUserId = await advanceRoundRobinState(db, rule.id, userIds);
-    } else if (rule.assignmentType === "weighted_round_robin") {
-      const userIds = rule.roundRobinUserIds as string[];
-      if (userIds.length === 0) continue;
-      const weights = (config?.weights ?? {}) as Record<string, number>;
-      assignedUserId = await pickWeightedRoundRobin(db, rule.id, userIds, weights);
-    } else if (rule.assignmentType === "least_loaded") {
-      const userIds = rule.roundRobinUserIds as string[];
-      if (userIds.length === 0) continue;
-      assignedUserId = await pickLeastLoaded(db, orgId, userIds, semantics.slaOpenKeys);
-    } else if (rule.assignmentType === "territory") {
-      if (!territoryMatch) continue;
-      const matchResult = await territoryMatch.match(orgId, {
-        city: lead.city ?? undefined,
-        country: undefined,
-        state: undefined,
-        industry: undefined,
-        companySize: undefined,
-        accountType: undefined,
-        productKeys: [],
-      });
-      if (!matchResult) continue;
-      const reps = matchResult.assignedReps;
-      if (reps.length === 0) continue;
-      assignedUserId = await advanceRoundRobinState(db, rule.id, reps.map(String));
-    }
-
-    if (assignedUserId) {
-      await updateMirroredLeads(db, orgId, [leadId], {
-        assignedToId: assignedUserId,
-        assignedAt: new Date(),
-        updatedAt: new Date(),
-      });
-      return { assigned: true, userId: assignedUserId, ruleName: rule.name };
-    }
+    const reps = matchResult?.assignedReps ?? [];
+    if (reps.length === 0) continue;
+    plan = { kind: "round_robin", rule, pool: reps.map(String) };
+    break;
   }
 
-  return { assigned: false, userId: null, ruleName: null };
+  if (!plan) return { assigned: false, userId: null, ruleName: null };
+
+  const assignedUserId = await resolveAssignee(db, orgId, plan, semantics.slaOpenKeys);
+  await updateMirroredLeads(db, orgId, [leadId], {
+    assignedToId: assignedUserId,
+    assignedAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return { assigned: true, userId: assignedUserId, ruleName: plan.rule.name };
 }
 
 function evaluateRule(leadRecord: Record<string, unknown>, rule: { field: string; operator: string; value: string }): boolean {

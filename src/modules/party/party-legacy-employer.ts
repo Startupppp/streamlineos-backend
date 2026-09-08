@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.types";
+import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
 import { businessParties, contactPartyMap, crmOrgPartyMap } from "../../db/schema/party";
 import { contacts } from "../../db/schema/crm/contacts";
 
@@ -106,6 +107,27 @@ export async function employerLegacyIds(
 }
 
 /**
+ * A legacy id resolved through a map the caller read once for a whole set.
+ *
+ * The bulk half of `absorbEmployerColumn` and its two siblings in
+ * `party-legacy-associations.ts`, and it keeps their refusal: a null link stays
+ * null, and a link naming a record this tenant has no party for is a request
+ * that cannot be honoured rather than one to answer with a silent null. The
+ * message is the caller's, because only the caller knows which backfill is
+ * missing.
+ */
+export function linkedPartyId(
+  resolved: ReadonlyMap<number, string>,
+  legacyId: number | null,
+  unresolved: (id: number) => string,
+): string | null {
+  if (legacyId === null) return null;
+  const partyId = resolved.get(legacyId);
+  if (partyId) return partyId;
+  throw new Error(unresolved(legacyId));
+}
+
+/**
  * `contacts.organization_id` → the `employer_party_id` it means.
  *
  * `undefined` in, `undefined` out: a patch that never mentioned the employer must
@@ -169,9 +191,12 @@ export async function repointEmployerParties(
  *
  * `refreshPartyMirrors` would do this one party at a time, which is the right
  * shape for a single edit and the wrong one for a merge that just moved five
- * hundred people. Grouped by the employer's legacy id, so it is one statement per
- * distinct company rather than one per person — and after a merge there is
- * exactly one.
+ * hundred people. One `UPDATE … FROM (VALUES …)` for the whole set, because the
+ * new value differs per row: grouping by the employer's legacy id was a statement
+ * per DISTINCT company, which a re-parenting sweep makes as many as there are
+ * companies. The tenant predicate is inside the statement, not merely implied by
+ * RLS, and `contact_party_map`'s own `(organization_id, contact_id)` key is what
+ * makes a contact id unrepeatable in the VALUES list.
  */
 export async function refreshEmployerColumns(
   db: Db,
@@ -200,35 +225,34 @@ export async function refreshEmployerColumns(
     employees.map((row) => row.employerPartyId).filter((id): id is string => Boolean(id)),
   );
 
-  const byLegacyId = new Map<number | null, string[]>();
-  for (const employee of employees) {
-    const legacyId = employee.employerPartyId
-      ? (legacyByEmployer.get(employee.employerPartyId) ?? null)
-      : null;
-    const group = byLegacyId.get(legacyId);
-    if (group) group.push(employee.partyId);
-    else byLegacyId.set(legacyId, [employee.partyId]);
+  const legacyByEmployee = new Map<string, number | null>();
+  for (const employee of employees)
+    legacyByEmployee.set(
+      employee.partyId,
+      employee.employerPartyId ? (legacyByEmployer.get(employee.employerPartyId) ?? null) : null,
+    );
+
+  const links = await db
+    .select({ partyId: contactPartyMap.partyId, contactId: contactPartyMap.contactId })
+    .from(contactPartyMap)
+    .where(
+      and(
+        eq(contactPartyMap.organizationId, organizationId),
+        inArray(contactPartyMap.partyId, ids),
+      ),
+    );
+
+  const rows: BulkUpdateRow[] = [];
+  for (const link of links) {
+    if (!legacyByEmployee.has(link.partyId)) continue;
+    rows.push({ key: link.contactId, values: [legacyByEmployee.get(link.partyId) ?? null] });
   }
 
-  for (const [legacyId, partyIds] of byLegacyId)
-    await db
-      .update(contacts)
-      .set({ organizationId: legacyId })
-      .where(
-        and(
-          eq(contacts.orgId, organizationId),
-          inArray(
-            contacts.id,
-            db
-              .select({ id: contactPartyMap.contactId })
-              .from(contactPartyMap)
-              .where(
-                and(
-                  eq(contactPartyMap.organizationId, organizationId),
-                  inArray(contactPartyMap.partyId, partyIds),
-                ),
-              ),
-          ),
-        ),
-      );
+  await bulkUpdateFromValues(db, {
+    table: contacts,
+    orgId: organizationId,
+    key: { column: "id", type: "integer" },
+    columns: [{ column: "organization_id", type: "integer" }],
+    rows,
+  });
 }

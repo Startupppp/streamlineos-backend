@@ -110,8 +110,9 @@ describe("what makes scheduling them safe — the database guards, not the lease
     expect(body).toContain('eq(subscriptions.status, "TRIAL")');
     expect(body).toContain("lt(subscriptions.trialEndsAt, now)");
     expect(body).toContain(".returning(");
-    // The churn event is emitted per RETURNING row, so a no-op run emits nothing.
-    expect(body).toMatch(/for \(const row of expiredRows\)[\s\S]{0,200}this\.revenue\.emit/);
+    // One churn event per RETURNING row, batched into a single emit, so a no-op run emits nothing.
+    expect(body).toMatch(/expiredRows\.map\([\s\S]{0,400}this\.revenue\.emitMany\(tx, lapsedChurn\)/);
+    expect(body).toContain("if (lapsedChurn.length > 0)");
   });
 
   it("trial-expiry: the reminders are deduped by a unique index, not by a cache TTL", () => {

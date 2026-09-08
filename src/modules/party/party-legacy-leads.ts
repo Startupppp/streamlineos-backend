@@ -4,8 +4,9 @@ import { leads } from "../../db/schema/crm/leads";
 import { LEAD_MIRROR } from "./party-legacy-mirror";
 import {
   applyPartyPatch,
-  grantRole,
+  grantRoles,
   groupByPayload,
+  insertBareParties,
   insertBareParty,
   movePartiesFor,
   type LeadInsert,
@@ -42,7 +43,7 @@ async function partyIdsForLeads(
 }
 
 /**
- * Gives a legacy row that has no Party one, from its own current values.
+ * Gives legacy rows that have no Party one, from their own current values.
  *
  * 0241 made the map total for every row that existed when it ran, and every
  * write path here keeps it total. A miss therefore means a row arrived by some
@@ -51,28 +52,49 @@ async function partyIdsForLeads(
  * would break a surface that worked yesterday; adopting reads the legacy row as
  * truth exactly once, which is correct precisely because there is no Party to
  * contradict it. `linked_by` records which rows came in this way.
+ *
+ * A whole set at a time, because the caller is a bulk update: the rows are read
+ * once, the Parties minted in one insert, patched through the same grouped
+ * writer the update path uses, and linked and roled in one statement each.
  */
-async function adoptLead(
+async function adoptLeads(
   db: MirrorDb,
   organizationId: string,
-  leadId: number,
-): Promise<string | null> {
-  const [row] = await db
+  leadIds: readonly number[],
+): Promise<Map<number, string>> {
+  const adopted = new Map<number, string>();
+  if (leadIds.length === 0) return adopted;
+
+  const rows = await db
     .select()
     .from(leads)
-    .where(and(eq(leads.id, leadId), eq(leads.orgId, organizationId)))
-    .limit(1);
-  if (!row) return null;
+    .where(and(eq(leads.orgId, organizationId), inArray(leads.id, [...leadIds])))
+    .limit(leadIds.length);
+  if (rows.length === 0) return adopted;
 
-  const party = await insertBareParty(db, organizationId, row.name);
-  const { partyPatch } = LEAD_MIRROR.split(row, party);
-  await applyPartyPatch(db, organizationId, party.partyId, partyPatch);
-  await db
-    .insert(leadPartyMap)
-    .values({ organizationId, leadId, partyId: party.partyId, linkedBy: "mirror:adopt" })
-    .onConflictDoNothing();
-  await grantRole(db, organizationId, party.partyId, "LEAD", "mirror:adopt");
-  return party.partyId;
+  const names = rows.map((row) => row.name);
+  const partyIds = await insertBareParties(db, organizationId, names);
+  const legacyByParty = new Map(
+    rows.map((row, index): [string, LeadRow] => [partyIds[index], row]),
+  );
+
+  await movePartiesFor(db, organizationId, partyIds, (party) => {
+    const legacy = legacyByParty.get(party.partyId);
+    return legacy ? LEAD_MIRROR.split(legacy, party).partyPatch : {};
+  });
+
+  const links = rows.map((row, index) => ({
+    organizationId,
+    leadId: row.id,
+    partyId: partyIds[index],
+    linkedBy: "mirror:adopt",
+  }));
+
+  await db.insert(leadPartyMap).values(links).onConflictDoNothing();
+  await grantRoles(db, organizationId, partyIds, "LEAD", "mirror:adopt");
+
+  for (const link of links) adopted.set(link.leadId, link.partyId);
+  return adopted;
 }
 
 export async function createMirroredLead(
@@ -106,7 +128,13 @@ export async function createMirroredLead(
       partyId: party.partyId,
       linkedBy: options.linkedBy ?? "mirror:create",
     });
-    await grantRole(tx, organizationId, party.partyId, "LEAD", options.linkedBy ?? "mirror:create");
+    await grantRoles(
+      tx,
+      organizationId,
+      [party.partyId],
+      "LEAD",
+      options.linkedBy ?? "mirror:create",
+    );
     return row;
   });
 }
@@ -144,11 +172,9 @@ export async function updateMirroredLeads(
 
   return db.transaction(async (tx) => {
     const partyByLead = await partyIdsForLeads(tx, organizationId, ids);
-    for (const leadId of ids) {
-      if (partyByLead.has(leadId)) continue;
-      const adopted = await adoptLead(tx, organizationId, leadId);
-      if (adopted) partyByLead.set(leadId, adopted);
-    }
+    const unadopted = ids.filter((leadId) => !partyByLead.has(leadId));
+    const adopted = await adoptLeads(tx, organizationId, unadopted);
+    for (const [leadId, partyId] of adopted) partyByLead.set(leadId, partyId);
 
     const moved = await movePartiesFor(
       tx,

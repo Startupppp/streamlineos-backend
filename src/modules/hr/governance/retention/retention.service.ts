@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
@@ -358,12 +358,10 @@ export class RetentionService {
     let processed = 0;
     let skipped = 0;
 
-    /* Loop-invariant: the organisation-wide hold is a property of the org, not of
-     * the request, so it was being asked once per stranded request. */
+    /* Every statement below is once per SWEEP, not once per request: the org-wide hold, the
+     * multi-key subject probe, the anonymisation and the completion marking are each one. */
     const orgHeld = await this.isOrgUnderLegalHold(orgId);
 
-    /* The per-subject hold probe is the same shape for every stranded request, so it
-     * is one indexed multi-key read rather than one round trip per subject. */
     const heldSubjects = orgHeld
       ? new Set<string>()
       : await subjectsUnderLegalHold(
@@ -372,9 +370,14 @@ export class RetentionService {
           this.db,
         );
 
+    const eligible = stranded.filter((req) => !orgHeld && !heldSubjects.has(req.subjectUserId));
+    const anonymized = await this.anonymizeSubjects(orgId, [
+      ...new Set(eligible.map((req) => req.subjectUserId)),
+    ]);
+
+    const completedIds: number[] = [];
     for (const req of stranded) {
-      const hrHeld = orgHeld ? false : heldSubjects.has(req.subjectUserId);
-      if (hrHeld || orgHeld) {
+      if (orgHeld || heldSubjects.has(req.subjectUserId)) {
         skipped++;
         logger.warn("[retention-sweep] stranded delete request blocked by legal hold", {
           orgId,
@@ -383,23 +386,24 @@ export class RetentionService {
         });
         continue;
       }
-
-      try {
-        await this.anonymizeSubject(orgId, req.subjectUserId);
-        await this.db
-          .update(hrDataRequests)
-          .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
-          .where(and(eq(hrDataRequests.orgId, orgId), eq(hrDataRequests.id, req.id)));
-        processed++;
-      } catch (err) {
+      if (!anonymized.has(req.subjectUserId)) {
         skipped++;
         logger.error("[retention-sweep] failed to process stranded delete request", {
           orgId,
           requestId: req.id,
-          error: err instanceof Error ? err.message : String(err),
+          subjectUserId: req.subjectUserId,
         });
+        continue;
       }
+      completedIds.push(req.id);
+      processed++;
     }
+
+    if (completedIds.length > 0)
+      await this.db
+        .update(hrDataRequests)
+        .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(hrDataRequests.orgId, orgId), inArray(hrDataRequests.id, completedIds)));
 
     return { processed, skipped };
   }
@@ -455,18 +459,41 @@ export class RetentionService {
 
   private async anonymizeSubject(orgId: string, subjectUserId: string): Promise<void> {
     await this.assertSubjectInOrg(orgId, subjectUserId);
-    const [{ value: memberships }] = await this.db
-      .select({ value: count() })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.userId, subjectUserId));
-    if (Number(memberships) > 1) {
+    const anonymized = await this.anonymizeSubjects(orgId, [subjectUserId]);
+    if (!anonymized.has(subjectUserId))
       throw new BadRequestException(
         "Subject belongs to multiple organizations; remove them from this organization before anonymizing the shared identity.",
       );
-    }
+  }
+
+  /** One grouped read answers "in this org" and "holds another membership" for the whole set;
+   * one UPDATE then derives each anonymised address from the row's own id. */
+  private async anonymizeSubjects(orgId: string, subjectUserIds: string[]): Promise<Set<string>> {
+    if (subjectUserIds.length === 0) return new Set();
+
+    const membershipRows = await this.db
+      .select({
+        userId: organizationMembers.userId,
+        total: count(),
+        inOrg: sql<number>`count(*) filter (where ${organizationMembers.orgId} = ${orgId})`,
+      })
+      .from(organizationMembers)
+      .where(inArray(organizationMembers.userId, subjectUserIds))
+      .groupBy(organizationMembers.userId);
+
+    const eligible = membershipRows
+      .filter((row) => Number(row.inOrg) > 0 && Number(row.total) <= 1)
+      .map((row) => row.userId);
+    if (eligible.length === 0) return new Set();
+
     await this.db
       .update(users)
-      .set({ name: "Anonymized User", email: `anonymized_${subjectUserId}@removed.invalid` })
-      .where(eq(users.id, subjectUserId));
+      .set({
+        name: "Anonymized User",
+        email: sql`'anonymized_' || ${users.id} || '@removed.invalid'`,
+      })
+      .where(inArray(users.id, eligible));
+
+    return new Set(eligible);
   }
 }

@@ -10,6 +10,7 @@ import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTemplatesService } from "./sign-templates.service";
 import { parseTemplateSnapshot } from "./sign-template-snapshot";
 import { SignEnvelopesService } from "./sign-envelopes.service";
+import { bulkUpdateFromValues } from "../../common/db/bulk-update";
 import type { CreateBulkSendJobInput } from "./dto/e-sign.schemas";
 
 const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
@@ -22,6 +23,24 @@ interface MappedRow {
   email?: string;
   phone?: string;
   error?: string;
+}
+
+/**
+ * The outcome of one row, held until the whole job has run.
+ *
+ * Instantiating and sending an envelope is irreducibly per row — each one is a
+ * distinct document with a distinct recipient — but the row's own status write
+ * is not, and it used to be a second round trip per row inside the same loop.
+ * Collecting the outcomes turns 2N statements into N + one
+ * `UPDATE … FROM (VALUES …)`, and loses nothing on a crash: `process` runs
+ * inside the request transaction, so a failure mid-job already rolled back
+ * every status the loop had written.
+ */
+interface RowOutcome {
+  readonly rowNumber: number;
+  readonly status: "success" | "failed";
+  readonly envelopeId: number | null;
+  readonly errorMessage: string | null;
 }
 
 @Injectable()
@@ -139,6 +158,7 @@ export class SignBulkSendService {
 
     let successCount = 0;
     let failedCount = 0;
+    const outcomes: RowOutcome[] = [];
 
     for (const row of rows) {
       if (row.error || !row.name) {
@@ -150,20 +170,16 @@ export class SignBulkSendService {
           recipients: [{ roleName, name: row.name, email: row.email, phone: row.phone }],
         });
         await this.envelopes.send(orgId, envelope.id, actor);
-        await this.db
-          .update(signBulkSendRows)
-          .set({ status: "success", envelopeId: envelope.id, updatedAt: new Date() })
-          .where(and(eq(signBulkSendRows.jobId, jobId), eq(signBulkSendRows.rowNumber, row.rowNumber)));
+        outcomes.push({ rowNumber: row.rowNumber, status: "success", envelopeId: envelope.id, errorMessage: null });
         successCount++;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to create envelope";
-        await this.db
-          .update(signBulkSendRows)
-          .set({ status: "failed", errorMessage: message, updatedAt: new Date() })
-          .where(and(eq(signBulkSendRows.jobId, jobId), eq(signBulkSendRows.rowNumber, row.rowNumber)));
+        outcomes.push({ rowNumber: row.rowNumber, status: "failed", envelopeId: null, errorMessage: message });
         failedCount++;
       }
     }
+
+    await this.writeRowOutcomes(orgId, jobId, outcomes);
 
     await this.db
       .update(signBulkSendJobs)
@@ -182,6 +198,31 @@ export class SignBulkSendService {
     }
 
     this.integrations.emitBulkSendCompleted(orgId, senderMember?.user?.id ?? null, jobId, { totalCount: rows.length, successCount, failedCount });
+  }
+
+  /**
+   * `row_number` is unique within a job, so it joins the outcome to its row
+   * exactly once the job is pinned in the `WHERE` — which it is, beside the
+   * tenant predicate the builder always adds.
+   */
+  private async writeRowOutcomes(orgId: string, jobId: number, outcomes: readonly RowOutcome[]): Promise<void> {
+    if (outcomes.length === 0) return;
+    await bulkUpdateFromValues(this.db, {
+      table: signBulkSendRows,
+      orgId,
+      key: { column: "row_number", type: "integer" },
+      columns: [
+        { column: "status", type: "sign_bulk_row_status" },
+        { column: "envelope_id", type: "integer" },
+        { column: "error_message", type: "text" },
+      ],
+      rows: outcomes.map((outcome) => ({
+        key: outcome.rowNumber,
+        values: [outcome.status, outcome.envelopeId, outcome.errorMessage],
+      })),
+      touch: ["updated_at"],
+      extraWhere: eq(signBulkSendRows.jobId, jobId),
+    });
   }
 
   async listJobs(orgId: string) {

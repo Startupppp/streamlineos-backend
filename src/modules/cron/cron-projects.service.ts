@@ -1,13 +1,34 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { projectStatuses, tickets, ticketActivityLog, ticketWatchers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { computeNextRunAt } from "../build/core/projects-recurrence.util";
-import { forEachOrg } from "../../common/tenant";
+import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
+import { forEachOrg, type TenantTx } from "../../common/tenant";
 
 const BATCH_SIZE = 50;
+
+type TemplateRow = {
+  id: number;
+  orgId: string;
+  projectId: number | null;
+  title: string;
+  description: string | null;
+  type: (typeof tickets.$inferInsert)["type"];
+  priority: (typeof tickets.$inferInsert)["priority"];
+  points: number | null;
+  assigneeMembershipId: number | null;
+  recurrenceRule: NonNullable<(typeof tickets.$inferSelect)["recurrenceRule"]> | null;
+  recurrenceNextRunAt: Date | null;
+};
+
+type RunnableTemplate = TemplateRow & {
+  projectId: number;
+  recurrenceRule: NonNullable<TemplateRow["recurrenceRule"]>;
+  recurrenceNextRunAt: Date;
+};
 
 @Injectable()
 export class CronProjectsService {
@@ -19,7 +40,7 @@ export class CronProjectsService {
     let advanced = 0;
 
     await forEachOrg(this.db, "spawn-recurring-tickets", async (tx, orgId) => {
-      const dueTemplates = await tx
+      const dueTemplates: TemplateRow[] = await tx
         .select({
           id: tickets.id,
           orgId: tickets.orgId,
@@ -46,90 +67,160 @@ export class CronProjectsService {
         )
         .limit(BATCH_SIZE);
 
-      for (const template of dueTemplates) {
-        if (!template.projectId || !template.recurrenceRule || !template.recurrenceNextRunAt) continue;
+      const runnable = dueTemplates.filter(
+        (template): template is RunnableTemplate =>
+          template.projectId !== null &&
+          template.recurrenceRule !== null &&
+          template.recurrenceNextRunAt !== null,
+      );
+      if (runnable.length === 0) return;
 
-        const rule = template.recurrenceRule;
-        const endDate = rule.endDate ? new Date(rule.endDate) : null;
-        if (endDate && now > endDate) {
-          await tx
-            .update(tickets)
-            .set({ isRecurring: false, recurrenceNextRunAt: null })
-            .where(and(eq(tickets.orgId, template.orgId), eq(tickets.id, template.id)));
-          advanced++;
-          continue;
-        }
-
-        try {
-          await tx.transaction(async (innerTx) => {
-            const [maxRow] = await innerTx
-              .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
-              .from(tickets)
-              .where(and(eq(tickets.projectId, template.projectId!), eq(tickets.orgId, template.orgId)));
-
-            const nextNum = (maxRow?.maxNum ?? 0) + 1;
-
-            const [firstStatus] = await innerTx
-              .select({ name: projectStatuses.name })
-              .from(projectStatuses)
-              .where(
-                and(
-                  eq(projectStatuses.orgId, template.orgId),
-                  eq(projectStatuses.projectId, template.projectId!),
-                ),
-              )
-              .orderBy(projectStatuses.order)
-              .limit(1);
-
-            const initialStatus = firstStatus?.name ?? "TODO";
-
-            const [child] = await innerTx
-              .insert(tickets)
-              .values({
-                orgId: template.orgId,
-                projectId: template.projectId,
-                ticketNumber: nextNum,
-                title: template.title,
-                description: template.description ?? undefined,
-                type: template.type,
-                priority: template.priority,
-                points: template.points ?? undefined,
-                assigneeMembershipId: template.assigneeMembershipId ?? undefined,
-                status: initialStatus,
-                recurrenceParentId: template.id,
-                isRecurring: false,
-              })
-              .returning({ id: tickets.id });
-
-            if (template.assigneeMembershipId != null) {
-              await innerTx
-                .insert(ticketWatchers)
-                .values({ orgId: template.orgId, ticketId: child.id, membershipId: template.assigneeMembershipId })
-                .onConflictDoNothing();
-            }
-
-            await innerTx.insert(ticketActivityLog).values({
-              orgId: template.orgId,
-              ticketId: child.id,
-              userMembershipId: null,
-              action: "created",
-            });
-
-            const nextRunAt = computeNextRunAt(rule, template.recurrenceNextRunAt!);
-            await innerTx
-              .update(tickets)
-              .set({ recurrenceNextRunAt: nextRunAt })
-              .where(and(eq(tickets.orgId, template.orgId), eq(tickets.id, template.id)));
-          });
-
-          spawned++;
-          advanced++;
-        } catch (error) {
-          logger.error("Failed to spawn recurring ticket", { templateId: template.id, error });
-        }
+      const finished: number[] = [];
+      const due: RunnableTemplate[] = [];
+      for (const template of runnable) {
+        const endDate = template.recurrenceRule.endDate
+          ? new Date(template.recurrenceRule.endDate)
+          : null;
+        if (endDate && now > endDate) finished.push(template.id);
+        else due.push(template);
       }
+
+      // Identical SET for every template that has run out of schedule, so one statement.
+      if (finished.length > 0) {
+        await tx
+          .update(tickets)
+          .set({ isRecurring: false, recurrenceNextRunAt: null })
+          .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, finished)));
+        advanced += finished.length;
+      }
+
+      if (due.length === 0) return;
+
+      const spawnedNow = await this.spawnBatch(tx, orgId, due);
+      spawned += spawnedNow;
+      advanced += spawnedNow;
     });
 
     return { spawned, advanced };
+  }
+
+  /**
+   * Every due template's child ticket, in a fixed number of statements.
+   *
+   * The numbering high-water mark and the first board column used to be read per
+   * template and the child, its watcher, its activity row and the template's own
+   * advance written per template — nine round trips for one ticket. They are now
+   * two grouped reads, three multi-row writes and one `UPDATE … FROM (VALUES …)`
+   * for the advance, whose `recurrence_next_run_at` is the one value that differs
+   * per row.
+   */
+  private async spawnBatch(
+    tx: TenantTx,
+    orgId: string,
+    due: readonly RunnableTemplate[],
+  ): Promise<number> {
+    const projectIds = [...new Set(due.map((template) => template.projectId))];
+
+    const [numberRows, statusRows] = await Promise.all([
+      tx
+        .select({
+          projectId: tickets.projectId,
+          maxNumber: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)`,
+        })
+        .from(tickets)
+        .where(and(eq(tickets.orgId, orgId), inArray(tickets.projectId, projectIds)))
+        .groupBy(tickets.projectId),
+      tx
+        .selectDistinctOn([projectStatuses.projectId], {
+          projectId: projectStatuses.projectId,
+          name: projectStatuses.name,
+        })
+        .from(projectStatuses)
+        .where(and(eq(projectStatuses.orgId, orgId), inArray(projectStatuses.projectId, projectIds)))
+        .orderBy(projectStatuses.projectId, projectStatuses.order)
+        .limit(projectIds.length),
+    ]);
+
+    const lastNumberByProject = new Map<number, number>();
+    for (const row of numberRows)
+      if (row.projectId !== null) lastNumberByProject.set(row.projectId, Number(row.maxNumber));
+
+    const firstStatusByProject = new Map<number, string>();
+    for (const row of statusRows)
+      if (!firstStatusByProject.has(row.projectId))
+        firstStatusByProject.set(row.projectId, row.name);
+
+    const children: (typeof tickets.$inferInsert)[] = [];
+    const advances: BulkUpdateRow[] = [];
+
+    for (const template of due) {
+      const nextNumber = (lastNumberByProject.get(template.projectId) ?? 0) + 1;
+      lastNumberByProject.set(template.projectId, nextNumber);
+
+      children.push({
+        orgId,
+        projectId: template.projectId,
+        ticketNumber: nextNumber,
+        title: template.title,
+        description: template.description ?? undefined,
+        type: template.type,
+        priority: template.priority,
+        points: template.points ?? undefined,
+        assigneeMembershipId: template.assigneeMembershipId ?? undefined,
+        status: firstStatusByProject.get(template.projectId) ?? "TODO",
+        recurrenceParentId: template.id,
+        isRecurring: false,
+      });
+
+      advances.push({
+        key: template.id,
+        values: [
+          computeNextRunAt(template.recurrenceRule, template.recurrenceNextRunAt).toISOString(),
+        ],
+      });
+    }
+
+    try {
+      await tx.transaction(async (innerTx) => {
+        const inserted = await innerTx
+          .insert(tickets)
+          .values(children)
+          .returning({ id: tickets.id, assigneeMembershipId: tickets.assigneeMembershipId });
+
+        const watchers: (typeof ticketWatchers.$inferInsert)[] = [];
+        const activity: (typeof ticketActivityLog.$inferInsert)[] = [];
+        for (const child of inserted) {
+          activity.push({ orgId, ticketId: child.id, userMembershipId: null, action: "created" });
+          if (child.assigneeMembershipId !== null)
+            watchers.push({
+              orgId,
+              ticketId: child.id,
+              membershipId: child.assigneeMembershipId,
+            });
+        }
+
+        if (watchers.length > 0)
+          await innerTx.insert(ticketWatchers).values(watchers).onConflictDoNothing();
+
+        await innerTx.insert(ticketActivityLog).values(activity);
+
+        await bulkUpdateFromValues(innerTx, {
+          table: tickets,
+          orgId,
+          key: { column: "id", type: "integer" },
+          columns: [{ column: "recurrence_next_run_at", type: "timestamp with time zone" }],
+          rows: advances,
+        });
+      });
+    } catch (error) {
+      logger.error("Failed to spawn recurring tickets", {
+        orgId,
+        templateIds: due.map((template) => template.id),
+        error,
+      });
+      return 0;
+    }
+
+    return children.length;
   }
 }

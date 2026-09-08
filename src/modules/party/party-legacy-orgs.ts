@@ -7,10 +7,12 @@ import {
   parentColumnOf,
   withoutSelfLinks,
 } from "./party-legacy-associations";
+import { crmOrgIdsOfParties, linkedPartyId, partyIdsOfCrmOrgs } from "./party-legacy-employer";
 import {
   applyPartyPatch,
-  grantRole,
+  grantRoles,
   groupByPayload,
+  insertBareParties,
   insertBareParty,
   movePartiesFor,
   type CrmOrgInsert,
@@ -22,24 +24,19 @@ import {
 /**
  * The `crm_organizations` entry points, Party-first.
  *
- * The fourth of these files and the last one the phase discovered it needed.
- * `crm_organizations` was never counted as an identity table — the split was
- * meant to be `contacts`, `clients`, `leads` and Party — but it carries a name, a
- * domain, an industry, a health score, a parent pointer, a merge pointer and its
- * own merge service, which is Party built a second time. Ticket 25 converged it,
- * and this is where its writes go from here.
+ * The fourth of these files. `crm_organizations` was never counted as an identity
+ * table, but it carries a name, a domain, an industry, a health score, a parent
+ * pointer, a merge pointer and its own merge service, which is Party built a
+ * second time. Ticket 25 converged it, and its writes go here from now on.
  *
  * The one difference from its three siblings: a company gets no `party_roles`
  * row. See `ROLE_FOR_KIND` in the writer for why — the call below is still made,
  * so that the decision lives in one place rather than in an omission here.
  *
- * One column does not go through the field map. `crm_organizations.parent_id` is
- * an integer company id and its Party counterpart `parent_party_id` is a party
- * id, so translating needs `crm_org_party_map` and therefore a query — which a
- * `MirrorCell` deliberately cannot do. Both directions run through
- * `party-legacy-associations.ts` at the three points below, and nowhere else.
- * Ticket 25 left the hierarchy on the legacy row and said converging it was the
- * follow-up; 0265 is that follow-up, and this is where its writes go.
+ * `parent_id` is an integer company id against a party id, so translating it
+ * needs `crm_org_party_map` and therefore a query — which a `MirrorCell` cannot
+ * do. Both directions run through `party-legacy-associations.ts` and nowhere
+ * else, and every path below reads that map ONCE per set.
  */
 
 async function partyIdsForOrganisations(
@@ -62,54 +59,76 @@ async function partyIdsForOrganisations(
   return new Map(rows.map((row) => [row.crmOrganizationId, row.partyId]));
 }
 
+const unresolvedParent = (id: number): string =>
+  `Organization ${id} has no party in this tenant; run the 0264 backfill before parenting to it`;
+
 /**
- * Gives a company row that predates the backfill a Party, on first write.
+ * Gives company rows that predate the backfill a Party, on first write.
  *
  * The same adoption path the other three kinds have: a row restored from a
  * backup, or imported out of band, still has to be writable, and failing the
  * write because the migration has not seen it would make the mirror the thing
- * standing between a user and their own data.
+ * standing between a user and their own data. A whole set at a time; see
+ * `adoptLeads` for the shape.
  */
-async function adoptOrganisation(
+async function adoptOrganisations(
   db: MirrorDb,
   organizationId: string,
-  crmOrganizationId: number,
-): Promise<string | null> {
-  const [row] = await db
+  crmOrganizationIds: readonly number[],
+): Promise<Map<number, string>> {
+  const adopted = new Map<number, string>();
+  if (crmOrganizationIds.length === 0) return adopted;
+
+  const rows = await db
     .select()
     .from(crmOrganizations)
     .where(
-      and(eq(crmOrganizations.id, crmOrganizationId), eq(crmOrganizations.orgId, organizationId)),
+      and(
+        eq(crmOrganizations.orgId, organizationId),
+        inArray(crmOrganizations.id, [...crmOrganizationIds]),
+      ),
     )
-    .limit(1);
-  if (!row) return null;
+    .limit(crmOrganizationIds.length);
+  if (rows.length === 0) return adopted;
 
-  const party = await insertBareParty(db, organizationId, row.name);
-  const { partyPatch } = ORGANISATION_MIRROR.split(row, party);
-  await applyPartyPatch(
-    db,
-    organizationId,
-    party.partyId,
-    withoutSelfLinks(
+  const parentIds = rows.map((row) => row.parentId).filter((id): id is number => id !== null);
+  const partyByParent = new Map(await partyIdsOfCrmOrgs(db, organizationId, parentIds));
+
+  const partyIds = await insertBareParties(db, organizationId, rows.map((row) => row.name));
+  const legacyByParty = new Map(
+    rows.map((row, index): [string, CrmOrgRow] => [partyIds[index], row]),
+  );
+
+  // The parties this call is minting, added to the map the read produced: a
+  // subsidiary and its parent can both arrive unadopted in the same set, and the
+  // loop this replaced resolved that only when the parent came first in the ids.
+  rows.forEach((row, index) => partyByParent.set(row.id, partyIds[index]));
+
+  await movePartiesFor(db, organizationId, partyIds, (party) => {
+    const legacy = legacyByParty.get(party.partyId);
+    if (!legacy) return {};
+    return withoutSelfLinks(
       {
-        ...partyPatch,
+        ...ORGANISATION_MIRROR.split(legacy, party).partyPatch,
         partyKind: "ORGANISATION",
-        ...(await absorbParentColumn(db, organizationId, row.parentId)),
+        parentPartyId: linkedPartyId(partyByParent, legacy.parentId, unresolvedParent),
       },
       party.partyId,
-    ),
-  );
-  await db
-    .insert(crmOrgPartyMap)
-    .values({
-      organizationId,
-      crmOrganizationId,
-      partyId: party.partyId,
-      linkedBy: "mirror:adopt",
-    })
-    .onConflictDoNothing();
-  await grantRole(db, organizationId, party.partyId, "ORGANISATION", "mirror:adopt");
-  return party.partyId;
+    );
+  });
+
+  const links = rows.map((row, index) => ({
+    organizationId,
+    crmOrganizationId: row.id,
+    partyId: partyIds[index],
+    linkedBy: "mirror:adopt",
+  }));
+
+  await db.insert(crmOrgPartyMap).values(links).onConflictDoNothing();
+  await grantRoles(db, organizationId, partyIds, "ORGANISATION", "mirror:adopt");
+
+  for (const link of links) adopted.set(link.crmOrganizationId, link.partyId);
+  return adopted;
 }
 
 export async function createMirroredOrganization(
@@ -156,10 +175,10 @@ export async function createMirroredOrganization(
       partyId: party.partyId,
       linkedBy: options.linkedBy ?? "mirror:create",
     });
-    await grantRole(
+    await grantRoles(
       tx,
       organizationId,
-      party.partyId,
+      [party.partyId],
       "ORGANISATION",
       options.linkedBy ?? "mirror:create",
     );
@@ -178,19 +197,16 @@ export async function updateMirroredOrganizations(
 
   return db.transaction(async (tx) => {
     const partyByOrg = await partyIdsForOrganisations(tx, organizationId, ids);
-    for (const crmOrganizationId of ids) {
-      if (partyByOrg.has(crmOrganizationId)) continue;
-      const adopted = await adoptOrganisation(tx, organizationId, crmOrganizationId);
-      if (adopted) partyByOrg.set(crmOrganizationId, adopted);
-    }
+    const unadopted = ids.filter((crmOrganizationId) => !partyByOrg.has(crmOrganizationId));
+    const adopted = await adoptOrganisations(tx, organizationId, unadopted);
+    for (const [crmOrganizationId, partyId] of adopted) partyByOrg.set(crmOrganizationId, partyId);
 
     /*
      * Resolved once, outside the per-party derivation: which parent the caller
-     * named is a property of the patch, not of whichever company is being
-     * patched, and `reparentSubsidiaries` moves every child of a merged company
-     * in one call. The self-check is not a property of the patch, so it stays
-     * inside -- and it is the one that matters here, because re-parenting the
-     * children of a loser onto the survivor can hand a company itself.
+     * named is a property of the patch, not of whichever company is being patched.
+     * The self-check is not a property of the patch, so it stays inside — and it
+     * is the one that matters here, because re-parenting the children of a loser
+     * onto the survivor can hand a company itself.
      */
     const parentPatch = await absorbParentColumn(tx, organizationId, patch.parentId);
 
@@ -205,6 +221,13 @@ export async function updateMirroredOrganizations(
         ),
     );
 
+    // The hierarchy resolved once for the whole set, for the reason the patch half
+    // above is: reading it per derived row was a query per child.
+    const parentPartyIds = [...moved.values()]
+      .map((party) => party.parentPartyId)
+      .filter((id): id is string => id !== null);
+    const legacyByParent = await crmOrgIdsOfParties(tx, organizationId, parentPartyIds);
+
     const derived: { id: number; payload: Partial<CrmOrgInsert> }[] = [];
     for (const [crmOrganizationId, partyId] of partyByOrg) {
       const party = moved.get(partyId);
@@ -214,7 +237,9 @@ export async function updateMirroredOrganizations(
         id: crmOrganizationId,
         payload: {
           ...ORGANISATION_MIRROR.derive(party),
-          ...(await parentColumnOf(tx, organizationId, party.parentPartyId)),
+          parentId: party.parentPartyId
+            ? (legacyByParent.get(party.parentPartyId) ?? null)
+            : null,
           ...legacyOwnedPatch,
         },
       });

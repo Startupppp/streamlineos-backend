@@ -5,12 +5,16 @@ import { CLIENT_MIRROR } from "./party-legacy-mirror";
 import {
   absorbLeadColumn,
   convertedFromColumnOf,
+  leadIdsOfParties,
+  partyIdsOfLeads,
   withoutSelfLinks,
 } from "./party-legacy-associations";
+import { linkedPartyId } from "./party-legacy-employer";
 import {
   applyPartyPatch,
-  grantRole,
+  grantRoles,
   groupByPayload,
+  insertBareParties,
   insertBareParty,
   movePartiesFor,
   type ClientInsert,
@@ -51,35 +55,59 @@ async function partyIdsForClients(
   return new Map(rows.map((row) => [row.clientId, row.partyId]));
 }
 
-async function adoptClient(
+function unresolvedLead(legacyLeadId: number): string {
+  return `Lead ${legacyLeadId} has no party in this tenant; run the 0241 backfill before converting from it`;
+}
+
+/** A whole set of unadopted clients at once; see `adoptLeads` for the argument. */
+async function adoptClients(
   db: MirrorDb,
   organizationId: string,
-  clientId: number,
-): Promise<string | null> {
-  const [row] = await db
+  clientIds: readonly number[],
+): Promise<Map<number, string>> {
+  const adopted = new Map<number, string>();
+  if (clientIds.length === 0) return adopted;
+
+  const rows = await db
     .select()
     .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.orgId, organizationId)))
-    .limit(1);
-  if (!row) return null;
+    .where(and(eq(clients.orgId, organizationId), inArray(clients.id, [...clientIds])))
+    .limit(clientIds.length);
+  if (rows.length === 0) return adopted;
 
-  const party = await insertBareParty(db, organizationId, row.name);
-  const { partyPatch } = CLIENT_MIRROR.split(row, party);
-  await applyPartyPatch(
-    db,
-    organizationId,
-    party.partyId,
-    withoutSelfLinks(
-      { ...partyPatch, ...(await absorbLeadColumn(db, organizationId, row.leadId)) },
-      party.partyId,
-    ),
+  const sourceLeadIds = rows.map((row) => row.leadId).filter((id): id is number => id !== null);
+  const partyByLead = await partyIdsOfLeads(db, organizationId, sourceLeadIds);
+
+  const names = rows.map((row) => row.name);
+  const partyIds = await insertBareParties(db, organizationId, names);
+  const legacyByParty = new Map(
+    rows.map((row, index): [string, ClientRow] => [partyIds[index], row]),
   );
-  await db
-    .insert(clientPartyMap)
-    .values({ organizationId, clientId, partyId: party.partyId, linkedBy: "mirror:adopt" })
-    .onConflictDoNothing();
-  await grantRole(db, organizationId, party.partyId, "CLIENT", "mirror:adopt");
-  return party.partyId;
+
+  await movePartiesFor(db, organizationId, partyIds, (party) => {
+    const legacy = legacyByParty.get(party.partyId);
+    if (!legacy) return {};
+    return withoutSelfLinks(
+      {
+        ...CLIENT_MIRROR.split(legacy, party).partyPatch,
+        convertedFromPartyId: linkedPartyId(partyByLead, legacy.leadId, unresolvedLead),
+      },
+      party.partyId,
+    );
+  });
+
+  const links = rows.map((row, index) => ({
+    organizationId,
+    clientId: row.id,
+    partyId: partyIds[index],
+    linkedBy: "mirror:adopt",
+  }));
+
+  await db.insert(clientPartyMap).values(links).onConflictDoNothing();
+  await grantRoles(db, organizationId, partyIds, "CLIENT", "mirror:adopt");
+
+  for (const link of links) adopted.set(link.clientId, link.partyId);
+  return adopted;
 }
 
 export async function createMirroredClient(
@@ -125,10 +153,10 @@ export async function createMirroredClient(
       partyId: party.partyId,
       linkedBy: options.linkedBy ?? "mirror:create",
     });
-    await grantRole(
+    await grantRoles(
       tx,
       organizationId,
-      party.partyId,
+      [party.partyId],
       "CLIENT",
       options.linkedBy ?? "mirror:create",
     );
@@ -157,11 +185,9 @@ export async function updateMirroredClients(
 
   return db.transaction(async (tx) => {
     const partyByClient = await partyIdsForClients(tx, organizationId, ids);
-    for (const clientId of ids) {
-      if (partyByClient.has(clientId)) continue;
-      const adopted = await adoptClient(tx, organizationId, clientId);
-      if (adopted) partyByClient.set(clientId, adopted);
-    }
+    const unadopted = ids.filter((clientId) => !partyByClient.has(clientId));
+    const adopted = await adoptClients(tx, organizationId, unadopted);
+    for (const [clientId, partyId] of adopted) partyByClient.set(clientId, partyId);
 
     /*
      * Resolved once, outside the per-party derivation: which lead the caller
@@ -182,6 +208,16 @@ export async function updateMirroredClients(
         ),
     );
 
+    /*
+     * The other half of the same read, and for the same reason: which lead each
+     * party was converted from is one map, so a bulk patch of fifty clients asks
+     * for it once instead of once per derived row.
+     */
+    const sourcePartyIds = [...moved.values()]
+      .map((party) => party.convertedFromPartyId)
+      .filter((id): id is string => id !== null);
+    const leadIdBySource = await leadIdsOfParties(tx, organizationId, sourcePartyIds);
+
     const derived: { id: number; payload: Partial<ClientInsert> }[] = [];
     for (const [clientId, partyId] of partyByClient) {
       const party = moved.get(partyId);
@@ -193,7 +229,9 @@ export async function updateMirroredClients(
         id: clientId,
         payload: {
           ...CLIENT_MIRROR.derive(party),
-          ...(await convertedFromColumnOf(tx, organizationId, party.convertedFromPartyId)),
+          leadId: party.convertedFromPartyId
+            ? (leadIdBySource.get(party.convertedFromPartyId) ?? null)
+            : null,
           ...legacyOwnedPatch,
         },
       });

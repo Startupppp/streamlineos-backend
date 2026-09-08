@@ -21,8 +21,10 @@ import { claimExecution } from "./execution-claim";
 import {
   advanceExecution,
   deadLetterExecution,
+  deadLetterExecutions,
   finishExecution,
   MAX_STEPS_PER_EXECUTION,
+  type DeadLetterTarget,
 } from "./execution-advance";
 import {
   bulkUpdateFromValues,
@@ -148,12 +150,14 @@ export class WorkflowRunnerService {
       )
       .limit(STUCK_BATCH);
     /*
-     * Every retried execution carries a different serialised context, so the
-     * batched form is `UPDATE … FROM (VALUES …)`. The `status = 'running'`
-     * compare-and-set the per-row update relied on rides in `extraWhere`, so a
-     * concurrently claimed execution is still skipped.
+     * Every retried execution carries a different serialised context, and so does
+     * every dead-lettered one, so both batched forms are `UPDATE … FROM (VALUES …)`.
+     * The `status = 'running'` compare-and-set the per-row updates relied on rides
+     * in `extraWhere` here and in the WHERE of `deadLetterExecutions`, so a
+     * concurrently claimed execution is still skipped by either.
      */
     const retries: BulkUpdateRow[] = [];
+    const exhausted: DeadLetterTarget[] = [];
     for (const row of stuck) {
       const state = readRunState(row.context);
       if (state.infraAttempt < OUTBOX_MAX_RETRIES) {
@@ -168,15 +172,14 @@ export class WorkflowRunnerService {
           ],
         });
       } else {
-        await deadLetterExecution(
-          tx,
-          orgId,
-          row.id,
-          `execution timed out after ${OUTBOX_MAX_RETRIES} infra attempts`,
+        exhausted.push({
+          executionId: row.id,
+          reason: `execution timed out after ${OUTBOX_MAX_RETRIES} infra attempts`,
           state,
-        );
+        });
       }
     }
+    if (exhausted.length > 0) await deadLetterExecutions(tx, orgId, exhausted);
     if (retries.length > 0)
       await bulkUpdateFromValues(tx, {
         table: workflowExecutions,

@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import {
   auditLogs,
   hrDataRequests,
@@ -87,26 +87,57 @@ export async function fetchSyncEmployment(
   const hrPersonRows = hrPersonRowsRaw.slice(0, SYNC_EXPORT_CAP);
 
   const employment: SubjectExportResult["employment"] = [];
-  for (const person of hrPersonRows) {
-    const rows = await db
-      .select({
-        orgId: hrPeople.orgId,
-        lifecycleStatus: hrEmployments.lifecycleStatus,
-        departmentId: hrEmployments.departmentId,
-        designation: hrEmployments.designation,
-        joiningDate: hrEmployments.joiningDate,
-        lastWorkingDay: hrEmployments.lastWorkingDay,
-      })
-      .from(hrEmployments)
-      .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
-      .where(
-        and(
-          eq(hrEmployments.personId, person.hrPersonId),
-          eq(hrPeople.orgId, callerOrgId),
-          isNull(hrEmployments.deletedAt),
+  if (hrPersonRows.length === 0) return employment;
+
+  /**
+   * One statement for every person, with the per-person cap kept exactly where it was:
+   * `row_number()` partitions by person so each subject still yields at most
+   * `SYNC_EXPORT_CAP` rows and still reports its own truncation by name. A plain
+   * `inArray` without the window would silently widen or narrow the exported row set,
+   * which on a compliance surface is the one thing batching may not do.
+   */
+  const ranked = db
+    .select({
+      personId: hrEmployments.personId,
+      orgId: hrPeople.orgId,
+      lifecycleStatus: hrEmployments.lifecycleStatus,
+      departmentId: hrEmployments.departmentId,
+      designation: hrEmployments.designation,
+      joiningDate: hrEmployments.joiningDate,
+      lastWorkingDay: hrEmployments.lastWorkingDay,
+      personRank: sql<number>`row_number() over (partition by ${hrEmployments.personId} order by ${hrEmployments.id})`.as(
+        "person_rank",
+      ),
+    })
+    .from(hrEmployments)
+    .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
+    .where(
+      and(
+        inArray(
+          hrEmployments.personId,
+          hrPersonRows.map((person) => person.hrPersonId),
         ),
-      )
-      .limit(SYNC_EXPORT_CAP + 1);
+        eq(hrPeople.orgId, callerOrgId),
+        isNull(hrEmployments.deletedAt),
+      ),
+    )
+    .as("ranked_employments");
+
+  const rankedRows = await db
+    .select()
+    .from(ranked)
+    .where(lte(ranked.personRank, SYNC_EXPORT_CAP + 1))
+    .limit(hrPersonRows.length * (SYNC_EXPORT_CAP + 1));
+
+  const byPerson = new Map<number, typeof rankedRows>();
+  for (const row of rankedRows) {
+    const rows = byPerson.get(row.personId) ?? [];
+    rows.push(row);
+    byPerson.set(row.personId, rows);
+  }
+
+  for (const person of hrPersonRows) {
+    const rows = byPerson.get(person.hrPersonId) ?? [];
     if (rows.length > SYNC_EXPORT_CAP)
       exportIncomplete.push(`hr_employments: truncated at ${SYNC_EXPORT_CAP} records for person ${person.hrPersonId} — use async export for full extract`);
     for (const r of rows.slice(0, SYNC_EXPORT_CAP))

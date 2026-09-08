@@ -21,6 +21,18 @@ type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
  */
 const PAID_TOLERANCE = "0.0050";
 
+/**
+ * Fallback notification recipients per organisation for an overdue invoice that
+ * names no collection owner.
+ *
+ * The read is loop-INVARIANT per organisation — the same membership query, with
+ * the same answer, once per invoice — so it is resolved for every organisation
+ * in the sweep in one ranked pass before the notification loop starts. The rank
+ * filter is what keeps that one statement equivalent to the per-org `LIMIT`:
+ * without it a single organisation's membership would fill the whole result.
+ */
+const FALLBACK_RECIPIENTS_PER_ORG = 5;
+
 @Injectable()
 export class InvoicesLifecycleService {
   constructor(
@@ -153,25 +165,14 @@ export class InvoicesLifecycleService {
           : inArray(invoices.id, ids),
       );
 
-    const fallbackRecipients = new Map<string, string[]>();
+    const fallbackRecipients = await this.loadFallbackRecipients(
+      dueInvoices.filter((inv) => !inv.collectionOwnerId).map((inv) => inv.orgId),
+    );
 
     for (const inv of dueInvoices) {
-      const targetUserIds: string[] = [];
-      if (inv.collectionOwnerId) {
-        targetUserIds.push(inv.collectionOwnerId);
-      } else {
-        let members = fallbackRecipients.get(inv.orgId);
-        if (members === undefined) {
-          const rows = await this.db
-            .select({ userId: organizationMembers.userId })
-            .from(organizationMembers)
-            .where(eq(organizationMembers.orgId, inv.orgId))
-            .limit(5);
-          members = rows.map((m) => m.userId);
-          fallbackRecipients.set(inv.orgId, members);
-        }
-        targetUserIds.push(...members);
-      }
+      const targetUserIds = inv.collectionOwnerId
+        ? [inv.collectionOwnerId]
+        : fallbackRecipients.get(inv.orgId) ?? [];
       if (targetUserIds.length > 0) {
         await this.dispatch.emit({
           eventKey: "accounting.invoice.overdue",
@@ -186,5 +187,33 @@ export class InvoicesLifecycleService {
     }
 
     return { updated: dueInvoices.length };
+  }
+
+  private async loadFallbackRecipients(orgIds: readonly string[]): Promise<Map<string, string[]>> {
+    const byOrg = new Map<string, string[]>();
+    const distinct = [...new Set(orgIds)];
+    if (distinct.length === 0) return byOrg;
+
+    const ranked = this.db
+      .select({
+        orgId: organizationMembers.orgId,
+        userId: organizationMembers.userId,
+        memberRank: sql<number>`row_number() over (partition by ${organizationMembers.orgId} order by ${organizationMembers.userId})`.as("member_rank"),
+      })
+      .from(organizationMembers)
+      .where(inArray(organizationMembers.orgId, distinct))
+      .as("ranked_org_members");
+
+    const rows = await this.db
+      .select({ orgId: ranked.orgId, userId: ranked.userId })
+      .from(ranked)
+      .where(lte(ranked.memberRank, FALLBACK_RECIPIENTS_PER_ORG));
+
+    for (const row of rows) {
+      const members = byOrg.get(row.orgId);
+      if (members) members.push(row.userId);
+      else byOrg.set(row.orgId, [row.userId]);
+    }
+    return byOrg;
   }
 }

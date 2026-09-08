@@ -17,6 +17,7 @@ import { SYSTEM_ENVELOPE_SCOPE } from "./sign-envelope-scope";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { isSigningType } from "./sign-envelope-validation.service";
 import { isEnvelopeSignable } from "./sign-state";
+import { bulkUpdateFromValues } from "../../common/db/bulk-update";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
 /**
@@ -37,6 +38,17 @@ import type { RequestActorContext } from "../../common/audit/actor-context";
  * not atomicity but 3N round trips inside that transaction.
  */
 const EXPIRATION_SWEEP_CHUNK = 500;
+
+/**
+ * A recipient whose reminder is owed, carried in the shape the eligibility test
+ * already narrowed it to — so the token rotation and the mail loop share one
+ * pre-filtered list without re-testing `email` or asserting it non-null.
+ */
+interface RemindableRecipient {
+  readonly id: number;
+  readonly name: string;
+  readonly email: string;
+}
 
 @Injectable()
 export class SignEnvelopeSweepsService {
@@ -77,9 +89,7 @@ export class SignEnvelopeSweepsService {
       envelope.id,
       SYSTEM_ENVELOPE_SCOPE,
     );
-    const senderNameStr = await this.senderName(envelope.orgId, envelope.senderMembershipId);
-    let remindedCount = 0;
-
+    const remindable: RemindableRecipient[] = [];
     for (const r of recipientRows) {
       if (!isSigningType(r.recipientType)) continue;
       if (
@@ -89,50 +99,69 @@ export class SignEnvelopeSweepsService {
       )
         continue;
       if (!r.email || !r.signingTokenHash) continue;
+      remindable.push({ id: r.id, name: r.name, email: r.email });
+    }
 
-      const rawToken = this.tokens.generateSigningToken();
-      await this.db
-        .update(signRecipients)
-        .set({ signingTokenHash: this.tokens.hash(rawToken) })
-        .where(and(eq(signRecipients.id, r.id), eq(signRecipients.orgId, envelope.orgId)));
-      const signingUrl = this.tokens.buildSigningUrl(rawToken);
-      const daysRemaining = envelope.expiresAt
-        ? Math.max(
-            0,
-            Math.ceil(
-              (envelope.expiresAt.getTime() - now.getTime()) / 86_400_000,
-            ),
-          )
-        : null;
+    const remindedCount = remindable.length;
+    if (remindedCount === 0) return 0;
+
+    const senderNameStr = await this.senderName(envelope.orgId, envelope.senderMembershipId);
+    const rotated = remindable.map((recipient) => ({
+      recipient,
+      rawToken: this.tokens.generateSigningToken(),
+    }));
+
+    await bulkUpdateFromValues(this.db, {
+      table: signRecipients,
+      orgId: envelope.orgId,
+      key: { column: "id", type: "integer" },
+      columns: [{ column: "signing_token_hash", type: "text" }],
+      rows: rotated.map(({ recipient, rawToken }) => ({
+        key: recipient.id,
+        values: [this.tokens.hash(rawToken)],
+      })),
+      touch: ["updated_at"],
+      extraWhere: eq(signRecipients.envelopeId, envelope.id),
+    });
+
+    const daysRemaining = envelope.expiresAt
+      ? Math.max(
+          0,
+          Math.ceil((envelope.expiresAt.getTime() - now.getTime()) / 86_400_000),
+        )
+      : null;
+
+    for (const { recipient, rawToken } of rotated) {
       await this.notifications.sendReminder(
-        r.email,
-        r.name,
+        recipient.email,
+        recipient.name,
         senderNameStr,
         envelope.title,
-        signingUrl,
+        this.tokens.buildSigningUrl(rawToken),
         daysRemaining,
       );
-      await this.audit.record({
-        orgId: envelope.orgId,
-        envelopeId: envelope.id,
-        recipientId: r.id,
-        actorType,
-        actorUserId,
-        eventType: "reminder_sent",
-        eventMessage: `Reminder sent to ${r.name}`,
-      });
-      remindedCount++;
     }
 
-    if (remindedCount > 0) {
-      await this.db
-        .update(signEnvelopes)
-        .set({
-          reminderSentCount: sql`${signEnvelopes.reminderSentCount} + 1`,
-          lastReminderAt: now,
-        })
-        .where(and(eq(signEnvelopes.id, envelope.id), eq(signEnvelopes.orgId, envelope.orgId)));
-    }
+    await this.audit.record(
+      rotated.map(({ recipient }) => ({
+        orgId: envelope.orgId,
+        envelopeId: envelope.id,
+        recipientId: recipient.id,
+        actorType,
+        actorUserId,
+        eventType: "reminder_sent" as const,
+        eventMessage: `Reminder sent to ${recipient.name}`,
+      })),
+    );
+
+    await this.db
+      .update(signEnvelopes)
+      .set({
+        reminderSentCount: sql`${signEnvelopes.reminderSentCount} + 1`,
+        lastReminderAt: now,
+      })
+      .where(and(eq(signEnvelopes.id, envelope.id), eq(signEnvelopes.orgId, envelope.orgId)));
+
     return remindedCount;
   }
 

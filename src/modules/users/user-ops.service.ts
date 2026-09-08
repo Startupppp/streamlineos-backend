@@ -35,7 +35,7 @@ import {
 } from "../../db/schema";
 import type { BulkUpdateUsersInput, ImportUsersRow } from "./dto/users.schemas";
 import { UsersService } from "./users.service";
-import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
+import { syncStructuralRoleAssignments } from "../../common/rbac/sync-structural-role";
 import {
   assertMayGrantRole,
   assertMayManageOrganizationMembership,
@@ -44,7 +44,7 @@ import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-o
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { UserOperationsReporter } from "./user-operations.reporter";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
+import { syncCanonicalReportingLines } from "../../common/hr/sync-canonical-reporting-line";
 
 @Injectable()
 export class UserOpsService {
@@ -226,9 +226,14 @@ export class UserOpsService {
 
       if (managerUserId !== undefined) {
         const today = new Date().toISOString().slice(0, 10);
-        for (const memberId of tenantUserIds) {
-          await syncCanonicalReportingLine(tx, orgId, memberId, managerUserId, today, actorUserId);
-        }
+        await syncCanonicalReportingLines(
+          tx,
+          orgId,
+          tenantUserIds,
+          managerUserId,
+          today,
+          actorUserId,
+        );
       }
 
       const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];
@@ -240,48 +245,49 @@ export class UserOpsService {
         unitMoves.push({ kind: "TEAM", unitId: teamId ?? null });
 
       if (unitMoves.length > 0) {
-        for (const { kind, unitId } of unitMoves) {
-          const memberRows = await tx
-            .select({ id: organizationMembers.id, userId: organizationMembers.userId })
-            .from(organizationMembers)
+        const memberRows = await tx
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              inArray(organizationMembers.userId, tenantUserIds),
+            ),
+          );
+        const membershipIds = memberRows.map((membership) => membership.id);
+
+        if (membershipIds.length > 0) {
+          const movedKinds = unitMoves.map((move) => move.kind);
+          const existing = await tx
+            .select({ id: orgUnitMembers.id })
+            .from(orgUnitMembers)
+            .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
             .where(
               and(
-                eq(organizationMembers.orgId, orgId),
-                inArray(organizationMembers.userId, tenantUserIds),
+                eq(orgUnitMembers.orgId, orgId),
+                inArray(orgUnitMembers.membershipId, membershipIds),
+                inArray(orgUnits.kind, movedKinds),
               ),
             );
-          const membershipIds = memberRows.map((m) => m.id);
-
-          if (membershipIds.length > 0) {
-            const existing = await tx
-              .select({ id: orgUnitMembers.id })
-              .from(orgUnitMembers)
-              .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
-              .where(
-                and(
-                  eq(orgUnitMembers.orgId, orgId),
-                  inArray(orgUnitMembers.membershipId, membershipIds),
-                  eq(orgUnits.kind, kind),
-                ),
-              );
-            if (existing.length > 0) {
-              await tx
-                .delete(orgUnitMembers)
-                .where(inArray(orgUnitMembers.id, existing.map((row) => row.id)));
-            }
+          if (existing.length > 0) {
+            await tx
+              .delete(orgUnitMembers)
+              .where(inArray(orgUnitMembers.id, existing.map((row) => row.id)));
           }
 
-          if (unitId !== null && membershipIds.length > 0) {
-            await tx
-              .insert(orgUnitMembers)
-              .values(memberRows.map((m) => ({
-                id: randomUUID(),
-                orgId,
-                orgUnitId: unitId,
-                membershipId: m.id,
-                role: "member",
-              })))
-              .onConflictDoNothing();
+          const additions = unitMoves.flatMap(({ unitId }) =>
+            unitId === null
+              ? []
+              : membershipIds.map((membershipId) => ({
+                  id: randomUUID(),
+                  orgId,
+                  orgUnitId: unitId,
+                  membershipId,
+                  role: "member",
+                })),
+          );
+          if (additions.length > 0) {
+            await tx.insert(orgUnitMembers).values(additions).onConflictDoNothing();
           }
         }
       }
@@ -298,9 +304,12 @@ export class UserOpsService {
             ),
           )
           .returning({ id: organizationMembers.id });
-        for (const row of rows) {
-          await syncStructuralRoleAssignment(tx, orgId, row.id, role);
-        }
+        await syncStructuralRoleAssignments(
+          tx,
+          orgId,
+          rows.map((row) => row.id),
+          role,
+        );
       }
 
       return tenantUserIds;

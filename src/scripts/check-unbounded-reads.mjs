@@ -43,7 +43,37 @@ const MIN_DB_FILES = 300;
  * is the only place it can fail. Lower it when you bound one; raising it means
  * saying, in ratchets.json, which read is now hidden and why.
  */
-const MAX_SUPPRESSED_UNBOUNDED = 646;
+/**
+ * RAISED 646 -> 650 on 2026-09-08, and this is the first raise. Every previous move was
+ * downward. It is recorded here read by read, because "a read added to an already-blessed
+ * file inherits a justification that was never written about it" is exactly what this
+ * ceiling exists to catch, and a raise with no inventory is indistinguishable from that.
+ *
+ * The N+1 pass replaced per-row loops with batched statements. Round trips fell by orders
+ * of magnitude; the count of statements WITHOUT a literal .limit() rose by four, because
+ * one batched read replaces N reads that each carried .limit(1). Net movement:
+ *
+ *   +2  /cron/cron-billing.service.ts        the trial_ends_at window read and the dunning
+ *                                            milestone read that replaced 3 windowed
+ *                                            SELECTs per org and 3R milestone INSERTs
+ *   +2  /invoices/invoices-lifecycle.service.ts  loadFallbackRecipients, one ranked
+ *                                            row_number() read capped at 5 per org, which
+ *                                            replaced one interleaved SELECT per invoice
+ *   +2  @common/hr/sync-canonical-reporting-line.ts  see its justification: the only
+ *                                            candidate bound would drop a different user's
+ *                                            row, so a limit was REFUSED, not forgotten
+ *   +1  /gdpr/gdpr-sync-export-fetchers.ts   a .as() subquery, not an executed statement;
+ *                                            its outer read carries an exact limit
+ *   -1  /cron/cron-notifications.service.ts  fan-out moved into the database
+ *   -1  /kb/wiki/kb-page-duplicate.service.ts  the unscoped root re-read is gone
+ *   -1  /leads/lead-triggers.ts              round-robin read-modify-write became one upsert
+ *
+ * Four further reads were BOUNDED in code in the same pass rather than suppressed, so they
+ * are not in this number at all: both crm-tasks reads (.limit on the id-set length), the
+ * gdpr outer read (persons x cap), and the cron-projects status read (DISTINCT ON plus a
+ * limit of the project count). Lower this the moment any of the seven above is bounded.
+ */
+const MAX_SUPPRESSED_UNBOUNDED = 650;
 const ORDER_BY_LOOKBACK = 25;
 const STATEMENT_MAX_LINES = 120;
 

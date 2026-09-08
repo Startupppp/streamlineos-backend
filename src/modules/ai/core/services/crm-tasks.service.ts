@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, isNull, sql, sum } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql, sum } from "drizzle-orm";
 import { crmDeals, organizationMembers, tasks, tickets, timesheets, users } from "../../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
@@ -9,7 +9,7 @@ import {
   INCLUDE_DELETED,
   LEAD_PARTY_COLUMNS,
   LEAD_PARTY_JOIN,
-  leadIdIs,
+  leadIdIn,
   leadPartyScope,
 } from "../../../leads/lead-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
@@ -70,80 +70,88 @@ export class CrmTasksService {
 
       if (pendingTasks.length === 0) return null;
 
-      return Promise.all(
-        pendingTasks.map(async (t) => {
-          let entityContext: Record<string, unknown> = {};
+      const idsOf = (entityType: string): number[] => [
+        ...new Set(
+          pendingTasks.flatMap((t) => (t.entityType === entityType && t.entityId ? [t.entityId] : [])),
+        ),
+      ];
+      const leadIds = idsOf("LEAD");
+      const dealIds = idsOf("DEAL");
 
-          if (t.entityType === "LEAD" && t.entityId) {
-            // A task can outlive the lead it was raised on, and the SLA line it
-            // carries is the reason it is still worth ranking -- so the deleted
-            // record is still read, exactly as it was before.
-            const [lead] = await tx
-              .select({
-                id: LEAD_PARTY_COLUMNS.id,
-                name: LEAD_PARTY_COLUMNS.name,
-                score: LEAD_PARTY_COLUMNS.score,
-                potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
-                slaDeadline: LEAD_PARTY_COLUMNS.slaDeadline,
-                status: LEAD_PARTY_COLUMNS.status,
-                priority: LEAD_PARTY_COLUMNS.priority,
-              })
-              .from(leadPartyMap)
-              .innerJoin(businessParties, LEAD_PARTY_JOIN)
-              .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(t.entityId)))
-              .limit(1);
+      // A task can outlive the lead it was raised on, and the SLA line it carries is the
+      // reason it is still worth ranking -- so the deleted record is still read, exactly
+      // as it was before.
+      const leadRows = leadIds.length === 0 ? [] : await tx
+        .select({
+          id: LEAD_PARTY_COLUMNS.id,
+          name: LEAD_PARTY_COLUMNS.name,
+          score: LEAD_PARTY_COLUMNS.score,
+          potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
+          slaDeadline: LEAD_PARTY_COLUMNS.slaDeadline,
+          status: LEAD_PARTY_COLUMNS.status,
+          priority: LEAD_PARTY_COLUMNS.priority,
+        })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIn(leadIds)))
+        .limit(leadIds.length);
+      const leadsById = new Map(leadRows.map((lead) => [lead.id, lead]));
 
-            if (lead) {
-              const slaHoursLeft = lead.slaDeadline ? diffHours(new Date(lead.slaDeadline), new Date()) : null;
-              entityContext = {
-                type: "LEAD",
-                name: lead.name,
-                score: lead.score ?? 0,
-                potentialValue: lead.potentialValue ? parseFloat(String(lead.potentialValue)) : 0,
-                slaHoursLeft,
-                slaMissed: slaHoursLeft !== null && slaHoursLeft < 0,
-                priority: lead.priority,
-                status: lead.status,
-              };
-            }
-          } else if (t.entityType === "DEAL" && t.entityId) {
-            const [deal] = await tx
-              .select({
-                id: crmDeals.id,
-                companyName: crmDeals.companyName,
-                value: crmDeals.value,
-                stage: crmDeals.stage,
-                closeDate: crmDeals.closeDate,
-              })
-              .from(crmDeals)
-              .where(and(eq(crmDeals.id, t.entityId), eq(crmDeals.orgId, orgId)))
-              .limit(1);
+      const dealRows = dealIds.length === 0 ? [] : await tx
+        .select({
+          id: crmDeals.id,
+          companyName: crmDeals.companyName,
+          value: crmDeals.value,
+          stage: crmDeals.stage,
+          closeDate: crmDeals.closeDate,
+        })
+        .from(crmDeals)
+        .where(and(inArray(crmDeals.id, dealIds), eq(crmDeals.orgId, orgId)))
+        .limit(dealIds.length);
+      const dealsById = new Map(dealRows.map((deal) => [deal.id, deal]));
 
-            if (deal) {
-              const closeDaysLeft = deal.closeDate ? diffHours(new Date(deal.closeDate), new Date()) / 24 : null;
-              entityContext = {
-                type: "DEAL",
-                companyName: deal.companyName,
-                value: deal.value ? parseFloat(String(deal.value)) : 0,
-                stage: deal.stage,
-                closeDaysLeft: closeDaysLeft !== null ? Math.round(closeDaysLeft) : null,
-              };
-            }
-          }
+      return pendingTasks.map((t) => {
+        let entityContext: Record<string, unknown> = {};
 
-          const dueHoursLeft = t.dueDate ? diffHours(new Date(t.dueDate), new Date()) : null;
-
-          return {
-            taskId: t.id,
-            title: t.title,
-            type: t.type,
-            notes: t.notes,
-            dueHoursLeft,
-            overdue: dueHoursLeft !== null && dueHoursLeft < 0,
-            entityContext,
+        const lead = t.entityType === "LEAD" && t.entityId ? leadsById.get(t.entityId) : undefined;
+        if (lead) {
+          const slaHoursLeft = lead.slaDeadline ? diffHours(new Date(lead.slaDeadline), new Date()) : null;
+          entityContext = {
+            type: "LEAD",
+            name: lead.name,
+            score: lead.score ?? 0,
+            potentialValue: lead.potentialValue ? parseFloat(String(lead.potentialValue)) : 0,
+            slaHoursLeft,
+            slaMissed: slaHoursLeft !== null && slaHoursLeft < 0,
+            priority: lead.priority,
+            status: lead.status,
           };
-        }),
-      );
+        }
+
+        const deal = t.entityType === "DEAL" && t.entityId ? dealsById.get(t.entityId) : undefined;
+        if (deal) {
+          const closeDaysLeft = deal.closeDate ? diffHours(new Date(deal.closeDate), new Date()) / 24 : null;
+          entityContext = {
+            type: "DEAL",
+            companyName: deal.companyName,
+            value: deal.value ? parseFloat(String(deal.value)) : 0,
+            stage: deal.stage,
+            closeDaysLeft: closeDaysLeft !== null ? Math.round(closeDaysLeft) : null,
+          };
+        }
+
+        const dueHoursLeft = t.dueDate ? diffHours(new Date(t.dueDate), new Date()) : null;
+
+        return {
+          taskId: t.id,
+          title: t.title,
+          type: t.type,
+          notes: t.notes,
+          dueHoursLeft,
+          overdue: dueHoursLeft !== null && dueHoursLeft < 0,
+          entityContext,
+        };
+      });
     }, { orgId });
 
     if (enriched === null) {

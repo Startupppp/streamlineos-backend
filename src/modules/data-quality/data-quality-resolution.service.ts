@@ -246,21 +246,15 @@ export class DataQualityResolutionService {
     claimed: readonly ClaimedFinding[],
   ): Promise<ExecutionFailure[]> {
     const failures: ExecutionFailure[] = [];
+    const undoTokens: Record<string, Record<string, unknown>> = {};
 
     for (const finding of claimed) {
       if (finding.proposedAction === "none") continue;
 
       try {
-        const undoToken = await withSavepoint(() => this.execute(organizationId, userId, finding));
-        await this.db
-          .update(dataQualityFindings)
-          .set({ undoToken })
-          .where(
-            and(
-              eq(dataQualityFindings.organizationId, organizationId),
-              eq(dataQualityFindings.findingId, finding.findingId),
-            ),
-          );
+        undoTokens[finding.findingId] = await withSavepoint(() =>
+          this.execute(organizationId, userId, finding),
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         failures.push({ findingId: finding.findingId, error: message });
@@ -269,7 +263,37 @@ export class DataQualityResolutionService {
       }
     }
 
+    await this.recordUndoTokens(organizationId, undoTokens);
+
     return failures;
+  }
+
+  /**
+   * The tokens of a whole batch, in one statement.
+   *
+   * Every merge leaves a different token, which is what used to make this one
+   * UPDATE per applied finding. The map rides as a single jsonb bind parameter
+   * and each row picks its own entry out of it by key, so four hundred merges
+   * record four hundred tokens in one round trip.
+   */
+  private async recordUndoTokens(
+    organizationId: string,
+    undoTokens: Record<string, Record<string, unknown>>,
+  ): Promise<void> {
+    const findingIds = Object.keys(undoTokens);
+    if (findingIds.length === 0) return;
+
+    await this.db
+      .update(dataQualityFindings)
+      .set({
+        undoToken: sql`${JSON.stringify(undoTokens)}::jsonb -> ${dataQualityFindings.findingId}`,
+      })
+      .where(
+        and(
+          eq(dataQualityFindings.organizationId, organizationId),
+          inArray(dataQualityFindings.findingId, findingIds),
+        ),
+      );
   }
 
   private async execute(
