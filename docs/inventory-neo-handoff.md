@@ -1,5 +1,39 @@
 # InventoryOS — NEO handoff
 
+## Reopened and closed again — 2026-09-08
+
+**Pushed: backend `0d464a88c`, frontend `d710aa11e`**, both on
+`feat/inventory-world-class-implementation`. No force push. `main` untouched.
+
+The 2026-09-05 pass closed with §12.4 recorded as **"not met — but now measured"**: T17 had
+classified all 214 mutating routes, found 40 that a retry duplicates, bounded the number with
+an assertion and left the fix out of scope. **A bounded finding is not a met criterion**, so
+the queue reopened on that one clause. Five tickets, GitHub #56–#60.
+
+| | |
+|---|---|
+| **T23** (#56) | The census read only `@IdempotencyKey()` and was blind to `@Idempotent(...)`, the metadata the global interceptor acts on. 13 routes were fenced and invisible as fenced; **3 were recorded as duplicating** under hand-written reasons describing a duplicate a fenced route cannot produce. 40 → 37. |
+| **T24** (#57) | The other 37 fenced, `DUPLICATES_ON_RETRY` now empty with the bound an equality in both directions. Proven at the HTTP seam. **The recorded reason was wrong in kind for about half of them**: removing a fence gave `409 "SKU already exists"`, not a duplicate — five of the thirteen tables carry a tenant-scoped unique index on a user-supplied key, so the retry was *refused*, which is the PEND-IDEM shape, not duplication. Eight generate the number server-side and did duplicate. |
+| **T25** (#58) | `api-client.ts:143` mints a **fresh key per fetch**. A replay fence keys on the *same* key, so the operator's second press was a different command and the fence never saw a retry — all 37 still duplicated for a real user. `useIdempotentMutation` scopes the key to the intent; 29 call sites, 17 files. Its ratchet found 2 sites my own enumeration had missed, on its first run. |
+| **T26** (#59) | The `CONVERGING` exemption ended *"or is refused by the command's own status precondition"* — PEND-IDEM stated as a feature. **31 of 48 CONVERGING POSTs refuse a retry**; 28 were unfenced and are now fenced. |
+| **T27** (#60) | **Open.** The other 17 are *not* cleared: the triage reads one hop, and `cancelGrn`/`cancelSo` both delegate, so the precondition lives below where it looked. The real count of refusing transitions is **at least 31 and not yet known**. |
+
+**Fenced routes in inventory: 13 → 78.** Backend `tsc --noEmit` EXIT=0.
+
+### What still needs a human — unchanged
+
+RF on a device (#45, no credentials), the Neon reconcile-or-rebaseline decision (#46), CI
+(#53, account billing), and live q-commerce / a real WES, which are secret-blocked by design.
+
+### The thing worth carrying forward
+
+Three passes in a row, the wrong answer was **a specific, confident, plausible sentence about
+a mechanism nobody had run** — §6's stale attribution, T17's forty reasons, and the
+`CONVERGING` exemption. Specificity reads as evidence. The only thing that caught any of them
+was running the code: a bite proof, a removed fence, a ratchet written after the hand sweep.
+
+---
+
 **Release pass, closed — 2026-09-05. Pushed: backend `f79ed69b2`, frontend `9285a13cb`**,
 both on `feat/inventory-world-class-implementation`. `main` was never pushed to from this
 pass; it has moved because other sessions push to it.
