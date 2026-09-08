@@ -1,7 +1,7 @@
 # CRM Final Handoff
 
 **Date:** 2026-09-08
-**Backend branch:** `crm/phase-2-3-consolidated` (PR #12) — `778cd29cd`
+**Backend branch:** `crm/phase-2-3-consolidated` (PR #12) — `a0ee3fbab`
 **Frontend branch:** `crm/phase-4-5-frontend` (PR #31) — `fecfe90fe`
 
 This handoff records what is implemented and **what was actually executed to
@@ -216,7 +216,7 @@ errors before and after this pass.
   commercial guardrails should be tighter than "the deal moved, we have a
   number, nobody has quoted yet", that is the paragraph to revisit.
 
-## The headline: the loops did not run, and three of them now do
+## The headline: the loops did not run, and most of them now do
 
 Phase 4's first goal is that the loops run with no human step. When this pass
 started, none of the autonomy loops ran at all unless somebody posted to a route.
@@ -229,17 +229,23 @@ support and Build. The CRM autonomy loops simply were not on it. (Two CRM things
 already were: `crm-sequences-flush` and `crm-tasks-overdue-flush`, both for
 *task* sequences, neither touching autonomy.)
 
-Three seams were closed this pass:
+Five seams were closed this pass:
 
 | Was | Now |
 |---|---|
 | `LifecycleTriggersService.sweep` — the only autonomous caller of `composeAndHold` — was invoked by nothing, so a renewal opened a conversation when somebody remembered to POST | `POST /cron/crm-lifecycle-triggers-sweep`, walking every organisation under a 600-second lease. Verified by running it: 200, 6 organisations, `failed: 0`, as the non-owner role. Two concurrent calls, one ran and one skipped. |
 | `SequenceReplyExitService.onInboundReply` was written, its module registered, and called by nothing — the PRD calls sending after a reply the single most damaging behaviour | Called from `AutonomyService.processActivity`, after the delivery gate so a bounce cannot end a sequence, and before the eligibility gate so that "thanks" still ends one |
 | `crm_outbound_class_stops` was read at send time and written by nothing, so US8's "a stopped message stops its class for that party" was a read with no writer | `cancelHold` writes it, and `GET/POST /crm/autonomy/class-stops[/:id/release]` gives it the person-shaped exit its schema always claimed |
+| `RelationshipStateService.listAwaitingReply` — which says in its own docstring that it is "the read ticket 02's detector runs", and takes `olderThan` as a parameter so a sweep could own the clock — had no caller. US1's deal-gone-quiet detection did not happen. | `POST /cron/crm-silence-sweep`, cutting off at `NUDGE_AFTER_DAYS` (now exported rather than copied, so the sweep and `judgeOutbound` cannot drift apart). The sweep picks candidates; `judgeOutbound` still decides whether any of them deserves a message. |
+| `AutonomyRepairService.runRepairs` was reachable only by a person POSTing to it, so the unattended repair loop was not unattended | `POST /cron/crm-field-repairs`, with no `classes` argument so each tenant's policy decides what is repaired rather than the scheduler's argument list |
 
-Still unscheduled: outbound, repair, forecast and relationship sweeps. The
-pattern for each is now established and cheap — a service that calls the existing
-one under `forEachOrg`, plus an endpoint and a lease.
+Two bugs were caught before shipping, both from calling services that expected
+Zod-validated input: `runRepairs` passes `input.limit` straight into its query and
+the 400 default lives on the schema, so `{}` would have handed it an undefined
+LIMIT; and a first draft passed a `dealId` from a ternary whose branches were both
+null. Both are covered by tests now.
+
+Still unscheduled: the learned forecast. That one is not a wiring gap — see below.
 
 ## Phase 4 was never ticketed either
 
@@ -255,7 +261,7 @@ Unreached, same shape as the rest:
 
 | Surface | State |
 |---|---|
-| **The learned forecast** | `src/modules/deals/forecast/{logistic-regression,training-examples,deal-forecast-features,forecast-metrics,matrix-solve}.ts` are imported only by their own specs. `crmDealForecastModels` and `crmDealForecastScores` have zero references outside `db/schema`. Shipped forecasting is stage-probability × value. |
+| **The learned forecast** | The library is complete and tested — features, logistic regression with intervals, Brier/log-loss/ROC-AUC, cold-start readiness, matrix solve — and every file was imported only by its own spec, with `crmDealForecastModels` and `crmDealForecastScores` unreferenced outside `db/schema`. Unlike the others this was never a wiring gap: what was missing is the DB-facing trainer. See **The learned forecast** below. |
 | **`LifecycleTriggersService.sweep`** | The only autonomous caller of `composeAndHold`. Nothing invokes it. |
 | **`POST /crm/autonomy/outbound`** | No frontend caller. |
 | **The whole repair operator surface** | Four endpoints — repair policies GET/PATCH, repairs/run, repairs, repair-measure — have no frontend caller at all, only an unused permission key. US18/20/21 have no operator: a steward can neither set classes nor see the ratio. |
@@ -317,6 +323,66 @@ no scheduler anywhere in `src/`, so "calculated continuously" and "clawback is
 automatic" are both manual today. Campaign attribution sums `deals.value` with no
 won-stage predicate, so it reports pipeline value, not closed revenue. MCP
 exposes six tools, all reads.
+
+## The learned forecast: a leak, and why the trainer is not here
+
+The forecast library is complete and tested — features, logistic regression with
+intervals, Brier/log-loss/ROC-AUC, cold-start readiness with a holdout and
+acceptance thresholds. Every file was imported only by its own spec. Unlike the
+other unreached surfaces this was never a wiring gap: what was missing is the
+DB-facing trainer.
+
+Building one found a defect that would have made the whole feature dishonest.
+`assembleDealFeatures` ran the organisation-wide baseline through
+`withoutOwnOutcome` before using it as the prior that `repWinRate` and
+`sourceWinRate` are smoothed towards. That baseline is one group per
+organisation, so removing the row's own outcome gave the prior exactly two values
+across the training set — one per label — and which one a row got was decided by
+nothing but its own outcome. Worked at three sizes: 40/100 → 0.403670 vs
+0.412844; 200/500 → 0.400786 vs 0.402750; 8/20 → 0.413793 vs 0.448276. Distinct
+every time, which is all a linear model needs to separate on perfectly.
+
+**`FORECAST_ACCEPTANCE` could not have caught it.** The held-out rows carry the
+same encoding of their own outcomes, so a model fitted on the leak clears
+`minAuc` and beats naive on Brier while having read the answer key. The gate that
+is the entire safety story for adopting a learned forecast was blind to the one
+thing that would have made adoption wrong. Fixed in `crm(22)`, spec version
+bumped to 2, and pinned by an assertion that a won, a lost and a serving example
+must resolve the same prior.
+
+**The trainer is not in this branch**, and the reason is the strongest evidence
+available that the leak mattered: its only test showing a model good enough to
+adopt stops passing once the leak is removed. On honest features that fixture's
+model no longer clears the bar. Three things should be true before a trainer
+ships:
+
+1. A demonstration — ideally on real tenant history, not a fixture — that a model
+   clears the gate on leak-free features.
+2. A naive comparator that is the forecast the tenant actually sees.
+   `DealsAnalyticsService.buildForecast` uses `deal.probability || stageProb || 20`;
+   the per-deal override and the flat 20 have no equivalent at a past `asOf`, so
+   "beats naive" currently means "beats a reconstruction of naive".
+3. Somewhere for a rep to see which forecast they are reading. The backend
+   already reports a `basis`, and no frontend file references it.
+
+The working trainer and its eight tests were preserved outside the repository
+rather than committed, so none of that analysis has to be redone.
+
+## Attribution: the library had no way to turn weights into money
+
+`attribution-models.ts` computes five weighting models and its docstrings name
+`allocateExact` and `attributeDeal` as though they exist. They do not — `git grep`
+at HEAD finds those names only inside comments. The library shipped weights and
+no allocator, no module, no service and no caller.
+
+`crm(23)` supplies the allocator to the documented contract and exposes
+`GET /crm/campaigns/attribution/by-model`. It deliberately disagrees with the
+shipped first/last-touch report, which has five defects of its own — most
+seriously that its join multiplies a deal's revenue by the number of first-touch
+rows on the lead, and nothing constrains `(org_id, lead_id, touch_type)` to be
+unique. **Two attribution reports that disagree is not a resting state**: the old
+one should be corrected or retired, and until it is, a number taken from it may
+overstate campaign revenue.
 
 ## Not Built, and Not a Gap to Close by Testing
 
