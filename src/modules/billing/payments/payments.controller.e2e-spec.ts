@@ -1,4 +1,4 @@
-import type { INestApplication } from "@nestjs/common";
+import { NotFoundException, type INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
@@ -187,10 +187,10 @@ describe("Payments controller auth/RBAC (e2e)", () => {
       enabledModules: ALL_MODULES,
     });
     stubProviders.getProvider.mockRejectedValueOnce(
-      Object.assign(new Error("Not found"), { status: 404 }),
+      new NotFoundException("Payment provider not configured: razorpay"),
     );
     const res = await call("get", "/payments/providers/razorpay")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(404);
   });
 });

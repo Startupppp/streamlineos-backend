@@ -370,6 +370,8 @@
     "bootstrap:interrupt-resume:self-test": "node src/scripts/bootstrap-interrupt-resume.mjs --self-test",
     "check:lifecycle-predicates": "node src/scripts/check-lifecycle-predicates.mjs",
     "check:lifecycle-predicates:self-test": "node src/scripts/check-lifecycle-predicates.mjs --self-test",
+    "check:plan-limit-enforcement": "node src/scripts/check-plan-limit-enforcement.mjs",
+    "check:plan-limit-enforcement:self-test": "node src/scripts/check-plan-limit-enforcement.mjs --self-test",
     "check:vacuous-assertions": "node src/scripts/check-vacuous-assertions.mjs",
     "check:vacuous-assertions:self-test": "node src/scripts/check-vacuous-assertions.mjs --self-test",
     "check:bare-throw": "node src/scripts/check-bare-throw.mjs",

@@ -566,6 +566,26 @@
         "reason": "Traversal depth cap for provider reach. Registered PINNED, not as a ratchet or a floor, by v2 ticket 30 on 2026-09-03: ticket 30 does not own this script and did not reason about which direction is safe here, and `pinned` is the honest default -- it asserts no direction and forces whoever changes the constant to re-register it with a direction and a reason. Lowering it shrinks the corpus the gate reaches, which is the vacuity risk; raising it only costs time. Reclassify when the owning ticket lands."
       }
     },
+    "check-plan-limit-enforcement.mjs": {
+      "MIN_KEYS": {
+        "value": 14,
+        "direction": "floor",
+        "owner": "billing owner",
+        "reason": "Anti-vacuity floor on the LimitKey union parsed out of plan-entitlements.constants.ts. Registered at the measured value on 2026-09-08 when this gate was written: the union carries exactly 14 keys today. A floor, not a hardcoded copy of the 14 names -- the gate derives the actual key list from source on every run, so a 15th key raises this number for free and the gate keeps covering it; only a broken parser could make the count fall, which is exactly what this floor catches."
+      },
+      "MIN_CALL_SITES": {
+        "value": 30,
+        "direction": "floor",
+        "owner": "billing owner",
+        "reason": "Anti-vacuity floor on assertWithinLimit call sites found across src. Measured 37 at authoring time; set with headroom below that so the gate does not false-positive on a handful of legitimate call sites moving between files, while still catching a regex/collector break that would silently empty the scan."
+      },
+      "MIN_SCANNED_FILES": {
+        "value": 2000,
+        "direction": "floor",
+        "owner": "billing owner",
+        "reason": "Anti-vacuity floor on the number of source files the walk visits before filtering to the ones that mention assertWithinLimit. Measured 4097 at authoring time; a collapsed walkTs (wrong root, an early filter) would drop this near zero long before the call-site count itself moved."
+      }
+    },
     "check-public-object-urls.mjs": {
       "MIN_PUBLIC_BASE_SITES": {
         "value": 4,
