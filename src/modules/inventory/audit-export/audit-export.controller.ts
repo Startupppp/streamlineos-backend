@@ -15,6 +15,7 @@ import {
   type CreateAuditExportJobInput,
   type ListAuditExportJobsQueryInput,
 } from "./dto/audit-export.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/audit-export")
@@ -25,6 +26,7 @@ export class AuditExportController {
   @Post("jobs")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:audit:export")
+  @Idempotent("inventory.audit-export.job.create")
   createJob(
     @Body(new ZodValidationPipe(createAuditExportJobSchema)) body: CreateAuditExportJobInput,
     @CurrentUser() u: CurrentUserContext,

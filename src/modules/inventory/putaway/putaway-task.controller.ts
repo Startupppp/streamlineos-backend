@@ -27,6 +27,7 @@ import {
   type CreatePutawayTaskInput,
   type ListPutawayTasksInput,
 } from "./dto/putaway.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 /**
  * B3 — the putaway workbench.
@@ -50,6 +51,7 @@ export class PutawayTaskController {
   @Post("tasks")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Idempotent("inventory.putaway.task.create")
   createTask(
     @Body(new ZodValidationPipe(createPutawayTaskSchema)) body: CreatePutawayTaskInput,
     @CurrentUser() u: CurrentUserContext,

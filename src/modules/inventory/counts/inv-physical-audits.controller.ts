@@ -15,6 +15,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const auditIdParams = z.object({ auditId: z.coerce.number().int().positive() }).strict();
 
@@ -49,6 +50,7 @@ export class InvPhysicalAuditsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.physical-audit.create")
   @Validate({ body: createAuditSchema })
   create(
     @Body() body: CreateAuditInput,

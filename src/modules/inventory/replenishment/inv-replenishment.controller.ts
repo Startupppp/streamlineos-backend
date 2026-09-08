@@ -35,6 +35,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
@@ -58,6 +59,7 @@ export class InvReplenishmentController {
   @Post("rules")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Idempotent("inventory.replenishment.rule.create")
   @Validate({ body: createRuleSchema })
   createRule(
     @Body() body: CreateRuleInput,

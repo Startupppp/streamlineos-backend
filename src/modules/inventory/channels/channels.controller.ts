@@ -32,6 +32,7 @@ import type {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 
@@ -51,6 +52,7 @@ export class ChannelsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Idempotent("inventory.channel.create")
   @Validate({ body: createChannelSchema })
   create(
     @Body() body: CreateChannelInput,

@@ -31,6 +31,7 @@ import type {
   ListInspectionPlansQueryInput,
   UpdateInspectionPlanInput,
 } from "./dto/inspection-plans.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/quality/inspection-plans")
@@ -71,6 +72,7 @@ export class InspectionPlansController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:plans:manage")
+  @Idempotent("inventory.quality.inspection-plan.create")
   create(
     @Body(new ZodValidationPipe(createInspectionPlanSchema)) body: CreateInspectionPlanInput,
     @CurrentUser() u: CurrentUserContext,
@@ -102,6 +104,7 @@ export class InspectionPlansController {
   @Post(":planId/versions")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:plans:manage")
+  @Idempotent("inventory.quality.inspection-plan.version.add")
   addVersion(
     @Param("planId", ParseIntPipe) planId: number,
     @Body(new ZodValidationPipe(createPlanVersionSchema)) body: CreatePlanVersionInput,

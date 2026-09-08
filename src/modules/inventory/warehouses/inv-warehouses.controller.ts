@@ -20,6 +20,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const warehouseIdParams = z.object({ warehouseId: z.coerce.number().int().positive() }).strict();
 const warehouseIdlocationIdParams = z.object({ warehouseId: z.coerce.number().int().positive(), locationId: z.coerce.number().int().positive() }).strict();
@@ -118,6 +119,7 @@ export class InvWarehousesController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
+  @Idempotent("inventory.warehouse.create")
   @Validate({ body: createWarehouseSchema })
   create(
     @Body() body: CreateWarehouseInput,
@@ -161,6 +163,7 @@ export class InvWarehousesController {
   @Post(":warehouseId/locations")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
+  @Idempotent("inventory.warehouse.location.create")
   @Validate({ params: warehouseIdParams, body: createLocationSchema })
   createLocation(
     @Param("warehouseId", ParseIntPipe) warehouseId: number,

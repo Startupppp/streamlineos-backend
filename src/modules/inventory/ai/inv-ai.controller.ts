@@ -18,6 +18,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
@@ -42,6 +43,7 @@ export class InvAiController {
   @BodylessAction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("inventory:ai:manage")
+  @Idempotent("inventory.ai.insights.generate")
   @UseRateLimit("ai:invoke")
   @HttpCode(HttpStatus.OK)
   generateInsights(@CurrentUser() u: CurrentUserContext) {

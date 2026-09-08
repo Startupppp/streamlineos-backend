@@ -37,6 +37,7 @@ import type {
   FillRateQuery,
   UploadPayoutInput,
 } from "./dto/quick-commerce.schemas";
+import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 
 /**
  * NEO-2 — platform purchase orders and advance shipping notices.
@@ -153,6 +154,7 @@ export class QuickCommerceController {
   @Post("payouts")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Idempotent("inventory.quick-commerce.payout.upload")
   uploadPayout(
     @Body(new ZodValidationPipe(uploadPayoutSchema)) body: UploadPayoutInput,
     @CurrentUser() u: CurrentUserContext,

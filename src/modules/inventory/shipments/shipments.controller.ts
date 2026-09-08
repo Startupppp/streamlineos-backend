@@ -33,6 +33,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const shipmentIdParams = z.object({ shipmentId: z.coerce.number().int().positive() }).strict();
 
@@ -67,6 +68,7 @@ export class ShipmentsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Idempotent("inventory.shipment.create")
   @Validate({ body: createShipmentSchema })
   create(
     @Body() body: CreateShipmentInput,

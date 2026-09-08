@@ -30,6 +30,7 @@ import type {
   ListAppointmentsQuery,
   SetAppointmentStatusInput,
 } from "./dto/dock.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 /**
  * NEO-12 - the dock calendar.
@@ -59,6 +60,7 @@ export class DockController {
   @Post("doors")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
+  @Idempotent("inventory.dock.door.create")
   createDoor(
     @Body(new ZodValidationPipe(createDockDoorSchema)) body: CreateDockDoorInput,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +81,7 @@ export class DockController {
   @Post("appointments")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:dock:manage")
+  @Idempotent("inventory.dock.appointment.book")
   book(
     @Body(new ZodValidationPipe(bookAppointmentSchema)) body: BookAppointmentInput,
     @CurrentUser() u: CurrentUserContext,

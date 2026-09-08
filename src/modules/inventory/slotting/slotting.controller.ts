@@ -35,6 +35,7 @@ import {
 import type {
   ApproveRecommendationInput, CreateSlottingRuleInput, DismissRecommendationInput, ListRecommendationsQuery, ListSlottingRulesQuery, SetSlottingRuleActiveInput } from "./dto/slotting.schemas";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 /**
  * NEO-6 - slotting.
@@ -70,6 +71,7 @@ export class SlottingController {
   @Post("rules")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
+  @Idempotent("inventory.slotting.rule.create")
   createRule(
     @Body(new ZodValidationPipe(createSlottingRuleSchema)) body: CreateSlottingRuleInput,
     @CurrentUser() u: CurrentUserContext,

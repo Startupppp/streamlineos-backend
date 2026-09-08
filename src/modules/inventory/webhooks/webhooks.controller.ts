@@ -21,6 +21,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const webhookIdParams = z.object({ webhookId: z.coerce.number().int().positive() }).strict();
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -41,6 +42,7 @@ export class InvWebhooksController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Idempotent("inventory.webhook.create")
   @Validate({ body: createWebhookSchema })
   create(
     @Body() body: CreateWebhookInput,

@@ -192,18 +192,25 @@ describe("A3 — idempotency coverage across inventory commands", () => {
       expect(rationale.length).toBeGreaterThan(120);
   });
 
-  it("records the routes a retry still duplicates, rather than leaving them uncounted", () => {
-    // DUPLICATES_ON_RETRY is a finding, not an exemption, and this assertion is
-    // the ratchet on it: the count may fall as keys are added, and may not rise
-    // without somebody changing this number and saying why. PRD §12.4's "all
-    // commands are idempotent" is false by exactly this many routes.
+  it("has no route left that a retry duplicates", () => {
+    // This was a bounded finding — 40, then 37 once T23 could see the second
+    // coverage mechanism. It is now zero, and zero by fencing rather than by
+    // reclassification: every one of those routes carries `@Idempotent`, so the
+    // interceptor answers the retry instead of the handler running twice.
+    //
+    // The bound is an equality now, in both directions. A route that regresses
+    // to duplicating fails, and so does one somebody quietly reclassifies into
+    // this bucket instead of fixing.
     const findings = COMMAND_CLASSIFICATION.filter(
       (c) => c.commandClass === "DUPLICATES_ON_RETRY",
-    );
-    expect(findings.length).toBeLessThanOrEqual(37);
-    // Not zero, and not silently zero: a walk that found nothing would satisfy
-    // the bound above.
-    expect(findings.length).toBeGreaterThan(30);
+    ).map((c) => c.route);
+
+    expect(findings).toEqual([]);
+    // Anti-vacuity: `findings` is empty because the table no longer holds those
+    // routes, not because the table itself vanished or the walk broke. The
+    // fenced floor in the surface test guards the other half.
+    expect(COMMAND_CLASSIFICATION.length).toBeGreaterThan(100);
+    expect(routes.filter((r) => r.carriesInterceptorFence).length).toBeGreaterThan(45);
   });
 
   it("does not call a fenced route one that duplicates, because the fence answers the retry", () => {

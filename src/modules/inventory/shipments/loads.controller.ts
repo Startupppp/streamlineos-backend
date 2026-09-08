@@ -32,6 +32,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const loadIdParams = z.object({ loadId: z.coerce.number().int().positive() }).strict();
 
@@ -66,6 +67,7 @@ export class LoadsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Idempotent("inventory.load.create")
   @Validate({ body: createLoadSchema })
   create(
     @Body() body: CreateLoadInput,

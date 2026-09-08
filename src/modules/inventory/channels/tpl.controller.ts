@@ -27,6 +27,7 @@ import type {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
 
@@ -46,6 +47,7 @@ export class TplController {
   @Post("connections")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
+  @Idempotent("inventory.3pl.connection.create")
   @Validate({ body: create3plConnectionSchema })
   createConnection(
     @Body() body: Create3plConnectionInput,

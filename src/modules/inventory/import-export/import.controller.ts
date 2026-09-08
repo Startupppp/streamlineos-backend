@@ -61,6 +61,7 @@ export class ImportController {
   @Post("staged/:jobId/rows")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
+  @Idempotent("inventory.import.rows.stage")
   stageRows(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body(new ZodValidationPipe(stageImportRowsSchema)) body: StageImportRowsInput,
@@ -129,6 +130,7 @@ export class ImportController {
   @Post("jobs")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
+  @Idempotent("inventory.import.job.create")
   @Validate({ body: createImportJobSchema })
   createJob(
     @Body() body: CreateImportJobInput,

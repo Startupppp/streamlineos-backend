@@ -18,6 +18,7 @@ import {
 } from "./dto/import-export.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
@@ -30,6 +31,7 @@ export class ExportController {
   @Post("jobs")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
+  @Idempotent("inventory.export.job.create")
   @Validate({ body: createExportJobSchema })
   createJob(
     @Body() body: CreateExportJobInput,

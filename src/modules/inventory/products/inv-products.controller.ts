@@ -27,6 +27,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive() }).strict();
 const uomIdParams = z.object({ uomId: z.coerce.number().int().positive() }).strict();
@@ -68,6 +69,7 @@ export class InvProductsController {
   @Post("categories")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:create")
+  @Idempotent("inventory.product.category.create")
   @Validate({ body: createCategorySchema })
   createCategory(
     @Body() body: CreateCategoryInput,
@@ -86,6 +88,7 @@ export class InvProductsController {
   @Post("uom")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:create")
+  @Idempotent("inventory.product.uom.create")
   @Validate({ body: createUomSchema })
   createUom(
     @Body() body: CreateUomInput,
@@ -263,6 +266,7 @@ export class InvProductsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:create")
+  @Idempotent("inventory.product.create")
   @Validate({ body: createProductSchema })
   create(
     @Body() body: CreateProductInput,
@@ -295,6 +299,7 @@ export class InvProductsController {
   @Post(":productId/variants")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
+  @Idempotent("inventory.product.variant.create")
   @Validate({ params: productIdParams, body: createVariantSchema })
   createVariant(
     @Param("productId", ParseIntPipe) productId: number,

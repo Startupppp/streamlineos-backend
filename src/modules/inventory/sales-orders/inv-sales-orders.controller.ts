@@ -33,6 +33,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const soIdParams = z.object({ soId: z.coerce.number().int().positive() }).strict();
 
@@ -72,6 +73,7 @@ export class InvSalesOrdersController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:create")
+  @Idempotent("inventory.sales-order.create")
   @Validate({ body: createSoSchema })
   create(
     @Body() body: CreateSoInput,
@@ -166,6 +168,7 @@ export class InvSalesOrdersController {
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:invoice")
+  @Idempotent("inventory.sales-order.invoice")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: soIdParams })
   invoice(

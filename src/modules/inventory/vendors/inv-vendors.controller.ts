@@ -16,6 +16,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
 
@@ -81,6 +82,7 @@ export class InvVendorsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:manage")
+  @Idempotent("inventory.vendor.create")
   @Validate({ body: createVendorSchema })
   create(
     @Body() body: CreateVendorInput,

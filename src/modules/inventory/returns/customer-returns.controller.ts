@@ -30,6 +30,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
 
@@ -64,6 +65,7 @@ export class CustomerReturnsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Idempotent("inventory.customer-return.create")
   @Validate({ body: createCustomerReturnSchema })
   create(
     @Body() body: CreateCustomerReturnInput,

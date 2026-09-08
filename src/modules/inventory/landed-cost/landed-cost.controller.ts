@@ -30,6 +30,7 @@ import {
   type CreateLandedCostVoucherInput,
   type ListLandedCostVouchersInput,
 } from "./dto/landed-cost.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 /**
  * G5 — landed cost as a document with a life.
@@ -90,6 +91,7 @@ export class LandedCostController {
   @Post(":voucherId/charges")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:landed-cost:manage")
+  @Idempotent("inventory.landed-cost.charge.add")
   addCharge(
     @Param("voucherId", ParseIntPipe) voucherId: number,
     @Body(new ZodValidationPipe(addLandedCostChargeSchema)) body: AddLandedCostChargeInput,

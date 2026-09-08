@@ -34,6 +34,7 @@ import {
   type ReportPlainPickExceptionInput,
   type SubstitutePickLineInput,
 } from "./dto/picking.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/picking")
@@ -48,6 +49,7 @@ export class PickWaveController {
   @Post("waves")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
+  @Idempotent("inventory.picking.wave.create")
   createWave(
     @Body(new ZodValidationPipe(createWaveSchema)) body: CreateWaveInput,
     @CurrentUser() u: CurrentUserContext,

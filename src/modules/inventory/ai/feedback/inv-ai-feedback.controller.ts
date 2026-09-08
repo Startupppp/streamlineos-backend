@@ -14,6 +14,7 @@ import {
   type CreateInvAiFeedbackInput,
   type InvAiFeedbackSummaryQuery,
 } from "./dto/inv-ai-feedback.schemas";
+import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 
 /**
  * F6 — filing a verdict, and reading the aggregate.
@@ -40,6 +41,7 @@ export class InvAiFeedbackController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:read")
+  @Idempotent("inventory.ai.feedback.submit")
   @HttpCode(HttpStatus.CREATED)
   submit(
     @Body(new ZodValidationPipe(createInvAiFeedbackSchema)) body: CreateInvAiFeedbackInput,
