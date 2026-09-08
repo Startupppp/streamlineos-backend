@@ -43,13 +43,11 @@ interface OrgContextEntry {
 }
 
 const ORG_CTX_TTL_MS = 60_000;
-const REVOCATION_CACHE_TTL_MS = 5_000;
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   private readonly logger = new Logger(JwtAuthGuard.name);
   private readonly orgCtxCache = new Map<string, OrgContextEntry>();
-  private readonly revocationCache = new Map<string, number>();
 
   constructor(
     private readonly reflector: Reflector,
@@ -96,48 +94,28 @@ export class JwtAuthGuard implements CanActivate {
 
     if (claims !== null) {
       if (!claims.sessionId.startsWith("pat:")) {
-        const cachedOk = this.revocationCache.get(claims.sessionId);
-        if (!(cachedOk && cachedOk > Date.now())) {
-          let tombstone: boolean | null = null;
-          let useDatabase = this.redis === null;
-          if (this.redis) {
-            try {
-              tombstone = await this.redis.get<boolean>(
-                `revoked:session:${claims.sessionId}`,
-              );
-            } catch (err) {
-              useDatabase = true;
-              this.logger.error(
-                `session revocation lookup failed, falling back to the database: ${err instanceof Error ? err.message : String(err)}`,
-              );
-            }
-          }
-
-          let revoked = tombstone === true;
-          let resolved = true;
-          if (useDatabase) {
-            const stored = await this.isRevokedInDatabase(claims.sessionId);
-            revoked = stored === true;
-            resolved = stored !== null;
-          }
-
-          if (revoked) {
-            this.revocationCache.delete(claims.sessionId);
-            throw new UnauthorizedException("Session has been revoked");
-          }
-          if (resolved) {
-            this.revocationCache.set(
-              claims.sessionId,
-              Date.now() + REVOCATION_CACHE_TTL_MS,
+        // Every request re-reads the tombstone. A positive-result cache used to sit here
+        // and it made revocation take effect up to its TTL later, on a per-process basis.
+        let tombstone: boolean | null = null;
+        let useDatabase = this.redis === null;
+        if (this.redis) {
+          try {
+            tombstone = await this.redis.get<boolean>(
+              `revoked:session:${claims.sessionId}`,
             );
-            if (this.revocationCache.size > 10000) {
-              const now = Date.now();
-              for (const [key, exp] of this.revocationCache) {
-                if (exp <= now) this.revocationCache.delete(key);
-              }
-            }
+          } catch (err) {
+            useDatabase = true;
+            this.logger.error(
+              `session revocation lookup failed, falling back to the database: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
         }
+
+        let revoked = tombstone === true;
+        if (useDatabase)
+          revoked = (await this.isRevokedInDatabase(claims.sessionId)) === true;
+
+        if (revoked) throw new UnauthorizedException("Session has been revoked");
       }
       const allowNoOrg = this.reflector.getAllAndOverride<boolean>(
         ALLOW_NO_ORG_KEY,

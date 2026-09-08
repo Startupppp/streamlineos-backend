@@ -18,7 +18,7 @@ import { REDIS } from "src/common/cache/cache.service";
  * concurrent moduleAvailability calls each issue 1 DB round-trip (not 2), and
  * the redundant class-level @UseGuards(JwtAuthGuard) removed from
  * SearchController — JwtAuthGuard is already a global APP_GUARD; the local copy
- * created a second instance with its own empty revocationCache, causing
+ * created a second instance with its own empty in-process caches, causing
  * isAccountActive + fetchMembershipState to each issue a second DB round-trip
  * per request (auth-scoped keys bypass outage memoization so no in-process dedup
  * was possible).
