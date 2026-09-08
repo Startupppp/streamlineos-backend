@@ -2,6 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { CrmMcpService, type McpContext } from "./crm-mcp.service";
 import { AccessService } from "../../access/access.service";
+import type { DataScope } from "../../access/access.types";
 import { PartyService } from "../../party/party.service";
 import { DealsService } from "../../deals/deals.service";
 import { ActivitiesService } from "../../activities/activities.service";
@@ -71,9 +72,9 @@ describe("CrmMcpService", () => {
 
     it("filters available tools based on the caller's actual permissions", async () => {
       // User only has deals read permission
-      accessService.resolveUserPermissions.mockResolvedValue({
-        permissions: ["crm:deals:read"],
-      });
+      accessService.resolveUserPermissions.mockResolvedValue(
+        new Map<string, DataScope>([["crm:deals:read", "all"]]),
+      );
 
       const available = await service.getAvailableTools(context);
       const names = available.map((t) => t.name);
@@ -86,9 +87,9 @@ describe("CrmMcpService", () => {
 
   describe("tool execution and authorization", () => {
     it("allows deal listing when caller has crm:deals:read", async () => {
-      accessService.resolveUserPermissions.mockResolvedValue({
-        permissions: ["crm:deals:read"],
-      });
+      accessService.resolveUserPermissions.mockResolvedValue(
+        new Map<string, DataScope>([["crm:deals:read", "all"]]),
+      );
       dealsService.list.mockResolvedValue({
         items: [{ id: 1, name: "Big Enterprise Deal" }],
         total: 1,
@@ -109,9 +110,9 @@ describe("CrmMcpService", () => {
     });
 
     it("refuses deal listing with 403 Forbidden when caller lacks crm:deals:read", async () => {
-      accessService.resolveUserPermissions.mockResolvedValue({
-        permissions: ["party:parties:view"], // lacks crm:deals:view
-      });
+      accessService.resolveUserPermissions.mockResolvedValue(
+        new Map<string, DataScope>([["party:parties:view", "all"]]),
+      );
 
       await expect(
         service.executeTool(context, {
@@ -123,10 +124,30 @@ describe("CrmMcpService", () => {
       expect(dealsService.list).not.toHaveBeenCalled();
     });
 
+    /**
+     * The resolver says no by returning `"none"`, not by leaving the key out.
+     *
+     * This check used to ask `resolved.has(key)`, which is true for a key
+     * resolved to `"none"` — so a permission the resolver had explicitly denied
+     * read as granted here, and only here: every `@RequirePermission` route goes
+     * through `AccessService.holds`, which is `scopeFor(...) !== "none"`.
+     */
+    it("refuses a permission the resolver denied by scope rather than by absence", async () => {
+      accessService.resolveUserPermissions.mockResolvedValue(
+        new Map<string, DataScope>([["crm:deals:read", "none"]]),
+      );
+
+      await expect(
+        service.executeTool(context, { name: "crm_list_deals", arguments: {} }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(dealsService.list).not.toHaveBeenCalled();
+    });
+
     it("refuses party listing with 403 Forbidden when caller lacks party:parties:view", async () => {
-      accessService.resolveUserPermissions.mockResolvedValue({
-        permissions: ["crm:deals:read"], // lacks party:parties:view
-      });
+      accessService.resolveUserPermissions.mockResolvedValue(
+        new Map<string, DataScope>([["crm:deals:read", "all"]]),
+      );
 
       await expect(
         service.executeTool(context, {
@@ -139,9 +160,9 @@ describe("CrmMcpService", () => {
     });
 
     it("throws NotFoundException on unknown tools", async () => {
-      accessService.resolveUserPermissions.mockResolvedValue({
-        permissions: ["*"],
-      });
+      accessService.resolveUserPermissions.mockResolvedValue(
+        new Map<string, DataScope>([["*", "all"]]),
+      );
 
       await expect(
         service.executeTool(context, {
@@ -152,9 +173,9 @@ describe("CrmMcpService", () => {
     });
 
     it("executes crm_get_party with caller's orgId", async () => {
-      accessService.resolveUserPermissions.mockResolvedValue({
-        permissions: ["party:parties:view"],
-      });
+      accessService.resolveUserPermissions.mockResolvedValue(
+        new Map<string, DataScope>([["party:parties:view", "all"]]),
+      );
       partyService.findOne.mockResolvedValue({
         id: "pty_123",
         name: "Acme Corp",

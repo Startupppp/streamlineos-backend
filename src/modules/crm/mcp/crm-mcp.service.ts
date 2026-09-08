@@ -6,6 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { AccessService } from "../../access/access.service";
+import type { DataScope } from "../../access/access.types";
 import { PartyService } from "../../party/party.service";
 import { DealsService } from "../../deals/deals.service";
 import { ActivitiesService } from "../../activities/activities.service";
@@ -32,18 +33,26 @@ export interface McpContext {
   orgId: string;
 }
 
-function checkPermission(resolved: unknown, permission: string): boolean {
-  if (!resolved) return false;
-  if (resolved instanceof Map) {
-    return resolved.has(permission) || resolved.has("*");
-  }
-  if (typeof resolved === "object" && "permissions" in resolved) {
-    const list = (resolved as { permissions?: unknown }).permissions;
-    if (Array.isArray(list)) {
-      return list.includes(permission) || list.includes("*");
-    }
-  }
-  return false;
+/**
+ * Whether a resolved permission map actually grants a key.
+ *
+ * `resolved.has(key)` is not the question. `resolveUserPermissions` returns
+ * `Map<string, DataScope>`, and a key resolved to `"none"` is present in that
+ * map and denied — that is how the resolver says no. Asking `has` therefore let
+ * an explicitly denied permission read as granted here while failing everywhere
+ * else in the product, because `AccessService.holds` is
+ * `scopeFor(...) !== "none"` and every `@RequirePermission` route goes through
+ * it. This is the same test, said the same way.
+ *
+ * The array branch that used to sit here was unreachable: nothing returns a
+ * `{ permissions: [] }` shape. It survived because the spec mocked it, so the
+ * authorization assertions were exercising a branch production never entered.
+ */
+function checkPermission(
+  resolved: ReadonlyMap<string, DataScope> | null | undefined,
+  permission: string,
+): boolean {
+  return (resolved?.get(permission) ?? "none") !== "none";
 }
 
 /**
