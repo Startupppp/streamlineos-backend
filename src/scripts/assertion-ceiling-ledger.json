@@ -305,10 +305,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/cron/cron-billing.service.ts": {
-      "as": 2,
-      "nonNull": 0
-    },
     "src/modules/cron/cron-gdpr-export-retention.service.ts": {
       "as": 1,
       "nonNull": 0
@@ -324,10 +320,6 @@
     "src/modules/cron/cron-mail-retention.service.ts": {
       "as": 1,
       "nonNull": 0
-    },
-    "src/modules/cron/cron-projects.service.ts": {
-      "as": 0,
-      "nonNull": 3
     },
     "src/modules/customer-executive/customer-executive.service.ts": {
       "as": 3,
@@ -432,10 +424,6 @@
     "src/modules/hr/directory/dto/hr-directory.schemas.ts": {
       "as": 1,
       "nonNull": 0
-    },
-    "src/modules/hr/directory/employee-bulk-onboarding.service.ts": {
-      "as": 0,
-      "nonNull": 1
     },
     "src/modules/hr/directory/employee-skills.service.ts": {
       "as": 0,
@@ -706,8 +694,8 @@
       "nonNull": 0
     },
     "src/modules/leads/lead-triggers.ts": {
-      "as": 7,
-      "nonNull": 2
+      "as": 1,
+      "nonNull": 1
     },
     "src/modules/leads/leads-read.service.ts": {
       "as": 1,

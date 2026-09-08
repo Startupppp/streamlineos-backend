@@ -353,8 +353,22 @@ const CEILING_LEDGER_PATH = fileURLToPath(new URL("./assertion-ceiling-ledger.js
  * planted `as { id: number }` in a source file moved the total 417 -> 418, and
  * removing it moved it back. A floor is a claim about the mechanism, so it may
  * only be lowered against a bite proof, never because the number under it moved.
+ *
+ * 400 -> 380 on 2026-09-08, to the same standard. The N+1 batching pass removed
+ * 13 assertions outright — a per-rule read-modify-write became one upsert in
+ * leads/lead-triggers.ts (9 -> 2), and the per-row loops in
+ * cron/cron-billing.service.ts (2), cron/cron-projects.service.ts (3, replaced
+ * by a real `template is RunnableTemplate` predicate) and
+ * hr/directory/employee-bulk-onboarding.service.ts (1) became batched
+ * statements — taking the tree 407 -> 394 and putting it under this floor. The
+ * bite proof was re-run before the move, not assumed: one planted
+ * `BATCH_SIZE as number` in cron-projects.service.ts took the total 394 -> 395,
+ * `as X` 273 -> 274 and the file count 221 -> 222, and the gate re-attributed
+ * that file from "no plain assertion left" to "tree 1"; removing the probe
+ * returned all four. The counter counts, so the floor follows the tree down
+ * rather than accusing it.
  */
-const CEILING_FLOOR_TOTAL = 400;
+const CEILING_FLOOR_TOTAL = 380;
 
 function loadCeilingLedger() {
   try {
@@ -645,10 +659,23 @@ function runSelfTest() {
   // exception, so the requirement attaches to `external` — and demoting an
   // entry is the only escape, which RAISES the "owed" count rather than
   // lowering the bar.
+  // (as) is proved against a SYNTHETIC pair as well as every live entry, in both
+  // directions, because the live population is now zero. Every ledgered seam is
+  // `external` — the gate prints "0 owed a Zod parse" — so a check written to run
+  // only per narrow-me entry stopped running the moment that debt was paid off,
+  // and took the self-test below its own floor with it. Lowering the floor to
+  // match would have repriced an anti-vacuity number to accommodate a check that
+  // cannot fire, which is the failure MIN_SELF_TEST_CHECKS exists to catch. A
+  // property must not be provable only while the debt it describes still exists.
+  const narrowMeNamesNoTest = (entry) => entry.test === undefined;
+  assert(narrowMeNamesNoTest({ seam: "narrow-me", count: 1, invariant: "x" })
+    && !narrowMeNamesNoTest({ seam: "narrow-me", count: 1, invariant: "x", test: "a.spec.ts::t" }),
+    "(as) a \"narrow-me\" entry is declared debt, not a proven seam — it must NOT name a contract test");
+
   const seenTestTargets = new Map();
   for (const [file, entry] of DOUBLE_CAST_LEDGER) {
     if (entry.seam !== "external") {
-      assert(entry.test === undefined,
+      assert(narrowMeNamesNoTest(entry),
         `(as) ${file}: a "narrow-me" entry is declared debt, not a proven seam — it must NOT name a contract test`);
       continue;
     }
