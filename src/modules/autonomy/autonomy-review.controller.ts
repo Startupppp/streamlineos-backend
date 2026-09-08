@@ -172,7 +172,7 @@ export class AutonomyReviewController {
     return this.scoring.settingsFor(u.orgId);
   }
 
-  /** Sampling rate, its daily cap, and the hold window. */
+  /** Sampling rate, its daily cap, the hold window, and the quote opt-in. */
   @Patch("settings")
   @Idempotent("crm.autonomy.settings")
   @RequirePermission("crm:autonomy:manage")

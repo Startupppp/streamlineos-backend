@@ -93,6 +93,16 @@ export const updateAutonomySettingsSchema = z
      * become the approval queue this product exists to remove.
      */
     holdWindowSeconds: z.number().int().min(10).max(86_400).optional(),
+    /**
+     * The one dial in here that is opted into rather than out of.
+     *
+     * Everything above tunes behaviour a tenant already has; this turns on a new
+     * one — a stage advance drafting a quote and putting it in the hold window.
+     * It is off until somebody sets it, and this field is the only way to set
+     * it, because the schema is `.strict()`: without the line, the flag exists
+     * in the database and no caller can ever reach it.
+     */
+    autoQuoteEnabled: z.boolean().optional(),
   })
   .strict()
   .refine((patch) => Object.keys(patch).length > 0, {

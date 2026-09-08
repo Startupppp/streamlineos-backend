@@ -200,9 +200,9 @@ export class AutonomyActionsService {
     model: string,
     inputs: Record<string, unknown>,
     availableStages: readonly string[],
-  ): Promise<void> {
+  ): Promise<boolean> {
     const suggested = extraction.stage.suggestedStage;
-    if (!suggested) return;
+    if (!suggested) return false;
 
     // Re-read after the provider call, so every judgement below — "is this
     // already the stage", the version passed for the write, and the `fromStage`
@@ -226,10 +226,10 @@ export class AutonomyActionsService {
           summary: "The deal was deleted while the extraction was running.",
         }),
       );
-      return;
+      return false;
     }
 
-    if (suggested === deal.stage) return;
+    if (suggested === deal.stage) return false;
 
     /**
      * A stage the tenant does not have is a rejected decision, not a new stage.
@@ -255,7 +255,7 @@ export class AutonomyActionsService {
           summary: `Suggested a stage this organisation does not use ("${suggested}").`,
         }),
       );
-      return;
+      return false;
     }
 
     const allowed = await this.isAllowed(organizationId, "stage.advanced");
@@ -347,9 +347,32 @@ export class AutonomyActionsService {
                 : `Stage advance is switched off (${allowed.decidedBy}).`)),
       }),
     );
+
+    /**
+     * Whether the deal actually moved — not whether this method ran.
+     *
+     * The quote leg reads this, and every non-`applied` outcome above is a deal
+     * sitting exactly where it was: an approval request raised, a version
+     * conflict, a stage the tenant does not have, a blueprint rejection. Drafting
+     * a quote off any of those would put a figure in front of a customer on the
+     * strength of a move that never happened.
+     */
+    return outcome === "applied";
   }
 
   // ── Shared with the decision path ─────────────────────────────────────────
+
+  /**
+   * The kill-switch resolution, for callers outside this class.
+   *
+   * A thin public face on `isAllowed` rather than widening it, so the two
+   * audiences stay legible: the private one is this class's own action methods,
+   * and this is the quote leg in `AutonomyService`, which has to make the same
+   * check against a kind it does not itself own an action for.
+   */
+  async isAllowedFor(organizationId: string, kind: DecisionKind) {
+    return this.isAllowed(organizationId, kind);
+  }
 
   private async isAllowed(organizationId: string, kind: DecisionKind) {
     const rows = await this.db

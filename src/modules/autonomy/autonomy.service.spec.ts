@@ -7,9 +7,12 @@ import {
   autonomySwitches,
   crmPipelineStages,
   deals,
+  quotes,
 } from "../../db/schema";
 import { AutonomyService } from "./autonomy.service";
 import { AutonomyActionsService } from "./autonomy-actions.service";
+import type { AutonomyHoldService } from "./autonomy-hold.service";
+import type { AutonomyScoringService } from "./autonomy-scoring.service";
 import type { Extraction } from "./extraction.schemas";
 
 /**
@@ -78,6 +81,8 @@ function makeDb(
   stages: string[],
   /** What else is on this message's thread, newest first, as the read returns it. */
   thread: ActivityFixture[] = [],
+  /** Quotes already on the deal. The leg refuses to draft a second one. */
+  existingQuotes: { id: number }[] = [],
 ): Db {
   let dealRead = 0;
 
@@ -111,6 +116,8 @@ function makeDb(
               query([{ organizationId: null, kind: "*", enabled: true, reason: null }]),
           };
 
+        if (table === quotes) return { where: () => query(existingQuotes) };
+
         throw new Error("unexpected read");
       },
     }),
@@ -131,6 +138,29 @@ function makeDb(
 const makeActions = (db: Db, updateDeal: jest.Mock) =>
   new AutonomyActionsService(db, { updateDeal } as unknown as DealsService);
 
+/**
+ * The quote leg's two collaborators, with the opt-in off.
+ *
+ * Off is the product default, so these stand-ins keep every test in this file
+ * describing the same system it described before the leg existed: `settingsFor`
+ * answers `autoQuoteEnabled: false` and `maybeDraftQuote` returns before it can
+ * reach either the hold service or the database. A test that wants the leg turns
+ * it on explicitly, which is also the only way a tenant gets it.
+ */
+const makeQuoteLeg = (autoQuoteEnabled = false) => {
+  const generateAndHoldQuote = jest.fn().mockResolvedValue({ held: true, quoteId: 1 });
+  const holds = { generateAndHoldQuote } as unknown as AutonomyHoldService;
+  const scoring = {
+    settingsFor: jest.fn().mockResolvedValue({
+      shadowSampleRate: 0.1,
+      shadowDailyCap: 500,
+      holdWindowSeconds: 60,
+      autoQuoteEnabled,
+    }),
+  } as unknown as AutonomyScoringService;
+  return { holds, scoring, generateAndHoldQuote };
+};
+
 function makeService(
   db: Db,
   result: unknown,
@@ -140,8 +170,39 @@ function makeService(
     invokeStructuredWithUsage: jest.fn().mockResolvedValue(result),
   } as unknown as AiGatewayService;
 
-  return new AutonomyService(db, gateway, makeActions(db, updateDeal));
+  const { holds, scoring } = makeQuoteLeg();
+  return new AutonomyService(db, gateway, makeActions(db, updateDeal), holds, scoring);
 }
+
+/** The same service, with the quote leg reachable and its hold call observable. */
+function makeServiceForQuotes(
+  db: Db,
+  result: unknown,
+  updateDeal: jest.Mock,
+  autoQuoteEnabled: boolean,
+) {
+  const gateway = {
+    invokeStructuredWithUsage: jest.fn().mockResolvedValue(result),
+  } as unknown as AiGatewayService;
+  const { holds, scoring, generateAndHoldQuote } = makeQuoteLeg(autoQuoteEnabled);
+  const service = new AutonomyService(
+    db,
+    gateway,
+    makeActions(db, updateDeal),
+    holds,
+    scoring,
+  );
+  return { service, generateAndHoldQuote };
+}
+
+/** A pipeline that accepts the move, so the stage advance reports `applied`. */
+const stageMoved = () =>
+  jest.fn().mockResolvedValue({
+    ok: true,
+    deal: {},
+    stageChanged: true,
+    previousStage: "QUALIFIED",
+  });
 
 const ok = (data: Extraction) => ({ ok: true, data, aiUsage: { model: "fast-1" } });
 
@@ -152,7 +213,8 @@ const ok = (data: Extraction) => ({ ok: true, data, aiUsage: { model: "fast-1" }
 function makeServiceCapturingPrompt(db: Db, result: unknown, updateDeal = jest.fn()) {
   const invoke = jest.fn().mockResolvedValue(result);
   const gateway = { invokeStructuredWithUsage: invoke } as unknown as AiGatewayService;
-  const service = new AutonomyService(db, gateway, makeActions(db, updateDeal));
+  const { holds, scoring } = makeQuoteLeg();
+  const service = new AutonomyService(db, gateway, makeActions(db, updateDeal), holds, scoring);
 
   const conversationSent = (): string => {
     const call = invoke.mock.calls[0]?.[0] as { prompt: { user: string } } | undefined;
@@ -593,5 +655,121 @@ describe("AutonomyService reads a thread, not only an activity", () => {
     await service.processActivity(ORG, ACTIVITY);
 
     expect(conversationSent()).not.toContain("somebody else's thread");
+  });
+});
+
+/**
+ * The quote leg — the half of the golden path that had no production caller.
+ *
+ * `generateAndHoldQuote` was written, reviewed and left unreached: nothing in
+ * `src/` called it, so the path `pending.md` specifies as "quote drafted into
+ * hold" existed only as a method somebody could have called. These tests are the
+ * caller's contract, and the first of them is the one that matters most — the
+ * default is still that nothing is quoted.
+ */
+describe("AutonomyService drafts a quote when a deal moves", () => {
+  const STAGES = ["QUALIFIED", "PROPOSAL"];
+  /** `loadDeal` is read twice on this path: once by the caller, once after. */
+  const dealReads = () => [DEAL, DEAL];
+
+  it("drafts nothing when the organisation never opted in", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const db = makeDb(rec, REPLY, dealReads(), STAGES);
+    const { service, generateAndHoldQuote } = makeServiceForQuotes(
+      db, ok(extraction()), stageMoved(), false,
+    );
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    // The move still happens. Only the quote is withheld.
+    expect(decisionsOfKind(rec, "stage.advanced")[0]).toMatchObject({ outcome: "applied" });
+    expect(generateAndHoldQuote).not.toHaveBeenCalled();
+    // Not even a skip: a tenant who never asked for this should not have their
+    // review feed filling up with quotes the system declined to draft.
+    expect(decisionsOfKind(rec, "quote.sent")).toHaveLength(0);
+  });
+
+  it("drafts and holds one once the organisation has opted in", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const db = makeDb(rec, REPLY, dealReads(), STAGES);
+    const { service, generateAndHoldQuote } = makeServiceForQuotes(
+      db, ok(extraction()), stageMoved(), true,
+    );
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    expect(generateAndHoldQuote).toHaveBeenCalledWith({
+      organizationId: ORG,
+      dealId: 7,
+      confidence: 0.95,
+    });
+  });
+
+  it("drafts nothing when the deal did not actually move", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const db = makeDb(rec, REPLY, dealReads(), STAGES);
+    // The pipeline raised an approval request rather than making the move, so
+    // `applyStageAdvance` reports `skipped` and there is no advance to quote off.
+    const updateDeal = jest.fn().mockResolvedValue({
+      ok: true, deal: {}, stageChanged: false, approvalPending: true,
+    });
+    const { service, generateAndHoldQuote } = makeServiceForQuotes(
+      db, ok(extraction()), updateDeal, true,
+    );
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    expect(decisionsOfKind(rec, "stage.advanced")[0]).toMatchObject({ outcome: "skipped" });
+    expect(generateAndHoldQuote).not.toHaveBeenCalled();
+  });
+
+  it("records a skip rather than quoting below the threshold a quote carries", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const db = makeDb(rec, REPLY, dealReads(), STAGES);
+    // 0.88 clears `stage.advanced` at 0.85 and misses `quote.sent` at 0.9 — the
+    // gap the two thresholds exist to create.
+    const { service, generateAndHoldQuote } = makeServiceForQuotes(
+      db, ok(extraction({ confidence: 0.88 })), stageMoved(), true,
+    );
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    expect(decisionsOfKind(rec, "stage.advanced")[0]).toMatchObject({ outcome: "applied" });
+    expect(generateAndHoldQuote).not.toHaveBeenCalled();
+    const skipped = decisionsOfKind(rec, "quote.sent")[0];
+    expect(skipped).toMatchObject({ outcome: "skipped" });
+    expect(String(skipped?.summary)).toContain("below what a quote needs");
+  });
+
+  it("does not quote a deal somebody has already quoted", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const db = makeDb(rec, REPLY, dealReads(), STAGES, [], [{ id: 42 }]);
+    const { service, generateAndHoldQuote } = makeServiceForQuotes(
+      db, ok(extraction()), stageMoved(), true,
+    );
+
+    await service.processActivity(ORG, ACTIVITY);
+
+    expect(generateAndHoldQuote).not.toHaveBeenCalled();
+    const skipped = decisionsOfKind(rec, "quote.sent")[0];
+    expect(skipped).toMatchObject({ outcome: "skipped" });
+    expect(String(skipped?.summary)).toContain("already has a quote");
+  });
+
+  it("records a failed decision rather than throwing into the retry loop", async () => {
+    const rec: Recorder = { decisions: [], createdTasks: [] };
+    const db = makeDb(rec, REPLY, dealReads(), STAGES);
+    const { service, generateAndHoldQuote } = makeServiceForQuotes(
+      db, ok(extraction()), stageMoved(), true,
+    );
+    generateAndHoldQuote.mockRejectedValue(new Error("quote numbering is exhausted"));
+
+    // The stage advance has already committed. Throwing would retry the whole
+    // workflow and re-apply a move that happened.
+    await expect(service.processActivity(ORG, ACTIVITY)).resolves.toBeUndefined();
+
+    const failed = decisionsOfKind(rec, "quote.sent")[0];
+    expect(failed).toMatchObject({ outcome: "failed" });
+    expect(String(failed?.summary)).toContain("quote numbering is exhausted");
   });
 });

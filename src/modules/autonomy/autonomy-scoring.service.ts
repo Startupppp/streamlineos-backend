@@ -72,12 +72,23 @@ export class AutonomyScoringService {
         : AUTONOMY_SETTINGS_DEFAULTS.shadowSampleRate,
       shadowDailyCap: row?.shadowDailyCap ?? AUTONOMY_SETTINGS_DEFAULTS.shadowDailyCap,
       holdWindowSeconds: row?.holdWindowSeconds ?? AUTONOMY_SETTINGS_DEFAULTS.holdWindowSeconds,
+      /**
+       * `??` and not `||`, because `false` is the answer here rather than the
+       * absence of one — and it is also the default, so the two are only
+       * distinguishable by which operator this line uses.
+       */
+      autoQuoteEnabled: row?.autoQuoteEnabled ?? AUTONOMY_SETTINGS_DEFAULTS.autoQuoteEnabled,
     };
   }
 
   async updateSettings(
     organizationId: string,
-    patch: { shadowSampleRate?: number; shadowDailyCap?: number; holdWindowSeconds?: number },
+    patch: {
+      shadowSampleRate?: number;
+      shadowDailyCap?: number;
+      holdWindowSeconds?: number;
+      autoQuoteEnabled?: boolean;
+    },
   ) {
     await this.db
       .insert(autonomySettings)
@@ -90,6 +101,9 @@ export class AutonomyScoringService {
         ...(patch.holdWindowSeconds !== undefined
           ? { holdWindowSeconds: patch.holdWindowSeconds }
           : {}),
+        ...(patch.autoQuoteEnabled !== undefined
+          ? { autoQuoteEnabled: patch.autoQuoteEnabled }
+          : {}),
       })
       .onConflictDoUpdate({
         target: autonomySettings.organizationId,
@@ -100,6 +114,9 @@ export class AutonomyScoringService {
           ...(patch.shadowDailyCap !== undefined ? { shadowDailyCap: patch.shadowDailyCap } : {}),
           ...(patch.holdWindowSeconds !== undefined
             ? { holdWindowSeconds: patch.holdWindowSeconds }
+            : {}),
+          ...(patch.autoQuoteEnabled !== undefined
+            ? { autoQuoteEnabled: patch.autoQuoteEnabled }
             : {}),
           updatedAt: new Date(),
         },
