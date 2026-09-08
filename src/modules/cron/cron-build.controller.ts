@@ -13,6 +13,7 @@ import { CronProjectsService } from "./cron-projects.service";
 import { CrmSequencesRunnerService } from "../crm/automation-studio/crm-sequences-runner.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
+import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -25,6 +26,7 @@ export class CronBuildController {
     private readonly crmSequencesRunner: CrmSequencesRunnerService,
     private readonly crmTasks: CronCrmTasksService,
     private readonly crmLifecycle: CronCrmLifecycleService,
+    private readonly crmAutonomy: CronCrmAutonomyService,
     private readonly buildRetention: CronBuildRetentionService,
     private readonly buildSnapshots: CronBuildSnapshotsService,
     private readonly cronLease: CronLeaseService,
@@ -61,6 +63,28 @@ export class CronBuildController {
   @HttpCode(200)
   postCrmLifecycleTriggersSweep(@Headers("authorization") authorization?: string) {
     return this.runCrmLifecycleTriggersSweep(authorization);
+  }
+
+  @Get("crm-silence-sweep")
+  getCrmSilenceSweep(@Headers("authorization") authorization?: string) {
+    return this.runCrmSilenceSweep(authorization);
+  }
+
+  @Post("crm-silence-sweep")
+  @HttpCode(200)
+  postCrmSilenceSweep(@Headers("authorization") authorization?: string) {
+    return this.runCrmSilenceSweep(authorization);
+  }
+
+  @Get("crm-field-repairs")
+  getCrmFieldRepairs(@Headers("authorization") authorization?: string) {
+    return this.runCrmFieldRepairs(authorization);
+  }
+
+  @Post("crm-field-repairs")
+  @HttpCode(200)
+  postCrmFieldRepairs(@Headers("authorization") authorization?: string) {
+    return this.runCrmFieldRepairs(authorization);
   }
 
   @Get("crm-tasks-overdue-flush")
@@ -160,6 +184,60 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("CRM lifecycle triggers sweep failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * Relationships that have gone quiet, handed to the outbound loop.
+   *
+   * 900 seconds, the longest lease here: this walks every organisation and every
+   * candidate that turns out to be due costs a draft. `OUTBOUND_SPACING_DAYS`
+   * already stops one loop redrafting the same nudge on every pass, so the lease
+   * is about not paying twice concurrently rather than about correctness.
+   */
+  private async runCrmSilenceSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("crm-silence-sweep", 900, () =>
+        this.crmAutonomy.sweepSilentRelationships(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "crm-silence-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Considered ${result.considered} quiet relationship(s) across ${result.organizations} organization(s): held ${result.held}, refused ${result.refused}`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("CRM silence sweep failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * Deterministic field repairs, under each tenant's own policy.
+   *
+   * No provider call and no hold window, so this is the cheapest of the three and
+   * takes the shortest lease.
+   */
+  private async runCrmFieldRepairs(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("crm-field-repairs", 300, () =>
+        this.crmAutonomy.runFieldRepairs(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "crm-field-repairs already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Repaired ${result.repaired} value(s) across ${result.organizations} organization(s); ${result.leftForAPerson} left for a person`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("CRM field repairs failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

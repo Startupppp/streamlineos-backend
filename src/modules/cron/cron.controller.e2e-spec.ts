@@ -36,6 +36,16 @@ describe("Cron auth (e2e)", () => {
      */
     ["get", "/cron/crm-lifecycle-triggers-sweep"],
     ["post", "/cron/crm-lifecycle-triggers-sweep"],
+    /**
+     * The silence loop and the repair loop, which had the same problem as the
+     * renewal one: a detector and an action that had never been introduced.
+     * `listAwaitingReply` says in its own docstring that it is the detector a
+     * sweep runs, and no sweep existed to run it.
+     */
+    ["get", "/cron/crm-silence-sweep"],
+    ["post", "/cron/crm-silence-sweep"],
+    ["get", "/cron/crm-field-repairs"],
+    ["post", "/cron/crm-field-repairs"],
   ];
 
   function callRoute(method: Method, path: string): request.Test {

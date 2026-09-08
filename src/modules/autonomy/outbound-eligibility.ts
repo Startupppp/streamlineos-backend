@@ -64,8 +64,17 @@ export type OutboundVerdict =
  */
 export const OUTBOUND_SPACING_DAYS = 5;
 
-/** Silence, before the system will nudge an open deal. */
-const NUDGE_AFTER_DAYS = 10;
+/**
+ * Silence, before the system will nudge an open deal.
+ *
+ * Exported because the sweep that finds candidates has to use the same number
+ * this function judges them by. A sweep with its own copy either misses deals
+ * that are due, or pays to load and refuse ones that are not — and the two
+ * numbers drift apart the first time either is tuned. It is the shorter of the
+ * two thresholds, so it is the earliest anything here can be due, which makes it
+ * the right cutoff for a candidate query.
+ */
+export const NUDGE_AFTER_DAYS = 10;
 
 /** Silence, before it will check in on a relationship with nothing open. */
 const CHECK_IN_AFTER_DAYS = 45;

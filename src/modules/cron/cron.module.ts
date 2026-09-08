@@ -55,6 +55,9 @@ import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
+import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
+import { RelationshipsModule } from "../relationships/relationships.module";
+import { AutonomyModule } from "../autonomy/autonomy.module";
 import { LifecycleTriggersModule } from "../lifecycle/lifecycle-triggers.module";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
@@ -88,6 +91,8 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
     HrCoreModule,
     HrLifecycleModule,
     LifecycleTriggersModule,
+    RelationshipsModule,
+    AutonomyModule,
     HrGlobalModule,
     InvoicesModule,
     CrmAutomationStudioModule,
@@ -129,6 +134,7 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
     NotificationRetentionService,
     CronCrmTasksService,
     CronCrmLifecycleService,
+    CronCrmAutonomyService,
     CronIdempotencyService,
     CronBuildRetentionService,
     CronBuildSnapshotsService,
